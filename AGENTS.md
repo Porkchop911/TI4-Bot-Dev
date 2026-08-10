@@ -191,6 +191,18 @@ Stop and request authority only when a choice would materially change public beh
 compatibility, security posture, licensing, deployment scope, external systems, or destructive data
 handling and the plans do not already decide it.
 
+## Managed RPC operation
+
+When Pi is launched through `tools/pi_rpc_bridge.py`, that controller is the sole owner of the Pi
+session. Do not launch a TUI, `--continue`, `--resume`, print-mode job, or second RPC process against
+the same session. Prompts, steering, status checks, aborts, and compaction may arrive through the
+native Pi RPC queue. Treat them like operator instructions, while still enforcing this file and
+`plans/SCOPED_PERMISSIONS.md`.
+
+Before settling after a triggered work unit, update `plans/EXECUTION_STATE.md` and package evidence,
+then report the exact branch, commit, checks, findings, and next safe action. Do not describe an
+independent review as complete unless a different reviewing agent or model actually performed it.
+
 ## Milestone completion
 
 At a milestone exit:
