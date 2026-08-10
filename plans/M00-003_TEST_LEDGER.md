@@ -84,4 +84,5 @@ cd D:\Projects\ti4-engine && python -m pytest --collect-only tests/ 2>&1 | grep 
 - [x] Per-file and summary counts are internally consistent (sums to 2,097) ✅
 - [x] Evidence file written with full ledger and statistics (CORRECTED version) ✅
 - [ ] `plans/EXECUTION_STATE.md` updated to reflect completion and next package
-> **NOTE:** Package REOPENED after audit. Original was missing three test modules (`test_transactions.py`: 39 tests, `test_tactical_plans.py`: 8 tests, `test_promotion_confirmation.py`: 7 tests = 54 total). Corrected evidence written but requires independent review before marking complete.
+- [x] Independent frontier review completed
+> **NOTE:** Corrected evidence passed independent frontier review with exact agreement across 106 modules and 2,097 collected tests. Only the EXECUTION_STATE update remains before formal completion; review: `plans/reviews/M00-003_FRONTIER_REVIEW.md`.
