@@ -1,3 +1,4 @@
 # Local Pi RPC controller state and logs.
 .pi-control/
-
+__pycache__/
+*.py[cod]

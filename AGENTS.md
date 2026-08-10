@@ -199,6 +199,16 @@ the same session. Prompts, steering, status checks, aborts, and compaction may a
 native Pi RPC queue. Treat them like operator instructions, while still enforcing this file and
 `plans/SCOPED_PERMISSIONS.md`.
 
+Normal autonomous work must be submitted as one bounded package through the controller's `/task`
+endpoint. Make the first repository edit promptly, use at most one simpler retry after a failed
+approach, run the package acceptance checks, report compactly, and stop. Never begin the next package
+from the same prompt. The controller may abort work after the configured no-edit timeout, absolute
+timeout, or tool-error limit. After an abort, the next prompt must be smaller than the failed one.
+
+Monitoring uses `/summary` at checkpoints. Token-level `message_update` events, streaming tool-output
+deltas, and full transcript reads are not part of normal supervision. See
+`plans/PI_RPC_CONTROL.md` for the low-token policy and limits.
+
 Before settling after a triggered work unit, update `plans/EXECUTION_STATE.md` and package evidence,
 then report the exact branch, commit, checks, findings, and next safe action. Do not describe an
 independent review as complete unless a different reviewing agent or model actually performed it.
