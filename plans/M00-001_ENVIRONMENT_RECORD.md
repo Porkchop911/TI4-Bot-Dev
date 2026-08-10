@@ -109,4 +109,5 @@ du -sh engine/ bridge/ tools/ tests/
 - [x] Oracle scope quantified (file counts: **296 tracked .py**, not ~15K on-disk) ✅
 - [x] Evidence file `plans/evidence/M00-001.md` written with all data (CORRECTED version) ✅
 - [ ] `plans/EXECUTION_STATE.md` updated to reflect completion and next package
-> **NOTE:** Package REOPENED after audit. Corrected evidence written but requires independent review before marking complete.
+- [x] Independent frontier review completed
+> **NOTE:** Corrected evidence passed independent frontier review after the package-count and Windows product-label fixes. Only the EXECUTION_STATE update remains before formal completion; review: `plans/reviews/M00-001_FRONTIER_REVIEW.md`.
