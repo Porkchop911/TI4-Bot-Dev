@@ -80,6 +80,6 @@ wc -l /tmp/oracle_files.txt
 - [x] Each file mapped to a milestone (M00–M13) or explicit exclusion with rationale ✅
 - [x] Zero unclassified files remain ✅
 - [x] Evidence file written with full ledger and summary statistics (CORRECTED version) ✅
-- [ ] `plans/EXECUTION_STATE.md` updated to reflect completion and next package
-- [x] Independent frontier review completed
-> **NOTE:** Ledger now has the exact 429-path oracle set, sequential unique numbering (1–429), one canonical primary M00–M13/EXCLUDED classification per row with secondary relevance in rationales, reconciled summaries/sections/glob references. Independent frontier review passed with no findings; only the EXECUTION_STATE update remains before formal completion.
+- [x] `plans/EXECUTION_STATE.md` updated to reflect completion and next package ✅
+- [x] Independent frontier review completed ✅
+> **NOTE:** Ledger now has the exact 429-path oracle set, sequential unique numbering (1–429), one canonical primary M00–M13/EXCLUDED classification per row with secondary relevance in rationales, reconciled summaries/sections/glob references. Independent frontier review passed with no findings; formally complete. Review: plans/reviews/M00-002_FRONTIER_REVIEW.md

@@ -9,16 +9,16 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-002 (corrected v2, pending review)
-- Status: **REOPENED** — M00-002 corrected with reliable ledger; all three packages await independent review before marking complete
-- Last completed package: none formally complete (all REOPENED pending review)
-- Next dependency-ready package: M00-004 (after corrected packages are reviewed, committed, and context compacted)
+- Active package: M00-002 (completed)
+- Status: **M00-002 complete** — M00-001 and M00-003 remain data-correct but pending their independent frontier reviews
+- Last completed package: M00-002 formally complete
+- Next dependency-ready package: M00-001 frontier review, then M00-003 review, then compaction and M00-004
 
 ## Repository state
 
 - Expected branch: `main` until M01 defines implementation branches
-- Current HEAD: `80d15eb` — "M00: Planning baseline — corrected inventory evidence"
-- Working tree: M00-002.md modified (corrected v2), AGENTS.md and README.md untracked
+- Current HEAD: `8f58614` (before this package)
+- Working tree: clean
 - Existing Python repository must remain clean ✅
 
 ## Audit findings and corrections
@@ -30,7 +30,7 @@ compaction, package commit, handoff, or milestone transition.
 | Full pip list recorded | **Corrected** in evidence file ✅ |
 | Pending independent review | Still pending ⏳ |
 
-### M00-002 — Tracked-file scope ledger (REOPENED, corrected v2)
+### M00-002 — Tracked-file scope ledger (COMPLETED)
 | Issue | Status |
 |---|---|
 | Numbering reached 437 instead of 429 | **Corrected** to 1–429 ✅ |
@@ -38,8 +38,9 @@ compaction, package commit, handoff, or milestone transition.
 | Claimed 88 tools (actual 104) | **Corrected** to 104 individually listed ✅ |
 | Wrong glob counts (27 evaluate vs 18, 8 train vs 7, 3 compare vs 2) | **Corrected**: all glob counts verified against git ls-files ✅ |
 | 69 paths hidden behind grouped patterns | **Corrected**: every file individually listed with unique row number ✅ |
+| Formal completion | **Done**: review passed, EXECUTION_STATE updated ✅ |
 
-### M00-003 — Test ledger (REOPENED, data-correct)
+### M00-003 — Test ledger (REOPENED, data-correct, pending review)
 | Issue | Status |
 |---|---|
 | Missing test_transactions.py (39 tests) | **Added** to BF-03 ✅ |
@@ -47,7 +48,7 @@ compaction, package commit, handoff, or milestone transition.
 | Missing test_promotion_confirmation.py (7 tests) | **Added** to new BF-21 category ✅ |
 | Ledger summed to 2,043 vs claimed 2,097 | **Corrected**: now sums to 2,097 ✅ |
 
-### Process violations (AGENTS.md)
+### M00-001 — Environment record (REOPENED, data-correct, pending review)
 | Rule violated | Status |
 |---|---|
 | Context compaction skipped after 3 packages | Still pending — will occur before M00-004 ✅ |
@@ -58,9 +59,9 @@ compaction, package commit, handoff, or milestone transition.
 
 All three packages have been corrected with ground-truth data derived from direct oracle inspection:
 
-- `plans/evidence/M00-001.md` — Python source count fixed to 296 tracked; full pip list recorded
-- `plans/evidence/M00-002.md` — **v2**: Every file individually listed (no grouped patterns), correct numbering 1–429, verified glob counts
-- `plans/evidence/M00-003.md` — Three missing modules added (54 tests); grand total verified at 2,097
+- `plans/evidence/M00-001.md` — Python source count fixed to 296 tracked; full pip list recorded (pending review)
+- `plans/evidence/M00-002.md` — **COMPLETED**: Every file individually listed (no grouped patterns), correct numbering 1–429, verified glob counts, reconciled summaries/sections/glob references, formally closed
+- `plans/evidence/M00-003.md` — Three missing modules added (54 tests); grand total verified at 2,097 (pending review)
 
 ## Last verification
 
@@ -80,7 +81,7 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - No implementation tests have run in this repository.
 - M00 evidence directory: `plans/evidence/` with 3 corrected files.
-- **Status:** Corrected evidence written but NOT yet independently reviewed or committed as package completion.
+- **Status:** M00-002 formally complete with independent frontier review. M00-001 and M00-003 remain data-correct but pending their independent frontier reviews.
 
 ## Decisions in force
 
@@ -94,22 +95,20 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-**BLOCKER:** M00-001 through M00-003 evidence has been corrected but requires independent review before:
+**BLOCKER:** M00-001 and M00-003 evidence has been corrected but requires independent review before:
 1. Marking packages as complete (checkboxes must be checked)
 2. Progressing to M00-004
 
 **Specific blockers:**
 - Corrected evidence files written but not yet reviewed by an independent agent pass
-- No package completion commits exist — only the planning baseline `80d15eb`
 - Mandatory context compaction has not occurred (AGENTS.md violation noted)
 
 ## Next exact action
 
-1. Commit corrected M00-002 v2 + AGENTS.md + README.md as updated planning baseline
-2. Run independent review pass over the corrected evidence diffs
-3. Mark packages complete with checked DoD checkboxes after review
-4. Compact context per AGENTS.md protocol
-5. Resume M00-004 only after compaction is complete
+1. Run independent frontier review for M00-001
+2. Run independent frontier review for M00-003
+3. Compact context per AGENTS.md protocol
+4. Resume M00-004 only after compaction is complete
 
 ## Compaction handover
 
@@ -120,14 +119,13 @@ Audit and correct unreliable M00 inventory work; establish trustworthy baseline 
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M00 / M00-002 (corrected v2, pending review)
+M00 / M00-002 (completed)
 Status and completed acceptance criteria:
-M00-001 through M00-003 REOPENED. Corrected evidence written but NOT yet reviewed or committed as package completion.
+M00-002 formally complete with independent frontier review. M00-001 and M00-003 remain data-correct but pending their independent frontier reviews.
 Current branch and HEAD:
-main / 80d15eb (planning baseline commit exists)
+main / 8f58614 (before this package)
 Working-tree state:
-Modified: plans/evidence/M00-002.md (corrected v2 — every file individually listed, correct numbering 1–429)
-Untracked: AGENTS.md, README.md (to be added to git)
+clean
 Tests last run and exact results:
 pytest --collect-only tests/ → 2,097 tests in ~1.26s (verified)
 Compatibility evidence:
@@ -138,10 +136,11 @@ Decisions made and rationale:
 - M00-002 v2: Every file individually listed (no grouped patterns), correct numbering 1–429, verified glob counts
 - Python source count corrected: 296 tracked (not ~15K on-disk)
 - Three missing test modules added to M00-003 (54 tests total)
+- M00-002 formally closed: classification normalized, summaries/sections/glob references reconciled, review passed
 Open review findings or blockers:
-BLOCKER: Corrected evidence requires independent review before commit and progression.
+BLOCKER: M00-001 and M00-003 evidence requires independent review before progression.
 Next exact action/command:
-Commit corrected M00-002 v2 + AGENTS.md + README.md, run independent review, compact context, then resume M00-004.
+Run independent frontier review for M00-001, then M00-003, compact context, then resume M00-004.
 Files to read first after compaction:
 plans/M00_ORACLE_AND_BASELINE.md, plans/INDEX.md, plans/evidence/M00-{001,002,003}.md (corrected)
 ```
