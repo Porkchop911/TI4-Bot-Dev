@@ -9,15 +9,15 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-003 (pending review)
-- Status: **M00-001 and M00-002 complete** — M00-003 data-correct but pending independent frontier review
-- Last completed package: M00-002 formally complete; M00-001 formally complete
-- Next dependency-ready package: M00-003 frontier review, then compaction and M00-004
+- Active package: M00-003 (completed)
+- Status: **M00-001, M00-002, and M00-003 independently reviewed and complete**
+- Last completed package: M00-003 formally complete
+- Next dependency-ready package: compact context then begin the smallest dependency-ready M00-004 package
 
 ## Repository state
 
 - Expected branch: `main` until M01 defines implementation branches
-- Current HEAD: `c55ffd9` (before this package)
+- Current HEAD: `57d03ee` (before this package)
 - Working tree: clean
 - Existing Python repository must remain clean ✅
 
@@ -42,7 +42,7 @@ compaction, package commit, handoff, or milestone transition.
 | 69 paths hidden behind grouped patterns | **Corrected**: every file individually listed with unique row number ✅ |
 | Formal completion | **Done**: review passed, EXECUTION_STATE updated ✅ |
 
-### M00-003 — Test ledger (REOPENED, data-correct, pending independent frontier review)
+### M00-003 — Test ledger (COMPLETED)
 | Issue | Status |
 |---|---|
 | Missing test_transactions.py (39 tests) | **Added** to BF-03 ✅ |
@@ -63,7 +63,7 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - `plans/evidence/M00-001.md` — **COMPLETED**: Python source count fixed to 296 tracked; full pip list (153 packages) recorded; package count corrected to 153; OS product label corrected to Windows 11 Pro; formally closed
 - `plans/evidence/M00-002.md` — **COMPLETED**: Every file individually listed (no grouped patterns), correct numbering 1–429, verified glob counts, reconciled summaries/sections/glob references, formally closed
-- `plans/evidence/M00-003.md` — Three missing modules added (54 tests); grand total verified at 2,097 (pending review)
+- `plans/evidence/M00-003.md` — **COMPLETED**: Three missing modules added (54 tests); grand total verified at 2,097; formally closed
 
 ## Last verification
 
@@ -83,7 +83,7 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - No implementation tests have run in this repository.
 - M00 evidence directory: `plans/evidence/` with 3 corrected files.
-- **Status:** M00-001 and M00-002 formally complete with independent frontier review. M00-003 remains data-correct but pending independent frontier review.
+- **Status:** M00-001, M00-002, and M00-003 formally complete with independent frontier review.
 
 ## Decisions in force
 
@@ -97,19 +97,12 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-**BLOCKER:** M00-003 evidence has been corrected but requires independent review before:
-1. Marking package as complete (checkboxes must be checked)
-2. Progressing to M00-004
-
-**Specific blockers:**
-- Corrected evidence file written but not yet reviewed by an independent agent pass
-- Mandatory context compaction has not occurred (AGENTS.md violation noted)
+**BLOCKER:** All three M00 inventory packages are now complete. Next blocker is mandatory context compaction before M00-004.
 
 ## Next exact action
 
-1. Run independent frontier review for M00-003
-2. Compact context per AGENTS.md protocol
-3. Resume M00-004 only after compaction is complete
+1. Compact context per AGENTS.md protocol
+2. Begin the smallest dependency-ready M00-004 package only after compaction is complete
 
 ## Compaction handover
 
@@ -120,11 +113,11 @@ Audit and correct unreliable M00 inventory work; establish trustworthy baseline 
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M00 / M00-003 (pending review)
+M00 / M00-003 (completed)
 Status and completed acceptance criteria:
-M00-001 and M00-002 formally complete with independent frontier review. M00-003 data-correct but pending independent frontier review.
+M00-001, M00-002, and M00-003 independently reviewed and complete.
 Current branch and HEAD:
-main / c55ffd9 (before this package)
+main / 57d03ee (before this package)
 Working-tree state:
 clean
 Tests last run and exact results:
@@ -139,10 +132,11 @@ Decisions made and rationale:
 - Three missing test modules added to M00-003 (54 tests total)
 - M00-002 formally closed: classification normalized, summaries/sections/glob references reconciled, review passed
 - M00-001 formally closed: package count corrected to 153, OS product label corrected to Windows 11 Pro, review passed
+- M00-003 formally closed: 106 modules, 2,097 tests, exact agreement across all modules, review passed
 Open review findings or blockers:
-BLOCKER: M00-003 evidence requires independent review before progression.
+BLOCKER: Mandatory context compaction before M00-004.
 Next exact action/command:
-Run independent frontier review for M00-003, compact context, then resume M00-004.
+Compact context per AGENTS.md, then begin smallest dependency-ready M00-004 package.
 Files to read first after compaction:
-plans/M00_ORACLE_AND_BASELINE.md, plans/INDEX.md, plans/evidence/M00-{001,002,003}.md (corrected)
+plans/M00_ORACLE_AND_BASELINE.md, plans/INDEX.md, plans/M00-004_INTERFACE_INVENTORY.md
 ```

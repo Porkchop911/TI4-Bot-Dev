@@ -83,6 +83,6 @@ cd D:\Projects\ti4-engine && python -m pytest --collect-only tests/ 2>&1 | grep 
 - [x] Each file mapped to Rust milestone target(s) ✅
 - [x] Per-file and summary counts are internally consistent (sums to 2,097) ✅
 - [x] Evidence file written with full ledger and statistics (CORRECTED version) ✅
-- [ ] `plans/EXECUTION_STATE.md` updated to reflect completion and next package
-- [x] Independent frontier review completed
-> **NOTE:** Corrected evidence passed independent frontier review with exact agreement across 106 modules and 2,097 collected tests. Only the EXECUTION_STATE update remains before formal completion; review: `plans/reviews/M00-003_FRONTIER_REVIEW.md`.
+- [x] `plans/EXECUTION_STATE.md` updated to reflect completion and next package ✅
+- [x] Independent frontier review completed ✅
+> **NOTE:** Corrected evidence passed independent frontier review with exact agreement across 106 modules and 2,097 collected tests. Formally complete. Review: `plans/reviews/M00-003_FRONTIER_REVIEW.md`.
