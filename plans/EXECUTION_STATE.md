@@ -9,10 +9,10 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-004c (COMPLETE — HTTP endpoints inventoried)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c complete**
-- Last completed package: M00-004c formally complete
-- Next dependency-ready package: M00-004d (Wire commands, messages, and telemetry)
+- Active package: M00-004d (COMPLETE — wire commands inventoried)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c, M00-004d complete**
+- Last completed package: M00-004d formally complete
+- Next dependency-ready package: M00-004e (Reconciliation and independent review)
 
 ## Repository state
 
@@ -122,12 +122,94 @@ All three packages have been corrected with ground-truth data derived from direc
 - M00-004a complete: 26 evidence slices (engine/ml/ all inventoried).
 - M00-004b complete: 10 evidence slices (engine/ bridge/ tools/ all inventoried).
 - M00-004c complete: 1 evidence slice (HTTP endpoints).
-- Next: M00-004d (Wire commands, messages, and telemetry)
+- M00-004d complete: 1 evidence slice (wire commands/telemetry).
+- M00-004e pending: reconciliation of all 004 children + frontier review.
 - No blockers.
 
 ## Next exact action
 
-1. Begin M00-004d: catalogue every wire message type, command schema, telemetry event, and Lua bridge helper contract.
+1. Begin M00-004e: cross-check all 004 children for completeness, resolve gaps, obtain independent frontier review.
+
+---
+
+## HANDOVER — Agent session paused by user
+
+### Handover summary
+```
+Objective:
+M00 — Oracle and baseline: Interface inventory (M00-004) nearly complete.
+Oracle commit:
+37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
+Active milestone/package:
+M00 / M00-004 (M00-004a, M00-004b, M00-004c, M00-004d complete; M00-004e next)
+Status and completed acceptance criteria:
+- M00-001, M00-002, M00-003: formally complete
+- M00-004a: 26 evidence slices — all 21 engine/ml/ files inventoried
+- M00-004b: 10 evidence slices — all engine/, bridge/, tools/ entry points inventoried (103 tools)
+- M00-004c: 1 evidence slice — HTTP endpoints (5 POST, 4 GET)
+- M00-004d: 1 evidence slice — wire commands (30+), Lua handlers (26), telemetry events (21)
+- M00-004e: pending (reconciliation + frontier review)
+Current branch and HEAD:
+main / b1fc747
+Working-tree state:
+clean
+Tests last run and exact results:
+n/a (M00 documentation-only inventory)
+Compatibility evidence:
+N/A — documentation-only inventory, no behavioral claims.
+Decisions made and rationale:
+- M00-004b split into 10 sub-packages (b1, b2, b3a–b3i) due to 103 tools
+- All tools follow identical argparse CLI pattern; grouped by purpose category
+- M00-004c documented all 9 HTTP endpoints with request/response schemas
+- M00-004d documented 30+ wire commands, 26 Lua handlers, 21 telemetry events
+- No implementation; evidence files are read-only documentation
+Open review findings or blockers:
+None.
+Next exact action/command:
+Begin M00-004e: reconcile all 004 children, resolve gaps, obtain frontier review.
+After M00-004e: proceed to M00-005 (Artifact inventory).
+Files to read first after resumption:
+1. plans/EXECUTION_STATE.md
+2. plans/M00-004_INTERFACE_INVENTORY.md
+3. plans/SCOPED_PERMISSIONS.md
+4. plans/evidence/M00-004e.md (to be created)
+```
+
+### Completed evidence files (28 total)
+```
+M00-004a26.md — capture.py inventory
+M00-004a27.md — features.py inventory
+M00-004a28.md — rollout.py inventory
+M00-004a29.md — tactical_macro.py inventory
+M00-004b1.md — engine/ core entry points
+M00-004b2.md — bridge/ entry points
+M00-004b3a.md — evaluate/ tools (18)
+M00-004b3b.md — train/ evolve/ tools (11)
+M00-004b3c.md — analysis tools (6)
+M00-004b3d.md — policy/training analysis tools (10)
+M00-004b3e.md — simulation/benchmark tools (4)
+M00-004b3f.md — LLM tools (5)
+M00-004b3g.md — export/extract/collect tools (8 CLI + 2 lib)
+M00-004b3h.md — TTS/bridge/misc tools (10)
+M00-004b3i.md — remaining tools (22 CLI + 3 lib)
+M00-004c.md — HTTP endpoints
+M00-004d.md — wire commands/telemetry
+```
+
+### Remaining M00 packages (after 004e)
+```
+M00-005 — Artifact inventory (JSON, Parquet, checkpoints, map pools, etc.)
+M00-006 — Compatibility classification
+M00-007 — Canonical projection spec
+M00-008 — Fixture selection
+M00-009 — Oracle exporter
+M00-010 — Entropy/replay corpus
+M00-011 — Correctness baseline
+M00-012 — Microbenchmark protocol
+M00-013 — Python performance baseline
+M00-014 — Oracle integrity guard
+M00-015 — Frontier scope review
+```
 
 ## Compaction handover
 
