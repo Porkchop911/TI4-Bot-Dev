@@ -1,0 +1,27 @@
+[package]
+name = "ti4-sim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ti4-model.workspace = true
+ti4-content.workspace = true
+ti4-engine.workspace = true
+ti4-policy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+itertools.workspace = true
+chrono.workspace = true
+criterion.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
+
+[lints]
+workspace = true

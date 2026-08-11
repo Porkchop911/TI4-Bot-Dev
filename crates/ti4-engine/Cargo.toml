@@ -1,0 +1,29 @@
+[package]
+name = "ti4-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ti4-model.workspace = true
+ti4-content.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+smallvec.workspace = true
+hashbrown.workspace = true
+indexmap.workspace = true
+bitflags.workspace = true
+enumset.workspace = true
+itertools.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

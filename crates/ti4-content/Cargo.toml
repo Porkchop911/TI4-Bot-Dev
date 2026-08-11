@@ -1,0 +1,21 @@
+[package]
+name = "ti4-content"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ti4-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+globset.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+itertools.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true
+
+[lints]
+workspace = true

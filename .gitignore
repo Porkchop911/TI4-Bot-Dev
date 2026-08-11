@@ -1,4 +1,39 @@
-# Local Pi RPC controller state and logs.
-.pi-control/
+# Rust build artifacts
+target/
+**/*.pdb
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib
+**/*.lib
+**/*.obj
+**/*.o
+**/*.rlib
+Cargo.lock
+
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.env
+.venv
+
+# Local state
+.pi-control/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build products
+*.snap
+*.profraw
+*.profdata

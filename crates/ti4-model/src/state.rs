@@ -1,0 +1,556 @@
+//! GameState and PlayerState structures.
+//!
+//! GameState owns ~44 fields; PlayerState owns ~46 fields.
+//! This module defines the core game state that the engine mutates.
+
+use crate::id::*;
+use crate::units::*;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, BTreeMap};
+
+// ─── Phase and timing ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GamePhase {
+    Setup,
+    Action,
+    Agenda,
+    RoundEnd,
+    GameEnd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionSubPhase {
+    Strategy,
+    Command,
+    Tactical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgendaPhase {
+    Political,
+    Economic,
+    Military,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StrategyCard {
+    Trade,
+    Diplomacy,
+    War,
+    Rebellion,
+    Technology,
+    Unknown,
+}
+
+impl StrategyCard {
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "trade" => Self::Trade,
+            "diplomacy" => Self::Diplomacy,
+            "war" => Self::War,
+            "rebellion" => Self::Rebellion,
+            "technology" => Self::Technology,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Trade => "trade",
+            Self::Diplomacy => "diplomacy",
+            Self::War => "war",
+            Self::Rebellion => "rebellion",
+            Self::Technology => "technology",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Token {
+    Invasion,
+    Control,
+    Casualty,
+    Retreat,
+    Agenda,
+    Initiative,
+    AgendaProxy,
+}
+
+// ─── GameState ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameState {
+    // Core identity
+    pub id: String,
+    pub round: i32,
+    pub phase: GamePhase,
+    pub sub_phase: Option<ActionSubPhase>,
+    pub agenda_phase: Option<AgendaPhase>,
+
+    // Player tracking
+    pub players: BTreeMap<PlayerId, PlayerState>,
+    pub player_order: Vec<PlayerId>,
+    pub player_count: i32,
+
+    // Initiative and agenda
+    pub initiative_player: Option<PlayerId>,
+    pub current_agenda_player: Option<PlayerId>,
+    pub agenda_tokens: HashMap<PlayerId, i32>,
+
+    // Strategy cards
+    pub strategy_deck: Vec<StrategyCard>,
+    pub revealed_strategies: Vec<StrategyCard>,
+    pub secret_strategies: HashMap<PlayerId, StrategyCard>,
+    pub passed: HashSet<PlayerId>,
+
+    // Galaxy
+    pub systems: BTreeMap<SystemId, SystemState>,
+    pub planets: BTreeMap<PlanetId, PlanetState>,
+    pub planet_to_system: HashMap<PlanetId, SystemId>,
+    pub exploration_map: HashMap<PlayerId, HashSet<SystemId>>,
+
+    // Thunder's Edge
+    pub expedition_tiles: Vec<ExpeditionTileState>,
+    pub edge_token: Option<PlayerId>,
+    pub edge_faction: Option<FactionId>,
+
+    // Agenda state
+    pub agenda_card: Option<AgendaCardState>,
+    pub laws: Vec<LawState>,
+    pub agenda_results: Vec<AgendaResult>,
+
+    // Game state
+    pub victory_conditions: Vec<VictoryCondition>,
+    pub winner: Option<PlayerId>,
+    pub game_over: bool,
+
+    // Event and timing
+    pub event_log: Vec<EventRecord>,
+    pub current_events: Vec<EventRecord>,
+    pub active_event: Option<EventRecord>,
+
+    // RNG state
+    pub rng_seed: u64,
+
+    // Metadata
+    pub content_version: String,
+    pub schema_version: i32,
+}
+
+// ─── PlayerState ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerState {
+    // Identity
+    pub id: PlayerId,
+    pub faction_id: FactionId,
+
+    // Fleet
+    pub fleet: HashMap<UnitTypeId, i32>,
+    pub fleet_in_systems: HashMap<SystemId, HashMap<UnitTypeId, i32>>,
+    pub fleet_on_planets: HashMap<PlanetId, HashMap<UnitTypeId, i32>>,
+
+    // Resources
+    pub commodity: i32,
+    pub influence: i32,
+    pub production: i32,
+    pub fuel: i32,
+    pub pips: i32,
+    pub action_pips: i32,
+    pub command_tokens: i32,
+
+    // Technology
+    pub technologies: HashSet<TechnologyId>,
+    pub tech_levels: HashMap<TechnologyId, i32>,
+
+    // Cards
+    pub action_cards: Vec<ActionCardState>,
+    pub strategy_discard: Vec<StrategyCard>,
+    pub secret_objective: Option<SecretObjectiveState>,
+    pub objectives: Vec<ObjectiveState>,
+    pub completed_objectives: Vec<ObjectiveState>,
+    pub secret_completed: Vec<SecretObjectiveState>,
+
+    // Leader
+    pub leaders: Vec<LeaderState>,
+    pub active_leader: Option<LeaderState>,
+    pub leader_fatigue: Vec<LeaderId>,
+
+    // Promissory notes
+    pub promissory_notes_given: Vec<PromissoryNoteState>,
+    pub promissory_notes_received: Vec<PromissoryNoteState>,
+
+    // Relics
+    pub relics: Vec<RelicState>,
+
+    // Fragments
+    pub fragments: HashMap<FragmentId, i32>,
+
+    // Tokens
+    pub tokens: HashMap<Token, i32>,
+
+    // Control and casualties
+    pub control_tokens: HashSet<PlanetId>,
+    pub casualties: HashMap<SystemId, i32>,
+    pub retreat_tokens: HashMap<SystemId, i32>,
+    pub invasion_tokens: HashMap<PlanetId, i32>,
+
+    // Thunder's Edge
+    pub expedition_tokens: i32,
+    pub edge_fragments: HashMap<FragmentId, i32>,
+    pub edge_breakthroughs: Vec<BreakthroughState>,
+
+    // Scoring
+    pub score: i32,
+    pub objective_score: i32,
+    pub secret_score: i32,
+    pub relic_score: i32,
+    pub fragment_score: i32,
+    pub edge_score: i32,
+
+    // Economy
+    pub trade_routes: i32,
+    pub trade_income: i32,
+    pub economic_score: i32,
+    pub economic_tokens: i32,
+
+    // Military
+    pub military_score: i32,
+    pub military_tokens: i32,
+
+    // Economy/production
+    pub production_tokens: i32,
+    pub home_planets_controlled: i32,
+
+    // Other
+    pub home_system: SystemId,
+    pub home_planets: Vec<PlanetId>,
+    pub homeworld_ability: bool,
+    pub has_initiative: bool,
+    pub has_agenda_token: bool,
+    pub has_agenda_proxy: bool,
+    pub has_victory_point: bool,
+    pub has_fatigued_leader: bool,
+    pub has_fatigued_leader_ability: bool,
+    pub has_command_token: bool,
+    pub has_exhausted_fleet: bool,
+    pub has_exhausted_planet: bool,
+    pub has_broken_promissory: bool,
+    pub has_rebel_fleet: bool,
+    pub has_sabotage_token: bool,
+    pub has_infantry_in_play: bool,
+    pub has_pds_in_play: bool,
+    pub has_home_planet_in_play: bool,
+    pub has_fleet_in_home: bool,
+    pub has_fleet_in_play: bool,
+    pub has_leader_in_play: bool,
+    pub has_tech_ability: bool,
+    pub has_unit_ability: bool,
+    pub has_card_effect: bool,
+    pub has_relic: bool,
+    pub has_fragment: bool,
+    pub has_edge: bool,
+    pub has_completed_objective: bool,
+    pub has_completed_secret: bool,
+    pub has_promissory: bool,
+    pub has_law_effect: bool,
+    pub has_agenda_effect: bool,
+    pub edge_faction: Option<FactionId>,
+    pub edge_token: Option<PlayerId>,
+}
+
+impl Default for PlayerState {
+    fn default() -> Self {
+        Self {
+            id: PlayerId::new(""),
+            faction_id: FactionId::new(""),
+            fleet: HashMap::new(),
+            fleet_in_systems: HashMap::new(),
+            fleet_on_planets: HashMap::new(),
+            commodity: 0,
+            influence: 0,
+            production: 0,
+            fuel: 0,
+            pips: 0,
+            action_pips: 0,
+            command_tokens: 0,
+            technologies: HashSet::new(),
+            tech_levels: HashMap::new(),
+            action_cards: vec![],
+            strategy_discard: vec![],
+            secret_objective: None,
+            objectives: vec![],
+            completed_objectives: vec![],
+            secret_completed: vec![],
+            leaders: vec![],
+            active_leader: None,
+            leader_fatigue: vec![],
+            promissory_notes_given: vec![],
+            promissory_notes_received: vec![],
+            relics: vec![],
+            fragments: HashMap::new(),
+            tokens: HashMap::new(),
+            control_tokens: HashSet::new(),
+            casualties: HashMap::new(),
+            retreat_tokens: HashMap::new(),
+            invasion_tokens: HashMap::new(),
+            score: 0,
+            objective_score: 0,
+            secret_score: 0,
+            relic_score: 0,
+            fragment_score: 0,
+            edge_score: 0,
+            trade_routes: 0,
+            trade_income: 0,
+            economic_score: 0,
+            economic_tokens: 0,
+            military_score: 0,
+            military_tokens: 0,
+            production_tokens: 0,
+            home_planets_controlled: 0,
+            home_system: SystemId::new(""),
+            home_planets: vec![],
+            homeworld_ability: false,
+            has_initiative: false,
+            has_agenda_token: false,
+            has_agenda_proxy: false,
+            has_victory_point: false,
+            has_fatigued_leader: false,
+            has_fatigued_leader_ability: false,
+            has_command_token: false,
+            has_exhausted_fleet: false,
+            has_exhausted_planet: false,
+            has_broken_promissory: false,
+            has_rebel_fleet: false,
+            has_sabotage_token: false,
+            has_infantry_in_play: false,
+            has_pds_in_play: false,
+            has_home_planet_in_play: false,
+            has_fleet_in_home: false,
+            has_fleet_in_play: false,
+            has_leader_in_play: false,
+            has_tech_ability: false,
+            has_unit_ability: false,
+            has_card_effect: false,
+            has_relic: false,
+            has_fragment: false,
+            has_edge: false,
+            has_completed_objective: false,
+            has_completed_secret: false,
+            has_promissory: false,
+            has_law_effect: false,
+            has_agenda_effect: false,
+            expedition_tokens: 0,
+            edge_fragments: HashMap::new(),
+            edge_breakthroughs: vec![],
+            edge_faction: None,
+            edge_token: None,
+        }
+    }
+}
+
+// ─── Galaxy structures ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemState {
+    pub id: SystemId,
+    pub name: String,
+    pub planet_ids: Vec<PlanetId>,
+    pub space_tokens: HashMap<Token, i32>,
+    pub system_tokens: HashMap<Token, i32>,
+    pub faction_tokens: HashMap<FactionId, i32>,
+    pub faction_fleets: HashMap<FactionId, HashMap<UnitTypeId, i32>>,
+    pub faction_casualties: HashMap<FactionId, i32>,
+    pub faction_retreats: HashMap<FactionId, i32>,
+    pub faction_invasion: HashMap<PlanetId, i32>,
+    pub faction_pds: HashMap<FactionId, i32>,
+    pub faction_leaders: HashMap<FactionId, Vec<LeaderState>>,
+    pub is_home: bool,
+    pub is_capital: bool,
+    pub home_faction: Option<FactionId>,
+    pub home_planet: Option<PlanetId>,
+    pub home_planet_count: i32,
+    pub home_system: bool,
+    pub has_pds: bool,
+    pub has_capital: bool,
+    pub has_fleet: bool,
+    pub has_casualty: bool,
+    pub has_retreat: bool,
+    pub has_invasion: bool,
+    pub has_leaders: bool,
+    pub has_influence: bool,
+    pub has_production: bool,
+    pub has_fuel: bool,
+    pub has_command: bool,
+    pub has_exhausted: bool,
+    pub has_rebel_fleet: bool,
+    pub has_fatigued_leader: bool,
+    pub has_broken_promissory: bool,
+    pub has_sabotage: bool,
+    pub has_infiltration: bool,
+    pub has_infantry: bool,
+    pub has_pds_token: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanetState {
+    pub id: PlanetId,
+    pub name: String,
+    pub system_id: SystemId,
+    pub planet_type: String,
+    pub influence: i32,
+    pub production: i32,
+    pub fuel: i32,
+    pub home_faction: Option<FactionId>,
+    pub owner: Option<FactionId>,
+    pub control_tokens: HashMap<FactionId, i32>,
+    pub invasion_tokens: HashMap<FactionId, i32>,
+    pub casualties: HashMap<FactionId, i32>,
+    pub pds: HashMap<FactionId, i32>,
+    pub leaders: HashMap<FactionId, Vec<LeaderState>>,
+    pub faction_fleets: HashMap<FactionId, HashMap<UnitTypeId, i32>>,
+    pub has_capital: bool,
+    pub has_influence: bool,
+    pub has_production: bool,
+    pub has_fuel: bool,
+    pub has_control_token: bool,
+    pub has_invasion_token: bool,
+    pub has_casualty: bool,
+    pub has_pds: bool,
+    pub has_leader: bool,
+    pub has_fleet: bool,
+    pub has_home: bool,
+    pub has_owner: bool,
+    pub has_exhausted: bool,
+    pub has_rebel_fleet: bool,
+    pub has_fatigued_leader: bool,
+    pub has_broken_promissory: bool,
+    pub has_sabotage: bool,
+    pub has_infantry: bool,
+    pub has_infiltration: bool,
+}
+
+// ─── Card and artifact structures ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionCardState {
+    pub id: ActionCardId,
+    pub owner: PlayerId,
+    pub exhausted: bool,
+    pub used: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeaderState {
+    pub id: LeaderId,
+    pub ability: String,
+    pub active: bool,
+    pub fatigued: bool,
+    pub system_id: Option<SystemId>,
+    pub planet_id: Option<PlanetId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromissoryNoteState {
+    pub id: PromissoryNoteId,
+    pub giver: PlayerId,
+    pub receiver: PlayerId,
+    pub broken: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelicState {
+    pub id: RelicId,
+    pub owner: Option<PlayerId>,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectiveState {
+    pub id: ObjectiveId,
+    pub completed: bool,
+    pub score: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretObjectiveState {
+    pub id: SecretObjectiveId,
+    pub completed: bool,
+    pub score: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgendaCardState {
+    pub id: AgendaId,
+    pub title: String,
+    pub effects: Vec<AgendaEffect>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgendaEffect {
+    pub target: String,
+    pub value: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LawState {
+    pub id: LawId,
+    pub active: bool,
+    pub effects: Vec<LawEffect>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LawEffect {
+    pub target: String,
+    pub value: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgendaResult {
+    pub phase: AgendaPhase,
+    pub winner: PlayerId,
+    pub score: i32,
+    pub effects: Vec<AgendaEffect>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpeditionTileState {
+    pub id: ExpeditionTileId,
+    pub revealed: bool,
+    pub claimed: Option<PlayerId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BreakthroughState {
+    pub id: BreakthroughId,
+    pub claimed: bool,
+}
+
+// ─── Event and timing ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventRecord {
+    pub id: EventId,
+    pub event_type: String,
+    pub source: PlayerId,
+    pub target: Option<String>,
+    pub timestamp: i32,
+    pub effects: Vec<EventEffect>,
+    pub resolved: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventEffect {
+    pub target: String,
+    pub value: i32,
+}
+
+// ─── Victory conditions ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VictoryCondition {
+    pub type_: String,
+    pub value: i32,
+}

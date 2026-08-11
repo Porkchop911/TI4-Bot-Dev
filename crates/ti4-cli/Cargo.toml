@@ -1,0 +1,29 @@
+[package]
+name = "ti4-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ti4"
+path = "src/main.rs"
+
+[dependencies]
+ti4-model.workspace = true
+ti4-content.workspace = true
+ti4-engine.workspace = true
+ti4-policy.workspace = true
+ti4-sim.workspace = true
+ti4-bridge.workspace = true
+ti4-legacy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+itertools.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true
