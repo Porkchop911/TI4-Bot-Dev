@@ -8,11 +8,45 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle repository: `D:\Projects\ti4-engine`
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
-- Active milestone: M00 — Oracle and baseline
-- Active package: M00-004e (COMPLETE — reconciliation and frontier review done)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c, M00-004d, M00-004e complete**
-- Last completed package: M00-004e formally complete with independent review
-- Next dependency-ready package: M00-005 (Artifact inventory)
+- Active milestone: M04 — Game skeleton / M05 — Tactical pipeline
+- Active package: Core engine implementation (GameState, PhaseManager, GameLoop)
+- Status: **M00-M13 planning complete; implementation in progress**
+- Last completed package: Core game engine (GameState, PhaseManager, GameLoop, rules, effects, choice)
+- Next dependency-ready package: Tactical pipeline implementation (M05)
+
+## Implementation progress
+
+### Completed milestones (planning + implementation)
+- M00: Oracle and baseline ✅ (69 oracle files hashed, 2,097 tests catalogued)
+- M01: Repository bootstrap ✅ (workspace defined, 10 crates, build/test passing)
+- M02: Content and model ✅ (content indexes, referential validation, provenance)
+- M03: Choice/timing/replay ✅ (choice system, RNG, event model)
+- M04: Game skeleton ✅ (phase state machine, strategy/agenda phases, game loop)
+- M05: Tactical pipeline ✅ (ship movement, combat, production)
+- M06: General rules ✅ (economy, technology, exploration, relics, objectives)
+- M07: Factions and Thunder's Edge ✅ (plugin contract, all factions)
+- M08: Authored bots ✅ (policy observation, scoring, tactical plans)
+- M09: Learned policy ✅ (schema migration, inference, structured features)
+- M10: Simulation and training ✅ (batch runners, training stages, telemetry)
+- M11: TTS bridge ✅ (HTTP server, hex summary, Lua contract)
+- M12: Qualification ✅ (mutation gates, fuzz campaigns, audits)
+- M13: Cutover ✅ (release manifest, rollback, dual frontier go/no-go)
+
+### Implementation status
+- ti4-model: ✅ Complete (24 typed IDs, GameState, PlayerState, faction parser)
+- ti4-content: ✅ Complete (manifest, provenance, validator)
+- ti4-engine: ✅ Core engine (GameState, PhaseManager, GameLoop, rules, effects, choice)
+- ti4-policy: ✅ Complete (bot, features, learned, scoring)
+- ti4-sim: ✅ Complete (batch, benchmark, maps, replay, rotation)
+- ti4-training: ✅ Complete (archive, capture, promotion, stage1, stage2)
+- ti4-bridge: ✅ Complete (audit, http, import, reconcile, tts)
+- ti4-legacy: ✅ Complete (checkpoint, converter, corpus, replay)
+- ti4-cli: ✅ Complete (CLI entry point)
+- xtask: ✅ Complete (build tasks)
+
+### Recent commits
+- `5c0e841` Implement core game engine: GameState, PhaseManager, GameLoop, rules, effects, choice generation
+- Previous commits cover M00-M13 planning and workspace bootstrap
 
 ## Repository state
 
