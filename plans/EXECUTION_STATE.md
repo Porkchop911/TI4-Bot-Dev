@@ -45,6 +45,7 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `4c39ff0` Implement strategy card effects (Trade, Diplomacy, War, Rebellion, Technology)
 - `5b65be7` Add objective scoring, technology research, leader abilities, and relic handling
 - `f8bca7d` Add planet control method and fix tactical tests
 - `2a449b0` Add full round simulation test and production effect test
