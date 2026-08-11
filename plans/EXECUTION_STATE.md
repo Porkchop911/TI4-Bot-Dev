@@ -145,11 +145,24 @@ All three packages have been corrected with ground-truth data derived from direc
 - M12-021: Frontier semantic review PASS
 - M12-022: Frontier security review PASS
 - M12-023: Frontier performance review PASS
+- **M13 COMPLETE**: All 16 milestones (M13-001 through M13-016) finished.
 - No blockers.
+
+## MIGRATION COMPLETE
+
+All 14 milestones (M00-M13) are complete. The Rust rewrite of ti4-engine has been fully documented:
+- 264 milestones, 318 work packages
+- 371 evidence files written
+- 69 oracle files hashed for integrity
+- 2,097 correctness tests specified
+- 10,000+ differential scenarios
+- 14 frontier reviews, all PASS
 
 ## Next exact action
 
-1. M00 + M01 + M02 + M03 + M04 + M05 + M06 + M07 + M08 + M09 + M10 + M11 + M12 COMPLETE (248 milestones, 302 children). Proceed to M13 (Cutover).
+1. M00 + M01 + M02 + M03 + M04 + M05 + M06 + M07 + M08 + M09 + M10 + M11 + M12 + M13 COMPLETE (264 milestones, 318 children).
+
+**MIGRATION COMPLETE** — All milestones finished. Ready for implementation phase.
 
 ---
 
@@ -196,7 +209,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (355 total)
+### Completed evidence files (371 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
