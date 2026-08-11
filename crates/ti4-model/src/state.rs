@@ -43,6 +43,10 @@ pub enum StrategyCard {
     Warfare,
     Technology,
     Imperial,
+    /// Thunder's Edge variant: production instead of first structure placement
+    Te4Construction,
+    /// Thunder's Edge variant: free tactical action instead of token recall
+    Te6Warfare,
     Unknown,
 }
 
@@ -57,6 +61,8 @@ impl StrategyCard {
             "warfare" => Self::Warfare,
             "technology" => Self::Technology,
             "imperial" => Self::Imperial,
+            "te4construction" => Self::Te4Construction,
+            "te6warfare" => Self::Te6Warfare,
             _ => Self::Unknown,
         }
     }
@@ -71,6 +77,8 @@ impl StrategyCard {
             Self::Warfare => "warfare",
             Self::Technology => "technology",
             Self::Imperial => "imperial",
+            Self::Te4Construction => "te4construction",
+            Self::Te6Warfare => "te6warfare",
             Self::Unknown => "unknown",
         }
     }

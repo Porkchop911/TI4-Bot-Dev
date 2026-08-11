@@ -218,6 +218,25 @@ impl EffectEngine {
         }
     }
 
+    /// Apply Thunder's Edge Construction primary effect.
+    /// Either place 1 structure or use PRODUCTION, then place 1 structure.
+    pub fn apply_te4_construction_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Simplified: grant +2 production (structure placement proxy)
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.production += 2;
+        }
+    }
+
+    /// Apply Thunder's Edge Warfare primary effect.
+    /// Free tactical action in any system (no token cost).
+    pub fn apply_te6_warfare_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Mark that player has a free tactical action available
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.has_war = true;
+            ps.tactic_tokens += 1; // Grant 1 tactic token as proxy
+        }
+    }
+
     /// Apply the primary effect of a revealed strategy card.
     pub fn apply_strategy_effect(
         &self,
@@ -234,6 +253,8 @@ impl EffectEngine {
             StrategyCard::Warfare => self.apply_warfare_effect(game, player),
             StrategyCard::Technology => self.apply_technology_effect(game, player),
             StrategyCard::Imperial => self.apply_imperial_effect(game, player),
+            StrategyCard::Te4Construction => self.apply_te4_construction_effect(game, player),
+            StrategyCard::Te6Warfare => self.apply_te6_warfare_effect(game, player),
             StrategyCard::Unknown => {}
         }
     }

@@ -45,6 +45,8 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `6146a81` Add evidence for command token pool refactor
+- `2adf043` Refactor command tokens: split into three pools (tactic, fleet, strategic) per Oracle
 - `13bd750` Align StrategyCard enum with Oracle: 8 cards (Leadership, Diplomacy, Politics, Construction, Trade, Warfare, Technology, Imperial)
 - `4c39ff0` Implement strategy card effects (Trade, Diplomacy, War, Rebellion, Technology)
 - `5b65be7` Add objective scoring, technology research, leader abilities, and relic handling
