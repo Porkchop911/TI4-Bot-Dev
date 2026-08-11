@@ -119,13 +119,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004 through M00-011 all complete.
-- M00-011d: Correctness baseline signed off (2,097 tests collected, no files modified).
+- M00-004 through M00-012 all complete.
+- M00-012e: Variance thresholds fixed (2-15% depending on metric).
 - No blockers.
 
 ## Next exact action
 
-1. M00-004 through M00-011 complete. Proceed to M00-012 (Microbenchmark protocol).
+1. M00-004 through M00-012 complete. Proceed to M00-013 (Python performance baseline).
 
 ---
 
@@ -172,7 +172,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (91 total)
+### Completed evidence files (97 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
