@@ -9,15 +9,15 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-003 (completed)
-- Status: **M00-001, M00-002, and M00-003 independently reviewed and complete**
+- Active package: M00-004a (partial — interface inventory in progress)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–6 in progress**
 - Last completed package: M00-003 formally complete
-- Next dependency-ready package: compact context then begin the smallest dependency-ready M00-004 package
+- Next dependency-ready package: engine/ml/counterfactual.py construction API inventory
 
 ## Repository state
 
 - Expected branch: `main` until M01 defines implementation branches
-- Current HEAD: `57d03ee` (before this package)
+- Current HEAD: `3cdbce9` (M00: Finish ML context field line corrections)
 - Working tree: clean
 - Existing Python repository must remain clean ✅
 
@@ -82,8 +82,16 @@ All three packages have been corrected with ground-truth data derived from direc
 ## Tests and evidence
 
 - No implementation tests have run in this repository.
-- M00 evidence directory: `plans/evidence/` with 3 corrected files.
-- **Status:** M00-001, M00-002, and M00-003 formally complete with independent frontier review.
+- M00 evidence directory: `plans/evidence/` with 9 files (3 M00-001/002/003 + 6 M00-004a slices).
+- **Status:** M00-001, M00-002, M00-003 formally complete with independent frontier review.
+- M00-004a partial evidence slices:
+  - `M00-004a.md` — engine/state.py (commit `292526f`)
+  - `M00-004a.md` — engine/content scope (commit `dfdddea`)
+  - `M00-004a.md` — engine/learned_policy.py (commit `bd5dd21`)
+  - `M00-004a.md` — engine/policy_linear.py (commit `3941c2c`)
+  - `M00-004a5.md` — engine/ml/__init__.py (commit `91b849d`)
+  - `M00-004a6.md` — engine/ml/context.py (commit `3cdbce9`)
+- **M00-004a remains incomplete** — other engine/ml submodules remain to be inventoried.
 
 ## Decisions in force
 
@@ -97,16 +105,50 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-**BLOCKER:** All three M00 inventory packages are now complete. Next blocker is mandatory context compaction before M00-004.
+- M00-004a remains incomplete (engine/ml/ submodules not yet inventoried).
+- No blockers preventing continuation of M00-004a.
 
 ## Next exact action
 
-1. Compact context per AGENTS.md protocol
-2. Begin the smallest dependency-ready M00-004 package only after compaction is complete
+1. After fresh-session reading of required files, inventory `engine/ml/counterfactual.py` construction APIs.
 
 ## Compaction handover
 
-### Handover summary (M00 audit correction v2)
+### Handover summary (M00-004a partial checkpoint)
+```
+Objective:
+M00-004a interface inventory — public construction APIs across engine/ modules. Context compaction before proceeding to engine/ml/counterfactual.py.
+Oracle commit:
+37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
+Active milestone/package:
+M00 / M00-004a (partial — 6 evidence slices completed, M00-004a incomplete)
+Status and completed acceptance criteria:
+M00-001, M00-002, M00-003 formally complete with independent review.
+M00-004a partial slices: state.py, engine/content scope, learned_policy.py, policy_linear.py, engine/ml/__init__.py, engine/ml/context.py.
+Current branch and HEAD:
+main / 3cdbce9
+Working-tree state:
+clean (both repos)
+Tests last run and exact results:
+n/a (M00 infrastructure/baseline only)
+Compatibility evidence:
+N/A — documentation-only inventory, no behavioral claims.
+Decisions made and rationale:
+- M00-004 split into 5 sub-packages (a–e) per M00-004_INTERFACE_INVENTORY.md
+- M00-004a inventory covers: engine/state.py, engine/content/ (N/A), engine/learned_policy.py, engine/policy_linear.py, engine/ml/__init__.py (re-exports only), engine/ml/context.py
+- All line numbers corrected through multiple rounds; all evidence self-consistent
+- engine/ml/__init__.py is pure re-export (31 symbols, 0 local constructors)
+- engine/ml/context.py is single-class module (TacticalDecisionContext, 8 required fields)
+Open review findings or blockers:
+None.
+Next exact action/command:
+After fresh-session reading: inventory engine/ml/counterfactual.py construction APIs.
+Files to read first after compaction:
+plans/EXECUTION_STATE.md, plans/M00-004_INTERFACE_INVENTORY.md, plans/SCOPED_PERMISSIONS.md, D:\Projects\ti4-engine\engine\ml\counterfactual.py
+```
+
+
+
 ```
 Objective:
 Audit and correct unreliable M00 inventory work; establish trustworthy baseline before proceeding.
