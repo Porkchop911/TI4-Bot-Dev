@@ -9,10 +9,10 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-004b (COMPLETE — all engine/ bridge/ tools/ entry points inventoried)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a complete; M00-004b complete**
-- Last completed package: M00-004b3i formally complete
-- Next dependency-ready package: M00-004c (Bridge HTTP endpoints)
+- Active package: M00-004c (COMPLETE — HTTP endpoints inventoried)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c complete**
+- Last completed package: M00-004c formally complete
+- Next dependency-ready package: M00-004d (Wire commands, messages, and telemetry)
 
 ## Repository state
 
@@ -121,12 +121,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - M00-004a complete: 26 evidence slices (engine/ml/ all inventoried).
 - M00-004b complete: 10 evidence slices (engine/ bridge/ tools/ all inventoried).
-- Next: M00-004c (Bridge HTTP endpoints)
+- M00-004c complete: 1 evidence slice (HTTP endpoints).
+- Next: M00-004d (Wire commands, messages, and telemetry)
 - No blockers.
 
 ## Next exact action
 
-1. Begin M00-004c: inventory every HTTP route, handler, and response schema in the TTS bridge server.
+1. Begin M00-004d: catalogue every wire message type, command schema, telemetry event, and Lua bridge helper contract.
 
 ## Compaction handover
 
