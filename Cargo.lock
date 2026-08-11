@@ -1708,6 +1708,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "sha2",
  "smallvec",
  "thiserror",
  "ti4-content",
