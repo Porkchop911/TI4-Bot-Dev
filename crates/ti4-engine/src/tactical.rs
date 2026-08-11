@@ -88,7 +88,7 @@ impl TacticalManager {
 
         // Update game state
         if let Some(ps) = self.game.players.get_mut(&activation) {
-            ps.command_tokens -= 1; // Cost of movement
+            ps.tactic_tokens -= 1; // Cost of movement
         }
 
         Ok(result)
@@ -257,7 +257,7 @@ impl TacticalManager {
 
         // Update game state
         if let Some(ps) = self.game.players.get_mut(&activation) {
-            ps.command_tokens -= 1; // Cost of production
+            ps.strategic_tokens -= 1; // Cost of production
         }
 
         Ok(result)

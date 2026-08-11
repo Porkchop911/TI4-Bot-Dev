@@ -168,7 +168,10 @@ pub struct PlayerState {
     pub fuel: i32,
     pub pips: i32,
     pub action_pips: i32,
-    pub command_tokens: i32,
+    // Command token pools (LRR 52.4)
+    pub tactic_tokens: i32,
+    pub fleet_tokens: i32,
+    pub strategic_tokens: i32,
 
     // Technology
     pub technologies: HashSet<TechnologyId>,
@@ -290,7 +293,10 @@ impl Default for PlayerState {
             fuel: 0,
             pips: 0,
             action_pips: 0,
-            command_tokens: 0,
+            // LRR 52.4: each player starts with 3 tactic, 3 fleet, 2 strategic tokens
+            tactic_tokens: 3,
+            fleet_tokens: 3,
+            strategic_tokens: 2,
             technologies: HashSet::new(),
             tech_levels: HashMap::new(),
             action_cards: vec![],

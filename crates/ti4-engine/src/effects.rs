@@ -138,11 +138,13 @@ impl EffectEngine {
     // ─── Strategy card effects (primary abilities) ─────────────────────────────
 
     /// Apply Leadership strategy card primary effect.
-    /// 52.1: Gain 3 command tokens, or spend influence for command tokens.
+    /// 52.1: Gain 3 command tokens into pools of your choice.
     pub fn apply_leadership_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Simplified: always grant 3 command tokens (player can choose influence option)
+        // Simplified: grant 1 to each pool (tactic, fleet, strategic)
         if let Some(ps) = game.players.get_mut(player) {
-            ps.command_tokens += 3;
+            ps.tactic_tokens += 1;
+            ps.fleet_tokens += 1;
+            ps.strategic_tokens += 1;
         }
     }
 
@@ -191,8 +193,9 @@ impl EffectEngine {
     /// 99.1: Recall a command token from the board, gain 1 command token.
     pub fn apply_warfare_effect(&self, game: &mut GameState, player: &PlayerId) {
         // 99.1: Player recalls a command token (tracked via flag)
+        // Simplified: grant 1 to tactic pool
         if let Some(ps) = game.players.get_mut(player) {
-            ps.command_tokens += 1;
+            ps.tactic_tokens += 1;
             ps.has_war = true;
         }
     }

@@ -157,7 +157,13 @@ impl GameLoop {
             return Err(anyhow::anyhow!("Player {} has passed", player));
         }
 
+        // Record the strategy card
         self.game.reveal_strategy(player.clone(), strategy);
+        
+        // Apply the primary effect of the strategy card (LRR 82)
+        let engine = crate::effects::EffectEngine::new();
+        engine.apply_strategy_effect(&mut self.game, &player, &strategy);
+        
         Ok(())
     }
 
@@ -177,18 +183,21 @@ impl GameLoop {
 
     /// Step through command token phase.
     fn step_command(&mut self) -> Result<bool> {
-        // Distribute command tokens based on initiative order
+        // Distribute command tokens based on initiative order (LRR 81.5)
         // First player gets more tokens, subsequent players get fewer
+        // Tokens are distributed into three pools: tactic, fleet, strategic
         for (i, pid) in self.game.player_order.iter().enumerate() {
-            let tokens = match i {
-                0 => 4, // First player gets 4
-                1 => 3, // Second player gets 3
-                2 => 2, // Third player gets 2
-                _ => 1, // Others get 1
+            let (tactic, fleet, strategic) = match i {
+                0 => (2, 1, 1),  // First player gets 4 total
+                1 => (1, 1, 1),  // Second player gets 3 total
+                2 => (1, 1, 0),  // Third player gets 2 total
+                _ => (1, 0, 0),  // Others get 1 total
             };
             
             if let Some(ps) = self.game.players.get_mut(pid) {
-                ps.command_tokens = tokens;
+                ps.tactic_tokens += tactic;
+                ps.fleet_tokens += fleet;
+                ps.strategic_tokens += strategic;
             }
         }
 
@@ -499,18 +508,23 @@ mod tests {
         // Distribute command tokens
         loop_.step().unwrap(); // Command → Tactical
 
-        // Check token distribution - collect all token counts
-        let tokens: Vec<_> = loop_.game.players.values().map(|ps| ps.command_tokens).collect();
-        let mut sorted_tokens = tokens.clone();
-        sorted_tokens.sort();
+        // Check token distribution - collect total tokens per player
+        // Default is 3/3/2 = 8 per player, step_command adds:
+        // P1 (idx 0): +2/+1/+1 = 4, P2 (idx 1): +1/+1/+1 = 3, P3 (idx 2): +1/+1/+0 = 2, P4 (idx 3): +1/+0/+0 = 1
+        let totals: Vec<_> = loop_.game.players.values()
+            .map(|ps| ps.tactic_tokens + ps.fleet_tokens + ps.strategic_tokens)
+            .collect();
+        let mut sorted_totals = totals.clone();
+        sorted_totals.sort();
         
-        // Should have 4, 3, 2, 1 tokens
-        assert_eq!(sorted_tokens, vec![1, 2, 3, 4]);
+        // Should have 12, 11, 10, 9 (8 default + added)
+        assert_eq!(sorted_totals, vec![9, 10, 11, 12]);
         
-        // Each player should have at least 1 token
+        // Each player should have at least 1 total token
         for pid in loop_.game.player_order.iter() {
             let ps = loop_.game.players.get(pid).unwrap();
-            assert!(ps.command_tokens >= 1, "Player {} should have at least 1 command token", pid);
+            let total = ps.tactic_tokens + ps.fleet_tokens + ps.strategic_tokens;
+            assert!(total >= 1, "Player {} should have at least 1 command token", pid);
         }
     }
 
@@ -742,7 +756,8 @@ mod tests {
         // Verify players have command tokens
         for pid in loop_.game.player_order.iter() {
             let ps = loop_.game.players.get(pid).unwrap();
-            assert!(ps.command_tokens >= 1);
+            let total = ps.tactic_tokens + ps.fleet_tokens + ps.strategic_tokens;
+            assert!(total >= 1);
         }
         
         // Verify agenda results recorded
@@ -927,16 +942,22 @@ mod tests {
         let mut game = make_test_game();
         let engine = EffectEngine::new();
         
-        // Initial command tokens
+        // Clear initial tokens
         game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .command_tokens = 1;
+            .tactic_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .fleet_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .strategic_tokens = 0;
         
         // Apply Leadership strategy
         engine.apply_leadership_effect(&mut game, &PlayerId::new("p0"));
         
-        // Should have 4 command tokens (1 + 3)
+        // Should have +1 to each pool
         let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert_eq!(ps.command_tokens, 4);
+        assert_eq!(ps.tactic_tokens, 1);
+        assert_eq!(ps.fleet_tokens, 1);
+        assert_eq!(ps.strategic_tokens, 1);
     }
 
     #[test]
@@ -1018,16 +1039,16 @@ mod tests {
         let mut game = make_test_game();
         let engine = EffectEngine::new();
         
-        // Initial command tokens
+        // Initial tactic tokens
         game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .command_tokens = 1;
+            .tactic_tokens = 1;
         
         // Apply Warfare strategy
         engine.apply_warfare_effect(&mut game, &PlayerId::new("p0"));
         
-        // Should have +1 command token and has_war flag
+        // Should have +1 tactic token and has_war flag
         let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert_eq!(ps.command_tokens, 2);
+        assert_eq!(ps.tactic_tokens, 2);
         assert!(ps.has_war);
     }
 
@@ -1072,13 +1093,30 @@ mod tests {
         let mut game = make_test_game();
         let engine = EffectEngine::new();
         
-        // Test Leadership dispatch
-        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Leadership);
-        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().command_tokens, 3);
-        
-        // Reset
+        // Clear initial tokens
         game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .command_tokens = 0;
+            .tactic_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .fleet_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .strategic_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .trade_goods = 0;
+        
+        // Test Leadership dispatch (grants 1 to each pool)
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Leadership);
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.tactic_tokens, 1);
+        assert_eq!(ps.fleet_tokens, 1);
+        assert_eq!(ps.strategic_tokens, 1);
+        
+        // Clear again
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .tactic_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .fleet_tokens = 0;
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .strategic_tokens = 0;
         
         // Test Trade dispatch
         engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Trade);
