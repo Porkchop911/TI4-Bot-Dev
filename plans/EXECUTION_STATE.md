@@ -127,11 +127,13 @@ All three packages have been corrected with ground-truth data derived from direc
 - ~1,495 artifacts classified (~132 exact, ~1,363 semantic).
 - M00-007 complete: All 8 children (a–h) reconciled.
 - 6 projection types specified (state, view, choice, event, outcome, error).
+- M00-008 complete: All 10 children (a–j) reconciled.
+- 103 fixtures selected across 10 categories.
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e, M00-005, M00-006, and M00-007 complete. Proceed to M00-008 (Fixture selection).
+1. M00-004e, M00-005, M00-006, M00-007, and M00-008 complete. Proceed to M00-009 (Oracle exporter).
 
 ---
 
@@ -178,7 +180,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (60 total)
+### Completed evidence files (71 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
