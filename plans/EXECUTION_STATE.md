@@ -9,10 +9,10 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-004a (partial — interface inventory in progress)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–20 in progress**
-- Last completed package: M00-003 formally complete
-- Next dependency-ready package: engine/ml/capture.py construction API inventory
+- Active package: M00-004a (COMPLETE — all 21 engine/ml/ files inventoried)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a complete**
+- Last completed package: M00-004a29 formally complete
+- Next dependency-ready package: M00-004b (Module entry points and CLI tools)
 
 ## Repository state
 
@@ -119,12 +119,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004a remains incomplete (engine/ml/ submodules not yet inventoried).
-- No blockers preventing continuation of M00-004a.
+- M00-004a complete: all 21 engine/ml/ files inventoried (26 evidence slices total).
+- Next: M00-004b (Module entry points and CLI tools)
+- No blockers.
 
 ## Next exact action
 
-1. After fresh-session reading of required files, inventory `engine/ml/capture.py` construction APIs.
+1. Begin M00-004b: inventory every `engine/*.py`, `bridge/*.py`, `tools/*.py` entry point, `if __name__ == "__main__"` block, and CLI tool.
 
 ## Compaction handover
 
