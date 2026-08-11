@@ -45,6 +45,8 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `09f2cf4` Add evidence for strategy card secondary abilities
+- `c5379e2` Implement strategy card secondary abilities in EffectEngine
 - `7bfc65d` Add evidence for Thunder's Edge variants
 - `e6d43fd` Add Thunder's Edge strategy card variants (te4construction, te6warfare)
 - `6146a81` Add evidence for command token pool refactor

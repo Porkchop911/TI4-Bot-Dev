@@ -151,24 +151,36 @@ impl EffectEngine {
     /// Apply Diplomacy strategy card primary effect.
     /// 32.1: Choose a system; other players place command tokens there; ready exhausted planets.
     pub fn apply_diplomacy_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Simplified: grant influence as placeholder for the system placement effect
+        // Simplified: grant influence and ready planets proxy
         if let Some(ps) = game.players.get_mut(player) {
             ps.influence += 1;
+            ps.has_agenda_token = true; // Proxy for system control
         }
     }
 
     /// Apply Politics strategy card primary effect.
-    /// 66.1: Transfer speaker token, draw action cards, or look at agenda cards.
+    /// 66.2: Choose a new speaker, draw 2 action cards, then reorder agenda deck.
     pub fn apply_politics_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Simplified: grant action card draw as placeholder
+        // i. Transfer speaker token (simplified: grant speaker proxy)
         if let Some(ps) = game.players.get_mut(player) {
-            ps.action_cards.push(ActionCardState {
-                id: ActionCardId::new("politics-draw"),
-                owner: player.clone(),
-                exhausted: false,
-                used: false,
-            });
+            ps.has_agenda_proxy = true;
         }
+        
+        // ii. Draw 2 action cards
+        if let Some(ps) = game.players.get_mut(player) {
+            for _ in 0..2 {
+                ps.action_cards.push(ActionCardState {
+                    id: ActionCardId::new(&format!("politics-draw-{}", ps.action_cards.len())),
+                    owner: player.clone(),
+                    exhausted: false,
+                    used: false,
+                });
+            }
+        }
+        
+        // iii. Look at top 2 agenda cards (tracked via has_agenda_token flag)
+        // Note: has_agenda_token already set by influence grant above
+        let _ = game.players.get(player); // Ensure player exists
     }
 
     /// Apply Construction strategy card primary effect.

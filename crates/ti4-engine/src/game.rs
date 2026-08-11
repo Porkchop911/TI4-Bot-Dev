@@ -91,46 +91,32 @@ impl GameLoop {
         });
 
         if all_done && !self.game.revealed_strategies.is_empty() {
-            // Sort revealed strategies by player order
-            // Initiative goes to the player who revealed first (highest priority)
-            // For War strategy, the winner gets first pick of initiative
-            let mut revealed_with_index: Vec<_> = self.game.revealed_strategies
+            // Calculate initiative order based on reveal order
+            // First to reveal = highest initiative, War player gets priority
+            let mut initiative_order: Vec<PlayerId> = self.game.revealed_strategies
                 .iter()
                 .enumerate()
+                .filter_map(|(i, _)| self.game.player_order.get(i).cloned())
+                .filter(|pid| self.game.secret_strategies.contains_key(pid))
                 .collect();
-            
-            // Sort by reveal order (first to reveal = highest initiative)
-            revealed_with_index.sort_by_key(|(idx, _)| *idx);
-            
-            // Build initiative order from revealed strategies
-            let mut initiative_order = vec![];
-            for (_, strategy) in revealed_with_index {
-                // Find which player revealed this strategy
-                for (pid, s) in self.game.secret_strategies.iter() {
-                    if s == strategy && !initiative_order.contains(pid) {
-                        initiative_order.push(pid.clone());
-                        break;
-                    }
-                }
-            }
             
             // If War strategy was played, the War player gets first pick of initiative
             if self.game.revealed_strategies.iter().any(|s| *s == StrategyCard::Warfare) {
-                // War player picks first - for simplicity, put them first
                 let war_player = self.game.revealed_strategies.iter()
                     .position(|s| *s == StrategyCard::Warfare)
                     .and_then(|idx| {
-                        self.game.revealed_strategies.iter().enumerate()
-                            .find(|(_, s)| **s == StrategyCard::Warfare)
-                            .and_then(|(i, _)| {
-                                self.game.player_order.iter().nth(i)
-                            })
-                            .cloned()
-                    });
+                        self.game.player_order.get(idx)
+                    })
+                    .cloned();
                 if let Some(wp) = war_player {
                     initiative_order.retain(|p| p != &wp);
                     initiative_order.insert(0, wp);
                 }
+            }
+            
+            // Resolve secondary abilities clockwise from first player
+            if let Some(first_player) = initiative_order.first() {
+                self.resolve_secondary_abilities(first_player)?;
             }
             
             self.game.player_order = initiative_order;
@@ -141,6 +127,39 @@ impl GameLoop {
         }
 
         Ok(true)
+    }
+
+    /// Resolve secondary abilities for all players after primary effects.
+    /// Per LRR 82.1: clockwise from the active player, everyone else may follow.
+    pub fn resolve_secondary_abilities(&mut self, active_player: &PlayerId) -> Result<()> {
+        // Get clockwise order from active player
+        let clockwise: Vec<PlayerId> = self.game.clockwise_from(active_player);
+        
+        let engine = crate::effects::EffectEngine::new();
+        
+        // Collect cards first to avoid borrow checker issues
+        let cards: Vec<_> = clockwise.iter()
+            .skip(1)
+            .filter_map(|pid| {
+                self.game.secret_strategies.get(pid).map(|card| (pid.clone(), card.clone()))
+            })
+            .collect();
+        
+        // For each player clockwise (skip the active player who already resolved primary)
+        for (pid, card) in cards {
+            // Check if player has strategic tokens to spend
+            let ps = self.game.players.get(&pid).ok_or_else(
+                || anyhow::anyhow!("Player {} not found", pid)
+            )?;
+            
+            if ps.strategic_tokens > 0 {
+                // Apply secondary effect (simplified: always apply if tokens available)
+                let args = crate::effects::SecondaryArgs::default();
+                let _ = engine.apply_strategy_secondary(&mut self.game, &pid, &card, &args);
+            }
+        }
+        
+        Ok(())
     }
 
     /// Reveal a strategy card for a player.
@@ -989,9 +1008,9 @@ mod tests {
         // Apply Politics strategy
         engine.apply_politics_effect(&mut game, &PlayerId::new("p0"));
         
-        // Should have received an action card
+        // Should have received 2 action cards
         let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert_eq!(ps.action_cards.len(), 1);
+        assert_eq!(ps.action_cards.len(), 2);
     }
 
     #[test]

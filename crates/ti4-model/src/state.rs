@@ -693,6 +693,20 @@ impl GameState {
         self.passed.clear();
     }
 
+    /// Get players in clockwise order starting from the given player.
+    pub fn clockwise_from(&self, start: &PlayerId) -> Vec<PlayerId> {
+        if let Some(pos) = self.player_order.iter().position(|p| p == start) {
+            let mut result = vec![];
+            for i in 0..self.player_order.len() {
+                let idx = (pos + i) % self.player_order.len();
+                result.push(self.player_order[idx].clone());
+            }
+            result
+        } else {
+            self.player_order.clone()
+        }
+    }
+
     /// Reveal a strategy card for a player.
     pub fn reveal_strategy(&mut self, pid: PlayerId, strategy: StrategyCard) {
         self.revealed_strategies.push(strategy);
