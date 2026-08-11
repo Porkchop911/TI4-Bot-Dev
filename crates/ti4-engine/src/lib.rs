@@ -19,6 +19,7 @@
 pub mod choice;
 pub mod deck;
 pub mod dice;
+pub mod draft;
 pub mod phase;
 pub mod rng;
 pub mod seating;
@@ -31,6 +32,7 @@ pub use choice::{
 };
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
 pub use dice::{Dice, Roll};
+pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};
 pub use phase::{
     PhaseOutcome, advance_phase, advance_turn, begin_action_turn, begin_next_round,
     next_strategy_picker, stock_unclaimed_cards, strategy_pick_order,

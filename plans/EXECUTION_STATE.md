@@ -29,6 +29,20 @@ actually in the tree and how the two diverged.
 - Next dependency-ready package: M04-005 — strategy-card draft resolution. Decks and
   setup dealing now complete the prerequisites for generated strategy choices.
 
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-005-strategy-draft`, based on unmerged M04-003 package commit `8f97ffb`.
+- Last completed package: M04-005 — generated strategy-card draft and atomic application
+  (`plans/evidence/M04-005.md`).
+- Next dependency-ready package: M04-008 — generic strategy primary. M04-005 through M04-007
+  now provide generated drafting, phase progression, and turn order.
+- `ti4-engine` now has 105 tests. The workspace has 295 passing tests: 121 `ti4-content`,
+  105 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- M04-005 is committed cleanly as `Generate and apply strategy draft choices` at the current
+  package-branch `HEAD`.
+- Strategy choices are generated from current unclaimed cards, validated at the shared choice
+  boundary, and applied atomically; action choices remain unimplemented.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
