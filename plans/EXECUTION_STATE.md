@@ -45,6 +45,7 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `13bd750` Align StrategyCard enum with Oracle: 8 cards (Leadership, Diplomacy, Politics, Construction, Trade, Warfare, Technology, Imperial)
 - `4c39ff0` Implement strategy card effects (Trade, Diplomacy, War, Rebellion, Technology)
 - `5b65be7` Add objective scoring, technology research, leader abilities, and relic handling
 - `f8bca7d` Add planet control method and fix tactical tests
