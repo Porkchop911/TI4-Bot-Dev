@@ -10,14 +10,14 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
 - Active package: M00-004a (partial — interface inventory in progress)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–6 in progress**
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–12 in progress**
 - Last completed package: M00-003 formally complete
-- Next dependency-ready package: engine/ml/counterfactual.py construction API inventory
+- Next dependency-ready package: engine/ml/sampling.py construction API inventory
 
 ## Repository state
 
 - Expected branch: `main` until M01 defines implementation branches
-- Current HEAD: `3cdbce9` (M00: Finish ML context field line corrections)
+- Current HEAD: `5e9066e` (M00: Inventory ML linear APIs)
 - Working tree: clean
 - Existing Python repository must remain clean ✅
 
@@ -91,6 +91,12 @@ All three packages have been corrected with ground-truth data derived from direc
   - `M00-004a.md` — engine/policy_linear.py (commit `3941c2c`)
   - `M00-004a5.md` — engine/ml/__init__.py (commit `91b849d`)
   - `M00-004a6.md` — engine/ml/context.py (commit `3cdbce9`)
+- `M00-004a7.md` — engine/ml/counterfactual.py (commit `bba0f0c`)
+- `M00-004a8.md` — engine/ml/tactical_macro_features.py (commit `d9c0cb7`)
+- `M00-004a9.md` — engine/ml/tactical_macro_runtime.py (commit `1cbef0e`)
+- `M00-004a10.md` — engine/ml/promoted.py (commit `d407ed5`)
+- `M00-004a11.md` — engine/ml/guard.py (commit `7e45538`)
+- `M00-004a12.md` — engine/ml/linear.py (commit `5e9066e`)
 - **M00-004a remains incomplete** — other engine/ml submodules remain to be inventoried.
 
 ## Decisions in force
@@ -110,23 +116,23 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Next exact action
 
-1. After fresh-session reading of required files, inventory `engine/ml/counterfactual.py` construction APIs.
+1. After fresh-session reading of required files, inventory `engine/ml/sampling.py` construction APIs.
 
 ## Compaction handover
 
-### Handover summary (M00-004a partial checkpoint)
+### Handover summary (M00-004a refresh checkpoint)
 ```
 Objective:
-M00-004a interface inventory — public construction APIs across engine/ modules. Context compaction before proceeding to engine/ml/counterfactual.py.
+M00-004a interface inventory — public construction APIs across engine/ modules. Context compaction after 6 additional ML slices.
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M00 / M00-004a (partial — 6 evidence slices completed, M00-004a incomplete)
+M00 / M00-004a (partial — 12 evidence slices completed, M00-004a incomplete)
 Status and completed acceptance criteria:
 M00-001, M00-002, M00-003 formally complete with independent review.
-M00-004a partial slices: state.py, engine/content scope, learned_policy.py, policy_linear.py, engine/ml/__init__.py, engine/ml/context.py.
+M00-004a slices: state.py, engine/content scope, learned_policy.py, policy_linear.py, engine/ml/__init__.py, engine/ml/context.py, engine/ml/counterfactual.py, engine/ml/tactical_macro_features.py, engine/ml/tactical_macro_runtime.py, engine/ml/promoted.py, engine/ml/guard.py, engine/ml/linear.py.
 Current branch and HEAD:
-main / 3cdbce9
+main / 5e9066e
 Working-tree state:
 clean (both repos)
 Tests last run and exact results:
@@ -135,16 +141,22 @@ Compatibility evidence:
 N/A — documentation-only inventory, no behavioral claims.
 Decisions made and rationale:
 - M00-004 split into 5 sub-packages (a–e) per M00-004_INTERFACE_INVENTORY.md
-- M00-004a inventory covers: engine/state.py, engine/content/ (N/A), engine/learned_policy.py, engine/policy_linear.py, engine/ml/__init__.py (re-exports only), engine/ml/context.py
+- M00-004a inventory covers: engine/state.py, engine/content/ (N/A), engine/learned_policy.py, engine/policy_linear.py, engine/ml/__init__.py, engine/ml/context.py, engine/ml/counterfactual.py, engine/ml/tactical_macro_features.py, engine/ml/tactical_macro_runtime.py, engine/ml/promoted.py, engine/ml/guard.py, engine/ml/linear.py
 - All line numbers corrected through multiple rounds; all evidence self-consistent
 - engine/ml/__init__.py is pure re-export (31 symbols, 0 local constructors)
 - engine/ml/context.py is single-class module (TacticalDecisionContext, 8 required fields)
+- engine/ml/counterfactual.py is single-function module (sanitize_unseen_state)
+- engine/ml/tactical_macro_features.py is single-function module (tactical_macro_features)
+- engine/ml/tactical_macro_runtime.py has 3 APIs (1 constant, 1 dataclass, 1 classmethod factory)
+- engine/ml/promoted.py has 3 APIs (1 dataclass, 1 constant mapping, 1 installer function)
+- engine/ml/guard.py has 2 APIs (2 module-level functions; _features is private)
+- engine/ml/linear.py has 4 APIs (2 constants, 1 dataclass, 1 classmethod factory)
 Open review findings or blockers:
 None.
 Next exact action/command:
-After fresh-session reading: inventory engine/ml/counterfactual.py construction APIs.
+After fresh-session reading: inventory engine/ml/sampling.py construction APIs.
 Files to read first after compaction:
-plans/EXECUTION_STATE.md, plans/M00-004_INTERFACE_INVENTORY.md, plans/SCOPED_PERMISSIONS.md, D:\Projects\ti4-engine\engine\ml\counterfactual.py
+plans/EXECUTION_STATE.md, plans/M00-004_INTERFACE_INVENTORY.md, plans/SCOPED_PERMISSIONS.md, D:\Projects\ti4-engine\engine\ml\sampling.py
 ```
 
 
