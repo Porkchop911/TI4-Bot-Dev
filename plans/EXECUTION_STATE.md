@@ -29,7 +29,7 @@ actually in the tree and how the two diverged.
 - Next dependency-ready package: M04-005 — strategy-card draft resolution. Decks and
   setup dealing now complete the prerequisites for generated strategy choices.
 
-## Current package checkpoint (authoritative)
+## M04-005 package checkpoint (historical)
 
 - Branch: `wp/m04-005-strategy-draft`, based on unmerged M04-003 package commit `8f97ffb`.
 - Last completed package: M04-005 — generated strategy-card draft and atomic application
@@ -42,6 +42,23 @@ actually in the tree and how the two diverged.
   package-branch `HEAD`.
 - Strategy choices are generated from current unclaimed cards, validated at the shared choice
   boundary, and applied atomically; action choices remain unimplemented.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-008-generic-strategy-primary`, based on M04-005 package commit `73ed98c`.
+- Last completed package: M04-008 — structural strategic-action generation and exact-card
+  exhaustion (`plans/evidence/M04-008.md`).
+- Next dependency-ready package: M04-009 — generic strategy secondary.
+- `ti4-engine` has 109 tests. The workspace has 299 passing tests: 121 `ti4-content`,
+  109 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- One unused strategy card produces the compatible bare `strategic` action; a player with several
+  cards receives a stable named action for each unused card. Applying an action validates before
+  mutation and exhausts exactly its selected card.
+- Card-specific primary effects and secondaries remain intentionally unimplemented. Normal actions,
+  turn advancement, and phase completion are also outside this package.
+- M04-008 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
 
 ## Implementation status
 

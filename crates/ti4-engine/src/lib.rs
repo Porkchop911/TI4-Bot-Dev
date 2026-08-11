@@ -24,6 +24,7 @@ pub mod phase;
 pub mod rng;
 pub mod seating;
 pub mod setup;
+pub mod strategy;
 
 pub use choice::{
     AlwaysDecline, Choice, ChoiceOption, Decider, DecisionLog, DecisionRecord, FirstOption,
@@ -40,3 +41,7 @@ pub use phase::{
 pub use rng::GameRng;
 pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
 pub use setup::{SetupError, cards_per_player, start_game, start_game_seeded, strategy_card_setup};
+pub use strategy::{
+    ACTION_KIND, STRATEGIC_ACTION_ID, StrategyActionError, strategic_action_options,
+    take_strategic_action,
+};

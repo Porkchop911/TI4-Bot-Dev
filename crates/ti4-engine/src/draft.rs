@@ -79,7 +79,7 @@ pub fn take_strategy_card(
     Ok(player)
 }
 
-fn strategy_card_label(content: &ContentStore, card_id: &str) -> String {
+pub(crate) fn strategy_card_label(content: &ContentStore, card_id: &str) -> String {
     let Some(card) = content.get(ContentType::StrategyCards, card_id) else {
         return card_id.to_owned();
     };
