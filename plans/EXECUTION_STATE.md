@@ -129,11 +129,13 @@ All three packages have been corrected with ground-truth data derived from direc
 - 6 projection types specified (state, view, choice, event, outcome, error).
 - M00-008 complete: All 10 children (a–j) reconciled.
 - 103 fixtures selected across 10 categories.
+- M00-009 complete: All 8 children (a–h) reconciled.
+- Oracle exporter design complete with all projection implementations.
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e, M00-005, M00-006, M00-007, and M00-008 complete. Proceed to M00-009 (Oracle exporter).
+1. M00-004e, M00-005, M00-006, M00-007, M00-008, and M00-009 complete. Proceed to M00-010 (Entropy/replay corpus).
 
 ---
 
@@ -180,7 +182,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (71 total)
+### Completed evidence files (80 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
