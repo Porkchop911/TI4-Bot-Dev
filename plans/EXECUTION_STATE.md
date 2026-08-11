@@ -125,11 +125,13 @@ All three packages have been corrected with ground-truth data derived from direc
 - ~1,091 artifacts inventoried across all categories.
 - M00-006 complete: All 9 children (a–i) reconciled.
 - ~1,495 artifacts classified (~132 exact, ~1,363 semantic).
+- M00-007 complete: All 8 children (a–h) reconciled.
+- 6 projection types specified (state, view, choice, event, outcome, error).
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e and M00-005 and M00-006 complete. Proceed to M00-007 (Python environment record — re-measure baseline metrics).
+1. M00-004e, M00-005, M00-006, and M00-007 complete. Proceed to M00-008 (Fixture selection).
 
 ---
 
@@ -176,7 +178,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (51 total)
+### Completed evidence files (60 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
