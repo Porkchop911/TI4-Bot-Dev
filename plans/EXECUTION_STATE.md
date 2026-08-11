@@ -45,6 +45,7 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `2a449b0` Add full round simulation test and production effect test
 - `59f4cc7` Implement strategy selection, command token distribution, and agenda voting
 - `5c0e841` Implement core game engine: GameState, PhaseManager, GameLoop, rules, effects, choice generation
 - Previous commits cover M00-M13 planning and workspace bootstrap
