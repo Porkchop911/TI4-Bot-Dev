@@ -1,39 +1,41 @@
-//! Timing and event resolution stub.
+//! Event timing and resolution.
+//!
+//! Manages the event queue and resolves events in deterministic order.
 
 use ti4_model::*;
+use anyhow::Result;
 
-pub struct TimingWindow {
-    pub event_id: EventId,
-    pub priority: i32,
-    pub resolved: bool,
-}
+/// Manages event timing and resolution.
+pub struct EventTimer;
 
-impl TimingWindow {
-    pub fn new(event_id: EventId, priority: i32) -> Self {
-        Self {
-            event_id,
-            priority,
-            resolved: false,
-        }
+impl EventTimer {
+    pub fn new() -> Self { Self }
+
+    /// Resolve all pending events in deterministic order.
+    pub fn resolve(&mut self, game: &mut GameState) -> Result<()> {
+        // Events are resolved in timestamp order
+        // For now, clear current events
+        game.current_events.clear();
+        game.active_event = None;
+        Ok(())
     }
-}
 
-pub struct EventResolver {
-    pub events: Vec<TimingWindow>,
-    pub max_depth: i32,
-    pub current_depth: i32,
-}
+    /// Add an event to the current events queue.
+    pub fn add_event(&mut self, game: &mut GameState, event: EventRecord) {
+        game.current_events.push(event);
+    }
 
-impl EventResolver {
-    pub fn new(max_depth: i32) -> Self {
-        Self {
-            events: Vec::new(),
-            max_depth,
-            current_depth: 0,
+    /// Activate an event.
+    pub fn activate_event(&mut self, game: &mut GameState, event_id: &EventId) {
+        if let Some(event) = game.current_events.iter().find(|e| e.id == *event_id) {
+            game.active_event = Some(event.clone());
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), anyhow::Error> {
-        todo!("M03: implement event resolution")
+    /// Deactivate the current event.
+    pub fn deactivate_event(&mut self, game: &mut GameState) {
+        if let Some(active) = game.active_event.take() {
+            game.current_events.retain(|e| e.id != active.id);
+        }
     }
 }

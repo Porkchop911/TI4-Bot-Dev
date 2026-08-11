@@ -547,6 +547,154 @@ pub struct EventEffect {
     pub value: i32,
 }
 
+// ─── GameState builder ─────────────────────────────────────────────────────────
+
+impl GameState {
+    /// Create a new game state with the given parameters.
+    pub fn new(id: String, rng_seed: u64, content_version: String, player_count: i32) -> Self {
+        Self {
+            id,
+            round: 1,
+            phase: GamePhase::Setup,
+            sub_phase: None,
+            agenda_phase: None,
+            players: BTreeMap::new(),
+            player_order: vec![],
+            player_count,
+            initiative_player: None,
+            current_agenda_player: None,
+            agenda_tokens: HashMap::new(),
+            strategy_deck: vec![],
+            revealed_strategies: vec![],
+            secret_strategies: HashMap::new(),
+            passed: HashSet::new(),
+            systems: BTreeMap::new(),
+            planets: BTreeMap::new(),
+            planet_to_system: HashMap::new(),
+            exploration_map: HashMap::new(),
+            expedition_tiles: vec![],
+            edge_token: None,
+            edge_faction: None,
+            agenda_card: None,
+            laws: vec![],
+            agenda_results: vec![],
+            victory_conditions: vec![],
+            winner: None,
+            game_over: false,
+            event_log: vec![],
+            current_events: vec![],
+            active_event: None,
+            rng_seed,
+            content_version,
+            schema_version: 1,
+        }
+    }
+
+    /// Add a player to the game state.
+    pub fn add_player(&mut self, ps: PlayerState) {
+        self.players.insert(ps.id.clone(), ps);
+    }
+
+    /// Get a mutable reference to a player's state.
+    pub fn player_mut(&mut self, pid: &PlayerId) -> Option<&mut PlayerState> {
+        self.players.get_mut(pid)
+    }
+
+    /// Get a reference to a player's state.
+    pub fn player(&self, pid: &PlayerId) -> Option<&PlayerState> {
+        self.players.get(pid)
+    }
+
+    /// Check if a player has passed for strategy selection.
+    pub fn has_passed(&self, pid: &PlayerId) -> bool {
+        self.passed.contains(pid)
+    }
+
+    /// Mark a player as having passed for strategy selection.
+    pub fn mark_passed(&mut self, pid: PlayerId) {
+        self.passed.insert(pid);
+    }
+
+    /// Reset passed set for a new round.
+    pub fn reset_passed(&mut self) {
+        self.passed.clear();
+    }
+
+    /// Reveal a strategy card for a player.
+    pub fn reveal_strategy(&mut self, pid: PlayerId, strategy: StrategyCard) {
+        self.revealed_strategies.push(strategy);
+        self.secret_strategies.insert(pid, strategy);
+    }
+
+    /// Advance to the next agenda phase.
+    pub fn advance_agenda_phase(&mut self) {
+        let next = match self.agenda_phase {
+            None | Some(AgendaPhase::Political) => Some(AgendaPhase::Economic),
+            Some(AgendaPhase::Economic) => Some(AgendaPhase::Military),
+            Some(AgendaPhase::Military) => None,
+        };
+        self.agenda_phase = next;
+    }
+
+    /// Check if agenda phase is complete.
+    pub fn agenda_complete(&self) -> bool {
+        self.agenda_phase.is_none()
+    }
+
+    /// Record an agenda result.
+    pub fn record_agenda_result(&mut self, phase: AgendaPhase, winner: PlayerId, score: i32) {
+        self.agenda_results.push(AgendaResult {
+            phase,
+            winner,
+            score,
+            effects: vec![],
+        });
+    }
+
+    /// Record an event in the event log.
+    pub fn record_event(&mut self, event: EventRecord) {
+        self.event_log.push(event);
+    }
+
+    /// Add a system to the game state.
+    pub fn add_system(&mut self, sys: SystemState) {
+        self.systems.insert(sys.id.clone(), sys);
+    }
+
+    /// Add a planet to the game state.
+    pub fn add_planet(&mut self, planet: PlanetState) {
+        self.planets.insert(planet.id.clone(), planet);
+    }
+
+    /// Map a planet to its system.
+    pub fn map_planet_to_system(&mut self, planet_id: PlanetId, system_id: SystemId) {
+        self.planet_to_system.insert(planet_id, system_id);
+    }
+
+    /// Initialize agenda tokens for all players.
+    pub fn init_agenda_tokens(&mut self) {
+        for pid in &self.player_order {
+            let count = if pid == self.initiative_player.as_ref().unwrap() {
+                2
+            } else {
+                1
+            };
+            self.agenda_tokens.insert(pid.clone(), count);
+        }
+    }
+
+    /// Transfer agenda token from one player to another.
+    pub fn transfer_agenda_token(&mut self, from: &PlayerId, to: &PlayerId) {
+        if let Some(count) = self.agenda_tokens.get_mut(from) {
+            if *count > 0 {
+                *count -= 1;
+                let to_count = self.agenda_tokens.entry(to.clone()).or_insert(0);
+                *to_count += 1;
+            }
+        }
+    }
+}
+
 // ─── Victory conditions ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
