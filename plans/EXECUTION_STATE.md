@@ -202,3 +202,10 @@ Compact context per AGENTS.md, then begin smallest dependency-ready M00-004 pack
 Files to read first after compaction:
 plans/M00_ORACLE_AND_BASELINE.md, plans/INDEX.md, plans/M00-004_INTERFACE_INVENTORY.md
 ```
+
+## M00-004a capture checkpoint (2026-08-11)
+- HEAD before checkpoint: `a456b5f`
+- Both repos clean
+- capture.py fully inventoried through slices 0d94bb2, 9af3701, a456b5f
+- M00-004a remains incomplete
+- Next exact fresh-session action: engine/ml/rollout.py inventory
