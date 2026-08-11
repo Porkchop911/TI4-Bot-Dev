@@ -2,7 +2,7 @@
 
 use ti4_content::ContentStore;
 use ti4_model::id::{PlayerId, StrategyCardId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, TokenPool};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 use crate::draft::strategy_card_label;
@@ -11,6 +11,10 @@ use crate::draft::strategy_card_label;
 pub const STRATEGIC_ACTION_ID: &str = "strategic";
 /// The choice kind for an ordinary action-phase action.
 pub const ACTION_KIND: &str = "action";
+/// The id used to follow a strategic action's secondary.
+pub const FOLLOW_SECONDARY_ID: &str = "follow";
+/// The choice kind for a strategic-action secondary response.
+pub const STRATEGY_KIND: &str = "strategy";
 
 /// A strategic action could not be selected from the state that was presented.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -21,6 +25,144 @@ pub enum StrategyActionError {
     MalformedActionId(String),
     #[error(transparent)]
     IllegalChoice(#[from] IllegalChoice),
+}
+
+/// The recorded structural result of one eligible follower's secondary decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecondaryResolution {
+    /// The follower chose not to use the secondary.
+    Declined,
+    /// The follower spent one strategy token; content-specific effects come later.
+    Followed,
+    /// The follower had no strategy token and was not offered the secondary.
+    Ineligible,
+}
+
+/// An error while resolving the follower window of a strategic action.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StrategySecondaryError {
+    #[error("the strategy-secondary window is complete")]
+    Complete,
+    #[error("follower {0} is no longer seated")]
+    FollowerMissing(PlayerId),
+    #[error("follower {0} no longer has a strategy token")]
+    NoStrategyToken(PlayerId),
+    #[error(transparent)]
+    IllegalChoice(#[from] IllegalChoice),
+}
+
+/// The ordered follower window opened by a strategic action.
+///
+/// The owner is deliberately absent from `followers`: LRR 82.1 offers a secondary to
+/// everyone else, clockwise from the primary player. The window keeps completion data
+/// outside `GameState` until the M04 step driver can own open decision windows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrategySecondaryWindow {
+    primary_player: PlayerId,
+    card: StrategyCardId,
+    followers: Vec<PlayerId>,
+    next_follower: usize,
+    resolutions: Vec<(PlayerId, SecondaryResolution)>,
+}
+
+impl StrategySecondaryWindow {
+    /// The player resolving the primary.
+    #[must_use]
+    pub const fn primary_player(&self) -> &PlayerId {
+        &self.primary_player
+    }
+
+    /// The strategy card whose secondary is being offered.
+    #[must_use]
+    pub const fn card(&self) -> &StrategyCardId {
+        &self.card
+    }
+
+    /// Follower results in clockwise resolution order.
+    #[must_use]
+    pub fn resolutions(&self) -> &[(PlayerId, SecondaryResolution)] {
+        &self.resolutions
+    }
+
+    /// Whether every follower has been recorded and the primary card exhausted.
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        self.next_follower == self.followers.len()
+    }
+
+    /// Return the next eligible follower's choice, recording tokenless followers as skipped.
+    ///
+    /// A content-specific secondary may later impose further eligibility checks. This generic
+    /// structural window has only the shared strategy-token gate.
+    pub fn next_choice(&mut self, state: &mut GameState) -> Option<Choice> {
+        while let Some(player_id) = self.followers.get(self.next_follower).cloned() {
+            if state
+                .player(&player_id)
+                .is_some_and(|player| player.strategic_tokens > 0)
+            {
+                return Some(Choice::new(
+                    player_id,
+                    format!("{} secondary", self.card),
+                    vec![
+                        ChoiceOption::decline(),
+                        ChoiceOption::labelled(
+                            FOLLOW_SECONDARY_ID,
+                            STRATEGY_KIND,
+                            "spend a strategy token to resolve the secondary",
+                        ),
+                    ],
+                ));
+            }
+            self.resolutions
+                .push((player_id, SecondaryResolution::Ineligible));
+            self.next_follower += 1;
+        }
+        self.exhaust_primary(state);
+        None
+    }
+
+    /// Resolve the current follower's answer and return its structural result.
+    ///
+    /// # Errors
+    /// [`StrategySecondaryError::IllegalChoice`] if the answer was not offered, or
+    /// [`StrategySecondaryError::Complete`] once all followers are resolved.
+    pub fn take_choice(
+        &mut self,
+        state: &mut GameState,
+        answer: ChoiceOption,
+    ) -> Result<SecondaryResolution, StrategySecondaryError> {
+        let choice = self
+            .next_choice(state)
+            .ok_or(StrategySecondaryError::Complete)?;
+        let answer = validate(&choice, answer)?;
+        let resolution = if answer.is_decline() {
+            SecondaryResolution::Declined
+        } else {
+            let player = state
+                .player_mut(&choice.player)
+                .ok_or_else(|| StrategySecondaryError::FollowerMissing(choice.player.clone()))?;
+            if !player.spend_token(TokenPool::Strategic) {
+                return Err(StrategySecondaryError::NoStrategyToken(choice.player));
+            }
+            SecondaryResolution::Followed
+        };
+        self.resolutions.push((choice.player, resolution));
+        self.next_follower += 1;
+        if self.is_complete() {
+            self.exhaust_primary(state);
+        }
+        Ok(resolution)
+    }
+
+    fn exhaust_primary(&self, state: &mut GameState) {
+        if self.is_complete() {
+            let exhausted = state.exhaust_strategy_card(&self.primary_player, self.card.clone());
+            debug_assert!(
+                exhausted,
+                "the primary holder must retain the selected card"
+            );
+        }
+    }
 }
 
 /// Legal structural strategic actions for one player.
@@ -78,6 +220,50 @@ pub fn take_strategic_action(
     player_id: &PlayerId,
     answer: ChoiceOption,
 ) -> Result<StrategyCardId, StrategyActionError> {
+    let card = selected_strategic_card(state, content, player_id, answer)?;
+
+    // This convenience operation is retained for the M04-008 structural-primary API. New
+    // action drivers must use `begin_strategic_action` so the primary stays ready while the
+    // secondary window is open.
+    let exhausted = state.exhaust_strategy_card(player_id, card.clone());
+    debug_assert!(exhausted, "the checked player must hold the checked card");
+    Ok(card)
+}
+
+/// Begin a strategic action and open its ordered generic-secondary window.
+///
+/// No card-specific primary effect is applied here. The selected card is exhausted only when
+/// the returned window has recorded every follower, including tokenless skipped followers.
+///
+/// # Errors
+/// [`StrategyActionError::IllegalChoice`] if `answer` was not offered, or
+/// [`StrategyActionError::NoUnusedStrategyCard`] if the player has no available card.
+pub fn begin_strategic_action(
+    state: &mut GameState,
+    content: &ContentStore,
+    player_id: &PlayerId,
+    answer: ChoiceOption,
+) -> Result<StrategySecondaryWindow, StrategyActionError> {
+    let card = selected_strategic_card(state, content, player_id, answer)?;
+    Ok(StrategySecondaryWindow {
+        primary_player: player_id.clone(),
+        card,
+        followers: state
+            .clockwise_from(player_id)
+            .into_iter()
+            .skip(1)
+            .collect(),
+        next_follower: 0,
+        resolutions: Vec::new(),
+    })
+}
+
+fn selected_strategic_card(
+    state: &GameState,
+    content: &ContentStore,
+    player_id: &PlayerId,
+    answer: ChoiceOption,
+) -> Result<StrategyCardId, StrategyActionError> {
     let choice = strategic_action_options(state, content, player_id)
         .ok_or_else(|| StrategyActionError::NoUnusedStrategyCard(player_id.clone()))?;
     let answer = validate(&choice, answer)?;
@@ -103,10 +289,6 @@ pub fn take_strategic_action(
             .ok_or_else(|| StrategyActionError::MalformedActionId(answer.id.clone()))?
     };
 
-    // The option was generated from this player's unused holding, so no other player or
-    // exhausted card can be changed here.
-    let exhausted = state.exhaust_strategy_card(player_id, card.clone());
-    debug_assert!(exhausted, "the checked player must hold the checked card");
     Ok(card)
 }
 
@@ -197,6 +379,128 @@ mod tests {
                 .ids(),
             vec![STRATEGIC_ACTION_ID]
         );
+    }
+
+    #[test]
+    fn followers_resolve_clockwise_pay_or_decline_then_exhaust_the_primary_card() {
+        let mut state = drafted_three_player_game();
+        let primary = PlayerId::new("a");
+        let first_follower = PlayerId::new("b");
+        let second_follower = PlayerId::new("c");
+        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        let first_tokens = state.player(&first_follower).unwrap().strategic_tokens;
+
+        let mut window = begin_strategic_action(
+            &mut state,
+            ContentStore::embedded(),
+            &primary,
+            ChoiceOption::new(format!("strategic|{card}"), ACTION_KIND),
+        )
+        .unwrap();
+
+        assert!(
+            !state
+                .player(&primary)
+                .unwrap()
+                .exhausted_strategy_cards
+                .contains(&card),
+            "the card remains ready while followers decide"
+        );
+        let choice = window.next_choice(&mut state).unwrap();
+        assert_eq!(choice.player, first_follower);
+        assert_eq!(choice.ids(), vec!["decline", "follow"]);
+        assert_eq!(
+            window
+                .take_choice(&mut state, ChoiceOption::new("follow", "strategy"))
+                .unwrap(),
+            SecondaryResolution::Followed
+        );
+        assert_eq!(
+            state.player(&first_follower).unwrap().strategic_tokens,
+            first_tokens - 1
+        );
+
+        let choice = window.next_choice(&mut state).unwrap();
+        assert_eq!(choice.player, second_follower);
+        assert_eq!(
+            window
+                .take_choice(&mut state, ChoiceOption::decline())
+                .unwrap(),
+            SecondaryResolution::Declined
+        );
+
+        assert!(window.is_complete());
+        assert!(
+            state
+                .player(&primary)
+                .unwrap()
+                .exhausted_strategy_cards
+                .contains(&card),
+            "the primary card exhausts after every follower has completed"
+        );
+    }
+
+    #[test]
+    fn tokenless_followers_are_recorded_ineligible_and_close_the_window() {
+        let mut state = drafted_three_player_game();
+        let primary = PlayerId::new("a");
+        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .strategic_tokens = 0;
+        state
+            .player_mut(&PlayerId::new("c"))
+            .unwrap()
+            .strategic_tokens = 0;
+        let mut window = begin_strategic_action(
+            &mut state,
+            ContentStore::embedded(),
+            &primary,
+            ChoiceOption::new(format!("strategic|{card}"), ACTION_KIND),
+        )
+        .unwrap();
+
+        assert!(window.next_choice(&mut state).is_none());
+        assert_eq!(
+            window.resolutions(),
+            &[
+                (PlayerId::new("b"), SecondaryResolution::Ineligible),
+                (PlayerId::new("c"), SecondaryResolution::Ineligible),
+            ]
+        );
+        assert!(window.is_complete());
+        assert!(
+            state
+                .player(&primary)
+                .unwrap()
+                .exhausted_strategy_cards
+                .contains(&card)
+        );
+    }
+
+    #[test]
+    fn an_invented_secondary_response_is_atomic() {
+        let mut state = drafted_three_player_game();
+        let primary = PlayerId::new("a");
+        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        let mut window = begin_strategic_action(
+            &mut state,
+            ContentStore::embedded(),
+            &primary,
+            ChoiceOption::new(format!("strategic|{card}"), ACTION_KIND),
+        )
+        .unwrap();
+        let before = state.clone();
+
+        let error = window
+            .take_choice(&mut state, ChoiceOption::new("invented", STRATEGY_KIND))
+            .unwrap_err();
+
+        assert!(matches!(error, StrategySecondaryError::IllegalChoice(_)));
+        assert!(state.identical(&before));
+        assert!(window.resolutions().is_empty());
+        assert!(!window.is_complete());
     }
 
     #[test]

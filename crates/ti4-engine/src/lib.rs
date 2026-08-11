@@ -42,6 +42,7 @@ pub use rng::GameRng;
 pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
 pub use setup::{SetupError, cards_per_player, start_game, start_game_seeded, strategy_card_setup};
 pub use strategy::{
-    ACTION_KIND, STRATEGIC_ACTION_ID, StrategyActionError, strategic_action_options,
-    take_strategic_action,
+    ACTION_KIND, FOLLOW_SECONDARY_ID, STRATEGIC_ACTION_ID, STRATEGY_KIND, SecondaryResolution,
+    StrategyActionError, StrategySecondaryError, StrategySecondaryWindow, begin_strategic_action,
+    strategic_action_options, take_strategic_action,
 };

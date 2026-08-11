@@ -43,7 +43,7 @@ actually in the tree and how the two diverged.
 - Strategy choices are generated from current unclaimed cards, validated at the shared choice
   boundary, and applied atomically; action choices remain unimplemented.
 
-## Current package checkpoint (authoritative)
+## M04-008 package checkpoint (historical)
 
 - Branch: `wp/m04-008-generic-strategy-primary`, based on M04-005 package commit `73ed98c`.
 - Last completed package: M04-008 — structural strategic-action generation and exact-card
@@ -57,6 +57,23 @@ actually in the tree and how the two diverged.
 - Card-specific primary effects and secondaries remain intentionally unimplemented. Normal actions,
   turn advancement, and phase completion are also outside this package.
 - M04-008 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-009-generic-strategy-secondary`, based on M04-008 package commit `7c27b47`.
+- Last completed package: M04-009 — generic strategic-action secondary window
+  (`plans/evidence/M04-009.md`).
+- Next dependency-ready package: M04-010 — status phase structural flow.
+- `ti4-engine` has 112 tests. The workspace has 302 passing tests: 121 `ti4-content`,
+  112 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- `begin_strategic_action` opens a clock-wise follower window. Eligible followers may follow for
+  one strategy token or decline; tokenless followers are recorded ineligible. The selected card
+  exhausts only when that window completes.
+- Content-specific primary and secondary effects, other eligibility gates, event emission, and
+  persistent game-step ownership of the window remain intentionally unimplemented.
+- M04-009 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
