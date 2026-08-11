@@ -919,4 +919,133 @@ mod tests {
         // Now should be complete
         assert!(game.check_secret_objective(&PlayerId::new("p0"), &secret));
     }
+
+    #[test]
+    fn test_trade_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial commodity
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .commodity = 5;
+        
+        // Apply Trade strategy
+        engine.apply_trade_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have 7 commodity (5 + 2)
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.commodity, 7);
+    }
+
+    #[test]
+    fn test_diplomacy_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial influence
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .influence = 3;
+        
+        // Apply Diplomacy strategy
+        engine.apply_diplomacy_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have 5 influence (3 + 2)
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.influence, 5);
+    }
+
+    #[test]
+    fn test_war_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Apply War strategy
+        engine.apply_war_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have has_war flag set
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert!(ps.has_war);
+    }
+
+    #[test]
+    fn test_rebellion_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Set up p0 with influence
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .influence = 2;
+        
+        // Set up p1 with control tokens
+        game.players.get_mut(&PlayerId::new("p1")).unwrap()
+            .control_tokens.insert(PlanetId::new("planet1"));
+        game.players.get_mut(&PlayerId::new("p1")).unwrap()
+            .control_tokens.insert(PlanetId::new("planet2"));
+        
+        // Apply Rebellion strategy for p0
+        engine.apply_rebellion_effect(&mut game, &PlayerId::new("p0"));
+        
+        // p0 should gain 2 influence (from 2 control tokens removed)
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.influence, 4);
+        
+        // p1 should have no control tokens
+        let ps1 = game.players.get(&PlayerId::new("p1")).unwrap();
+        assert!(ps1.control_tokens.is_empty());
+    }
+
+    #[test]
+    fn test_technology_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Apply Technology strategy
+        engine.apply_technology_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have free_research flag set
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert!(ps.free_research);
+    }
+
+    #[test]
+    fn test_strategy_effect_dispatch() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Test Trade dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Trade);
+        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().commodity, 2);
+        
+        // Reset
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .commodity = 0;
+        
+        // Test Diplomacy dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Diplomacy);
+        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().influence, 2);
+        
+        // Reset
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .influence = 0;
+        
+        // Test War dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::War);
+        assert!(game.players.get(&PlayerId::new("p0")).unwrap().has_war);
+        
+        // Test Technology dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Technology);
+        assert!(game.players.get(&PlayerId::new("p0")).unwrap().free_research);
+    }
 }

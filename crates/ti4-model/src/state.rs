@@ -257,6 +257,11 @@ pub struct PlayerState {
     pub has_promissory: bool,
     pub has_law_effect: bool,
     pub has_agenda_effect: bool,
+    
+    // Strategy card flags
+    pub has_war: bool,
+    pub free_research: bool,
+    
     pub edge_faction: Option<FactionId>,
     pub edge_token: Option<PlayerId>,
 }
@@ -342,6 +347,8 @@ impl Default for PlayerState {
             has_promissory: false,
             has_law_effect: false,
             has_agenda_effect: false,
+            has_war: false,
+            free_research: false,
             expedition_tokens: 0,
             edge_fragments: HashMap::new(),
             edge_breakthroughs: vec![],

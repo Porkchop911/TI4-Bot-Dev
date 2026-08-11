@@ -134,6 +134,88 @@ impl EffectEngine {
             }
         }
     }
+
+    // ─── Strategy card effects ───────────────────────────────────────────────
+
+    /// Apply Trade strategy card effects.
+    pub fn apply_trade_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Gain commodity based on strategy card value (simplified: +2 commodity)
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.commodity += 2;
+        }
+    }
+
+    /// Apply Diplomacy strategy card effects.
+    pub fn apply_diplomacy_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Gain influence tokens
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.influence += 2;
+        }
+    }
+
+    /// Apply War strategy card effects.
+    pub fn apply_war_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // War strategy provides combat bonus (tracked via leader or direct modifier)
+        // For now, mark that player has War strategy for initiative priority
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.has_war = true;
+        }
+    }
+
+    /// Apply Rebellion strategy card effects.
+    pub fn apply_rebellion_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Rebellion removes control tokens from other players
+        // Simplified: gain influence for each control token removed
+        // First pass: collect control tokens to remove
+        let mut total_removed = 0i32;
+        for other_pid in game.player_order.iter() {
+            if other_pid != player {
+                if let Some(other_ps) = game.players.get(other_pid) {
+                    total_removed += other_ps.control_tokens.len() as i32;
+                }
+            }
+        }
+        
+        // Second pass: clear control tokens
+        for other_pid in game.player_order.iter() {
+            if other_pid != player {
+                if let Some(other_ps) = game.players.get_mut(other_pid) {
+                    other_ps.control_tokens.clear();
+                }
+            }
+        }
+        
+        // Finally: add influence to the player
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.influence += total_removed;
+        }
+    }
+
+    /// Apply Technology strategy card effects.
+    pub fn apply_technology_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Technology strategy allows free research
+        // Mark that player can research for free this round
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.free_research = true;
+        }
+    }
+
+    /// Apply the effect of a revealed strategy card.
+    pub fn apply_strategy_effect(
+        &self,
+        game: &mut GameState,
+        player: &PlayerId,
+        card: &StrategyCard,
+    ) {
+        match card {
+            StrategyCard::Trade => self.apply_trade_effect(game, player),
+            StrategyCard::Diplomacy => self.apply_diplomacy_effect(game, player),
+            StrategyCard::War => self.apply_war_effect(game, player),
+            StrategyCard::Rebellion => self.apply_rebellion_effect(game, player),
+            StrategyCard::Technology => self.apply_technology_effect(game, player),
+            StrategyCard::Unknown => {}
+        }
+    }
 }
 
 /// Outcome of a combat engagement.
