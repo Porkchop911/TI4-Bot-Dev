@@ -9,6 +9,8 @@ use ti4_model::content_types::{ContentType, Source, SourceSet};
 use ti4_model::id::{PlayerId, StrategyCardId};
 use ti4_model::state::GameState;
 
+use crate::deck::build_starting_decks;
+
 /// The strategy-card set to use for a source scope, most recent expansion first.
 ///
 /// Order matters: Thunder's Edge replaces the `PoK` set, which replaces the base set.
@@ -85,17 +87,56 @@ pub fn start_game(
     sources: SourceSet,
     speaker: Option<PlayerId>,
 ) -> Result<GameState, SetupError> {
+    start_game_seeded(content, player_ids, sources, speaker, 0)
+}
+
+/// A new game with the complete setup decks derived from `deck_seed`.
+///
+/// The seed is explicit here rather than taken from ambient randomness: a setup replay is
+/// reproducible from its inputs, while the native domain-separated RNG keeps future dice
+/// and deck work independent.
+///
+/// # Errors
+/// [`SetupError::NoPlayers`], or any error from [`strategy_card_setup`].
+pub fn start_game_seeded(
+    content: &ContentStore,
+    player_ids: &[PlayerId],
+    sources: SourceSet,
+    speaker: Option<PlayerId>,
+    deck_seed: u64,
+) -> Result<GameState, SetupError> {
     if player_ids.is_empty() {
         return Err(SetupError::NoPlayers);
     }
     let (cards, initiative) = strategy_card_setup(content, sources)?;
-    Ok(GameState::new(
+    let mut state = GameState::new(
         player_ids,
         &cards,
         initiative,
         speaker,
         cards_per_player(player_ids.len()),
-    ))
+    );
+    let decks = build_starting_decks(content, sources, deck_seed);
+    state.objective_deck = decks.objectives;
+    state.exploration_decks = decks.exploration;
+    state.relic_deck = decks.relics;
+    state.agenda_deck = decks.agendas;
+    state.action_card_deck = decks.action_cards;
+    state.secret_deck = decks.secrets;
+
+    for _ in 0..2 {
+        let _ = state.reveal_objective();
+    }
+    for player_id in player_ids {
+        let Some(secret) = state.secret_deck.first().cloned() else {
+            break;
+        };
+        state.secret_deck.remove(0);
+        if let Some(player) = state.player_mut(player_id) {
+            player.secret_objectives.push(secret);
+        }
+    }
+    Ok(state)
 }
 
 #[cfg(test)]
@@ -158,6 +199,28 @@ mod tests {
         assert_eq!(g.unclaimed_strategy_cards.len(), 8);
         assert_eq!(g.strategy_cards_per_player, 1);
         assert!(g.players.iter().all(|p| p.strategy_cards.is_empty()));
+    }
+
+    #[test]
+    fn setup_builds_decks_reveals_objectives_and_deals_secrets() {
+        // `start_game` owns the setup-only parts of 61.13: build every deck, reveal two
+        // stage-I objectives, then deal one secret objective to each seat.  Leaving the
+        // decks empty makes a game look initialized while silently disabling scoring.
+        let players = players(3);
+        let game = start_game(content(), &players, POK, None).unwrap();
+
+        assert_eq!(game.revealed_objectives.len(), 2);
+        assert_eq!(game.objective_deck.len(), 8);
+        assert!(game.action_card_deck.len() > 0);
+        assert!(game.agenda_deck.len() > 0);
+        assert!(game.relic_deck.len() > 0);
+        assert_eq!(game.exploration_decks.len(), 4);
+        assert!(
+            game.players
+                .iter()
+                .all(|player| player.secret_objectives.len() == 1)
+        );
+        assert_eq!(game.secret_deck.len() + game.players.len(), 40);
     }
 
     #[test]
