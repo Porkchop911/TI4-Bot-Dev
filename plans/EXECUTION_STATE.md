@@ -9,10 +9,10 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-004a (COMPLETE — all 21 engine/ml/ files inventoried)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a complete**
-- Last completed package: M00-004a29 formally complete
-- Next dependency-ready package: M00-004b (Module entry points and CLI tools)
+- Active package: M00-004b (COMPLETE — all engine/ bridge/ tools/ entry points inventoried)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a complete; M00-004b complete**
+- Last completed package: M00-004b3i formally complete
+- Next dependency-ready package: M00-004c (Bridge HTTP endpoints)
 
 ## Repository state
 
@@ -119,13 +119,14 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004a complete: all 21 engine/ml/ files inventoried (26 evidence slices total).
-- Next: M00-004b (Module entry points and CLI tools)
+- M00-004a complete: 26 evidence slices (engine/ml/ all inventoried).
+- M00-004b complete: 10 evidence slices (engine/ bridge/ tools/ all inventoried).
+- Next: M00-004c (Bridge HTTP endpoints)
 - No blockers.
 
 ## Next exact action
 
-1. Begin M00-004b: inventory every `engine/*.py`, `bridge/*.py`, `tools/*.py` entry point, `if __name__ == "__main__"` block, and CLI tool.
+1. Begin M00-004c: inventory every HTTP route, handler, and response schema in the TTS bridge server.
 
 ## Compaction handover
 
