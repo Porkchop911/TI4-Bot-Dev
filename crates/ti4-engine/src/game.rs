@@ -1056,6 +1056,33 @@ mod tests {
     }
 
     #[test]
+    fn test_clockwise_from() {
+        let mut game = make_test_game();
+        
+        // Test clockwise from p0
+        let clockwise = game.clockwise_from(&PlayerId::new("p0"));
+        assert_eq!(clockwise.len(), 4);
+        assert_eq!(clockwise[0].as_str(), "p0");
+        assert_eq!(clockwise[1].as_str(), "p1");
+        assert_eq!(clockwise[2].as_str(), "p2");
+        assert_eq!(clockwise[3].as_str(), "p3");
+        
+        // Test clockwise from p2
+        let clockwise = game.clockwise_from(&PlayerId::new("p2"));
+        assert_eq!(clockwise[0].as_str(), "p2");
+        assert_eq!(clockwise[1].as_str(), "p3");
+        assert_eq!(clockwise[2].as_str(), "p0");
+        assert_eq!(clockwise[3].as_str(), "p1");
+        
+        // Test clockwise from p3
+        let clockwise = game.clockwise_from(&PlayerId::new("p3"));
+        assert_eq!(clockwise[0].as_str(), "p3");
+        assert_eq!(clockwise[1].as_str(), "p0");
+        assert_eq!(clockwise[2].as_str(), "p1");
+        assert_eq!(clockwise[3].as_str(), "p2");
+    }
+
+    #[test]
     fn test_construction_strategy_effect() {
         use crate::effects::EffectEngine;
         
