@@ -767,4 +767,156 @@ mod tests {
         // Should be production + trade_income
         assert_eq!(total, 4);
     }
+
+    #[test]
+    fn test_objective_scoring() {
+        let mut game = make_test_game();
+        
+        // Create a test objective
+        let objective = ObjectiveState {
+            id: ObjectiveId::new("test-obj"),
+            completed: false,
+            score: 1,
+        };
+        
+        // Score the objective for p0 (first time)
+        let vp = game.score_objective(&PlayerId::new("p0"), &objective);
+        
+        // p0 has no control tokens or completed objectives, so vp should be 0
+        assert_eq!(vp, 0);
+        
+        // Add a control token
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .control_tokens.insert(PlanetId::new("test-planet"));
+        
+        // Score again - should have 1 VP (1 control token) + 1 VP (objective completed) = 2
+        let vp = game.score_objective(&PlayerId::new("p0"), &objective);
+        assert_eq!(vp, 2);
+        
+        // Add another control token
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .control_tokens.insert(PlanetId::new("test-planet-2"));
+        
+        // Score again - should have 3 VP (2 control tokens + 1 completed objective)
+        let vp = game.score_objective(&PlayerId::new("p0"), &objective);
+        assert_eq!(vp, 3);
+    }
+
+    #[test]
+    fn test_technology_research() {
+        let mut game = make_test_game();
+        
+        // Add commodity to p0
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .commodity = 5;
+        
+        // Research a technology
+        let tech = TechnologyId::new("superior_weapons");
+        let result = game.research_technology(&PlayerId::new("p0"), tech.clone(), 3);
+        
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+        
+        // Check tech level
+        let level = game.get_tech_level(&PlayerId::new("p0"), &tech);
+        assert_eq!(level, 1);
+        
+        // Check commodity spent
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.commodity, 2);
+        
+        // Try to research again with insufficient commodity
+        let result = game.research_technology(&PlayerId::new("p0"), tech.clone(), 3);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // Should fail - not enough commodity
+        
+        // Tech level should still be 1
+        let level = game.get_tech_level(&PlayerId::new("p0"), &tech);
+        assert_eq!(level, 1);
+    }
+
+    #[test]
+    fn test_leader_activation() {
+        let mut game = make_test_game();
+        
+        // Create a test leader
+        let leader = LeaderState {
+            id: LeaderId::new("test-leader"),
+            ability: "test-ability".to_string(),
+            active: true,
+            fatigued: false,
+            system_id: None,
+            planet_id: None,
+        };
+        
+        // Activate the leader
+        let result = game.activate_leader(&PlayerId::new("p0"), leader.clone());
+        assert!(result.is_ok());
+        
+        // Check leader is active
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert!(ps.active_leader.is_some());
+        
+        // Fatigue the leader
+        game.fatigue_leader(&PlayerId::new("p0"), LeaderId::new("test-leader"));
+        
+        // Try to activate again - should fail
+        let result = game.activate_leader(&PlayerId::new("p0"), leader.clone());
+        assert!(result.is_err());
+        
+        // Refresh leaders
+        game.refresh_leaders(&PlayerId::new("p0"));
+        
+        // Should be able to activate again
+        let result = game.activate_leader(&PlayerId::new("p0"), leader);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_relic_handling() {
+        let mut game = make_test_game();
+        
+        // Create a test relic
+        let relic = RelicState {
+            id: RelicId::new("test-relic"),
+            owner: None,
+            active: true,
+        };
+        
+        // Award relic to p0
+        game.award_relic(&PlayerId::new("p0"), relic.clone());
+        
+        // Check player has the relic
+        assert!(game.has_relic(&PlayerId::new("p0"), &RelicId::new("test-relic")));
+        
+        // Check p1 doesn't have the relic
+        assert!(!game.has_relic(&PlayerId::new("p1"), &RelicId::new("test-relic")));
+        
+        // Try to award again - should not duplicate
+        game.award_relic(&PlayerId::new("p0"), relic);
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.relics.len(), 1);
+    }
+
+    #[test]
+    fn test_secret_objective_check() {
+        let mut game = make_test_game();
+        
+        // Create a test secret objective
+        let secret = SecretObjectiveState {
+            id: SecretObjectiveId::new("test-secret"),
+            completed: false,
+            score: 1,
+        };
+        
+        // p0 has no technologies or control tokens
+        assert!(!game.check_secret_objective(&PlayerId::new("p0"), &secret));
+        
+        // Add a technology to p0
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .technologies.insert(TechnologyId::new("test-tech"));
+        
+        // Now should be complete
+        assert!(game.check_secret_objective(&PlayerId::new("p0"), &secret));
+    }
 }

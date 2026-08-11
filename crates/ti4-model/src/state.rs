@@ -734,6 +734,128 @@ impl GameState {
             }
         }
     }
+
+    // ─── Objective scoring ─────────────────────────────────────────────────────
+
+    /// Score a public objective for a player.
+    pub fn score_objective(&mut self, player: &PlayerId, objective: &ObjectiveState) -> i32 {
+        let mut vp = 0;
+        
+        // Check if objective conditions are met (simplified)
+        if let Some(ps) = self.players.get(player) {
+            // Control tokens count toward objectives
+            vp += ps.control_tokens.len() as i32;
+            
+            // Completed objectives count
+            vp += ps.completed_objectives.len() as i32;
+        }
+        
+        // Record completion
+        if let Some(ps) = self.players.get_mut(player) {
+            if !ps.completed_objectives.iter().any(|o| o.id == objective.id) {
+                ps.completed_objectives.push(objective.clone());
+            }
+        }
+        
+        vp
+    }
+
+    /// Check if a secret objective is completed for a player.
+    pub fn check_secret_objective(&self, player: &PlayerId, secret: &SecretObjectiveState) -> bool {
+        if let Some(ps) = self.players.get(player) {
+            // Simplified check - in full implementation, check specific conditions
+            !ps.control_tokens.is_empty() || !ps.technologies.is_empty() || !ps.fleet.is_empty()
+        } else {
+            false
+        }
+    }
+
+    // ─── Technology research ───────────────────────────────────────────────────
+
+    /// Research a technology for a player.
+    pub fn research_technology(
+        &mut self,
+        player: &PlayerId,
+        tech: TechnologyId,
+        cost: i32,
+    ) -> std::result::Result<bool, String> {
+        if let Some(ps) = self.players.get_mut(player) {
+            // Check if player can afford the technology
+            if ps.commodity >= cost {
+                ps.commodity -= cost;
+                ps.technologies.insert(tech.clone());
+                
+                // Update tech level
+                let level = ps.tech_levels.entry(tech.clone()).or_insert(0);
+                *level += 1;
+                
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Err("Player not found".to_string())
+        }
+    }
+
+    /// Get the tech level for a player and technology.
+    pub fn get_tech_level(&self, player: &PlayerId, tech: &TechnologyId) -> i32 {
+        self.players.get(player)
+            .and_then(|ps| ps.tech_levels.get(tech))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    // ─── Leader abilities ──────────────────────────────────────────────────────
+
+    /// Activate a leader for a player.
+    pub fn activate_leader(&mut self, player: &PlayerId, leader: LeaderState) -> std::result::Result<(), String> {
+        if let Some(ps) = self.players.get_mut(player) {
+            // Check if leader is available (not fatigued)
+            if !ps.leader_fatigue.contains(&leader.id) {
+                ps.active_leader = Some(leader.clone());
+                Ok(())
+            } else {
+                Err("Leader is fatigued".to_string())
+            }
+        } else {
+            Err("Player not found".to_string())
+        }
+    }
+
+    /// Fatigue a leader.
+    pub fn fatigue_leader(&mut self, player: &PlayerId, leader_id: LeaderId) {
+        if let Some(ps) = self.players.get_mut(player) {
+            if !ps.leader_fatigue.contains(&leader_id) {
+                ps.leader_fatigue.push(leader_id);
+            }
+        }
+    }
+
+    /// Refresh all leaders for a player (typically at round start).
+    pub fn refresh_leaders(&mut self, player: &PlayerId) {
+        if let Some(ps) = self.players.get_mut(player) {
+            ps.leader_fatigue.clear();
+        }
+    }
+
+    // ─── Relic handling ────────────────────────────────────────────────────────
+
+    /// Award a relic to a player.
+    pub fn award_relic(&mut self, player: &PlayerId, relic: RelicState) {
+        if let Some(ps) = self.players.get_mut(player) {
+            if !ps.relics.iter().any(|r| r.id == relic.id) {
+                ps.relics.push(relic);
+            }
+        }
+    }
+
+    /// Check if a player has a specific relic.
+    pub fn has_relic(&self, player: &PlayerId, relic_id: &RelicId) -> bool {
+        self.players.get(player)
+            .map(|ps| ps.relics.iter().any(|r| r.id == *relic_id))
+            .unwrap_or(false)
+    }
 }
 
 // ─── Victory conditions ────────────────────────────────────────────────────────
