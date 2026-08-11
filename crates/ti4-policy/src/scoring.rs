@@ -1,15 +1,27 @@
 //! Scoring stub.
 
-use ti4_model::*;
-use ti4_model::view::BotView;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+
+use ti4_model::id::PlayerId;
+use ti4_model::state::GameState;
 
 pub struct Scorer;
 
 impl Scorer {
-    pub fn new() -> Self { Self }
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
 
-    pub fn score(&self, _view: &BotView) -> Result<HashMap<PlayerId, f64>, anyhow::Error> {
+    /// # Errors
+    /// Not implemented yet.
+    pub fn score(&self, _view: &GameState) -> Result<BTreeMap<PlayerId, f64>, anyhow::Error> {
         todo!("M08: implement scoring")
+    }
+}
+
+impl Default for Scorer {
+    fn default() -> Self {
+        Self::new()
     }
 }
