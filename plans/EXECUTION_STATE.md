@@ -127,11 +127,13 @@ All three packages have been corrected with ground-truth data derived from direc
 - M03-016: Frontier critical review PASS (7 accepted findings).
 - **M04 COMPLETE**: All 16 milestones (M04-001 through M04-016) finished.
 - M04-016: Frontier milestone review PASS (7 accepted findings).
+- **M05 COMPLETE**: All 24 milestones (M05-001 through M05-024) finished.
+- M05-024: Frontier critical review PASS (7 accepted findings).
 - No blockers.
 
 ## Next exact action
 
-1. M00 + M01 + M02 + M03 + M04 COMPLETE (76 milestones, 130 children). Proceed to M05 (Tactical pipeline).
+1. M00 + M01 + M02 + M03 + M04 + M05 COMPLETE (100 milestones, 154 children). Proceed to M06 (General rules).
 
 ---
 
@@ -178,7 +180,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (185 total)
+### Completed evidence files (209 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
