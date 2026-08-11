@@ -119,13 +119,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004 through M00-012 all complete.
-- M00-012e: Variance thresholds fixed (2-15% depending on metric).
+- M00-004 through M00-013 all complete.
+- M00-013g: Python baseline measured (0.993s game, 0.9 games/s throughput).
 - No blockers.
 
 ## Next exact action
 
-1. M00-004 through M00-012 complete. Proceed to M00-013 (Python performance baseline).
+1. M00-004 through M00-013 complete. Proceed to M00-014 (Oracle integrity guard).
 
 ---
 
@@ -172,7 +172,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (97 total)
+### Completed evidence files (105 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
