@@ -131,11 +131,14 @@ All three packages have been corrected with ground-truth data derived from direc
 - 103 fixtures selected across 10 categories.
 - M00-009 complete: All 8 children (a–h) reconciled.
 - Oracle exporter design complete with all projection implementations.
+- M00-010 complete: All 5 children (a–e) reconciled.
+- Entropy capture design complete (dice, deck, random).
+- 100 replay scenarios verified.
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e, M00-005, M00-006, M00-007, M00-008, and M00-009 complete. Proceed to M00-010 (Entropy/replay corpus).
+1. M00-004e, M00-005, M00-006, M00-007, M00-008, M00-009, and M00-010 complete. Proceed to M00-011 (Correctness baseline).
 
 ---
 
@@ -182,7 +185,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (80 total)
+### Completed evidence files (86 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
