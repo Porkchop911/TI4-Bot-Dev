@@ -141,11 +141,15 @@ All three packages have been corrected with ground-truth data derived from direc
 - M10-030: Frontier math/artifact review PASS (3 accepted findings).
 - **M11 COMPLETE**: All 22 milestones (M11-001 through M11-022) finished.
 - M11-022: Frontier security review PASS (3 accepted findings).
+- **M12 COMPLETE**: All 23 milestones (M12-001 through M12-023) finished.
+- M12-021: Frontier semantic review PASS
+- M12-022: Frontier security review PASS
+- M12-023: Frontier performance review PASS
 - No blockers.
 
 ## Next exact action
 
-1. M00 + M01 + M02 + M03 + M04 + M05 + M06 + M07 + M08 + M09 + M10 + M11 COMPLETE (225 milestones, 279 children). Proceed to M12 (Qualification).
+1. M00 + M01 + M02 + M03 + M04 + M05 + M06 + M07 + M08 + M09 + M10 + M11 + M12 COMPLETE (248 milestones, 302 children). Proceed to M13 (Cutover).
 
 ---
 
@@ -192,7 +196,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (332 total)
+### Completed evidence files (355 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
