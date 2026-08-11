@@ -686,4 +686,85 @@ mod tests {
         let result = loop_.step().unwrap();
         assert!(!result);
     }
+
+    #[test]
+    fn test_full_round_simulation() {
+        let mut game = make_test_game();
+        let mut loop_ = GameLoop::new(game);
+        loop_.start();
+
+        // Simulate one complete round
+        loop_.step().unwrap(); // Setup → Action (Strategy)
+        
+        // All players reveal strategies
+        let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
+        for pid in pids {
+            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+        }
+        
+        // Strategy → Command
+        loop_.step().unwrap();
+        
+        // Command → Tactical (tokens distributed)
+        loop_.step().unwrap();
+        
+        // Tactical → Agenda
+        loop_.step().unwrap();
+        
+        // Init agenda tokens
+        loop_.game.initiative_player = Some(PlayerId::new("p3"));
+        loop_.game.init_agenda_tokens();
+        
+        // Political agenda
+        let phase = loop_.game.agenda_phase.unwrap();
+        loop_.resolve_agenda_phase(phase).unwrap();
+        
+        // Economic agenda
+        loop_.game.agenda_phase = Some(AgendaPhase::Economic);
+        let phase = loop_.game.agenda_phase.unwrap();
+        loop_.resolve_agenda_phase(phase).unwrap();
+        
+        // Military agenda
+        loop_.game.agenda_phase = Some(AgendaPhase::Military);
+        let phase = loop_.game.agenda_phase.unwrap();
+        loop_.resolve_agenda_phase(phase).unwrap();
+        
+        // Round end - first step transitions to RoundEnd phase
+        loop_.step().unwrap();
+        // Second step executes RoundEnd (increments round)
+        loop_.step().unwrap();
+        
+        // Verify game state after one round
+        assert_eq!(loop_.game.round, 2);
+        assert_eq!(loop_.game.phase, GamePhase::Action);
+        assert_eq!(loop_.game.sub_phase, Some(ActionSubPhase::Strategy));
+        
+        // Verify players have command tokens
+        for pid in loop_.game.player_order.iter() {
+            let ps = loop_.game.players.get(pid).unwrap();
+            assert!(ps.command_tokens >= 1);
+        }
+        
+        // Verify agenda results recorded
+        assert!(!loop_.game.agenda_results.is_empty());
+    }
+
+    #[test]
+    fn test_production_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        
+        // Set up a player with production capacity
+        if let Some(ps) = game.players.get_mut(&PlayerId::new("p0")) {
+            ps.production = 3;
+            ps.trade_income = 1;
+        }
+        
+        let engine = EffectEngine::new();
+        let total = engine.apply_production(&mut game, &PlayerId::new("p0"));
+        
+        // Should be production + trade_income
+        assert_eq!(total, 4);
+    }
 }
