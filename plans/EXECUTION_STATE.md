@@ -123,11 +123,13 @@ All three packages have been corrected with ground-truth data derived from direc
 - **M01 COMPLETE**: All 13 milestones (M01-001 through M01-013) finished.
 - **M02 COMPLETE**: All 16 milestones (M02-001 through M02-016) finished.
 - M02-016: Frontier model review PASS (7 accepted findings).
+- **M03 COMPLETE**: All 16 milestones (M03-001 through M03-016) finished.
+- M03-016: Frontier critical review PASS (7 accepted findings).
 - No blockers.
 
 ## Next exact action
 
-1. M00 + M01 + M02 COMPLETE (44 milestones, 98 children). Proceed to M03 (Choice, timing, replay).
+1. M00 + M01 + M02 + M03 COMPLETE (60 milestones, 114 children). Proceed to M04 (Action phase).
 
 ---
 
@@ -174,7 +176,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (153 total)
+### Completed evidence files (169 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
