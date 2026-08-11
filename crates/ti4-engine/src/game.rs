@@ -5,6 +5,7 @@
 
 use ti4_model::*;
 use anyhow::Result;
+use std::collections::HashMap;
 
 /// The main game loop that advances through phases.
 pub struct GameLoop {
@@ -91,20 +92,48 @@ impl GameLoop {
 
         if all_done && !self.game.revealed_strategies.is_empty() {
             // Sort revealed strategies by player order
-            self.game.revealed_strategies.sort_by(|a, b| {
-                let ai = self.game.player_order.iter().position(|p| {
-                    self.game.secret_strategies.iter().any(|(p, s)| p == p && s == a)
-                }).unwrap_or(0);
-                let bi = self.game.player_order.iter().position(|p| {
-                    self.game.secret_strategies.iter().any(|(p, s)| p == p && s == b)
-                }).unwrap_or(0);
-                ai.cmp(&bi)
-            });
-
-            // Determine initiative order (reverse of strategy reveal order for War)
-            // For now, use player order
-            self.game.player_order = self.game.players.keys().cloned().collect();
-            self.game.player_order.reverse();
+            // Initiative goes to the player who revealed first (highest priority)
+            // For War strategy, the winner gets first pick of initiative
+            let mut revealed_with_index: Vec<_> = self.game.revealed_strategies
+                .iter()
+                .enumerate()
+                .collect();
+            
+            // Sort by reveal order (first to reveal = highest initiative)
+            revealed_with_index.sort_by_key(|(idx, _)| *idx);
+            
+            // Build initiative order from revealed strategies
+            let mut initiative_order = vec![];
+            for (_, strategy) in revealed_with_index {
+                // Find which player revealed this strategy
+                for (pid, s) in self.game.secret_strategies.iter() {
+                    if s == strategy && !initiative_order.contains(pid) {
+                        initiative_order.push(pid.clone());
+                        break;
+                    }
+                }
+            }
+            
+            // If War strategy was played, the War player gets first pick of initiative
+            if self.game.revealed_strategies.iter().any(|s| *s == StrategyCard::War) {
+                // War player picks first - for simplicity, put them first
+                let war_player = self.game.revealed_strategies.iter()
+                    .position(|s| *s == StrategyCard::War)
+                    .and_then(|idx| {
+                        self.game.revealed_strategies.iter().enumerate()
+                            .find(|(_, s)| **s == StrategyCard::War)
+                            .and_then(|(i, _)| {
+                                self.game.player_order.iter().nth(i)
+                            })
+                            .cloned()
+                    });
+                if let Some(wp) = war_player {
+                    initiative_order.retain(|p| p != &wp);
+                    initiative_order.insert(0, wp);
+                }
+            }
+            
+            self.game.player_order = initiative_order;
 
             // Transition to command phase
             self.game.sub_phase = Some(ActionSubPhase::Command);
@@ -114,22 +143,96 @@ impl GameLoop {
         Ok(true)
     }
 
+    /// Reveal a strategy card for a player.
+    pub fn reveal_strategy(&mut self, player: PlayerId, strategy: StrategyCard) -> Result<()> {
+        if self.game.sub_phase != Some(ActionSubPhase::Strategy) {
+            return Err(anyhow::anyhow!("Cannot reveal strategy: not in strategy phase"));
+        }
+
+        if self.game.secret_strategies.contains_key(&player) {
+            return Err(anyhow::anyhow!("Player {} already revealed strategy", player));
+        }
+
+        if self.game.has_passed(&player) {
+            return Err(anyhow::anyhow!("Player {} has passed", player));
+        }
+
+        self.game.reveal_strategy(player.clone(), strategy);
+        Ok(())
+    }
+
+    /// Have a player pass on strategy selection.
+    pub fn pass_strategy(&mut self, player: PlayerId) -> Result<()> {
+        if self.game.sub_phase != Some(ActionSubPhase::Strategy) {
+            return Err(anyhow::anyhow!("Cannot pass: not in strategy phase"));
+        }
+
+        if self.game.secret_strategies.contains_key(&player) {
+            return Err(anyhow::anyhow!("Player {} already revealed strategy", player));
+        }
+
+        self.game.mark_passed(player);
+        Ok(())
+    }
+
     /// Step through command token phase.
     fn step_command(&mut self) -> Result<bool> {
-        // Command token distribution happens here
-        // For now, transition to tactical phase
+        // Distribute command tokens based on initiative order
+        // First player gets more tokens, subsequent players get fewer
+        for (i, pid) in self.game.player_order.iter().enumerate() {
+            let tokens = match i {
+                0 => 4, // First player gets 4
+                1 => 3, // Second player gets 3
+                2 => 2, // Third player gets 2
+                _ => 1, // Others get 1
+            };
+            
+            if let Some(ps) = self.game.players.get_mut(pid) {
+                ps.command_tokens = tokens;
+            }
+        }
+
+        // Transition to tactical phase
         self.game.sub_phase = Some(ActionSubPhase::Tactical);
         Ok(true)
     }
 
     /// Step through tactical phase (player activation).
     fn step_tactical(&mut self) -> Result<bool> {
-        // Player activation order based on initiative
-        // In full implementation, this would activate each player's fleet
-        // For now, transition to agenda phase
+        // Check if all players have been activated
+        // In a full implementation, we'd track activation state per player
+        // For now, transition to agenda phase after one round of activations
         self.game.phase = GamePhase::Agenda;
         self.game.agenda_phase = Some(AgendaPhase::Political);
         Ok(true)
+    }
+
+    /// Get the next player to activate in tactical phase.
+    pub fn next_activatable_player(&self) -> Option<&PlayerId> {
+        // Returns players in initiative order who haven't been activated yet
+        // For now, return the first player in initiative order
+        self.game.player_order.first()
+    }
+
+    /// Activate a specific player for tactical operations.
+    pub fn activate_player(&mut self, player: PlayerId) -> Result<()> {
+        if self.game.sub_phase != Some(ActionSubPhase::Tactical) {
+            return Err(anyhow::anyhow!("Cannot activate player: not in tactical phase"));
+        }
+
+        // In a full implementation, we'd track which players have been activated
+        // For now, just log the activation
+        self.game.record_event(EventRecord {
+            id: EventId::new("activate"),
+            event_type: "activate".to_string(),
+            source: player.clone(),
+            target: None,
+            effects: vec![],
+            timestamp: 0,
+            resolved: true,
+        });
+
+        Ok(())
     }
 
     // ─── Agenda phase ────────────────────────────────────────────────────────
@@ -159,21 +262,45 @@ impl GameLoop {
 
     /// Resolve a single agenda phase.
     fn resolve_agenda_phase(&mut self, phase: AgendaPhase) -> Result<()> {
-        // Find the winner of this agenda phase
-        // In full implementation, this would:
-        // 1. Collect votes from each player
-        // 2. Determine winner based on agenda card effects
-        // 3. Award victory points
-        // 4. Apply agenda effects
+        // Collect votes from each player
+        let mut votes: HashMap<PlayerId, i32> = HashMap::new();
+        
+        for pid in &self.game.player_order {
+            // Each player votes based on their agenda tokens
+            let token_count = self.game.agenda_tokens.get(pid).cloned().unwrap_or(0);
+            let vote_value = if token_count > 0 { token_count } else { 1 };
+            *votes.entry(pid.clone()).or_insert(0) += vote_value;
+        }
 
-        // For now, use the player with the most agenda tokens
-        let winner = self.game.agenda_tokens.iter()
+        // Find the winner (highest vote count)
+        let winner = votes.iter()
             .max_by_key(|(_, count)| *count)
-            .map(|(pid, _)| pid.clone());
+            .map(|(pid, _): (&PlayerId, &i32)| pid.clone());
 
         if let Some(winner) = winner {
-            self.game.record_agenda_result(phase, winner.clone(), 1);
-            self.game.current_agenda_player = Some(winner);
+            // Award victory points based on agenda phase
+            let vp = match phase {
+                AgendaPhase::Political => 1,
+                AgendaPhase::Economic => 1,
+                AgendaPhase::Military => 1,
+            };
+
+            // Update winner's score
+            if let Some(ps) = self.game.players.get_mut(&winner) {
+                ps.score += vp;
+            }
+
+            // Record agenda result
+            self.game.record_agenda_result(phase, winner.clone(), vp);
+            self.game.current_agenda_player = Some(winner.clone());
+
+            // Transfer agenda token to winner
+            let player_order: Vec<_> = self.game.player_order.iter().cloned().collect();
+            for pid in player_order {
+                if &pid != &winner {
+                    self.game.transfer_agenda_token(&pid, &winner);
+                }
+            }
         }
 
         Ok(())
@@ -323,6 +450,97 @@ mod tests {
         loop_.step().unwrap();
         assert_eq!(loop_.game.phase, GamePhase::Agenda);
         assert_eq!(loop_.game.agenda_phase, Some(AgendaPhase::Political));
+    }
+
+    #[test]
+    fn test_strategy_reveal() {
+        let mut game = make_test_game();
+        let mut loop_ = GameLoop::new(game);
+        loop_.start();
+
+        // Get to strategy phase
+        loop_.step().unwrap();
+        assert_eq!(loop_.game.sub_phase, Some(ActionSubPhase::Strategy));
+
+        // Reveal strategy for a player
+        loop_.reveal_strategy(PlayerId::new("p0"), StrategyCard::from_code("s")).unwrap();
+        assert!(loop_.game.secret_strategies.contains_key(&PlayerId::new("p0")));
+        assert_eq!(loop_.game.revealed_strategies.len(), 1);
+    }
+
+    #[test]
+    fn test_strategy_pass() {
+        let mut game = make_test_game();
+        let mut loop_ = GameLoop::new(game);
+        loop_.start();
+
+        // Get to strategy phase
+        loop_.step().unwrap();
+
+        // Pass strategy for a player
+        loop_.pass_strategy(PlayerId::new("p0")).unwrap();
+        assert!(loop_.game.has_passed(&PlayerId::new("p0")));
+    }
+
+    #[test]
+    fn test_command_token_distribution() {
+        let mut game = make_test_game();
+        let mut loop_ = GameLoop::new(game);
+        loop_.start();
+
+        // Get to command phase
+        loop_.step().unwrap(); // Setup → Action
+        let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
+        for pid in pids {
+            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+        }
+        loop_.step().unwrap(); // Strategy → Command
+
+        // Distribute command tokens
+        loop_.step().unwrap(); // Command → Tactical
+
+        // Check token distribution - collect all token counts
+        let tokens: Vec<_> = loop_.game.players.values().map(|ps| ps.command_tokens).collect();
+        let mut sorted_tokens = tokens.clone();
+        sorted_tokens.sort();
+        
+        // Should have 4, 3, 2, 1 tokens
+        assert_eq!(sorted_tokens, vec![1, 2, 3, 4]);
+        
+        // Each player should have at least 1 token
+        for pid in loop_.game.player_order.iter() {
+            let ps = loop_.game.players.get(pid).unwrap();
+            assert!(ps.command_tokens >= 1, "Player {} should have at least 1 command token", pid);
+        }
+    }
+
+    #[test]
+    fn test_agenda_voting() {
+        let mut game = make_test_game();
+        let mut loop_ = GameLoop::new(game);
+        loop_.start();
+
+        // Get to agenda phase
+        loop_.step().unwrap(); // Setup → Action
+        let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
+        for pid in pids {
+            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+        }
+        loop_.step().unwrap(); // Strategy
+        loop_.step().unwrap(); // Command
+        loop_.step().unwrap(); // Tactical → Agenda
+
+        // Set initiative player for agenda token distribution
+        loop_.game.initiative_player = Some(PlayerId::new("p3"));
+        loop_.game.init_agenda_tokens();
+
+        // Resolve political agenda
+        let phase = loop_.game.agenda_phase.unwrap();
+        loop_.resolve_agenda_phase(phase).unwrap();
+
+        // Check that winner was determined
+        assert!(loop_.game.current_agenda_player.is_some());
+        assert!(!loop_.game.agenda_results.is_empty());
     }
 
     #[test]
