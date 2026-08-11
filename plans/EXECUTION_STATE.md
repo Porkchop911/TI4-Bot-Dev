@@ -45,6 +45,8 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `7bfc65d` Add evidence for Thunder's Edge variants
+- `e6d43fd` Add Thunder's Edge strategy card variants (te4construction, te6warfare)
 - `6146a81` Add evidence for command token pool refactor
 - `2adf043` Refactor command tokens: split into three pools (tactic, fleet, strategic) per Oracle
 - `13bd750` Align StrategyCard enum with Oracle: 8 cards (Leadership, Diplomacy, Politics, Construction, Trade, Warfare, Technology, Imperial)

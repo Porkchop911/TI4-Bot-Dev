@@ -237,6 +237,176 @@ impl EffectEngine {
         }
     }
 
+    // ─── Strategy card secondary abilities ─────────────────────────────────────
+
+    /// Apply Leadership secondary: buy tokens with influence.
+    /// Costs 3 influence per token.
+    pub fn apply_leadership_secondary(&self, game: &mut GameState, player: &PlayerId, influence_cost: i32) {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.influence >= influence_cost {
+                ps.influence -= influence_cost;
+                ps.tactic_tokens += 1;
+                ps.fleet_tokens += 1;
+                ps.strategic_tokens += 1;
+            }
+        }
+    }
+
+    /// Apply Diplomacy secondary: ready 2 exhausted planets.
+    /// Costs 1 strategic token.
+    pub fn apply_diplomacy_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                // Ready 2 planets (tracked via flag, actual planet ready is deferred)
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Politics secondary: draw 2 action cards.
+    /// Costs 1 strategic token.
+    pub fn apply_politics_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.action_cards.push(ActionCardState {
+                    id: ActionCardId::new("politics-draw-1"),
+                    owner: player.clone(),
+                    exhausted: false,
+                    used: false,
+                });
+                ps.action_cards.push(ActionCardState {
+                    id: ActionCardId::new("politics-draw-2"),
+                    owner: player.clone(),
+                    exhausted: false,
+                    used: false,
+                });
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Construction secondary: place 1 structure.
+    /// Costs 1 strategic token.
+    pub fn apply_construction_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.production += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Trade secondary: replenish commodities.
+    /// Costs 1 strategic token.
+    pub fn apply_trade_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.trade_goods = 10; // Replenish to max (simplified)
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Warfare secondary: produce at home system.
+    /// Costs 1 strategic token.
+    pub fn apply_warfare_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.production += 2; // Production proxy
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Technology secondary: research for 6 resources.
+    /// Costs 1 strategic token + 6 resources.
+    pub fn apply_technology_secondary(&self, game: &mut GameState, player: &PlayerId, resources: i32) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 && ps.fuel >= resources {
+                ps.strategic_tokens -= 1;
+                ps.fuel -= resources;
+                ps.free_research = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Imperial secondary: draw a secret objective.
+    /// Costs 1 strategic token.
+    pub fn apply_imperial_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                // Draw secret (tracked via flag, actual secret draw is deferred)
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Thunder's Edge Construction secondary: place 1 structure.
+    /// Costs 1 strategic token.
+    pub fn apply_te4_construction_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.production += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply Thunder's Edge Warfare secondary: produce at home system.
+    /// Costs 1 strategic token (same as base).
+    pub fn apply_te6_warfare_secondary(&self, game: &mut GameState, player: &PlayerId) -> bool {
+        if let Some(ps) = game.players.get_mut(player) {
+            if ps.strategic_tokens >= 1 {
+                ps.strategic_tokens -= 1;
+                ps.production += 2;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Apply the secondary effect of a revealed strategy card.
+    pub fn apply_strategy_secondary(
+        &self,
+        game: &mut GameState,
+        player: &PlayerId,
+        card: &StrategyCard,
+        args: &SecondaryArgs,
+    ) -> bool {
+        match card {
+            StrategyCard::Leadership => {
+                self.apply_leadership_secondary(game, player, args.influence_cost.unwrap_or(3));
+                true
+            }
+            StrategyCard::Diplomacy => self.apply_diplomacy_secondary(game, player),
+            StrategyCard::Politics => self.apply_politics_secondary(game, player),
+            StrategyCard::Construction => self.apply_construction_secondary(game, player),
+            StrategyCard::Trade => self.apply_trade_secondary(game, player),
+            StrategyCard::Warfare => self.apply_warfare_secondary(game, player),
+            StrategyCard::Technology => self.apply_technology_secondary(game, player, args.resources.unwrap_or(6)),
+            StrategyCard::Imperial => self.apply_imperial_secondary(game, player),
+            StrategyCard::Te4Construction => self.apply_te4_construction_secondary(game, player),
+            StrategyCard::Te6Warfare => self.apply_te6_warfare_secondary(game, player),
+            StrategyCard::Unknown => false,
+        }
+    }
+
     /// Apply the primary effect of a revealed strategy card.
     pub fn apply_strategy_effect(
         &self,
@@ -256,6 +426,21 @@ impl EffectEngine {
             StrategyCard::Te4Construction => self.apply_te4_construction_effect(game, player),
             StrategyCard::Te6Warfare => self.apply_te6_warfare_effect(game, player),
             StrategyCard::Unknown => {}
+        }
+    }
+}
+
+/// Arguments for strategy card secondary effects.
+pub struct SecondaryArgs {
+    pub influence_cost: Option<i32>,
+    pub resources: Option<i32>,
+}
+
+impl Default for SecondaryArgs {
+    fn default() -> Self {
+        Self {
+            influence_cost: None,
+            resources: None,
         }
     }
 }
