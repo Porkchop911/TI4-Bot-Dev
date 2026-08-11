@@ -9,10 +9,10 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
-- Active package: M00-004d (COMPLETE — wire commands inventoried)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c, M00-004d complete**
-- Last completed package: M00-004d formally complete
-- Next dependency-ready package: M00-004e (Reconciliation and independent review)
+- Active package: M00-004e (COMPLETE — reconciliation and frontier review done)
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a, M00-004b, M00-004c, M00-004d, M00-004e complete**
+- Last completed package: M00-004e formally complete with independent review
+- Next dependency-ready package: M00-005 (Artifact inventory)
 
 ## Repository state
 
@@ -119,16 +119,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004a complete: 26 evidence slices (engine/ml/ all inventoried).
-- M00-004b complete: 10 evidence slices (engine/ bridge/ tools/ all inventoried).
-- M00-004c complete: 1 evidence slice (HTTP endpoints).
-- M00-004d complete: 1 evidence slice (wire commands/telemetry).
-- M00-004e pending: reconciliation of all 004 children + frontier review.
+- M00-004 complete: All 5 children (a–e) reconciled and reviewed.
+- M00-004e: Reconciliation evidence written, frontier review PASSED (2 minor findings accepted).
 - No blockers.
 
 ## Next exact action
 
-1. Begin M00-004e: cross-check all 004 children for completeness, resolve gaps, obtain independent frontier review.
+1. M00-004e complete. Proceed to M00-005 (Artifact inventory).
 
 ---
 
@@ -213,7 +210,7 @@ M00-015 — Frontier scope review
 
 ## Compaction handover
 
-### Handover summary (M00-004a refresh checkpoint)
+### Handover summary (M00-004e completion checkpoint)
 ```
 Objective:
 M00-004a interface inventory — public construction APIs across engine/ modules. Context compaction after 6 additional ML slices.
