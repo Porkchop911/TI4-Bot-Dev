@@ -432,6 +432,47 @@ pub struct PlanetState {
     pub has_infiltration: bool,
 }
 
+impl Default for PlanetState {
+    fn default() -> Self {
+        Self {
+            id: PlanetId::new(""),
+            name: String::new(),
+            system_id: SystemId::new(""),
+            planet_type: String::new(),
+            influence: 0,
+            production: 0,
+            fuel: 0,
+            home_faction: None,
+            owner: None,
+            control_tokens: HashMap::new(),
+            invasion_tokens: HashMap::new(),
+            casualties: HashMap::new(),
+            pds: HashMap::new(),
+            leaders: HashMap::new(),
+            faction_fleets: HashMap::new(),
+            has_capital: false,
+            has_influence: false,
+            has_production: false,
+            has_fuel: false,
+            has_control_token: false,
+            has_invasion_token: false,
+            has_casualty: false,
+            has_pds: false,
+            has_leader: false,
+            has_fleet: false,
+            has_home: false,
+            has_owner: false,
+            has_exhausted: false,
+            has_rebel_fleet: false,
+            has_fatigued_leader: false,
+            has_broken_promissory: false,
+            has_sabotage: false,
+            has_infantry: false,
+            has_infiltration: false,
+        }
+    }
+}
+
 // ─── Card and artifact structures ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

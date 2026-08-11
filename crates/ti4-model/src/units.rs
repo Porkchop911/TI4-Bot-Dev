@@ -55,6 +55,29 @@ pub struct FleetState {
     pub has_spacedock: bool,
 }
 
+impl Default for FleetState {
+    fn default() -> Self {
+        Self {
+            unit_types: vec![],
+            total_movement: 0,
+            total_fuel: 0,
+            total_capacity: 0,
+            total_casualties: 0,
+            has_flagship: false,
+            has_warsun: false,
+            has_pds: false,
+            has_infantry: false,
+            has_mech: false,
+            has_fighter: false,
+            has_cruiser: false,
+            has_destroyer: false,
+            has_carrier: false,
+            has_dreadnought: false,
+            has_spacedock: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnitFleetEntry {
     pub unit_type: UnitTypeId,
