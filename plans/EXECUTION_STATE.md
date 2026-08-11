@@ -121,11 +121,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - M00-004 complete: All 5 children (a–e) reconciled and reviewed.
 - M00-004e: Reconciliation evidence written, frontier review PASSED (2 minor findings accepted).
+- M00-005 complete: All 10 children (a–j) reconciled.
+- ~1,091 artifacts inventoried across all categories.
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e complete. Proceed to M00-005 (Artifact inventory).
+1. M00-004e and M00-005 complete. Proceed to M00-006 (Compatibility classification).
 
 ---
 
@@ -172,7 +174,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (28 total)
+### Completed evidence files (40 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
