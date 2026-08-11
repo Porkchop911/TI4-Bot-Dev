@@ -10,14 +10,14 @@ compaction, package commit, handoff, or milestone transition.
 - Oracle commit: `37061c5`
 - Active milestone: M00 — Oracle and baseline
 - Active package: M00-004a (partial — interface inventory in progress)
-- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–17 in progress**
+- Status: **M00-001, M00-002, M00-003 complete; M00-004a slices 1–20 in progress**
 - Last completed package: M00-003 formally complete
-- Next dependency-ready package: engine/ml/tactical_plan_rollout.py construction API inventory
+- Next dependency-ready package: engine/ml/capture.py construction API inventory
 
 ## Repository state
 
 - Expected branch: `main` until M01 defines implementation branches
-- Current HEAD: `bb7f91c` (M00: Inventory tactical search APIs)
+- Current HEAD: `183d55f` (M00: Inventory ML model feature APIs)
 - Working tree: clean
 - Existing Python repository must remain clean ✅
 
@@ -102,6 +102,9 @@ All three packages have been corrected with ground-truth data derived from direc
 - `M00-004a15.md` — engine/ml/provenance.py (commit `474b894`)
 - `M00-004a16.md` — engine/ml/observation.py (commit `2f47664`)
 - `M00-004a17.md` — engine/ml/tactical_search.py (commit `bb7f91c`)
+- `M00-004a18.md` — engine/ml/tactical_plan_rollout.py (commit `6ba817a`)
+- `M00-004a19.md` — engine/ml/tactical_plan_features.py (commit `2c20acc`)
+- `M00-004a20.md` — engine/ml/model_features.py (commit `183d55f`)
 - **M00-004a remains incomplete** — other engine/ml submodules remain to be inventoried.
 
 ## Decisions in force
@@ -121,7 +124,7 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Next exact action
 
-1. After fresh-session reading of required files, inventory `engine/ml/tactical_plan_rollout.py` construction APIs.
+1. After fresh-session reading of required files, inventory `engine/ml/capture.py` construction APIs.
 
 ## Compaction handover
 
@@ -132,12 +135,12 @@ M00-004a interface inventory — public construction APIs across engine/ modules
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M00 / M00-004a (partial — 17 evidence slices completed, M00-004a incomplete)
+M00 / M00-004a (partial — 20 evidence slices completed, M00-004a incomplete)
 Status and completed acceptance criteria:
 M00-001, M00-002, M00-003 formally complete with independent review.
-M00-004a slices: state.py, engine/content scope, learned_policy.py, policy_linear.py, engine/ml/__init__.py, engine/ml/context.py, engine/ml/counterfactual.py, engine/ml/tactical_macro_features.py, engine/ml/tactical_macro_runtime.py, engine/ml/promoted.py, engine/ml/guard.py, engine/ml/linear.py, engine/ml/sampling.py, engine/ml/catalogue.py, engine/ml/provenance.py, engine/ml/observation.py, engine/ml/tactical_search.py.
+M00-004a slices: state.py, engine/content scope, learned_policy.py, policy_linear.py, engine/ml/__init__.py, engine/ml/context.py, engine/ml/counterfactual.py, engine/ml/tactical_macro_features.py, engine/ml/tactical_macro_runtime.py, engine/ml/promoted.py, engine/ml/guard.py, engine/ml/linear.py, engine/ml/sampling.py, engine/ml/catalogue.py, engine/ml/provenance.py, engine/ml/observation.py, engine/ml/tactical_search.py, engine/ml/tactical_plan_rollout.py, engine/ml/tactical_plan_features.py, engine/ml/model_features.py.
 Current branch and HEAD:
-main / bb7f91c
+main / 183d55f
 Working-tree state:
 clean (both repos)
 Tests last run and exact results:
@@ -159,7 +162,7 @@ Decisions made and rationale:
 Open review findings or blockers:
 None.
 Next exact action/command:
-After fresh-session reading: inventory engine/ml/tactical_plan_rollout.py construction APIs.
+After fresh-session reading: inventory engine/ml/capture.py construction APIs.
 Files to read first after compaction:
 plans/EXECUTION_STATE.md, plans/M00-004_INTERFACE_INVENTORY.md, plans/SCOPED_PERMISSIONS.md, D:\Projects\ti4-engine\engine\ml\sampling.py
 ```
