@@ -393,6 +393,31 @@ impl EffectEngine {
         false
     }
 
+    /// Check if a faction gets a free secondary for a strategy card.
+    /// Per Oracle: Hacon (Masters of Trade) gets free Trade secondary.
+    /// Jol-Nar (Brilliant) swaps Technology secondary for primary.
+    pub fn is_secondary_free(game: &GameState, player: &PlayerId, card: &StrategyCard) -> bool {
+        // Masters of Trade: free Trade secondary
+        if card == &StrategyCard::Trade {
+            if let Some(ps) = game.players.get(player) {
+                if ps.faction_id.as_str() == "masters_of_trade" {
+                    return true;
+                }
+            }
+        }
+        
+        // Jol-Nar Brilliant: Technology secondary becomes primary (free)
+        if card == &StrategyCard::Technology {
+            if let Some(ps) = game.players.get(player) {
+                if ps.faction_id.as_str() == "brilliant" {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
     /// Apply the secondary effect of a revealed strategy card.
     pub fn apply_strategy_secondary(
         &self,
@@ -401,6 +426,9 @@ impl EffectEngine {
         card: &StrategyCard,
         args: &SecondaryArgs,
     ) -> bool {
+        // Check faction ability for free secondary
+        let is_free = Self::is_secondary_free(game, player, card);
+        
         match card {
             StrategyCard::Leadership => {
                 self.apply_leadership_secondary(game, player, args.influence_cost.unwrap_or(3));
@@ -409,9 +437,24 @@ impl EffectEngine {
             StrategyCard::Diplomacy => self.apply_diplomacy_secondary(game, player),
             StrategyCard::Politics => self.apply_politics_secondary(game, player),
             StrategyCard::Construction => self.apply_construction_secondary(game, player),
-            StrategyCard::Trade => self.apply_trade_secondary(game, player),
+            StrategyCard::Trade => {
+                if is_free {
+                    self.apply_trade_effect(game, player);
+                    true
+                } else {
+                    self.apply_trade_secondary(game, player)
+                }
+            }
             StrategyCard::Warfare => self.apply_warfare_secondary(game, player),
-            StrategyCard::Technology => self.apply_technology_secondary(game, player, args.resources.unwrap_or(6)),
+            StrategyCard::Technology => {
+                if is_free {
+                    // Jol-Nar Brilliant: swap secondary for primary
+                    self.apply_technology_effect(game, player);
+                    true
+                } else {
+                    self.apply_technology_secondary(game, player, args.resources.unwrap_or(6))
+                }
+            }
             StrategyCard::Imperial => self.apply_imperial_secondary(game, player),
             StrategyCard::Te4Construction => self.apply_te4_construction_secondary(game, player),
             StrategyCard::Te6Warfare => self.apply_te6_warfare_secondary(game, player),

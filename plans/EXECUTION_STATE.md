@@ -45,6 +45,7 @@ compaction, package commit, handoff, or milestone transition.
 - xtask: ✅ Complete (build tasks)
 
 ### Recent commits
+- `a1ca813` Implement full strategy phase flow with clockwise secondary resolution
 - `09f2cf4` Add evidence for strategy card secondary abilities
 - `c5379e2` Implement strategy card secondary abilities in EffectEngine
 - `7bfc65d` Add evidence for Thunder's Edge variants
