@@ -216,6 +216,9 @@ pub struct PlayerState {
     pub casualties: HashMap<SystemId, i32>,
     pub retreat_tokens: HashMap<SystemId, i32>,
     pub invasion_tokens: HashMap<PlanetId, i32>,
+    
+    // Strategy card effects
+    pub ready_planets: i32, // Planets to ready from Diplomacy
 
     // Thunder's Edge
     pub expedition_tokens: i32,
@@ -325,6 +328,7 @@ impl Default for PlayerState {
             casualties: HashMap::new(),
             retreat_tokens: HashMap::new(),
             invasion_tokens: HashMap::new(),
+            ready_planets: 0,
             score: 0,
             objective_score: 0,
             secret_score: 0,

@@ -149,12 +149,13 @@ impl EffectEngine {
     }
 
     /// Apply Diplomacy strategy card primary effect.
-    /// 32.1: Choose a system; other players place command tokens there; ready exhausted planets.
+    /// 32.2: Lock a system, then ready two planets.
     pub fn apply_diplomacy_effect(&self, game: &mut GameState, player: &PlayerId) {
         // Simplified: grant influence and ready planets proxy
         if let Some(ps) = game.players.get_mut(player) {
             ps.influence += 1;
             ps.has_agenda_token = true; // Proxy for system control
+            ps.ready_planets += 2; // Track planets to ready
         }
     }
 
@@ -168,9 +169,9 @@ impl EffectEngine {
         
         // ii. Draw 2 action cards
         if let Some(ps) = game.players.get_mut(player) {
-            for _ in 0..2 {
+            for i in 0..2 {
                 ps.action_cards.push(ActionCardState {
-                    id: ActionCardId::new(&format!("politics-draw-{}", ps.action_cards.len())),
+                    id: ActionCardId::new(&format!("politics-draw-{}", i)),
                     owner: player.clone(),
                     exhausted: false,
                     used: false,
