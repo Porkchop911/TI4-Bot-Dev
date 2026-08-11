@@ -120,12 +120,13 @@ All three packages have been corrected with ground-truth data derived from direc
 ## Open blockers/findings
 
 - **M00 COMPLETE**: All 15 milestones (M00-001 through M00-015) finished.
-- M00-015d: Frontier scope review PASSED — all exit criteria met.
+- **M01 COMPLETE**: All 13 milestones (M01-001 through M01-013) finished.
+- M01-013: Fresh-checkout proof documented (6-step bootstrap, ~5 min cached).
 - No blockers.
 
 ## Next exact action
 
-1. M00 COMPLETE (15 milestones, 69 children). Proceed to M01 (Qualification) per master plan.
+1. M00 + M01 COMPLETE (28 milestones, 82 children). Proceed to M02 (Content and model).
 
 ---
 
@@ -172,7 +173,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (115 total)
+### Completed evidence files (128 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
