@@ -1,0 +1,393 @@
+//! Seating players as factions and deploying their opening positions.
+//!
+//! Ported from the oracle's `engine/factions.py` `deploy` and `home_systems`, and the
+//! galaxy-building half of `engine/game.py` `seated_game`.
+
+use std::collections::BTreeMap;
+
+use ti4_content::ContentStore;
+use ti4_content::factions::{self, FleetError, Placement};
+use ti4_content::galaxy::{Galaxy, GalaxyError, all_systems};
+use ti4_model::content_types::{ContentType, SourceSet};
+use ti4_model::id::{FactionId, PlanetId, PlayerId, SystemId, TechnologyId};
+use ti4_model::state::GameState;
+use ti4_model::units::Unit;
+
+/// Mecatol Rex, which sits at the centre of the board.
+pub const MECATOL: &str = "18";
+
+/// Something went wrong seating a game.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SeatingError {
+    #[error("no faction {0:?} in the corpus")]
+    UnknownFaction(String),
+    #[error("faction {0:?} has no home system")]
+    NoHomeSystem(String),
+    #[error("no player {0:?} in this game")]
+    UnknownPlayer(String),
+    #[error(transparent)]
+    Fleet(#[from] FleetError),
+    #[error(transparent)]
+    Galaxy(#[from] GalaxyError),
+}
+
+/// Home system tile ids for a player-to-faction assignment, in assignment order.
+///
+/// # Errors
+/// [`SeatingError::UnknownFaction`] or [`SeatingError::NoHomeSystem`].
+pub fn home_systems(
+    content: &ContentStore,
+    assignments: &BTreeMap<PlayerId, FactionId>,
+) -> Result<Vec<SystemId>, SeatingError> {
+    assignments
+        .values()
+        .map(|alias| {
+            let faction = factions::get(content, alias.as_str())
+                .ok_or_else(|| SeatingError::UnknownFaction(alias.to_string()))?;
+            faction
+                .home_system()
+                .map(SystemId::new)
+                .ok_or_else(|| SeatingError::NoHomeSystem(alias.to_string()))
+        })
+        .collect()
+}
+
+/// Seat one player as a faction and place their opening position.
+///
+/// Sets control of every home planet, deploys the starting fleet with `mech` and `flagship`
+/// resolved to the faction's own versions, and grants the faction's starting technology.
+///
+/// # Errors
+/// Any [`SeatingError`].
+pub fn deploy(
+    state: &mut GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    alias: &FactionId,
+    sources: SourceSet,
+) -> Result<(), SeatingError> {
+    if state.player(player).is_none() {
+        return Err(SeatingError::UnknownPlayer(player.to_string()));
+    }
+    let faction = factions::get(content, alias.as_str())
+        .ok_or_else(|| SeatingError::UnknownFaction(alias.to_string()))?;
+    let home = faction
+        .home_system()
+        .ok_or_else(|| SeatingError::NoHomeSystem(alias.to_string()))?;
+    let system_id = SystemId::new(home);
+    let home_planets = faction.home_planets();
+    let deployments = faction.deployments(content)?;
+
+    // Resolve everything against the corpus before touching the state, so a faction that
+    // fails to deploy leaves no half-seated player behind.
+    let mut placements = Vec::new();
+    for deployment in deployments {
+        let unit_id = factions::resolve_unit(content, alias.as_str(), &deployment.unit_id, sources);
+        let unit = Unit::new(unit_id, player.clone());
+        placements.push((deployment.count, deployment.placement, unit));
+    }
+
+    let system = state.system_mut(&system_id);
+    for planet in &home_planets {
+        system.set_control(PlanetId::new(*planet), player.clone());
+    }
+    for (count, placement, unit) in placements {
+        let units: Vec<Unit> = std::iter::repeat_n(unit, count as usize).collect();
+        match placement {
+            Placement::Space => system.add(&units),
+            Placement::Planet(planet) => {
+                system.planet_units.entry(planet).or_default().extend(units);
+            }
+        }
+    }
+
+    let starting_tech: Vec<TechnologyId> = faction
+        .starting_tech()
+        .iter()
+        .filter_map(|t| content.resolve_id(ContentType::Technologies, t, sources))
+        .map(TechnologyId::new)
+        .collect();
+    let seat = state
+        .player_mut(player)
+        .ok_or_else(|| SeatingError::UnknownPlayer(player.to_string()))?;
+    seat.faction = alias.clone();
+    seat.home_system = Some(system_id);
+    seat.home_planets = home_planets.iter().map(|p| PlanetId::new(*p)).collect();
+    seat.technologies.extend(starting_tech);
+    // Commodities are deliberately not set. LRR 21: the faction record's `commodities` is
+    // the *capacity* a player refreshes to, not an opening balance, and a player starts
+    // with none. The oracle sets trade_goods to 0 here for the same reason.
+    Ok(())
+}
+
+/// A board with Mecatol at the centre, a ring of filler systems, and the home systems beyond.
+///
+/// Not real map setup — there is no draft — but a legal board with somewhere to expand into.
+/// The filler ring matters more than it looks: with only Mecatol and home systems on the
+/// board there is nothing explorable (their traits are `MR` and faction homeworlds), so
+/// exploration could never fire and conquest would have nowhere to go.
+///
+/// # Errors
+/// Any [`SeatingError`].
+pub fn build_board(
+    content: &ContentStore,
+    assignments: &BTreeMap<PlayerId, FactionId>,
+    filler: &[&str],
+    sources: SourceSet,
+) -> Result<Galaxy, SeatingError> {
+    let homes = home_systems(content, assignments)?;
+    let mut ids: Vec<&str> = vec![MECATOL];
+    ids.extend(filler.iter().copied());
+    ids.extend(homes.iter().map(SystemId::as_str));
+
+    // Three rings hold 37 tiles, enough for Mecatol plus six homes and filler.
+    let rings = 3;
+    Ok(Galaxy::build(content, &ids, sources, rings)?)
+}
+
+/// Ordinary planet-bearing tiles to fill a map with.
+///
+/// Excludes Mecatol, home systems, anomalies, wormholes, and hyperlanes, so the filler is
+/// somewhere to expand into rather than a hazard course.
+///
+/// Returned in corpus order rather than shuffled from a seed as the oracle does. The oracle
+/// needs a seed because its map is one of its variables; here a deterministic filler ring
+/// keeps board-dependent tests stable. Seeded selection belongs with the simulation harness.
+#[must_use]
+pub fn neutral_systems(content: &ContentStore, count: usize, sources: SourceSet) -> Vec<SystemId> {
+    all_systems(content, sources)
+        .into_iter()
+        .filter(|(id, system)| {
+            *id != MECATOL
+                && !system.planets().is_empty()
+                && !system.is_anomaly()
+                && !system.is_hyperlane()
+                && system.wormholes().is_empty()
+                && !is_home_tile(content, system.id(), sources)
+        })
+        .map(|(id, _)| SystemId::new(id))
+        .take(count)
+        .collect()
+}
+
+fn is_home_tile(content: &ContentStore, system_id: &str, sources: SourceSet) -> bool {
+    ti4_content::galaxy::planets_in(content, system_id, sources)
+        .iter()
+        .any(|p| p.homeworld_of().is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::setup::start_game;
+    use ti4_model::content_types::POK;
+
+    fn content() -> &'static ContentStore {
+        ContentStore::embedded()
+    }
+
+    fn assignments(pairs: &[(&str, &str)]) -> BTreeMap<PlayerId, FactionId> {
+        pairs
+            .iter()
+            .map(|(p, f)| (PlayerId::new(*p), FactionId::new(*f)))
+            .collect()
+    }
+
+    fn seated(pairs: &[(&str, &str)]) -> GameState {
+        let ids: Vec<PlayerId> = pairs.iter().map(|(p, _)| PlayerId::new(*p)).collect();
+        let mut state = start_game(content(), &ids, POK, None).unwrap();
+        for (player, alias) in assignments(pairs) {
+            deploy(&mut state, content(), &player, &alias, POK).unwrap();
+        }
+        state
+    }
+
+    #[test]
+    fn deploying_seats_the_faction_and_takes_home_control() {
+        let state = seated(&[("a", "sol")]);
+        let player = state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(player.faction, FactionId::new("sol"));
+        assert_eq!(player.home_system, Some(SystemId::new("01")));
+        assert_eq!(player.home_planets, vec![PlanetId::new("jord")]);
+
+        let home = state.system_state(&SystemId::new("01"));
+        assert!(home.controls_a_planet(&PlayerId::new("a")));
+    }
+
+    #[test]
+    fn sol_opens_with_two_carriers_in_space_and_five_infantry_on_jord() {
+        let state = seated(&[("a", "sol")]);
+        let home = state.system_state(&SystemId::new("01"));
+
+        let carriers = home
+            .units
+            .iter()
+            .filter(|u| u.type_id.as_str().contains("carrier"))
+            .count();
+        assert_eq!(carriers, 2);
+
+        let jord = home.on_planet(&PlanetId::new("jord"));
+        let infantry = jord
+            .iter()
+            .filter(|u| u.type_id.as_str().contains("infantry"))
+            .count();
+        assert_eq!(infantry, 5);
+    }
+
+    #[test]
+    fn a_faction_gets_its_own_mech_and_flagship() {
+        let state = seated(&[("a", "sol")]);
+        let home = state.system_state(&SystemId::new("01"));
+        let all: Vec<&str> = home
+            .units
+            .iter()
+            .chain(home.planet_units.values().flatten())
+            .map(|u| u.type_id.as_str())
+            .collect();
+        assert!(
+            all.iter().any(|u| *u == "sol_infantry" || *u == "infantry"),
+            "got {all:?}"
+        );
+        assert!(
+            !all.iter().any(|u| *u == "mech"),
+            "a generic mech means resolution failed: {all:?}"
+        );
+    }
+
+    #[test]
+    fn every_deployed_unit_belongs_to_the_seated_player() {
+        let state = seated(&[("a", "sol"), ("b", "hacan")]);
+        for (system, player) in [("01", "a"), ("13", "b")] {
+            let home = state.system_state(&SystemId::new(system));
+            for unit in home
+                .units
+                .iter()
+                .chain(home.planet_units.values().flatten())
+            {
+                assert_eq!(unit.owner, PlayerId::new(player), "in system {system}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_seated_player_holds_their_factions_starting_technology() {
+        let state = seated(&[("a", "sol")]);
+        let player = state.player(&PlayerId::new("a")).unwrap();
+        assert!(!player.technologies.is_empty());
+        assert!(player.technologies.contains(&TechnologyId::new("amd")));
+    }
+
+    #[test]
+    fn every_base_faction_deploys_onto_a_board() {
+        for (alias, faction) in ti4_content::factions::catalogue(content(), POK) {
+            if faction.starting_fleet().is_empty() {
+                continue;
+            }
+            let player = PlayerId::new("a");
+            let mut state = start_game(content(), &[player.clone()], POK, None).unwrap();
+            deploy(&mut state, content(), &player, &FactionId::new(alias), POK)
+                .unwrap_or_else(|e| panic!("{alias}: {e}"));
+
+            let home = state.player(&player).unwrap().home_system.clone().unwrap();
+            let system = state.system_state(&home);
+            let placed =
+                system.units.len() + system.planet_units.values().map(Vec::len).sum::<usize>();
+            assert!(placed > 0, "{alias} deployed nothing");
+        }
+    }
+
+    #[test]
+    fn seating_an_unknown_faction_fails_rather_than_seating_nothing() {
+        let player = PlayerId::new("a");
+        let mut state = start_game(content(), &[player.clone()], POK, None).unwrap();
+        let err = deploy(
+            &mut state,
+            content(),
+            &player,
+            &FactionId::new("nonesuch"),
+            POK,
+        )
+        .unwrap_err();
+        assert!(matches!(err, SeatingError::UnknownFaction(_)), "{err}");
+        assert!(state.board.is_empty(), "nothing may be placed on a failure");
+    }
+
+    #[test]
+    fn seating_an_unseated_player_is_refused() {
+        let mut state = start_game(content(), &[PlayerId::new("a")], POK, None).unwrap();
+        let err = deploy(
+            &mut state,
+            content(),
+            &PlayerId::new("ghost"),
+            &FactionId::new("sol"),
+            POK,
+        )
+        .unwrap_err();
+        assert!(matches!(err, SeatingError::UnknownPlayer(_)), "{err}");
+    }
+
+    // -- the board ------------------------------------------------------------------
+
+    #[test]
+    fn home_systems_are_read_from_the_faction_records() {
+        let homes = home_systems(content(), &assignments(&[("a", "sol"), ("b", "hacan")])).unwrap();
+        assert!(homes.contains(&SystemId::new("01")), "Sol's home is 01");
+        assert_eq!(homes.len(), 2);
+    }
+
+    #[test]
+    fn filler_systems_carry_explorable_planets_and_no_special_cases() {
+        let filler = neutral_systems(content(), 6, POK);
+        assert_eq!(filler.len(), 6);
+        let systems = all_systems(content(), POK);
+        assert!(
+            !filler.contains(&SystemId::new(MECATOL)),
+            "Mecatol is not filler"
+        );
+        for id in &filler {
+            let system = systems[id.as_str()];
+            assert!(!system.planets().is_empty(), "{id} has no planet to take");
+            assert!(!system.is_anomaly(), "{id} is an anomaly");
+            assert!(system.wormholes().is_empty(), "{id} has a wormhole");
+        }
+    }
+
+    #[test]
+    fn a_seated_game_places_mecatol_at_the_centre() {
+        let pairs = [("a", "sol"), ("b", "hacan")];
+        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let filler_refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let galaxy = build_board(content(), &assignments(&pairs), &filler_refs, POK).unwrap();
+
+        assert_eq!(galaxy.coord_of(MECATOL), Some(ti4_model::Hex::ORIGIN));
+        assert_eq!(galaxy.adjacent(MECATOL).len(), 6, "a full first ring");
+    }
+
+    #[test]
+    fn neutral_systems_separate_the_homes_from_mecatol() {
+        let pairs = [("a", "sol"), ("b", "hacan")];
+        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let filler_refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let galaxy = build_board(content(), &assignments(&pairs), &filler_refs, POK).unwrap();
+
+        // Homes are placed after the filler ring, so nobody starts next to Mecatol.
+        for home in home_systems(content(), &assignments(&pairs)).unwrap() {
+            assert!(
+                !galaxy.are_adjacent(MECATOL, home.as_str()),
+                "{home} starts adjacent to Mecatol"
+            );
+        }
+    }
+
+    #[test]
+    fn a_board_is_deterministic() {
+        let pairs = assignments(&[("a", "sol"), ("b", "hacan")]);
+        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        assert_eq!(
+            build_board(content(), &pairs, &refs, POK).unwrap(),
+            build_board(content(), &pairs, &refs, POK).unwrap()
+        );
+        assert_eq!(filler, neutral_systems(content(), 6, POK));
+    }
+}

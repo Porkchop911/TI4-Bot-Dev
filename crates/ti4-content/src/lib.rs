@@ -16,6 +16,7 @@
 //! ```
 
 pub mod error;
+pub mod factions;
 pub mod galaxy;
 pub mod loader;
 pub mod manifest;
@@ -25,6 +26,7 @@ pub mod units;
 pub mod validator;
 
 pub use error::{ContentError, ReferenceError};
+pub use factions::{Deployment, Faction, FleetError, Placement};
 pub use galaxy::{Galaxy, GalaxyError, Planet, System, all_planets, all_systems};
 pub use loader::ContentStore;
 pub use manifest::{CategoryCounts, Manifest, Totals, Upstream};

@@ -17,10 +17,12 @@
 //! mirrored, and what is not ported yet is absent rather than faked.
 
 pub mod phase;
+pub mod seating;
 pub mod setup;
 
 pub use phase::{
     PhaseOutcome, advance_phase, advance_turn, begin_action_turn, begin_next_round,
     next_strategy_picker, stock_unclaimed_cards, strategy_pick_order,
 };
+pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
 pub use setup::{SetupError, cards_per_player, start_game, strategy_card_setup};

@@ -236,6 +236,8 @@ pub enum GalaxyError {
     },
     #[error("no system {0:?} in the corpus for the requested sources")]
     UnknownSystem(String),
+    #[error("system {0:?} was placed twice")]
+    DuplicateSystem(String),
 }
 
 /// Wormhole kinds that Wormhole Reconstruction links together, whatever their kind.
@@ -293,6 +295,12 @@ impl Galaxy {
             let system = catalogue
                 .get(id)
                 .ok_or_else(|| GalaxyError::UnknownSystem(id.to_owned()))?;
+            if coords.contains_key(id) {
+                // Silently keeping the last placement leaves `placement` and `coords`
+                // disagreeing, which puts the tile in two places at once and moves
+                // everything after it one step round the spiral.
+                return Err(GalaxyError::DuplicateSystem(id.to_owned()));
+            }
             placement.insert(*hex, id.to_owned());
             coords.insert(id.to_owned(), *hex);
             wormholes.insert(
@@ -661,7 +669,7 @@ mod tests {
 
     #[test]
     fn building_more_tiles_than_fit_fails_loudly() {
-        let ids = vec!["18"; 40];
+        let ids: Vec<&str> = std::iter::repeat_n("18", 40).collect();
         let err = Galaxy::build(store(), &ids, FULL, 1).unwrap_err();
         assert!(
             matches!(
@@ -674,6 +682,14 @@ mod tests {
             ),
             "{err}"
         );
+    }
+
+    #[test]
+    fn placing_a_system_twice_fails_loudly() {
+        // Keeping the last placement would leave the tile in two places at once and
+        // shift every later tile one step round the spiral.
+        let err = Galaxy::build(store(), &["18", "19", "18"], FULL, 3).unwrap_err();
+        assert_eq!(err, GalaxyError::DuplicateSystem("18".to_owned()));
     }
 
     #[test]
