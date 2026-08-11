@@ -1014,6 +1014,48 @@ mod tests {
     }
 
     #[test]
+    fn test_secondary_cost_waiver_masters_of_trade() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        
+        // Set p0 as Masters of Trade
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .faction_id = FactionId::new("masters_of_trade");
+        
+        // Apply Trade strategy
+        let engine = EffectEngine::new();
+        engine.apply_trade_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Masters of Trade gets +3 trade goods from primary effect
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.trade_goods, 3);
+    }
+
+    #[test]
+    fn test_is_secondary_free() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        
+        // Normal player - not free
+        assert!(!EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Trade));
+        assert!(!EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Technology));
+        
+        // Masters of Trade - free Trade
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .faction_id = FactionId::new("masters_of_trade");
+        assert!(EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Trade));
+        assert!(!EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Technology));
+        
+        // Brilliant - free Technology
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .faction_id = FactionId::new("brilliant");
+        assert!(!EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Trade));
+        assert!(EffectEngine::is_secondary_free(&game, &PlayerId::new("p0"), &StrategyCard::Technology));
+    }
+
+    #[test]
     fn test_construction_strategy_effect() {
         use crate::effects::EffectEngine;
         
