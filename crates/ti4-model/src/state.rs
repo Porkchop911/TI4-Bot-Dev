@@ -35,33 +35,42 @@ pub enum AgendaPhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StrategyCard {
-    Trade,
+    Leadership,
     Diplomacy,
-    War,
-    Rebellion,
+    Politics,
+    Construction,
+    Trade,
+    Warfare,
     Technology,
+    Imperial,
     Unknown,
 }
 
 impl StrategyCard {
     pub fn from_code(code: &str) -> Self {
         match code {
-            "trade" => Self::Trade,
+            "leadership" => Self::Leadership,
             "diplomacy" => Self::Diplomacy,
-            "war" => Self::War,
-            "rebellion" => Self::Rebellion,
+            "politics" => Self::Politics,
+            "construction" => Self::Construction,
+            "trade" => Self::Trade,
+            "warfare" => Self::Warfare,
             "technology" => Self::Technology,
+            "imperial" => Self::Imperial,
             _ => Self::Unknown,
         }
     }
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Trade => "trade",
+            Self::Leadership => "leadership",
             Self::Diplomacy => "diplomacy",
-            Self::War => "war",
-            Self::Rebellion => "rebellion",
+            Self::Politics => "politics",
+            Self::Construction => "construction",
+            Self::Trade => "trade",
+            Self::Warfare => "warfare",
             Self::Technology => "technology",
+            Self::Imperial => "imperial",
             Self::Unknown => "unknown",
         }
     }
@@ -212,6 +221,7 @@ pub struct PlayerState {
 
     // Economy
     pub trade_routes: i32,
+    pub trade_goods: i32,
     pub trade_income: i32,
     pub economic_score: i32,
     pub economic_tokens: i32,
@@ -308,6 +318,7 @@ impl Default for PlayerState {
             fragment_score: 0,
             edge_score: 0,
             trade_routes: 0,
+            trade_goods: 0,
             trade_income: 0,
             economic_score: 0,
             economic_tokens: 0,

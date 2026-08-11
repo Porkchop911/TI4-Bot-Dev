@@ -115,13 +115,13 @@ impl GameLoop {
             }
             
             // If War strategy was played, the War player gets first pick of initiative
-            if self.game.revealed_strategies.iter().any(|s| *s == StrategyCard::War) {
+            if self.game.revealed_strategies.iter().any(|s| *s == StrategyCard::Warfare) {
                 // War player picks first - for simplicity, put them first
                 let war_player = self.game.revealed_strategies.iter()
-                    .position(|s| *s == StrategyCard::War)
+                    .position(|s| *s == StrategyCard::Warfare)
                     .and_then(|idx| {
                         self.game.revealed_strategies.iter().enumerate()
-                            .find(|(_, s)| **s == StrategyCard::War)
+                            .find(|(_, s)| **s == StrategyCard::Warfare)
                             .and_then(|(i, _)| {
                                 self.game.player_order.iter().nth(i)
                             })
@@ -433,7 +433,7 @@ mod tests {
         // Simulate by revealing strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
 
         // Advance strategy
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(loop_.game.sub_phase, Some(ActionSubPhase::Strategy));
 
         // Reveal strategy for a player
-        loop_.reveal_strategy(PlayerId::new("p0"), StrategyCard::from_code("s")).unwrap();
+        loop_.reveal_strategy(PlayerId::new("p0"), StrategyCard::Leadership).unwrap();
         assert!(loop_.game.secret_strategies.contains_key(&PlayerId::new("p0")));
         assert_eq!(loop_.game.revealed_strategies.len(), 1);
     }
@@ -492,7 +492,7 @@ mod tests {
         loop_.step().unwrap(); // Setup → Action
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy → Command
 
@@ -524,7 +524,7 @@ mod tests {
         loop_.step().unwrap(); // Setup → Action
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy
         loop_.step().unwrap(); // Command
@@ -554,7 +554,7 @@ mod tests {
         // Reveal strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy
         loop_.step().unwrap(); // Command
@@ -586,7 +586,7 @@ mod tests {
         // Reveal strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy
         loop_.step().unwrap(); // Command
@@ -613,7 +613,7 @@ mod tests {
             // Reveal strategies
             let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
             for pid in pids {
-                loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+                loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
             }
             loop_.step().unwrap(); // Strategy
             loop_.step().unwrap(); // Command
@@ -630,7 +630,7 @@ mod tests {
         // Reveal strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy
         loop_.step().unwrap(); // Command
@@ -656,7 +656,7 @@ mod tests {
         // Reveal strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         loop_.step().unwrap(); // Strategy
         loop_.step().unwrap(); // Command
@@ -671,7 +671,7 @@ mod tests {
             loop_.step().unwrap(); // Setup → Action
             let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
             for pid in pids {
-                loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+                loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
             }
             loop_.step().unwrap(); // Strategy
             loop_.step().unwrap(); // Command
@@ -699,7 +699,7 @@ mod tests {
         // All players reveal strategies
         let pids: Vec<_> = loop_.game.player_order.iter().cloned().collect();
         for pid in pids {
-            loop_.game.reveal_strategy(pid, StrategyCard::from_code("s"));
+            loop_.game.reveal_strategy(pid, StrategyCard::Leadership);
         }
         
         // Strategy → Command
@@ -921,22 +921,22 @@ mod tests {
     }
 
     #[test]
-    fn test_trade_strategy_effect() {
+    fn test_leadership_strategy_effect() {
         use crate::effects::EffectEngine;
         
         let mut game = make_test_game();
         let engine = EffectEngine::new();
         
-        // Initial commodity
+        // Initial command tokens
         game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .commodity = 5;
+            .command_tokens = 1;
         
-        // Apply Trade strategy
-        engine.apply_trade_effect(&mut game, &PlayerId::new("p0"));
+        // Apply Leadership strategy
+        engine.apply_leadership_effect(&mut game, &PlayerId::new("p0"));
         
-        // Should have 7 commodity (5 + 2)
+        // Should have 4 command tokens (1 + 3)
         let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert_eq!(ps.commodity, 7);
+        assert_eq!(ps.command_tokens, 4);
     }
 
     #[test]
@@ -953,53 +953,82 @@ mod tests {
         // Apply Diplomacy strategy
         engine.apply_diplomacy_effect(&mut game, &PlayerId::new("p0"));
         
-        // Should have 5 influence (3 + 2)
-        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert_eq!(ps.influence, 5);
-    }
-
-    #[test]
-    fn test_war_strategy_effect() {
-        use crate::effects::EffectEngine;
-        
-        let mut game = make_test_game();
-        let engine = EffectEngine::new();
-        
-        // Apply War strategy
-        engine.apply_war_effect(&mut game, &PlayerId::new("p0"));
-        
-        // Should have has_war flag set
-        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
-        assert!(ps.has_war);
-    }
-
-    #[test]
-    fn test_rebellion_strategy_effect() {
-        use crate::effects::EffectEngine;
-        
-        let mut game = make_test_game();
-        let engine = EffectEngine::new();
-        
-        // Set up p0 with influence
-        game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .influence = 2;
-        
-        // Set up p1 with control tokens
-        game.players.get_mut(&PlayerId::new("p1")).unwrap()
-            .control_tokens.insert(PlanetId::new("planet1"));
-        game.players.get_mut(&PlayerId::new("p1")).unwrap()
-            .control_tokens.insert(PlanetId::new("planet2"));
-        
-        // Apply Rebellion strategy for p0
-        engine.apply_rebellion_effect(&mut game, &PlayerId::new("p0"));
-        
-        // p0 should gain 2 influence (from 2 control tokens removed)
+        // Should have 4 influence (3 + 1)
         let ps = game.players.get(&PlayerId::new("p0")).unwrap();
         assert_eq!(ps.influence, 4);
+    }
+
+    #[test]
+    fn test_politics_strategy_effect() {
+        use crate::effects::EffectEngine;
         
-        // p1 should have no control tokens
-        let ps1 = game.players.get(&PlayerId::new("p1")).unwrap();
-        assert!(ps1.control_tokens.is_empty());
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Apply Politics strategy
+        engine.apply_politics_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have received an action card
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.action_cards.len(), 1);
+    }
+
+    #[test]
+    fn test_construction_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial production
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .production = 2;
+        
+        // Apply Construction strategy
+        engine.apply_construction_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have production +1 (for structure placement)
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.production, 3);
+    }
+
+    #[test]
+    fn test_trade_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial trade goods
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .trade_goods = 5;
+        
+        // Apply Trade strategy
+        engine.apply_trade_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have 8 trade goods (5 + 3)
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.trade_goods, 8);
+    }
+
+    #[test]
+    fn test_warfare_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial command tokens
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .command_tokens = 1;
+        
+        // Apply Warfare strategy
+        engine.apply_warfare_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have +1 command token and has_war flag
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.command_tokens, 2);
+        assert!(ps.has_war);
     }
 
     #[test]
@@ -1018,31 +1047,50 @@ mod tests {
     }
 
     #[test]
+    fn test_imperial_strategy_effect() {
+        use crate::effects::EffectEngine;
+        
+        let mut game = make_test_game();
+        let engine = EffectEngine::new();
+        
+        // Initial score
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .score = 3;
+        
+        // Apply Imperial strategy
+        engine.apply_imperial_effect(&mut game, &PlayerId::new("p0"));
+        
+        // Should have +1 score
+        let ps = game.players.get(&PlayerId::new("p0")).unwrap();
+        assert_eq!(ps.score, 4);
+    }
+
+    #[test]
     fn test_strategy_effect_dispatch() {
         use crate::effects::EffectEngine;
         
         let mut game = make_test_game();
         let engine = EffectEngine::new();
         
+        // Test Leadership dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Leadership);
+        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().command_tokens, 3);
+        
+        // Reset
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .command_tokens = 0;
+        
         // Test Trade dispatch
         engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Trade);
-        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().commodity, 2);
+        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().trade_goods, 3);
         
-        // Reset
-        game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .commodity = 0;
-        
-        // Test Diplomacy dispatch
-        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Diplomacy);
-        assert_eq!(game.players.get(&PlayerId::new("p0")).unwrap().influence, 2);
-        
-        // Reset
-        game.players.get_mut(&PlayerId::new("p0")).unwrap()
-            .influence = 0;
-        
-        // Test War dispatch
-        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::War);
+        // Test Warfare dispatch
+        engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Warfare);
         assert!(game.players.get(&PlayerId::new("p0")).unwrap().has_war);
+        
+        // Reset
+        game.players.get_mut(&PlayerId::new("p0")).unwrap()
+            .has_war = false;
         
         // Test Technology dispatch
         engine.apply_strategy_effect(&mut game, &PlayerId::new("p0"), &StrategyCard::Technology);

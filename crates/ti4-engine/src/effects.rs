@@ -135,72 +135,87 @@ impl EffectEngine {
         }
     }
 
-    // ─── Strategy card effects ───────────────────────────────────────────────
+    // ─── Strategy card effects (primary abilities) ─────────────────────────────
 
-    /// Apply Trade strategy card effects.
-    pub fn apply_trade_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Gain commodity based on strategy card value (simplified: +2 commodity)
+    /// Apply Leadership strategy card primary effect.
+    /// 52.1: Gain 3 command tokens, or spend influence for command tokens.
+    pub fn apply_leadership_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Simplified: always grant 3 command tokens (player can choose influence option)
         if let Some(ps) = game.players.get_mut(player) {
-            ps.commodity += 2;
+            ps.command_tokens += 3;
         }
     }
 
-    /// Apply Diplomacy strategy card effects.
+    /// Apply Diplomacy strategy card primary effect.
+    /// 32.1: Choose a system; other players place command tokens there; ready exhausted planets.
     pub fn apply_diplomacy_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Gain influence tokens
+        // Simplified: grant influence as placeholder for the system placement effect
         if let Some(ps) = game.players.get_mut(player) {
-            ps.influence += 2;
+            ps.influence += 1;
         }
     }
 
-    /// Apply War strategy card effects.
-    pub fn apply_war_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // War strategy provides combat bonus (tracked via leader or direct modifier)
-        // For now, mark that player has War strategy for initiative priority
+    /// Apply Politics strategy card primary effect.
+    /// 66.1: Transfer speaker token, draw action cards, or look at agenda cards.
+    pub fn apply_politics_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Simplified: grant action card draw as placeholder
         if let Some(ps) = game.players.get_mut(player) {
+            ps.action_cards.push(ActionCardState {
+                id: ActionCardId::new("politics-draw"),
+                owner: player.clone(),
+                exhausted: false,
+                used: false,
+            });
+        }
+    }
+
+    /// Apply Construction strategy card primary effect.
+    /// 24.1: Place PDS/Space Dock on controlled planet.
+    pub fn apply_construction_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Simplified: grant structure placement token
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.production += 1; // Placeholder for structure placement
+        }
+    }
+
+    /// Apply Trade strategy card primary effect.
+    /// 92.1: Gain 3 trade goods, replenish commodities.
+    pub fn apply_trade_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // 92.2: Gain 3 trade goods
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.trade_goods = ps.trade_goods + 3;
+        }
+    }
+
+    /// Apply Warfare strategy card primary effect.
+    /// 99.1: Recall a command token from the board, gain 1 command token.
+    pub fn apply_warfare_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // 99.1: Player recalls a command token (tracked via flag)
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.command_tokens += 1;
             ps.has_war = true;
         }
     }
 
-    /// Apply Rebellion strategy card effects.
-    pub fn apply_rebellion_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Rebellion removes control tokens from other players
-        // Simplified: gain influence for each control token removed
-        // First pass: collect control tokens to remove
-        let mut total_removed = 0i32;
-        for other_pid in game.player_order.iter() {
-            if other_pid != player {
-                if let Some(other_ps) = game.players.get(other_pid) {
-                    total_removed += other_ps.control_tokens.len() as i32;
-                }
-            }
-        }
-        
-        // Second pass: clear control tokens
-        for other_pid in game.player_order.iter() {
-            if other_pid != player {
-                if let Some(other_ps) = game.players.get_mut(other_pid) {
-                    other_ps.control_tokens.clear();
-                }
-            }
-        }
-        
-        // Finally: add influence to the player
-        if let Some(ps) = game.players.get_mut(player) {
-            ps.influence += total_removed;
-        }
-    }
-
-    /// Apply Technology strategy card effects.
+    /// Apply Technology strategy card primary effect.
+    /// 91.1: Research 1 technology (free or spend 6 resources).
     pub fn apply_technology_effect(&self, game: &mut GameState, player: &PlayerId) {
-        // Technology strategy allows free research
         // Mark that player can research for free this round
         if let Some(ps) = game.players.get_mut(player) {
             ps.free_research = true;
         }
     }
 
-    /// Apply the effect of a revealed strategy card.
+    /// Apply Imperial strategy card primary effect.
+    /// 45.1: Score a public objective; Mecatol Rex pays 1 VP or 1 secret.
+    pub fn apply_imperial_effect(&self, game: &mut GameState, player: &PlayerId) {
+        // Simplified: grant VP if controlling Mecatol Rex
+        if let Some(ps) = game.players.get_mut(player) {
+            ps.score += 1;
+        }
+    }
+
+    /// Apply the primary effect of a revealed strategy card.
     pub fn apply_strategy_effect(
         &self,
         game: &mut GameState,
@@ -208,11 +223,14 @@ impl EffectEngine {
         card: &StrategyCard,
     ) {
         match card {
-            StrategyCard::Trade => self.apply_trade_effect(game, player),
+            StrategyCard::Leadership => self.apply_leadership_effect(game, player),
             StrategyCard::Diplomacy => self.apply_diplomacy_effect(game, player),
-            StrategyCard::War => self.apply_war_effect(game, player),
-            StrategyCard::Rebellion => self.apply_rebellion_effect(game, player),
+            StrategyCard::Politics => self.apply_politics_effect(game, player),
+            StrategyCard::Construction => self.apply_construction_effect(game, player),
+            StrategyCard::Trade => self.apply_trade_effect(game, player),
+            StrategyCard::Warfare => self.apply_warfare_effect(game, player),
             StrategyCard::Technology => self.apply_technology_effect(game, player),
+            StrategyCard::Imperial => self.apply_imperial_effect(game, player),
             StrategyCard::Unknown => {}
         }
     }
