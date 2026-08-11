@@ -119,26 +119,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 ## Open blockers/findings
 
-- M00-004 complete: All 5 children (a–e) reconciled and reviewed.
-- M00-004e: Reconciliation evidence written, frontier review PASSED (2 minor findings accepted).
-- M00-005 complete: All 10 children (a–j) reconciled.
-- ~1,091 artifacts inventoried across all categories.
-- M00-006 complete: All 9 children (a–i) reconciled.
-- ~1,495 artifacts classified (~132 exact, ~1,363 semantic).
-- M00-007 complete: All 8 children (a–h) reconciled.
-- 6 projection types specified (state, view, choice, event, outcome, error).
-- M00-008 complete: All 10 children (a–j) reconciled.
-- 103 fixtures selected across 10 categories.
-- M00-009 complete: All 8 children (a–h) reconciled.
-- Oracle exporter design complete with all projection implementations.
-- M00-010 complete: All 5 children (a–e) reconciled.
-- Entropy capture design complete (dice, deck, random).
-- 100 replay scenarios verified.
+- M00-004 through M00-011 all complete.
+- M00-011d: Correctness baseline signed off (2,097 tests collected, no files modified).
 - No blockers.
 
 ## Next exact action
 
-1. M00-004e, M00-005, M00-006, M00-007, M00-008, M00-009, and M00-010 complete. Proceed to M00-011 (Correctness baseline).
+1. M00-004 through M00-011 complete. Proceed to M00-012 (Microbenchmark protocol).
 
 ---
 
@@ -185,7 +172,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (86 total)
+### Completed evidence files (91 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
