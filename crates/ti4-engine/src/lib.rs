@@ -7,6 +7,7 @@ pub mod rules;
 pub mod effects;
 pub mod game;
 pub mod phase;
+pub mod tactical;
 
 pub use choice::*;
 pub use timing::*;
@@ -14,3 +15,4 @@ pub use rules::*;
 pub use effects::*;
 pub use game::*;
 pub use phase::*;
+pub use tactical::*;
