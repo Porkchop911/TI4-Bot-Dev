@@ -16,10 +16,16 @@
 //! What replaces them is ported against a named oracle source with the oracle's own tests
 //! mirrored, and what is not ported yet is absent rather than faked.
 
+pub mod choice;
 pub mod phase;
 pub mod seating;
 pub mod setup;
 
+pub use choice::{
+    AlwaysDecline, Choice, ChoiceOption, Decider, DecisionLog, DecisionRecord, FirstOption,
+    IllegalChoice, Scripted, SeededRandom, Table, distinct_units, first_of_each, options_from,
+    unit_label, validate,
+};
 pub use phase::{
     PhaseOutcome, advance_phase, advance_turn, begin_action_turn, begin_next_round,
     next_strategy_picker, stock_unclaimed_cards, strategy_pick_order,

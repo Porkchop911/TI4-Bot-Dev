@@ -18,14 +18,15 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M04-004 — faction seating, starting fleets, and the board
-  (`plans/evidence/M04-004_FACTION_SEATING.md`)
-- Previous packages: state model, views, phases and turn order
+- Last completed package: M03-001…005 — the choice model
+  (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`)
+- Previous packages: faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
+  state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M03-001/003 — the choice model. A seated game cannot take
-  a turn until there is something to decide.
+- Next dependency-ready package: M03-006 — the pinned RNG. Deck construction, dice, and
+  map generation all wait on it.
 
 ## Implementation status
 
@@ -36,7 +37,7 @@ behaviour is a placeholder.
 |---|---|---|
 | `ti4-content` | **Implemented** | 28-category corpus loader, source scoping, TE id fallback, manifest cross-check, canonical digests, referential validation, unit catalogue, galaxy and adjacency, faction records and starting-fleet parsing. 121 tests. |
 | `ti4-model` | **Implemented** | `id.rs`, `content_types.rs`, `hex.rs`, `state.rs` (45-field `Player`, 52-field `GameState`), `units.rs`, `view.rs` (redaction + leak check). 68 tests. |
-| `ti4-engine` | **Partial** | Setup, the four-phase state machine, the strategy draft (snake order), turn order by initiative, and faction seating onto a board. 42 tests. No choice model, so nothing can take a turn. Movement, combat, production, legality, the status phase and the agenda phase are absent — not stubbed. |
+| `ti4-engine` | **Partial** | Setup, the four-phase state machine, the strategy draft (snake order), turn order by initiative, faction seating onto a board, and the choice model (options, deciders, validation, decision log, replay). 72 tests. Nothing *generates* options yet, so no turn can be taken. Movement, combat, production, legality, the status phase and the agenda phase are absent — not stubbed. |
 | `ti4-policy` | **Stub** | 5 × `todo!()` |
 | `ti4-sim` | **Stub** | 6 × `todo!()` |
 | `ti4-training` | **Stub** | 6 × `todo!()` |
@@ -52,7 +53,7 @@ behaviour is a placeholder.
 | M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed. No oracle exporter, no fixtures, no differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
 | M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
-| M03 Choice, timing, replay | Written | **Not started** |
+| M03 Choice, timing, replay | Written | **Partial** — 001–005 done (choice, validation, deciders, decision log). 006 (pinned RNG), 007–016 outstanding. |
 | M04 Game skeleton | Written | **Partial** — 001, 002, 003, 004, 006, 007 done. 005 (draft resolution), 008–016 outstanding. Decks are not built: that needs the seeded RNG of M03-006. |
 | M05 … M13 | Written | **Not started** |
 
@@ -60,8 +61,8 @@ behaviour is a placeholder.
 
 - Working tree: clean at the last commit
 - Python oracle tree: clean, unmodified ✅
-- Tests: **232 passing** (`cargo test --workspace`) — 121 `ti4-content`, 68 `ti4-model`,
-  42 `ti4-engine`, 1 doc-test
+- Tests: **262 passing** (`cargo test --workspace`) — 121 `ti4-content`, 72 `ti4-engine`,
+  68 `ti4-model`, 1 doc-test
 - Integration tests: none. All tests are inline `#[cfg(test)]` modules.
 - Content corpus: `crates/ti4-content/content/`, 29 files, 1,800 records, byte-identical to
   the oracle and checksummed in `CHECKSUMS.sha256`
@@ -89,17 +90,18 @@ behaviour is a placeholder.
 
 In dependency order. Each is one package under `PI_WORK_PACKAGE_STANDARD.md`.
 
-1. **M03-001/003 — the choice model.** `Option`/`Choice` with stable ids, and the decider
-   interface. Nothing can take a turn until there is something to decide.
-2. **M03-006 — the pinned RNG.** Deck construction, and therefore the rest of setup, needs
+1. **M03-006 — the pinned RNG.** Deck construction, and therefore the rest of setup, needs
    it: the oracle's `start_game` builds six decks from a seed, reveals two objectives, and
    deals a secret each.
+2. **M04-005/012 — option generation.** The choice model exists but nothing fills it. Port
+   the oracle's `Game._strategy_options` and `_action_options` so a seated game can take a
+   turn.
 3. **M05-003/006 — ship movement.** The first real use of `ti4-content::galaxy`: legality
    from adjacency and move value, then atomic application.
 4. **M04-010 — the status phase.** `advance_phase` currently reaches `StatusBegan` and
    stops.
 5. **M00-009 — build the oracle exporter.** Unblocks every differential deliverable.
-6. **M01-006 — CI**, so that the 232 tests actually gate a change.
+6. **M01-006 — CI**, so that the 262 tests actually gate a change.
 
 ## Decisions in force
 
@@ -123,15 +125,15 @@ faction seating next.
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M02-009…012, M04-001/002/003/004/006/007, M02-003/005/008 complete;
-M03-001/003 (the choice model) next
+M02-009…012, M02-003/005/008, M03-001…005, M04-001/002/003/004/006/007 complete;
+M03-006 (the pinned RNG) next
 Status:
-232 tests passing. ti4-content and ti4-model implemented; ti4-engine partial (setup,
-phases, turn order, seating); six crates still todo!().
+262 tests passing. ti4-content and ti4-model implemented; ti4-engine partial (setup,
+phases, turn order, seating, choice model); six crates still todo!().
 Working-tree state:
 clean
 Tests last run and exact results:
-cargo test --workspace -> 232 passed, 0 failed
+cargo test --workspace -> 262 passed, 0 failed
 Compatibility evidence:
 Content semantics documented against engine/content.py and engine/units.py in
 plans/evidence/M02-009_TO_012_CONTENT_LAYER.md. No differential fixture evidence exists
@@ -151,6 +153,8 @@ Decisions made and rationale:
   left placement and coords disagreeing and shifted every later tile round the spiral
 - neutral_systems returns corpus order rather than a seeded shuffle; seeded map selection
   belongs with the simulation harness
+- SeededRandom uses ChaCha8, not Python's Mersenne Twister, so the same seed plays a
+  different legal game; reproducing an oracle game needs its decision log replayed
 Open review findings or blockers:
 No independent review of any code package. No oracle exporter. No CI.
 Next exact action:

@@ -1,0 +1,824 @@
+//! Choices: the single way any actor decides anything.
+//!
+//! Every decision in the game — which ability to resolve in an open window, which action to
+//! take on your turn, how to vote — is the same shape: *the engine enumerates legal options,
+//! and an actor picks one of them*. Nothing else is a decision point.
+//!
+//! That shape is what makes several guarantees hold at once:
+//!
+//! * the engine is authoritative, because options are generated, never accepted from outside;
+//! * a bot or an LLM can only ever select a legal option, with no channel to invent one;
+//! * decisions are recorded, so a game replays exactly from a seed plus its decision log;
+//! * an actor sees only the [`Choice`] it is handed, never the full game state.
+//!
+//! [`Decider`] is deliberately tiny. Human input, a scripted conformance test, a seeded
+//! random smoke run, and a scored bot are all the same interface.
+//!
+//! Ported from the oracle's `engine/choice.py`. The oracle's `Option` is [`ChoiceOption`]
+//! here, because a type called `Option` in scope alongside `std::option::Option` is a trap.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use ti4_model::id::{PlayerId, UnitTypeId};
+use ti4_model::units::Unit;
+
+/// The kind used by a declining option.
+pub const DECLINE_KIND: &str = "decline";
+/// The id used by a declining option.
+pub const DECLINE_ID: &str = "decline";
+
+/// One legal thing an actor may pick.
+///
+/// `id` must be stable for a given game state so decision logs replay faithfully.
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
+pub struct ChoiceOption {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    /// Structured detail for whatever will apply this option. Excluded from equality, as in
+    /// the oracle: two options with the same id are the same option, and a payload that
+    /// differed would mean the id was not stable.
+    pub payload: BTreeMap<String, Value>,
+}
+
+impl PartialEq for ChoiceOption {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.kind == other.kind && self.label == other.label
+    }
+}
+
+impl ChoiceOption {
+    #[must_use]
+    pub fn new(id: impl Into<String>, kind: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            kind: kind.into(),
+            label: String::new(),
+            payload: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn labelled(
+        id: impl Into<String>,
+        kind: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            ..Self::new(id, kind)
+        }
+    }
+
+    /// The standard "do nothing" option.
+    #[must_use]
+    pub fn decline() -> Self {
+        Self::labelled(DECLINE_ID, DECLINE_KIND, "Decline")
+    }
+
+    #[must_use]
+    pub fn is_decline(&self) -> bool {
+        self.kind == DECLINE_KIND
+    }
+
+    /// Attach structured detail. Does not affect equality or the option's identity.
+    #[must_use]
+    pub fn with(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
+        self.payload.insert(key.into(), value.into());
+        self
+    }
+
+    /// What to show: the label if there is one, else the id.
+    #[must_use]
+    pub fn display(&self) -> &str {
+        if self.label.is_empty() {
+            &self.id
+        } else {
+            &self.label
+        }
+    }
+}
+
+/// A decision point handed to exactly one actor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Choice {
+    pub player: PlayerId,
+    pub prompt: String,
+    pub options: Vec<ChoiceOption>,
+}
+
+impl Choice {
+    #[must_use]
+    pub fn new(player: PlayerId, prompt: impl Into<String>, options: Vec<ChoiceOption>) -> Self {
+        Self {
+            player,
+            prompt: prompt.into(),
+            options,
+        }
+    }
+
+    #[must_use]
+    pub fn option(&self, option_id: &str) -> Option<&ChoiceOption> {
+        self.options.iter().find(|o| o.id == option_id)
+    }
+
+    #[must_use]
+    pub fn ids(&self) -> Vec<&str> {
+        self.options.iter().map(|o| o.id.as_str()).collect()
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.options.is_empty()
+    }
+}
+
+/// A decider returned something that was not on offer.
+///
+/// This is the boundary that keeps an LLM or a buggy bot from inventing moves.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum IllegalChoice {
+    #[error("{player} chose {chosen:?}, which was not offered: {offered:?}")]
+    NotOffered {
+        player: PlayerId,
+        chosen: String,
+        offered: Vec<String>,
+    },
+    #[error("script wanted {wanted:?} but {player} was offered {offered:?}")]
+    ScriptDiverged {
+        player: PlayerId,
+        wanted: String,
+        offered: Vec<String>,
+    },
+    #[error("{player} was asked {prompt:?} with no options")]
+    NoOptions { player: PlayerId, prompt: String },
+}
+
+/// Reject any answer that was not among the offered options.
+///
+/// # Errors
+/// [`IllegalChoice::NotOffered`].
+pub fn validate(choice: &Choice, option: ChoiceOption) -> Result<ChoiceOption, IllegalChoice> {
+    if choice.option(&option.id).is_some() {
+        return Ok(option);
+    }
+    Err(IllegalChoice::NotOffered {
+        player: choice.player.clone(),
+        chosen: option.id,
+        offered: choice.ids().into_iter().map(str::to_owned).collect(),
+    })
+}
+
+/// Anything that can answer a [`Choice`].
+///
+/// `&mut self` because a decider may carry state — a script position, an RNG stream.
+pub trait Decider {
+    /// # Errors
+    /// [`IllegalChoice`] if the decider cannot answer, e.g. an exhausted script whose next
+    /// wanted option was not offered.
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice>;
+}
+
+/// Always take the first option. Deterministic; the default in tests.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FirstOption;
+
+impl Decider for FirstOption {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        choice
+            .options
+            .first()
+            .cloned()
+            .ok_or_else(|| IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            })
+    }
+}
+
+/// Decline whenever declining is legal, else take the first option.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AlwaysDecline;
+
+impl Decider for AlwaysDecline {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        choice
+            .options
+            .iter()
+            .find(|o| o.is_decline())
+            .cloned()
+            .map_or_else(|| FirstOption.choose(choice), Ok)
+    }
+}
+
+/// Answer from a fixed sequence of option ids, falling back once exhausted.
+///
+/// The workhorse for conformance tests: it states the exact line of play a scenario is
+/// asserting, and fails loudly if the engine offers something unexpected.
+pub struct Scripted {
+    queue: std::collections::VecDeque<String>,
+    fallback: Box<dyn Decider>,
+}
+
+impl Scripted {
+    #[must_use]
+    pub fn new<I, S>(option_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::with_fallback(option_ids, Box::new(FirstOption))
+    }
+
+    #[must_use]
+    pub fn with_fallback<I, S>(option_ids: I, fallback: Box<dyn Decider>) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            queue: option_ids.into_iter().map(Into::into).collect(),
+            fallback,
+        }
+    }
+
+    /// How many scripted answers remain.
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.queue.len()
+    }
+}
+
+impl Decider for Scripted {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        let Some(wanted) = self.queue.pop_front() else {
+            return self.fallback.choose(choice);
+        };
+        choice
+            .option(&wanted)
+            .cloned()
+            .ok_or_else(|| IllegalChoice::ScriptDiverged {
+                player: choice.player.clone(),
+                wanted,
+                offered: choice.ids().into_iter().map(str::to_owned).collect(),
+            })
+    }
+}
+
+/// Uniform random over legal options from a seed.
+///
+/// Not a bot. This is what drives bot-versus-bot smoke runs that assert every game
+/// terminates and no illegal state is reachable.
+///
+/// **The stream is not the oracle's.** The oracle uses Python's Mersenne Twister via
+/// `random.Random(seed)`; this uses `ChaCha8`, which is reproducible across platforms and
+/// Rust versions in a way Python's is not. The same seed therefore plays a *different* legal
+/// game. Reproducing an oracle game needs its decision log replayed through [`Scripted`],
+/// or the legacy entropy translator planned in M03-007.
+pub struct SeededRandom {
+    rng: ChaCha8Rng,
+}
+
+impl SeededRandom {
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        Self {
+            rng: ChaCha8Rng::seed_from_u64(seed),
+        }
+    }
+}
+
+impl Decider for SeededRandom {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.is_empty() {
+            return Err(IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            });
+        }
+        let index = self.rng.random_range(0..choice.options.len());
+        Ok(choice.options[index].clone())
+    }
+}
+
+/// One resolved choice, for replay (determinism) and for explaining bot play.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionRecord {
+    pub player: PlayerId,
+    pub prompt: String,
+    pub chosen: String,
+    pub offered: Vec<String>,
+}
+
+/// Ordered record of every choice made, sufficient to replay a game.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionLog {
+    pub records: Vec<DecisionRecord>,
+}
+
+impl DecisionLog {
+    pub fn record(&mut self, choice: &Choice, option: &ChoiceOption) {
+        self.records.push(DecisionRecord {
+            player: choice.player.clone(),
+            prompt: choice.prompt.clone(),
+            chosen: option.id.clone(),
+            offered: choice.ids().into_iter().map(str::to_owned).collect(),
+        });
+    }
+
+    /// Replay script — the chosen option ids, optionally for one player.
+    #[must_use]
+    pub fn as_script(&self, player: Option<&PlayerId>) -> Vec<String> {
+        self.records
+            .iter()
+            .filter(|r| player.is_none_or(|p| &r.player == p))
+            .map(|r| r.chosen.clone())
+            .collect()
+    }
+
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+}
+
+/// Deciders by player, with a default for anyone unassigned.
+pub struct Table {
+    deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    default: Box<dyn Decider>,
+    pub log: DecisionLog,
+}
+
+impl Default for Table {
+    fn default() -> Self {
+        Self {
+            deciders: BTreeMap::new(),
+            default: Box::new(FirstOption),
+            log: DecisionLog::default(),
+        }
+    }
+}
+
+impl Table {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A table where everyone unassigned uses this decider.
+    #[must_use]
+    pub fn with_default(default: Box<dyn Decider>) -> Self {
+        Self {
+            default,
+            ..Self::default()
+        }
+    }
+
+    pub fn seat(&mut self, player: PlayerId, decider: Box<dyn Decider>) {
+        self.deciders.insert(player, decider);
+    }
+
+    /// Put a choice to its actor, validate the answer, and record it.
+    ///
+    /// # Errors
+    /// [`IllegalChoice`] if the answer was not on offer — the boundary that stops a bot
+    /// inventing a move.
+    pub fn ask(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        let decider = self
+            .deciders
+            .get_mut(&choice.player)
+            .unwrap_or(&mut self.default);
+        let answer = decider.choose(choice)?;
+        let option = validate(choice, answer)?;
+        self.log.record(choice, &option);
+        Ok(option)
+    }
+}
+
+// ─── building options ──────────────────────────────────────────────────────────
+
+/// Build options from `(id, label)` pairs.
+#[must_use]
+pub fn options_from<'a, I>(items: I, kind: &str) -> Vec<ChoiceOption>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+{
+    items
+        .into_iter()
+        .map(|(id, label)| ChoiceOption::labelled(id, kind, label))
+        .collect()
+}
+
+/// The first index of each distinct item, keeping the original order.
+///
+/// The shape behind every duplicate-option fix in the engine: build options from
+/// *distinguishable* things rather than from every thing, keeping the first index so the
+/// option id still points at a real element.
+#[must_use]
+pub fn first_of_each<T, K, F>(items: &[T], key: F) -> Vec<(usize, &T)>
+where
+    K: Ord,
+    F: Fn(&T) -> K,
+{
+    let mut seen = BTreeSet::new();
+    items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| seen.insert(key(item)))
+        .collect()
+}
+
+/// How a unit is distinguished when offering it as an option.
+///
+/// Owner is not in the key: every caller is choosing among one player's own units.
+pub type UnitKey = (UnitTypeId, bool);
+
+/// The first index of each *distinguishable* unit, keyed by type and damage.
+///
+/// A unit is its type, its owner, and whether it has taken damage. Units matching on those
+/// are interchangeable, so offering one option each is offering the same move several times
+/// — and that is not merely verbose. **Deciders weigh options one by one**, and a sampling
+/// bot draws from the option list, so a move written five times drew five times the
+/// probability of an equally good move written once. In the oracle a player holding five
+/// fighters and one dreadnought assigned its hits to a fighter five times in six no matter
+/// what its scoring thought of the trade, because the count decided rather than the score.
+#[must_use]
+pub fn distinct_units(units: &[Unit]) -> Vec<(usize, &Unit)> {
+    first_of_each(units, |u: &Unit| {
+        (u.type_id.clone(), u.sustained_damage) as UnitKey
+    })
+}
+
+/// `destroy dreadnought` / `destroy dreadnought (damaged)`.
+///
+/// Damage is shown rather than folded away: losing a ship that has already taken a hit is a
+/// different proposition from losing a fresh one, and collapsing the two would hide a real
+/// choice instead of removing a false one.
+#[must_use]
+pub fn unit_label(verb: &str, type_id: &UnitTypeId, damaged: bool) -> String {
+    let suffix = if damaged { " (damaged)" } else { "" };
+    format!("{verb} {type_id}{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pid(id: &str) -> PlayerId {
+        PlayerId::new(id)
+    }
+
+    fn unit(type_id: &str, damaged: bool) -> Unit {
+        Unit {
+            sustained_damage: damaged,
+            ..Unit::new(UnitTypeId::new(type_id), pid("a"))
+        }
+    }
+
+    fn choice(options: Vec<ChoiceOption>) -> Choice {
+        Choice::new(pid("a"), "pick one", options)
+    }
+
+    fn three() -> Choice {
+        choice(vec![
+            ChoiceOption::labelled("x", "action", "Do X"),
+            ChoiceOption::labelled("y", "action", "Do Y"),
+            ChoiceOption::decline(),
+        ])
+    }
+
+    // -- options ---------------------------------------------------------------
+
+    #[test]
+    fn an_option_is_identified_by_its_id_not_its_payload() {
+        // A payload that changed equality would mean the id was not stable, which is
+        // exactly what replay depends on.
+        let bare = ChoiceOption::new("move", "movement");
+        let loaded = ChoiceOption::new("move", "movement").with("from", "18");
+        assert_eq!(bare, loaded);
+        assert_ne!(bare.payload, loaded.payload);
+    }
+
+    #[test]
+    fn an_option_displays_its_label_or_falls_back_to_its_id() {
+        assert_eq!(ChoiceOption::labelled("x", "k", "Do X").display(), "Do X");
+        assert_eq!(ChoiceOption::new("x", "k").display(), "x");
+    }
+
+    #[test]
+    fn declining_is_recognised_by_kind_not_by_id() {
+        assert!(ChoiceOption::decline().is_decline());
+        assert!(!ChoiceOption::new("x", "action").is_decline());
+        // A differently-named decline still counts.
+        assert!(ChoiceOption::new("pass_window", DECLINE_KIND).is_decline());
+    }
+
+    #[test]
+    fn a_choice_finds_its_options_by_id() {
+        let c = three();
+        assert_eq!(c.option("y").unwrap().label, "Do Y");
+        assert!(c.option("nonesuch").is_none());
+        assert_eq!(c.ids(), vec!["x", "y", "decline"]);
+    }
+
+    // -- validation ------------------------------------------------------------
+
+    #[test]
+    fn an_answer_that_was_not_offered_is_rejected() {
+        // The boundary that keeps a bot or an LLM from inventing a move.
+        let err = validate(&three(), ChoiceOption::new("invented", "action")).unwrap_err();
+        assert!(
+            matches!(err, IllegalChoice::NotOffered { ref chosen, .. } if chosen == "invented"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn an_answer_that_was_offered_passes_through() {
+        let answer = validate(&three(), ChoiceOption::new("y", "action")).unwrap();
+        assert_eq!(answer.id, "y");
+    }
+
+    #[test]
+    fn the_rejection_names_what_was_on_offer() {
+        let err = validate(&three(), ChoiceOption::new("z", "action")).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains('a'), "{message}");
+        assert!(message.contains('z'), "{message}");
+        assert!(message.contains("decline"), "{message}");
+    }
+
+    // -- deciders ---------------------------------------------------------------
+
+    #[test]
+    fn first_option_is_deterministic() {
+        assert_eq!(FirstOption.choose(&three()).unwrap().id, "x");
+        assert_eq!(FirstOption.choose(&three()).unwrap().id, "x");
+    }
+
+    #[test]
+    fn always_decline_takes_the_decline_when_there_is_one() {
+        assert_eq!(AlwaysDecline.choose(&three()).unwrap().id, "decline");
+    }
+
+    #[test]
+    fn always_decline_falls_back_to_the_first_option() {
+        let no_decline = choice(vec![
+            ChoiceOption::new("x", "action"),
+            ChoiceOption::new("y", "action"),
+        ]);
+        assert_eq!(AlwaysDecline.choose(&no_decline).unwrap().id, "x");
+    }
+
+    #[test]
+    fn a_decider_asked_with_no_options_reports_it_rather_than_panicking() {
+        let empty = choice(vec![]);
+        assert!(matches!(
+            FirstOption.choose(&empty).unwrap_err(),
+            IllegalChoice::NoOptions { .. }
+        ));
+        assert!(matches!(
+            SeededRandom::new(1).choose(&empty).unwrap_err(),
+            IllegalChoice::NoOptions { .. }
+        ));
+    }
+
+    #[test]
+    fn a_script_states_the_exact_line_of_play() {
+        let mut scripted = Scripted::new(["y", "decline"]);
+        assert_eq!(scripted.choose(&three()).unwrap().id, "y");
+        assert_eq!(scripted.choose(&three()).unwrap().id, "decline");
+        assert_eq!(scripted.remaining(), 0);
+    }
+
+    #[test]
+    fn a_script_that_diverges_fails_loudly() {
+        // The point of a script: if the engine offers something unexpected the test must
+        // fail, not quietly take a different line.
+        let mut scripted = Scripted::new(["nonesuch"]);
+        let err = scripted.choose(&three()).unwrap_err();
+        assert!(
+            matches!(err, IllegalChoice::ScriptDiverged { ref wanted, .. } if wanted == "nonesuch"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn an_exhausted_script_falls_back() {
+        let mut scripted = Scripted::new(["y"]);
+        assert_eq!(scripted.choose(&three()).unwrap().id, "y");
+        assert_eq!(
+            scripted.choose(&three()).unwrap().id,
+            "x",
+            "fallback is first"
+        );
+    }
+
+    #[test]
+    fn a_script_can_be_given_its_own_fallback() {
+        let mut scripted = Scripted::with_fallback(Vec::<String>::new(), Box::new(AlwaysDecline));
+        assert_eq!(scripted.choose(&three()).unwrap().id, "decline");
+    }
+
+    #[test]
+    fn a_seeded_random_repeats_itself_and_only_picks_legal_options() {
+        let run = || {
+            let mut rng = SeededRandom::new(42);
+            (0..20)
+                .map(|_| rng.choose(&three()).unwrap().id)
+                .collect::<Vec<_>>()
+        };
+        let first = run();
+        assert_eq!(first, run(), "the same seed must play the same game");
+        assert!(first.iter().all(|id| three().option(id).is_some()));
+    }
+
+    #[test]
+    fn different_seeds_diverge() {
+        let run = |seed| {
+            let mut rng = SeededRandom::new(seed);
+            (0..30)
+                .map(|_| rng.choose(&three()).unwrap().id)
+                .collect::<Vec<_>>()
+        };
+        assert_ne!(run(1), run(2));
+    }
+
+    // -- the table ----------------------------------------------------------------
+
+    #[test]
+    fn a_table_routes_a_choice_to_its_own_players_decider() {
+        let mut table = Table::new();
+        table.seat(pid("a"), Box::new(AlwaysDecline));
+        assert_eq!(table.ask(&three()).unwrap().id, "decline");
+
+        let other = Choice::new(pid("b"), "pick one", three().options);
+        assert_eq!(table.ask(&other).unwrap().id, "x", "b uses the default");
+    }
+
+    #[test]
+    fn a_table_records_every_answer() {
+        let mut table = Table::new();
+        table.ask(&three()).unwrap();
+        table.ask(&three()).unwrap();
+
+        assert_eq!(table.log.len(), 2);
+        let record = &table.log.records[0];
+        assert_eq!(record.player, pid("a"));
+        assert_eq!(record.chosen, "x");
+        assert_eq!(record.offered, vec!["x", "y", "decline"]);
+        assert_eq!(record.prompt, "pick one");
+    }
+
+    #[test]
+    fn a_table_rejects_an_invented_answer_before_recording_it() {
+        struct Cheat;
+        impl Decider for Cheat {
+            fn choose(&mut self, _: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::new("invented", "action"))
+            }
+        }
+        let mut table = Table::new();
+        table.seat(pid("a"), Box::new(Cheat));
+
+        assert!(table.ask(&three()).is_err());
+        assert!(table.log.is_empty(), "a rejected answer must not be logged");
+    }
+
+    // -- the decision log -----------------------------------------------------------
+
+    #[test]
+    fn a_log_replays_as_a_script() {
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.ask(&three()).unwrap();
+        table.ask(&three()).unwrap();
+
+        let script = table.log.as_script(None);
+        assert_eq!(script, vec!["decline", "decline"]);
+
+        // Feeding it back to a Scripted decider reproduces the same answers.
+        let mut replay = Scripted::new(script);
+        assert_eq!(replay.choose(&three()).unwrap().id, "decline");
+        assert_eq!(replay.choose(&three()).unwrap().id, "decline");
+    }
+
+    #[test]
+    fn a_log_can_be_filtered_to_one_player() {
+        let mut table = Table::new();
+        table.ask(&three()).unwrap();
+        table
+            .ask(&Choice::new(pid("b"), "pick one", three().options))
+            .unwrap();
+
+        assert_eq!(table.log.as_script(Some(&pid("a"))).len(), 1);
+        assert_eq!(table.log.as_script(None).len(), 2);
+    }
+
+    #[test]
+    fn a_seeded_run_replays_exactly_from_its_own_log() {
+        // The determinism guarantee: a seed plus a decision log reproduces a game.
+        let options = || {
+            choice(vec![
+                ChoiceOption::new("p", "action"),
+                ChoiceOption::new("q", "action"),
+                ChoiceOption::new("r", "action"),
+            ])
+        };
+        let mut table = Table::with_default(Box::new(SeededRandom::new(7)));
+        for _ in 0..25 {
+            table.ask(&options()).unwrap();
+        }
+
+        let mut replay = Table::with_default(Box::new(Scripted::new(table.log.as_script(None))));
+        for _ in 0..25 {
+            replay.ask(&options()).unwrap();
+        }
+        assert_eq!(replay.log, table.log);
+    }
+
+    // -- distinguishable options -------------------------------------------------------
+
+    #[test]
+    fn interchangeable_units_are_offered_once() {
+        // Five fighters are one option, not five. A sampling bot draws from the option
+        // list, so writing a move five times gives it five times the probability of an
+        // equally good move written once.
+        let units = vec![
+            unit("fighter", false),
+            unit("fighter", false),
+            unit("fighter", false),
+            unit("dreadnought", false),
+            unit("fighter", false),
+        ];
+        let distinct = distinct_units(&units);
+        assert_eq!(distinct.len(), 2);
+        assert_eq!(distinct[0].0, 0, "the first fighter");
+        assert_eq!(distinct[1].0, 3, "the dreadnought");
+    }
+
+    #[test]
+    fn a_damaged_unit_is_a_different_option_from_a_fresh_one() {
+        // Losing a ship that has already taken a hit is a different proposition.
+        let units = vec![
+            unit("dreadnought", false),
+            unit("dreadnought", true),
+            unit("dreadnought", false),
+        ];
+        let distinct = distinct_units(&units);
+        assert_eq!(distinct.len(), 2);
+        assert!(!distinct[0].1.sustained_damage);
+        assert!(distinct[1].1.sustained_damage);
+    }
+
+    #[test]
+    fn the_kept_index_points_at_a_real_element() {
+        let units = vec![unit("fighter", false), unit("carrier", false)];
+        for (index, unit) in distinct_units(&units) {
+            assert_eq!(&units[index], unit);
+        }
+    }
+
+    #[test]
+    fn first_of_each_keeps_the_original_order() {
+        let items = ["b", "a", "b", "c", "a"];
+        let firsts = first_of_each(&items, |s: &&str| *s);
+        assert_eq!(
+            firsts.iter().map(|(i, s)| (*i, **s)).collect::<Vec<_>>(),
+            vec![(0, "b"), (1, "a"), (3, "c")]
+        );
+    }
+
+    #[test]
+    fn a_unit_label_shows_damage_rather_than_folding_it_away() {
+        let dread = UnitTypeId::new("dreadnought");
+        assert_eq!(unit_label("destroy", &dread, false), "destroy dreadnought");
+        assert_eq!(
+            unit_label("destroy", &dread, true),
+            "destroy dreadnought (damaged)"
+        );
+    }
+
+    #[test]
+    fn options_are_built_from_id_label_pairs() {
+        let built = options_from([("x", "Do X"), ("y", "Do Y")], "action");
+        assert_eq!(built.len(), 2);
+        assert_eq!(built[0].id, "x");
+        assert_eq!(built[0].label, "Do X");
+        assert_eq!(built[1].kind, "action");
+    }
+
+    #[test]
+    fn a_choice_round_trips_through_json() {
+        let json = serde_json::to_string(&three()).unwrap();
+        assert_eq!(serde_json::from_str::<Choice>(&json).unwrap(), three());
+    }
+}
