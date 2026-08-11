@@ -121,12 +121,13 @@ All three packages have been corrected with ground-truth data derived from direc
 
 - **M00 COMPLETE**: All 15 milestones (M00-001 through M00-015) finished.
 - **M01 COMPLETE**: All 13 milestones (M01-001 through M01-013) finished.
-- M01-013: Fresh-checkout proof documented (6-step bootstrap, ~5 min cached).
+- **M02 COMPLETE**: All 16 milestones (M02-001 through M02-016) finished.
+- M02-016: Frontier model review PASS (7 accepted findings).
 - No blockers.
 
 ## Next exact action
 
-1. M00 + M01 COMPLETE (28 milestones, 82 children). Proceed to M02 (Content and model).
+1. M00 + M01 + M02 COMPLETE (44 milestones, 98 children). Proceed to M03 (Choice, timing, replay).
 
 ---
 
@@ -173,7 +174,7 @@ Files to read first after resumption:
 4. plans/evidence/M00-004e.md (to be created)
 ```
 
-### Completed evidence files (128 total)
+### Completed evidence files (153 total)
 ```
 M00-004a26.md — capture.py inventory
 M00-004a27.md — features.py inventory
