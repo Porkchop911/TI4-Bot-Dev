@@ -1,0 +1,178 @@
+[
+  {
+    "alias": "dynamiscore",
+    "name": "Dynamis Core",
+    "text": "While this card is in your play area, your commodity value is increased by 2.\nACTION: Gain trade goods equal to your commodity value, then purge this card.",
+    "source": "codex2",
+    "flavourText": "*Dart and Tai stood, mesmerized by the swirling mass. Neither had any idea what it was, but both were fairly sure they were about to retire.*"
+  },
+  {
+    "alias": "titanprototype",
+    "name": "JR-XS455-O",
+    "text": "ACTION: Exhaust this agent and choose a player, that player may spend 3 resources to place a structure on a planet they control. If they do not, they gain 1 trade good.",
+    "source": "codex2",
+    "shortName": "JR-\nXS455-O"
+  },
+  {
+    "alias": "nanoforge",
+    "name": "Nano-Forge",
+    "text": "ACTION: Attach this card to a non-legendary, non-home planet you control, its resource and influence values are increased by 2 and it is a legendary planet. This action cannot be performed once attached.",
+    "source": "codex2",
+    "flavourText": "*Intended to bring prosperity, the forge was twisted into an instrument of war.*",
+    "shortName": "Nano-\nForge"
+  },
+  {
+    "alias": "neuraloop",
+    "name": "Neuraloop",
+    "text": "When a public objective is revealed, you may purge one of your relics to discard that objective and replace it with a random objective from any objective deck; that objective is a public objective, even if it is a secret objective.",
+    "flavourText": "Knowledge. Creation. Control. Have a wonderful day.",
+    "source": "codex4"
+  },
+  {
+    "alias": "circletofthevoid",
+    "name": "Circlet of the Void",
+    "text": "Your units do not roll for gravity rifts, and you ignore the effects of all other anomalies on movement.\n\nACTION: Exhaust this card to explore a frontier token in a system that does not contain any other players' ships.",
+    "notes": "Gravity rifts still grant the +1 to movement. There must be at least one system containing a frontier token to use the component action.",
+    "flavourText": "Xuange touched the silver circlet that sat upon their temple. The pride of the Archive. Knowledge of the stars, passed down from the First, fated for the Last.",
+    "source": "codex4"
+  },
+  {
+    "alias": "bookoflatvinia",
+    "name": "Book of Latvinia",
+    "text": "When you gain this card, research up to 2 technologies that have no prerequisites.\n> ACTION: Purge this card; if you control planets that have all 4 types of technology specialties, gain 1 victory point. Otherwise, gain the speaker token.",
+    "flavourText": "A collector's item of incalculable value, none have been able to unlock its secrets - assuming its contents aren't just the ravings of a madwoman.",
+    "source": "codex4"
+  },
+  {
+    "alias": "enigmaticdevice",
+    "name": "Enigmatic Device",
+    "text": "Place this card faceup in your play area. ACTION: You may spend 6 resources and purge this card to research 1 technology.",
+    "isFakeRelic": true,
+    "source": "pok"
+  },
+  {
+    "alias": "dominusorb",
+    "name": "Dominus Orb",
+    "text": "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens.",
+    "source": "pok",
+    "flavourText": "*Goldos hoisted the ivory orb at the head of their army. At once, the weariness that filled the bodies and minds of each soldier vanished. They strode forth as if fresh from a week's rest.*"
+  },
+  {
+    "alias": "mawofworlds",
+    "name": "Maw of Worlds",
+    "text": "At the start of the agenda phase, you may purge this card and exhaust all of your planets to gain any 1 technology.",
+    "source": "pok",
+    "flavourText": "*No larger than a carrier, the spherical lattice held a captive singularity at its heart. As they dumped the planet's entire energy grid into its core, the black hole began to spin, the complex logic-circuitry along the lattice slowly coming to life.*"
+  },
+  {
+    "alias": "emelpar",
+    "name": "Scepter of Emelpar",
+    "text": "When you would spend a token from your strategy pool, you may exhaust this card to spend a token from your reinforcements instead.",
+    "source": "pok",
+    "flavourText": "*As the hilt began to fuse with the flesh of her hand, she worried that she should set the scepter aside. But the whispered suggestions in her mind were too valuable and insightful to seriously consider such a rash and illogical act.*"
+  },
+  {
+    "alias": "shard",
+    "name": "Shard of the Throne",
+    "text": "When you gain this card, gain 1 victory point, when you lose this card, lose 1 victory point. When a player gains control of a legendary planet you control or a planet you control in your home system, that player gains this card.",
+    "source": "pok",
+    "flavourText": "*\"What power does a broken piece of the Throne of Emperors hold? To me, none. But to everyone else...\"*"
+  },
+  {
+    "alias": "stellarconverter",
+    "name": "Stellar Converter",
+    "text": "ACTION: Choose 1 non-home, non-legendary planet other than Mecatol Rex in a system that is adjacent to 1 or more of your units that have BOMBARDMENT, destroy all units on that planet and purge its attachments and its planet card. Then, place the destroyed planet token on that planet and purge this card.",
+    "notes": "You cannot explode a planet that you control.",
+    "source": "pok",
+    "flavourText": "*A power great enough to envelop a star, such that its energies might be concentrated… and scattered.*"
+  },
+  {
+    "alias": "codex",
+    "name": "The Codex",
+    "text": "ACTION: Purge this card to take up to 3 action cards of your choice from the action card discard pile.",
+    "source": "pok",
+    "flavourText": "*No single tome could contain the collected knowledge of millennia of rulers. Thus, the last Emperor built a massive cruiser, its holds bulging with crystal info-matrices. It roams the outer reaches of the Mecatol system, awaiting a summons that will never come.*"
+  },
+  {
+    "alias": "emphidia",
+    "name": "The Crown of Emphidia",
+    "text": "After you perform a tactical action, you may exhaust this card to explore 1 planet you control. At the end of the status phase, if you control the \"Tomb of Emphidia,\" you may purge this card to gain 1 victory point.",
+    "source": "pok",
+    "flavourText": "*The machines of the forgotten throne-world could only be controlled through the data-impulses of the black-barbed crown.*",
+    "shrinkName": true
+  },
+  {
+    "alias": "thalnos",
+    "name": "The Crown of Thalnos",
+    "text": "During each combat round, this card's owner may reroll any number of their dice, applying +1 to the results, any units that reroll dice but do not produce at least 1 hit are destroyed.",
+    "source": "pok",
+    "flavourText": "*A cloud of satellites spewed from the dreadnought's hull, drifting into a halo around the vessel. The battle seemed to pause for one long moment, before the drones' weapons flared, unleashing beams of energy in all directions.*"
+  },
+  {
+    "alias": "obsidian",
+    "name": "The Obsidian",
+    "text": "When you gain this card, draw 1 secret objective. You can have 1 additional scored or unscored secret objective.",
+    "source": "pok",
+    "flavourText": "*The inky blackness of the blade evoked feelings of discomfort and nausea in all who saw it. All but Sharsiss. It whispered to him promises of power. Promises of a reckoning that would see the Collective unmade. \"Good,\" he thought. \"Let them burn.\"*"
+  },
+  {
+    "alias": "prophetstears",
+    "name": "The Prophet's Tears",
+    "text": "When you research a technology, you may exhaust this card to ignore 1 prerequisite or draw 1 action card.",
+    "source": "pok",
+    "flavourText": "*\"So you're going to drink a vial of murky liquid we found in a stasis vault on a dead world because you think it's the concentrated genetic essence of an entire species' most brilliant minds...and you think* I'm *being irrational?\"*",
+    "shortName": "Prophet's\nTears"
+  },
+  {
+    "alias": "heartofixth",
+    "name": "Heart of Ixth",
+    "text": "After any die is rolled, you may exhaust this card to add or subtract 1 from its result.",
+    "flavourText": "\"It should be impossible.\" Feng glanced sidelong at his compatriot. The Thundarian merely stared ahead, as if he did not hear. Feng snorted. \"One day I mean to know the source of this so-called power of yours.\"",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "lightrailordnance",
+    "name": "Lightrail Ordnance",
+    "text": "Your space docks gain SPACE CANNON 5 (x2). You may use your space dock's SPACE CANNON against ships that are adjacent to their systems.",
+    "flavourText": "A single sparkle was the only warning the Yin fleet had before a massive hole had been punched through the hull of the Van Hauge.\nThen, searing light.",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "metalivoidarmaments",
+    "name": "Metali Void Armaments",
+    "shortName": "Metali Void\nArmam'nts",
+    "text": "During the \"Anti-Fighter Barrage\" step of space combat, you may resolve ANTI-FIGHTER BARRAGE 6 (x3) against your opponent's units.",
+    "flavourText": "The Metali, Empyrean artificers of legend, were said to have created weapons that harnessed the power of space itself.",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "metalivoidshielding",
+    "name": "Metali Void Shielding",
+    "text": "Each time hits are produced against 1 or more of your non-fighter ships, 1 of those ships may use SUSTAIN DAMAGE as if it had that ability.",
+    "flavourText": "Capable of more than destruction, the Metali also wrapped their ships in nigh-indestructable plating unable to be replicated using today's methods.",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "quantumcore",
+    "name": "The Quantumcore",
+    "shortName": "The Quan\n-tumcore",
+    "text": "When you gain this card, gain your breakthrough. You have SYNERGY for all technology types.",
+    "flavourText": "The core burned with the heat of a thousand stars, connections forming and reforming a thousand times per second.",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "thesilverflame",
+    "name": "The Silver Flame",
+    "text": "The Silver Flame may be exchanged as part of a transaction.\n> ACTION: Roll 1 die and purge this card; if the result is a 10, gain 1 victory point. Otherwise, purge your home system and all units in it; you cannot score public objectives. Put The Fracture into play if it is not already.",
+    "notes": "If your home system is purged, you may score _Become A Martyr_. Saar can still score public objectives with a purged home system because of NOMADIC.",
+    "flavourText": "Shen're Ix Ianovar. The flame beyond time and space.",
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "thetriad",
+    "name": "The Triad",
+    "text": "This card can be readied and spent as if it were a planet card. Its resource and influence values are equal to 3 plus the number of different types of relic fragments you own.",
+    "flavourText": "The light that shines without reflects the dark it harbors within.",
+    "source": "thunders_edge"
+  }
+]

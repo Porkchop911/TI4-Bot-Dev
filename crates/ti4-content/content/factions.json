@@ -1,0 +1,1933 @@
+[
+  {
+    "alias": "arborec",
+    "factionName": "The Arborec",
+    "homeSystem": "05",
+    "startingFleet": "cv, cr,2 ff, 4 inf n,pds n, sd n",
+    "commodities": 3,
+    "factionTech": [
+      "bio",
+      "lw2"
+    ],
+    "startingTech": [
+      "md"
+    ],
+    "homePlanets": [
+      "nestphar"
+    ],
+    "abilities": [
+      "mitosis"
+    ],
+    "leaders": [
+      "arborecagent",
+      "arboreccommander",
+      "arborechero"
+    ],
+    "promissoryNotes": [
+      "stymie"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "arborec_flagship",
+      "arborec_infantry",
+      "arborec_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheArborec",
+    "preferredColours": [
+      "grn",
+      "frs",
+      "eme",
+      "jad",
+      "wtm",
+      "psn",
+      "blt",
+      "cam",
+      "tqs"
+    ],
+    "source": "base",
+    "priorityNumber": 29
+  },
+  {
+    "alias": "ghost",
+    "factionName": "The Ghosts of Creuss",
+    "shortName": "Creuss",
+    "shortTag": "CRE",
+    "homeSystem": "17",
+    "startingFleet": "cv,2 dd,2 ff,4 inf c,sd c",
+    "commodities": 4,
+    "factionTech": [
+      "ds",
+      "wg"
+    ],
+    "startingTech": [
+      "gd"
+    ],
+    "homePlanets": [
+      "creuss"
+    ],
+    "abilities": [
+      "quantum_entanglement",
+      "slipstream",
+      "creuss_gate"
+    ],
+    "leaders": [
+      "ghostagent",
+      "ghostcommander",
+      "ghosthero"
+    ],
+    "promissoryNotes": [
+      "iff"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "ghost_flagship",
+      "infantry",
+      "ghost_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheGhostsOfCreuss",
+    "preferredColours": [
+      "blu",
+      "eth",
+      "gcr",
+      "vpw",
+      "sns",
+      "nvy",
+      "tea",
+      "ptr",
+      "vdg",
+      "azr"
+    ],
+    "source": "base",
+    "priorityNumber": 20
+  },
+  {
+    "alias": "hacan",
+    "factionName": "The Emirates of Hacan",
+    "homeSystem": "16",
+    "startingFleet": "2 cv,cr,2 ff,2 inf h,sd a, inf a, inf k",
+    "commodities": 6,
+    "factionTech": [
+      "qdn",
+      "pm"
+    ],
+    "startingTech": [
+      "st",
+      "amd"
+    ],
+    "homePlanets": [
+      "arretze",
+      "hercant",
+      "kamdorn"
+    ],
+    "abilities": [
+      "master_of_trade",
+      "guild_ships",
+      "arbiters"
+    ],
+    "leaders": [
+      "hacanagent",
+      "hacancommander",
+      "hacanhero"
+    ],
+    "promissoryNotes": [
+      "convoys"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "hacan_flagship",
+      "infantry",
+      "hacan_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheEmiratesOfHacan",
+    "preferredColours": [
+      "gld",
+      "ylw",
+      "crm",
+      "wsp",
+      "org",
+      "cpr",
+      "spr",
+      "dw",
+      "beg",
+      "tpl"
+    ],
+    "source": "base",
+    "priorityNumber": 18
+  },
+  {
+    "alias": "jolnar",
+    "factionName": "The Universities of Jol-Nar",
+    "shortName": "Jol-Nar",
+    "shortTag": "J-N",
+    "homeSystem": "12",
+    "startingFleet": "dn,2 cv,ff,2 inf j,sd n,pds j,pds n",
+    "commodities": 4,
+    "factionTech": [
+      "ers",
+      "scc"
+    ],
+    "startingTech": [
+      "amd",
+      "st",
+      "nm",
+      "ps"
+    ],
+    "homePlanets": [
+      "jol",
+      "nar"
+    ],
+    "abilities": [
+      "fragile",
+      "brilliant",
+      "analytical"
+    ],
+    "leaders": [
+      "jolnaragent",
+      "jolnarcommander",
+      "jolnarhero"
+    ],
+    "promissoryNotes": [
+      "ra"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "jolnar_flagship",
+      "infantry",
+      "jolnar_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheUniversitiesOfJolNar",
+    "preferredColours": [
+      "ppl",
+      "ryl",
+      "nvy",
+      "blu",
+      "vpw",
+      "sns",
+      "lvn",
+      "eth",
+      "plm"
+    ],
+    "source": "base",
+    "priorityNumber": 24
+  },
+  {
+    "alias": "l1z1x",
+    "factionName": "The L1Z1X Mindnet",
+    "shortName": "L1Z1X",
+    "shortTag": "LZX",
+    "homeSystem": "06",
+    "startingFleet": "dn, cv, 3 ff, 5 inf 0,sd 0,pds 0",
+    "commodities": 2,
+    "factionTech": [
+      "is",
+      "sdn2"
+    ],
+    "startingTech": [
+      "ps",
+      "nm"
+    ],
+    "homePlanets": [
+      "0.0.0"
+    ],
+    "abilities": [
+      "assimilate",
+      "harrow"
+    ],
+    "leaders": [
+      "l1z1xagent",
+      "l1z1xcommander",
+      "l1z1xhero"
+    ],
+    "promissoryNotes": [
+      "ce"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "l1z1x_dreadnought",
+      "l1z1x_flagship",
+      "infantry",
+      "l1z1x_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheL1z1xMindnet",
+    "preferredColours": [
+      "blk",
+      "red",
+      "bld",
+      "nm",
+      "cqr",
+      "orca",
+      "pld",
+      "gry",
+      "rst"
+    ],
+    "source": "base",
+    "priorityNumber": 5
+  },
+  {
+    "alias": "letnev",
+    "factionName": "The Barony of Letnev",
+    "homeSystem": "10",
+    "startingFleet": "dn,cv,dd,ff, 3 inf w,sd a",
+    "commodities": 2,
+    "factionTech": [
+      "l4",
+      "nes"
+    ],
+    "startingTech": [
+      "amd",
+      "ps"
+    ],
+    "homePlanets": [
+      "arcprime",
+      "wrenterra"
+    ],
+    "abilities": [
+      "munitions",
+      "armada"
+    ],
+    "leaders": [
+      "letnevagent",
+      "letnevcommander",
+      "letnevhero"
+    ],
+    "promissoryNotes": [
+      "war_funding"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "letnev_flagship",
+      "infantry",
+      "letnev_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheBaronyOfLetnev",
+    "preferredColours": [
+      "blk",
+      "red",
+      "bld",
+      "pld",
+      "rst",
+      "sns",
+      "nm",
+      "chk",
+      "rbw"
+    ],
+    "source": "base",
+    "priorityNumber": 8
+  },
+  {
+    "alias": "mentak",
+    "factionName": "The Mentak Coalition",
+    "shortTag": "MTK",
+    "homeSystem": "02",
+    "startingFleet": "cv,2 cr,3 ff,4 inf m,pds m,sd m",
+    "commodities": 2,
+    "factionTech": [
+      "mc",
+      "so"
+    ],
+    "startingTech": [
+      "ps",
+      "st"
+    ],
+    "homePlanets": [
+      "mollprimus"
+    ],
+    "abilities": [
+      "ambush",
+      "pillage"
+    ],
+    "leaders": [
+      "mentakagent",
+      "mentakcommander",
+      "mentakhero"
+    ],
+    "promissoryNotes": [
+      "pop"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "mentak_flagship",
+      "infantry",
+      "mentak_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheMentakCoalition",
+    "preferredColours": [
+      "ylw",
+      "org",
+      "gld",
+      "dw",
+      "crm",
+      "wsp",
+      "blk",
+      "cpr",
+      "cam",
+      "tan",
+      "beg"
+    ],
+    "source": "base",
+    "priorityNumber": 15
+  },
+  {
+    "alias": "muaat",
+    "factionName": "The Embers of Muaat",
+    "homeSystem": "04",
+    "startingFleet": "ws,2 ff,4 inf m,sd m",
+    "commodities": 4,
+    "factionTech": [
+      "pws2",
+      "mr"
+    ],
+    "startingTech": [
+      "ps"
+    ],
+    "homePlanets": [
+      "muaat"
+    ],
+    "abilities": [
+      "star_forge",
+      "gashlai_physiology"
+    ],
+    "leaders": [
+      "muaatagent",
+      "muaatcommander",
+      "muaathero"
+    ],
+    "promissoryNotes": [
+      "fires"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "muaat_flagship",
+      "muaat_warsun",
+      "infantry",
+      "muaat_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheEmbersOfMuaat",
+    "preferredColours": [
+      "mgm",
+      "red",
+      "org",
+      "sns",
+      "cnb",
+      "bld",
+      "rst",
+      "cpr",
+      "rby"
+    ],
+    "source": "base",
+    "priorityNumber": 14
+  },
+  {
+    "alias": "naalu",
+    "factionName": "The Naalu Collective",
+    "homeSystem": "09",
+    "startingFleet": "cv,cr,dd,3 ff,2 inf m,2 inf d,pds m,sd d",
+    "commodities": 3,
+    "factionTech": [
+      "ng",
+      "hcf2"
+    ],
+    "startingTech": [
+      "st",
+      "nm"
+    ],
+    "homePlanets": [
+      "maaluuk",
+      "druaa"
+    ],
+    "abilities": [
+      "telepathic",
+      "foresight"
+    ],
+    "leaders": [
+      "naaluagent-te",
+      "naalucommander",
+      "naaluhero"
+    ],
+    "promissoryNotes": [
+      "gift"
+    ],
+    "units": [
+      "naalu_fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "naalu_flagship",
+      "infantry",
+      "naalu_mech_te",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheNaaluCollective",
+    "preferredColours": [
+      "grn",
+      "eme",
+      "tqs",
+      "wtm",
+      "psn",
+      "hqn",
+      "tpl",
+      "jad",
+      "frs",
+      "cam"
+    ],
+    "source": "base",
+    "priorityNumber": 28
+  },
+  {
+    "alias": "nekro",
+    "factionName": "The Nekro Virus",
+    "shortTag": "NKR",
+    "homeSystem": "08",
+    "startingFleet": "dn,cv,cr,2 ff,2 inf m,sd m",
+    "commodities": 3,
+    "factionTech": [
+      "vax",
+      "vay"
+    ],
+    "startingTech": [
+      "dxa"
+    ],
+    "homePlanets": [
+      "mordaiii"
+    ],
+    "abilities": [
+      "galactic_threat",
+      "technological_singularity",
+      "propagation"
+    ],
+    "leaders": [
+      "nekroagent",
+      "nekrocommander",
+      "nekrohero"
+    ],
+    "promissoryNotes": [
+      "antivirus"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "nekro_flagship",
+      "infantry",
+      "nekro_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheNekroVirus",
+    "preferredColours": [
+      "bld",
+      "red",
+      "pld",
+      "blk",
+      "nm",
+      "rbw",
+      "sns",
+      "rby"
+    ],
+    "source": "base",
+    "priorityNumber": 22
+  },
+  {
+    "alias": "saar",
+    "factionName": "The Clan of Saar",
+    "homeSystem": "11",
+    "startingFleet": "2 cv,1 cr,2 ff,4 inf, sd",
+    "commodities": 3,
+    "factionTech": [
+      "ffac2",
+      "cm"
+    ],
+    "startingTech": [
+      "amd"
+    ],
+    "homePlanets": [
+      "ragh",
+      "lisisii"
+    ],
+    "abilities": [
+      "scavenge",
+      "nomadic"
+    ],
+    "leaders": [
+      "saaragent",
+      "saarcommander",
+      "saarhero"
+    ],
+    "promissoryNotes": [
+      "ragh"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "saar_flagship",
+      "infantry",
+      "saar_mech",
+      "pds",
+      "saar_spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheClanOfSaar",
+    "preferredColours": [
+      "ylw",
+      "chk",
+      "cpr",
+      "wsp",
+      "rst",
+      "cam",
+      "tan",
+      "nea",
+      "beg"
+    ],
+    "source": "base",
+    "priorityNumber": 17
+  },
+  {
+    "alias": "sardakk",
+    "factionName": "Sardakk Norr",
+    "shortName": "Sardakk",
+    "shortTag": "BUG",
+    "homeSystem": "13",
+    "startingFleet": "2 cv,cr,3 inf q,2 inf t,sd q,pds t",
+    "commodities": 3,
+    "factionTech": [
+      "exo2",
+      "vpw"
+    ],
+    "startingTechOptions": [],
+    "startingTechAmount": 0,
+    "homePlanets": [
+      "quinarra",
+      "trenlak"
+    ],
+    "abilities": [
+      "unrelenting"
+    ],
+    "leaders": [
+      "sardakkagent",
+      "sardakkcommander",
+      "sardakkhero"
+    ],
+    "promissoryNotes": [
+      "tekklar"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "sardakk_dreadnought",
+      "sardakk_flagship",
+      "infantry",
+      "sardakk_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=SardakkNorr",
+    "preferredColours": [
+      "red",
+      "bld",
+      "blk",
+      "nm",
+      "pld",
+      "rby",
+      "sns",
+      "chk"
+    ],
+    "source": "base",
+    "priorityNumber": 10
+  },
+  {
+    "alias": "sol",
+    "factionName": "The Federation of Sol",
+    "homeSystem": "01",
+    "startingFleet": "2 cv, dd, 3 ff,5 inf j, sd j",
+    "commodities": 4,
+    "factionTech": [
+      "so2",
+      "ac2"
+    ],
+    "startingTech": [
+      "amd",
+      "nm"
+    ],
+    "homePlanets": [
+      "jord"
+    ],
+    "abilities": [
+      "orbital_drop",
+      "versatile"
+    ],
+    "leaders": [
+      "solagent",
+      "solcommander",
+      "solhero"
+    ],
+    "promissoryNotes": [
+      "ms"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "sol_carrier",
+      "dreadnought",
+      "sol_flagship",
+      "sol_infantry",
+      "sol_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheFederationOfSol",
+    "preferredColours": [
+      "blu",
+      "nvy",
+      "dw",
+      "crm",
+      "jpt",
+      "cam",
+      "gry",
+      "vpw",
+      "eth"
+    ],
+    "source": "base",
+    "priorityNumber": 3
+  },
+  {
+    "alias": "winnu",
+    "factionName": "The Winnu",
+    "homeSystem": "07",
+    "startingFleet": "cv,cr,2 ff,2 inf w,pds w, sd w",
+    "commodities": 3,
+    "factionTech": [
+      "lgf",
+      "htp"
+    ],
+    "startingTechOptions": [
+      "amd",
+      "det",
+      "nm",
+      "pa",
+      "st",
+      "sdn",
+      "ps",
+      "aida"
+    ],
+    "startingTechAmount": 1,
+    "homePlanets": [
+      "winnu"
+    ],
+    "abilities": [
+      "blood_ties",
+      "reclamation"
+    ],
+    "leaders": [
+      "winnuagent",
+      "winnucommander",
+      "winnuhero"
+    ],
+    "promissoryNotes": [
+      "acq"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "winnu_flagship",
+      "infantry",
+      "winnu_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheWinnu",
+    "preferredColours": [
+      "ppl",
+      "ryl",
+      "sns",
+      "plm",
+      "rbw",
+      "vpw",
+      "lvn",
+      "blk",
+      "gry"
+    ],
+    "source": "base",
+    "priorityNumber": 27
+  },
+  {
+    "alias": "xxcha",
+    "factionName": "The Xxcha Kingdom",
+    "homeSystem": "14",
+    "startingFleet": "cv,2 cr,3 ff,2 inf at,2 inf ar,pds at,sd ar",
+    "commodities": 4,
+    "factionTech": [
+      "it",
+      "nf"
+    ],
+    "startingTech": [
+      "gls"
+    ],
+    "homePlanets": [
+      "archonren",
+      "archontau"
+    ],
+    "abilities": [
+      "peace_accords",
+      "quash"
+    ],
+    "leaders": [
+      "xxchaagent",
+      "xxchacommander",
+      "xxchahero"
+    ],
+    "promissoryNotes": [
+      "favor"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "xxcha_flagship",
+      "infantry",
+      "xxcha_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheXxchaKingdom",
+    "preferredColours": [
+      "grn",
+      "eme",
+      "lme",
+      "hqn",
+      "tqs",
+      "vdg",
+      "jad",
+      "psn",
+      "frs",
+      "cam"
+    ],
+    "source": "base",
+    "priorityNumber": 26
+  },
+  {
+    "alias": "yin",
+    "factionName": "The Yin Brotherhood",
+    "homeSystem": "03",
+    "startingFleet": "2 cv,dd,4 ff,4 inf d,sd d",
+    "commodities": 2,
+    "factionTech": [
+      "yso",
+      "ic"
+    ],
+    "startingTech": [
+      "st"
+    ],
+    "homePlanets": [
+      "darien"
+    ],
+    "abilities": [
+      "indoctrination",
+      "devotion"
+    ],
+    "leaders": [
+      "yinagent",
+      "yincommander",
+      "yinhero"
+    ],
+    "promissoryNotes": [
+      "greyfire"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "yin_flagship",
+      "infantry",
+      "yin_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheYinBrotherhood",
+    "preferredColours": [
+      "ppl",
+      "plm",
+      "ryl",
+      "sns",
+      "blk",
+      "gry",
+      "lvn",
+      "vpw"
+    ],
+    "source": "base",
+    "priorityNumber": 4
+  },
+  {
+    "alias": "yssaril",
+    "factionName": "The Yssaril Tribes",
+    "homeSystem": "15",
+    "startingFleet": "2 cv,cr, 2 ff, 2 inf s,3 inf r,pds s,sd r",
+    "commodities": 3,
+    "factionTech": [
+      "tp",
+      "mi"
+    ],
+    "startingTech": [
+      "nm"
+    ],
+    "homePlanets": [
+      "retillion",
+      "shalloq"
+    ],
+    "abilities": [
+      "stall_tactics",
+      "scheming",
+      "crafty"
+    ],
+    "leaders": [
+      "yssarilagent",
+      "yssarilcommander",
+      "yssarilhero"
+    ],
+    "promissoryNotes": [
+      "spynet"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "yssaril_flagship",
+      "infantry",
+      "yssaril_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheYssarilTribes",
+    "preferredColours": [
+      "grn",
+      "eme",
+      "cam",
+      "tpl",
+      "tqs",
+      "jad",
+      "lme",
+      "frs",
+      "vdg"
+    ],
+    "source": "base",
+    "priorityNumber": 11
+  },
+  {
+    "alias": "keleresm",
+    "factionName": "The Council Keleres - Mentak",
+    "shortName": "Keleres",
+    "homeSystem": "94new",
+    "startingFleet": "2 inf, 2 cv, 2 ff, 1 ca, sd mollprimusk",
+    "commodities": 2,
+    "factionTech": [
+      "iihq",
+      "asn"
+    ],
+    "startingTech": [],
+    "homePlanets": [
+      "mollprimusk"
+    ],
+    "abilities": [
+      "the_tribuni",
+      "council_patronage",
+      "laws_order"
+    ],
+    "leaders": [
+      "keleresagent",
+      "kelerescommander",
+      "keleresheroharka"
+    ],
+    "promissoryNotes": [
+      "riderm"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "keleres_flagship",
+      "infantry",
+      "keleres_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "org",
+      "ppl",
+      "lvn",
+      "jpt",
+      "gry",
+      "nea",
+      "crm",
+      "plm",
+      "vpw"
+    ],
+    "source": "codex3",
+    "priorityNumber": 23
+  },
+  {
+    "alias": "keleresx",
+    "factionName": "The Council Keleres - Xxcha",
+    "shortName": "Keleres",
+    "homeSystem": "92new",
+    "startingFleet": "2 inf, 2 cv, 2 ff, 1 ca, sd archonrenk",
+    "commodities": 2,
+    "factionTech": [
+      "iihq",
+      "asn"
+    ],
+    "startingTech": [],
+    "homePlanets": [
+      "archonrenk",
+      "archontauk"
+    ],
+    "abilities": [
+      "the_tribuni",
+      "council_patronage",
+      "laws_order"
+    ],
+    "leaders": [
+      "keleresagent",
+      "kelerescommander",
+      "keleresheroodlynn"
+    ],
+    "promissoryNotes": [
+      "riderx"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "keleres_flagship",
+      "infantry",
+      "keleres_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "org",
+      "ppl",
+      "lvn",
+      "jpt",
+      "gry",
+      "nea",
+      "crm",
+      "plm",
+      "vpw"
+    ],
+    "source": "codex3"
+  },
+  {
+    "alias": "keleresa",
+    "factionName": "The Council Keleres - Argent",
+    "shortName": "Keleres",
+    "homeSystem": "93new",
+    "startingFleet": "2 inf, 2 cv, 2 ff, 1 ca, sd valkk",
+    "commodities": 2,
+    "factionTech": [
+      "iihq",
+      "asn"
+    ],
+    "startingTech": [],
+    "homePlanets": [
+      "valkk",
+      "ylirk",
+      "avark"
+    ],
+    "abilities": [
+      "the_tribuni",
+      "council_patronage",
+      "laws_order"
+    ],
+    "leaders": [
+      "keleresagent",
+      "kelerescommander",
+      "keleresherokuuasi"
+    ],
+    "promissoryNotes": [
+      "ridera"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "keleres_flagship",
+      "infantry",
+      "keleres_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "org",
+      "ppl",
+      "lvn",
+      "jpt",
+      "gry",
+      "nea",
+      "crm",
+      "plm",
+      "vpw"
+    ],
+    "source": "codex3"
+  },
+  {
+    "alias": "neutral",
+    "factionName": "Neutral",
+    "shortTag": "NEU",
+    "homeSystem": "",
+    "startingFleet": "",
+    "commodities": 0,
+    "factionTech": [],
+    "startingTech": [],
+    "homePlanets": [],
+    "abilities": [],
+    "leaders": [],
+    "promissoryNotes": [],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "flagship",
+      "infantry",
+      "mech",
+      "pds",
+      "spacedock"
+    ],
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "argent",
+    "factionName": "The Argent Flight",
+    "homeSystem": "58",
+    "startingFleet": "cv,2 dd,2 ff,3 inf v,2 inf a, pds y,sd v",
+    "commodities": 3,
+    "factionTech": [
+      "ah",
+      "swa2"
+    ],
+    "startingTechOptions": [
+      "nm",
+      "st",
+      "ps"
+    ],
+    "startingTechAmount": 2,
+    "homePlanets": [
+      "valk",
+      "ylir",
+      "avar"
+    ],
+    "abilities": [
+      "zeal",
+      "raid_formation"
+    ],
+    "leaders": [
+      "argentagent",
+      "argentcommander",
+      "argenthero"
+    ],
+    "promissoryNotes": [
+      "ambuscade"
+    ],
+    "units": [
+      "fighter",
+      "argent_destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "argent_flagship",
+      "infantry",
+      "argent_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheArgentFlight",
+    "preferredColours": [
+      "org",
+      "rst",
+      "cnb",
+      "pch",
+      "gld",
+      "cpr",
+      "wsp",
+      "crm",
+      "tan"
+    ],
+    "source": "pok",
+    "priorityNumber": 25
+  },
+  {
+    "alias": "cabal",
+    "factionName": "The Vuil'raith Cabal",
+    "shortName": "Vuil'raith",
+    "shortTag": "VRC",
+    "homeSystem": "54",
+    "startingFleet": "dn,cv,cr,3 ff,3 inf a,sd a",
+    "commodities": 2,
+    "factionTech": [
+      "dt2",
+      "vtx"
+    ],
+    "startingTech": [
+      "sar"
+    ],
+    "homePlanets": [
+      "acheron"
+    ],
+    "abilities": [
+      "devour",
+      "amalgamation",
+      "riftmeld"
+    ],
+    "leaders": [
+      "cabalagent",
+      "cabalcommander",
+      "cabalhero"
+    ],
+    "promissoryNotes": [
+      "crucible"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "cabal_flagship",
+      "infantry",
+      "cabal_mech",
+      "pds",
+      "cabal_spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheVuilRaithCabal",
+    "preferredColours": [
+      "bld",
+      "red",
+      "psn",
+      "blk",
+      "nm",
+      "rby",
+      "pld",
+      "chk"
+    ],
+    "source": "pok",
+    "priorityNumber": 6
+  },
+  {
+    "alias": "empyrean",
+    "factionName": "The Empyrean",
+    "homeSystem": "56",
+    "startingFleet": "2 cv,dd,2 ff,4 inf t,sd t",
+    "commodities": 4,
+    "factionTech": [
+      "vw",
+      "as"
+    ],
+    "startingTech": [
+      "det"
+    ],
+    "homePlanets": [
+      "thedark"
+    ],
+    "abilities": [
+      "voidborn",
+      "aetherpassage",
+      "dark_whispers"
+    ],
+    "leaders": [
+      "empyreanagent",
+      "empyreancommander",
+      "empyreanhero"
+    ],
+    "promissoryNotes": [
+      "dark_pact",
+      "blood_pact"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "empyrean_flagship",
+      "infantry",
+      "empyrean_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheEmpyrean",
+    "preferredColours": [
+      "ppl",
+      "eth",
+      "sns",
+      "vpw",
+      "psn",
+      "ryl",
+      "plm",
+      "lvn"
+    ],
+    "source": "pok",
+    "priorityNumber": 9
+  },
+  {
+    "alias": "mahact",
+    "factionName": "The Mahact Gene-Sorcerers",
+    "shortTag": "MHC",
+    "homeSystem": "52",
+    "startingFleet": "dn, cv,cr,2 ff, 3 inf i,sd i",
+    "commodities": 3,
+    "factionTech": [
+      "cl2",
+      "gr"
+    ],
+    "startingTech": [
+      "pi",
+      "bs"
+    ],
+    "homePlanets": [
+      "ixth"
+    ],
+    "abilities": [
+      "edict",
+      "imperia",
+      "hubris"
+    ],
+    "leaders": [
+      "mahactagent",
+      "mahactcommander",
+      "mahacthero"
+    ],
+    "promissoryNotes": [
+      "scepter"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "mahact_flagship",
+      "mahact_infantry",
+      "mahact_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "High",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheMahactGeneSorcerers",
+    "preferredColours": [
+      "gld",
+      "ylw",
+      "ppl",
+      "ryl",
+      "wsp",
+      "splitgld",
+      "cpr",
+      "psy"
+    ],
+    "source": "pok",
+    "priorityNumber": 1
+  },
+  {
+    "alias": "nomad",
+    "factionName": "The Nomad",
+    "shortTag": "NMD",
+    "homeSystem": "53",
+    "startingFleet": "cv,dd,3 ff,fs,4 inf a,sd a",
+    "commodities": 4,
+    "factionTech": [
+      "m2",
+      "tcs"
+    ],
+    "startingTech": [
+      "sr"
+    ],
+    "homePlanets": [
+      "arcturus"
+    ],
+    "abilities": [
+      "the_company",
+      "future_sight"
+    ],
+    "leaders": [
+      "nomadagentmercer",
+      "nomadagentthundarian",
+      "nomadagentartuno",
+      "nomadcommander",
+      "nomadhero"
+    ],
+    "promissoryNotes": [
+      "cavalry"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "nomad_flagship",
+      "infantry",
+      "nomad_mech",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "",
+    "preferredColours": [
+      "nvy",
+      "blu",
+      "gcr",
+      "ppl",
+      "azr",
+      "sns",
+      "ryl",
+      "vpw",
+      "eth"
+    ],
+    "source": "pok",
+    "priorityNumber": 2
+  },
+  {
+    "alias": "naaz",
+    "factionName": "The Naaz-Rokha Alliance",
+    "shortName": "Naaz-Rokha",
+    "shortTag": "NRA",
+    "homeSystem": "57",
+    "startingFleet": "2 cv,dd,2 ff,3 inf n,mech r,sd n",
+    "commodities": 3,
+    "factionTech": [
+      "pfa",
+      "sc"
+    ],
+    "startingTech": [
+      "pa",
+      "aida"
+    ],
+    "homePlanets": [
+      "naazir",
+      "rokha"
+    ],
+    "abilities": [
+      "distant_suns",
+      "fabrication"
+    ],
+    "leaders": [
+      "naazagent",
+      "naazcommander",
+      "naazhero"
+    ],
+    "promissoryNotes": [
+      "bmf"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "naaz_flagship",
+      "infantry",
+      "naaz_mech",
+      "naaz_mech_space",
+      "pds",
+      "spacedock"
+    ],
+    "complexity": "Low",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheNaazRokhaAlliance",
+    "preferredColours": [
+      "eme",
+      "grn",
+      "frs",
+      "psn",
+      "tqs",
+      "plm",
+      "cam",
+      "ryl",
+      "jad"
+    ],
+    "source": "pok",
+    "priorityNumber": 19
+  },
+  {
+    "alias": "titans",
+    "factionName": "The Titans of Ul",
+    "shortName": "Ul",
+    "shortTag": "UL",
+    "homeSystem": "55",
+    "startingFleet": "dn,2 cr,2 ff,3 inf elysium,sd elysium",
+    "commodities": 2,
+    "factionTech": [
+      "ht2",
+      "se2"
+    ],
+    "startingTech": [
+      "amd",
+      "sdn"
+    ],
+    "homePlanets": [
+      "elysium"
+    ],
+    "abilities": [
+      "terragenesis",
+      "awaken",
+      "coalescence"
+    ],
+    "leaders": [
+      "titansagent",
+      "titanscommander",
+      "titanshero"
+    ],
+    "promissoryNotes": [
+      "terraform"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "titans_cruiser",
+      "carrier",
+      "dreadnought",
+      "titans_flagship",
+      "infantry",
+      "titans_mech",
+      "titans_pds",
+      "spacedock"
+    ],
+    "complexity": "Moderate",
+    "wikiURL": "https://ti4ultimate.com/game/factions?faction=TheTitansOfUl",
+    "preferredColours": [
+      "pnk",
+      "rse",
+      "vpw",
+      "sbt",
+      "psy",
+      "blt",
+      "plm",
+      "sns",
+      "pch",
+      "nea",
+      "lvn"
+    ],
+    "source": "pok",
+    "priorityNumber": 13
+  },
+  {
+    "alias": "bastion",
+    "factionName": "Last Bastion",
+    "homeSystem": "92",
+    "startingFleet": "3 inf o, sd o, 2 ff, cv, dn, ca",
+    "commodities": 1,
+    "factionTech": [
+      "proxima",
+      "helios2"
+    ],
+    "startingTechOptions": [
+      "amd",
+      "det",
+      "st",
+      "sdn"
+    ],
+    "startingTechAmount": 1,
+    "homePlanets": [
+      "ordinian",
+      "revelation"
+    ],
+    "abilities": [
+      "liberate",
+      "galvanize",
+      "phoenixstandard"
+    ],
+    "leaders": [
+      "bastionagent",
+      "bastioncommander",
+      "bastionhero"
+    ],
+    "promissoryNotes": [
+      "raisethestandard"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "bastion_flagship",
+      "infantry",
+      "bastion_mech",
+      "pds",
+      "bastion_spacedock"
+    ],
+    "preferredColours": [
+      "dw",
+      "jpt",
+      "ylw",
+      "blu",
+      "crm",
+      "tpl",
+      "wsp",
+      "cpr"
+    ],
+    "source": "thunders_edge",
+    "priorityNumber": 21
+  },
+  {
+    "alias": "deepwrought",
+    "factionName": "The Deepwrought Scholarate",
+    "homeSystem": "95",
+    "startingFleet": "3 inf i, sd i, 4 ff, cv, dn",
+    "commodities": 3,
+    "factionTech": [
+      "hydrothermal",
+      "radical"
+    ],
+    "startingTechOptions": [],
+    "startingTechAmount": 2,
+    "homePlanets": [
+      "ikatena"
+    ],
+    "abilities": [
+      "researchteam",
+      "oceanbound"
+    ],
+    "leaders": [
+      "deepwroughtagent",
+      "deepwroughtcommander",
+      "deepwroughthero"
+    ],
+    "promissoryNotes": [
+      "shareknowledge"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "deepwrought_flagship",
+      "infantry",
+      "deepwrought_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "gcr",
+      "ppl",
+      "vpw",
+      "tea",
+      "plm",
+      "ryl",
+      "eth",
+      "nvy",
+      "azr"
+    ],
+    "source": "thunders_edge",
+    "priorityNumber": 7
+  },
+  {
+    "alias": "firmament",
+    "factionName": "The Firmament",
+    "homeSystem": "96a",
+    "startingFleet": "1 inf c, 2 inf t, cv, 3 ff, ca, dd, sd c",
+    "commodities": 3,
+    "factionTech": [
+      "planesplitter-firm",
+      "parasite-firm"
+    ],
+    "startingTechOptions": [
+      "nm",
+      "pa",
+      "st",
+      "sdn"
+    ],
+    "startingTechAmount": 1,
+    "homePlanets": [
+      "cronos",
+      "tallin"
+    ],
+    "abilities": [
+      "plotsplots",
+      "puppetsoftheblade"
+    ],
+    "leaders": [
+      "firmamentagent",
+      "firmamentcommander",
+      "firmamenthero"
+    ],
+    "promissoryNotes": [
+      "blackops"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "firmament_flagship",
+      "infantry",
+      "firmament_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "ppl",
+      "blu",
+      "blk",
+      "ryl",
+      "sns",
+      "rby",
+      "rbw",
+      "pld",
+      "plm"
+    ],
+    "source": "thunders_edge",
+    "priorityNumber": 30
+  },
+  {
+    "alias": "obsidian",
+    "factionName": "The Obsidian",
+    "homeSystem": "96b",
+    "startingFleet": "1 inf c, 2 inf t, cv, 3 ff, ca, dd, sd c",
+    "commodities": 3,
+    "factionTech": [
+      "planesplitter-obs",
+      "parasite-obs"
+    ],
+    "startingTech": [],
+    "homePlanets": [
+      "cronoshollow",
+      "tallinhollow"
+    ],
+    "abilities": [
+      "nocturne",
+      "bladesorchestra",
+      "marionettes"
+    ],
+    "leaders": [
+      "obsidianagent",
+      "obsidiancommander",
+      "obsidianhero"
+    ],
+    "promissoryNotes": [
+      "malevolency"
+    ],
+    "units": [
+      "fighter",
+      "destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "obsidian_flagship",
+      "infantry",
+      "obsidian_mech",
+      "pds",
+      "spacedock"
+    ],
+    "source": "thunders_edge"
+  },
+  {
+    "alias": "crimson",
+    "factionName": "The Crimson Rebellion",
+    "shortName": "Rebellion",
+    "homeSystem": "94",
+    "startingFleet": "4 inf a, sd a, 3 ff, pds a, cv, 2 dd",
+    "commodities": 2,
+    "factionTech": [
+      "subatomic",
+      "exile2"
+    ],
+    "startingTechOptions": [
+      "det",
+      "amd",
+      "ps",
+      "aida"
+    ],
+    "startingTechAmount": 1,
+    "homePlanets": [
+      "ahkcreuxx"
+    ],
+    "abilities": [
+      "sundered",
+      "incursion",
+      "sorrow"
+    ],
+    "leaders": [
+      "crimsonagent",
+      "crimsoncommander",
+      "crimsonhero"
+    ],
+    "promissoryNotes": [
+      "sever"
+    ],
+    "units": [
+      "fighter",
+      "crimson_destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "crimson_flagship",
+      "infantry",
+      "crimson_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "red",
+      "bld",
+      "nm",
+      "rby",
+      "sns",
+      "vpw",
+      "rst"
+    ],
+    "source": "thunders_edge",
+    "priorityNumber": 16
+  },
+  {
+    "alias": "ralnel",
+    "factionName": "The Ral Nel Consortium",
+    "shortName": "Ral Nel",
+    "homeSystem": "93",
+    "startingFleet": "2 inf m, 2 inf r, cv, 2 ff, dn, pds r, pds m, dd, sd m",
+    "commodities": 4,
+    "factionTech": [
+      "nanomachines",
+      "linkship2"
+    ],
+    "startingTechOptions": [
+      "nm",
+      "pa",
+      "ps",
+      "aida"
+    ],
+    "startingTechAmount": 1,
+    "homePlanets": [
+      "mez",
+      "rep"
+    ],
+    "abilities": [
+      "survivalinstinct",
+      "miniaturization"
+    ],
+    "leaders": [
+      "ralnelagent",
+      "ralnelcommander",
+      "ralnelhero"
+    ],
+    "promissoryNotes": [
+      "nanolink"
+    ],
+    "units": [
+      "fighter",
+      "ralnel_destroyer",
+      "cruiser",
+      "carrier",
+      "dreadnought",
+      "ralnel_flagship",
+      "infantry",
+      "ralnel_mech",
+      "pds",
+      "spacedock"
+    ],
+    "preferredColours": [
+      "grn",
+      "ylw",
+      "tpl",
+      "lme",
+      "wtm",
+      "psn",
+      "cam",
+      "frs",
+      "jad"
+    ],
+    "source": "thunders_edge",
+    "priorityNumber": 12
+  }
+]

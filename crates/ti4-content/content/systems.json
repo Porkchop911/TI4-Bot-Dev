@@ -1,0 +1,3762 @@
+[
+  {
+    "tileBack": "green",
+    "id": "01",
+    "name": "Jord - Sol",
+    "aliases": [
+      "01",
+      "1",
+      "jord",
+      "sol",
+      "solhs",
+      "earth"
+    ],
+    "wormholes": [],
+    "planets": [
+      "jord"
+    ],
+    "source": "base"
+  },
+  {
+    "id": "02",
+    "name": "Moll Primus - Mentak",
+    "aliases": [
+      "02",
+      "2",
+      "mollprimus",
+      "mentak",
+      "mentakhs",
+      "moll",
+      "mentakcoalition",
+      "mentakcoalitionhs",
+      "mentak_hs",
+      "mp",
+      "molpriums",
+      "pirates"
+    ],
+    "wormholes": [],
+    "planets": [
+      "mollprimus"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "03",
+    "name": "Darien - Yin",
+    "aliases": [
+      "03",
+      "3",
+      "darien",
+      "yin",
+      "yinhs",
+      "yinbrotherhood",
+      "brotherhood",
+      "yinbrotherhoodhs",
+      "brotherhoodhs",
+      "yin_hs",
+      "daryen",
+      "draien",
+      "darin",
+      "clones"
+    ],
+    "wormholes": [],
+    "planets": [
+      "darien"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "04",
+    "name": "Muaat - Muaat",
+    "aliases": [
+      "04",
+      "4",
+      "muaat",
+      "muaaths",
+      "embers",
+      "embershs",
+      "muat",
+      "muaa",
+      "fire"
+    ],
+    "wormholes": [],
+    "planets": [
+      "muaat"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "05",
+    "name": "Nestphar - Arborec",
+    "aliases": [
+      "05",
+      "5",
+      "nestphar",
+      "arborec",
+      "arborechs",
+      "plants",
+      "arborec_hs",
+      "nestfar",
+      "nstfr",
+      "arbo",
+      "plant"
+    ],
+    "wormholes": [],
+    "planets": [
+      "nestphar"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "06",
+    "name": "[0.0.0] - L1Z1X",
+    "aliases": [
+      "06",
+      "6",
+      "l1z1x",
+      "l1",
+      "l1hs",
+      "l1z1xhs",
+      "0.0.0",
+      "l1_hs",
+      "[0.0.0]",
+      "cyborgs",
+      "cyborg",
+      "borg"
+    ],
+    "wormholes": [],
+    "planets": [
+      "0.0.0"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "07",
+    "name": "Winnu - Winnu",
+    "aliases": [
+      "07",
+      "7",
+      "winnu",
+      "winnuhs",
+      "winu",
+      "winn"
+    ],
+    "wormholes": [],
+    "planets": [
+      "winnu"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "08",
+    "name": "Mordai II - Nekro",
+    "aliases": [
+      "08",
+      "8",
+      "mordaiii",
+      "mordai",
+      "nekro",
+      "nekrovirus",
+      "virus",
+      "nekrohs",
+      "nekrovirushs",
+      "mordai2",
+      "nekro_hs",
+      "nkro"
+    ],
+    "wormholes": [],
+    "planets": [
+      "mordaiii"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "09",
+    "name": "Maaluuk/Druaa - Naalu",
+    "aliases": [
+      "09",
+      "9",
+      "maaluuk",
+      "druaa",
+      "druaamaaluuk",
+      "maaluukdruaa",
+      "naalu",
+      "naaluhs",
+      "snakes",
+      "dru",
+      "maaluk",
+      "maluuk",
+      "mlk",
+      "drua",
+      "maluk",
+      "snake"
+    ],
+    "wormholes": [],
+    "planets": [
+      "maaluuk",
+      "druaa"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "10",
+    "name": "Arc Prime/Wren Terra - Letnev",
+    "aliases": [
+      "10",
+      "arcprime",
+      "wrenterra",
+      "arcprimewrenterra",
+      "letnev",
+      "barony",
+      "baronyofletnev",
+      "baronyhs",
+      "letnevhs",
+      "arkprime",
+      "arc_prime",
+      "arcprim",
+      "wrentera",
+      "rentera",
+      "wren_terra",
+      "renterra",
+      "baron"
+    ],
+    "wormholes": [],
+    "planets": [
+      "arcprime",
+      "wrenterra"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "100",
+    "name": "Tempesta",
+    "aliases": [
+      "te12",
+      "tempesta",
+      "tempest"
+    ],
+    "planets": [
+      "tempesta"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "101",
+    "name": "Olergodt",
+    "aliases": [
+      "te18",
+      "olergodt"
+    ],
+    "planets": [
+      "olergodt"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "102",
+    "name": "Andeara",
+    "aliases": [
+      "te03",
+      "andeara"
+    ],
+    "planets": [
+      "andeara"
+    ],
+    "wormholes": [
+      "ALPHA"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "103",
+    "name": "Vira Pics III",
+    "aliases": [
+      "te20",
+      "vira",
+      "virapics",
+      "vira3",
+      "pics3",
+      "pics"
+    ],
+    "planets": [
+      "virapicsiii"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "104",
+    "name": "Lesab",
+    "aliases": [
+      "te21",
+      "lesab"
+    ],
+    "planets": [
+      "lesab"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "105",
+    "name": "New Terra/Tinnes",
+    "aliases": [
+      "te17",
+      "neutera",
+      "tinnes",
+      "newterra"
+    ],
+    "planets": [
+      "neutera",
+      "tinnes"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "106",
+    "name": "Cresius/Lazul Rex",
+    "aliases": [
+      "te16",
+      "cresius",
+      "lazulrex"
+    ],
+    "planets": [
+      "cresius",
+      "lazulrex"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "107",
+    "name": "Tiamat/Hercalor",
+    "aliases": [
+      "te25",
+      "tiamat",
+      "dragon",
+      "hercalor",
+      "hercolor",
+      "hercolour"
+    ],
+    "planets": [
+      "tiamat",
+      "hercalor"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "108",
+    "name": "Kostboth/Capha",
+    "aliases": [
+      "te24",
+      "kostboth",
+      "costboth",
+      "cost2",
+      "capha"
+    ],
+    "planets": [
+      "kostboth",
+      "capha"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "109",
+    "name": "Bellatrix/Tsion Station",
+    "aliases": [
+      "te23",
+      "bellatrix",
+      "tsion",
+      "tsionstation"
+    ],
+    "planets": [
+      "bellatrix",
+      "tsionstation"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "11",
+    "name": "Ragh/Lisis II - Saar",
+    "aliases": [
+      "11",
+      "lisisii",
+      "lisis2",
+      "ragh",
+      "raghlisis",
+      "raghlisis2",
+      "raghlisisii",
+      "lisisiiragh",
+      "lisis2ragh",
+      "lisisragh",
+      "saar",
+      "clanofsaar",
+      "saarhs",
+      "clanofsaarhs",
+      "lisistwo",
+      "lis2",
+      "lisii",
+      "lisis_2",
+      "lisis_ii",
+      "rag"
+    ],
+    "wormholes": [],
+    "planets": [
+      "lisisii",
+      "ragh"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "110",
+    "name": "Horizon/El'Nath/Luthien VI",
+    "aliases": [
+      "te26",
+      "horizon",
+      "elnath",
+      "luthien4",
+      "luthieniv",
+      "luthienvi",
+      "luthien6"
+    ],
+    "planets": [
+      "horizon",
+      "elnath",
+      "luthieniv"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "111",
+    "name": "Tarana/Oluz Station",
+    "aliases": [
+      "te22",
+      "tarana",
+      "oluz",
+      "oluzstation"
+    ],
+    "planets": [
+      "tarana",
+      "oluzstation"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "112",
+    "name": "Mecatol Rex",
+    "aliases": [
+      "te05",
+      "mrte",
+      "mr",
+      "mecatol",
+      "mecatolrex",
+      "rex",
+      "mechatolrex"
+    ],
+    "planets": [
+      "mrte"
+    ],
+    "tileBack": "black",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "113",
+    "name": "Beta Rift",
+    "aliases": [
+      "te07",
+      "betarift"
+    ],
+    "wormholes": [
+      "BETA"
+    ],
+    "planets": [],
+    "tileBack": "red",
+    "isGravityRift": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "114",
+    "name": "Entropic Scar",
+    "aliases": [
+      "te27",
+      "scar",
+      "entropicscar",
+      "entropic"
+    ],
+    "planets": [],
+    "wormholes": [],
+    "tileBack": "red",
+    "isScar": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "115",
+    "name": "Industrex",
+    "aliases": [
+      "te30",
+      "industrex",
+      "industrialrex"
+    ],
+    "planets": [
+      "industrex"
+    ],
+    "tileBack": "red",
+    "isAsteroidField": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "116",
+    "name": "Lemox",
+    "aliases": [
+      "te28",
+      "lemox",
+      "lemoxscar"
+    ],
+    "planets": [
+      "lemox"
+    ],
+    "tileBack": "red",
+    "isScar": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "117",
+    "name": "The Watchtower",
+    "aliases": [
+      "te29",
+      "watchtower",
+      "thewatch",
+      "thewatchtower"
+    ],
+    "planets": [
+      "thewatchtower"
+    ],
+    "tileBack": "red",
+    "isAsteroidField": true,
+    "isGravityRift": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "118",
+    "name": "Ahk Creuxx - Rebellion",
+    "aliases": [
+      "te06",
+      "creuxx",
+      "ahk",
+      "ahkcreuxx",
+      "crimson",
+      "rebellion",
+      "crimsonhs",
+      "rebellionhs",
+      "crimsonrebellion",
+      "crimsonrebellionhs"
+    ],
+    "planets": [
+      "ahkcreuxx"
+    ],
+    "wormholes": [
+      "EPSILON"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "12",
+    "name": "Nar/Jol - Jol-Nar",
+    "aliases": [
+      "12",
+      "nar",
+      "jol",
+      "jolnar",
+      "jolnarhs",
+      "universitiesofjolnar",
+      "universities",
+      "jn",
+      "jol_nar",
+      "fish",
+      "fishes"
+    ],
+    "wormholes": [],
+    "planets": [
+      "nar",
+      "jol"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "13",
+    "name": "Quinarra/Trenlak - Sardakk",
+    "aliases": [
+      "13",
+      "trenlak",
+      "quinarra",
+      "quinarratrenlak",
+      "trenlakquinarra",
+      "sardakk",
+      "sardakkhs",
+      "sardakknorr",
+      "sardakknorrhs",
+      "bugs",
+      "quinara",
+      "qinarra",
+      "qinara",
+      "trnlk",
+      "bug"
+    ],
+    "wormholes": [],
+    "planets": [
+      "trenlak",
+      "quinarra"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "14",
+    "name": "Archon Ren/Archon Tau - Xxcha",
+    "aliases": [
+      "14",
+      "archonren",
+      "archontau",
+      "archonrenarchontau",
+      "archontauarchonren",
+      "xxcha",
+      "xxchakingdom",
+      "xxchahs",
+      "xxchakingdomhs",
+      "turtles",
+      "archon_ren",
+      "archon_tau",
+      "arcon_ren",
+      "arconren",
+      "archonrn",
+      "arcon_tau",
+      "arcontau",
+      "archonta"
+    ],
+    "wormholes": [],
+    "planets": [
+      "archonren",
+      "archontau"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "15",
+    "name": "Retillion/Shalloq - Yssaril",
+    "aliases": [
+      "15",
+      "retillion",
+      "shalloq",
+      "retillionshalloq",
+      "shalloqrettillion",
+      "yssaril",
+      "yssariltribes",
+      "yssarilhs",
+      "yssariltribeshs",
+      "goblins",
+      "retilion",
+      "shaloq",
+      "retillon",
+      "retllion",
+      "retillio",
+      "shallok",
+      "shalok"
+    ],
+    "wormholes": [],
+    "planets": [
+      "retillion",
+      "shalloq"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "16",
+    "name": "Arretze/Hercant/Kamdorn - Hacan",
+    "aliases": [
+      "16",
+      "arretze",
+      "hercant",
+      "kamdorn",
+      "arretzhercantkamdorn",
+      "hacan",
+      "emirates",
+      "emiratesofhacan",
+      "hacanhs",
+      "emiratesofhacanhs",
+      "lions",
+      "aretze",
+      "hrcnt",
+      "kmdrn",
+      "arrtze",
+      "artze",
+      "atz",
+      "herkant",
+      "heircant",
+      "hercnt",
+      "hct",
+      "kmdorn",
+      "kamdrn",
+      "kdn"
+    ],
+    "wormholes": [],
+    "planets": [
+      "hercant",
+      "arretze",
+      "kamdorn"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "17",
+    "name": "Creuss Gate - Creuss",
+    "aliases": [
+      "17",
+      "deltawh",
+      "creussgate",
+      "deltawormhole",
+      "ghostsgate",
+      "gate"
+    ],
+    "wormholes": [
+      "DELTA"
+    ],
+    "planets": [],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "18",
+    "name": "Mecatol Rex",
+    "aliases": [
+      "18",
+      "mr",
+      "mecatol",
+      "mecatolrex",
+      "rex",
+      "capital",
+      "mechatolrex",
+      "camelot"
+    ],
+    "wormholes": [],
+    "planets": [
+      "mr"
+    ],
+    "source": "base",
+    "tileBack": "black"
+  },
+  {
+    "id": "19",
+    "name": "Wellon",
+    "aliases": [
+      "19",
+      "wellon",
+      "wel",
+      "weolon"
+    ],
+    "wormholes": [],
+    "planets": [
+      "wellon"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "20",
+    "name": "Vefut II",
+    "aliases": [
+      "20",
+      "vefutii",
+      "vefut2",
+      "vefut",
+      "vefoot2",
+      "vefut_2",
+      "vefutii",
+      "vefut_ii",
+      "vft"
+    ],
+    "wormholes": [],
+    "planets": [
+      "vefutii"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "21",
+    "name": "Thibah",
+    "aliases": [
+      "21",
+      "thibah",
+      "thiba",
+      "tiba"
+    ],
+    "wormholes": [],
+    "planets": [
+      "thibah"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "22",
+    "name": "Tarmann",
+    "aliases": [
+      "22",
+      "tarmann",
+      "tm",
+      "tarman",
+      "tar_mann",
+      "tar_man"
+    ],
+    "wormholes": [],
+    "planets": [
+      "tarmann"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "23",
+    "name": "Saudor",
+    "aliases": [
+      "23",
+      "saudor",
+      "sau",
+      "saud"
+    ],
+    "wormholes": [],
+    "planets": [
+      "saudor"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "24",
+    "name": "Mehar Xull",
+    "aliases": [
+      "24",
+      "meharxull",
+      "mehar",
+      "mx",
+      "meharxul",
+      "mehurxul",
+      "mehar_xull"
+    ],
+    "wormholes": [],
+    "planets": [
+      "meharxull"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "25",
+    "name": "Quann",
+    "aliases": [
+      "25",
+      "quann",
+      "quannbeta",
+      "quannbwh",
+      "quannbetawormhole",
+      "quannbwormhole",
+      "quan"
+    ],
+    "wormholes": [
+      "BETA"
+    ],
+    "planets": [
+      "quann"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "26",
+    "name": "Lodor",
+    "aliases": [
+      "26",
+      "lodor",
+      "lodorawh",
+      "lodoralphawh",
+      "lodoralphawormhole",
+      "lodoralpha",
+      "ldr",
+      "lod"
+    ],
+    "wormholes": [
+      "ALPHA"
+    ],
+    "planets": [
+      "lodor"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "27",
+    "name": "Starpoint/New Albion",
+    "aliases": [
+      "27",
+      "newalbion",
+      "starpoint",
+      "starpointnewalbion",
+      "newalbionstarpoint",
+      "nasp",
+      "nalbion",
+      "new_albion",
+      "spna",
+      "sna"
+    ],
+    "wormholes": [],
+    "planets": [
+      "newalbion",
+      "starpoint"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "28",
+    "name": "Tequran/Torkan",
+    "aliases": [
+      "28",
+      "tequran",
+      "torkan",
+      "torkantequran",
+      "tequrantorkan",
+      "tt",
+      "tqn",
+      "tkn",
+      "tqntkn",
+      "tkntqn"
+    ],
+    "wormholes": [],
+    "planets": [
+      "tequran",
+      "torkan"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "29",
+    "name": "Qucenn/Rarron",
+    "aliases": [
+      "29",
+      "qucenn",
+      "rarron",
+      "qucennrarron",
+      "rarronqucenn",
+      "qr",
+      "qucen",
+      "quecn",
+      "quecnn",
+      "qcuen",
+      "qcuenn",
+      "qcn",
+      "rrn",
+      "raron"
+    ],
+    "wormholes": [],
+    "planets": [
+      "qucenn",
+      "rarron"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "30",
+    "name": "Mellon/Zohbat",
+    "aliases": [
+      "30",
+      "mellon",
+      "zohbat",
+      "zohbatmellon",
+      "mellonzohbat",
+      "mz",
+      "melon",
+      "zbt",
+      "zobat",
+      "mello"
+    ],
+    "wormholes": [],
+    "planets": [
+      "mellon",
+      "zohbat"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "31",
+    "name": "Lazar/Sakulag",
+    "aliases": [
+      "31",
+      "lazar",
+      "sakulag",
+      "lazarsakulag",
+      "sakulaglazar",
+      "ls",
+      "lzr",
+      "skg",
+      "sakula"
+    ],
+    "wormholes": [],
+    "planets": [
+      "lazar",
+      "sakulag"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "32",
+    "name": "Dal-Bootha/Xxehan",
+    "aliases": [
+      "32",
+      "dalbootha",
+      "xxehan",
+      "xxehandalbootha",
+      "dalboothaxxehan",
+      "dbx",
+      "dbxx",
+      "xehan",
+      "xxhan",
+      "dal_bootha",
+      "dalboota",
+      "dalbotha"
+    ],
+    "wormholes": [],
+    "planets": [
+      "dalbootha",
+      "xxehan"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "33",
+    "name": "Corneeq/Resculon",
+    "aliases": [
+      "33",
+      "corneeq",
+      "resculon",
+      "corneeqresculon",
+      "resculoncorneeq",
+      "cr"
+    ],
+    "wormholes": [],
+    "planets": [
+      "corneeq",
+      "resculon"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "34",
+    "name": "Centauri/Gral",
+    "aliases": [
+      "34",
+      "centauri",
+      "gral",
+      "gralcentauri",
+      "centaurigral",
+      "cg",
+      "cntri",
+      "grl",
+      "centari"
+    ],
+    "wormholes": [],
+    "planets": [
+      "centauri",
+      "gral"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "35",
+    "name": "Bereg/Lirta iv",
+    "aliases": [
+      "35",
+      "bereg",
+      "lirta",
+      "lirtaiv",
+      "lirta4",
+      "bereglirta",
+      "lirtabereg",
+      "bereglirtaiv",
+      "lirtaivbereg",
+      "bl4",
+      "bliv",
+      "brg",
+      "lrta",
+      "lirta",
+      "lirta4",
+      "lirta_4",
+      "lirta_iv"
+    ],
+    "wormholes": [],
+    "planets": [
+      "bereg",
+      "lirtaiv"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "36",
+    "name": "Arnor/Lor",
+    "aliases": [
+      "36",
+      "arnor",
+      "lor",
+      "arnorlor",
+      "lorarnor",
+      "al",
+      "arnr",
+      "lr",
+      "arnrlr"
+    ],
+    "wormholes": [],
+    "planets": [
+      "arnor",
+      "lor"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "37",
+    "name": "Arinam/Meer",
+    "aliases": [
+      "37",
+      "arinam",
+      "meer",
+      "meerarinam",
+      "arinammeer",
+      "am",
+      "ari",
+      "arnm",
+      "mer",
+      "mir"
+    ],
+    "wormholes": [],
+    "planets": [
+      "arinam",
+      "meer"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "38",
+    "name": "Abyz/Fria",
+    "aliases": [
+      "38",
+      "abyz",
+      "fria",
+      "abyzfria",
+      "friaabyz",
+      "af",
+      "abiz",
+      "abz",
+      "fri",
+      "frya"
+    ],
+    "wormholes": [],
+    "planets": [
+      "abyz",
+      "fria"
+    ],
+    "source": "base",
+    "tileBack": "blue"
+  },
+  {
+    "id": "39",
+    "name": "Alpha Wormhole",
+    "aliases": [
+      "39",
+      "alphawh",
+      "alpha",
+      "alphawormhole",
+      "awh",
+      "alphawh",
+      "wha"
+    ],
+    "wormholes": [
+      "ALPHA"
+    ],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "40",
+    "name": "Beta Wormhole",
+    "aliases": [
+      "40",
+      "betawh",
+      "beta",
+      "betawormhole",
+      "betawh",
+      "bwh",
+      "whb"
+    ],
+    "wormholes": [
+      "BETA"
+    ],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "41",
+    "name": "Gravity Rift",
+    "aliases": [
+      "41",
+      "gravityrift",
+      "rift",
+      "gravrift",
+      "gr"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isGravityRift": true,
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "42",
+    "name": "Nebula",
+    "aliases": [
+      "42",
+      "nebula",
+      "neb"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isNebula": true,
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "43",
+    "name": "Supernova",
+    "aliases": [
+      "43",
+      "supernova1",
+      "nova1",
+      "sn1",
+      "supernova",
+      "nova",
+      "super"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isSupernova": true,
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "44",
+    "name": "Asteroids",
+    "aliases": [
+      "44",
+      "asteroids1",
+      "asteroidsfield1",
+      "af1",
+      "asteroids",
+      "asteroid",
+      "asteroidfield",
+      "asteroidsfield"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isAsteroidField": true,
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "45",
+    "name": "Asteroids",
+    "aliases": [
+      "45",
+      "asteroids2",
+      "asteroidsfield2",
+      "af2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isAsteroidField": true,
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "46",
+    "name": "Empty System",
+    "aliases": [
+      "46",
+      "void1",
+      "empty1",
+      "emtpyspace1",
+      "space1",
+      "void",
+      "empty",
+      "emptyspace",
+      "space"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "47",
+    "name": "Empty System",
+    "aliases": [
+      "47",
+      "void2",
+      "empty2",
+      "emtpyspace2",
+      "space2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "48",
+    "name": "Empty System",
+    "aliases": [
+      "48",
+      "void3",
+      "empty3",
+      "emtpyspace3",
+      "space3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "49",
+    "name": "Empty System",
+    "aliases": [
+      "49",
+      "void4",
+      "empty4",
+      "emtpyspace4",
+      "space4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "50",
+    "name": "Empty System",
+    "aliases": [
+      "50",
+      "void5",
+      "empty5",
+      "emtpyspace5",
+      "space5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "base",
+    "tileBack": "red"
+  },
+  {
+    "id": "51",
+    "name": "Creuss - Creuss",
+    "aliases": [
+      "51",
+      "creuss",
+      "ghosts",
+      "ghostsofcruess",
+      "ghostshs",
+      "cruesshs",
+      "ghost"
+    ],
+    "wormholes": [
+      "DELTA"
+    ],
+    "planets": [
+      "creuss"
+    ],
+    "source": "base",
+    "tileBack": "green"
+  },
+  {
+    "id": "52",
+    "name": "Ixth - Mahact",
+    "aliases": [
+      "52",
+      "ixth",
+      "mahact",
+      "mahacths",
+      "mahactgenesorcerers",
+      "mahcat_hs",
+      "ixs",
+      "mahacat",
+      "mhact"
+    ],
+    "wormholes": [],
+    "planets": [
+      "ixth"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "53",
+    "name": "Arcturus - Nomad",
+    "aliases": [
+      "53",
+      "arcturus",
+      "nomad",
+      "nomadhs",
+      "bestmad",
+      "nomad_hs",
+      "nmd"
+    ],
+    "wormholes": [],
+    "planets": [
+      "arcturus"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "54",
+    "name": "Acheron - Vuil'raith",
+    "aliases": [
+      "54",
+      "acheron",
+      "cabal",
+      "cabalhs",
+      "vuilrath",
+      "vuilrathhs",
+      "vuilrathcabal",
+      "dinos",
+      "vrc",
+      "vrc_hs",
+      "cabal_hc",
+      "vuilrath_hs",
+      "vulrath",
+      "vuilwrath"
+    ],
+    "wormholes": [],
+    "planets": [
+      "acheron"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "55",
+    "name": "Elysium - Ul",
+    "aliases": [
+      "55",
+      "elysium",
+      "titans",
+      "titanshs",
+      "titansoful",
+      "titansofulhs",
+      "titan",
+      "titans_hs",
+      "elisium"
+    ],
+    "wormholes": [],
+    "planets": [
+      "elysium"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "56",
+    "name": "The Dark - Empyrean",
+    "aliases": [
+      "56",
+      "thedark",
+      "empyrean",
+      "empyreanhs",
+      "empy",
+      "empyhs",
+      "bats",
+      "bat",
+      "dark",
+      "drak",
+      "the dark"
+    ],
+    "wormholes": [],
+    "planets": [
+      "thedark"
+    ],
+    "isNebula": true,
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "57",
+    "name": "Naazir/Rokha - Naaz-Rokha",
+    "aliases": [
+      "57",
+      "naazir",
+      "rokha",
+      "rokhanaazir",
+      "naazirrokha",
+      "nra",
+      "nrahs",
+      "naazrokha",
+      "naazrokhahs",
+      "naazrokhaalliance",
+      "nazir",
+      "roka",
+      "naaz",
+      "rokh"
+    ],
+    "wormholes": [],
+    "planets": [
+      "naazir",
+      "rokha"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "58",
+    "name": "Ylir/Avar/Valk - Argent",
+    "aliases": [
+      "58",
+      "ylir",
+      "valk",
+      "avar",
+      "ylirvalkavar",
+      "argent",
+      "argenths",
+      "argentflight",
+      "argentflighths",
+      "birds",
+      "avr",
+      "ava",
+      "vlk",
+      "ylr",
+      "ylyr",
+      "vulk",
+      "bird"
+    ],
+    "wormholes": [],
+    "planets": [
+      "valk",
+      "ylir",
+      "avar"
+    ],
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "59",
+    "name": "Archon Vail",
+    "aliases": [
+      "59",
+      "archonvail",
+      "archonv",
+      "av",
+      "arconvail",
+      "archonveil",
+      "archon_vail",
+      "archon_veil",
+      "arcon_vail"
+    ],
+    "wormholes": [],
+    "planets": [
+      "archonvail"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "60",
+    "name": "Perimeter",
+    "aliases": [
+      "60",
+      "perimeter",
+      "peremeter",
+      "perymeter",
+      "prmtr",
+      "prmeter",
+      "primeter",
+      "primter"
+    ],
+    "wormholes": [],
+    "planets": [
+      "perimeter"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "61",
+    "name": "Ang",
+    "aliases": [
+      "61",
+      "ang"
+    ],
+    "wormholes": [],
+    "planets": [
+      "ang"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "62",
+    "name": "Sem-Lore",
+    "aliases": [
+      "62",
+      "semlore",
+      "sem_lore",
+      "slr",
+      "smlore",
+      "semlor",
+      "sem_lor",
+      "semlord",
+      "semilore",
+      "sem",
+      "sl"
+    ],
+    "wormholes": [],
+    "planets": [
+      "semlore"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "63",
+    "name": "Vorhal",
+    "aliases": [
+      "63",
+      "vorhal",
+      "vrhl",
+      "vrhl",
+      "vorhl"
+    ],
+    "wormholes": [],
+    "planets": [
+      "vorhal"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "64",
+    "name": "Atlas",
+    "aliases": [
+      "64",
+      "atlas",
+      "atlasb",
+      "atlasbwh",
+      "atlasbwomrhole",
+      "atlasbeta",
+      "atlasbetawh",
+      "atls"
+    ],
+    "wormholes": [
+      "BETA"
+    ],
+    "planets": [
+      "atlas"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "65",
+    "name": "Primor",
+    "aliases": [
+      "65",
+      "primor",
+      "prmr",
+      "primr",
+      "prmor",
+      "prim",
+      "prime"
+    ],
+    "wormholes": [],
+    "planets": [
+      "primor"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "66",
+    "name": "Hope's End",
+    "aliases": [
+      "66",
+      "hopesend",
+      "he",
+      "hopes_end",
+      "hope",
+      "hopeend",
+      "hope_end",
+      "hope",
+      "hope's end",
+      "hopes end"
+    ],
+    "wormholes": [],
+    "planets": [
+      "hopesend"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "67",
+    "name": "Cormund",
+    "aliases": [
+      "67",
+      "cormund",
+      "cormundgr",
+      "cormundgravrift",
+      "cormundrift",
+      "cormnd",
+      "cormond",
+      "crmnd",
+      "cmnd",
+      "cd"
+    ],
+    "wormholes": [],
+    "planets": [
+      "cormund"
+    ],
+    "isGravityRift": true,
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "68",
+    "name": "Everra",
+    "aliases": [
+      "68",
+      "everra",
+      "everranebula",
+      "evera",
+      "everr",
+      "evra",
+      "ev"
+    ],
+    "wormholes": [],
+    "planets": [
+      "everra"
+    ],
+    "isNebula": true,
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "69",
+    "name": "Accoen/Jeol-ir",
+    "aliases": [
+      "69",
+      "accoen",
+      "jeolir",
+      "acceonjeolir",
+      "joelir",
+      "acceonjoelir",
+      "acoen",
+      "jeol_ir",
+      "accen",
+      "accon",
+      "acn",
+      "joel_ir",
+      "joelir",
+      "joeljr",
+      "joel_jr",
+      "joel_ir",
+      "jeol_jr",
+      "jeoljr",
+      "jeol",
+      "joel",
+      "jewel",
+      "aj"
+    ],
+    "wormholes": [],
+    "planets": [
+      "accoen",
+      "jeolir"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "70",
+    "name": "Kraag/Siig",
+    "aliases": [
+      "70",
+      "kraag",
+      "siig",
+      "kraagsiig",
+      "siigkraag",
+      "ks",
+      "krag",
+      "sig",
+      "krg"
+    ],
+    "wormholes": [],
+    "planets": [
+      "kraag",
+      "siig"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "71",
+    "name": "Bakal/Alio Prima",
+    "aliases": [
+      "71",
+      "bakal",
+      "alioprima",
+      "alio",
+      "bakalalioprima",
+      "alioprimabakal",
+      "bakalalio",
+      "alio_prima",
+      "bkl",
+      "bkal",
+      "bakl.bap"
+    ],
+    "wormholes": [],
+    "planets": [
+      "bakal",
+      "alioprima"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "72",
+    "name": "Lisis/Velnor",
+    "aliases": [
+      "72",
+      "lisis",
+      "velnor",
+      "lisisvelnor",
+      "velnorlisis",
+      "lv",
+      "lis",
+      "vlnr",
+      "velnr",
+      "vlnor"
+    ],
+    "wormholes": [],
+    "planets": [
+      "lisis",
+      "velnor"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "73",
+    "name": "Cealdri/Xanhact",
+    "aliases": [
+      "73",
+      "cealdri",
+      "xanhact",
+      "cealdrixanhact",
+      "xanhactcealdri",
+      "cx",
+      "celdri",
+      "xnhct",
+      "cldri",
+      "caldri",
+      "xanhct",
+      "xct"
+    ],
+    "wormholes": [],
+    "planets": [
+      "cealdri",
+      "xanhact"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "74",
+    "name": "Vega Major/Vega Minor",
+    "aliases": [
+      "74",
+      "vegas",
+      "vegaminor",
+      "vegamajor",
+      "vegamajorvegaminor",
+      "vegaminorvegamajor",
+      "vgamj",
+      "vgamn",
+      "vegamj",
+      "vegamn",
+      "vega",
+      "major",
+      "minor",
+      "vga",
+      "vgas",
+      "vmm"
+    ],
+    "wormholes": [],
+    "planets": [
+      "vegamajor",
+      "vegaminor"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "75",
+    "name": "Loki/Ashtroth/Abaddon - Devils",
+    "aliases": [
+      "75",
+      "abaddon",
+      "loki",
+      "ashtroth",
+      "abbadonlokiashtroth",
+      "ala",
+      "abadon",
+      "ashtros",
+      "ashtrot",
+      "lki",
+      "devils",
+      "devil",
+      "laa",
+      "aal"
+    ],
+    "wormholes": [],
+    "planets": [
+      "loki",
+      "abaddon",
+      "ashtroth"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "76",
+    "name": "Rigels",
+    "aliases": [
+      "76",
+      "rigels",
+      "rigel1",
+      "rigeli",
+      "rigel2",
+      "rigelii",
+      "rigel3",
+      "rigeliii",
+      "rigel",
+      "rigl1",
+      "rigl1",
+      "rigl3",
+      "rigli",
+      "riglii",
+      "rigliii",
+      "rigl",
+      "rrr",
+      "rgl",
+      "rig"
+    ],
+    "wormholes": [],
+    "planets": [
+      "rigeliii",
+      "rigelii",
+      "rigeli"
+    ],
+    "source": "pok",
+    "tileBack": "blue"
+  },
+  {
+    "id": "77",
+    "name": "Empty System",
+    "aliases": [
+      "77",
+      "void6",
+      "empty6",
+      "emtpyspace6",
+      "space6"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "78",
+    "name": "Empty System",
+    "aliases": [
+      "78",
+      "void7",
+      "empty7",
+      "emtpyspace7",
+      "space7"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "79",
+    "name": "Asteroids Alpha Wormhole",
+    "aliases": [
+      "79",
+      "asteroidsalphawh",
+      "asteroidsawh",
+      "asteroidsalpha",
+      "asteroidalphawormhole",
+      "asteroidsawormhole",
+      "asawh",
+      "awhas"
+    ],
+    "wormholes": [
+      "ALPHA"
+    ],
+    "planets": [],
+    "isAsteroidField": true,
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "80",
+    "name": "Supernova",
+    "aliases": [
+      "80",
+      "supernova2",
+      "nova2",
+      "sn2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isSupernova": true,
+    "source": "pok",
+    "tileBack": "red"
+  },
+  {
+    "id": "81",
+    "name": "Nova Seed",
+    "aliases": [
+      "81",
+      "novaseed",
+      "ns"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "isSupernova": true,
+    "source": "pok",
+    "tileBack": "green"
+  },
+  {
+    "id": "82a",
+    "name": "Mallice - Locked Nexus",
+    "aliases": [
+      "82a",
+      "mallicelocked",
+      "nexuslocked",
+      "whnexsuslocked",
+      "nexusstarting",
+      "nexusstart",
+      "nexusinactive",
+      "nexusnew"
+    ],
+    "wormholes": [
+      "GAMMA"
+    ],
+    "planets": [
+      "lockedmallice"
+    ],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "82b",
+    "name": "Mallice - Nexus",
+    "aliases": [
+      "82b",
+      "mallice",
+      "malice",
+      "malis",
+      "mallis",
+      "mellice",
+      "mallic",
+      "nexus",
+      "wormholenexus",
+      "whnexus"
+    ],
+    "wormholes": [
+      "BETA",
+      "ALPHA",
+      "GAMMA"
+    ],
+    "planets": [
+      "mallice"
+    ],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok"
+  },
+  {
+    "id": "83a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "83b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "83b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "84b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "84b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "85b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "85b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "86b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "86b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "87b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "87b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "88b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "88b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "89b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "89b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "90b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "90b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91a60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91a1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b0"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b120",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b2"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b180",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b3"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b240",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b4"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b300",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b5"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "91b60",
+    "name": "Hyperlane",
+    "isHyperlane": true,
+    "aliases": [
+      "91b1"
+    ],
+    "wormholes": [],
+    "planets": [],
+    "source": "pok",
+    "tileBack": "black"
+  },
+  {
+    "id": "92",
+    "name": "Ordinian/Revelation - Bastion",
+    "aliases": [
+      "te01",
+      "ordinian",
+      "revelation",
+      "bastion",
+      "bastionhs"
+    ],
+    "planets": [
+      "ordinian",
+      "revelation"
+    ],
+    "tileBack": "green",
+    "isNebula": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "92new",
+    "name": "Archon Ren/Archon Tau - Keleres",
+    "aliases": [
+      "keleresx",
+      "archontauk",
+      "archonrenk"
+    ],
+    "wormholes": [],
+    "planets": [
+      "archonrenk",
+      "archontauk"
+    ],
+    "source": "codex3",
+    "tileBack": "green"
+  },
+  {
+    "id": "93",
+    "name": "Mez Lo Orz Fei Zsha/Rep Lo Orz Qet - Ral Nel",
+    "aliases": [
+      "te02",
+      "mez",
+      "mezlo",
+      "rep",
+      "replo",
+      "ralnel",
+      "ralnelhs"
+    ],
+    "planets": [
+      "mez",
+      "rep"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "93new",
+    "name": "Ylir/Avar/Valk - Keleres",
+    "aliases": [
+      "keleresa",
+      "ylirk",
+      "avark",
+      "valkk"
+    ],
+    "wormholes": [],
+    "planets": [
+      "valkk",
+      "ylirk",
+      "avark"
+    ],
+    "source": "codex3",
+    "tileBack": "green"
+  },
+  {
+    "id": "94",
+    "name": "The Sorrow - Rebellion",
+    "aliases": [
+      "te04",
+      "epsilonwh",
+      "sorrow",
+      "sorrowgate",
+      "crimsongate",
+      "rebelliongate",
+      "epsilongate"
+    ],
+    "planets": [],
+    "wormholes": [
+      "EPSILON"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "94new",
+    "name": "Moll Primus - Keleres",
+    "aliases": [
+      "keleresm",
+      "mollprimusk"
+    ],
+    "wormholes": [],
+    "planets": [
+      "mollprimusk"
+    ],
+    "source": "codex3",
+    "tileBack": "green"
+  },
+  {
+    "id": "95",
+    "name": "Ikatena - Deepwrought",
+    "aliases": [
+      "te11",
+      "ikatena",
+      "deepwrought",
+      "deepwroughths",
+      "dws",
+      "dwshs"
+    ],
+    "planets": [
+      "ikatena"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "96a",
+    "name": "Cronos/Tallin - Firmament",
+    "aliases": [
+      "te15a",
+      "cronos",
+      "tallin",
+      "firmament",
+      "firmamenths"
+    ],
+    "planets": [
+      "cronos",
+      "tallin"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "96b",
+    "name": "Cronos Hollow/Tallin Hollow - Obsidian",
+    "aliases": [
+      "te15b",
+      "cronoshollow",
+      "tallinhollow",
+      "hollow",
+      "obsidian",
+      "obsidianhs"
+    ],
+    "planets": [
+      "cronoshollow",
+      "tallinhollow"
+    ],
+    "tileBack": "green",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "97",
+    "name": "Faunus",
+    "aliases": [
+      "te08",
+      "faunus",
+      "fanus",
+      "fauns",
+      "faunas"
+    ],
+    "planets": [
+      "faunus"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "98",
+    "name": "Garbozia",
+    "aliases": [
+      "te09",
+      "garbozia",
+      "garbage",
+      "sig01"
+    ],
+    "planets": [
+      "garbozia"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "99",
+    "name": "Emelpar",
+    "aliases": [
+      "te10",
+      "emelpar",
+      "empelar",
+      "emplar",
+      "sillyspelling"
+    ],
+    "planets": [
+      "emelpar"
+    ],
+    "tileBack": "blue",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "c41",
+    "name": "Ordinian (C4)",
+    "aliases": [
+      "ordinianc4"
+    ],
+    "wormholes": [],
+    "planets": [
+      "ordinianc4"
+    ],
+    "source": "base",
+    "isNebula": true,
+    "tileBack": "black"
+  },
+  {
+    "id": "fracture1",
+    "name": "Cocytus",
+    "aliases": [
+      "fracture1",
+      "cocytus",
+      "cocy",
+      "cody",
+      "codytct",
+      "frac1"
+    ],
+    "planets": [
+      "cocytus"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture2",
+    "name": "Fracture Egress Left",
+    "aliases": [
+      "fracture2",
+      "egressleft",
+      "frac2",
+      "fracleftegr"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture3",
+    "name": "Fracture Void Left",
+    "aliases": [
+      "fracture3",
+      "frac3",
+      "fracleftvoid"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture4",
+    "name": "Styx",
+    "aliases": [
+      "fracture4",
+      "styx",
+      "sticks",
+      "stix",
+      "frac4"
+    ],
+    "planets": [
+      "styx"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture5",
+    "name": "Fracture Void Right",
+    "aliases": [
+      "fracture5",
+      "frac5",
+      "fracrightvoid"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture6",
+    "name": "Fracture Egress Right",
+    "aliases": [
+      "fracture6",
+      "egressright",
+      "frac6",
+      "fracrightegr"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "fracture7",
+    "name": "Lethe/Phlegethon",
+    "aliases": [
+      "fracture7",
+      "lethe",
+      "phlegethon",
+      "phlegm",
+      "pleg",
+      "leath",
+      "leth",
+      "plegeth",
+      "phleg",
+      "lathe",
+      "frac7"
+    ],
+    "planets": [
+      "lethe",
+      "phlegethon"
+    ],
+    "tileBack": "fracture",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "silver_flame",
+    "name": "Remnants of The Silver Flame",
+    "aliases": [],
+    "wormholes": [],
+    "planets": [],
+    "source": "thunders_edge",
+    "tileBack": "black"
+  }
+]

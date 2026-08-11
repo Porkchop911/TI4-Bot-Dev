@@ -1,0 +1,590 @@
+[
+  {
+    "id": "mitosis",
+    "name": "Mitosis",
+    "faction": "arborec",
+    "permanentEffect": "Your space docks cannot produce infantry",
+    "window": "At the start of the status phase",
+    "windowEffect": "Place 1 infantry from your reinforcements on any planet you control.",
+    "source": "base"
+  },
+  {
+    "id": "creuss_gate",
+    "name": "Creuss Gate",
+    "faction": "ghost",
+    "permanentEffect": "When you create the game board, place the Creuss Gate (tile 17) where your home system would normally be placed. The Creuss Gate system is not a home system. Then, place your home system (tile 51) in your play area.",
+    "source": "base"
+  },
+  {
+    "id": "quantum_entanglement",
+    "name": "Quantum Entanglement",
+    "faction": "ghost",
+    "permanentEffect": "You treat all systems that contain either an alpha or beta wormhole as adjacent to each other. Game effects cannot prevent you from using this ability.",
+    "source": "base",
+    "shortName": "Quantum\nEnt'glem'nt"
+  },
+  {
+    "id": "slipstream",
+    "name": "Slipstream",
+    "faction": "ghost",
+    "window": "During your tactical actions",
+    "windowEffect": "Apply +1 to the move value of each of your ships that starts its movement in your home system or in a system that contains either an alpha or beta wormhole.",
+    "source": "base"
+  },
+  {
+    "id": "arbiters",
+    "name": "Arbiters",
+    "faction": "hacan",
+    "permanentEffect": "When you are negotiating a transaction, action cards can be exchanged as part of that transaction.",
+    "source": "base"
+  },
+  {
+    "id": "guild_ships",
+    "name": "Guild Ships",
+    "faction": "hacan",
+    "permanentEffect": "You can negotiate transactions with players who are not your neighbor.",
+    "source": "base"
+  },
+  {
+    "id": "master_of_trade",
+    "name": "Masters of Trade",
+    "faction": "hacan",
+    "permanentEffect": "You do not have to spend a command token to resolve the secondary ability of the \"Trade\" strategy card.",
+    "source": "base"
+  },
+  {
+    "id": "analytical",
+    "name": "Analytical",
+    "faction": "jolnar",
+    "window": "When you research a technology that is not a unit upgrade technology",
+    "windowEffect": "You may ignore 1 prerequisite.",
+    "source": "base"
+  },
+  {
+    "id": "brilliant",
+    "name": "Brilliant",
+    "faction": "jolnar",
+    "window": "When you spend a command token to resolve the secondary ability of the \"Technology\" strategy card",
+    "windowEffect": "You may resolve the primary ability instead.",
+    "source": "base"
+  },
+  {
+    "id": "fragile",
+    "name": "Fragile",
+    "faction": "jolnar",
+    "permanentEffect": "Apply -1 to the result of each of your unit's combat rolls.",
+    "source": "base"
+  },
+  {
+    "id": "assimilate",
+    "name": "Assimilate",
+    "faction": "l1z1x",
+    "window": "When you gain control of a planet",
+    "windowEffect": "Replace each PDS and space dock that is on that planet with a matching unit from your reinforcements.",
+    "source": "base"
+  },
+  {
+    "id": "harrow",
+    "name": "Harrow",
+    "faction": "l1z1x",
+    "window": "At the end of each round of ground combat",
+    "windowEffect": "Your ships in the active system may use their BOMBARDMENT abilities against your opponent's ground forces on the planet.",
+    "source": "base"
+  },
+  {
+    "id": "armada",
+    "name": "Armada",
+    "faction": "letnev",
+    "permanentEffect": "The maximum number of non-fighter ships you can have in each system is equal to 2 more than the number of tokens in your fleet pool",
+    "source": "base"
+  },
+  {
+    "id": "munitions",
+    "name": "Munitions Reserves",
+    "faction": "letnev",
+    "window": "At the start of each round of space combat",
+    "windowEffect": "You may spend 2 trade goods to re-roll any number of your dice during that combat round.",
+    "source": "base"
+  },
+  {
+    "id": "ambush",
+    "name": "Ambush",
+    "faction": "mentak",
+    "window": "At the start of a space combat",
+    "windowEffect": "You may roll 1 die for each of up to 2 of your cruisers or destroyers in the system. For each result equal to or greater than that ship's combat value, produce 1 hit; your opponent must assign it to 1 of their ships.",
+    "source": "base"
+  },
+  {
+    "id": "pillage",
+    "name": "Pillage",
+    "faction": "mentak",
+    "window": "After 1 of your neighbors gains trade goods or resolves a transaction",
+    "windowEffect": "If they have 3 or more trade goods, you may take 1 of their trade goods or commodities.",
+    "source": "base"
+  },
+  {
+    "id": "gashlai_physiology",
+    "name": "Gashlai Physiology",
+    "faction": "muaat",
+    "permanentEffect": "Your ships can move through supernovas",
+    "source": "base"
+  },
+  {
+    "id": "star_forge",
+    "name": "Star Forge",
+    "faction": "muaat",
+    "window": "ACTION",
+    "windowEffect": "Spend 1 token from your strategy pool to place either 2 fighters or 1 destroyer from your reinforcements in a system that contains 1 or more of your war suns.",
+    "source": "base"
+  },
+  {
+    "id": "foresight",
+    "name": "Foresight",
+    "faction": "naalu",
+    "window": "After another player moves ships into a system that contains 1 or more of your ships",
+    "windowEffect": "You may place 1 token from your strategy pool in an adjacent system that does not contain another player's ships; move your ships from the active system into that system.",
+    "source": "base"
+  },
+  {
+    "id": "telepathic",
+    "name": "Telepathic",
+    "faction": "naalu",
+    "window": "At the end of the strategy phase",
+    "windowEffect": "Place the Naalu \"0\" token on your strategy card; you are first in initiative order.",
+    "source": "base"
+  },
+  {
+    "id": "galactic_threat",
+    "name": "Galactic Threat",
+    "faction": "nekro",
+    "permanentEffect": "You cannot vote on agendas",
+    "window": "Once per agenda phase, after an agenda is revealed",
+    "windowEffect": "You may predict aloud the outcome of that agenda. If your prediction is correct, gain 1 technology that is owned by a player who voted how you predicted.",
+    "source": "base"
+  },
+  {
+    "id": "propagation",
+    "name": "Propagation",
+    "faction": "nekro",
+    "permanentEffect": "You cannot research technology",
+    "window": "When you would research a technology",
+    "windowEffect": "Gain 3 command tokens instead.",
+    "source": "base",
+    "shortName": "Propa-\ngation"
+  },
+  {
+    "id": "technological_singularity",
+    "name": "Technological Singularity",
+    "faction": "nekro",
+    "window": "Once per combat, after 1 of your opponent's units is destroyed",
+    "windowEffect": "You may gain 1 technology that is owned by that player.",
+    "source": "base",
+    "shortName": "Techno...\nSingularity"
+  },
+  {
+    "id": "nomadic",
+    "name": "Nomadic",
+    "faction": "saar",
+    "permanentEffect": "You can score objectives even if you do not control the planets in your home system.",
+    "source": "base"
+  },
+  {
+    "id": "scavenge",
+    "name": "Scavenge",
+    "faction": "saar",
+    "window": "After you gain control of a planet",
+    "windowEffect": "Gain 1 trade good.",
+    "source": "base"
+  },
+  {
+    "id": "unrelenting",
+    "name": "Unrelenting",
+    "faction": "sardakk",
+    "permanentEffect": "Apply +1 to the result of each of your unit's combat rolls.",
+    "source": "base",
+    "shortName": "Unre-\nlenting"
+  },
+  {
+    "id": "orbital_drop",
+    "name": "Orbital Drop",
+    "faction": "sol",
+    "window": "ACTION",
+    "windowEffect": "Spend 1 token from your strategy pool to place 2 infantry from your reinforcements on 1 planet you control.",
+    "source": "base"
+  },
+  {
+    "id": "versatile",
+    "name": "Versatile",
+    "faction": "sol",
+    "window": "When you gain command tokens during the status phase",
+    "windowEffect": "Gain 1 additional command token.",
+    "source": "base"
+  },
+  {
+    "id": "blood_ties",
+    "name": "Blood Ties",
+    "faction": "winnu",
+    "permanentEffect": "You do not have to spend influence to remove the custodians token from Mecatol Rex.",
+    "source": "base"
+  },
+  {
+    "id": "reclamation",
+    "name": "Reclamation",
+    "faction": "winnu",
+    "window": "After you resolve a tactical action during which you gained control of Mecatol Rex",
+    "windowEffect": "You may place 1 PDS and 1 space dock from your reinforcements on Mecatol Rex.",
+    "source": "base",
+    "shortName": "Recla-\nmation"
+  },
+  {
+    "id": "peace_accords",
+    "name": "Peace Accords",
+    "faction": "xxcha",
+    "window": "After you resolve the primary or secondary ability of the \"Diplomacy\" strategy card",
+    "windowEffect": "You may gain control of 1 planet other than Mecatol Rex that does not contain any units and is in a system that is adjacent to a planet you control.",
+    "source": "base"
+  },
+  {
+    "id": "quash",
+    "name": "Quash",
+    "faction": "xxcha",
+    "window": "When an agenda is revealed",
+    "windowEffect": "You may spend 1 token from your strategy pool to discard that agenda and reveal 1 agenda from the top of the deck. Players vote on this agenda instead.",
+    "source": "base"
+  },
+  {
+    "id": "devotion",
+    "name": "Devotion",
+    "faction": "yin",
+    "window": "After each space combat round",
+    "windowEffect": "You may destroy 1 of your cruisers or destroyers in the active system to produce 1 hit and assign it to 1 of your opponent's ships in that system.",
+    "source": "base"
+  },
+  {
+    "id": "indoctrination",
+    "name": "Indoctrination",
+    "faction": "yin",
+    "window": "At the start of a ground combat",
+    "windowEffect": "You may spend 2 influence to replace 1 of your opponent's participating infantry with 1 infantry from your reinforcements.",
+    "source": "base",
+    "shortName": "Indoctri\n-nation"
+  },
+  {
+    "id": "crafty",
+    "name": "Crafty",
+    "faction": "yssaril",
+    "permanentEffect": "You can have any number of action cards in your hand. Game effects cannot prevent you from using this ability.",
+    "source": "base"
+  },
+  {
+    "id": "scheming",
+    "name": "Scheming",
+    "faction": "yssaril",
+    "window": "When you draw 1 or more action cards",
+    "windowEffect": "Draw 1 additional action card. Then, choose and discard 1 action card from your hand.",
+    "source": "base"
+  },
+  {
+    "id": "stall_tactics",
+    "name": "Stall Tactics",
+    "faction": "yssaril",
+    "window": "ACTION",
+    "windowEffect": "Discard 1 action card from your hand",
+    "source": "base"
+  },
+  {
+    "id": "council_patronage",
+    "name": "Council Patronage",
+    "faction": "keleres",
+    "window": "At the start of the strategy phase",
+    "windowEffect": "Replenish your commodities, then gain 1 trade good.",
+    "source": "codex3"
+  },
+  {
+    "id": "laws_order",
+    "name": "Law's Order",
+    "faction": "keleres",
+    "window": "At the start of any player's turn",
+    "windowEffect": "You may spend 1 trade good or 1 commodity to treat all laws as blank until the end of that turn.",
+    "source": "codex3"
+  },
+  {
+    "id": "the_tribuni",
+    "name": "The Tribuni",
+    "faction": "keleres",
+    "permanentEffect": "During setup, choose an unplayed faction from among the Mentak, the Xxcha and The Argent Flight; take that faction's home system, command tokens and control markers. Additionally, take the Keleres Hero that corresponds to that faction",
+    "source": "codex3"
+  },
+  {
+    "id": "raid_formation",
+    "name": "Raid Formation",
+    "faction": "argent",
+    "window": "When 1 or more of your units uses ANTI-FIGHTER BARRAGE",
+    "windowEffect": "for each hit produced in excess of your opponent's fighters, choose 1 of your opponent's ships that has SUSTAIN DAMAGE to become damaged.",
+    "source": "pok"
+  },
+  {
+    "id": "zeal",
+    "name": "Zeal",
+    "faction": "argent",
+    "permanentEffect": "You always vote first during the agenda phase",
+    "window": "When you cast at least 1 vote",
+    "windowEffect": "cast 1 additional vote for each player in the game including you.",
+    "source": "pok"
+  },
+  {
+    "id": "amalgamation",
+    "name": "Amalgamation",
+    "faction": "cabal",
+    "window": "When you produce a unit",
+    "windowEffect": "You may return 1 captured unit of that type to produce that unit without spending resources.",
+    "source": "pok",
+    "shortName": "Amalga\n-mation"
+  },
+  {
+    "id": "devour",
+    "name": "Devour",
+    "faction": "cabal",
+    "permanentEffect": "Capture your opponent's non-structure units that are destroyed during combat.",
+    "source": "pok"
+  },
+  {
+    "id": "riftmeld",
+    "name": "Riftmeld",
+    "faction": "cabal",
+    "window": "When you research a unit upgrade technology",
+    "windowEffect": "You may return 1 captured unit of that type to ignore all of the technology's prerequisites.",
+    "source": "pok"
+  },
+  {
+    "id": "aetherpassage",
+    "name": "Aetherpassage",
+    "faction": "empyrean",
+    "window": "After a player activates a system",
+    "windowEffect": "You may allow that player to move their ships through systems that contain your ships.",
+    "source": "pok",
+    "shortName": "Aether-\npassage"
+  },
+  {
+    "id": "dark_whispers",
+    "name": "Dark Whispers",
+    "faction": "empyrean",
+    "permanentEffect": "During setup, take the additional Empyrean faction promissory note; you have 2 faction promissory notes",
+    "source": "pok"
+  },
+  {
+    "id": "voidborn",
+    "name": "Voidborn",
+    "faction": "empyrean",
+    "permanentEffect": "Nebulae do not affect your ships' movement",
+    "source": "pok"
+  },
+  {
+    "id": "edict",
+    "name": "Edict",
+    "faction": "mahact",
+    "permanentEffect": "Other player's tokens in your fleet pool increase your fleet limit but cannot be redistributed.",
+    "window": "When you win a combat",
+    "windowEffect": "Place 1 command token from your opponent's reinforcements in your fleet pool if it does not already contain 1 of that player's tokens.",
+    "source": "pok"
+  },
+  {
+    "id": "hubris",
+    "name": "Hubris",
+    "faction": "mahact",
+    "permanentEffect": "During setup, purge your \"Alliance\" promissory note. Other players cannot give you their 'Alliance\" promissory note.",
+    "source": "pok"
+  },
+  {
+    "id": "imperia",
+    "name": "Imperia",
+    "faction": "mahact",
+    "permanentEffect": "While another player's command token is in your fleet pool, you can use the ability of that player's commander, if it is unlocked.",
+    "source": "pok"
+  },
+  {
+    "id": "distant_suns",
+    "name": "Distant Suns",
+    "faction": "naaz",
+    "window": "When you explore a planet that contains 1 of your mechs",
+    "windowEffect": "You may draw 1 additional card; choose 1 to resolve and discard the rest.",
+    "source": "pok"
+  },
+  {
+    "id": "fabrication",
+    "name": "Fabrication",
+    "faction": "naaz",
+    "window": "ACTION",
+    "windowEffect": "Either purge 2 of your relic fragments of the same type to gain 1 relic; or purge 1 of your relic fragments to gain 1 command token.",
+    "source": "pok"
+  },
+  {
+    "id": "future_sight",
+    "name": "Future Sight",
+    "faction": "nomad",
+    "window": "During the Agenda phase, after an outcome that you voted for or predicted is resolved",
+    "windowEffect": "Gain 1 trade good",
+    "source": "pok"
+  },
+  {
+    "id": "the_company",
+    "name": "The Company",
+    "faction": "nomad",
+    "permanentEffect": "During setup, take the 2 additional Nomad faction agents and place them next to your faction sheet; you have 3 agents",
+    "source": "pok"
+  },
+  {
+    "id": "awaken",
+    "name": "Awaken",
+    "faction": "titans",
+    "window": "After you activate a system that contains 1 or more of your sleeper tokens",
+    "windowEffect": "You may replace each of those tokens with 1 PDS from your reinforcements.",
+    "source": "pok"
+  },
+  {
+    "id": "coalescence",
+    "name": "Coalescence",
+    "faction": "titans",
+    "permanentEffect": "If your flagship or your AWAKEN faction ability places your units into the same space area or onto the same planet as another player's units, your units must participate in combat during \"Space Combat\" or \"Ground Combat\" steps.",
+    "source": "pok",
+    "shortName": "Coale-\nscence"
+  },
+  {
+    "id": "terragenesis",
+    "name": "Terragenesis",
+    "faction": "titans",
+    "window": "After you explore a planet that does not have a sleeper token",
+    "windowEffect": "You may place or move 1 sleeper token onto that planet.",
+    "source": "pok",
+    "shortName": "Terra-\ngenesis"
+  },
+  {
+    "id": "liberate",
+    "name": "Liberate",
+    "faction": "bastion",
+    "window": "When you gain control of a planet",
+    "windowEffect": "ready that planet if it contains a number of your infantry equal to or greater than that planet's resource value; otherwise, place 1 infantry on that planet.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "galvanize",
+    "name": "Galvanize",
+    "faction": "bastion",
+    "permanentEffect": "Galvanized units roll 1 additional die for combat rolls and unit abilities.",
+    "window": "When a game effect instructs a player to galvanize a unit",
+    "windowEffect": "they place a galvanize token beneath it if it does not have one. ",
+    "notes": "There are only 7 galvanize tokens.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "phoenixstandard",
+    "name": "Phoenix Standard",
+    "faction": "bastion",
+    "window": "At the end of combat",
+    "windowEffect": "you may galvanize 1 of your units that participated.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "survivalinstinct",
+    "name": "Survival Instinct",
+    "faction": "ralnel",
+    "window": "After a player activates a system that contains your ships",
+    "windowEffect": "you may move up to 2 of your ships into the active system from adjacent systems that do not contain your command tokens.",
+    "notes": "These ships can transport fighters and ground forces.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "researchteam",
+    "name": "Research Team",
+    "faction": "deepwrought",
+    "window": "When ground forces are committed",
+    "windowEffect": "if your units on that planet are not already coexisting, you may choose for your units to coexist.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "oceanbound",
+    "name": "Oceanbound",
+    "shortName": "Ocean\nbound",
+    "faction": "deepwrought",
+    "permanentEffect": "Any time you have more ocean cards than there are planets that contain your coexisting units, discard ocean cards until you do not.",
+    "window": "When your units begin coexisting on a planet",
+    "windowEffect": "gain an ocean card and ready it.",
+    "notes": "There are only 5 ocean cards. You cannot gain more than that.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "sundered",
+    "name": "Sundered",
+    "faction": "crimson",
+    "permanentEffect": "You cannot use wormholes other than epsilon wormholes. Other players' units that move or are placed into your home system are destroyed.",
+    "notes": "Cannot use wormholes means that you cannot move through them. You can still fire space cannon and form neighborship through them. ",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "incursion",
+    "name": "Incursion",
+    "faction": "crimson",
+    "permanentEffect": "When you activate a system that contains a breach, you may flip that breach; systems that contain active breaches are adjacent. at the end of the status phase, any player with ships in a system that contain an active breach may remove that breach.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "miniaturization",
+    "name": "Miniaturization",
+    "shortName": "Miniatur\n-ization",
+    "faction": "ralnel",
+    "permanentEffect": "Your structures can be transported by any ship; this does not require or count against capacity. While your structures are in the space area, they cannot use their unit abilities.",
+    "window": "At the end of your tactical actions",
+    "windowEffect": "you may place your structures that are in space areas onto planets you control in their respective systems.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "sorrow",
+    "name": "Sorrow",
+    "faction": "crimson",
+    "permanentEffect": "When you create the game board, place the Sorrow (tile 94) where your home system would normally be placed, then place a inactive breach there. The Sorrow is not a home system. Then, place your home system (tile 118) in your play area.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "plotsplots",
+    "name": "Plots Within Plots",
+    "shrinkName": true,
+    "faction": "firmament",
+    "permanentEffect": "You can score secret objectives already scored by other players if you fulfill their requirements; this does not count against your secret objective limit or the number you can score in a round.",
+    "window": "When you score another player's secret objective",
+    "windowEffect": "do not gain a victory point; instead, place a facedown plot card into your play area with that player's control token on it.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "puppetsoftheblade",
+    "name": "Puppets of the Blade",
+    "shortName": "Puppets of\nthe Blade",
+    "faction": "firmament",
+    "window": "If you have at least 1 plot card in your play area, gain the following ability:",
+    "windowEffect": "ACTION: Purge The Firmament's faction sheet, leaders, planet cards, and promissory note. Then, gain all of the faction components for The Obsidian.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "nocturne",
+    "name": "Nocturne",
+    "faction": "obsidian",
+    "permanentEffect": "This faction cannot be chosen during setup.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "bladesorchestra",
+    "name": "The Blade's Orchestra",
+    "shortName": "The Blade's\nOrchestra",
+    "faction": "obsidian",
+    "window": "When this faction comes into play",
+    "windowEffect": "flip your home system, double-sided faction components, and all of your in-play plot cards. Then, ready Cronos Hollow and Tallin Hollow if you control them.",
+    "source": "thunders_edge"
+  },
+  {
+    "id": "marionettes",
+    "name": "Marionettes",
+    "shortName": "Mario\n-nettes",
+    "faction": "obsidian",
+    "permanentEffect": "The player or players whose control tokens are on each plot card are the puppeted players for that plot.",
+    "source": "thunders_edge"
+  }
+]

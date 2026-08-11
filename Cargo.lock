@@ -1682,6 +1682,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "globset",
+ "hex",
  "itertools 0.14.0",
  "rstest",
  "serde",

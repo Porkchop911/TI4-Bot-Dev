@@ -1,0 +1,161 @@
+[
+  {
+    "id": "biotic",
+    "name": "Biotic Research Facility",
+    "techSpeciality": [
+      "biotic"
+    ],
+    "source": "pok"
+  },
+  {
+    "id": "bioticstat",
+    "name": "Biotic Research Facility",
+    "resourcesModifier": 1,
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "cybernetic",
+    "name": "Cybernetic Research Facility",
+    "techSpeciality": [
+      "cybernetic"
+    ],
+    "source": "pok"
+  },
+  {
+    "id": "cyberneticstat",
+    "name": "Cybernetic Research Facility",
+    "resourcesModifier": 1,
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "dmz",
+    "name": "Demilitarized Zone",
+    "token": "dmz_large",
+    "source": "pok"
+  },
+  {
+    "id": "dysonsphere",
+    "name": "Dyson Sphere",
+    "resourcesModifier": 2,
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "lazaxsurvivors",
+    "name": "Lazax Survivors",
+    "resourcesModifier": 1,
+    "influenceModifier": 2,
+    "source": "pok"
+  },
+  {
+    "id": "miningworld",
+    "name": "Mining World",
+    "resourcesModifier": 2,
+    "source": "pok"
+  },
+  {
+    "id": "nanoforge",
+    "name": "Nanoforge",
+    "resourcesModifier": 2,
+    "influenceModifier": 2,
+    "isLegendary": true,
+    "source": "pok"
+  },
+  {
+    "id": "paradiseworld",
+    "name": "Paradise World",
+    "resourcesModifier": 0,
+    "influenceModifier": 2,
+    "source": "pok"
+  },
+  {
+    "id": "propulsion",
+    "name": "Propulsion Research Facility",
+    "techSpeciality": [
+      "propulsion"
+    ],
+    "source": "pok"
+  },
+  {
+    "id": "propulsionstat",
+    "name": "Propulsion Research Facility",
+    "resourcesModifier": 1,
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "richworld",
+    "name": "Rich World",
+    "resourcesModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "titanshero",
+    "name": "Geoform",
+    "resourcesModifier": 3,
+    "influenceModifier": 3,
+    "token": "ul",
+    "spaceCannonHitsOn": 5,
+    "spaceCannonDieCount": 3,
+    "source": "pok"
+  },
+  {
+    "id": "titanspn",
+    "name": "Terraform",
+    "resourcesModifier": 1,
+    "influenceModifier": 1,
+    "planetTypes": [
+      "cultural",
+      "industrial",
+      "hazardous"
+    ],
+    "source": "pok"
+  },
+  {
+    "id": "tombofemphidia",
+    "name": "Tomb of Emphidia",
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "warfare",
+    "name": "Warfare Research Facility",
+    "techSpeciality": [
+      "warfare"
+    ],
+    "source": "pok"
+  },
+  {
+    "id": "warfarestat",
+    "name": "Warfare Research Facility",
+    "resourcesModifier": 1,
+    "influenceModifier": 1,
+    "source": "pok"
+  },
+  {
+    "id": "custodiavigilia1",
+    "name": "Custodia Vigilia",
+    "isFakeAttachment": true,
+    "source": "codex3"
+  },
+  {
+    "id": "custodiavigilia2",
+    "name": "Custodia Vigilia",
+    "isFakeAttachment": true,
+    "source": "codex3"
+  },
+  {
+    "id": "helios1",
+    "resourcesModifier": 1,
+    "isFakeAttachment": true,
+    "source": "thunders_edge"
+  },
+  {
+    "id": "helios2",
+    "resourcesModifier": 2,
+    "isFakeAttachment": true,
+    "source": "thunders_edge"
+  }
+]

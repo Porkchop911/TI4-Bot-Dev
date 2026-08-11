@@ -1,0 +1,43 @@
+# Content corpus checksum manifest
+#
+# Source repository: D:\Projects\ti4-engine (read-only behavioral oracle)
+# Source branch:     codex/fully-learned-policy
+# Source commit:     37061c511a4780d4c0719e0342533a498cd4b457
+# Source path:       engine/content/
+# Copied:            2026-08-11 (byte-identical, verified by sha256sum -c)
+#
+# Upstream data:     AsyncTI4/TI4_map_generator_bot @ 8e90459d789fb767b9d5aff3a55bd7dd0b3e781b
+# Upstream licence:  Unlicense (software and tooling only, NOT art assets)
+#
+# Regenerate:  sha256sum *.json
+# Verify:      sha256sum -c CHECKSUMS.sha256 --ignore-missing
+#
+b0914527c73b04bfdac059e933322a44513385a2a9353e1a3e8cfdf59adb9efe *abilities.json
+6775679b7993385d42f2f4a08a5993253d84cb86cff5ea7d3b7380bb94d8e0be *action_cards.json
+703e7b852f716b1328adf8031c2503c878f276aa9ea94e84c10e4afa569dc0ca *agendas.json
+58821e8f0eb80a0b588294d4c80b5525f89ebb01f6c62fdf451a78b91e6798cd *attachments.json
+23aaf15a23d5e718319b374543c7f00d4317df464472e6fa84e0bd94c4512178 *breakthroughs.json
+737f7a2a47f4dd873d32acf34ba5876babf402f43ae0aaaae223e9bc90a19c80 *colors.json
+94de4f0a1cd078b83c6080e47c7595d238cad0d253a0073afdeaf3d035e39d48 *combat_modifiers.json
+334dff52f671ae3d480ee11d2c609a959208930fdbbd7e2eba1c8a799df22da6 *decks.json
+f138c8baf96b823705031c15e8ba8089bdc29f6ecb35e04722addce21baf8943 *explores.json
+2455ae19cfd47f8c80025e73242cd3be85e45717dead822731bd1e6b696f1fe6 *factions.json
+bd01c07323bc791c9e90ab69ec3217918d022b248a56732f2a8b67a86dd11656 *franken_errata.json
+e674100d65e2f9a28752a3e178c2be864e05b399d41c8bb484810d574d8d316d *galactic_events.json
+8337f2e353e77bc13fd7d08cc95903f9bc0509f807ae4dc49a4086239e3ac992 *genericcards.json
+ca40155d83c38933e7d167b9601bf2447d8cf5447ac3abbff3995e50b190d3fa *leaders.json
+a4743df24d4bb9ccaf531c8bbe4101cf7843af59e9869faf66d8e6985b937933 *manifest.json
+e704887dccefd8e45f61958a5407717e245c2dc7f5a65d4ee7c2c064033e4cd6 *map_templates.json
+2c9d1b5e444047b1227f5b7457f5dbb64fe415395b118168c34c21fb5679a100 *planets.json
+9d1fde1b74531458d71123a369f25ded02c3a6050e93e491cbb47bdc6efb3859 *promissory_notes.json
+d220e74fa6bb33b317979d95a635e1c2c3f44cfdaa8ec55a2c9f77f38996a293 *public_objectives.json
+08dc00b92901795f9fb9655a13d91d31d56d701ec4dc999a3630d7c990eba6b2 *relics.json
+2cb5c805bde4c757912cff7300faff9f888cdba9cb7c344ba7637101d61fbe6c *rules.json
+b9d96a1752f7adfec5c419967609576cf70748ed46371f7bec5817e6e4f2ea36 *secret_objectives.json
+ea35feecfd748a06c56691c698aa8744c0646c3d01eebd08476314c51ebbfa4b *sources.json
+b018b329403bf093325162a600f641300b5ec4ef28489a28da770537892a5bf4 *strategy_card_sets.json
+78cdba121e86e5203a24491309a202962e7de5b441d3441406967e69a7ad1abe *strategy_cards.json
+8195f323dad5fc7c16e52c31aee89a07194bfee3c341dcd192272fa1eb1810be *systems.json
+821dc3230c70936b8e756fcd3aae5775f61f610f2f9ac726d832e3a51b0fe55e *technologies.json
+9fc4e54f2ebaee59754d0a6f7c2bd50f229a0216660de45b465af307cabe0276 *tokens.json
+99b83121bf722b83c43ad908358eaaf284eb968a0398b8b39f7c8858b193cec4 *units.json

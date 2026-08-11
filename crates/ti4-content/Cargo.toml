@@ -9,6 +9,7 @@ ti4-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+hex.workspace = true
 globset.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true

@@ -1,0 +1,340 @@
+{
+  "schema_version": "1.1.0",
+  "extracted_at": "2026-07-26T16:38:20.843640+00:00",
+  "upstream": {
+    "project": "AsyncTI4/TI4_map_generator_bot",
+    "licence": "Unlicense (software and tooling only, NOT art assets)",
+    "commit": "8e90459d789fb767b9d5aff3a55bd7dd0b3e781b",
+    "committed_at": "2026-07-25T19:28:49-04:00"
+  },
+  "official_sources": [
+    "base",
+    "codex1",
+    "codex2",
+    "codex3",
+    "codex4",
+    "pok",
+    "thunders_edge"
+  ],
+  "dropped_fields": [
+    "cardImagePath",
+    "contrastColor",
+    "factionSheetBackImageURL",
+    "factionSheetFrontImageURL",
+    "imagePath",
+    "imageURL",
+    "positionInTile",
+    "searchTags",
+    "shipPositionsType",
+    "spaceTokenLocations",
+    "unitPositions"
+  ],
+  "totals": {
+    "records": 1800,
+    "categories": 28,
+    "untagged": 237
+  },
+  "categories": {
+    "abilities": {
+      "records": 73,
+      "untagged": 0,
+      "by_source": {
+        "base": 37,
+        "codex3": 3,
+        "pok": 18,
+        "thunders_edge": 15
+      }
+    },
+    "action_cards": {
+      "records": 142,
+      "untagged": 0,
+      "by_source": {
+        "base": 82,
+        "codex1": 20,
+        "pok": 20,
+        "thunders_edge": 20
+      }
+    },
+    "agendas": {
+      "records": 63,
+      "untagged": 0,
+      "by_source": {
+        "base": 50,
+        "pok": 13
+      }
+    },
+    "attachments": {
+      "records": 22,
+      "untagged": 0,
+      "by_source": {
+        "codex3": 2,
+        "pok": 18,
+        "thunders_edge": 2
+      }
+    },
+    "breakthroughs": {
+      "records": 31,
+      "untagged": 0,
+      "by_source": {
+        "thunders_edge": 31
+      }
+    },
+    "colors": {
+      "records": 80,
+      "untagged": 80,
+      "by_source": {}
+    },
+    "combat_modifiers": {
+      "records": 123,
+      "untagged": 123,
+      "by_source": {}
+    },
+    "decks": {
+      "records": 25,
+      "untagged": 0,
+      "by_source": {
+        "base": 9,
+        "pok": 11,
+        "thunders_edge": 5
+      }
+    },
+    "explores": {
+      "records": 80,
+      "untagged": 0,
+      "by_source": {
+        "codex3": 6,
+        "pok": 74
+      }
+    },
+    "factions": {
+      "records": 34,
+      "untagged": 0,
+      "by_source": {
+        "base": 17,
+        "codex3": 3,
+        "pok": 7,
+        "thunders_edge": 7
+      }
+    },
+    "franken_errata": {
+      "records": 140,
+      "untagged": 0,
+      "by_source": {
+        "codex3": 5,
+        "pok": 63,
+        "thunders_edge": 72
+      }
+    },
+    "galactic_events": {
+      "records": 20,
+      "untagged": 0,
+      "by_source": {
+        "thunders_edge": 20
+      }
+    },
+    "genericcards": {
+      "records": 10,
+      "untagged": 0,
+      "by_source": {
+        "thunders_edge": 10
+      }
+    },
+    "leaders": {
+      "records": 103,
+      "untagged": 0,
+      "by_source": {
+        "pok": 83,
+        "thunders_edge": 20
+      }
+    },
+    "map_templates": {
+      "records": 34,
+      "untagged": 34,
+      "by_source": {}
+    },
+    "promissory_notes": {
+      "records": 40,
+      "untagged": 0,
+      "by_source": {
+        "base": 21,
+        "codex3": 4,
+        "pok": 9,
+        "thunders_edge": 6
+      }
+    },
+    "public_objectives": {
+      "records": 40,
+      "untagged": 0,
+      "by_source": {
+        "base": 20,
+        "pok": 20
+      }
+    },
+    "relics": {
+      "records": 24,
+      "untagged": 0,
+      "by_source": {
+        "codex2": 3,
+        "codex4": 3,
+        "pok": 11,
+        "thunders_edge": 7
+      }
+    },
+    "rules": {
+      "records": 8,
+      "untagged": 0,
+      "by_source": {
+        "thunders_edge": 8
+      }
+    },
+    "secret_objectives": {
+      "records": 40,
+      "untagged": 0,
+      "by_source": {
+        "base": 20,
+        "pok": 20
+      }
+    },
+    "sources": {
+      "records": 7,
+      "untagged": 0,
+      "by_source": {
+        "base": 1,
+        "codex1": 1,
+        "codex2": 1,
+        "codex3": 1,
+        "codex4": 1,
+        "pok": 1,
+        "thunders_edge": 1
+      }
+    },
+    "strategy_card_sets": {
+      "records": 4,
+      "untagged": 0,
+      "by_source": {
+        "base": 1,
+        "codex1": 1,
+        "pok": 1,
+        "thunders_edge": 1
+      }
+    },
+    "strategy_cards": {
+      "records": 12,
+      "untagged": 0,
+      "by_source": {
+        "base": 8,
+        "codex1": 1,
+        "pok": 1,
+        "thunders_edge": 2
+      }
+    },
+    "technologies": {
+      "records": 102,
+      "untagged": 0,
+      "by_source": {
+        "base": 59,
+        "codex1": 2,
+        "codex4": 2,
+        "pok": 26,
+        "thunders_edge": 13
+      }
+    },
+    "tokens": {
+      "records": 28,
+      "untagged": 0,
+      "by_source": {
+        "base": 6,
+        "pok": 14,
+        "thunders_edge": 8
+      }
+    },
+    "units": {
+      "records": 125,
+      "untagged": 0,
+      "by_source": {
+        "base": 54,
+        "codex3": 3,
+        "pok": 47,
+        "thunders_edge": 21
+      }
+    },
+    "planets": {
+      "records": 159,
+      "untagged": 0,
+      "by_source": {
+        "base": 60,
+        "codex3": 7,
+        "pok": 43,
+        "thunders_edge": 49
+      }
+    },
+    "systems": {
+      "records": 231,
+      "untagged": 0,
+      "by_source": {
+        "base": 52,
+        "codex3": 3,
+        "pok": 140,
+        "thunders_edge": 36
+      }
+    }
+  },
+  "excluded_sources": {
+    "absol": 200,
+    "action_deck_2": 145,
+    "admins": 11,
+    "andcat": 63,
+    "ascendant_sun": 4,
+    "asteroid": 119,
+    "balacasi": 148,
+    "beans": 134,
+    "black_spectrum": 367,
+    "blue_reverie": 246,
+    "byz_agendas": 30,
+    "cpti": 28,
+    "dane_leaks": 7,
+    "deprecated": 190,
+    "draft": 30,
+    "ds": 834,
+    "endlesst": 203,
+    "eronous": 258,
+    "flagshipping": 61,
+    "fow": 19,
+    "fowplus": 10,
+    "franken": 41,
+    "gamma": 130,
+    "holytispoon": 2,
+    "ignis_aurora": 195,
+    "keleresplus": 75,
+    "lazax": 3,
+    "little_omega": 80,
+    "lost_star_charts_of_ixth": 35,
+    "luminous": 70,
+    "memephilosopher": 18,
+    "miltymod": 158,
+    "monuments": 64,
+    "nomadfalcon": 63,
+    "oath_of_kings": 3,
+    "omega_phase": 23,
+    "other": 324,
+    "pbd100": 72,
+    "pbd1000": 2,
+    "pbd2000": 48,
+    "project_pi": 183,
+    "promises_promises": 43,
+    "riftset": 8,
+    "salliance": 10,
+    "sigma": 90,
+    "somno": 57,
+    "spice_thyme": 5,
+    "theodisi": 288,
+    "twilight_ds": 77,
+    "twilight_kart": 62,
+    "twilights_fall": 240,
+    "uncharted_space": 77,
+    "unfulvio": 2,
+    "untangled_space": 6,
+    "viability_patch": 4,
+    "voices_of_the_council": 90
+  }
+}

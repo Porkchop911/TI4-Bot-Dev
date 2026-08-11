@@ -1,0 +1,11 @@
+# The content corpus is copied byte-for-byte from the Python oracle and its SHA-256
+# checksums are recorded in crates/ti4-content/content/CHECKSUMS.sha256. End-of-line
+# conversion would invalidate those checksums on a non-Windows checkout, so these files
+# are never translated.
+crates/ti4-content/content/*.json -text
+crates/ti4-content/content/CHECKSUMS.sha256 -text
+
+# Rust sources are normalised to LF in the repository.
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf

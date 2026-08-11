@@ -1,0 +1,66 @@
+[
+  {
+    "name": "PoK Strategy Cards",
+    "alias": "pok",
+    "scIDs": [
+      "pok1leadership",
+      "pok2diplomacy",
+      "pok3politics",
+      "pok4construction",
+      "pok5trade",
+      "pok6warfare",
+      "pok7technology",
+      "pok8imperial"
+    ],
+    "description": "The \"default\" set of strategy cards, used in PoK",
+    "source": "pok"
+  },
+  {
+    "name": "Base Game Strategy Cards",
+    "alias": "base_game",
+    "scIDs": [
+      "pok1leadership",
+      "base2",
+      "pok3politics",
+      "base4",
+      "pok5trade",
+      "pok6warfare",
+      "pok7technology",
+      "pok8imperial"
+    ],
+    "description": "The original set of strategy cards, before Diplomacy and Construction were updated",
+    "source": "base"
+  },
+  {
+    "name": "Base Game Strategy Cards (Codex I)",
+    "alias": "base_game_codex1",
+    "scIDs": [
+      "pok1leadership",
+      "pok2diplomacy",
+      "pok3politics",
+      "base4",
+      "pok5trade",
+      "pok6warfare",
+      "pok7technology",
+      "pok8imperial"
+    ],
+    "description": "The original set of strategy cards, with Codex I Diplomacy and before Construction was updated",
+    "source": "codex1"
+  },
+  {
+    "name": "TE Strategy Cards",
+    "alias": "te",
+    "scIDs": [
+      "pok1leadership",
+      "pok2diplomacy",
+      "pok3politics",
+      "te4construction",
+      "pok5trade",
+      "te6warfare",
+      "pok7technology",
+      "pok8imperial"
+    ],
+    "description": "The \"default\" set of strategy cards, used in TE",
+    "source": "thunders_edge"
+  }
+]
