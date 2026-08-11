@@ -16,6 +16,7 @@
 //! ```
 
 pub mod error;
+pub mod galaxy;
 pub mod loader;
 pub mod manifest;
 pub mod provenance;
@@ -24,6 +25,7 @@ pub mod units;
 pub mod validator;
 
 pub use error::{ContentError, ReferenceError};
+pub use galaxy::{Galaxy, GalaxyError, Planet, System, all_planets, all_systems};
 pub use loader::ContentStore;
 pub use manifest::{CategoryCounts, Manifest, Totals, Upstream};
 pub use provenance::{CorpusDigest, digest_of, embedded_digest};

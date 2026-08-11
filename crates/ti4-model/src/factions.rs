@@ -65,7 +65,9 @@ fn parse_fleet(fleet: &str, home_planets: &[String]) -> Vec<Deployment> {
     let mut out = Vec::new();
     for part in fleet.split(',') {
         let part = part.trim();
-        if part.is_empty() { continue; }
+        if part.is_empty() {
+            continue;
+        }
         if let Some(dep) = parse_fleet_entry(part, home_planets) {
             out.push(dep);
         }
@@ -76,7 +78,9 @@ fn parse_fleet(fleet: &str, home_planets: &[String]) -> Vec<Deployment> {
 fn parse_fleet_entry(part: &str, home_planets: &[String]) -> Option<Deployment> {
     // Match "[count] code [where]" or "code [where]"
     let parts: Vec<&str> = part.split_whitespace().collect();
-    if parts.is_empty() { return None; }
+    if parts.is_empty() {
+        return None;
+    }
 
     let (count, rest) = if let Ok(c) = parts[0].parse::<i32>() {
         (c, &parts[1..])
@@ -84,7 +88,9 @@ fn parse_fleet_entry(part: &str, home_planets: &[String]) -> Option<Deployment> 
         (1, parts.as_slice())
     };
 
-    if rest.is_empty() { return None; }
+    if rest.is_empty() {
+        return None;
+    }
 
     let code = rest[0];
     let where_token = rest.get(1).copied();
@@ -109,7 +115,11 @@ fn parse_fleet_entry(part: &str, home_planets: &[String]) -> Option<Deployment> 
         _ => DeploymentLocation::Space,
     };
 
-    Some(Deployment { count, unit_id, where_ })
+    Some(Deployment {
+        count,
+        unit_id,
+        where_,
+    })
 }
 
 #[cfg(test)]

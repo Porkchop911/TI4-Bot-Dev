@@ -3,12 +3,12 @@
 //! Views provide redacted access to GameState: no hidden information,
 //! no opponent cards, no secret objectives, etc.
 
+use crate::factions::FactionRecord;
 use crate::id::*;
 use crate::state::*;
-use crate::factions::FactionRecord;
 use crate::units::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 // ─── Bot view ──────────────────────────────────────────────────────────────────
 
@@ -378,21 +378,33 @@ impl BotView {
                 completed: s.completed,
                 score: s.score,
             }),
-            my_objectives: ps.objectives.iter().map(|o| ObjectiveView {
-                id: o.id.clone(),
-                completed: o.completed,
-                score: o.score,
-            }).collect(),
-            my_completed_objectives: ps.completed_objectives.iter().map(|o| ObjectiveView {
-                id: o.id.clone(),
-                completed: o.completed,
-                score: o.score,
-            }).collect(),
-            my_secret_completed: ps.secret_completed.iter().map(|s| SecretObjectiveView {
-                id: s.id.clone(),
-                completed: s.completed,
-                score: s.score,
-            }).collect(),
+            my_objectives: ps
+                .objectives
+                .iter()
+                .map(|o| ObjectiveView {
+                    id: o.id.clone(),
+                    completed: o.completed,
+                    score: o.score,
+                })
+                .collect(),
+            my_completed_objectives: ps
+                .completed_objectives
+                .iter()
+                .map(|o| ObjectiveView {
+                    id: o.id.clone(),
+                    completed: o.completed,
+                    score: o.score,
+                })
+                .collect(),
+            my_secret_completed: ps
+                .secret_completed
+                .iter()
+                .map(|s| SecretObjectiveView {
+                    id: s.id.clone(),
+                    completed: s.completed,
+                    score: s.score,
+                })
+                .collect(),
             my_leaders: vec![],
             my_active_leader: None,
             my_leader_fatigue: ps.leader_fatigue.clone(),
@@ -453,150 +465,202 @@ impl BotView {
             my_has_agenda_effect: ps.has_agenda_effect,
             expedition_tokens: ps.expedition_tokens,
             edge_fragments: ps.edge_fragments.clone(),
-            edge_breakthroughs: ps.edge_breakthroughs.iter().map(|b| BreakthroughView {
-                id: b.id.clone(),
-                claimed: b.claimed,
-            }).collect(),
+            edge_breakthroughs: ps
+                .edge_breakthroughs
+                .iter()
+                .map(|b| BreakthroughView {
+                    id: b.id.clone(),
+                    claimed: b.claimed,
+                })
+                .collect(),
             edge_faction: ps.edge_faction.clone(),
             edge_token: ps.edge_token.clone(),
             revealed_strategies: game.revealed_strategies.clone(),
             secret_strategies: game.secret_strategies.clone(),
             passed: game.passed.clone(),
-            systems: game.systems.iter().map(|(k, v)| {
-                (k.clone(), SystemView {
-                    id: v.id.clone(),
-                    name: v.name.clone(),
-                    planet_ids: v.planet_ids.clone(),
-                    space_tokens: v.space_tokens.clone(),
-                    system_tokens: v.system_tokens.clone(),
-                    faction_tokens: v.faction_tokens.clone(),
-                    faction_fleets: v.faction_fleets.clone(),
-                    faction_casualties: v.faction_casualties.clone(),
-                    faction_retreats: v.faction_retreats.clone(),
-                    faction_invasion: v.faction_invasion.clone(),
-                    faction_pds: v.faction_pds.clone(),
-                    faction_leaders: v.faction_leaders.iter().map(|(k, v)| {
-                        (k.clone(), v.iter().map(|l| LeaderView {
-                            id: l.id.clone(),
-                            ability: l.ability.clone(),
-                            active: l.active,
-                            fatigued: l.fatigued,
-                            system_id: l.system_id.clone(),
-                            planet_id: l.planet_id.clone(),
-                        }).collect())
-                    }).collect(),
-                    is_home: v.is_home,
-                    is_capital: v.is_capital,
-                    home_faction: v.home_faction.clone(),
-                    home_planet: v.home_planet.clone(),
-                    home_planet_count: v.home_planet_count,
-                    home_system: v.home_system,
-                    has_pds: v.has_pds,
-                    has_capital: v.has_capital,
-                    has_fleet: v.has_fleet,
-                    has_casualty: v.has_casualty,
-                    has_retreat: v.has_retreat,
-                    has_invasion: v.has_invasion,
-                    has_leaders: v.has_leaders,
-                    has_influence: v.has_influence,
-                    has_production: v.has_production,
-                    has_fuel: v.has_fuel,
-                    has_command: v.has_command,
-                    has_exhausted: v.has_exhausted,
-                    has_rebel_fleet: v.has_rebel_fleet,
-                    has_fatigued_leader: v.has_fatigued_leader,
-                    has_broken_promissory: v.has_broken_promissory,
-                    has_sabotage: v.has_sabotage,
-                    has_infiltration: v.has_infiltration,
-                    has_infantry: v.has_infantry,
-                    has_pds_token: v.has_pds_token,
+            systems: game
+                .systems
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        SystemView {
+                            id: v.id.clone(),
+                            name: v.name.clone(),
+                            planet_ids: v.planet_ids.clone(),
+                            space_tokens: v.space_tokens.clone(),
+                            system_tokens: v.system_tokens.clone(),
+                            faction_tokens: v.faction_tokens.clone(),
+                            faction_fleets: v.faction_fleets.clone(),
+                            faction_casualties: v.faction_casualties.clone(),
+                            faction_retreats: v.faction_retreats.clone(),
+                            faction_invasion: v.faction_invasion.clone(),
+                            faction_pds: v.faction_pds.clone(),
+                            faction_leaders: v
+                                .faction_leaders
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        v.iter()
+                                            .map(|l| LeaderView {
+                                                id: l.id.clone(),
+                                                ability: l.ability.clone(),
+                                                active: l.active,
+                                                fatigued: l.fatigued,
+                                                system_id: l.system_id.clone(),
+                                                planet_id: l.planet_id.clone(),
+                                            })
+                                            .collect(),
+                                    )
+                                })
+                                .collect(),
+                            is_home: v.is_home,
+                            is_capital: v.is_capital,
+                            home_faction: v.home_faction.clone(),
+                            home_planet: v.home_planet.clone(),
+                            home_planet_count: v.home_planet_count,
+                            home_system: v.home_system,
+                            has_pds: v.has_pds,
+                            has_capital: v.has_capital,
+                            has_fleet: v.has_fleet,
+                            has_casualty: v.has_casualty,
+                            has_retreat: v.has_retreat,
+                            has_invasion: v.has_invasion,
+                            has_leaders: v.has_leaders,
+                            has_influence: v.has_influence,
+                            has_production: v.has_production,
+                            has_fuel: v.has_fuel,
+                            has_command: v.has_command,
+                            has_exhausted: v.has_exhausted,
+                            has_rebel_fleet: v.has_rebel_fleet,
+                            has_fatigued_leader: v.has_fatigued_leader,
+                            has_broken_promissory: v.has_broken_promissory,
+                            has_sabotage: v.has_sabotage,
+                            has_infiltration: v.has_infiltration,
+                            has_infantry: v.has_infantry,
+                            has_pds_token: v.has_pds_token,
+                        },
+                    )
                 })
-            }).collect(),
-            planets: game.planets.iter().map(|(k, v)| {
-                (k.clone(), PlanetView {
-                    id: v.id.clone(),
-                    name: v.name.clone(),
-                    system_id: v.system_id.clone(),
-                    planet_type: v.planet_type.clone(),
-                    influence: v.influence,
-                    production: v.production,
-                    fuel: v.fuel,
-                    home_faction: v.home_faction.clone(),
-                    owner: v.owner.clone(),
-                    control_tokens: v.control_tokens.clone(),
-                    invasion_tokens: v.invasion_tokens.clone(),
-                    casualties: v.casualties.clone(),
-                    pds: v.pds.clone(),
-                    leaders: v.leaders.iter().map(|(k, v)| {
-                        (k.clone(), v.iter().map(|l| LeaderView {
-                            id: l.id.clone(),
-                            ability: l.ability.clone(),
-                            active: l.active,
-                            fatigued: l.fatigued,
-                            system_id: l.system_id.clone(),
-                            planet_id: l.planet_id.clone(),
-                        }).collect())
-                    }).collect(),
-                    faction_fleets: v.faction_fleets.clone(),
-                    has_capital: v.has_capital,
-                    has_influence: v.has_influence,
-                    has_production: v.has_production,
-                    has_fuel: v.has_fuel,
-                    has_control_token: v.has_control_token,
-                    has_invasion_token: v.has_invasion_token,
-                    has_casualty: v.has_casualty,
-                    has_pds: v.has_pds,
-                    has_leader: v.has_leader,
-                    has_fleet: v.has_fleet,
-                    has_home: v.has_home,
-                    has_owner: v.has_owner,
-                    has_exhausted: v.has_exhausted,
-                    has_rebel_fleet: v.has_rebel_fleet,
-                    has_fatigued_leader: v.has_fatigued_leader,
-                    has_broken_promissory: v.has_broken_promissory,
-                    has_sabotage: v.has_sabotage,
-                    has_infantry: v.has_infantry,
-                    has_infiltration: v.has_infiltration,
+                .collect(),
+            planets: game
+                .planets
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        PlanetView {
+                            id: v.id.clone(),
+                            name: v.name.clone(),
+                            system_id: v.system_id.clone(),
+                            planet_type: v.planet_type.clone(),
+                            influence: v.influence,
+                            production: v.production,
+                            fuel: v.fuel,
+                            home_faction: v.home_faction.clone(),
+                            owner: v.owner.clone(),
+                            control_tokens: v.control_tokens.clone(),
+                            invasion_tokens: v.invasion_tokens.clone(),
+                            casualties: v.casualties.clone(),
+                            pds: v.pds.clone(),
+                            leaders: v
+                                .leaders
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        v.iter()
+                                            .map(|l| LeaderView {
+                                                id: l.id.clone(),
+                                                ability: l.ability.clone(),
+                                                active: l.active,
+                                                fatigued: l.fatigued,
+                                                system_id: l.system_id.clone(),
+                                                planet_id: l.planet_id.clone(),
+                                            })
+                                            .collect(),
+                                    )
+                                })
+                                .collect(),
+                            faction_fleets: v.faction_fleets.clone(),
+                            has_capital: v.has_capital,
+                            has_influence: v.has_influence,
+                            has_production: v.has_production,
+                            has_fuel: v.has_fuel,
+                            has_control_token: v.has_control_token,
+                            has_invasion_token: v.has_invasion_token,
+                            has_casualty: v.has_casualty,
+                            has_pds: v.has_pds,
+                            has_leader: v.has_leader,
+                            has_fleet: v.has_fleet,
+                            has_home: v.has_home,
+                            has_owner: v.has_owner,
+                            has_exhausted: v.has_exhausted,
+                            has_rebel_fleet: v.has_rebel_fleet,
+                            has_fatigued_leader: v.has_fatigued_leader,
+                            has_broken_promissory: v.has_broken_promissory,
+                            has_sabotage: v.has_sabotage,
+                            has_infantry: v.has_infantry,
+                            has_infiltration: v.has_infiltration,
+                        },
+                    )
                 })
-            }).collect(),
+                .collect(),
             exploration_map: game.exploration_map.clone(),
             agenda_card: game.agenda_card.as_ref().map(|c| AgendaCardView {
                 id: c.id.clone(),
                 title: c.title.clone(),
                 effects: c.effects.clone(),
             }),
-            laws: game.laws.iter().map(|l| LawView {
-                id: l.id.clone(),
-                active: l.active,
-                effects: l.effects.clone(),
-            }).collect(),
-            agenda_results: game.agenda_results.iter().map(|r| AgendaResultView {
-                phase: r.phase,
-                winner: r.winner.clone(),
-                score: r.score,
-                effects: r.effects.clone(),
-            }).collect(),
+            laws: game
+                .laws
+                .iter()
+                .map(|l| LawView {
+                    id: l.id.clone(),
+                    active: l.active,
+                    effects: l.effects.clone(),
+                })
+                .collect(),
+            agenda_results: game
+                .agenda_results
+                .iter()
+                .map(|r| AgendaResultView {
+                    phase: r.phase,
+                    winner: r.winner.clone(),
+                    score: r.score,
+                    effects: r.effects.clone(),
+                })
+                .collect(),
             victory_conditions: game.victory_conditions.clone(),
             winner: game.winner.clone(),
             game_over: game.game_over,
-            event_log: game.event_log.iter().map(|e| EventView {
-                id: e.id.clone(),
-                event_type: e.event_type.clone(),
-                source: e.source.clone(),
-                target: e.target.clone(),
-                timestamp: e.timestamp,
-                effects: e.effects.clone(),
-                resolved: e.resolved,
-            }).collect(),
-            current_events: game.current_events.iter().map(|e| EventView {
-                id: e.id.clone(),
-                event_type: e.event_type.clone(),
-                source: e.source.clone(),
-                target: e.target.clone(),
-                timestamp: e.timestamp,
-                effects: e.effects.clone(),
-                resolved: e.resolved,
-            }).collect(),
+            event_log: game
+                .event_log
+                .iter()
+                .map(|e| EventView {
+                    id: e.id.clone(),
+                    event_type: e.event_type.clone(),
+                    source: e.source.clone(),
+                    target: e.target.clone(),
+                    timestamp: e.timestamp,
+                    effects: e.effects.clone(),
+                    resolved: e.resolved,
+                })
+                .collect(),
+            current_events: game
+                .current_events
+                .iter()
+                .map(|e| EventView {
+                    id: e.id.clone(),
+                    event_type: e.event_type.clone(),
+                    source: e.source.clone(),
+                    target: e.target.clone(),
+                    timestamp: e.timestamp,
+                    effects: e.effects.clone(),
+                    resolved: e.resolved,
+                })
+                .collect(),
             active_event: game.active_event.as_ref().map(|e| EventView {
                 id: e.id.clone(),
                 event_type: e.event_type.clone(),
@@ -632,127 +696,171 @@ impl TtsView {
             revealed_strategies: game.revealed_strategies.clone(),
             secret_strategies: game.secret_strategies.clone(),
             passed: game.passed.clone(),
-            systems: game.systems.iter().map(|(k, v)| {
-                (k.clone(), SystemView {
-                    id: v.id.clone(),
-                    name: v.name.clone(),
-                    planet_ids: v.planet_ids.clone(),
-                    space_tokens: v.space_tokens.clone(),
-                    system_tokens: v.system_tokens.clone(),
-                    faction_tokens: v.faction_tokens.clone(),
-                    faction_fleets: v.faction_fleets.clone(),
-                    faction_casualties: v.faction_casualties.clone(),
-                    faction_retreats: v.faction_retreats.clone(),
-                    faction_invasion: v.faction_invasion.clone(),
-                    faction_pds: v.faction_pds.clone(),
-                    faction_leaders: v.faction_leaders.iter().map(|(k, v)| {
-                        (k.clone(), v.iter().map(|l| LeaderView {
-                            id: l.id.clone(),
-                            ability: l.ability.clone(),
-                            active: l.active,
-                            fatigued: l.fatigued,
-                            system_id: l.system_id.clone(),
-                            planet_id: l.planet_id.clone(),
-                        }).collect())
-                    }).collect(),
-                    is_home: v.is_home,
-                    is_capital: v.is_capital,
-                    home_faction: v.home_faction.clone(),
-                    home_planet: v.home_planet.clone(),
-                    home_planet_count: v.home_planet_count,
-                    home_system: v.home_system,
-                    has_pds: v.has_pds,
-                    has_capital: v.has_capital,
-                    has_fleet: v.has_fleet,
-                    has_casualty: v.has_casualty,
-                    has_retreat: v.has_retreat,
-                    has_invasion: v.has_invasion,
-                    has_leaders: v.has_leaders,
-                    has_influence: v.has_influence,
-                    has_production: v.has_production,
-                    has_fuel: v.has_fuel,
-                    has_command: v.has_command,
-                    has_exhausted: v.has_exhausted,
-                    has_rebel_fleet: v.has_rebel_fleet,
-                    has_fatigued_leader: v.has_fatigued_leader,
-                    has_broken_promissory: v.has_broken_promissory,
-                    has_sabotage: v.has_sabotage,
-                    has_infiltration: v.has_infiltration,
-                    has_infantry: v.has_infantry,
-                    has_pds_token: v.has_pds_token,
+            systems: game
+                .systems
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        SystemView {
+                            id: v.id.clone(),
+                            name: v.name.clone(),
+                            planet_ids: v.planet_ids.clone(),
+                            space_tokens: v.space_tokens.clone(),
+                            system_tokens: v.system_tokens.clone(),
+                            faction_tokens: v.faction_tokens.clone(),
+                            faction_fleets: v.faction_fleets.clone(),
+                            faction_casualties: v.faction_casualties.clone(),
+                            faction_retreats: v.faction_retreats.clone(),
+                            faction_invasion: v.faction_invasion.clone(),
+                            faction_pds: v.faction_pds.clone(),
+                            faction_leaders: v
+                                .faction_leaders
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        v.iter()
+                                            .map(|l| LeaderView {
+                                                id: l.id.clone(),
+                                                ability: l.ability.clone(),
+                                                active: l.active,
+                                                fatigued: l.fatigued,
+                                                system_id: l.system_id.clone(),
+                                                planet_id: l.planet_id.clone(),
+                                            })
+                                            .collect(),
+                                    )
+                                })
+                                .collect(),
+                            is_home: v.is_home,
+                            is_capital: v.is_capital,
+                            home_faction: v.home_faction.clone(),
+                            home_planet: v.home_planet.clone(),
+                            home_planet_count: v.home_planet_count,
+                            home_system: v.home_system,
+                            has_pds: v.has_pds,
+                            has_capital: v.has_capital,
+                            has_fleet: v.has_fleet,
+                            has_casualty: v.has_casualty,
+                            has_retreat: v.has_retreat,
+                            has_invasion: v.has_invasion,
+                            has_leaders: v.has_leaders,
+                            has_influence: v.has_influence,
+                            has_production: v.has_production,
+                            has_fuel: v.has_fuel,
+                            has_command: v.has_command,
+                            has_exhausted: v.has_exhausted,
+                            has_rebel_fleet: v.has_rebel_fleet,
+                            has_fatigued_leader: v.has_fatigued_leader,
+                            has_broken_promissory: v.has_broken_promissory,
+                            has_sabotage: v.has_sabotage,
+                            has_infiltration: v.has_infiltration,
+                            has_infantry: v.has_infantry,
+                            has_pds_token: v.has_pds_token,
+                        },
+                    )
                 })
-            }).collect(),
-            planets: game.planets.iter().map(|(k, v)| {
-                (k.clone(), PlanetView {
-                    id: v.id.clone(),
-                    name: v.name.clone(),
-                    system_id: v.system_id.clone(),
-                    planet_type: v.planet_type.clone(),
-                    influence: v.influence,
-                    production: v.production,
-                    fuel: v.fuel,
-                    home_faction: v.home_faction.clone(),
-                    owner: v.owner.clone(),
-                    control_tokens: v.control_tokens.clone(),
-                    invasion_tokens: v.invasion_tokens.clone(),
-                    casualties: v.casualties.clone(),
-                    pds: v.pds.clone(),
-                    leaders: v.leaders.iter().map(|(k, v)| {
-                        (k.clone(), v.iter().map(|l| LeaderView {
-                            id: l.id.clone(),
-                            ability: l.ability.clone(),
-                            active: l.active,
-                            fatigued: l.fatigued,
-                            system_id: l.system_id.clone(),
-                            planet_id: l.planet_id.clone(),
-                        }).collect())
-                    }).collect(),
-                    faction_fleets: v.faction_fleets.clone(),
-                    has_capital: v.has_capital,
-                    has_influence: v.has_influence,
-                    has_production: v.has_production,
-                    has_fuel: v.has_fuel,
-                    has_control_token: v.has_control_token,
-                    has_invasion_token: v.has_invasion_token,
-                    has_casualty: v.has_casualty,
-                    has_pds: v.has_pds,
-                    has_leader: v.has_leader,
-                    has_fleet: v.has_fleet,
-                    has_home: v.has_home,
-                    has_owner: v.has_owner,
-                    has_exhausted: v.has_exhausted,
-                    has_rebel_fleet: v.has_rebel_fleet,
-                    has_fatigued_leader: v.has_fatigued_leader,
-                    has_broken_promissory: v.has_broken_promissory,
-                    has_sabotage: v.has_sabotage,
-                    has_infantry: v.has_infantry,
-                    has_infiltration: v.has_infiltration,
+                .collect(),
+            planets: game
+                .planets
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        PlanetView {
+                            id: v.id.clone(),
+                            name: v.name.clone(),
+                            system_id: v.system_id.clone(),
+                            planet_type: v.planet_type.clone(),
+                            influence: v.influence,
+                            production: v.production,
+                            fuel: v.fuel,
+                            home_faction: v.home_faction.clone(),
+                            owner: v.owner.clone(),
+                            control_tokens: v.control_tokens.clone(),
+                            invasion_tokens: v.invasion_tokens.clone(),
+                            casualties: v.casualties.clone(),
+                            pds: v.pds.clone(),
+                            leaders: v
+                                .leaders
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        v.iter()
+                                            .map(|l| LeaderView {
+                                                id: l.id.clone(),
+                                                ability: l.ability.clone(),
+                                                active: l.active,
+                                                fatigued: l.fatigued,
+                                                system_id: l.system_id.clone(),
+                                                planet_id: l.planet_id.clone(),
+                                            })
+                                            .collect(),
+                                    )
+                                })
+                                .collect(),
+                            faction_fleets: v.faction_fleets.clone(),
+                            has_capital: v.has_capital,
+                            has_influence: v.has_influence,
+                            has_production: v.has_production,
+                            has_fuel: v.has_fuel,
+                            has_control_token: v.has_control_token,
+                            has_invasion_token: v.has_invasion_token,
+                            has_casualty: v.has_casualty,
+                            has_pds: v.has_pds,
+                            has_leader: v.has_leader,
+                            has_fleet: v.has_fleet,
+                            has_home: v.has_home,
+                            has_owner: v.has_owner,
+                            has_exhausted: v.has_exhausted,
+                            has_rebel_fleet: v.has_rebel_fleet,
+                            has_fatigued_leader: v.has_fatigued_leader,
+                            has_broken_promissory: v.has_broken_promissory,
+                            has_sabotage: v.has_sabotage,
+                            has_infantry: v.has_infantry,
+                            has_infiltration: v.has_infiltration,
+                        },
+                    )
                 })
-            }).collect(),
+                .collect(),
             exploration_map: game.exploration_map.clone(),
             agenda_card: game.agenda_card.as_ref().map(|c| AgendaCardView {
                 id: c.id.clone(),
                 title: c.title.clone(),
                 effects: c.effects.clone(),
             }),
-            laws: game.laws.iter().map(|l| LawView {
-                id: l.id.clone(),
-                active: l.active,
-                effects: l.effects.clone(),
-            }).collect(),
-            agenda_results: game.agenda_results.iter().map(|r| AgendaResultView {
-                phase: r.phase,
-                winner: r.winner.clone(),
-                score: r.score,
-                effects: r.effects.clone(),
-            }).collect(),
+            laws: game
+                .laws
+                .iter()
+                .map(|l| LawView {
+                    id: l.id.clone(),
+                    active: l.active,
+                    effects: l.effects.clone(),
+                })
+                .collect(),
+            agenda_results: game
+                .agenda_results
+                .iter()
+                .map(|r| AgendaResultView {
+                    phase: r.phase,
+                    winner: r.winner.clone(),
+                    score: r.score,
+                    effects: r.effects.clone(),
+                })
+                .collect(),
             winner: game.winner.clone(),
             game_over: game.game_over,
-            expedition_tiles: game.expedition_tiles.iter().map(|t| ExpeditionTileView {
-                id: t.id.clone(),
-                revealed: t.revealed,
-                claimed: t.claimed.clone(),
-            }).collect(),
+            expedition_tiles: game
+                .expedition_tiles
+                .iter()
+                .map(|t| ExpeditionTileView {
+                    id: t.id.clone(),
+                    revealed: t.revealed,
+                    claimed: t.claimed.clone(),
+                })
+                .collect(),
             edge_token: game.edge_token.clone(),
             edge_faction: game.edge_faction.clone(),
         }

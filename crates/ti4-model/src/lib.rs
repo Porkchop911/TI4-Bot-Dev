@@ -3,15 +3,17 @@
 //! All IDs are newtypes to prevent accidental mixing. State is owned by the engine
 //! and not publicly mutable. Views provide redacted access for bots and TTS.
 
+pub mod content_types;
+pub mod factions;
+pub mod hex;
 pub mod id;
 pub mod state;
 pub mod units;
 pub mod view;
-pub mod content_types;
-pub mod factions;
 
+pub use content_types::*;
+pub use factions::*;
+pub use hex::Hex;
 pub use id::*;
 pub use state::*;
 pub use units::*;
-pub use content_types::*;
-pub use factions::*;

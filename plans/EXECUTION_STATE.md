@@ -16,11 +16,14 @@ actually in the tree and how the two diverged.
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
 - Branch: `main`
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
-- Implementation: **M02 in progress.** Content layer done; state model not yet ported.
-- Last completed package: M02-009…012 — content corpus, indexes, provenance, referential
+- Implementation: **M02 in progress.** Content layer and galaxy done; state model not yet
+  ported.
+- Last completed package: M04-001/002 — hex geometry and galaxy adjacency
+  (`plans/evidence/M04-001_002_GALAXY.md`)
+- Previous package: M02-009…012 — content corpus, indexes, provenance, referential
   validation (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M02-003/004/005 — port `engine/state.py` and
-  `engine/units.py` onto the corpus (see "Next actions")
+- Next dependency-ready package: M02-003/005 — port `engine/state.py` onto the corpus
+  (see "Next actions")
 
 ## Implementation status
 
@@ -29,8 +32,8 @@ behaviour is a placeholder.
 
 | Crate | Status | Detail |
 |---|---|---|
-| `ti4-content` | **Implemented** | 28-category corpus loader, source scoping, TE id fallback, manifest cross-check, canonical digests, referential validation, unit catalogue. 73 tests. |
-| `ti4-model` | **Partial** | `id.rs` and `content_types.rs` sound. `state.rs` needs porting against `engine/state.py`; `view.rs` redaction is incorrect; `units.rs` is superseded by `ti4-content::units`. |
+| `ti4-content` | **Implemented** | 28-category corpus loader, source scoping, TE id fallback, manifest cross-check, canonical digests, referential validation, unit catalogue, galaxy and adjacency. 97 tests. |
+| `ti4-model` | **Partial** | `id.rs`, `content_types.rs`, `hex.rs` sound. `state.rs` needs porting against `engine/state.py`; `view.rs` redaction is incorrect; `units.rs` is superseded by `ti4-content::units`. |
 | `ti4-engine` | **Scaffold** | Phase flow runs, but `rules.rs` returns `Ok(true)` for every action, `tactical.rs` moves no units and treats every system as distance 1, `effects.rs` gives every unit combat value 1. No dice, no adjacency, no legality. |
 | `ti4-policy` | **Stub** | 5 × `todo!()` |
 | `ti4-sim` | **Stub** | 6 × `todo!()` |
@@ -46,15 +49,17 @@ behaviour is a placeholder.
 |---|---|---|
 | M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed. No oracle exporter, no fixtures, no differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
-| M02 Content and model | Written | **In progress** — 009–012 done. 001 done. 003–008, 013–015 outstanding. |
-| M03 … M13 | Written | **Not started** |
+| M02 Content and model | Written | **In progress** — 001, 009–012 done. 003–008, 013–015 outstanding. |
+| M03 Choice, timing, replay | Written | **Not started** |
+| M04 Game skeleton | Written | **Partial** — 001 (hex) and 002 (galaxy/content mapping) done out of order, because no adjacency existed. 003–016 outstanding. |
+| M05 … M13 | Written | **Not started** |
 
 ## Repository state
 
 - Working tree: clean at the last commit
 - Python oracle tree: clean, unmodified ✅
-- Tests: **118 passing** (`cargo test --workspace`) — 73 `ti4-content`, 35 `ti4-engine`,
-  9 `ti4-model`, 1 doc-test
+- Tests: **150 passing** (`cargo test --workspace`) — 97 `ti4-content`, 35 `ti4-engine`,
+  17 `ti4-model`, 1 doc-test
 - Integration tests: none. All tests are inline `#[cfg(test)]` modules.
 - Content corpus: `crates/ti4-content/content/`, 29 files, 1,800 records, byte-identical to
   the oracle and checksummed in `CHECKSUMS.sha256`
@@ -85,13 +90,14 @@ In dependency order. Each is one package under `PI_WORK_PACKAGE_STANDARD.md`.
    effects stored as the sequence number they were played in (`combat_round_seq`,
    `activation_seq`, `production_seq`, `turn_seq`) rather than as flags a later step must
    clear; and `compare=False` on 20+ dict fields, which is load-bearing for state equality.
-2. **M02-004 — system and planet state**, including the galaxy adjacency that does not
-   currently exist anywhere.
+2. **M02-004 — system and planet state**, now that `ti4-content::galaxy` supplies
+   adjacency. Includes wiring `Galaxy` into the engine so `tactical.rs` stops treating
+   every system as one step away.
 3. **M02-008 — hidden views.** Port `engine/views.py`: two private sequences redacted to
    `"?"` with length preserved, plus the `leaks()` check so a newly added private field
    fails a test instead of leaking quietly. Replaces the current `view.rs`.
 4. **M00-009 — build the oracle exporter.** Unblocks every differential deliverable.
-5. **M01-006 — CI**, so that the 118 tests actually gate a change.
+5. **M01-006 — CI**, so that the 150 tests actually gate a change.
 
 ## Decisions in force
 
@@ -114,14 +120,14 @@ M02 — content and model. Content layer complete; state model next.
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M02 / M02-009…012 complete; M02-003/005 (state model port) next
+M02-009…012 and M04-001/002 complete; M02-003/005 (state model port) next
 Status:
-118 tests passing. ti4-content implemented; ti4-model partial; ti4-engine scaffold;
+150 tests passing. ti4-content implemented; ti4-model partial; ti4-engine scaffold;
 six crates still todo!().
 Working-tree state:
 clean
 Tests last run and exact results:
-cargo test --workspace -> 118 passed, 0 failed
+cargo test --workspace -> 150 passed, 0 failed
 Compatibility evidence:
 Content semantics documented against engine/content.py and engine/units.py in
 plans/evidence/M02-009_TO_012_CONTENT_LAYER.md. No differential fixture evidence exists
@@ -131,6 +137,8 @@ Decisions made and rationale:
 - Record counts cross-checked against manifest.json at load
 - Unknown source tags are load errors, not silent filter misses
 - ContentType taxonomy replaced: the previous list invented 14 categories and omitted 14
+- Hex geometry lives in ti4-model (pure); Galaxy lives in ti4-content (needs records)
+- 12 planets with no tileId are placed during play, modelled rather than allowlisted
 Open review findings or blockers:
 No independent review of any code package. No oracle exporter. No CI.
 Next exact action:

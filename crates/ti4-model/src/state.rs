@@ -6,7 +6,7 @@
 use crate::id::*;
 use crate::units::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 // ─── Phase and timing ─────────────────────────────────────────────────────────
 
@@ -216,7 +216,7 @@ pub struct PlayerState {
     pub casualties: HashMap<SystemId, i32>,
     pub retreat_tokens: HashMap<SystemId, i32>,
     pub invasion_tokens: HashMap<PlanetId, i32>,
-    
+
     // Strategy card effects
     pub ready_planets: i32, // Planets to ready from Diplomacy
 
@@ -281,11 +281,11 @@ pub struct PlayerState {
     pub has_promissory: bool,
     pub has_law_effect: bool,
     pub has_agenda_effect: bool,
-    
+
     // Strategy card flags
     pub has_war: bool,
     pub free_research: bool,
-    
+
     pub edge_faction: Option<FactionId>,
     pub edge_token: Option<PlayerId>,
 }
@@ -790,23 +790,23 @@ impl GameState {
     /// Score a public objective for a player.
     pub fn score_objective(&mut self, player: &PlayerId, objective: &ObjectiveState) -> i32 {
         let mut vp = 0;
-        
+
         // Check if objective conditions are met (simplified)
         if let Some(ps) = self.players.get(player) {
             // Control tokens count toward objectives
             vp += ps.control_tokens.len() as i32;
-            
+
             // Completed objectives count
             vp += ps.completed_objectives.len() as i32;
         }
-        
+
         // Record completion
         if let Some(ps) = self.players.get_mut(player) {
             if !ps.completed_objectives.iter().any(|o| o.id == objective.id) {
                 ps.completed_objectives.push(objective.clone());
             }
         }
-        
+
         vp
     }
 
@@ -834,11 +834,11 @@ impl GameState {
             if ps.commodity >= cost {
                 ps.commodity -= cost;
                 ps.technologies.insert(tech.clone());
-                
+
                 // Update tech level
                 let level = ps.tech_levels.entry(tech.clone()).or_insert(0);
                 *level += 1;
-                
+
                 Ok(true)
             } else {
                 Ok(false)
@@ -850,7 +850,8 @@ impl GameState {
 
     /// Get the tech level for a player and technology.
     pub fn get_tech_level(&self, player: &PlayerId, tech: &TechnologyId) -> i32 {
-        self.players.get(player)
+        self.players
+            .get(player)
             .and_then(|ps| ps.tech_levels.get(tech))
             .copied()
             .unwrap_or(0)
@@ -859,7 +860,11 @@ impl GameState {
     // ─── Leader abilities ──────────────────────────────────────────────────────
 
     /// Activate a leader for a player.
-    pub fn activate_leader(&mut self, player: &PlayerId, leader: LeaderState) -> std::result::Result<(), String> {
+    pub fn activate_leader(
+        &mut self,
+        player: &PlayerId,
+        leader: LeaderState,
+    ) -> std::result::Result<(), String> {
         if let Some(ps) = self.players.get_mut(player) {
             // Check if leader is available (not fatigued)
             if !ps.leader_fatigue.contains(&leader.id) {
@@ -902,7 +907,8 @@ impl GameState {
 
     /// Check if a player has a specific relic.
     pub fn has_relic(&self, player: &PlayerId, relic_id: &RelicId) -> bool {
-        self.players.get(player)
+        self.players
+            .get(player)
             .map(|ps| ps.relics.iter().any(|r| r.id == *relic_id))
             .unwrap_or(false)
     }
