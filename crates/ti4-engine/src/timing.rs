@@ -1,8 +1,7 @@
 //! Deterministic timing-ability registration.
 //!
 //! This module owns only the data and ordered registry needed to open a timing window. Event
-//! execution, player priority, nested emission, and frequency consumption deliberately remain in
-//! their later M03 packages.
+//! execution and frequency consumption deliberately remain in their later M03 packages.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -44,7 +43,8 @@ pub enum Frequency {
 }
 
 /// A side-effect performed when an ability is selected in an eligible timing window.
-pub type AbilityEffect = Arc<dyn Fn(&mut Event, &mut Resolver) + Send + Sync>;
+pub type AbilityEffect =
+    Arc<dyn Fn(&mut Event, &mut Resolver) -> Result<(), TimingError> + Send + Sync>;
 
 /// A rule-specific eligibility predicate.
 pub type AbilityCondition = Arc<dyn Fn(&Event, &Resolver) -> bool + Send + Sync>;
@@ -63,7 +63,7 @@ pub struct Ability {
     pub event_type: String,
     /// Whether this is a WHEN or AFTER ability.
     pub relation: Relation,
-    /// Rule effect, invoked only by the later resolver.
+    /// Fallible rule effect invoked by the timing resolver.
     pub effect: AbilityEffect,
     /// Optional rule-specific eligibility gate.
     pub condition: Option<AbilityCondition>,
@@ -179,6 +179,8 @@ pub struct Resolver {
     table: Table,
     log: Vec<String>,
     relation_being_resolved: Option<Relation>,
+    emission_stack: Vec<(String, u64)>,
+    maximum_depth: usize,
 }
 
 impl Resolver {
@@ -199,6 +201,8 @@ impl Resolver {
             table,
             log: Vec::new(),
             relation_being_resolved: None,
+            emission_stack: Vec::new(),
+            maximum_depth: Self::DEFAULT_MAXIMUM_DEPTH,
         }
     }
 
@@ -239,39 +243,70 @@ impl Resolver {
         &self.log
     }
 
+    /// Default maximum count of simultaneously resolving events.
+    pub const DEFAULT_MAXIMUM_DEPTH: usize = 100;
+
+    /// Set the maximum simultaneous event depth for a bounded resolver.
+    ///
+    /// # Panics
+    /// Panics if `maximum_depth` is zero, because even a root emission then has no legal state.
+    pub fn set_maximum_depth(&mut self, maximum_depth: usize) {
+        assert!(
+            maximum_depth > 0,
+            "a resolver needs room for its root event"
+        );
+        self.maximum_depth = maximum_depth;
+    }
+
     /// Emit an event through WHEN, ordinary resolution, and AFTER windows.
     ///
     /// # Errors
-    /// Returns [`TimingError::IllegalChoice`] if a decider attempts an option that was not offered.
+    /// Returns an error for an illegal decider answer or an exhausted nested-emission depth budget.
     pub fn emit(
         &mut self,
         mut event: Event,
         resolve: impl FnOnce(&mut Event),
     ) -> Result<Event, TimingError> {
-        self.log
-            .push(format!("emit {}#{}", event.event_type, event.id));
-        self.run_window(&mut event, Relation::When)?;
+        if self.emission_stack.len() == self.maximum_depth {
+            return Err(TimingError::NestedEmissionDepthExceeded {
+                maximum_depth: self.maximum_depth,
+                event_chain: self.emission_stack.clone(),
+            });
+        }
+        self.emission_stack
+            .push((event.event_type.clone(), event.id));
+        self.log.push(format!(
+            "emit {}#{} (depth {})",
+            event.event_type,
+            event.id,
+            self.emission_stack.len()
+        ));
+        let result = (|| {
+            self.run_window(&mut event, Relation::When)?;
 
-        if event.cancelled {
+            if event.cancelled {
+                self.log
+                    .push(format!("  {}#{} cancelled", event.event_type, event.id));
+                return Ok(event);
+            }
+
+            if let Some(label) = self.is_forbidden(&event).map(str::to_owned) {
+                event.cancel();
+                self.log.push(format!(
+                    "  {}#{} forbidden by {label}",
+                    event.event_type, event.id
+                ));
+                return Ok(event);
+            }
+
             self.log
-                .push(format!("  {}#{} cancelled", event.event_type, event.id));
-            return Ok(event);
-        }
-
-        if let Some(label) = self.is_forbidden(&event).map(str::to_owned) {
-            event.cancel();
-            self.log.push(format!(
-                "  {}#{} forbidden by {label}",
-                event.event_type, event.id
-            ));
-            return Ok(event);
-        }
-
-        self.log
-            .push(format!("  resolve {}#{}", event.event_type, event.id));
-        resolve(&mut event);
-        self.run_window(&mut event, Relation::After)?;
-        Ok(event)
+                .push(format!("  resolve {}#{}", event.event_type, event.id));
+            resolve(&mut event);
+            self.run_window(&mut event, Relation::After)?;
+            Ok(event)
+        })();
+        self.emission_stack.pop();
+        result
     }
 
     /// Register abilities in the supplied order.
@@ -330,7 +365,7 @@ impl Resolver {
                         player,
                         ability.id
                     ));
-                    (ability.effect)(event, self);
+                    (ability.effect)(event, self)?;
                     resolved_this_pass = true;
                     if event.cancelled {
                         return Ok(());
@@ -450,6 +485,14 @@ pub enum TimingError {
     /// A decider attempted to choose an option that this timing window did not offer.
     #[error(transparent)]
     IllegalChoice(IllegalChoice),
+    /// A nested event would exceed the resolver's explicit depth budget.
+    #[error("nested emission depth exceeded (maximum {maximum_depth}): {event_chain:?}")]
+    NestedEmissionDepthExceeded {
+        /// Highest permitted simultaneously resolving-event count.
+        maximum_depth: usize,
+        /// Root-to-leaf chain that was already open when the next event was refused.
+        event_chain: Vec<(String, u64)>,
+    },
 }
 
 const fn relation_name(relation: Relation) -> &'static str {
@@ -523,7 +566,7 @@ mod tests {
             PlayerId::new("sol"),
             event_type,
             relation,
-            Arc::new(|_, _| {}),
+            Arc::new(|_, _| Ok(())),
         )
     }
 
@@ -633,7 +676,10 @@ mod tests {
             player(owner),
             event_type,
             relation,
-            Arc::new(move |_, _| log.lock().unwrap().push(name.clone())),
+            Arc::new(move |_, _| {
+                log.lock().unwrap().push(name.clone());
+                Ok(())
+            }),
         )
     }
 
@@ -748,7 +794,10 @@ mod tests {
                 player("sol"),
                 "E",
                 Relation::When,
-                Arc::new(|event, _| event.cancel()),
+                Arc::new(|event, _| {
+                    event.cancel();
+                    Ok(())
+                }),
             ),
             recording_ability("after", "letnev", "E", Relation::After, order.clone()),
         ]);
@@ -802,5 +851,175 @@ mod tests {
 
         assert!(matches!(result, Err(TimingError::IllegalChoice(_))));
         assert!(order.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn nested_events_resolve_depth_first_before_the_outer_event_continues() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        let outer_order = order.clone();
+        let inner_order = order.clone();
+        timing.register([
+            Ability::new(
+                "outer",
+                player("sol"),
+                "OUTER",
+                Relation::When,
+                Arc::new(move |_, resolver| {
+                    outer_order.lock().unwrap().push("outer_before".to_owned());
+                    resolver.emit(Event::new(2, "INNER", BTreeMap::new()), |_| {})?;
+                    outer_order.lock().unwrap().push("outer_after".to_owned());
+                    Ok(())
+                }),
+            ),
+            Ability::new(
+                "inner",
+                player("sol"),
+                "INNER",
+                Relation::After,
+                Arc::new(move |_, _| {
+                    inner_order.lock().unwrap().push("inner_after".to_owned());
+                    Ok(())
+                }),
+            ),
+        ]);
+
+        timing
+            .emit(Event::new(1, "OUTER", BTreeMap::new()), |_| {
+                order.lock().unwrap().push("outer_resolve".to_owned());
+            })
+            .unwrap();
+
+        assert_eq!(
+            *order.lock().unwrap(),
+            [
+                "outer_before",
+                "inner_after",
+                "outer_after",
+                "outer_resolve"
+            ]
+        );
+        let trace = timing.log();
+        assert!(
+            trace
+                .iter()
+                .position(|line| line.contains("resolve INNER#2"))
+                < trace
+                    .iter()
+                    .position(|line| line.contains("resolve OUTER#1"))
+        );
+    }
+
+    #[test]
+    fn an_inner_cancellation_stays_local_to_the_inner_event() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        let after_order = order.clone();
+        timing.register([
+            Ability::new(
+                "outer",
+                player("sol"),
+                "OUTER",
+                Relation::When,
+                Arc::new(|_, resolver| {
+                    resolver.emit(Event::new(2, "INNER", BTreeMap::new()), |_| {})?;
+                    Ok(())
+                }),
+            ),
+            Ability::new(
+                "cancel_inner",
+                player("sol"),
+                "INNER",
+                Relation::When,
+                Arc::new(|event, _| {
+                    event.cancel();
+                    Ok(())
+                }),
+            ),
+            Ability::new(
+                "outer_after",
+                player("sol"),
+                "OUTER",
+                Relation::After,
+                Arc::new(move |_, _| {
+                    after_order.lock().unwrap().push("outer_after".to_owned());
+                    Ok(())
+                }),
+            ),
+        ]);
+
+        timing
+            .emit(Event::new(1, "OUTER", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*order.lock().unwrap(), ["outer_after"]);
+    }
+
+    #[test]
+    fn depth_limit_returns_the_open_event_chain_and_unwinds_cleanly() {
+        let mut timing = resolver(&["sol"], "sol");
+        timing.set_maximum_depth(2);
+        timing.register([
+            Ability::new(
+                "first",
+                player("sol"),
+                "A",
+                Relation::When,
+                Arc::new(|_, resolver| {
+                    resolver.emit(Event::new(2, "B", BTreeMap::new()), |_| {})?;
+                    Ok(())
+                }),
+            ),
+            Ability::new(
+                "second",
+                player("sol"),
+                "B",
+                Relation::When,
+                Arc::new(|_, resolver| {
+                    resolver.emit(Event::new(3, "C", BTreeMap::new()), |_| {})?;
+                    Ok(())
+                }),
+            ),
+        ]);
+
+        let result = timing.emit(Event::new(1, "A", BTreeMap::new()), |_| {});
+
+        assert!(matches!(
+            result,
+            Err(TimingError::NestedEmissionDepthExceeded {
+                maximum_depth: 2,
+                event_chain,
+            }) if event_chain == vec![("A".to_owned(), 1), ("B".to_owned(), 2)]
+        ));
+        timing
+            .emit(Event::new(4, "SAFE", BTreeMap::new()), |_| {})
+            .unwrap();
+    }
+
+    #[test]
+    fn default_depth_limit_refuses_the_one_hundred_and_first_open_event() {
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([Ability::new(
+            "loop",
+            player("sol"),
+            "LOOP",
+            Relation::When,
+            Arc::new(|event, resolver| {
+                resolver.emit(Event::new(event.id + 1, "LOOP", BTreeMap::new()), |_| {})?;
+                Ok(())
+            }),
+        )]);
+
+        let result = timing.emit(Event::new(1, "LOOP", BTreeMap::new()), |_| {});
+
+        assert!(matches!(
+            result,
+            Err(TimingError::NestedEmissionDepthExceeded {
+                maximum_depth: Resolver::DEFAULT_MAXIMUM_DEPTH,
+                event_chain,
+            }) if event_chain.len() == Resolver::DEFAULT_MAXIMUM_DEPTH
+                && event_chain.first() == Some(&("LOOP".to_owned(), 1))
+                && event_chain.last() == Some(&("LOOP".to_owned(), 100))
+        ));
     }
 }
