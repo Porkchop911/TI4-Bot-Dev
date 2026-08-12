@@ -147,6 +147,8 @@ pub struct Position<'a> {
     pub content: &'a ContentStore,
     pub sources: SourceSet,
     pub player: &'a PlayerId,
+    /// The map, when the caller has one. `None` leaves board-shape requirements unmet.
+    pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
 }
 
 impl Position<'_> {
@@ -555,6 +557,21 @@ pub fn scoreable(
     sources: SourceSet,
     player: &PlayerId,
 ) -> Vec<SecretObjectiveId> {
+    scoreable_on(state, content, sources, player, None)
+}
+
+/// Status-phase secrets this player may score now, with the map available.
+///
+/// Requirements about the shape of the board report unmet without it, so a driver that has a
+/// galaxy should pass it: the same position otherwise scores differently depending on who asked.
+#[must_use]
+pub fn scoreable_on(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<SecretObjectiveId> {
     let Some(seat) = state.player(player) else {
         return Vec::new();
     };
@@ -564,6 +581,7 @@ pub fn scoreable(
         content,
         sources,
         player,
+        galaxy,
     };
     seat.secret_objectives
         .iter()
@@ -915,6 +933,7 @@ mod tests {
                 content: ContentStore::embedded(),
                 sources: POK,
                 player: seat,
+                galaxy: None,
             }
         }
 

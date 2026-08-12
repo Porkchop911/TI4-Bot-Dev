@@ -1002,7 +1002,12 @@ impl<'a> Game<'a> {
     /// the phase is not touched until the window closes.
     fn step_status(&mut self) -> StepResult {
         self.status_resolved = true;
-        self.scoring = Some(ScoringWindow::new(&self.state.initiative_order()));
+        // With the map, so objectives that ask about the board's shape can be scored at all.
+        let mut window = ScoringWindow::new(&self.state.initiative_order());
+        if let Some(galaxy) = self.galaxy.clone() {
+            window = window.with_galaxy(galaxy);
+        }
+        self.scoring = Some(window);
         self.emit("STATUS_SCORING_BEGAN");
         self.result(false, None)
     }

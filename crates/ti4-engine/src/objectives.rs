@@ -36,6 +36,12 @@ pub struct Position<'a> {
     pub content: &'a ContentStore,
     pub sources: SourceSet,
     pub player: &'a PlayerId,
+    /// The map, when the caller has one.
+    ///
+    /// Several objectives ask about the *shape* of the board — its edge, what is adjacent to
+    /// Mecatol Rex — which no amount of state can answer. Without a galaxy those requirements
+    /// report unmet rather than guessing, exactly as the oracle does.
+    pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
     controlled: Vec<Planet<'a>>,
 }
 
@@ -61,6 +67,7 @@ impl<'a> Position<'a> {
             .filter_map(|(_, planet)| catalogue.get(planet.as_str()).copied())
             .collect();
         Self {
+            galaxy: None,
             state,
             content,
             sources,
@@ -109,9 +116,23 @@ impl<'a> Position<'a> {
         found
     }
 
+    /// Attach the map, so requirements about the board's shape can be answered.
+    #[must_use]
+    pub const fn with_galaxy(mut self, galaxy: &'a ti4_content::galaxy::Galaxy) -> Self {
+        self.galaxy = Some(galaxy);
+        self
+    }
+
     /// This player's home system, if their faction names one.
     fn home_system(&self) -> Option<String> {
         let seat = self.state.player(self.player)?;
+        // The seat's own record wins over its faction's. A game may seat a player at a home
+        // that is not their faction's printed one — a tournament replica, or a setup that
+        // placed them elsewhere — and reading only the faction would call that home a foreign
+        // system, which flips every requirement phrased "other than your home system".
+        if let Some(home) = &seat.home_system {
+            return Some(home.to_string());
+        }
         ti4_content::factions::get(self.content, seat.faction.as_str())
             .and_then(|faction| faction.home_system())
             .map(ToOwned::to_owned)
@@ -199,6 +220,160 @@ fn achieve_supremacy(position: &Position<'_>) -> bool {
     flagship_or_war_sun(position)
         .iter()
         .any(|system| theirs.contains(system))
+}
+
+/// Systems on the edge of the board: those with a neighbouring hex that holds no tile.
+///
+/// Derived, never listed. A board is built from whatever tiles a game was set up with, so its
+/// edge is a property of that arrangement and a fixed list would be right for exactly one map.
+fn edge_systems(galaxy: &ti4_content::galaxy::Galaxy) -> std::collections::BTreeSet<String> {
+    galaxy
+        .system_ids()
+        .into_iter()
+        .filter(|id| {
+            galaxy.coord_of(id).is_some_and(|here| {
+                here.neighbours()
+                    .into_iter()
+                    .any(|next| galaxy.system_at(next).is_none())
+            })
+        })
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+impl Position<'_> {
+    /// Systems where this player has any unit, in space or on a planet.
+    fn systems_holding_units(&self) -> Vec<String> {
+        self.state
+            .board
+            .iter()
+            .filter(|(_, board)| {
+                board.units.iter().any(|unit| &unit.owner == self.player)
+                    || board
+                        .planet_units
+                        .values()
+                        .flatten()
+                        .any(|unit| &unit.owner == self.player)
+            })
+            .map(|(id, _)| id.to_string())
+            .collect()
+    }
+
+    /// Systems where this player has a ship.
+    fn systems_with_ships(&self) -> Vec<String> {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        self.state
+            .board
+            .iter()
+            .filter(|(_, board)| {
+                board.units_of(self.player).into_iter().any(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ship)
+                })
+            })
+            .map(|(id, _)| id.to_string())
+            .collect()
+    }
+}
+
+/// Have units in `count` edge systems other than your home system.
+fn on_the_rim(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let Some(galaxy) = position.galaxy else {
+            return false;
+        };
+        let edge = edge_systems(galaxy);
+        let home = position.home_system();
+        position
+            .systems_holding_units()
+            .into_iter()
+            .filter(|system| edge.contains(system) && Some(system) != home.as_ref())
+            .count()
+            >= count
+    }
+}
+
+/// Have ships in two systems adjacent to Mecatol Rex's.
+fn intimidate_council(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let beside: std::collections::BTreeSet<&str> = galaxy.adjacent(crate::seating::MECATOL);
+    if beside.is_empty() {
+        return false; // Mecatol is not on this map, so nothing is adjacent to it
+    }
+    position
+        .systems_with_ships()
+        .into_iter()
+        .filter(|system| beside.contains(system.as_str()))
+        .count()
+        >= 2
+}
+
+/// Control more planets than each of two of your neighbours.
+///
+/// "More than each of two" is the difficulty: beating one neighbour twice over is not beating
+/// two neighbours.
+fn push_boundaries(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let mine = position.state.controlled_planets(position.player).len();
+    crate::transactions::neighbours(position.state, galaxy, position.player)
+        .into_iter()
+        .filter(|other| position.state.controlled_planets(other).len() < mine)
+        .count()
+        >= 2
+}
+
+/// Control two planets each in or adjacent to a *different* other player's home system.
+///
+/// "Different" is the whole difficulty: two planets around one opponent's home are one distant
+/// land, not two.
+fn rule_distant_lands(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let mut homes: Vec<(PlayerId, std::collections::BTreeSet<String>)> = Vec::new();
+    for seat in &position.state.players {
+        if &seat.id == position.player {
+            continue;
+        }
+        let home = seat
+            .home_system
+            .as_ref()
+            .map(ToString::to_string)
+            .or_else(|| {
+                ti4_content::factions::get(position.content, seat.faction.as_str())
+                    .and_then(|faction| faction.home_system())
+                    .map(ToOwned::to_owned)
+            });
+        let Some(home) = home else {
+            continue;
+        };
+        let mut reach: std::collections::BTreeSet<String> = galaxy
+            .adjacent(&home)
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect();
+        reach.insert(home);
+        homes.push((seat.id.clone(), reach));
+    }
+
+    // One planet may only speak for one opponent, so count the opponents reached, not the
+    // planets held.
+    let held: Vec<String> = position
+        .state
+        .controlled_planets(position.player)
+        .into_iter()
+        .map(|(system, _)| system.to_string())
+        .collect();
+    homes
+        .iter()
+        .filter(|(_, reach)| held.iter().any(|system| reach.contains(system)))
+        .count()
+        >= 2
 }
 
 /// Control `count` planets in non-home systems.
@@ -379,11 +554,21 @@ fn in_notable_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
 /// therefore unscoreable, which is the designed behaviour for a coverage gap — see the module
 /// documentation. [`unregistered_objectives`] reports which they are.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per objective: the list is the point, and splitting it hides the set"
+)]
 pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     // Written as a match rather than a lazy map so the set is visible at a glance and adding
     // one is a one-line change with no initialisation order to think about.
     fn expand_borders(p: &Position<'_>) -> bool {
         non_home(6)(p)
+    }
+    fn outer_rim(p: &Position<'_>) -> bool {
+        on_the_rim(3)(p)
+    }
+    fn control_borderlands(p: &Position<'_>) -> bool {
+        on_the_rim(5)(p)
     }
     fn subdue(p: &Position<'_>) -> bool {
         non_home(11)(p)
@@ -451,6 +636,11 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
 
     match alias.as_str() {
         "conquer" => Some(conquer_the_weak),
+        "intimidate" => Some(intimidate_council),
+        "outer_rim" => Some(outer_rim),
+        "control_borderlands" => Some(control_borderlands),
+        "push_boundaries" => Some(push_boundaries),
+        "distant_lands" => Some(rule_distant_lands),
         "engineer_marvel" => Some(engineer_a_marvel),
         "supremacy" => Some(achieve_supremacy),
         "expand_borders" => Some(expand_borders),
@@ -486,7 +676,12 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "brain_trust",
         "build_defenses",
         "conquer",
+        "control_borderlands",
+        "distant_lands",
         "engineer_marvel",
+        "intimidate",
+        "outer_rim",
+        "push_boundaries",
         "supremacy",
         "corner",
         "develop",
@@ -801,7 +996,24 @@ pub fn scoreable(
     sources: SourceSet,
     player: &PlayerId,
 ) -> Vec<ObjectiveId> {
-    let position = Position::new(state, content, sources, player);
+    scoreable_on(state, content, sources, player, None)
+}
+
+/// Revealed public objectives this player could score right now, with the map available.
+///
+/// Objectives that ask about the shape of the board report unmet without it, so a driver holding
+/// a galaxy should pass it — otherwise the same position scores differently depending on who
+/// asked.
+#[must_use]
+pub fn scoreable_on(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<ObjectiveId> {
+    let mut position = Position::new(state, content, sources, player);
+    position.galaxy = galaxy;
     if !controls_home_system(&position) {
         return Vec::new(); // 61.16
     }
@@ -938,9 +1150,22 @@ pub const SCORE_KIND: &str = "score";
 pub struct ScoringWindow {
     pending: Vec<PlayerId>,
     scored: Vec<(PlayerId, ObjectiveId)>,
+    /// The map, when the driver has one.
+    galaxy: Option<ti4_content::galaxy::Galaxy>,
 }
 
 impl ScoringWindow {
+    /// Attach the map for the duration of the window.
+    ///
+    /// Owned rather than borrowed because the window outlives any one call and the driver holds
+    /// the galaxy alongside it. Nothing places a tile during the status phase, so a snapshot
+    /// taken when the window opens is the same map it closes on.
+    #[must_use]
+    pub fn with_galaxy(mut self, galaxy: ti4_content::galaxy::Galaxy) -> Self {
+        self.galaxy = Some(galaxy);
+        self
+    }
+
     /// Open the window over `initiative`, which 81.1 requires be initiative order.
     #[must_use]
     pub fn new(initiative: &[PlayerId]) -> Self {
@@ -949,6 +1174,7 @@ impl ScoringWindow {
         Self {
             pending,
             scored: Vec::new(),
+            galaxy: None,
         }
     }
 
@@ -994,9 +1220,9 @@ impl ScoringWindow {
             // 61.6: one public and one secret at most per status phase, and the oracle offers
             // both in the same window. A player with no public objective in reach may still
             // have a secret in reach, so this must not stop at the public list.
-            let mut available = scoreable(state, content, sources, player);
+            let mut available = scoreable_on(state, content, sources, player, self.galaxy.as_ref());
             available.extend(
-                crate::secrets::scoreable(state, content, sources, player)
+                crate::secrets::scoreable_on(state, content, sources, player, self.galaxy.as_ref())
                     .into_iter()
                     .map(|secret| ObjectiveId::new(secret.as_str())),
             );
@@ -1106,13 +1332,13 @@ mod tests {
         // take, never as a bot winning on a rule that was never written.
         let players = ids(&["a"]);
         let mut state = game(&players);
-        // Populate the Outer Rim needs the edge of the map, which `Position` cannot see, so it
-        // is genuinely uncovered rather than merely chosen for this test.
+        // Every printed objective is registered now, so this uses one that does not exist:
+        // the point is the *design* — an unknown card is unscoreable, never freely scoreable.
         state
             .revealed_objectives
-            .push(ObjectiveId::new("outer_rim"));
+            .push(ObjectiveId::new("no_such_objective"));
 
-        assert!(requirement_for(&ObjectiveId::new("outer_rim")).is_none());
+        assert!(requirement_for(&ObjectiveId::new("no_such_objective")).is_none());
         assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
     }
 
@@ -1122,12 +1348,12 @@ mod tests {
         let mut state = game(&players);
         state.revealed_objectives = vec![
             ObjectiveId::new("expand_borders"),
-            ObjectiveId::new("outer_rim"),
+            ObjectiveId::new("no_such_objective"),
         ];
 
         assert_eq!(
             unregistered_objectives(&state),
-            vec![ObjectiveId::new("outer_rim")]
+            vec![ObjectiveId::new("no_such_objective")]
         );
     }
 
@@ -1305,6 +1531,221 @@ mod tests {
                 "{alias} is not an objective the corpus knows"
             );
         }
+    }
+
+    /// A position with the map attached.
+    fn on_map<'a>(
+        state: &'a GameState,
+        seat: &'a PlayerId,
+        galaxy: &'a ti4_content::galaxy::Galaxy,
+    ) -> Position<'a> {
+        Position::new(state, ContentStore::embedded(), POK, seat).with_galaxy(galaxy)
+    }
+
+    #[test]
+    fn a_map_shaped_objective_is_unmet_without_a_map() {
+        // Not "true by default" and not a panic: the requirement reports unmet, so a driver
+        // with no galaxy leaves it unscoreable instead of giving it away.
+        let players = ids(&["a", "b"]);
+        let state = game(&players);
+        let seat = PlayerId::new("a");
+        let position = Position::new(&state, ContentStore::embedded(), POK, &seat);
+
+        assert!(!intimidate_council(&position));
+        assert!(!push_boundaries(&position));
+        assert!(!rule_distant_lands(&position));
+        assert!(!on_the_rim(3)(&position));
+    }
+
+    #[test]
+    fn the_edge_of_the_board_is_derived_from_the_tiles_that_are_there() {
+        // A hub is a centre ringed by six systems: every ring system has an empty neighbour and
+        // the centre does not. A hard-coded edge list would be right for one map and wrong here.
+        let hub = crate::fixtures::plain_hub();
+        let edge = edge_systems(&hub.galaxy);
+
+        assert!(
+            !edge.contains(&hub.centre),
+            "the centre is enclosed by the ring"
+        );
+        for outer in &hub.outer {
+            assert!(edge.contains(outer), "{outer} is on the rim");
+        }
+    }
+
+    #[test]
+    fn populating_the_outer_rim_does_not_count_your_home() {
+        let hub = crate::fixtures::plain_hub();
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        for outer in hub.outer.iter().take(3) {
+            crate::fixtures::put(
+                &mut state,
+                &SystemId::new(outer.clone()),
+                "cruiser",
+                &seat,
+                1,
+            );
+        }
+        assert!(
+            on_the_rim(3)(&on_map(&state, &seat, &hub.galaxy)),
+            "three rim systems"
+        );
+
+        // Declaring one of them home takes it out of the count, leaving two.
+        state.player_mut(&seat).unwrap().home_system = Some(SystemId::new(hub.outer[0].clone()));
+        assert!(
+            !on_the_rim(3)(&on_map(&state, &seat, &hub.galaxy)),
+            "your own home does not populate the rim"
+        );
+    }
+
+    #[test]
+    fn intimidating_the_council_needs_two_systems_not_two_ships() {
+        // A hub centred on Mecatol: the ring is exactly what is adjacent to it.
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(hub.outer[0].clone()),
+            "cruiser",
+            &seat,
+            5,
+        );
+        assert!(
+            !intimidate_council(&on_map(&state, &seat, &hub.galaxy)),
+            "five ships in one system is one system"
+        );
+
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(hub.outer[1].clone()),
+            "cruiser",
+            &seat,
+            1,
+        );
+        assert!(intimidate_council(&on_map(&state, &seat, &hub.galaxy)));
+    }
+
+    #[test]
+    fn intimidating_the_council_ignores_ground_forces() {
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        for outer in hub.outer.iter().take(2) {
+            crate::fixtures::put(
+                &mut state,
+                &SystemId::new(outer.clone()),
+                "infantry",
+                &seat,
+                1,
+            );
+        }
+        assert!(
+            !intimidate_council(&on_map(&state, &seat, &hub.galaxy)),
+            "the card asks for ships"
+        );
+    }
+
+    #[test]
+    fn pushing_boundaries_needs_two_neighbours_beaten_not_one_beaten_twice() {
+        let hub = crate::fixtures::plain_hub();
+        let players = ids(&["a", "b", "c"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+        let centre = SystemId::new(hub.centre.clone());
+
+        // All three share the centre system, so all three are neighbours.
+        for player in &players {
+            crate::fixtures::put(&mut state, &centre, "cruiser", player, 1);
+        }
+        let planets: Vec<PlanetId> =
+            ti4_content::galaxy::all_planets(ContentStore::embedded(), POK)
+                .into_keys()
+                .map(PlanetId::new)
+                .take(4)
+                .collect();
+        let (system, _) = crate::fixtures::a_placed_planet();
+        for planet in planets.iter().take(3) {
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), seat.clone());
+        }
+        // b holds one, c holds three: only one neighbour is behind.
+        state
+            .system_mut(&system)
+            .set_control(planets[3].clone(), PlayerId::new("b"));
+        for planet in ti4_content::galaxy::all_planets(ContentStore::embedded(), POK)
+            .into_keys()
+            .map(PlanetId::new)
+            .filter(|planet| !planets.contains(planet))
+            .take(3)
+        {
+            state
+                .system_mut(&system)
+                .set_control(planet, PlayerId::new("c"));
+        }
+
+        assert!(
+            !push_boundaries(&on_map(&state, &seat, &hub.galaxy)),
+            "beating one neighbour is not beating two"
+        );
+
+        // Take c's planets away and both are behind.
+        state
+            .system_mut(&system)
+            .planet_control
+            .retain(|_, owner| owner == &seat || owner == &PlayerId::new("b"));
+        assert!(push_boundaries(&on_map(&state, &seat, &hub.galaxy)));
+    }
+
+    #[test]
+    fn distant_lands_must_be_two_different_opponents() {
+        let hub = crate::fixtures::plain_hub();
+        let players = ids(&["a", "b", "c"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        // b's home is the centre; both of a's planets sit in its ring, so both speak for b.
+        state.player_mut(&PlayerId::new("b")).unwrap().home_system =
+            Some(SystemId::new(hub.centre.clone()));
+        state.player_mut(&PlayerId::new("c")).unwrap().home_system =
+            Some(SystemId::new(hub.outer[3].clone()));
+
+        let planets: Vec<PlanetId> =
+            ti4_content::galaxy::all_planets(ContentStore::embedded(), POK)
+                .into_keys()
+                .map(PlanetId::new)
+                .take(2)
+                .collect();
+        state
+            .system_mut(&SystemId::new(hub.outer[0].clone()))
+            .set_control(planets[0].clone(), seat.clone());
+        state
+            .system_mut(&SystemId::new(hub.outer[1].clone()))
+            .set_control(planets[1].clone(), seat.clone());
+
+        assert!(
+            !rule_distant_lands(&on_map(&state, &seat, &hub.galaxy)),
+            "two planets around one opponent's home are one distant land"
+        );
+
+        // c's home is outer[3]; a planet in it reaches a second opponent.
+        state
+            .system_mut(&SystemId::new(hub.outer[3].clone()))
+            .set_control(planets[1].clone(), seat.clone());
+        state
+            .system_mut(&SystemId::new(hub.outer[1].clone()))
+            .planet_control
+            .clear();
+        assert!(rule_distant_lands(&on_map(&state, &seat, &hub.galaxy)));
     }
 
     #[test]

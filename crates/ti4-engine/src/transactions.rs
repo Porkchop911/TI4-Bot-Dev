@@ -244,10 +244,7 @@ pub fn available_actions(
 /// The partner an opening option names, or `None` for any other option.
 #[must_use]
 pub fn opens_with(option: &crate::choice::ChoiceOption) -> Option<PlayerId> {
-    option
-        .id
-        .strip_prefix(OPEN_PREFIX)
-        .map(PlayerId::new)
+    option.id.strip_prefix(OPEN_PREFIX).map(PlayerId::new)
 }
 
 /// What one side holds that a deal can be built from.

@@ -176,9 +176,12 @@ mod tests {
                 + crate::objectives::bought_aliases().len(),
             "achieved and bought objectives both count as covered"
         );
-        assert!(
-            objectives.missing() > 0,
-            "coverage is still partial, and the ledger should say so"
+        // The public deck is fully registered now, so a drop shows up here as a gap rather
+        // than as an objective quietly becoming unscoreable in a game.
+        assert_eq!(
+            objectives.missing(),
+            0,
+            "every revealed public objective must have a requirement or a price"
         );
     }
 
