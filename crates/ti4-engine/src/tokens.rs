@@ -94,7 +94,7 @@ impl TokenGain {
     }
 
     #[must_use]
-    pub fn is_complete(&self) -> bool {
+    pub const fn is_complete(&self) -> bool {
         self.pending.is_empty()
     }
 
@@ -140,7 +140,9 @@ impl TokenGain {
     ) -> Result<TokenPool, TokenGainError> {
         let choice = self.pending_choice().ok_or(TokenGainError::Complete)?;
         let option = validate(&choice, answer)?;
-        let pool = pool_for(&option.id).ok_or_else(|| TokenGainError::UnknownPool(option.id))?;
+        let Some(pool) = pool_for(&option.id) else {
+            return Err(TokenGainError::UnknownPool(option.id));
+        };
 
         let player_id = choice.player;
         let player = state

@@ -18,16 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M04-016 — the status phase's command-token gain, LRR 81.5
-  (`plans/evidence/M04-016_STATUS_TOKEN_GAIN.md`)
+- Last completed package: M04-017 — objective scoring, LRR 61/81.1/98
+  (`plans/evidence/M04-017_OBJECTIVE_SCORING.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M04-017 — objective scoring (LRR 81.1), the last step
-  before a generic game can complete a round.
+- Next dependency-ready package: M04-018 — agenda voting, the last structural boundary left in
+  the round loop.
 
 ## M04-005 package checkpoint (historical)
 
@@ -214,11 +214,11 @@ are recorded in the package evidence; independent review remains owner-waived.
   not only fixtures: a zeroed digest is rejected with exit 2. Automatic pipeline integration is
   still a separate, unclaimed package. See `plans/evidence/M00-014e.md`.
 
-## M04-016 package checkpoint (authoritative)
+## M04-016 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
-- Last completed package: M04-016 — the status phase's command-token gain, LRR 81.5
-  (`plans/evidence/M04-016_STATUS_TOKEN_GAIN.md`).
+- Last completed package: M04-017 — objective scoring, LRR 61/81.1/98
+  (`plans/evidence/M04-017_OBJECTIVE_SCORING.md`).
 - `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
   142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
 - `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
@@ -234,6 +234,25 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Two pre-existing status tests used strategy-card ids that do not exist in the corpus
   (`leadership` rather than `pok1leadership`), so they silently tested seating order rather than
   initiative order. Fixed; no production code was wrong.
+
+## M04-017 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `3a78709`.
+- Last completed package: M04-017 — objective scoring
+  (`plans/evidence/M04-017_OBJECTIVE_SCORING.md`).
+- `ti4-engine` has 157 tests. The workspace has **347 passing tests**: 121 `ti4-content`,
+  157 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- **A generic game now completes a whole round.** All 100 seeded two-to-six-player runs finish
+  the round with no step refusing, where before every one stopped at an unimplemented boundary.
+- Scoring's machinery is fully ported (61.8 once-per-game, 61.16 home control, 98.4a point cap,
+  98.7/98.8 initiative tie-breaks, both-deck point lookup). The *requirement predicates* are a
+  first tranche of 6 of the oracle's 32 — the planet-control family. The other 26 are
+  unregistered and therefore unscoreable, which is the oracle's own design for a coverage gap,
+  and `unregistered_objectives()` reports them.
+- 81.1 runs before 81.2 because scoring can end the game.
+- Two defects found and fixed during the package: resolving controlled planets per predicate was
+  quadratic enough to stop the campaign terminating, and completing the status phase turned a
+  previously-safe unbounded test loop into a hang. Both are recorded in the evidence.
 
 ## Implementation status
 
