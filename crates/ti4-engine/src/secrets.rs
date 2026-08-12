@@ -341,6 +341,120 @@ fn ground_forces_on_one_planet(count: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// The systems where this player has a ship, by id.
+///
+/// `Position::systems_with_ships` counts them; several cards need to know *which*.
+fn ship_systems<'a>(position: &Position<'a>) -> Vec<&'a ti4_model::id::SystemId> {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    position
+        .state
+        .board
+        .iter()
+        .filter(|(_, board)| {
+            board.units_of(position.player).into_iter().any(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+            })
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Have a ship in the same system as another player's space dock.
+fn beside_a_rival_dock(position: &Position<'_>) -> bool {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    ship_systems(position).into_iter().any(|system| {
+        position
+            .state
+            .system_state(system)
+            .planet_units
+            .values()
+            .flatten()
+            .any(|unit| {
+                &unit.owner != position.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == "spacedock")
+            })
+    })
+}
+
+/// Have a ship at an alpha wormhole *and* one at a beta — two systems, not one.
+///
+/// The wormholes are read from the corpus record for each system the player has ships in.
+/// A system on the board is a system that was placed, so this asks the same question as the
+/// oracle's galaxy lookup of the same records.
+fn ships_at_both_wormhole_kinds(position: &Position<'_>) -> bool {
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    let mut kinds = std::collections::BTreeSet::new();
+    for system in ship_systems(position) {
+        if let Some(record) = systems.get(system.as_str()) {
+            for wormhole in record.wormholes() {
+                if wormhole == "ALPHA" || wormhole == "BETA" {
+                    kinds.insert(wormhole);
+                }
+            }
+        }
+    }
+    kinds.len() == 2
+}
+
+/// Own two faction technologies.
+///
+/// The card excludes Valefar Assimilator technologies, which this engine does not model; when
+/// the Nekro ability arrives it has to exclude them here or this scores early for one faction.
+fn two_faction_technologies(position: &Position<'_>) -> bool {
+    let Some(seat) = position.state.player(position.player) else {
+        return false;
+    };
+    seat.technologies
+        .iter()
+        .filter(|alias| {
+            position
+                .content
+                .get(ContentType::Technologies, alias.as_str())
+                .and_then(|record| record.text("faction"))
+                .is_some()
+        })
+        .count()
+        >= 2
+}
+
+/// There are three or more laws in play. Not a thing you do — a state of the table.
+fn three_laws_in_play(position: &Position<'_>) -> bool {
+    position.state.laws.len() >= 3
+}
+
+/// Control a planet in a system that contains a planet controlled by another player.
+fn share_a_system_with_a_rival(position: &Position<'_>) -> bool {
+    position.state.board.values().any(|board| {
+        let mut mine = false;
+        let mut theirs = false;
+        for owner in board.planet_control.values() {
+            if owner == position.player {
+                mine = true;
+            } else {
+                theirs = true;
+            }
+        }
+        mine && theirs
+    })
+}
+
+/// Units with a combined PRODUCTION value of at least 8 in a single system.
+fn production_eight_in_one_system(position: &Position<'_>) -> bool {
+    position.state.board.keys().any(|system| {
+        crate::production::capacity(
+            position.state,
+            position.content,
+            position.sources,
+            position.player,
+            system,
+        ) >= 8
+    })
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -396,6 +510,12 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     }
 
     match alias.as_str() {
+        "csl" => Some(beside_a_rival_dock),
+        "btgk" => Some(ships_at_both_wormhole_kinds),
+        "ans" => Some(two_faction_technologies),
+        "dp" => Some(three_laws_in_play),
+        "syc" => Some(share_a_system_with_a_rival),
+        "pem" => Some(production_eight_in_one_system),
         "sai" => Some(legendary),
         "ose" => Some(mecatol_with_three),
         "mtm" => Some(four_mechs),
@@ -418,8 +538,8 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ctr", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp", "mrm", "mtm", "ose", "otf",
-        "sai",
+        "ans", "btgk", "csl", "ctr", "dp", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp",
+        "mrm", "mtm", "ose", "otf", "pem", "sai", "syc",
     ]
 }
 
@@ -664,6 +784,252 @@ mod tests {
         }
 
         assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
+    }
+
+    /// Give this player one secret and nothing else in hand.
+    fn holding(state: &mut GameState, alias: &str) {
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new(alias)];
+    }
+
+    fn can_score(state: &GameState, alias: &str) -> bool {
+        scoreable(state, ContentStore::embedded(), POK, &player())
+            .contains(&SecretObjectiveId::new(alias))
+    }
+
+    #[test]
+    fn cutting_supply_lines_needs_a_rival_dock_not_your_own() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "csl");
+        let (system, planet) = a_placed_planet();
+        put(&mut state, &system, "cruiser", &player(), 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+
+        assert!(
+            !can_score(&state, "csl"),
+            "your own dock is not supply lines"
+        );
+
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "spacedock",
+            &PlayerId::new("b"),
+            1,
+        );
+        assert!(can_score(&state, "csl"));
+    }
+
+    #[test]
+    fn the_gatekeeper_needs_both_wormhole_kinds() {
+        // One kind twice is not both kinds, which is the only way to get this card wrong.
+        let systems = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK);
+        let of_kind = |kind: &str, excluded: &str| -> Vec<String> {
+            systems
+                .iter()
+                .filter(|(_, system)| {
+                    system.wormholes().contains(kind) && !system.wormholes().contains(excluded)
+                })
+                .map(|(id, _)| (*id).to_owned())
+                .collect()
+        };
+        let alphas = of_kind("ALPHA", "BETA");
+        let betas = of_kind("BETA", "ALPHA");
+        assert!(
+            alphas.len() >= 2 && !betas.is_empty(),
+            "the corpus has both"
+        );
+
+        let mut state = game(&["a"]);
+        holding(&mut state, "btgk");
+        for id in alphas.iter().take(2) {
+            put(
+                &mut state,
+                &ti4_model::id::SystemId::new(id.clone()),
+                "cruiser",
+                &player(),
+                1,
+            );
+        }
+        assert!(!can_score(&state, "btgk"), "two alphas are still one kind");
+
+        put(
+            &mut state,
+            &ti4_model::id::SystemId::new(betas[0].clone()),
+            "cruiser",
+            &player(),
+            1,
+        );
+        assert!(can_score(&state, "btgk"));
+    }
+
+    #[test]
+    fn adapting_new_strategies_counts_faction_technologies_only() {
+        let content = ContentStore::embedded();
+        let faction_techs: Vec<String> = content
+            .from_sources(ContentType::Technologies, POK)
+            .filter(|record| record.text("faction").is_some())
+            .filter_map(|record| record.text("alias").map(ToOwned::to_owned))
+            .take(2)
+            .collect();
+        let generic: Vec<String> = content
+            .from_sources(ContentType::Technologies, POK)
+            .filter(|record| record.text("faction").is_none())
+            .filter_map(|record| record.text("alias").map(ToOwned::to_owned))
+            .take(2)
+            .collect();
+        assert_eq!(faction_techs.len(), 2);
+
+        let mut state = game(&["a"]);
+        holding(&mut state, "ans");
+        for alias in &generic {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert!(
+            !can_score(&state, "ans"),
+            "two ordinary technologies are not two faction technologies"
+        );
+
+        for alias in &faction_techs {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert!(can_score(&state, "ans"));
+    }
+
+    #[test]
+    fn dictating_policy_reads_the_table_not_the_player() {
+        // An agenda-phase secret, so scoreable() will not offer it at status time — the
+        // requirement is still the thing under test.
+        fn at<'a>(state: &'a GameState, seat: &'a PlayerId) -> Position<'a> {
+            Position {
+                state,
+                content: ContentStore::embedded(),
+                sources: POK,
+                player: seat,
+            }
+        }
+
+        let mut state = game(&["a"]);
+        let check = requirement_for(&SecretObjectiveId::new("dp")).expect("registered");
+        let seat = player();
+        assert!(!check(&at(&state, &seat)));
+        for n in 0..3 {
+            state.laws.insert(format!("law{n}"), String::new());
+        }
+        assert!(check(&at(&state, &seat)));
+        assert_eq!(
+            timing(ContentStore::embedded(), &SecretObjectiveId::new("dp")),
+            Timing::Agenda,
+            "it is scored in the agenda phase"
+        );
+    }
+
+    #[test]
+    fn staking_a_claim_needs_a_rival_in_the_same_system() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "syc");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+
+        assert!(
+            !can_score(&state, "syc"),
+            "a system of your own is not a claim"
+        );
+
+        let other = ti4_content::galaxy::planets_in(ContentStore::embedded(), system.as_str(), POK)
+            .into_iter()
+            .map(|found| ti4_model::id::PlanetId::new(found.id()))
+            .find(|found| found != &planet);
+        let Some(other) = other else {
+            return; // a one-planet system cannot show this
+        };
+        state
+            .system_mut(&system)
+            .set_control(other, PlayerId::new("b"));
+        assert!(can_score(&state, "syc"));
+    }
+
+    #[test]
+    fn producing_en_masse_counts_one_system_not_the_board() {
+        // "in a single system" is the whole card: eight production spread over two systems is
+        // not eight production.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "pem");
+
+        // Find a system whose planets, all docked, reach the threshold.
+        let big = ti4_content::galaxy::all_systems(content, POK)
+            .iter()
+            .filter(|(_, system)| system.planets().len() >= 2)
+            .map(|(id, _)| (*id).to_owned())
+            .find(|id| {
+                let mut trial = game(&["a"]);
+                let system = ti4_model::id::SystemId::new(id.clone());
+                for planet in ti4_content::galaxy::planets_in(content, id, POK) {
+                    let planet = ti4_model::id::PlanetId::new(planet.id());
+                    trial
+                        .system_mut(&system)
+                        .set_control(planet.clone(), player());
+                    crate::fixtures::put_on_planet(
+                        &mut trial,
+                        &system,
+                        &planet,
+                        "spacedock",
+                        &player(),
+                        1,
+                    );
+                }
+                crate::production::capacity(&trial, content, POK, &player(), &system) >= 8
+            });
+        let Some(big) = big else {
+            return; // no system in this corpus can reach eight on its own
+        };
+
+        let system = ti4_model::id::SystemId::new(big.clone());
+        let planets: Vec<ti4_model::id::PlanetId> =
+            ti4_content::galaxy::planets_in(content, &big, POK)
+                .into_iter()
+                .map(|planet| ti4_model::id::PlanetId::new(planet.id()))
+                .collect();
+        for planet in &planets {
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), player());
+        }
+        // One dock short, so nothing on the board reaches eight yet.
+        for planet in planets.iter().skip(1) {
+            crate::fixtures::put_on_planet(&mut state, &system, planet, "spacedock", &player(), 1);
+        }
+        let (elsewhere, other_planet) = a_placed_planet();
+        state
+            .system_mut(&elsewhere)
+            .set_control(other_planet.clone(), player());
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &elsewhere,
+            &other_planet,
+            "spacedock",
+            &player(),
+            1,
+        );
+        assert!(
+            !can_score(&state, "pem"),
+            "production spread over two systems is not production in one"
+        );
+
+        crate::fixtures::put_on_planet(&mut state, &system, &planets[0], "spacedock", &player(), 1);
+        assert!(can_score(&state, "pem"));
     }
 
     #[test]
