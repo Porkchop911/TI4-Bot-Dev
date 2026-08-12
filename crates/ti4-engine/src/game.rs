@@ -132,14 +132,13 @@ impl AftermathWindow {
     fn new(
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
-        table: &mut Table,
         player: &PlayerId,
         system: &SystemId,
         galaxy: Option<&Galaxy>,
     ) -> Result<Self, GameError> {
         // Movement may take the only carrier out of a system and strand what it was holding, so
         // capacity is settled before anything shoots.
-        crate::fleet::enforce(state, ctx.content, ctx.sources, table, player, system)
+        crate::fleet::enforce(state, ctx.content, ctx.sources, ctx.table, player, system)
             .map_err(GameError::IllegalChoice)?;
 
         // Fired by everyone except the active player, before combat.
@@ -157,7 +156,7 @@ impl AftermathWindow {
                 state,
                 ctx.content,
                 ctx.sources,
-                table,
+                ctx.table,
                 player,
                 system,
                 hits,
@@ -343,6 +342,8 @@ pub struct Game<'a> {
     tactical: Option<TacticalWindow>,
     /// The open post-movement sequence: combat, invasion, production.
     aftermath: Option<AftermathWindow>,
+    /// The open transaction. Free (94.1a), so closing it does not end the turn.
+    trade: Option<crate::transactions::TradeWindow>,
     /// The pinned source of gravity-rift rolls.
     rng: GameRng,
     dice: Dice,
@@ -395,6 +396,7 @@ impl<'a> Game<'a> {
             galaxy: None,
             tactical: None,
             aftermath: None,
+            trade: None,
             rng: GameRng::new(0),
             dice: Dice::new(),
             status_resolved: false,
@@ -478,6 +480,9 @@ impl<'a> Game<'a> {
         if self.aftermath.is_some() {
             return self.step_aftermath();
         }
+        if self.trade.is_some() {
+            return self.step_trade();
+        }
         if self.tactical.is_some() {
             return self.step_tactical();
         }
@@ -549,6 +554,21 @@ impl<'a> Game<'a> {
                 "take a tactical action",
             ));
         }
+        if let Some(galaxy) = self.galaxy.as_ref() {
+            choice
+                .options
+                .extend(crate::transactions::available_actions(
+                    &self.state,
+                    galaxy,
+                    active,
+                ));
+        }
+        choice.options.extend(crate::relics::available_actions(
+            &self.state,
+            self.content,
+            self.sources,
+            active,
+        ));
         Some(choice)
     }
 
@@ -584,6 +604,39 @@ impl<'a> Game<'a> {
                         .passed = true;
                     self.emit("PLAYER_PASSED");
                     self.advance_turn();
+                    return Ok(());
+                }
+                // 22.1: a component action costs the whole turn, so unlike a transaction this
+                // advances it whether or not the relic did anything worth having.
+                if answer.kind == crate::relics::ACTION_KIND {
+                    let mut dice = std::mem::take(&mut self.dice);
+                    let mut rng = self.rng.clone();
+                    let done = crate::relics::perform(
+                        &mut self.state,
+                        self.content,
+                        self.sources,
+                        &mut dice,
+                        &mut rng,
+                        &active,
+                        &answer,
+                    );
+                    self.dice = dice;
+                    self.rng = rng;
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    self.advance_turn();
+                    return Ok(());
+                }
+                if let Some(partner) = crate::transactions::opens_with(&answer) {
+                    self.trade = Some(crate::transactions::TradeWindow::open(
+                        &mut self.state,
+                        &active,
+                        &partner,
+                    ));
+                    self.emit("TRANSACTION_OPENED");
                     return Ok(());
                 }
                 if answer.kind != ACTION_KIND {
@@ -822,16 +875,11 @@ impl<'a> Game<'a> {
             sources: self.sources,
             dice: &mut dice,
             rng: &mut rng,
+            table: &mut self.table,
         };
         let galaxy = self.galaxy.clone();
-        let opened = AftermathWindow::new(
-            &mut self.state,
-            &mut ctx,
-            &mut self.table,
-            &player,
-            &system,
-            galaxy.as_ref(),
-        );
+        let opened =
+            AftermathWindow::new(&mut self.state, &mut ctx, &player, &system, galaxy.as_ref());
         let mut window = match opened {
             Ok(mut window) => {
                 window.settle(&mut self.state, &mut ctx);
@@ -878,6 +926,7 @@ impl<'a> Game<'a> {
             sources: self.sources,
             dice: &mut dice,
             rng: &mut rng,
+            table: &mut self.table,
         };
         let outcome = window.resolve(&mut self.state, &mut ctx, answer);
         self.dice = dice;
@@ -906,6 +955,51 @@ impl<'a> Game<'a> {
         self.emit("TACTICAL_ACTION_COMPLETE");
         self.advance_turn();
         self.result(false, None)
+    }
+
+    /// Resolve one decision of an open transaction.
+    ///
+    /// Unlike every other window here, finishing does **not** advance the turn: 94.1a puts a
+    /// transaction "at any time during your turn", and the turn continues afterwards.
+    fn step_trade(&mut self) -> StepResult {
+        let Some(galaxy) = self.galaxy.clone() else {
+            self.trade = None;
+            return self.result(false, None);
+        };
+        let choice = self
+            .trade
+            .as_ref()
+            .expect("checked above")
+            .pending_choice(&self.state);
+        let Some(choice) = choice else {
+            self.trade = None;
+            return self.result(false, None);
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let outcome = self.trade.as_mut().expect("window remains open").resolve(
+            &mut self.state,
+            &galaxy,
+            &answer,
+        );
+        self.emit(match outcome {
+            crate::transactions::Traded::Resolved => "TRANSACTION",
+            crate::transactions::Traded::Refused => "TRANSACTION_REFUSED",
+            crate::transactions::Traded::Offered => "TRANSACTION_OFFERED",
+            crate::transactions::Traded::Countered => "COUNTEROFFER",
+            crate::transactions::Traded::Rejected(_) => "TRANSACTION_REJECTED",
+            crate::transactions::Traded::NothingOffered => "TRANSACTION_ABANDONED",
+        });
+        if self
+            .trade
+            .as_ref()
+            .is_some_and(crate::transactions::TradeWindow::is_complete)
+        {
+            self.trade = None;
+        }
+        self.result(true, None)
     }
 
     fn step_secondary(&mut self) -> StepResult {
@@ -958,7 +1052,12 @@ impl<'a> Game<'a> {
     /// the phase is not touched until the window closes.
     fn step_status(&mut self) -> StepResult {
         self.status_resolved = true;
-        self.scoring = Some(ScoringWindow::new(&self.state.initiative_order()));
+        // With the map, so objectives that ask about the board's shape can be scored at all.
+        let mut window = ScoringWindow::new(&self.state.initiative_order());
+        if let Some(galaxy) = self.galaxy.clone() {
+            window = window.with_galaxy(galaxy);
+        }
+        self.scoring = Some(window);
         self.emit("STATUS_SCORING_BEGAN");
         self.result(false, None)
     }
@@ -1142,40 +1241,39 @@ impl<'a> Game<'a> {
                 self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
             }
 
-            // The speaker resolves a tie the card cannot (8.18). Answered through the table so
-            // it is a generated decision like any other.
-            let speaker = self.state.speaker.clone();
-            let table = &mut self.table;
-            let effect = crate::agenda_effects::resolve(
+            // With the game's own dice, table and map: several agendas roll, ask, or read
+            // the shape of the board, and one borrowed from nowhere would roll off a stream no
+            // seed covers. The speaker's tie-break (8.18) is asked through the same table.
+            let mut dice = std::mem::take(&mut self.dice);
+            let mut rng = self.rng.clone();
+            let galaxy = self.galaxy.clone();
+            let mut ctx = Resolving {
+                content: self.content,
+                sources: self.sources,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut self.table,
+            };
+            let effect = crate::agenda_effects::resolve_with(
                 &mut self.state,
-                self.content,
+                &mut ctx,
+                galaxy.as_ref(),
                 &alias,
                 &outcome,
                 window.ballot(),
-                |tied| {
-                    let options: Vec<ChoiceOption> = tied
-                        .iter()
-                        .map(|player| {
-                            ChoiceOption::labelled(player.to_string(), "elect", player.to_string())
-                        })
-                        .collect();
-                    let choice = Choice::new(
-                        speaker.clone(),
-                        "which tied player does the agenda name",
-                        options,
-                    );
-                    table
-                        .ask(&choice)
-                        .ok()
-                        .map(|answer| PlayerId::new(answer.id))
-                },
             );
+            self.dice = dice;
+            self.rng = rng;
+
             match effect {
                 crate::agenda_effects::Effect::Resolved { .. } => {
                     self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
                 }
                 crate::agenda_effects::Effect::Unresolved { .. } => {
                     self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
+                }
+                crate::agenda_effects::Effect::Deferred { .. } => {
+                    self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
                 }
             }
         }
@@ -1865,14 +1963,21 @@ mod tests {
 
         // A For/Against law, so the vote has the ordinary two outcomes and passing it
         // leaves something behind on the table.
+        // Deliberately one with no registered effect, because the point of this test is that
+        // an agenda the engine cannot resolve still goes through the whole vote and says so.
+        let registered = crate::agenda_effects::registered_aliases();
         let law = ContentStore::embedded()
             .records(ti4_model::content_types::ContentType::Agendas)
             .iter()
             .find(|record| {
-                record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
+                record.text("type") == Some("Law")
+                    && record.text("target") == Some("For/Against")
+                    && record
+                        .text("alias")
+                        .is_some_and(|alias| !registered.contains(&alias))
             })
             .and_then(|record| record.text("alias"))
-            .expect("the corpus has a For/Against law")
+            .expect("the corpus has an unregistered For/Against law")
             .to_owned();
         state.agenda_deck = vec![law.clone()];
 

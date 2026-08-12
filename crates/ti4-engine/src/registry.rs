@@ -8,6 +8,23 @@
 //! This counts what is covered, per registry, so the gap is a number rather than an impression.
 //! It is also the honest answer to "how much of the rules are implemented", which is a question
 //! this project has been burned by answering from memory.
+//!
+//! **The denominator is the corpus, not the oracle.** A card the oracle does not implement
+//! either is not a porting gap, and reading these fractions as "work remaining on the migration"
+//! overstates it badly. Measured against the oracle at the pinned commit on 2026-08-12, by
+//! comparing its registered aliases with this engine's:
+//!
+//! | registry | oracle implements | this engine |
+//! |---|---|---|
+//! | public objectives | 32 | 40 |
+//! | secret objectives | 27 | 27 |
+//! | agenda effects | 34 | 34 |
+//! | exploration cards | 33 | 36 |
+//! | action cards | **1** | 0 |
+//!
+//! So "action cards 0/122" is one card behind the oracle, not 122. The rest of that deck is
+//! unwritten in both engines and waits on the reaction system, not on porting effort. Re-measure
+//! rather than trusting this table: it was true on the date above and nothing keeps it true.
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
@@ -176,9 +193,12 @@ mod tests {
                 + crate::objectives::bought_aliases().len(),
             "achieved and bought objectives both count as covered"
         );
-        assert!(
-            objectives.missing() > 0,
-            "coverage is still partial, and the ledger should say so"
+        // The public deck is fully registered now, so a drop shows up here as a gap rather
+        // than as an objective quietly becoming unscoreable in a game.
+        assert_eq!(
+            objectives.missing(),
+            0,
+            "every revealed public objective must have a requirement or a price"
         );
     }
 

@@ -21,6 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
+### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
 - Last completed package: M02-002 common schema envelope (`b063dcb`).
@@ -41,6 +42,70 @@ three times in one session and is worth re-deriving against the tree.
   100-trace corpus (12,234,839 NDJSON bytes; four scenarios times seeds 0–24). M03-007c owns
   native semantic replay and remains blocked on generic-game parity. M03-016 cannot start until
   the parent package is complete.
+### Superseded content-branch checkpoint
+- Branch: `wp/m06-003-structured-transactions` (eight packages, 2026-08-12 evening)
+- **Two agents are working this repository at once.** The M03 timing chain
+  (M03-007a/b, M03-010 through M03-015) is held in `.worktrees/` by the other agent;
+  `timing.rs` and `event.rs` belong to it. The packages below deliberately avoid both files.
+- M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
+  registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
+  User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
+
+### Measured, 2026-08-12 evening
+
+`cargo test --workspace`: **539 engine + 121 content + 68 model + 1 doc-test, 0 failed.**
+Workspace clippy-clean under `-D warnings`; `cargo fmt --all --check` clean.
+
+Registry coverage, from the ledger in `crates/ti4-engine/src/registry.rs`:
+
+```
+public objectives      40/40   (100%)
+exploration cards      71/80   (89%)
+secret objectives      27/40   (68%)
+agenda effects         34/63   (54%)
+relics                  5/17   (29%)
+action cards            0/122  (0%)
+```
+
+**Those denominators are the corpus, not the oracle, and reading them as migration progress
+overstates the gap badly.** Measured against the oracle at the pinned commit by comparing
+registered aliases: public objectives 32, secrets 27, agendas 34, exploration 33, **action
+cards 1**. Every content registry in this engine is now at or ahead of oracle parity, and the
+action-card deck is one card behind — not 122. The remainder of each deck is unimplemented in
+the oracle too and waits on the reaction system, not on porting effort.
+
+### Packages completed this session
+
+1. **Transactions are negotiable** (94.1a) — the last unwired module.
+2. **Public objectives complete at 40/40.** `Position` gained an optional galaxy so objectives
+   about the shape of the board can be answered; without a map they report unmet.
+3. **Secrets to 27/40**, which is oracle parity, including the two that are *bought*.
+4. **Exploration 41 → 71/80.** `Resolving` gained the table, so a window resolving a "you may"
+   card can ask the player instead of answering for them.
+5. **Agendas 7 → 34/63**, oracle parity. `resolve_with` takes dice, a table and the map.
+6. **Relics made reachable** through a component action, plus `relics::gain` as the one door.
+
+Bugs found and fixed, each of which was silent:
+
+- `Position::home_system` ignored the seat's own recorded home, inverting every requirement
+  phrased "other than your home system".
+- Dynamis Core read commodities *held* as the faction's commodity *value* — the card backwards.
+- Relics drawn straight off the deck never scored the Shard of the Throne.
+- Enforced Travel Ban read every wormhole system in the corpus, destroying garrisons in systems
+  the game was never set up with.
+- A leaked secret (Classified Document Leaks) was worth nothing to anybody, because `scoreable`
+  looked only at the public registry while the requirement stays registered in `secrets`.
+
+### Next actions, re-derived against the tree
+
+1. **Content porting is done to oracle parity.** Further cards would be new design, not
+   migration, and every remaining registry entry is blocked behind the reaction system.
+2. The M03 timing chain is therefore the critical path for everything left, and it is held in
+   `.worktrees/` by the other agent.
+3. M00-013, the performance baseline, is still unrun.
+4. `GameState` still does not record its source scope; `Game` holds it via `with_sources`, so a
+   state loaded from disk and driven without it scores against the wrong catalogue.
+
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
@@ -97,6 +162,18 @@ three times in one session and is worth re-deriving against the tree.
   owns native executable scenario construction, full entropy/decision consumption, event
   projection, and selected cross-engine comparison. M03-007c remains blocked until those later
   compatibility surfaces prove semantic equality.
+
+## M03-016b integration checkpoint (2026-08-12)
+
+- Branch: `wp/m03-m06-timing-integration`.
+- The M03 timing chain and `wp/m06-003-structured-transactions` now coexist in one local merge
+  result. `game.rs` and `wiring.rs` merged automatically; their combined result retains the M06
+  driver calls and M03's stateful timing ownership/wiring guard.
+- `plans/EXECUTION_STATE.md` was the only textual conflict. Both historical branch checkpoints
+  remain labelled as superseded above; the current package evidence and this checkpoint supersede
+  their stale branch/next-action fields.
+- No source-rule behavior was introduced as part of conflict resolution. The integration must pass
+  all parent checks before it can be committed or used as the content/timing handoff branch.
 
 ## M03-016a package checkpoint (2026-08-12)
 

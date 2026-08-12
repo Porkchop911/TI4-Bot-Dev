@@ -1204,10 +1204,11 @@ pub fn resolve(
         sources,
         dice,
         rng,
+        table,
     };
     // Opening does not roll; settle once so a fight that is already over reports so.
     window.settle(state, &mut ctx);
-    window.drive(state, &mut ctx, table)?;
+    window.drive(state, &mut ctx)?;
     window
         .outcome()
         .ok_or_else(|| CombatError::Unresolved(system.clone()))
@@ -1971,11 +1972,13 @@ mod tests {
         let mut table = Table::new();
         let mut dice = Dice::new();
         let mut rng = GameRng::new(2);
+        let mut inner = Table::new();
         let mut ctx = crate::choice::Resolving {
             content: ContentStore::embedded(),
             sources: POK,
             dice: &mut dice,
             rng: &mut rng,
+            table: &mut inner,
         };
         window.settle(&mut state, &mut ctx);
 
@@ -2005,11 +2008,13 @@ mod tests {
             let mut rng = GameRng::new(17);
             if stepped {
                 let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+                let mut inner = Table::new();
                 let mut ctx = crate::choice::Resolving {
                     content: ContentStore::embedded(),
                     sources: POK,
                     dice: &mut dice,
                     rng: &mut rng,
+                    table: &mut inner,
                 };
                 window.settle(&mut state, &mut ctx);
                 while let Some(choice) =

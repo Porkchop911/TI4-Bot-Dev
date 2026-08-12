@@ -61,13 +61,158 @@ pub fn resolution(content: &ContentStore, card: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// This player's commodity value, from their faction (21.1).
+fn commodity_limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
+    state.player(player).map_or(0, |seat| {
+        ti4_content::factions::get(content, seat.faction.as_str())
+            .map_or(0, |faction| faction.commodities())
+    })
+}
+
+/// Gain up to `count` commodities, never past the faction's value (21.2).
+fn gain_commodities(state: &mut GameState, content: &ContentStore, player: &PlayerId, count: i32) {
+    let limit = commodity_limit(state, content, player);
+    if let Some(seat) = state.player_mut(player) {
+        seat.commodities = (seat.commodities + count).min(limit);
+    }
+}
+
+/// Turn up to `most` commodities into trade goods, or all of them when `most` is `None`.
+///
+/// 21.5 only converts commodities when they *change hands*; these cards say so explicitly, which
+/// is why this is written here rather than reached for anywhere a commodity is spent.
+fn convert_commodities(state: &mut GameState, player: &PlayerId, most: Option<i32>) {
+    if let Some(seat) = state.player_mut(player) {
+        let moved = most.map_or(seat.commodities, |cap| seat.commodities.min(cap));
+        seat.commodities -= moved;
+        seat.trade_goods += moved;
+    }
+}
+
+/// Ask this player one question with the given options.
+fn ask(
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    prompt: &str,
+    options: &[(&str, &str)],
+) -> Option<String> {
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        prompt,
+        options
+            .iter()
+            .map(|(id, label)| crate::choice::ChoiceOption::labelled(*id, "explore", *label))
+            .collect(),
+    );
+    ctx.table.ask(&choice).ok().map(|answer| answer.id)
+}
+
+/// The system a planet sits in, according to the board.
+fn system_of(state: &GameState, planet: &PlanetId) -> Option<ti4_model::id::SystemId> {
+    state
+        .board
+        .iter()
+        .find(|(_, board)| {
+            board.planet_units.contains_key(planet) || board.planet_control.contains_key(planet)
+        })
+        .map(|(id, _)| id.clone())
+}
+
+/// Place one unit of a base type on a planet.
+fn place_on_planet(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+    base_type: &str,
+) -> bool {
+    let Some(system) = system_of(state, planet) else {
+        return false;
+    };
+    let faction = state
+        .player(player)
+        .map(|seat| seat.faction.to_string())
+        .unwrap_or_default();
+    // A faction's own version first — a Sol infantry is not the generic one — then the plain
+    // unit when the seat has no faction record. A base type with neither is not placed at all,
+    // which is right for a mech: a factionless seat has no mech to place.
+    let generic = ti4_content::units::catalogue(content, sources)
+        .get(base_type)
+        .map(|unit| unit.id().to_owned());
+    let Some(id) = ti4_content::units::faction_unit(content, &faction, base_type, sources)
+        .map(|unit| unit.id().to_owned())
+        .or(generic)
+    else {
+        return false;
+    };
+    let type_id = ti4_model::id::UnitTypeId::new(id);
+    state
+        .system_mut(&system)
+        .planet_units
+        .entry(planet.clone())
+        .or_default()
+        .push(ti4_model::units::Unit::new(type_id, player.clone()));
+    true
+}
+
+/// "If you have at least 1 mech on this planet, or if you remove 1 infantry from this planet."
+///
+/// A mech pays by being there; infantry pays by dying. A player with neither cannot resolve the
+/// card at all, which is the card working rather than a gap.
+fn pay_with_mech_or_infantry(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+) -> bool {
+    let Some(system) = system_of(state, planet) else {
+        return false;
+    };
+    let types = ti4_content::units::catalogue(content, sources);
+    let units = state
+        .system_state(&system)
+        .planet_units
+        .get(planet)
+        .cloned()
+        .unwrap_or_default();
+
+    if units.iter().any(|unit| {
+        &unit.owner == player
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == "mech")
+    }) {
+        return true;
+    }
+
+    let infantry = units.iter().position(|unit| {
+        &unit.owner == player
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == "infantry")
+    });
+    let Some(index) = infantry else {
+        return false;
+    };
+    if let Some(held) = state.system_mut(&system).planet_units.get_mut(planet) {
+        held.remove(index);
+    }
+    true
+}
+
 /// Exploration cards this engine resolves.
 ///
 /// The rest are drawn, announced [`Explored::Unresolved`], and do nothing — the registry design
 /// used throughout. `unimplemented` reports them.
 #[must_use]
 pub fn registered_cards() -> Vec<&'static str> {
-    vec!["dw", "ent", "kel1", "kel2", "majent", "minent"]
+    vec![
+        "aw1", "aw2", "aw3", "aw4", "cm1", "cm2", "cm3", "dv1", "dv2", "dw", "ent", "exp1", "exp2",
+        "exp3", "fb1", "fb2", "fb3", "fb4", "kel1", "kel2", "lc1", "lc2", "lf1", "lf2", "lf3",
+        "lf4", "majent", "minent", "mo1", "mo2", "mo3", "ms1", "ms2", "vfs1", "vfs2", "vfs3",
+    ]
 }
 
 /// Cards the engine draws but cannot resolve.
@@ -87,7 +232,18 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
 ///
 /// Returns `false` for a card with no handler, so the caller announces it unresolved rather
 /// than reporting a card that did nothing as having worked.
-fn resolve_instant(state: &mut GameState, player: &PlayerId, card: &str) -> bool {
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per card: the list is the point, and splitting it hides the set"
+)]
+fn resolve_instant(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    planet: Option<&PlanetId>,
+    card: &str,
+) -> bool {
+    let (content, sources) = (ctx.content, ctx.sources);
     // Command tokens go to the strategy pool. LRR 52.4 lets the player choose, and this does
     // not ask — recorded as a simplification rather than passed off as the rule.
     let (tokens, goods) = match card {
@@ -96,14 +252,157 @@ fn resolve_instant(state: &mut GameState, player: &PlayerId, card: &str) -> bool
         "majent" => (1, 3),
         "kel1" | "kel2" => (2, 0),
         "dw" => {
-            // Draw 1 relic.
-            let Some(relic) = state.relic_deck.first().cloned() else {
-                return true; // an empty deck gives nothing, which is not a failure
-            };
-            state.relic_deck.remove(0);
-            if let Some(seat) = state.player_mut(player) {
-                seat.relics.push(relic);
+            // Draw 1 relic, through `relics::gain` — a relic can be worth a point the moment it
+            // arrives, and taking it off the deck here scored nobody the Shard.
+            crate::relics::gain(state, player);
+            return true; // an empty deck gives nothing, which is not a failure
+        }
+        "aw1" | "aw2" | "aw3" | "aw4" => {
+            let chosen = ask(
+                ctx,
+                player,
+                "Abandoned Warehouses",
+                &[
+                    ("gain", "gain 2 commodities"),
+                    ("convert", "convert up to 2 commodities to trade goods"),
+                ],
+            );
+            if chosen.as_deref() == Some("convert") {
+                convert_commodities(state, player, Some(2));
+            } else {
+                gain_commodities(state, content, player, 2);
             }
+            return true;
+        }
+        "ms1" | "ms2" => {
+            let chosen = ask(
+                ctx,
+                player,
+                "Merchant Station",
+                &[
+                    ("replenish", "replenish commodities"),
+                    ("convert", "convert commodities to trade goods"),
+                ],
+            );
+            if chosen.as_deref() == Some("convert") {
+                convert_commodities(state, player, None);
+            } else {
+                let limit = commodity_limit(state, content, player);
+                gain_commodities(state, content, player, limit);
+            }
+            return true;
+        }
+        "fb1" | "fb2" | "fb3" | "fb4" => {
+            let (goods_held, commodities_held) = state
+                .player(player)
+                .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
+            let mut options = vec![("gain", "gain 1 commodity")];
+            if goods_held >= 1 {
+                options.push(("spend_tg", "spend 1 trade good to draw an action card"));
+            }
+            if commodities_held >= 1 {
+                options.push(("spend_com", "spend 1 commodity to draw an action card"));
+            }
+            let chosen = ask(ctx, player, "Functioning Base", &options);
+            match chosen.as_deref() {
+                Some("spend_tg" | "spend_com") => {
+                    if let Some(seat) = state.player_mut(player) {
+                        if chosen.as_deref() == Some("spend_tg") {
+                            seat.trade_goods -= 1;
+                        } else {
+                            seat.commodities -= 1;
+                        }
+                    }
+                    let _ = crate::action_cards::draw(state, content, ctx.table, player, 1);
+                }
+                _ => gain_commodities(state, content, player, 1),
+            }
+            return true;
+        }
+        "lf1" | "lf2" | "lf3" | "lf4" => {
+            let Some(planet) = planet else {
+                return true; // no planet, so nothing to build on
+            };
+            let (goods_held, commodities_held) = state
+                .player(player)
+                .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
+            let mut options = vec![("gain", "gain 1 commodity")];
+            if goods_held >= 1 {
+                options.push(("spend_tg", "spend 1 trade good to place a mech"));
+            }
+            if commodities_held >= 1 {
+                options.push(("spend_com", "spend 1 commodity to place a mech"));
+            }
+            let chosen = ask(ctx, player, "Local Fabricators", &options);
+            match chosen.as_deref() {
+                Some("spend_tg" | "spend_com") => {
+                    if !place_on_planet(state, content, sources, player, planet, "mech") {
+                        return true; // no mech to place, and nothing was charged for it
+                    }
+                    if let Some(seat) = state.player_mut(player) {
+                        if chosen.as_deref() == Some("spend_tg") {
+                            seat.trade_goods -= 1;
+                        } else {
+                            seat.commodities -= 1;
+                        }
+                    }
+                }
+                _ => gain_commodities(state, content, player, 1),
+            }
+            return true;
+        }
+        "mo1" | "mo2" | "mo3" => {
+            let Some(planet) = planet else {
+                return true;
+            };
+            let chosen = ask(
+                ctx,
+                player,
+                "Mercenary Outfit",
+                &[("place", "place 1 infantry"), ("decline", "place nothing")],
+            );
+            if chosen.as_deref() == Some("place") {
+                place_on_planet(state, content, sources, player, planet, "infantry");
+            }
+            return true;
+        }
+        "cm1" | "cm2" | "cm3" => {
+            let Some(planet) = planet else {
+                return true;
+            };
+            if pay_with_mech_or_infantry(state, content, sources, player, planet)
+                && let Some(seat) = state.player_mut(player)
+            {
+                seat.trade_goods += 1;
+            }
+            return true;
+        }
+        "exp1" | "exp2" | "exp3" => {
+            let Some(planet) = planet else {
+                return true;
+            };
+            if pay_with_mech_or_infantry(state, content, sources, player, planet) {
+                state.exhausted_planets.remove(planet);
+            }
+            return true;
+        }
+        "vfs1" | "vfs2" | "vfs3" => {
+            let Some(planet) = planet else {
+                return true;
+            };
+            if pay_with_mech_or_infantry(state, content, sources, player, planet)
+                && let Some(seat) = state.player_mut(player)
+            {
+                seat.gain_token(ti4_model::state::TokenPool::Strategic, 1);
+            }
+            return true;
+        }
+        "dv1" | "dv2" => {
+            let _ = crate::secrets::draw(state, content, ctx.table, player);
+            return true;
+        }
+        "lc1" | "lc2" => {
+            let _ = crate::action_cards::draw(state, content, ctx.table, player, 2);
             return true;
         }
         _ => return false,
@@ -126,6 +425,32 @@ pub fn explore(
     deck: &str,
     planet: Option<&PlanetId>,
 ) -> Option<Explored> {
+    let mut table = crate::choice::Table::new();
+    let mut dice = crate::dice::Dice::new();
+    let mut rng = crate::rng::GameRng::new(0);
+    let mut ctx = crate::choice::Resolving {
+        content,
+        sources: ti4_model::content_types::POK,
+        dice: &mut dice,
+        rng: &mut rng,
+        table: &mut table,
+    };
+    explore_with(state, &mut ctx, player, deck, planet)
+}
+
+/// Explore a planet with the table that is answering this action (35.2).
+///
+/// Most instant cards read "you may", so resolving one is a decision. Taking the first option
+/// on the player's behalf is what the plain [`explore`] does, and it is only right when nobody
+/// is seated — a driver with a table should pass it.
+pub fn explore_with(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    deck: &str,
+    planet: Option<&PlanetId>,
+) -> Option<Explored> {
+    let content = ctx.content;
     let card = draw(state, deck)?;
     let kind = resolution(content, &card).unwrap_or_default();
 
@@ -159,7 +484,7 @@ pub fn explore(
         // the rest are announced rather than dropped, so an unimplemented card is visible as a
         // gap instead of passing for one that did nothing on purpose.
         _ => {
-            if resolve_instant(state, player, &card) {
+            if resolve_instant(state, ctx, player, planet, &card) {
                 Explored::Resolved { card }
             } else {
                 Explored::Unresolved { card }
@@ -412,6 +737,223 @@ mod tests {
                 "{card} is not an exploration card the corpus knows"
             );
         }
+    }
+
+    /// Explore one named card with a scripted answer, and give back the state it left.
+    fn resolve_card(
+        state: &mut GameState,
+        player: &PlayerId,
+        planet: Option<&PlanetId>,
+        card: &str,
+        answers: &[&str],
+    ) -> Option<Explored> {
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new(
+            answers.iter().map(|answer| (*answer).to_owned()),
+        )));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+        };
+        state
+            .exploration_decks
+            .insert("CULTURAL".to_owned(), vec![card.to_owned()]);
+        explore_with(state, &mut ctx, player, "CULTURAL", planet)
+    }
+
+    /// A player holding a planet, with a real faction and the seat's economy set.
+    ///
+    /// The faction matters: commodity value comes from it, and a seat with none can hold no
+    /// commodities at all, which would make every gain in these tests a silent no-op.
+    fn holder(goods: i32, commodities: i32) -> (GameState, PlanetId) {
+        let mut state = game(&["a"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        let seat = state.player_mut(&player()).unwrap();
+        seat.faction = ti4_model::id::FactionId::new("sol");
+        seat.trade_goods = goods;
+        seat.commodities = commodities;
+        (state, planet)
+    }
+
+    #[test]
+    fn abandoned_warehouses_converts_or_gains_but_not_both() {
+        let (mut state, planet) = holder(0, 2);
+        resolve_card(&mut state, &player(), Some(&planet), "aw1", &["convert"]);
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(
+            seat.trade_goods, 2,
+            "two commodities became two trade goods"
+        );
+        assert_eq!(seat.commodities, 0);
+
+        let (mut state, planet) = holder(0, 0);
+        resolve_card(&mut state, &player(), Some(&planet), "aw1", &["gain"]);
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(
+            seat.commodities, 2,
+            "gained as commodities, not trade goods"
+        );
+        assert_eq!(seat.trade_goods, 0);
+    }
+
+    #[test]
+    fn commodities_never_pass_the_factions_value() {
+        // 21.2. A card that says "gain 2" gains what the seat can hold, and a faction with a
+        // value of 2 does not end up with 4.
+        let (mut state, planet) = holder(0, 0);
+        let limit = commodity_limit(&state, ContentStore::embedded(), &player());
+        state.player_mut(&player()).unwrap().commodities = limit;
+
+        resolve_card(&mut state, &player(), Some(&planet), "aw1", &["gain"]);
+
+        assert_eq!(
+            state.player(&player()).unwrap().commodities,
+            limit,
+            "already full, so nothing was gained"
+        );
+    }
+
+    #[test]
+    fn a_functioning_base_charges_for_the_card_it_draws() {
+        let (mut state, planet) = holder(1, 0);
+        state.action_card_deck = vec![ti4_model::id::ActionCardId::new("some_card")];
+
+        resolve_card(&mut state, &player(), Some(&planet), "fb1", &["spend_tg"]);
+
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(seat.trade_goods, 0, "the trade good was spent");
+        assert_eq!(seat.action_cards.len(), 1, "and a card was drawn");
+    }
+
+    #[test]
+    fn a_functioning_base_cannot_spend_what_it_does_not_have() {
+        // The option is not offered, so a scripted answer naming it falls through to the
+        // default rather than drawing a free card.
+        let (mut state, planet) = holder(0, 0);
+        state.action_card_deck = vec![ti4_model::id::ActionCardId::new("some_card")];
+
+        resolve_card(&mut state, &player(), Some(&planet), "fb1", &[]);
+
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(seat.trade_goods, 0);
+        assert!(seat.action_cards.is_empty(), "nothing was drawn on credit");
+        assert!(seat.commodities > 0, "the gain was taken instead");
+    }
+
+    #[test]
+    fn a_core_mine_is_paid_for_with_a_mech_or_an_infantry() {
+        // "If you have at least 1 mech on this planet, or if you remove 1 infantry from this
+        // planet" — a player with neither gains nothing, which is the card working.
+        let (mut state, planet) = holder(0, 0);
+        resolve_card(&mut state, &player(), Some(&planet), "cm1", &[]);
+        assert_eq!(
+            state.player(&player()).unwrap().trade_goods,
+            0,
+            "nothing on the planet, so nothing was mined"
+        );
+
+        let system = crate::fixtures::a_placed_planet().0;
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player(), 1);
+        resolve_card(&mut state, &player(), Some(&planet), "cm1", &[]);
+
+        assert_eq!(state.player(&player()).unwrap().trade_goods, 1);
+        assert!(
+            state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .is_none_or(Vec::is_empty),
+            "the infantry paid for it"
+        );
+    }
+
+    #[test]
+    fn an_expedition_readies_the_planet_it_was_found_on() {
+        let (mut state, planet) = holder(0, 0);
+        let system = crate::fixtures::a_placed_planet().0;
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player(), 1);
+        state.exhausted_planets.insert(planet.clone());
+
+        resolve_card(&mut state, &player(), Some(&planet), "exp1", &[]);
+
+        assert!(!state.exhausted_planets.contains(&planet));
+    }
+
+    #[test]
+    fn a_lost_crew_draws_two_action_cards() {
+        let (mut state, planet) = holder(0, 0);
+        state.action_card_deck = (0..2)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("card{n}")))
+            .collect();
+
+        resolve_card(&mut state, &player(), Some(&planet), "lc1", &[]);
+
+        assert_eq!(state.player(&player()).unwrap().action_cards.len(), 2);
+    }
+
+    #[test]
+    fn a_derelict_vessel_draws_a_secret_objective() {
+        let (mut state, planet) = holder(0, 0);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .secret_objectives
+            .clear();
+        state.secret_deck = vec![ti4_model::id::SecretObjectiveId::new("some_secret")];
+
+        resolve_card(&mut state, &player(), Some(&planet), "dv1", &[]);
+
+        assert_eq!(state.player(&player()).unwrap().secret_objectives.len(), 1);
+    }
+
+    #[test]
+    fn a_mercenary_outfit_may_be_declined() {
+        let (mut state, planet) = holder(0, 0);
+        let system = crate::fixtures::a_placed_planet().0;
+
+        resolve_card(&mut state, &player(), Some(&planet), "mo1", &["decline"]);
+        assert!(
+            state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .is_none_or(Vec::is_empty),
+            "declining places nothing"
+        );
+
+        resolve_card(&mut state, &player(), Some(&planet), "mo1", &["place"]);
+        assert_eq!(
+            state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .map_or(0, Vec::len),
+            1,
+            "one infantry, from the player's own faction"
+        );
+    }
+
+    #[test]
+    fn the_cards_left_unresolved_are_the_ones_that_need_more_engine() {
+        // Nine remain, and each needs machinery this engine does not have: a held card with its
+        // own ACTION, production with a payer, or a token the galaxy cannot carry.
+        let missing = unimplemented(ContentStore::embedded(), POK);
+        for card in registered_cards() {
+            assert!(!missing.contains(&card.to_owned()), "{card} is registered");
+        }
+        assert!(
+            missing.iter().all(|card| card.starts_with("ed")
+                || card.starts_with("frln")
+                || matches!(card.as_str(), "gamma" | "gw" | "ion" | "mirage")),
+            "an unexpected card is unresolved: {missing:?}"
+        );
     }
 
     #[test]

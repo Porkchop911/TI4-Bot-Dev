@@ -147,6 +147,8 @@ pub struct Position<'a> {
     pub content: &'a ContentStore,
     pub sources: SourceSet,
     pub player: &'a PlayerId,
+    /// The map, when the caller has one. `None` leaves board-shape requirements unmet.
+    pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
 }
 
 impl Position<'_> {
@@ -341,6 +343,310 @@ fn ground_forces_on_one_planet(count: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// The systems where this player has a ship, by id.
+///
+/// `Position::systems_with_ships` counts them; several cards need to know *which*.
+fn ship_systems<'a>(position: &Position<'a>) -> Vec<&'a ti4_model::id::SystemId> {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    position
+        .state
+        .board
+        .iter()
+        .filter(|(_, board)| {
+            board.units_of(position.player).into_iter().any(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+            })
+        })
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Have a ship in the same system as another player's space dock.
+fn beside_a_rival_dock(position: &Position<'_>) -> bool {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    ship_systems(position).into_iter().any(|system| {
+        position
+            .state
+            .system_state(system)
+            .planet_units
+            .values()
+            .flatten()
+            .any(|unit| {
+                &unit.owner != position.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == "spacedock")
+            })
+    })
+}
+
+/// Have a ship at an alpha wormhole *and* one at a beta — two systems, not one.
+///
+/// The wormholes are read from the corpus record for each system the player has ships in.
+/// A system on the board is a system that was placed, so this asks the same question as the
+/// oracle's galaxy lookup of the same records.
+fn ships_at_both_wormhole_kinds(position: &Position<'_>) -> bool {
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    let mut kinds = std::collections::BTreeSet::new();
+    for system in ship_systems(position) {
+        if let Some(record) = systems.get(system.as_str()) {
+            for wormhole in record.wormholes() {
+                if wormhole == "ALPHA" || wormhole == "BETA" {
+                    kinds.insert(wormhole);
+                }
+            }
+        }
+    }
+    kinds.len() == 2
+}
+
+/// Own two faction technologies.
+///
+/// The card excludes Valefar Assimilator technologies, which this engine does not model; when
+/// the Nekro ability arrives it has to exclude them here or this scores early for one faction.
+fn two_faction_technologies(position: &Position<'_>) -> bool {
+    let Some(seat) = position.state.player(position.player) else {
+        return false;
+    };
+    seat.technologies
+        .iter()
+        .filter(|alias| {
+            position
+                .content
+                .get(ContentType::Technologies, alias.as_str())
+                .and_then(|record| record.text("faction"))
+                .is_some()
+        })
+        .count()
+        >= 2
+}
+
+/// There are three or more laws in play. Not a thing you do — a state of the table.
+fn three_laws_in_play(position: &Position<'_>) -> bool {
+    position.state.laws.len() >= 3
+}
+
+/// Control a planet in a system that contains a planet controlled by another player.
+fn share_a_system_with_a_rival(position: &Position<'_>) -> bool {
+    position.state.board.values().any(|board| {
+        let mut mine = false;
+        let mut theirs = false;
+        for owner in board.planet_control.values() {
+            if owner == position.player {
+                mine = true;
+            } else {
+                theirs = true;
+            }
+        }
+        mine && theirs
+    })
+}
+
+/// Units with a combined PRODUCTION value of at least 8 in a single system.
+fn production_eight_in_one_system(position: &Position<'_>) -> bool {
+    position.state.board.keys().any(|system| {
+        crate::production::capacity(
+            position.state,
+            position.content,
+            position.sources,
+            position.player,
+            system,
+        ) >= 8
+    })
+}
+
+/// Have ships in three systems that are each adjacent to an anomaly.
+///
+/// Three systems beside anomalies, not three anomalies: one system with three anomalous
+/// neighbours is one system.
+fn ships_beside_three_anomalies(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    ship_systems(position)
+        .into_iter()
+        .filter(|here| {
+            galaxy.adjacent(here.as_str()).into_iter().any(|other| {
+                systems
+                    .get(other)
+                    .is_some_and(ti4_content::galaxy::System::is_anomaly)
+            })
+        })
+        .count()
+        >= 3
+}
+
+/// Have a ship in a system adjacent to another player's home system.
+fn ships_beside_a_rival_home(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let mine = position
+        .state
+        .player(position.player)
+        .map(|seat| seat.faction.to_string());
+    let planets = ti4_content::galaxy::all_planets(position.content, position.sources);
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+
+    let is_rival_home = |system_id: &str| {
+        systems.get(system_id).is_some_and(|system| {
+            system.planets().into_iter().any(|planet| {
+                planets
+                    .get(planet)
+                    .and_then(ti4_content::galaxy::Planet::homeworld_of)
+                    .is_some_and(|faction| Some(faction.to_owned()) != mine)
+            })
+        })
+    };
+
+    ship_systems(position).into_iter().any(|here| {
+        galaxy
+            .adjacent(here.as_str())
+            .into_iter()
+            .any(is_rival_home)
+    })
+}
+
+/// Be neighbours with every other player (LRR 60).
+fn neighbours_with_everyone(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let others: Vec<&PlayerId> = position
+        .state
+        .players
+        .iter()
+        .map(|seat| &seat.id)
+        .filter(|id| *id != position.player)
+        .collect();
+    if others.is_empty() {
+        return false; // a table of one is not cohesion
+    }
+    let reached = crate::transactions::neighbours(position.state, galaxy, position.player);
+    others.into_iter().all(|other| reached.contains(other))
+}
+
+/// Have units in the wormhole nexus.
+///
+/// The nexus is a `PoK` system; a board without it simply never satisfies this, which is a legal
+/// state of affairs rather than a gap. No map is needed — the question is only whether the
+/// player has units there.
+fn units_in_the_nexus(position: &Position<'_>) -> bool {
+    ti4_content::galaxy::all_systems(position.content, position.sources)
+        .iter()
+        .filter(|(_, system)| {
+            system
+                .name()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
+        })
+        .any(|(id, _)| {
+            let system = ti4_model::id::SystemId::new(*id);
+            position.state.board.contains_key(&system)
+                && !position
+                    .state
+                    .system_state(&system)
+                    .units_of(position.player)
+                    .is_empty()
+        })
+}
+
+/// Relic fragments this player holds, of any trait.
+fn fragment_count(state: &GameState, player: &PlayerId) -> i32 {
+    state.player(player).map_or(0, |seat| {
+        seat.relic_fragments
+            .values()
+            .filter(|held| **held > 0)
+            .sum()
+    })
+}
+
+/// Hold two relic fragments of any type — and purge them to score (see [`pay_for`]).
+fn two_relic_fragments(position: &Position<'_>) -> bool {
+    fragment_count(position.state, position.player) >= 2
+}
+
+/// Hold five action cards, which scoring then discards.
+fn five_action_cards(position: &Position<'_>) -> bool {
+    position
+        .state
+        .player(position.player)
+        .is_some_and(|seat| seat.action_cards.len() >= 5)
+}
+
+/// Have another player's promissory note in your play area.
+fn holds_a_rivals_note(position: &Position<'_>) -> bool {
+    let Some(seat) = position.state.player(position.player) else {
+        return false;
+    };
+    // Support for the Throne has its own field, because it is the one note whose position is
+    // worth a victory point. Reading only the general map would miss the commonest case.
+    if position
+        .state
+        .support_holders
+        .iter()
+        .any(|(owner, holder)| holder == position.player && owner != position.player)
+    {
+        return true;
+    }
+    position
+        .state
+        .promissory_notes
+        .iter()
+        .filter(|(_, holder)| *holder == position.player)
+        .any(|(note, _)| {
+            // A note is "another player's" when the corpus attributes it to a faction that is
+            // not this seat's. A note with no faction is a generic one, which anybody's copy
+            // could be, so it cannot show whose it was.
+            position
+                .content
+                .get(ContentType::PromissoryNotes, note)
+                .and_then(|record| record.text("faction"))
+                .is_some_and(|faction| faction != seat.faction.as_str())
+        })
+}
+
+/// What scoring a secret costs, beyond meeting its requirement.
+///
+/// Two secrets are *paid for* rather than achieved: the fragments are purged and the cards are
+/// discarded as part of scoring. Charged in [`award`] and never in the requirement, so being
+/// offered the objective costs nothing — a requirement that spent as a side effect would charge
+/// a player for merely being asked.
+fn pay_for(state: &mut GameState, player: &PlayerId, alias: &SecretObjectiveId) -> bool {
+    match alias.as_str() {
+        "dhw" => {
+            if fragment_count(state, player) < 2 {
+                return false;
+            }
+            let Some(seat) = state.player_mut(player) else {
+                return false;
+            };
+            let mut owed = 2;
+            for held in seat.relic_fragments.values_mut() {
+                while owed > 0 && *held > 0 {
+                    *held -= 1;
+                    owed -= 1;
+                }
+            }
+            seat.relic_fragments.retain(|_, held| *held > 0);
+            owed == 0
+        }
+        "fsn" => {
+            let Some(seat) = state.player_mut(player) else {
+                return false;
+            };
+            if seat.action_cards.len() < 5 {
+                return false;
+            }
+            seat.action_cards.drain(..5);
+            true
+        }
+        _ => true,
+    }
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -396,6 +702,19 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     }
 
     match alias.as_str() {
+        "csl" => Some(beside_a_rival_dock),
+        "dhw" => Some(two_relic_fragments),
+        "fsn" => Some(five_action_cards),
+        "sb" => Some(holds_a_rivals_note),
+        "lsc" => Some(ships_beside_three_anomalies),
+        "te" => Some(ships_beside_a_rival_home),
+        "fc" => Some(neighbours_with_everyone),
+        "dfat" => Some(units_in_the_nexus),
+        "btgk" => Some(ships_at_both_wormhole_kinds),
+        "ans" => Some(two_faction_technologies),
+        "dp" => Some(three_laws_in_play),
+        "syc" => Some(share_a_system_with_a_rival),
+        "pem" => Some(production_eight_in_one_system),
         "sai" => Some(legendary),
         "ose" => Some(mecatol_with_three),
         "mtm" => Some(four_mechs),
@@ -418,8 +737,9 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ctr", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp", "mrm", "mtm", "ose", "otf",
-        "sai",
+        "ans", "btgk", "csl", "ctr", "dfat", "dhw", "dp", "eap", "eh", "faa", "fc", "fsn", "fwm",
+        "gamf", "hrm", "lsc", "mlp", "mp", "mrm", "mtm", "ose", "otf", "pem", "sai", "sb", "syc",
+        "te",
     ]
 }
 
@@ -435,6 +755,21 @@ pub fn scoreable(
     sources: SourceSet,
     player: &PlayerId,
 ) -> Vec<SecretObjectiveId> {
+    scoreable_on(state, content, sources, player, None)
+}
+
+/// Status-phase secrets this player may score now, with the map available.
+///
+/// Requirements about the shape of the board report unmet without it, so a driver that has a
+/// galaxy should pass it: the same position otherwise scores differently depending on who asked.
+#[must_use]
+pub fn scoreable_on(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<SecretObjectiveId> {
     let Some(seat) = state.player(player) else {
         return Vec::new();
     };
@@ -444,6 +779,7 @@ pub fn scoreable(
         content,
         sources,
         player,
+        galaxy,
     };
     seat.secret_objectives
         .iter()
@@ -465,6 +801,11 @@ pub fn award(
         .player(player)
         .is_some_and(|seat| seat.secret_objectives.contains(alias));
     if !held {
+        return None;
+    }
+    // Paid for before it is recorded: a secret whose price cannot be met is not scored, and a
+    // score recorded first would be kept even when the payment failed.
+    if !pay_for(state, player, alias) {
         return None;
     }
     let points = content
@@ -664,6 +1005,543 @@ mod tests {
         }
 
         assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
+    }
+
+    /// Give this player one secret and nothing else in hand.
+    fn holding(state: &mut GameState, alias: &str) {
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new(alias)];
+    }
+
+    fn can_score(state: &GameState, alias: &str) -> bool {
+        scoreable(state, ContentStore::embedded(), POK, &player())
+            .contains(&SecretObjectiveId::new(alias))
+    }
+
+    /// A position with the map attached.
+    fn on_map<'a>(
+        state: &'a GameState,
+        seat: &'a PlayerId,
+        galaxy: &'a ti4_content::galaxy::Galaxy,
+    ) -> Position<'a> {
+        Position {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: seat,
+            galaxy: Some(galaxy),
+        }
+    }
+
+    #[test]
+    fn the_map_shaped_secrets_are_unmet_without_a_map() {
+        let state = game(&["a", "b"]);
+        let seat = player();
+        let blind = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+
+        assert!(!ships_beside_three_anomalies(&blind));
+        assert!(!ships_beside_a_rival_home(&blind));
+        assert!(!neighbours_with_everyone(&blind));
+    }
+
+    #[test]
+    fn learning_the_secrets_counts_systems_not_anomalies() {
+        // A hub whose centre is an anomaly: every ring system is adjacent to it, so ships in
+        // three ring systems satisfy the card and ships in two do not.
+        let anomaly = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| system.is_anomaly() && !system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned());
+        let Some(anomaly) = anomaly else {
+            return; // no anomaly in this corpus
+        };
+        let hub = crate::fixtures::hub_with_centre(&anomaly);
+        let mut state = game(&["a"]);
+        let seat = player();
+
+        for outer in hub.outer.iter().take(2) {
+            crate::fixtures::put(
+                &mut state,
+                &ti4_model::id::SystemId::new(outer.clone()),
+                "cruiser",
+                &seat,
+                3,
+            );
+        }
+        assert!(
+            !ships_beside_three_anomalies(&on_map(&state, &seat, &hub.galaxy)),
+            "two systems beside an anomaly are two, however many ships are in them"
+        );
+
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(hub.outer[2].clone()),
+            "cruiser",
+            &seat,
+            1,
+        );
+        assert!(ships_beside_three_anomalies(&on_map(
+            &state,
+            &seat,
+            &hub.galaxy
+        )));
+    }
+
+    #[test]
+    fn threatening_enemies_needs_a_rivals_home_not_your_own() {
+        let content = ContentStore::embedded();
+        let homes_in = |system: &str| -> Vec<String> {
+            ti4_content::galaxy::planets_in(content, system, POK)
+                .into_iter()
+                .filter_map(|planet| planet.homeworld_of().map(ToOwned::to_owned))
+                .collect()
+        };
+
+        // The ring must hold no homeworld at all, or a second home next door keeps the
+        // requirement true after the player adopts the first faction and the test passes for
+        // the wrong reason. Ordinary systems include homeworlds, so the ring has to be chosen.
+        let (faction, home_system) = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .find_map(|(_, planet)| {
+                planet
+                    .homeworld_of()
+                    .zip(planet.system_id())
+                    .map(|(faction, system)| (faction.to_owned(), system.to_owned()))
+            })
+            .expect("the corpus has a homeworld");
+
+        let mut ids = vec![home_system.clone()];
+        ids.extend(
+            ti4_content::galaxy::all_systems(content, POK)
+                .iter()
+                .filter(|(_, system)| !system.is_anomaly() && !system.is_hyperlane())
+                .map(|(id, _)| (*id).to_owned())
+                .filter(|id| id != &home_system && homes_in(id).is_empty())
+                .take(6),
+        );
+        assert_eq!(ids.len(), 7, "a centre and a ring of six");
+        let hub = crate::fixtures::hub_from(&ids);
+
+        let mut state = game(&["a"]);
+        let seat = player();
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(hub.outer[0].clone()),
+            "cruiser",
+            &seat,
+            1,
+        );
+
+        assert!(
+            ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            "a ship next to somebody else's home"
+        );
+
+        // Playing that faction makes it your own home, and the threat is empty.
+        state.player_mut(&seat).unwrap().faction = ti4_model::id::FactionId::new(faction);
+        assert!(
+            !ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            "your own home is not an enemy to threaten"
+        );
+    }
+
+    #[test]
+    fn fostering_cohesion_needs_every_other_player() {
+        let hub = crate::fixtures::plain_hub();
+        let mut state = game(&["a", "b", "c"]);
+        let seat = player();
+        let centre = ti4_model::id::SystemId::new(hub.centre.clone());
+
+        crate::fixtures::put(&mut state, &centre, "cruiser", &seat, 1);
+        crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("b"), 1);
+        assert!(
+            !neighbours_with_everyone(&on_map(&state, &seat, &hub.galaxy)),
+            "c is not a neighbour, so this is not cohesion"
+        );
+
+        crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("c"), 1);
+        assert!(neighbours_with_everyone(&on_map(
+            &state,
+            &seat,
+            &hub.galaxy
+        )));
+    }
+
+    #[test]
+    fn defying_space_and_time_needs_the_nexus_itself() {
+        let nexus = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| {
+                system
+                    .name()
+                    .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
+            })
+            .map(|(id, _)| (*id).to_owned());
+        let Some(nexus) = nexus else {
+            return; // this corpus has no nexus
+        };
+
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "dfat");
+        let (elsewhere, _) = a_placed_planet();
+        put(&mut state, &elsewhere, "cruiser", &player(), 1);
+        assert!(
+            !can_score(&state, "dfat"),
+            "units elsewhere are not the nexus"
+        );
+
+        // Somebody else's fleet puts the nexus on the board without putting you in it, which is
+        // the difference between "the nexus is in play" and "you have units there".
+        let nexus = ti4_model::id::SystemId::new(nexus);
+        put(&mut state, &nexus, "cruiser", &PlayerId::new("b"), 1);
+        assert!(
+            !can_score(&state, "dfat"),
+            "another player's fleet in the nexus is not yours"
+        );
+
+        put(&mut state, &nexus, "cruiser", &player(), 1);
+        assert!(can_score(&state, "dfat"));
+    }
+
+    #[test]
+    fn destroying_heretical_works_purges_the_fragments_it_needs() {
+        let mut state = game(&["a"]);
+        holding(&mut state, "dhw");
+        state.player_mut(&player()).unwrap().relic_fragments =
+            [("CULTURAL".to_owned(), 1)].into_iter().collect();
+        assert!(!can_score(&state, "dhw"), "one fragment is not two");
+
+        state
+            .player_mut(&player())
+            .unwrap()
+            .relic_fragments
+            .insert("INDUSTRIAL".to_owned(), 1);
+        assert!(can_score(&state, "dhw"), "two of any type");
+
+        let points = award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("dhw"),
+        );
+
+        assert_eq!(points, Some(1));
+        assert_eq!(
+            fragment_count(&state, &player()),
+            0,
+            "both fragments were purged to pay for it"
+        );
+    }
+
+    #[test]
+    fn a_secret_whose_price_cannot_be_met_is_not_scored() {
+        // The requirement and the price are checked at different moments, so a hand that
+        // shrank in between must not score — and must not record a score it did not pay for.
+        let mut state = game(&["a"]);
+        holding(&mut state, "fsn");
+        state.player_mut(&player()).unwrap().action_cards = (0..4)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("card{n}")))
+            .collect();
+        let before = state.player(&player()).unwrap().victory_points;
+
+        let points = award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("fsn"),
+        );
+
+        assert_eq!(points, None);
+        assert_eq!(state.player(&player()).unwrap().victory_points, before);
+        assert_eq!(
+            state.player(&player()).unwrap().action_cards.len(),
+            4,
+            "and nothing was taken"
+        );
+        assert_eq!(
+            state.player(&player()).unwrap().secret_objectives.len(),
+            1,
+            "the card stays in hand"
+        );
+    }
+
+    #[test]
+    fn forming_a_spy_network_discards_five_cards_and_no_more() {
+        let mut state = game(&["a"]);
+        holding(&mut state, "fsn");
+        state.player_mut(&player()).unwrap().action_cards = (0..7)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("card{n}")))
+            .collect();
+        assert!(can_score(&state, "fsn"));
+
+        award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("fsn"),
+        );
+
+        assert_eq!(
+            state.player(&player()).unwrap().action_cards.len(),
+            2,
+            "five discarded, the rest kept"
+        );
+    }
+
+    #[test]
+    fn strengthening_bonds_needs_somebody_elses_note() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "sb");
+        assert!(!can_score(&state, "sb"));
+
+        // Your own Support for the Throne, sitting in your own play area, is not a bond.
+        state.support_holders.insert(player(), player());
+        assert!(!can_score(&state, "sb"), "your own note is not another's");
+
+        state.support_holders.insert(PlayerId::new("b"), player());
+        assert!(can_score(&state, "sb"));
+    }
+
+    #[test]
+    fn cutting_supply_lines_needs_a_rival_dock_not_your_own() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "csl");
+        let (system, planet) = a_placed_planet();
+        put(&mut state, &system, "cruiser", &player(), 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+
+        assert!(
+            !can_score(&state, "csl"),
+            "your own dock is not supply lines"
+        );
+
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "spacedock",
+            &PlayerId::new("b"),
+            1,
+        );
+        assert!(can_score(&state, "csl"));
+    }
+
+    #[test]
+    fn the_gatekeeper_needs_both_wormhole_kinds() {
+        // One kind twice is not both kinds, which is the only way to get this card wrong.
+        let systems = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK);
+        let of_kind = |kind: &str, excluded: &str| -> Vec<String> {
+            systems
+                .iter()
+                .filter(|(_, system)| {
+                    system.wormholes().contains(kind) && !system.wormholes().contains(excluded)
+                })
+                .map(|(id, _)| (*id).to_owned())
+                .collect()
+        };
+        let alphas = of_kind("ALPHA", "BETA");
+        let betas = of_kind("BETA", "ALPHA");
+        assert!(
+            alphas.len() >= 2 && !betas.is_empty(),
+            "the corpus has both"
+        );
+
+        let mut state = game(&["a"]);
+        holding(&mut state, "btgk");
+        for id in alphas.iter().take(2) {
+            put(
+                &mut state,
+                &ti4_model::id::SystemId::new(id.clone()),
+                "cruiser",
+                &player(),
+                1,
+            );
+        }
+        assert!(!can_score(&state, "btgk"), "two alphas are still one kind");
+
+        put(
+            &mut state,
+            &ti4_model::id::SystemId::new(betas[0].clone()),
+            "cruiser",
+            &player(),
+            1,
+        );
+        assert!(can_score(&state, "btgk"));
+    }
+
+    #[test]
+    fn adapting_new_strategies_counts_faction_technologies_only() {
+        let content = ContentStore::embedded();
+        let faction_techs: Vec<String> = content
+            .from_sources(ContentType::Technologies, POK)
+            .filter(|record| record.text("faction").is_some())
+            .filter_map(|record| record.text("alias").map(ToOwned::to_owned))
+            .take(2)
+            .collect();
+        let generic: Vec<String> = content
+            .from_sources(ContentType::Technologies, POK)
+            .filter(|record| record.text("faction").is_none())
+            .filter_map(|record| record.text("alias").map(ToOwned::to_owned))
+            .take(2)
+            .collect();
+        assert_eq!(faction_techs.len(), 2);
+
+        let mut state = game(&["a"]);
+        holding(&mut state, "ans");
+        for alias in &generic {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert!(
+            !can_score(&state, "ans"),
+            "two ordinary technologies are not two faction technologies"
+        );
+
+        for alias in &faction_techs {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert!(can_score(&state, "ans"));
+    }
+
+    #[test]
+    fn dictating_policy_reads_the_table_not_the_player() {
+        // An agenda-phase secret, so scoreable() will not offer it at status time — the
+        // requirement is still the thing under test.
+        fn at<'a>(state: &'a GameState, seat: &'a PlayerId) -> Position<'a> {
+            Position {
+                state,
+                content: ContentStore::embedded(),
+                sources: POK,
+                player: seat,
+                galaxy: None,
+            }
+        }
+
+        let mut state = game(&["a"]);
+        let check = requirement_for(&SecretObjectiveId::new("dp")).expect("registered");
+        let seat = player();
+        assert!(!check(&at(&state, &seat)));
+        for n in 0..3 {
+            state.laws.insert(format!("law{n}"), String::new());
+        }
+        assert!(check(&at(&state, &seat)));
+        assert_eq!(
+            timing(ContentStore::embedded(), &SecretObjectiveId::new("dp")),
+            Timing::Agenda,
+            "it is scored in the agenda phase"
+        );
+    }
+
+    #[test]
+    fn staking_a_claim_needs_a_rival_in_the_same_system() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "syc");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+
+        assert!(
+            !can_score(&state, "syc"),
+            "a system of your own is not a claim"
+        );
+
+        let other = ti4_content::galaxy::planets_in(ContentStore::embedded(), system.as_str(), POK)
+            .into_iter()
+            .map(|found| ti4_model::id::PlanetId::new(found.id()))
+            .find(|found| found != &planet);
+        let Some(other) = other else {
+            return; // a one-planet system cannot show this
+        };
+        state
+            .system_mut(&system)
+            .set_control(other, PlayerId::new("b"));
+        assert!(can_score(&state, "syc"));
+    }
+
+    #[test]
+    fn producing_en_masse_counts_one_system_not_the_board() {
+        // "in a single system" is the whole card: eight production spread over two systems is
+        // not eight production.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "pem");
+
+        // Find a system whose planets, all docked, reach the threshold.
+        let big = ti4_content::galaxy::all_systems(content, POK)
+            .iter()
+            .filter(|(_, system)| system.planets().len() >= 2)
+            .map(|(id, _)| (*id).to_owned())
+            .find(|id| {
+                let mut trial = game(&["a"]);
+                let system = ti4_model::id::SystemId::new(id.clone());
+                for planet in ti4_content::galaxy::planets_in(content, id, POK) {
+                    let planet = ti4_model::id::PlanetId::new(planet.id());
+                    trial
+                        .system_mut(&system)
+                        .set_control(planet.clone(), player());
+                    crate::fixtures::put_on_planet(
+                        &mut trial,
+                        &system,
+                        &planet,
+                        "spacedock",
+                        &player(),
+                        1,
+                    );
+                }
+                crate::production::capacity(&trial, content, POK, &player(), &system) >= 8
+            });
+        let Some(big) = big else {
+            return; // no system in this corpus can reach eight on its own
+        };
+
+        let system = ti4_model::id::SystemId::new(big.clone());
+        let planets: Vec<ti4_model::id::PlanetId> =
+            ti4_content::galaxy::planets_in(content, &big, POK)
+                .into_iter()
+                .map(|planet| ti4_model::id::PlanetId::new(planet.id()))
+                .collect();
+        for planet in &planets {
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), player());
+        }
+        // One dock short, so nothing on the board reaches eight yet.
+        for planet in planets.iter().skip(1) {
+            crate::fixtures::put_on_planet(&mut state, &system, planet, "spacedock", &player(), 1);
+        }
+        let (elsewhere, other_planet) = a_placed_planet();
+        state
+            .system_mut(&elsewhere)
+            .set_control(other_planet.clone(), player());
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &elsewhere,
+            &other_planet,
+            "spacedock",
+            &player(),
+            1,
+        );
+        assert!(
+            !can_score(&state, "pem"),
+            "production spread over two systems is not production in one"
+        );
+
+        crate::fixtures::put_on_planet(&mut state, &system, &planets[0], "spacedock", &player(), 1);
+        assert!(can_score(&state, "pem"));
     }
 
     #[test]
