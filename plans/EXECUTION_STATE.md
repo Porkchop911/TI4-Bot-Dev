@@ -21,10 +21,16 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-009-ability-registration`
+- Branch: `wp/m03-010-timing-resolver`
 - M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
   registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
   User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
+- M03-010 timing-window resolution is complete: generated WHEN/AFTER windows respect rotated
+  initiative or seating priority, choices validate through `Table`, and cancellation/cannot rules
+  atomically skip ordinary resolution and AFTER. Full workspace checks pass. User waived
+  Pi/external review on 2026-08-12 and authorized the agent's own invariant review. M03-011 nested
+  emission is now the next direct resolver dependency; M03-013 hashes remain committed on their
+  disjoint package branch.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.

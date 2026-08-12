@@ -94,7 +94,7 @@ pub use strategy::{
 pub use tactical::{TacticalError, activatable, activate, movable, movement_options};
 pub use timing::{
     Ability, AbilityCondition, AbilityEffect, AbilityRegistry, Frequency, OptionPayload, Relation,
-    Resolver,
+    Resolver, TimingError,
 };
 pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
 pub use transit::{Cargo, CargoSource, CargoWindow, MoveOutcome, apply_move};
