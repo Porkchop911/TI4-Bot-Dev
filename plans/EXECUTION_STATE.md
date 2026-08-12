@@ -21,7 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-015-timing-properties`
+- Branch: `wp/m03-007a-bounded-trace`
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
@@ -33,6 +33,11 @@ three times in one session and is worth re-deriving against the tree.
   one doc-test, all passing. User waived Pi/external review on 2026-08-12 and authorized
   self-review; the waiver is recorded in each package evidence file rather than represented as
   independent review.
+- M03-007's previous evidence claimed a completed translator without source, fixtures, or tests.
+  The original oversized package is now split: M03-007a is complete and parses existing bounded
+  oracle traces into explicit selected decisions and dice entropy; M03-007b owns the 100-trace
+  corpus; M03-007c owns native semantic replay. M03-016 cannot start until the parent package is
+  complete.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
@@ -60,9 +65,8 @@ three times in one session and is worth re-deriving against the tree.
 - Last completed package: **M03-008 — typed event model** (`plans/evidence/M03-008.md`). It has
   trace-local numeric IDs, deterministic payload serialization, cancellation, and validated typed
   reads; 449 engine tests and the workspace suite pass.
-- Next dependency-ready package: **M03-016 — critical timing review**, which follows the completed
-  property suite. M03-007 remains separately blocked on its legacy-entropy corpus and is not being
-  bypassed.
+- Next dependency-ready package: **M03-007b — bounded oracle trace corpus**. M03-016 remains
+  blocked on the unfinished M03-007 parent package and is not being bypassed.
 
 ## M04-005 package checkpoint (historical)
 
