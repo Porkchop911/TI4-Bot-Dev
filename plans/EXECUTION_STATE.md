@@ -21,7 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m04-015a-native-state-projection`
+- Branch: `wp/m04-015b-source-state-intake`
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
@@ -84,9 +84,10 @@ three times in one session and is worth re-deriving against the tree.
 - The owner authorized a recorded M03→M04 sequencing exception on 2026-08-12 to construct those
   prerequisites without faking M03-007c success. M04-015 is split: M04-015a now supplies the
   native canonical public-state projection in the executable source schema, with public-card
-  redaction and deterministic bytes; M04-015b will own the source scenario/state-import boundary;
-  M04-015c will own scripted entropy/decision/event comparison. M03-007c remains blocked until
-  those later compatibility surfaces prove semantic equality.
+  redaction and deterministic bytes. M04-015b now owns a checked two-snapshot source-state intake
+  boundary and validates all 100 retained traces. M04-015c owns scripted entropy/decision/event
+  comparison and remains blocked on native scenario/state construction and entropy consumption.
+  M03-007c remains blocked until those later compatibility surfaces prove semantic equality.
 
 ## M04-005 package checkpoint (historical)
 
