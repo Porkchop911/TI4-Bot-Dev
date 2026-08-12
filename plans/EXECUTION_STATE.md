@@ -392,7 +392,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   renamed: `M05-004_TACTICAL_DRIVER` and `M06-001_SPACE_COMBAT` both sit in slots the plan
   assigns to other packages.
 
-## Velocity refactor + tactical wiring (authoritative)
+## Velocity refactor + tactical wiring (historical)
 
 - **464 passing tests**: 121 `ti4-content`, 274 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
   Zero rustc warnings; `ti4-engine` clippy-clean apart from two pre-existing `seating`/`setup`
@@ -413,6 +413,20 @@ are recorded in the package evidence; independent review remains owner-waived.
 - **Not done from the agreed refactor:** the `Ctx` struct bundling content/sources/table/dice/rng
   (47 signatures), and the generic `Window` trait. The wiring above delivered the visible unblock
   first; both remain worthwhile and are cheaper now that lints and fixtures are settled.
+
+## M05-016-019 checkpoint (authoritative)
+
+- **477 passing tests**: 121 `ti4-content`, 287 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
+- **The tactical action is complete end to end**: activate, move, capacity, space cannon,
+  combat, invasion, production. Nothing in it is announced as missing any more.
+- 68.2's half-cost rule is implemented: fighters and infantry are produced two at a time for
+  one resource. The first version charged `ceil` and yielded one, doubling the cost of the two
+  commonest units in the game.
+- Biggest known production gap: **no faction-specific hulls**, so every seat builds the generic
+  unit. The oracle notes this flattens faction differentiation; worth an early package once
+  factions land.
+- Largest architectural debt: combat, invasion and production all resolve inside one `step()`,
+  breaking the one-decision-per-step contract. The generic `Window` trait fixes it.
 
 ## Implementation status
 
@@ -478,24 +492,18 @@ behaviour is a placeholder.
 
 ## Next actions
 
-In dependency order. Each is one package under `PI_WORK_PACKAGE_STANDARD.md`.
+Rewritten against the tree as measured on 2026-08-12. The previous list named packages that
+had already shipped — it is worth re-deriving this rather than trusting it.
 
-This list was stale — it still named option generation and the status phase, both of which
-shipped in M04-005/008/009/010/012. Rewritten against the tree as measured on 2026-08-12.
-
-1. **M04-017 — objective scoring (LRR 81.1).** The last thing standing between the engine and
-   a completed round. Needs the `objectives.scoreable` predicate registry (~40 requirements),
-   `award`, the secret-objective window from `_score_secret`, and the 98.7 victory check. The
-   oracle's design is that an objective with no registered predicate is simply unscoreable, so
-   this can land as tranches of predicates without pretending to cover more than it does.
-2. **M04-018 — agenda voting.** The remaining `AgendaChoicesUnimplemented` boundary: votes,
-   tie-breaks, and law/directive effects.
-3. **M05-003/006 — ship movement.** The first real use of `ti4-content::galaxy`: legality
-   from adjacency and move value, then atomic application.
-4. **M01-006 — CI**, so that the 332 tests actually gate a change. Now more valuable than it
-   was: the integrity guard gives CI something meaningful to run before any oracle work.
-5. **M00-010 — the fixture manifest**, still blocked on an executable 100-scenario definition
-   and an artifact-retention policy for traces that may contain hidden card identities.
+1. **The `Window` trait.** Make combat, invasion and production resumable so the driver keeps
+   its one-decision-per-step contract. Largest architectural debt, and it is now load-bearing
+   rather than tidy.
+2. **M01-006 — CI.** 477 tests currently gate nothing on push.
+3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.
+4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
+   that validates the premise of the rewrite.
+5. **M06 — general rules**: payment planner, trade, technology, exploration, relics, action
+   cards, secrets, leaders, reactions. Nineteen packages, largely untouched.
 
 ## Decisions in force
 

@@ -31,6 +31,7 @@ pub mod invasion;
 pub mod movement;
 pub mod objectives;
 pub mod phase;
+pub mod production;
 pub mod rng;
 pub mod seating;
 pub mod setup;

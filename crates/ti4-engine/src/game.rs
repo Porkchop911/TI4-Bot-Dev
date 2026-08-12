@@ -618,7 +618,7 @@ impl<'a> Game<'a> {
     /// resumable is a follow-up; leaving them uncalled meanwhile would have kept a whole
     /// subsystem dark, which is the worse of the two.
     ///
-    /// Production is not here: it is unimplemented, and announced rather than skipped quietly.
+    /// Production closes the action (68).
     fn resolve_after_movement(
         &mut self,
         player: &PlayerId,
@@ -694,7 +694,20 @@ impl<'a> Game<'a> {
             }
         }
 
-        self.emit("PRODUCTION_UNRESOLVED");
+        // 68: the last step of the action. Producing is optional, so a player with capacity
+        // and nothing they want simply declines.
+        let built = crate::production::resolve(
+            &mut self.state,
+            self.content,
+            self.sources,
+            &mut self.table,
+            player,
+            system,
+        )
+        .map_err(GameError::IllegalChoice)?;
+        for (unit, _) in &built.produced {
+            self.emit(&format!("UNIT_PRODUCED:{unit}"));
+        }
         Ok(())
     }
 
@@ -1306,8 +1319,8 @@ mod tests {
         );
         assert!(game.events.iter().any(|e| e == "SHIP_MOVED"));
         assert!(
-            game.events.iter().any(|e| e == "PRODUCTION_UNRESOLVED"),
-            "production is the one post-movement step still missing, and it says so"
+            game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+            "the action ran every step it has and closed"
         );
 
         assert_eq!(
