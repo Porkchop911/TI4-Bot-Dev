@@ -164,6 +164,21 @@ fn the_status_phase_still_readies_leaders() {
 }
 
 #[test]
+fn the_scoring_window_still_offers_secrets() {
+    // 61.6 lets a player score one public and one secret. Dropping the secrets call would
+    // leave satisfied secrets unscoreable all game with nothing failing.
+    let objectives = include_str!("objectives.rs");
+    assert!(
+        objectives.contains("crate::secrets::scoreable"),
+        "the scoring window no longer offers secrets"
+    );
+    assert!(
+        objectives.contains("crate::secrets::award"),
+        "a scored secret no longer leaves the hand"
+    );
+}
+
+#[test]
 fn scoring_still_checks_leader_unlocks() {
     let objectives = include_str!("objectives.rs");
     assert!(

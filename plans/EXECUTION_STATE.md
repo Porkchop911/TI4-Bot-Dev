@@ -697,6 +697,19 @@ relics                  3/17   implemented (18%)
 - Incentive Program now reveals by **stage**, not off the top. The deck is stage I then stage II
   in order, so the first version would have revealed the wrong stage for most of a game.
 
+## Secrets wired into scoring (authoritative)
+
+- **631 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- The 81.1 window now offers **secrets alongside public objectives** (61.6). Closes the gap
+  M04-017's evidence recorded as "no secret-objective window".
+- A player with no public objective in reach may still have a secret in reach, so the window no
+  longer stops at the public list — which is exactly what left satisfied secrets unscoreable.
+- A scored secret leaves its owner's hand (61.18); a public objective does not. Which module
+  owns the card decides which path the award takes.
+- Guarded in `wiring.rs`, since this is precisely the kind of call that falls out silently.
+- **Still unwired:** `technology`, `transactions`, `exploration`. Each needs an action or a
+  trigger that does not exist yet (research, a transaction window, exploring on gaining control).
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its

@@ -832,7 +832,15 @@ impl ScoringWindow {
         sources: SourceSet,
     ) -> Option<(usize, PlayerId, Vec<ObjectiveId>)> {
         for (offset, player) in self.pending.iter().rev().enumerate() {
-            let available = scoreable(state, content, sources, player);
+            // 61.6: one public and one secret at most per status phase, and the oracle offers
+            // both in the same window. A player with no public objective in reach may still
+            // have a secret in reach, so this must not stop at the public list.
+            let mut available = scoreable(state, content, sources, player);
+            available.extend(
+                crate::secrets::scoreable(state, content, sources, player)
+                    .into_iter()
+                    .map(|secret| ObjectiveId::new(secret.as_str())),
+            );
             if !available.is_empty() {
                 return Some((offset, player.clone(), available));
             }
@@ -868,7 +876,12 @@ impl ScoringWindow {
             return Ok(None);
         }
         let alias = ObjectiveId::new(option.id);
-        award(state, content, sources, &player, &alias)?;
+        // A secret leaves its owner's hand when scored (61.18), which a public award does not
+        // do — so which module owns the card decides which path it takes.
+        let secret = ti4_model::id::SecretObjectiveId::new(alias.as_str());
+        if crate::secrets::award(state, content, &player, &secret).is_none() {
+            award(state, content, sources, &player, &alias)?;
+        }
         if winner(state).is_some() {
             state.finished = true;
         }
@@ -1243,6 +1256,82 @@ mod tests {
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
             vec![ObjectiveId::new("ancient_monuments")]
         );
+    }
+
+    #[test]
+    fn the_scoring_window_offers_a_secret_too() {
+        // 61.6 lets a player score one public and one secret. A window that only looked at
+        // public objectives left a satisfied secret unscoreable all game.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives.clear();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+
+        // Four PDS satisfies it.
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        let window = ScoringWindow::new(&[PlayerId::new("a")]);
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the secret is offered");
+        assert!(choice.ids().contains(&"eap"));
+    }
+
+    #[test]
+    fn scoring_a_secret_takes_it_out_of_hand() {
+        // A secret leaves its owner's hand when scored (61.18); a public objective does not.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives.clear();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        let mut window = ScoringWindow::new(&[PlayerId::new("a")]);
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap();
+        let pick = choice.option("eap").unwrap().clone();
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, pick)
+            .unwrap();
+
+        assert!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .secret_objectives
+                .is_empty(),
+            "it left the hand"
+        );
+        assert!(state.player(&PlayerId::new("a")).unwrap().victory_points > 0);
     }
 
     #[test]
