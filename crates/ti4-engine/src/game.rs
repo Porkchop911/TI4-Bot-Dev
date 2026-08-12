@@ -843,7 +843,7 @@ impl<'a> Game<'a> {
             active.as_str(),
             Board::for_player(&self.state, self.content, self.sources, &window.player),
         );
-        rules.rifts_ignored = crate::relics::ignores_gravity_rifts(&self.state, &window.player);
+        crate::action_cards::apply_movement_effects(&mut rules, &self.state, &window.player);
         let path = ti4_content::units::catalogue(self.content, self.sources)
             .get(ship.type_id.as_str())
             .and_then(|kind| {
@@ -908,8 +908,10 @@ impl<'a> Game<'a> {
             active.as_str(),
             Board::default(),
         );
-        // The Circlet's owner never rolls, so the immunity is read where the roll happens.
-        rules.rifts_ignored = crate::relics::ignores_gravity_rifts(&self.state, &ship.owner);
+        // Through the same door as the pathing rules. `survives_gravity_rifts` honours
+        // `anomalies_ignored` as well as `rifts_ignored`, so setting only the Circlet's immunity
+        // here would let Nav Suite route around an anomaly and then roll for the rift anyway.
+        crate::action_cards::apply_movement_effects(&mut rules, &self.state, &ship.owner);
         let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
         apply_move(&mut self.state, origin, &active, ship, cargo, survives)
     }

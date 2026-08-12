@@ -157,6 +157,85 @@ fn flank_speed(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     }
 }
 
+/// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
+///
+/// All of them, including a gravity rift's +1 and its destruction roll. A rift's bonus is as much
+/// an effect of an anomaly as a supernova's bar, so the card gives up the one along with the other.
+fn nav_suite(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.anomalies_ignored_activation = Some(activation);
+    }
+}
+
+/// In The Silence Of Space: "choose 1 system; during this tactical action, your ships in the
+/// chosen system can move through systems that contain other players' ships."
+///
+/// The permission is tied to where the ships *start*, not to what they pass through, so the chosen
+/// origin is stored and checked against the origin of each route.
+fn in_the_silence_of_space(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let origins: Vec<ti4_model::id::SystemId> = context
+        .state
+        .systems_with_units_of(player)
+        .into_iter()
+        .filter(|system| !context.state.ships_of(player, system).is_empty())
+        .cloned()
+        .collect();
+    let Some(first) = origins.first().cloned() else {
+        return; // no ships anywhere, so there is nothing to free
+    };
+    let chosen = if origins.len() == 1 {
+        first
+    } else {
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "In The Silence Of Space: whose ships ignore blockades",
+            origins
+                .iter()
+                .map(|system| {
+                    crate::choice::ChoiceOption::labelled(
+                        system.to_string(),
+                        "silence",
+                        format!("ships in {system} may pass blockades"),
+                    )
+                })
+                .collect(),
+        );
+        match context.table.ask(&choice) {
+            Ok(answer) => ti4_model::id::SystemId::new(answer.id),
+            Err(_) => return,
+        }
+    };
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.silence_activation = Some(activation);
+        seat.silence_system = Some(chosen);
+    }
+}
+
+/// Apply every movement modifier this player currently owns to a set of rules.
+///
+/// One door, called wherever rules are built for a real move. Reading the fields at each
+/// construction site instead would mean a card that works in the option list and not in the move
+/// that follows, which is worse than one that does not work at all.
+pub fn apply_movement_effects(
+    rules: &mut crate::movement::MovementRules<'_>,
+    state: &GameState,
+    player: &PlayerId,
+) {
+    rules.rifts_ignored = crate::relics::ignores_gravity_rifts(state, player);
+    let Some(seat) = state.player(player) else {
+        return;
+    };
+    let this_activation = Some(state.activation_seq);
+    if seat.anomalies_ignored_activation == this_activation {
+        rules.anomalies_ignored = true;
+    }
+    if seat.silence_activation == this_activation {
+        rules.ignore_enemy_ships_from = seat.silence_system.as_ref().map(ToString::to_string);
+    }
+}
+
 /// The effect registered for a card, if this engine has one.
 #[must_use]
 pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
@@ -166,6 +245,8 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         // fourth copy left off a list stays unplayable for ever with no symptom.
         "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
+        "nav_suite" => Some(nav_suite),
+        "silence_space" => Some(in_the_silence_of_space),
         _ => None,
     }
 }
@@ -173,7 +254,18 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
 /// Aliases with a registered effect.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["fs1", "fs2", "fs3", "fs4", "mb1", "mb2", "mb3", "mb4"]
+    vec![
+        "fs1",
+        "fs2",
+        "fs3",
+        "fs4",
+        "mb1",
+        "mb2",
+        "mb3",
+        "mb4",
+        "nav_suite",
+        "silence_space",
+    ]
 }
 
 /// This player's ships move one further during `activation`, from Flank Speed.

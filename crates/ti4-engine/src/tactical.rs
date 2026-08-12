@@ -137,7 +137,8 @@ pub fn movable(
     };
     let types = catalogue(content, sources);
     let board = Board::for_player(state, content, sources, player);
-    let rules = MovementRules::new(galaxy, content, sources, active.as_str(), board);
+    let mut rules = MovementRules::new(galaxy, content, sources, active.as_str(), board);
+    crate::action_cards::apply_movement_effects(&mut rules, state, player);
 
     let mut found = Vec::new();
     for origin in state.systems_with_units_of(player) {
@@ -259,6 +260,96 @@ pub fn read_move(choice: &Choice, answer: ChoiceOption) -> Result<MoveSelection,
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn nav_suite_opens_a_supernova_that_barred_the_route() {
+        // The consumer again: setting `anomalies_ignored_activation` and never applying it to
+        // the rules leaves the card doing nothing, and a field check cannot tell.
+        let supernova = crate::fixtures::a_system_where("supernova");
+        let hub = crate::fixtures::hub_with_centre(&supernova);
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let target = SystemId::new(hub.centre.clone());
+
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &origin, "cruiser", &player, 1);
+        activate(&mut state, &player, &target).unwrap();
+
+        let reach = |state: &GameState| {
+            movable(state, ContentStore::embedded(), POK, &hub.galaxy, &player).len()
+        };
+
+        assert_eq!(reach(&state), 0, "a supernova bars the way");
+
+        state
+            .player_mut(&player)
+            .unwrap()
+            .anomalies_ignored_activation = Some(state.activation_seq);
+        assert_eq!(
+            reach(&state),
+            1,
+            "Nav Suite ignores the effect of anomalies"
+        );
+
+        state
+            .player_mut(&player)
+            .unwrap()
+            .anomalies_ignored_activation = Some(state.activation_seq + 1);
+        assert_eq!(reach(&state), 0, "and only for this tactical action");
+    }
+
+    #[test]
+    fn in_the_silence_of_space_frees_only_the_system_it_named() {
+        // "Your ships in the chosen system." The permission follows where the ships start, so
+        // naming a different origin must leave this one blocked.
+        //
+        // One ship, deliberately. A second fleet elsewhere on the ring is not a control: the
+        // ring is itself a route, so its path to the far seat never crosses the blocked centre
+        // and it would be movable whatever this card says.
+        let hub = crate::fixtures::plain_hub();
+        let mine = PlayerId::new("a");
+        let theirs = PlayerId::new("b");
+        let near = SystemId::new(hub.outer[0].clone());
+        let far = SystemId::new(hub.across(&hub.outer[0]));
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        crate::fixtures::put(&mut state, &near, "cruiser", &mine, 1);
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(hub.centre.clone()),
+            "cruiser",
+            &theirs,
+            1,
+        );
+        activate(&mut state, &mine, &far).unwrap();
+
+        let can_move = |state: &GameState| {
+            !movable(state, ContentStore::embedded(), POK, &hub.galaxy, &mine).is_empty()
+        };
+
+        assert!(
+            !can_move(&state),
+            "an enemy fleet in the centre blocks the way"
+        );
+
+        let activation = state.activation_seq;
+        let seat = state.player_mut(&mine).unwrap();
+        seat.silence_activation = Some(activation);
+        seat.silence_system = Some(near.clone());
+        assert!(can_move(&state), "the named system may pass the blockade");
+
+        let other = hub
+            .outer
+            .iter()
+            .find(|id| **id != hub.outer[0])
+            .unwrap()
+            .clone();
+        state.player_mut(&mine).unwrap().silence_system = Some(SystemId::new(other));
+        assert!(
+            !can_move(&state),
+            "an origin that was not named is still blocked"
+        );
+    }
 
     #[test]
     fn flank_speed_puts_a_system_in_reach_that_was_not() {
