@@ -563,7 +563,7 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ```
 public objectives      19/40   implemented (48%)
-secret objectives       2/40   implemented (5%)
+secret objectives      10/40   implemented (25%)
 action cards            0/122  implemented (0%)
 agenda effects          0/63   implemented (0%)
 exploration cards       0/80   implemented (0%)
@@ -586,6 +586,16 @@ relics                  0/17   implemented (0%)
   planetless systems, and planets carrying exploration attachments.
 - `fighters_do_not_make_an_armada` pins that the card counts non-fighter ships — nine fighters
   in one system score nothing.
+
+## Secret tranche 2 checkpoint (authoritative)
+
+- **561 passing tests**; workspace clippy-clean under `-D warnings`.
+- Secret objective coverage 2/40 → **10/40 (25%)**: dreadnought and PDS counts, ships in six
+  systems, four planets of one trait, twelve combined resources or influence, and four
+  technologies of one colour.
+- `four_technologies_of_one_colour_is_not_four_technologies` is the one worth keeping: one
+  technology in each of four tracks is the *opposite* of what the card asks for, and a naive
+  count would have scored it.
 
 ## Implementation status
 

@@ -173,6 +173,58 @@ impl Position<'_> {
             })
             .sum()
     }
+    /// Systems where this player has a ship.
+    fn systems_with_ships(&self) -> usize {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        self.state
+            .board
+            .values()
+            .filter(|board| {
+                board.units_of(self.player).into_iter().any(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ship)
+                })
+            })
+            .count()
+    }
+
+    /// Controlled planets of one trait.
+    fn planets_of_trait(&self, trait_name: &str) -> usize {
+        let catalogue = ti4_content::galaxy::all_planets(self.content, self.sources);
+        self.state
+            .controlled_planets(self.player)
+            .into_iter()
+            .filter(|(_, planet)| {
+                catalogue.get(planet.as_str()).is_some_and(|record| {
+                    record
+                        .planet_type()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case(trait_name))
+                })
+            })
+            .count()
+    }
+
+    /// Combined resources or influence of controlled planets.
+    fn combined(&self, kind: crate::production::Spend) -> i64 {
+        self.state
+            .controlled_planets(self.player)
+            .into_iter()
+            .map(|(_, planet)| {
+                crate::production::planet_value(self.content, self.sources, planet, kind)
+            })
+            .sum()
+    }
+
+    /// Technologies owned of one colour.
+    fn technologies_of_colour(&self, colour: &str) -> usize {
+        self.state.player(self.player).map_or(0, |seat| {
+            seat.technologies
+                .iter()
+                .filter(|alias| crate::technology::colour_type(self.content, alias) == Some(colour))
+                .count()
+        })
+    }
 }
 
 /// Have `count` units of a base type on the board.
@@ -180,9 +232,36 @@ fn units(count: usize, base_type: &'static str) -> impl Fn(&Position<'_>) -> boo
     move |position| position.units_on_board(base_type) >= count
 }
 
+/// Have ships in `count` systems.
+fn ships_in_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| position.systems_with_ships() >= count
+}
+
+/// Control `count` planets of one trait.
+fn planets_of_trait(count: usize, trait_name: &'static str) -> impl Fn(&Position<'_>) -> bool {
+    move |position| position.planets_of_trait(trait_name) >= count
+}
+
+/// Control planets with a combined value of at least `total`.
+fn combined_value(total: i64, kind: crate::production::Spend) -> impl Fn(&Position<'_>) -> bool {
+    move |position| position.combined(kind) >= total
+}
+
+/// Own `count` technologies of the same colour.
+///
+/// The same colour, not four technologies: a spread across four tracks is the opposite of what
+/// this card asks for.
+fn same_colour_technologies(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        crate::technology::COLOURS
+            .iter()
+            .any(|colour| position.technologies_of_colour(colour) >= count)
+    }
+}
+
 /// The registered requirements.
 ///
-/// A first tranche, and unregistered secrets are unscoreable — the same design the objective
+/// Two tranches, and unregistered secrets are unscoreable — the same design the objective
 /// registry documents, and for the same reason: a coverage gap must show as a card nobody can
 /// take, never as a bot winning on a rule that was never written.
 #[must_use]
@@ -196,9 +275,42 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     fn three_docks(p: &Position<'_>) -> bool {
         units(3, "spacedock")(p)
     }
+    fn five_dreadnoughts(p: &Position<'_>) -> bool {
+        units(5, "dreadnought")(p)
+    }
+    fn ships_in_six(p: &Position<'_>) -> bool {
+        ships_in_systems(6)(p)
+    }
+    fn four_cultural(p: &Position<'_>) -> bool {
+        planets_of_trait(4, "cultural")(p)
+    }
+    fn four_hazardous(p: &Position<'_>) -> bool {
+        planets_of_trait(4, "hazardous")(p)
+    }
+    fn four_industrial(p: &Position<'_>) -> bool {
+        planets_of_trait(4, "industrial")(p)
+    }
+    fn twelve_influence(p: &Position<'_>) -> bool {
+        combined_value(12, crate::production::Spend::Influence)(p)
+    }
+    fn twelve_resources(p: &Position<'_>) -> bool {
+        combined_value(12, crate::production::Spend::Resources)(p)
+    }
+    fn four_of_a_colour(p: &Position<'_>) -> bool {
+        same_colour_technologies(4)(p)
+    }
+
     match alias.as_str() {
         "eap" => Some(four_pds),
         "fwm" => Some(three_docks),
+        "gamf" => Some(five_dreadnoughts),
+        "ctr" => Some(ships_in_six),
+        "faa" => Some(four_cultural),
+        "mrm" => Some(four_hazardous),
+        "mp" => Some(four_industrial),
+        "eh" => Some(twelve_influence),
+        "hrm" => Some(twelve_resources),
+        "mlp" => Some(four_of_a_colour),
         _ => None,
     }
 }
@@ -206,7 +318,9 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 /// Aliases with a registered requirement.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["eap", "fwm"]
+    vec![
+        "ctr", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp", "mrm",
+    ]
 }
 
 /// Status-phase secrets this player may score now.
@@ -450,6 +564,89 @@ mod tests {
         }
 
         assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
+    }
+
+    #[test]
+    fn four_technologies_of_one_colour_is_not_four_technologies() {
+        // The card asks for four of the *same* colour; a spread across four tracks is the
+        // opposite of what it wants.
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("mlp")];
+
+        let one_each: Vec<String> = crate::technology::COLOURS
+            .iter()
+            .filter_map(|colour| {
+                ContentStore::embedded()
+                    .records(ContentType::Technologies)
+                    .iter()
+                    .find(|record| record.strings("types").contains(colour))
+                    .and_then(|record| record.text("alias"))
+                    .map(ToOwned::to_owned)
+            })
+            .collect();
+        for alias in &one_each {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty(),
+            "one of each colour is not four of one"
+        );
+
+        let four_biotic: Vec<String> = ContentStore::embedded()
+            .records(ContentType::Technologies)
+            .iter()
+            .filter(|record| record.strings("types").contains(&"BIOTIC"))
+            .filter_map(|record| record.text("alias"))
+            .map(ToOwned::to_owned)
+            .take(4)
+            .collect();
+        if four_biotic.len() < 4 {
+            return;
+        }
+        for alias in &four_biotic {
+            state
+                .player_mut(&player())
+                .unwrap()
+                .technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &player()),
+            vec![SecretObjectiveId::new("mlp")]
+        );
+    }
+
+    #[test]
+    fn a_combined_value_secret_adds_up_controlled_planets() {
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("hrm")];
+
+        let mut total = 0;
+        for (id, record) in &ti4_content::galaxy::all_planets(ContentStore::embedded(), POK) {
+            if record.is_placed_during_play() || record.resources() == 0 {
+                continue;
+            }
+            let system = ti4_model::id::SystemId::new(record.system_id().unwrap_or("18"));
+            state
+                .system_mut(&system)
+                .set_control(ti4_model::id::PlanetId::new(*id), player());
+            total += record.resources();
+            if total >= 12 {
+                break;
+            }
+        }
+
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &player()),
+            vec![SecretObjectiveId::new("hrm")],
+            "twelve combined resources scores it"
+        );
     }
 
     #[test]
