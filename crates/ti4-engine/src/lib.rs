@@ -17,6 +17,7 @@
 //! What replaces them is ported against a named oracle source with the oracle's own tests
 //! mirrored, and what is not ported yet is absent rather than faked.
 
+pub mod action_cards;
 pub mod agenda;
 pub mod choice;
 pub mod combat;
