@@ -30,7 +30,7 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Five quality packages landed this session: `Dice::from_faces` (1), `unimplemented()` gaps
   for secrets/agenda_effects (2), wiring guard for five subsystems (3), runnable doc-examples
   on Table/Decider/ContentStore (4), and `plans/evidence/INDEX.md` separating 86 written
-  evidence from 344 placeholder stubs (5). See handover for details.
+  evidence files from 345 placeholder stubs (5). See handover for details.
 
 ### Measured, 2026-08-12 evening
 
@@ -926,9 +926,10 @@ Oracle commit:
 Active milestone/package:
 M06 partial (M00-013 performance baseline next; M03 timing chain held in .worktrees/).
 Status:
-Sixty-three-two tests passing (542 engine + 121 content + 68 model), 0 failed.
-Workspace clippy-clean under -D warnings; cargo fmt clean. Doc-tests: 3 runnable
-(Table, Decider, ContentStore embedded) + 2 ignored (Window, TradeWindow).
+731 tests passing (544 engine + 121 content + 68 model + 1 content doc-test + 5 engine
+doc-tests), 0 failed.
+Workspace clippy-clean under -D warnings; cargo fmt clean. Doc-tests: 6 runnable, none
+ignored (Table, Decider, Window, TradeWindow, scoreable, ContentStore::embedded).
 Registry coverage: public objectives 40/40, exploration 71/80, secrets 27/40,
 agenda effects 34/63, relics 5/17. Content parity reached against oracle at pinned
 commit; remaining gaps are blocked behind the reaction system (M06-016).
@@ -936,16 +937,19 @@ Working-tree state:
 Clean (only untracked .worktrees/ from co-agent). Five new commits on wp/m06-003.
 Tests last run and exact results:
 cargo test --workspace -> 542 engine + 121 content + 68 model passed; 0 failed.
-cargo test --doc --workspace -> 3 runnable + 2 ignored passed; 0 failed.
+cargo test --doc --workspace -> 6 passed, 0 ignored; 0 failed.
 cargo clippy --workspace --all-targets -> clean. cargo fmt --all --check -> clean.
 Compatibility evidence:
 plans/oracle_integrity_manifest.json (238 files) verifies oracle clean.
-plans/evidence/INDEX.md separates 86 written evidence from 344 placeholder stubs.
+plans/evidence/INDEX.md separates 86 written evidence files from 345 placeholder stubs.
 Decisions made and rationale:
 - Dice::from_faces replaces duplicated seed_rolling in relics.rs and agenda_effects.rs
 - unimplemented() functions in secrets.rs and agenda_effects.rs report gaps non-empty
-- wiring.rs guard added for agenda, draft, objectives, transit, vote subsystems
-- Doc-examples made runnable where self-contained; Window/TradeWindow remain ignore
+- wiring.rs: the first guards for these were text matches on *import* lines, which -D
+  warnings already enforces, and passed while scoring was wired to an empty initiative
+  order. Replaced with behavioural guards (a satisfied objective must actually be scored;
+  a round must deal strategy cards), each proven by breaking the driver.
+- Doc-examples: all six run. An ignored example is unchecked code in the documentation.
 - INDEX.md classification rule: stubs have "## Package details", "## Package specification",
   or "status: COMPLETE"; all others are written evidence
 Open review findings or blockers:
