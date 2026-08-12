@@ -24,7 +24,14 @@ pub enum Effect {
 /// Agendas this engine can resolve.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["economic_equality", "mutiny", "seed_empire"]
+    vec![
+        "abolishment",
+        "constitution",
+        "economic_equality",
+        "incentive",
+        "mutiny",
+        "seed_empire",
+    ]
 }
 
 /// 98.4a caps a player at the target; a loss cannot take them below zero.
@@ -109,6 +116,26 @@ pub fn resolve(
             if let Some(winner) = winner {
                 adjust_victory_points(state, &winner, 1);
             }
+        }
+        "abolishment" => {
+            // Judicial Abolishment discards the *elected law*, so the outcome names a law
+            // rather than For/Against. A repeal that ignored the outcome would discard
+            // whatever happened to be first.
+            crate::laws::repeal(state, outcome);
+        }
+        "constitution" => {
+            // New Constitution discards every law in play, on For only.
+            if outcome == FOR {
+                for alias in crate::laws::in_play(state) {
+                    crate::laws::repeal(state, &alias);
+                }
+            }
+        }
+        "incentive" => {
+            // Incentive Program reveals a stage I (For) or stage II (Against) objective. The
+            // stage split is unmodelled here, so this reveals from the top either way and the
+            // difference is recorded rather than pretended away.
+            state.reveal_objective();
         }
         _ => {
             return Effect::Unresolved {
@@ -290,6 +317,65 @@ mod tests {
             tied.last().cloned()
         });
         assert_eq!(state.player(&b()).unwrap().victory_points, 1);
+    }
+
+    #[test]
+    fn judicial_abolishment_discards_the_law_it_elected() {
+        // The outcome names a law, not For or Against. A repeal ignoring it would discard
+        // whichever law happened to sort first.
+        let mut state = game(&["a"]);
+        state.enact_law("regulations", "for");
+        state.enact_law("sanctions", "for");
+
+        resolve(
+            &mut state,
+            "abolishment",
+            "sanctions",
+            &Ballot::default(),
+            no_choice,
+        );
+
+        assert!(crate::laws::active(&state, "regulations"), "untouched");
+        assert!(!crate::laws::active(&state, "sanctions"), "discarded");
+    }
+
+    #[test]
+    fn new_constitution_clears_the_table_only_on_for() {
+        let mut state = game(&["a"]);
+        state.enact_law("regulations", "for");
+        state.enact_law("sanctions", "for");
+
+        resolve(
+            &mut state,
+            "constitution",
+            AGAINST,
+            &Ballot::default(),
+            no_choice,
+        );
+        assert_eq!(
+            crate::laws::in_play(&state).len(),
+            2,
+            "Against changes nothing"
+        );
+
+        resolve(
+            &mut state,
+            "constitution",
+            FOR,
+            &Ballot::default(),
+            no_choice,
+        );
+        assert!(crate::laws::in_play(&state).is_empty());
+    }
+
+    #[test]
+    fn incentive_program_reveals_an_objective() {
+        let mut state = game(&["a"]);
+        let before = state.revealed_objectives.len();
+
+        resolve(&mut state, "incentive", FOR, &Ballot::default(), no_choice);
+
+        assert_eq!(state.revealed_objectives.len(), before + 1);
     }
 
     #[test]
