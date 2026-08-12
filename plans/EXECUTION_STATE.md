@@ -39,8 +39,13 @@ three times in one session and is worth re-deriving against the tree.
   workspace are green, and the oracle guard passes.
 - M05-010b remains deferred: source registration and payment require the M06-016 reaction/event
   resolver and must not be invented as a direct action-card path.
-- Next dependency-ready package: **M00-013 — performance baseline**. It is unblocked now that
-  the oracle guard verifies the clean pinned tree.
+- **M00-013 is blocked after a bounded smoke run.** The oracle is clean and executable, but its
+  benchmark script cannot produce M00-012's raw monotonic paired report; the Rust benchmark is
+  still `todo!()` and no semantic parity corpus qualifies a comparison. See
+  `plans/evidence/M00-013.md`. No diagnostic number is accepted as a baseline.
+- Next independent dependency-ready package: **M06-016 — generic reactions**. Its M06-008 and
+  M06-015 dependencies are implemented, and it is required before M05-010b can register card
+  and faction sources for the combat markers.
 
 ## M04-005 package checkpoint (historical)
 
