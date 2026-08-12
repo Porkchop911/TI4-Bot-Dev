@@ -724,6 +724,7 @@ impl<'a> Game<'a> {
     ) -> Result<bool, GameError> {
         let event = self.event_sequence.next(event_type, payload)?;
         let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
         let emitted = {
             let (state, table, timing, dice, rng, event_sequence) = (
                 &mut self.state,
@@ -741,6 +742,7 @@ impl<'a> Game<'a> {
                 dice,
                 rng,
                 event_sequence,
+                galaxy: galaxy.as_ref(),
             };
             timing.emit_with_context(&mut context, event, |_, _| {})?
         };
@@ -1397,6 +1399,7 @@ impl<'a> Game<'a> {
         let event = self.event_sequence.next("STRATEGY_CARD_CHOSEN", payload)?;
         let content = self.content;
         let sources = self.sources;
+        let galaxy = self.galaxy.clone();
         let mut selected = None;
         let emitted = {
             let (state, table, timing, dice, rng, event_sequence) = (
@@ -1415,6 +1418,7 @@ impl<'a> Game<'a> {
                 dice,
                 rng,
                 event_sequence,
+                galaxy: galaxy.as_ref(),
             };
             timing.emit_with_context(&mut context, event, |_, context| {
                 selected = Some(take_strategy_card(context.state, content, answer));

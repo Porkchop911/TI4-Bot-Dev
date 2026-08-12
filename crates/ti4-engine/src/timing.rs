@@ -91,6 +91,12 @@ pub struct TimingContext<'a> {
     pub rng: &'a mut GameRng,
     /// The game's typed-event allocator, shared by nested rule emissions.
     pub event_sequence: &'a mut EventSequence,
+    /// The map, when the game has one.
+    ///
+    /// Optional for the same reason `objectives::Position` carries it optionally: a rule that
+    /// asks about the shape of the board cannot resolve without one, and reporting it unmet is
+    /// honest where guessing is not. Skilled Retreat is the first such card.
+    pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
 }
 
 /// An ability registered against one deterministic timing window.
@@ -1125,6 +1131,7 @@ mod tests {
             dice,
             rng,
             event_sequence,
+            galaxy: None,
         }
     }
 

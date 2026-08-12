@@ -39,7 +39,8 @@ pub enum CombatError {
 /// How a space combat ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CombatOutcome {
-    /// The last player with ships, or `None` if both sides were wiped out.
+    /// The last player with ships; `None` when both sides were wiped out, or when the combat
+    /// was declared a draw by Skilled Retreat.
     pub winner: Option<PlayerId>,
     /// Rounds fought.
     pub rounds: u32,
@@ -551,6 +552,47 @@ pub fn eligible_retreats(
         .collect()
 }
 
+/// Whether this combat round was declared a draw (Skilled Retreat).
+///
+/// Checked at both exits. The window concludes through `conclude` when a fight is fought out, but
+/// a fleet that retreats leaves one side empty, and the next look at the system takes the
+/// "fewer than two fleets" exit instead — so applying the draw in only one of them would make the
+/// card work or not depending on which path the retreat happened to land on.
+fn declared_draw(state: &GameState) -> bool {
+    state.combat_draw_round == Some(state.combat_round_seq)
+}
+
+/// Where Skilled Retreat may send a fleet.
+///
+/// Deliberately not [`eligible_retreats`]. That enforces 78.7c, which also demands the
+/// destination hold your units or a planet you control; the card asks only for "an adjacent
+/// system that does not contain another player's ships". Reusing the stricter function would
+/// quietly make the card weaker than it is printed.
+#[must_use]
+pub fn skilled_retreat_destinations(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Vec<SystemId> {
+    let types = catalogue(content, sources);
+    galaxy
+        .adjacent(system.as_str())
+        .into_iter()
+        .map(SystemId::new)
+        .filter(|adjacent| {
+            !state.system_state(adjacent).units.iter().any(|unit| {
+                &unit.owner != player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::is_ship)
+            })
+        })
+        .collect()
+}
+
 /// 78.7b: move a player's fleet to `destination`, and lose what it cannot carry.
 ///
 /// Only ships with a move value leave under their own power. Anything consuming capacity comes
@@ -676,7 +718,11 @@ impl CombatWindow {
                 attacker: PlayerId::new(""),
                 defender: PlayerId::new(""),
                 stage: Stage::Done(CombatOutcome {
-                    winner: sides.first().cloned(),
+                    winner: if declared_draw(state) {
+                        None
+                    } else {
+                        sides.first().cloned()
+                    },
                     rounds: 0,
                 }),
                 galaxy: None,
@@ -744,15 +790,22 @@ impl CombatWindow {
         sources: SourceSet,
         rounds: u32,
     ) -> Stage {
+        // Skilled Retreat ends the combat in a draw. Counting ships would hand the win to
+        // whoever stayed, which is the opposite of what the card says and would also score
+        // "win a space combat" for a fight nobody won.
         Stage::Done(CombatOutcome {
-            winner: winner(
-                state,
-                content,
-                sources,
-                &self.system,
-                &self.attacker,
-                &self.defender,
-            ),
+            winner: if declared_draw(state) {
+                None
+            } else {
+                winner(
+                    state,
+                    content,
+                    sources,
+                    &self.system,
+                    &self.attacker,
+                    &self.defender,
+                )
+            },
             rounds,
         })
     }
@@ -1246,6 +1299,69 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn skilled_retreat_may_go_where_an_ordinary_retreat_may_not() {
+        // 78.7c demands the destination hold your units or a planet you control. The card asks
+        // only for "an adjacent system that does not contain another player's ships", so reusing
+        // the stricter rule would quietly make it weaker than printed.
+        let hub = crate::fixtures::plain_hub();
+        let mine = PlayerId::new("a");
+        let system = SystemId::new(hub.centre.clone());
+        let state = crate::fixtures::game(&["a", "b"]);
+
+        let ordinary = eligible_retreats(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &hub.galaxy,
+            &mine,
+            &system,
+        );
+        let skilled = skilled_retreat_destinations(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &hub.galaxy,
+            &mine,
+            &system,
+        );
+
+        assert!(
+            ordinary.is_empty(),
+            "an empty ring holds none of this player's units"
+        );
+        assert_eq!(
+            skilled.len(),
+            6,
+            "but every ring seat is free of enemy ships"
+        );
+    }
+
+    #[test]
+    fn skilled_retreat_will_not_go_where_an_enemy_fleet_sits() {
+        let hub = crate::fixtures::plain_hub();
+        let mine = PlayerId::new("a");
+        let theirs = PlayerId::new("b");
+        let system = SystemId::new(hub.centre.clone());
+        let occupied = SystemId::new(hub.outer[0].clone());
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        crate::fixtures::put(&mut state, &occupied, "cruiser", &theirs, 1);
+
+        let open = skilled_retreat_destinations(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &hub.galaxy,
+            &mine,
+            &system,
+        );
+
+        assert_eq!(open.len(), 5);
+        assert!(!open.contains(&occupied), "another player's ships bar it");
+    }
+
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;
 
@@ -1679,6 +1795,59 @@ mod tests {
 
         assert_eq!(stranded, 0);
         assert_eq!(state.system_state(&refuge).units.len(), 3);
+    }
+
+    #[test]
+    fn a_declared_draw_beats_counting_the_survivors() {
+        // Skilled Retreat: the fleet leaves and the combat ends in a draw. Counting ships would
+        // hand the win to whoever stayed, and would also score "win a space combat" for a fight
+        // nobody won.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 2);
+        let (mut table, mut dice, mut rng) = kit();
+        state.combat_draw_round = Some(state.combat_round_seq);
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome.winner, None,
+            "the round was declared a draw, so the last fleet standing did not win it"
+        );
+    }
+
+    #[test]
+    fn a_draw_declared_in_another_round_does_not_carry() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 2);
+        let (mut table, mut dice, mut rng) = kit();
+        state.combat_round_seq = 4;
+        state.combat_draw_round = Some(3);
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome.winner,
+            Some(attacker()),
+            "last round's draw is not this round's"
+        );
     }
 
     #[test]

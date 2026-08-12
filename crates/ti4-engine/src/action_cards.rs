@@ -213,6 +213,65 @@ fn in_the_silence_of_space(context: &mut crate::timing::TimingContext<'_>, playe
     }
 }
 
+/// Skilled Retreat: "move all of your ships from the active system into an adjacent system that
+/// does not contain another player's ships. The space combat ends in a draw. Then place a command
+/// token in that system."
+///
+/// The movement, the stranding of cargo beyond capacity and the token are exactly a retreat, so
+/// [`crate::combat::retreat_to`] does them. What the card changes is *where* it may go and that
+/// the result is a draw rather than a win for whoever stayed.
+fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(system) = context.state.active_system.clone() else {
+        return;
+    };
+    let Some(galaxy) = context.galaxy else {
+        return; // without a map there is no "adjacent", so the card cannot resolve
+    };
+    let destinations = crate::combat::skilled_retreat_destinations(
+        context.state,
+        context.content,
+        context.sources,
+        galaxy,
+        player,
+        &system,
+    );
+    let Some(first) = destinations.first().cloned() else {
+        return;
+    };
+    let chosen = if destinations.len() == 1 {
+        first
+    } else {
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "Skilled Retreat: withdraw to which system",
+            destinations
+                .iter()
+                .map(|system| {
+                    crate::choice::ChoiceOption::labelled(
+                        system.to_string(),
+                        "skilled_retreat",
+                        format!("withdraw to {system}"),
+                    )
+                })
+                .collect(),
+        );
+        match context.table.ask(&choice) {
+            Ok(answer) => ti4_model::id::SystemId::new(answer.id),
+            Err(_) => return,
+        }
+    };
+
+    crate::combat::retreat_to(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        &system,
+        &chosen,
+    );
+    context.state.combat_draw_round = Some(context.state.combat_round_seq);
+}
+
 /// Apply every movement modifier this player currently owns to a set of rules.
 ///
 /// One door, called wherever rules are built for a real move. Reading the fields at each
@@ -246,6 +305,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
         "nav_suite" => Some(nav_suite),
+        "s_retreat1" | "s_retreat2" | "s_retreat3" | "s_retreat4" => Some(skilled_retreat),
         "silence_space" => Some(in_the_silence_of_space),
         _ => None,
     }
@@ -264,6 +324,10 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "mb3",
         "mb4",
         "nav_suite",
+        "s_retreat1",
+        "s_retreat2",
+        "s_retreat3",
+        "s_retreat4",
         "silence_space",
     ]
 }
@@ -310,6 +374,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             event_sequence: &mut sequence,
+            galaxy: None,
         };
         effect(&mut context, player);
     }
@@ -359,7 +424,7 @@ mod tests {
         // catches a wrong alias but never a missing one, and the only symptom of a fourth copy
         // left off is a slightly lower play rate.
         let content = ContentStore::embedded();
-        for name in ["Morale Boost", "Flank Speed"] {
+        for name in ["Morale Boost", "Flank Speed", "Skilled Retreat"] {
             let copies: Vec<ActionCardId> = content
                 .from_sources(
                     ti4_model::content_types::ContentType::ActionCards,
@@ -375,6 +440,31 @@ mod tests {
                     "{alias} is a copy of {name} and must carry its effect"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_alias_list_and_the_effect_table_agree() {
+        // Two places record the same fact: `effect_for` decides behaviour and
+        // `registered_aliases` feeds the coverage ledger. They drifted the first time a card was
+        // added — the effect worked and the ledger under-reported by four — so this ties them.
+        let content = ContentStore::embedded();
+        let listed: std::collections::BTreeSet<&str> = registered_aliases().into_iter().collect();
+
+        for record in content.from_sources(
+            ti4_model::content_types::ContentType::ActionCards,
+            ti4_model::content_types::POK,
+        ) {
+            let Some(alias) = record.text("alias") else {
+                continue;
+            };
+            let has_effect = effect_for(&ActionCardId::new(alias)).is_some();
+            assert_eq!(
+                has_effect,
+                listed.contains(alias),
+                "{alias}: effect_for says {has_effect}, registered_aliases says {}",
+                listed.contains(alias)
+            );
         }
     }
 
