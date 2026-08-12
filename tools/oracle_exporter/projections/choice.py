@@ -12,6 +12,18 @@ if TYPE_CHECKING:
 def _canonical_value(value: Any) -> Any:
     """Return a JSON value or reject a payload that cannot be exported faithfully."""
 
+    # Event payloads can contain a resolved `engine.dice.Roll`, notably the unit-ability
+    # reroll event. Preserve its replay-relevant fields rather than refusing an otherwise
+    # complete bounded trace.
+    from engine.dice import Roll
+
+    if isinstance(value, Roll):
+        return {
+            "faces": list(value.faces),
+            "hits_on": value.hits_on,
+            "reason": value.reason,
+            "rerolled": sorted(value.rerolled),
+        }
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):

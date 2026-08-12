@@ -166,6 +166,25 @@ class StateProjectionTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             event_projection(Event("E", {"bad": object()}, uid=4), state)
 
+    def test_event_projection_canonicalizes_a_dice_roll_payload(self) -> None:
+        from engine.dice import Roll
+        from engine.timing import Event
+
+        state = start_game(("p1", "p2"))
+        projection = event_projection(
+            Event(
+                "UNIT_ABILITY_DICE_ROLLED",
+                {"roll": Roll("bombardment", (8, 4), hits_on=6, rerolled=frozenset({1}))},
+                uid=5,
+            ),
+            state,
+        )
+
+        self.assertEqual(
+            projection["payload"]["roll"],
+            {"faces": [8, 4], "hits_on": 6, "reason": "bombardment", "rerolled": [1]},
+        )
+
     def test_outcome_projection_requires_a_finished_game_and_uses_initiative_tie_breaking(self) -> None:
         from engine.game import Game
 

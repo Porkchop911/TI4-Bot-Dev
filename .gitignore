@@ -39,3 +39,11 @@ Thumbs.db
 *.snap
 *.profraw
 *.profdata
+
+# The bounded oracle traces are the one retained, checksummed fixture corpus.
+!fixtures/
+fixtures/*
+!fixtures/legacy_entropy/
+fixtures/legacy_entropy/*
+!fixtures/legacy_entropy/bounded-v1/
+!fixtures/legacy_entropy/bounded-v1/**
