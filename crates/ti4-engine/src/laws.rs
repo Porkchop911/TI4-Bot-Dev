@@ -73,6 +73,12 @@ pub fn action_card_limit(state: &GameState, base: usize) -> usize {
     }
 }
 
+/// Political Censure: its elected owner cannot play action cards.
+#[must_use]
+pub fn action_cards_forbidden(state: &GameState, player: &PlayerId) -> bool {
+    active(state, "censure") && elected(state, "censure").is_some_and(|who| who == player.as_str())
+}
+
 /// Shared Research makes nebulae passable.
 #[must_use]
 pub fn nebulae_passable(state: &GameState) -> bool {

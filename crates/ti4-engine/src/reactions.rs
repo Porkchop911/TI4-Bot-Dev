@@ -231,12 +231,30 @@ pub fn play(
         return Ok(false);
     };
     crate::action_cards::discard(context.state, player, index);
+    announce(context, resolver, player, alias)
+}
 
+/// Announce a card as played, then resolve it.
+///
+/// Shared by the reaction window and the component action (22.1), because the announcement is the
+/// same event either way: Sabotage cancels *another card being played*, and it hooks the WHEN
+/// window of `ACTION_CARD_PLAYED`, which only exists if every path announces before resolving.
+///
+/// # Errors
+/// [`TimingError`] when the announcement cannot be resolved.
+pub fn announce(
+    context: &mut TimingContext<'_>,
+    resolver: &mut Resolver,
+    player: &PlayerId,
+    alias: &ActionCardId,
+) -> Result<bool, TimingError> {
     let mut payload = BTreeMap::new();
     payload.insert("player".to_owned(), player.to_string().into());
     payload.insert("card".to_owned(), alias.to_string().into());
     let announced = context.event_sequence.next("ACTION_CARD_PLAYED", payload)?;
     let announced = resolver.emit_with_context(context, announced, |_, _| {})?;
+    // The card is still spent when cancelled: 1.15 lets a WHEN ability cancel the event, not
+    // un-spend the card.
     if announced.cancelled {
         return Ok(false);
     }

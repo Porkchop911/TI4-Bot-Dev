@@ -575,6 +575,15 @@ impl<'a> Game<'a> {
             self.sources,
             active,
         ));
+        // 22.1: cards whose printed window is "Action" are played on your turn. Without this
+        // every such card is drawn, held, discarded to the hand limit, and never played.
+        choice
+            .options
+            .extend(crate::action_cards::available_actions(
+                &self.state,
+                self.content,
+                active,
+            ));
         Some(choice)
     }
 
@@ -614,6 +623,17 @@ impl<'a> Game<'a> {
                 }
                 // 22.1: a component action costs the whole turn, so unlike a transaction this
                 // advances it whether or not the relic did anything worth having.
+                if let Some(index) = answer.id.strip_prefix("action_card|") {
+                    let _ = index;
+                    let played = self.play_component_action(&active, &answer);
+                    self.emit(if played.unwrap_or(false) {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    self.advance_turn();
+                    return Ok(());
+                }
                 if answer.kind == crate::relics::ACTION_KIND {
                     let mut dice = std::mem::take(&mut self.dice);
                     let mut rng = self.rng.clone();
@@ -709,6 +729,24 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// Copy anything the resolver emitted since `from` into the game's event log.
+    ///
+    /// There are two event streams: the driver's string labels and the resolver's typed events.
+    /// A reaction played inside a timing window only ever appears in the second, so a report
+    /// reading the first saw a batch in which no action card was ever played — while five
+    /// hundred of them were. One observable stream, or observability is a lie.
+    fn mirror_timing_log(&mut self, from: usize) {
+        let emitted: Vec<String> = self
+            .timing
+            .log()
+            .iter()
+            .skip(from)
+            .filter_map(|line| line.strip_prefix("emit "))
+            .map(|line| line.split('#').next().unwrap_or(line).to_owned())
+            .collect();
+        self.events.extend(emitted);
+    }
+
     /// Emit a typed event through the resolver, opening its WHEN and AFTER windows.
     ///
     /// The reaction slots registered by [`crate::reactions::arm`] hang off exactly this: a
@@ -725,6 +763,7 @@ impl<'a> Game<'a> {
         let event = self.event_sequence.next(event_type, payload)?;
         let (content, sources) = (self.content, self.sources);
         let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
         let emitted = {
             let (state, table, timing, dice, rng, event_sequence) = (
                 &mut self.state,
@@ -746,7 +785,46 @@ impl<'a> Game<'a> {
             };
             timing.emit_with_context(&mut context, event, |_, _| {})?
         };
+        self.mirror_timing_log(logged);
         Ok(!emitted.cancelled)
+    }
+
+    /// Play an action card as a component action, through the game's own timing context.
+    ///
+    /// 22.1: it costs the whole turn, which is why the caller advances the turn whatever the
+    /// card managed to do.
+    fn play_component_action(
+        &mut self,
+        player: &PlayerId,
+        answer: &ChoiceOption,
+    ) -> Result<bool, GameError> {
+        let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        let played = {
+            let (state, table, timing, dice, rng, event_sequence) = (
+                &mut self.state,
+                &mut self.table,
+                &mut self.timing,
+                &mut self.dice,
+                &mut self.rng,
+                &mut self.event_sequence,
+            );
+            let mut context = TimingContext {
+                state,
+                content,
+                sources,
+                table,
+                dice,
+                rng,
+                event_sequence,
+                galaxy: galaxy.as_ref(),
+            };
+            crate::action_cards::perform(&mut context, timing, player, answer)
+                .map_err(GameError::from)
+        };
+        self.mirror_timing_log(logged);
+        played
     }
 
     fn apply_tactical(

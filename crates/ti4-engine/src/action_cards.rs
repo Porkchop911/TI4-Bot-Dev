@@ -126,6 +126,98 @@ pub fn discard(state: &mut GameState, player: &PlayerId, index: usize) -> Option
     Some(seat.action_cards.remove(index))
 }
 
+// -- the component action (22.1) -----------------------------------------------------------------
+
+/// The kind of a component-action option.
+pub const ACTION_KIND: &str = "component";
+
+/// The prefix of an option that plays an action card as a turn action.
+const PLAY_PREFIX: &str = "action_card|";
+
+/// Whether a card's printed window makes it a component action (22.1).
+#[must_use]
+pub fn is_component_action(content: &ContentStore, alias: &ActionCardId) -> bool {
+    content
+        .get(ContentType::ActionCards, alias.as_str())
+        .and_then(|record| record.text("window"))
+        .is_some_and(|window| window.trim() == "Action")
+}
+
+/// 22.3: whether this card could be played right now.
+///
+/// A card nobody has modelled has no stated requirement, so it stays offered — which is what
+/// keeps an unimplemented card countable rather than invisible. The alternative hides the gap
+/// behind a card that simply never appears.
+#[must_use]
+pub fn is_playable(state: &GameState, player: &PlayerId, _alias: &ActionCardId) -> bool {
+    !crate::laws::action_cards_forbidden(state, player)
+}
+
+/// Component actions this player could take with the cards in hand (22.1).
+///
+/// Indexed by hand position rather than by alias, because a hand may hold two copies of the
+/// same card and naming the alias would make them one option — which a sampling decider would
+/// then draw half as often as it should.
+#[must_use]
+pub fn available_actions(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+) -> Vec<crate::choice::ChoiceOption> {
+    let Some(seat) = state.player(player) else {
+        return Vec::new();
+    };
+    seat.action_cards
+        .iter()
+        .enumerate()
+        .filter(|(_, alias)| is_component_action(content, alias))
+        .filter(|(_, alias)| is_playable(state, player, alias))
+        .map(|(index, alias)| {
+            crate::choice::ChoiceOption::labelled(
+                format!("{PLAY_PREFIX}{index}"),
+                ACTION_KIND,
+                format!("play {}", name_of(content, alias)),
+            )
+        })
+        .collect()
+}
+
+/// Play an action card as a component action. Returns `false` for an option that is not one.
+///
+/// # Errors
+/// [`crate::timing::TimingError`] when announcing the play cannot be resolved.
+pub fn perform(
+    context: &mut crate::timing::TimingContext<'_>,
+    resolver: &mut crate::timing::Resolver,
+    player: &PlayerId,
+    option: &crate::choice::ChoiceOption,
+) -> Result<bool, crate::timing::TimingError> {
+    let Some(index) = option
+        .id
+        .strip_prefix(PLAY_PREFIX)
+        .and_then(|index| index.parse::<usize>().ok())
+    else {
+        return Ok(false);
+    };
+    let held = context
+        .state
+        .player(player)
+        .and_then(|seat| seat.action_cards.get(index).cloned());
+    let Some(alias) = held else {
+        return Ok(false);
+    };
+    if !is_component_action(context.content, &alias) || !is_playable(context.state, player, &alias)
+    {
+        return Ok(false);
+    }
+
+    // 22.3: the card leaves the hand whether or not its effect is modelled. It was genuinely
+    // played, and pretending otherwise would let a bot hold it for ever.
+    discard(context.state, player, index);
+    crate::reactions::announce(context, resolver, player, &alias)?;
+    Ok(true)
+}
+
 // -- effects (M06-016b) --------------------------------------------------------------------------
 
 /// What playing an action card does.
@@ -533,6 +625,130 @@ mod tests {
         let paid_again = resolve_predictions(&mut state, "for");
         assert!(paid_again.is_empty(), "and cannot pay a second time");
         assert_eq!(state.player(&PlayerId::new("a")).unwrap().victory_points, 1);
+    }
+
+    /// The first card in the corpus whose printed window makes it a component action.
+    fn a_component_action_card() -> ActionCardId {
+        ContentStore::embedded()
+            .from_sources(
+                ti4_model::content_types::ContentType::ActionCards,
+                ti4_model::content_types::POK,
+            )
+            .find(|record| record.text("window") == Some("Action"))
+            .and_then(|record| record.text("alias").map(ActionCardId::new))
+            .expect("the corpus has component-action cards")
+    }
+
+    #[test]
+    fn only_a_card_that_says_action_is_a_component_action() {
+        // 22.1. Offering a reaction card as a turn action would let a player spend a turn on a
+        // card whose own text says it is played in somebody else's window.
+        let content = ContentStore::embedded();
+        assert!(is_component_action(content, &a_component_action_card()));
+        assert!(
+            !is_component_action(content, &ActionCardId::new("fs1")),
+            "Flank Speed is played after an activation, not as a turn"
+        );
+    }
+
+    #[test]
+    fn a_component_action_card_in_hand_is_offered() {
+        let content = ContentStore::embedded();
+        let card = a_component_action_card();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().action_cards =
+            vec![ActionCardId::new("fs1"), card.clone()];
+
+        let offered = available_actions(&state, content, &player);
+
+        assert_eq!(offered.len(), 1, "one of the two is a turn action");
+        assert!(
+            offered[0].id.ends_with('1'),
+            "offered by hand position, so two copies are two options: {}",
+            offered[0].id
+        );
+    }
+
+    #[test]
+    fn two_copies_of_one_card_are_two_options() {
+        // Indexed by hand position rather than by alias. Naming the alias would collapse them
+        // into one option, which a sampling decider then draws half as often as it should.
+        let content = ContentStore::embedded();
+        let card = a_component_action_card();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().action_cards = vec![card.clone(), card];
+
+        assert_eq!(available_actions(&state, content, &player).len(), 2);
+    }
+
+    #[test]
+    fn political_censure_stops_its_owner_playing_action_cards() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player).unwrap().action_cards = vec![a_component_action_card()];
+        assert_eq!(available_actions(&state, content, &player).len(), 1);
+
+        state.enact_law("censure", "a");
+        assert!(
+            available_actions(&state, content, &player).is_empty(),
+            "the elected owner cannot play action cards"
+        );
+        assert_eq!(
+            available_actions(&state, content, &PlayerId::new("b")).len(),
+            0,
+            "and b has no cards either way"
+        );
+    }
+
+    #[test]
+    fn playing_a_component_action_spends_the_card_even_with_no_effect() {
+        // 22.3: it was genuinely played. Leaving an unmodelled card in hand would let a bot
+        // hold it for ever and would hide the gap behind a card that never leaves.
+        let content = ContentStore::embedded();
+        let card = a_component_action_card();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().action_cards = vec![card.clone()];
+
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut resolver = crate::timing::Resolver::default();
+        let option = available_actions(&state, content, &player)
+            .into_iter()
+            .next()
+            .expect("it is offered");
+        let played = {
+            let mut context = crate::timing::TimingContext {
+                state: &mut state,
+                content,
+                sources: ti4_model::content_types::POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: None,
+            };
+            perform(&mut context, &mut resolver, &player, &option).unwrap()
+        };
+
+        assert!(played);
+        assert!(
+            state.player(&player).unwrap().action_cards.is_empty(),
+            "the card left the hand"
+        );
+        assert!(
+            resolver
+                .log()
+                .iter()
+                .any(|line| line.contains("ACTION_CARD_UNRESOLVED")),
+            "and said it had no effect: {:?}",
+            resolver.log()
+        );
     }
 
     #[test]

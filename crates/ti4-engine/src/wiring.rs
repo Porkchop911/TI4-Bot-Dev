@@ -461,4 +461,67 @@ fn a_held_reaction_card_is_played_into_a_real_window() {
         "playing a card must announce itself, so Sabotage has a window; timing {:?}",
         game.timing.log()
     );
+    // And it must reach the *observable* log. A reaction played inside a timing window appears
+    // only in the resolver's stream, so a report reading the game's events saw a batch in which
+    // no card was ever played while hundreds were. This is the assertion that catches that.
+    assert!(
+        game.events
+            .iter()
+            .any(|event| event == "ACTION_CARD_PLAYED"),
+        "the typed event never reached the game's own log; events {:?}",
+        game.events
+    );
+}
+
+#[test]
+fn a_turn_can_play_a_component_action_card() {
+    // 22.1. Without this every card whose window reads "Action" is drawn, held, discarded to the
+    // hand limit and never played — which is what a batch of forty games showed: five hundred
+    // card plays after wiring, none before.
+    let hub = plain_hub();
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+    state.phase = ti4_model::state::Phase::Action;
+    state.active = Some(PlayerId::new("a"));
+
+    let card = ContentStore::embedded()
+        .from_sources(ti4_model::content_types::ContentType::ActionCards, POK)
+        .find(|record| record.text("window") == Some("Action"))
+        .and_then(|record| record.text("alias").map(ti4_model::id::ActionCardId::new))
+        .expect("the corpus has one");
+    state.player_mut(&PlayerId::new("a")).unwrap().action_cards = vec![card.clone()];
+
+    let table = Table::with_default(Box::new(Scripted::new(["action_card|0".to_owned()])));
+    let mut game =
+        Game::with_table(state, ContentStore::embedded(), table).with_galaxy(hub.galaxy.clone());
+    let _ = game.step();
+
+    assert!(
+        !game
+            .state
+            .player(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .contains(&card),
+        "the card was played; events {:?}",
+        game.events
+    );
+    assert!(
+        game.events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+        "and announced, so Sabotage has a window; events {:?}",
+        game.events
+    );
+}
+
+#[test]
+fn the_driver_still_offers_component_action_cards() {
+    let driver = include_str!("game.rs");
+    assert!(
+        driver.contains("crate::action_cards::available_actions"),
+        "no turn offers an action card any more"
+    );
+    assert!(
+        driver.contains("crate::action_cards::perform"),
+        "choosing one no longer plays it"
+    );
 }
