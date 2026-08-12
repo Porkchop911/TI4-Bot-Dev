@@ -152,6 +152,30 @@ impl<'a> UnitType<'a> {
         self.afb_hits_on().is_some()
     }
 
+    /// Fighters this unit supports without using ship capacity (16.2).
+    ///
+    /// Read out of the printed ability text rather than assumed, because a Dimensional Tear
+    /// supports six or twelve where an ordinary dock supports three — treating every dock as
+    /// the generic one would quietly under-count the faction's whole point.
+    #[must_use]
+    pub fn fighter_support(&self) -> i64 {
+        let Some(ability) = self.record.text("ability") else {
+            return 0;
+        };
+        let lower = ability.to_ascii_lowercase();
+        let Some(start) = lower.find("up to ") else {
+            return 0;
+        };
+        let rest = &lower[start + "up to ".len()..];
+        if !rest.contains("fighter") {
+            return 0;
+        }
+        rest.split_whitespace()
+            .next()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0)
+    }
+
     #[must_use]
     pub fn bombard_hits_on(&self) -> Option<i64> {
         positive(self.record.int("bombardHitsOn"))

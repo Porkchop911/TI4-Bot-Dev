@@ -353,10 +353,11 @@ are recorded in the package evidence; independent review remains owner-waived.
   invasion and production are unimplemented, so **arriving in an enemy system has no
   consequence** — announced, not hidden.
 
-## M06-001 package checkpoint (authoritative)
+## M06-001 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `96a562e`.
-- Last completed package: M06-001 — space combat (`plans/evidence/M06-001_SPACE_COMBAT.md`).
+- Last completed package: M05-004/012-015 — fleet limits and invasion
+  (`plans/evidence/M05-004_012-015_FLEET_AND_INVASION.md`).
 - `ti4-engine` has 255 tests. The workspace has **445 passing tests**: 121 `ti4-content`,
   255 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - 78.1, 78.5b/c, 78.5f, 78.6, 87.1 and 15.2a are implemented and tested. Hits are simultaneous;
@@ -373,6 +374,23 @@ are recorded in the package evidence; independent review remains owner-waived.
   and its hits fall only on fighters. Space cannon offense is implemented but **uncalled**, as it
   belongs to the tactical action's post-movement sequence.
 - Not included: retreats, rerolls, combat modifiers, PDS II adjacency, ability suppression.
+
+## M05-004/012-015 checkpoint (authoritative)
+
+- **463 passing tests**: 121 `ti4-content`, 273 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
+  Zero warnings, engine Clippy clean. Oracle verified clean before and after.
+- Fleet supply (37) and capacity (16); bombardment, landing, ground combat and planet control
+  (49, 42). Five plan packages in one batch.
+- A captured planet is taken **exhausted**; 49.5d leaves a wiped-out invasion's target with its
+  previous holder; a war sun ignores Planetary Shield.
+- Supply is enforced before capacity, since removing a carrier can strand its fighters.
+- Working mode changed at the owner's request: batch several modules, one verify, one evidence
+  file, one commit. Test density unchanged.
+- **Nothing calls combat, invasion or fleet enforcement.** All three wait on the same wiring
+  into the tactical action, which still emits `TACTICAL_STEPS_UNRESOLVED`.
+- Package IDs in earlier evidence filenames drifted from the master plan and have not been
+  renamed: `M05-004_TACTICAL_DRIVER` and `M06-001_SPACE_COMBAT` both sit in slots the plan
+  assigns to other packages.
 
 ## Implementation status
 
