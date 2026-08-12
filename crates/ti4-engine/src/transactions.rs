@@ -405,14 +405,29 @@ enum Stage {
 ///
 /// # Example
 ///
-/// ```ignore
-/// let mut window = TradeWindow::open(proposer.clone(), partner.clone());
-/// while let Some(choice) = window.pending_choice(state, content, sources) {
-///     let answer = table.ask(&choice)?;
-///     window.resolve(state, ctx, answer)?;
-/// }
 /// ```
-#[derive(Debug, Clone)]
+/// use ti4_content::ContentStore;
+/// use ti4_model::content_types::POK;
+/// use ti4_model::id::PlayerId;
+/// use ti4_engine::transactions::TradeWindow;
+///
+/// let players = [PlayerId::new("a"), PlayerId::new("b")];
+/// let mut state =
+///     ti4_engine::setup::start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+/// for player in &players {
+///     let seat = state.player_mut(player).unwrap();
+///     seat.trade_goods = 2;
+///     seat.commodities = 3;
+/// }
+///
+/// // Opening spends this pair's one transaction for the turn (94.1), whether or not a deal
+/// // closes — which is also what stops the free action being taken for ever.
+/// let window = TradeWindow::open(&mut state, &players[0], &players[1]);
+/// assert!(state.transacted_with(&players[0]).contains(&players[1]));
+///
+/// let choice = window.pending_choice(&state).expect("there are deals to propose");
+/// assert!(choice.ids().contains(&"cc3"), "swap three commodities each");
+/// ```
 pub struct TradeWindow {
     proposer: PlayerId,
     partner: PlayerId,

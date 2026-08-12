@@ -373,7 +373,9 @@ fn a_driven_round_deals_strategy_cards() {
     game.run(1, 800).expect("a round completes");
 
     assert!(
-        game.events.iter().any(|event| event == "STRATEGY_CARD_CHOSEN"),
+        game.events
+            .iter()
+            .any(|event| event == "STRATEGY_CARD_CHOSEN"),
         "no strategy card was drafted; events {:?}",
         game.events
     );

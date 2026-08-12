@@ -205,13 +205,60 @@ pub struct Resolving<'a> {
 ///
 /// # Example
 ///
-/// ```ignore
-/// // A window is created by a subsystem, filled with options, then stepped:
-/// let mut window = ProductionWindow::new(state, ctx.content, ctx.sources);
-/// while let Some(choice) = window.pending_choice(state, content, sources) {
-///     let answer = table.ask(&choice)?;
-///     window.resolve(state, ctx, answer)?;
+/// The contract, shown with a window small enough to read. A real one — production, combat,
+/// cargo — differs only in what it asks and what answering does.
+///
+/// ```
+/// use ti4_engine::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Window};
+/// use ti4_model::id::PlayerId;
+///
+/// /// Asks a player to name a colour, once.
+/// struct PickAColour {
+///     asked: bool,
 /// }
+///
+/// impl Window for PickAColour {
+///     fn pending_choice(
+///         &self,
+///         _state: &ti4_model::state::GameState,
+///         _content: &ti4_content::ContentStore,
+///         _sources: ti4_model::content_types::SourceSet,
+///     ) -> Option<Choice> {
+///         // No flag says "finished": the window is done when it owes no question.
+///         if self.asked {
+///             return None;
+///         }
+///         Some(Choice::new(
+///             PlayerId::new("a"),
+///             "pick a colour",
+///             vec![
+///                 ChoiceOption::labelled("red", "colour", "red"),
+///                 ChoiceOption::labelled("blue", "colour", "blue"),
+///             ],
+///         ))
+///     }
+///
+///     fn resolve(
+///         &mut self,
+///         _state: &mut ti4_model::state::GameState,
+///         _ctx: &mut Resolving<'_>,
+///         _answer: ChoiceOption,
+///     ) -> Result<(), IllegalChoice> {
+///         self.asked = true;
+///         Ok(())
+///     }
+/// }
+///
+/// let content = ti4_content::ContentStore::embedded();
+/// let sources = ti4_model::content_types::POK;
+/// let state =
+///     ti4_engine::setup::start_game(content, &[PlayerId::new("a")], sources, None).unwrap();
+///
+/// let mut window = PickAColour { asked: false };
+/// let choice = window
+///     .pending_choice(&state, content, sources)
+///     .expect("a colour is owed");
+/// assert_eq!(choice.options.len(), 2);
 /// ```
 pub trait Window {
     /// The decision currently owed, or `None` when the sequence is finished.

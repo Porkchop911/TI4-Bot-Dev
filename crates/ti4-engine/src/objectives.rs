@@ -1013,11 +1013,24 @@ fn satisfied(position: &Position<'_>, alias: &ObjectiveId) -> bool {
 ///
 /// # Example
 ///
-/// ```ignore
-/// let scoreable = objectives::scoreable(&state, content, sources, &player);
-/// // scoreable contains every objective whose requirement predicates hold.
 /// ```
-#[must_use]
+/// use ti4_content::ContentStore;
+/// use ti4_model::content_types::POK;
+/// use ti4_model::id::{ObjectiveId, PlayerId};
+///
+/// let players = [PlayerId::new("a"), PlayerId::new("b")];
+/// let mut state =
+///     ti4_engine::setup::start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+///
+/// // Nothing is revealed, so nothing can be scored.
+/// assert!(ti4_engine::objectives::scoreable(&state, ContentStore::embedded(), POK, &players[0])
+///     .is_empty());
+///
+/// // Engineer a Marvel: have your flagship or a war sun on the board.
+/// state.revealed_objectives.push(ObjectiveId::new("engineer_marvel"));
+/// assert!(ti4_engine::objectives::scoreable(&state, ContentStore::embedded(), POK, &players[0])
+///     .is_empty(), "revealed, but not yet met");
+/// ```
 pub fn scoreable(
     state: &GameState,
     content: &ContentStore,

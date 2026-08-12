@@ -112,7 +112,7 @@ Per the handover, two package IDs in filenames drift from `MASTER_PLAN.md`:
 
 | Filename | Plan slot | Note |
 |---|---|---|
-| `M05-004_TACTICAL_DRIVER.md` | M05-004 | Plan slot M05-004 is "Fleet composition"; this file covers tactical driver |
-| `M06-001_SPACE_COMBAT.md` | M06-001 | Plan slot M06-001 is "Space combat"; this file covers space combat but the ID was reused |
+| `M05-004_TACTICAL_DRIVER.md` | M05-004 | Plan slot M05-004 is "Fleet composition" (`M05_TACTICAL_PIPELINE.md:14`); this file covers the tactical driver |
+| `M06-001_SPACE_COMBAT.md` | M06-001 | Plan slot M06-001 is **"Generic payment planner"** (`M06_GENERAL_RULES.md:11`); this file covers space combat, so the ID is genuinely borrowed |
 
 These have not been renamed (per the instruction). The index records the drift so the next reader is not misled.
