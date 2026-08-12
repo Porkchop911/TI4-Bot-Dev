@@ -131,7 +131,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-013 package checkpoint (historical)
 
 - Branch: `wp/m04-013-random-legal-bot`, based on M04-012 package commit `d316107`.
 - Last completed package: M04-013 — shared-stream seeded random-legal game constructor
@@ -146,6 +146,24 @@ are recorded in the package evidence; independent review remains owner-waived.
   pretending the absent status scoring/token choices completed. Python seed parity is intentionally
   not claimed because the native stream is ChaCha8, not Mersenne Twister.
 - M04-013 committed after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-014-completion-suite`, based on M04-013 package commit `d509d87`.
+- Last completed package: M04-014 — 100-seed native generic structural campaign
+  (`plans/evidence/M04-014.md`).
+- Next dependency-ready package: M04-015 — differential phase suite.
+- `ti4-engine` has 130 tests. The workspace has 320 passing tests: 121 `ti4-content`,
+  130 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- Every one of 100 seeded two-to-six-player runs reaches the explicit status choice boundary within
+  500 steps; no run silently finishes, deadlocks, or records an invented choice. Same-seed state,
+  event, decision-log, and step-result snapshots match after every step.
+- M04 does not yet have generic game completion. Status scoring/token allocation and agenda
+  voting/ties/effects are still required decision windows. The campaign records this as a bounded
+  failure rather than presenting an incomplete run as success.
+- M04-014 committed after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 

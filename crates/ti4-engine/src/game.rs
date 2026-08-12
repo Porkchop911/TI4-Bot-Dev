@@ -456,6 +456,59 @@ mod tests {
     }
 
     #[test]
+    fn one_hundred_seeded_generic_games_reach_only_the_explicit_bounded_failure() {
+        for seed in 0..100_u64 {
+            let player_count = 2 + usize::try_from(seed % 5).unwrap();
+            let players = (0..player_count)
+                .map(|index| PlayerId::new(format!("p{index}")))
+                .collect::<Vec<_>>();
+            let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+            let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed);
+
+            assert_eq!(
+                game.run(1, 500),
+                Err(RunError::Step(GameError::StatusChoicesUnimplemented)),
+                "seed {seed}, players {player_count}"
+            );
+            assert_eq!(game.state.phase, Phase::Status, "seed {seed}");
+            assert!(game.events.contains(&"ACTION_PHASE_BEGAN".to_owned()));
+            assert!(game.events.contains(&"STATUS_PHASE_BEGAN".to_owned()));
+            assert!(
+                game.table
+                    .log
+                    .records
+                    .iter()
+                    .all(|record| record.offered.contains(&record.chosen))
+            );
+        }
+    }
+
+    #[test]
+    fn seeded_game_has_matching_state_event_and_decision_snapshots_at_every_step() {
+        let snapshots = |seed| {
+            let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+            let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+            let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed);
+            let mut snapshots = Vec::new();
+            loop {
+                let result = game.step();
+                snapshots.push((
+                    serde_json::to_string(&game.state).unwrap(),
+                    game.events.clone(),
+                    game.table.log.clone(),
+                    result.clone(),
+                ));
+                if result.error.is_some() || result.finished {
+                    break;
+                }
+            }
+            snapshots
+        };
+
+        assert_eq!(snapshots(42), snapshots(42));
+    }
+
+    #[test]
     fn strategy_primary_and_each_secondary_are_separate_steps() {
         let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
         let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
