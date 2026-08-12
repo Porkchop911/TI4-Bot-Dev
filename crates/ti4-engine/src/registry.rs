@@ -88,8 +88,29 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "action cards",
             total: count(content, ContentType::ActionCards, sources),
-            // Nothing plays an action card yet.
+            // *Playable*, not *implemented*: a reaction card can be played into its window and
+            // still have no effect, which is announced rather than passed off as resolved. No
+            // action card in this engine has an effect yet.
             implemented: 0,
+        },
+        Coverage {
+            registry: "reaction windows",
+            // Every card whose printed window is not "Action".
+            total: content
+                .from_sources(ContentType::ActionCards, sources)
+                .filter(|record| record.text("window").is_some_and(|w| w.trim() != "Action"))
+                .count(),
+            // Mapped to an event *and* that event is emitted somewhere. A window with no
+            // emission is as unplayable as one with no mapping, and far easier to mistake for
+            // finished — so it does not count here.
+            implemented: crate::reactions::reachable(content, sources)
+                .into_iter()
+                .filter(|alias| {
+                    crate::reactions::window_for(content, alias).is_some_and(|window| {
+                        crate::reactions::EMITTED_EVENTS.contains(&window.event)
+                    })
+                })
+                .count(),
         },
         Coverage {
             registry: "agenda effects",

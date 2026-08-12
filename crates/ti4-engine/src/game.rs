@@ -318,7 +318,8 @@ pub struct Game<'a> {
     pub table: Table,
     pub events: Vec<String>,
     /// The resolver that owns registered timing abilities for this game.
-    timing: Resolver,
+    /// The timing resolver. Public so wiring guards can read what a window actually did.
+    pub timing: Resolver,
     /// One-based allocator for driver-emitted typed timing events.
     event_sequence: EventSequence,
     content: &'a ContentStore,
@@ -379,7 +380,12 @@ impl<'a> Game<'a> {
     /// Create a game with explicit deciders for generated choices.
     #[must_use]
     pub fn with_table(state: GameState, content: &'a ContentStore, table: Table) -> Self {
-        let timing = Resolver::new(state.initiative_order(), state.active.clone(), Table::new());
+        let mut timing =
+            Resolver::new(state.initiative_order(), state.active.clone(), Table::new());
+        // Standing reaction slots, registered once while the game is seated. The resolver has no
+        // unregister — a "cannot" effect must not be removable (LRR 1.6) — so registering hands
+        // instead of slots would leak an ability for every card ever drawn.
+        crate::reactions::arm(&mut timing, &state);
         Self {
             strategy_cards: state.unclaimed_strategy_cards.clone(),
             state,
@@ -703,6 +709,44 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// Emit a typed event through the resolver, opening its WHEN and AFTER windows.
+    ///
+    /// The reaction slots registered by [`crate::reactions::arm`] hang off exactly this: a
+    /// subsystem that announces itself only as a string label is a subsystem no card can react
+    /// to, however complete the timing machinery behind it.
+    ///
+    /// # Errors
+    /// [`GameError`] when the event id space is exhausted or a decider answers illegally.
+    fn emit_typed(
+        &mut self,
+        event_type: &str,
+        payload: BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, GameError> {
+        let event = self.event_sequence.next(event_type, payload)?;
+        let (content, sources) = (self.content, self.sources);
+        let emitted = {
+            let (state, table, timing, dice, rng, event_sequence) = (
+                &mut self.state,
+                &mut self.table,
+                &mut self.timing,
+                &mut self.dice,
+                &mut self.rng,
+                &mut self.event_sequence,
+            );
+            let mut context = TimingContext {
+                state,
+                content,
+                sources,
+                table,
+                dice,
+                rng,
+                event_sequence,
+            };
+            timing.emit_with_context(&mut context, event, |_, _| {})?
+        };
+        Ok(!emitted.cancelled)
+    }
+
     fn apply_tactical(
         &mut self,
         mut window: TacticalWindow,
@@ -714,6 +758,18 @@ impl<'a> Game<'a> {
                 let system = SystemId::new(answer.id);
                 activate(&mut self.state, &window.player, &system)?;
                 self.emit(&format!("SYSTEM_ACTIVATED:{system}"));
+                // Typed as well as logged, so the eight cards that read "After you activate a
+                // system" have a window to be played into.
+                let mut payload = BTreeMap::new();
+                payload.insert(
+                    "player".to_owned(),
+                    serde_json::Value::String(window.player.to_string()),
+                );
+                payload.insert(
+                    "system".to_owned(),
+                    serde_json::Value::String(system.to_string()),
+                );
+                self.emit_typed("SYSTEM_ACTIVATED", payload)?;
                 window.stage = TacticalStage::Moving;
                 self.tactical = Some(window);
                 Ok(self.result(true, None))

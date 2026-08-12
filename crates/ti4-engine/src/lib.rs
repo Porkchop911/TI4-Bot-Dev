@@ -40,6 +40,7 @@ pub mod objectives;
 pub mod payment;
 pub mod phase;
 pub mod production;
+pub mod reactions;
 pub mod registry;
 pub mod relics;
 pub mod rng;

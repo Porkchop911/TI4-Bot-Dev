@@ -400,3 +400,65 @@ fn the_driver_still_reaches_the_subsystems_with_no_behavioural_guard() {
         );
     }
 }
+
+#[test]
+fn a_held_reaction_card_is_played_into_a_real_window() {
+    // The whole point of the reactions module. Timing, resolver, slots and the typed event have
+    // to line up in a driven game before a single card can be played — and every piece of that
+    // chain has been built and connected to nothing at least once in this project.
+    let hub = plain_hub();
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+    state.phase = ti4_model::state::Phase::Action;
+    state.active = Some(PlayerId::new("a"));
+
+    // Flank Speed: "After you activate a system".
+    state.player_mut(&PlayerId::new("a")).unwrap().action_cards =
+        vec![ti4_model::id::ActionCardId::new("fs1")];
+
+    let origin = SystemId::new(hub.outer[0].clone());
+    let target = SystemId::new(hub.centre.clone());
+    put(&mut state, &origin, "carrier", &PlayerId::new("a"), 1);
+
+    let table = Table::with_default(Box::new(Scripted::new([
+        TACTICAL_ACTION_ID.to_owned(),
+        target.to_string(),
+    ])));
+    let mut game =
+        Game::with_table(state, ContentStore::embedded(), table).with_galaxy(hub.galaxy.clone());
+
+    for _ in 0..12 {
+        if game.step().error.is_some() {
+            break;
+        }
+    }
+
+    // Named specifically, not "the hand is empty": the status phase deals a fresh card, so an
+    // emptiness check would pass or fail for reasons that have nothing to do with reactions.
+    assert!(
+        !game
+            .state
+            .player(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .contains(&ti4_model::id::ActionCardId::new("fs1")),
+        "Flank Speed was never played; timing {:?}",
+        game.timing.log()
+    );
+    assert!(
+        game.timing
+            .log()
+            .iter()
+            .any(|line| line.contains("reaction:a:SYSTEM_ACTIVATED")),
+        "the reaction slot never resolved; timing {:?}",
+        game.timing.log()
+    );
+    assert!(
+        game.timing
+            .log()
+            .iter()
+            .any(|line| line.contains("ACTION_CARD_PLAYED")),
+        "playing a card must announce itself, so Sabotage has a window; timing {:?}",
+        game.timing.log()
+    );
+}
