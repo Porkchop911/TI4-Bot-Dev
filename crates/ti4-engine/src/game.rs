@@ -1216,34 +1216,30 @@ impl<'a> Game<'a> {
                 self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
             }
 
-            // The speaker resolves a tie the card cannot (8.18). Answered through the table so
-            // it is a generated decision like any other.
-            let speaker = self.state.speaker.clone();
-            let table = &mut self.table;
-            let effect = crate::agenda_effects::resolve(
+            // With the game's own dice, table and map: several agendas roll, ask, or read
+            // the shape of the board, and one borrowed from nowhere would roll off a stream no
+            // seed covers. The speaker's tie-break (8.18) is asked through the same table.
+            let mut dice = std::mem::take(&mut self.dice);
+            let mut rng = self.rng.clone();
+            let galaxy = self.galaxy.clone();
+            let mut ctx = Resolving {
+                content: self.content,
+                sources: self.sources,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut self.table,
+            };
+            let effect = crate::agenda_effects::resolve_with(
                 &mut self.state,
-                self.content,
+                &mut ctx,
+                galaxy.as_ref(),
                 &alias,
                 &outcome,
                 window.ballot(),
-                |tied| {
-                    let options: Vec<ChoiceOption> = tied
-                        .iter()
-                        .map(|player| {
-                            ChoiceOption::labelled(player.to_string(), "elect", player.to_string())
-                        })
-                        .collect();
-                    let choice = Choice::new(
-                        speaker.clone(),
-                        "which tied player does the agenda name",
-                        options,
-                    );
-                    table
-                        .ask(&choice)
-                        .ok()
-                        .map(|answer| PlayerId::new(answer.id))
-                },
             );
+            self.dice = dice;
+            self.rng = rng;
+
             match effect {
                 crate::agenda_effects::Effect::Resolved { .. } => {
                     self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
