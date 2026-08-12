@@ -823,7 +823,7 @@ behaviour is a placeholder.
 |---|---|---|
 | M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, resolved-event, finished-outcome, and error projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
-| M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
+| M02 Content and model | Written | **In progress** — 001–003, 005, 007, 008, 009–012 done. 004, 006, 013–016 outstanding. |
 | M03 Choice, timing, replay | Written | **Partial** — 001–006 and 008–015 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice, event/timing resolver, frequency scopes, canonical hashes, direct timing differential, and generated timing properties). 007 remains blocked; 016 outstanding. |
 | M04 Game skeleton | Written | **Partial** — 001, 002, 003, 004, 006, 007 done. 005 (draft resolution), 008–016 outstanding. Setup now builds deterministic decks and deals setup cards. |
 | M05 … M13 | Written | **Not started** |

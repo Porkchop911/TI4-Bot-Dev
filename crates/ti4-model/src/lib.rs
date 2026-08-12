@@ -6,6 +6,7 @@
 pub mod content_types;
 pub mod hex;
 pub mod id;
+pub mod schema;
 pub mod state;
 pub mod units;
 pub mod view;
@@ -13,5 +14,6 @@ pub mod view;
 pub use content_types::*;
 pub use hex::Hex;
 pub use id::*;
+pub use schema::*;
 pub use state::*;
 pub use units::*;
