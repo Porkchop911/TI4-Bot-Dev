@@ -172,6 +172,8 @@ mod tests {
         assert_eq!(
             objectives.implemented,
             crate::objectives::registered_aliases().len()
+                + crate::objectives::bought_aliases().len(),
+            "achieved and bought objectives both count as covered"
         );
         assert!(
             objectives.missing() > 0,
