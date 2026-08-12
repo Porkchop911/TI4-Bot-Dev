@@ -539,6 +539,22 @@ are recorded in the package evidence; independent review remains owner-waived.
   says 3, and the alias I guessed (`usc`) does not exist. Both found by a test asserting every
   registered alias is a real card.
 
+## M06 batch checkpoint (authoritative)
+
+- **548 passing tests**; workspace clippy-clean under `-D warnings`; CI gate verified locally.
+- Six M06 packages landed in one stretch: secrets, leaders, action cards, the payment planner,
+  on top of technology, exploration and transactions earlier.
+- **The corpus corrected me twice more**, both caught by the guard test asserting every
+  registered alias is a real card: the space-dock secret wants 3 docks, not 4, and the war-sun
+  secret alias I guessed does not exist. That guard has now paid for itself in four registries.
+- Action cards dedup by **printed name, not alias** — a card printed four times has four
+  aliases, so keying on the alias offers the same card twice and makes a sampling decider
+  likelier to discard whichever it holds two of.
+- The payment planner enumerates *minimal* plans: a plan exhausting a planet it did not need is
+  the same payment plus waste, and offering it biases a sampler towards overpaying.
+- A missing `# Errors` doc slipped past into a commit and would have failed the new CI on its
+  first push. Caught and fixed in the following commit — the gate works.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -616,9 +632,10 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
-5. **M06 — general rules**: payment planner, action cards, leaders, reactions. Technology
-   (004/005), exploration and relic fragments (006, part of 007), transactions (002/003) and
-   secrets (010) are done.
+5. **M06 — general rules**: reactions (016), agenda effects/laws (014), relic effects, and the
+   per-card handlers behind exploration and action cards. Done: payment planner (001),
+   transactions (002/003), technology (004/005), exploration and fragments (006, part of 007),
+   action cards (008), secrets (010) and leaders (015).
 
 ## Decisions in force
 

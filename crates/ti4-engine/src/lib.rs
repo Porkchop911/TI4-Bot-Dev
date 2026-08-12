@@ -34,6 +34,7 @@ pub mod invasion;
 pub mod leaders;
 pub mod movement;
 pub mod objectives;
+pub mod payment;
 pub mod phase;
 pub mod production;
 pub mod rng;
