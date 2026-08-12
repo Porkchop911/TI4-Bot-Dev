@@ -141,9 +141,10 @@ $ cargo fmt --all      # clean
 
 ## Open findings
 
-1. **26 of 32 requirement predicates are unregistered**, so most revealed objectives cannot be
-   scored. This is the designed behaviour for a gap, not a silent failure, but it means a game
-   currently ends by exhausting the objective deck far more often than by anyone reaching ten.
+1. **18 of 32 requirement predicates are unregistered** after the second tranche, so many
+   revealed objectives still cannot be scored. This is the designed behaviour for a gap, not a
+   silent failure, but it means a game still ends by exhausting the objective deck more often
+   than by anyone reaching ten.
 2. **`GameState` does not record its source scope.** `Game` holds it instead. A state loaded
    from disk and driven without `with_sources` will score against the PoK catalogue whatever it
    was built from. This should move into the state model.
