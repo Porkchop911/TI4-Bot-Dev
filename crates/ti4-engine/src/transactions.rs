@@ -402,6 +402,16 @@ enum Stage {
 ///
 /// A counteroffer is the same structure seen from the other chair, so haggling needs no separate
 /// representation — it is the offer, mirrored, going back the other way.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut window = TradeWindow::open(proposer.clone(), partner.clone());
+/// while let Some(choice) = window.pending_choice(state, content, sources) {
+///     let answer = table.ask(&choice)?;
+///     window.resolve(state, ctx, answer)?;
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct TradeWindow {
     proposer: PlayerId,

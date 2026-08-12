@@ -202,6 +202,17 @@ pub struct Resolving<'a> {
 ///
 /// Completion is "no choice is owed" rather than a separate flag, so a window cannot report
 /// itself finished while still holding a question, or hold a question after it is done.
+///
+/// # Example
+///
+/// ```ignore
+/// // A window is created by a subsystem, filled with options, then stepped:
+/// let mut window = ProductionWindow::new(state, ctx.content, ctx.sources);
+/// while let Some(choice) = window.pending_choice(state, content, sources) {
+///     let answer = table.ask(&choice)?;
+///     window.resolve(state, ctx, answer)?;
+/// }
+/// ```
 pub trait Window {
     /// The decision currently owed, or `None` when the sequence is finished.
     fn pending_choice(
@@ -245,6 +256,20 @@ pub trait Window {
 /// Anything that can answer a [`Choice`].
 ///
 /// `&mut self` because a decider may carry state — a script position, an RNG stream.
+///
+/// # Example
+///
+/// ```
+/// use ti4_engine::choice::{Decider, Choice, ChoiceOption, IllegalChoice};
+///
+/// struct AlwaysDecline;
+///
+/// impl Decider for AlwaysDecline {
+///     fn choose(&mut self, _choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+///         Ok(ChoiceOption::decline())
+///     }
+/// }
+/// ```
 pub trait Decider {
     /// # Errors
     /// [`IllegalChoice`] if the decider cannot answer, e.g. an exhausted script whose next
@@ -421,6 +446,16 @@ impl DecisionLog {
 }
 
 /// Deciders by player, with a default for anyone unassigned.
+///
+/// # Example
+///
+/// ```
+/// use ti4_engine::choice::{Table, Decider, Scripted};
+/// use ti4_model::id::PlayerId;
+///
+/// let mut table = Table::with_default(Box::new(Scripted::new(vec![String::new()])));
+/// table.seat(PlayerId::new("a"), Box::new(Scripted::new(vec!["first".to_owned()])));
+/// ```
 pub struct Table {
     deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
     default: Box<dyn Decider>,

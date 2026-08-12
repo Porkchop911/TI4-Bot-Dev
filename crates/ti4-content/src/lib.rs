@@ -5,7 +5,7 @@
 //! their upstream field names; interpretation belongs to the rules code that consumes a
 //! category.
 //!
-//! ```no_run
+//! ```
 //! use ti4_content::ContentStore;
 //! use ti4_model::content_types::{ContentType, POK};
 //!

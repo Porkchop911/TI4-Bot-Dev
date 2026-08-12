@@ -1010,6 +1010,13 @@ fn satisfied(position: &Position<'_>, alias: &ObjectiveId) -> bool {
 }
 
 /// Revealed public objectives this player could score right now.
+///
+/// # Example
+///
+/// ```ignore
+/// let scoreable = objectives::scoreable(&state, content, sources, &player);
+/// // scoreable contains every objective whose requirement predicates hold.
+/// ```
 #[must_use]
 pub fn scoreable(
     state: &GameState,
