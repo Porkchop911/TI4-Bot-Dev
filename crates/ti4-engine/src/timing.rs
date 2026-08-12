@@ -316,12 +316,8 @@ impl Resolver {
         }
         self.emission_stack
             .push((event.event_type.clone(), event.id));
-        self.log.push(format!(
-            "emit {}#{} (depth {})",
-            event.event_type,
-            event.id,
-            self.emission_stack.len()
-        ));
+        self.log
+            .push(format!("emit {}#{}", event.event_type, event.id));
         let result = (|| {
             self.run_window(&mut event, Relation::When)?;
 
@@ -1194,6 +1190,34 @@ mod tests {
         assert_eq!(
             *fired.lock().unwrap(),
             ["unlimited", "unlimited", "unlimited"]
+        );
+    }
+
+    #[test]
+    fn oracle_emit_order_fixture_matches_line_for_line() {
+        // Generated from the pinned oracle on 2026-08-12 with PYTHONDONTWRITEBYTECODE=1:
+        // Resolver(initiative_order=["sol", "letnev"], active_player="sol") with AFTER
+        // registered before WHEN, then Event("E") emitted with a non-null no-op resolver.
+        let mut timing = resolver(&["sol", "letnev"], "sol");
+        timing.register([
+            ability("after", "E", Relation::After),
+            ability("when", "E", Relation::When),
+        ]);
+
+        let event = timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(event.id, 1);
+        assert!(!event.cancelled);
+        assert_eq!(
+            timing.log(),
+            [
+                "emit E#1",
+                "  [when] sol -> when",
+                "  resolve E#1",
+                "  [after] sol -> after",
+            ]
         );
     }
 }
