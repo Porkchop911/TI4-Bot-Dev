@@ -239,6 +239,8 @@ mod tests {
 
     use crate::source_trace::parse_source_trace_states;
     use serde_json::json;
+    use ti4_content::ContentStore;
+    use ti4_engine::{Game, GameError, IllegalChoice, Scripted, Table};
 
     use super::*;
 
@@ -289,6 +291,33 @@ mod tests {
             Err(PublicStateImportError::Unsupported(
                 "held strategy cards need omitted initiative metadata".to_owned()
             ))
+        );
+    }
+
+    #[test]
+    fn retained_source_script_stops_at_the_first_unimplemented_action_option() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/legacy_entropy/bounded-v1/trace-001.ndjson");
+        let trace = parse_source_trace_states(&fs::read_to_string(path).unwrap()).unwrap();
+        let state = import_initial_public_state(&trace.initial).unwrap();
+        let mut game = Game::with_table(
+            state,
+            ContentStore::embedded(),
+            Table::with_default(Box::new(Scripted::new(trace.trace.decisions))),
+        );
+
+        let error = (0..10)
+            .find_map(|_| game.step().error)
+            .expect("source script must not be silently accepted");
+        assert!(matches!(
+            error,
+            GameError::IllegalChoice(IllegalChoice::ScriptDiverged { ref wanted, .. })
+                if wanted == "component|expedition|secret"
+        ));
+        assert_eq!(
+            game.table.log.len(),
+            6,
+            "only the shared strategy picks applied"
         );
     }
 }

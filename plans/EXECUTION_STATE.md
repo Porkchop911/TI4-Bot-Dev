@@ -89,10 +89,12 @@ three times in one session and is worth re-deriving against the tree.
   public-state comparator. M04-015c2a now reconstructs every retained initial snapshot into an
   intentionally public-only native `GameState`, proving its public projection is exact while
   rejecting held strategy cards whose initiative metadata is absent from the source schema.
-  Opaque private-card placeholders make the state non-executable. M04-015c2b owns native
-  executable scenario construction, entropy/decision consumption, event projection, and selected
-  cross-engine comparison. M03-007c remains blocked until those later compatibility surfaces prove
-  semantic equality.
+  Opaque private-card placeholders make the state non-executable. M04-015c2b1 proves that the
+  native driver consumes exactly the shared six-card strategy prefix then refuses the trace's first
+  unsupported `component|expedition|secret` action; it neither skips nor accepts it. M04-015c2b2
+  owns native executable scenario construction, full entropy/decision consumption, event
+  projection, and selected cross-engine comparison. M03-007c remains blocked until those later
+  compatibility surfaces prove semantic equality.
 
 ## M04-005 package checkpoint (historical)
 
