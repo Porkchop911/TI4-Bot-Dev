@@ -4,7 +4,7 @@
 //!
 //! Small, and honest about it. It holds setup, the phase state machine, and turn order,
 //! ported from the oracle's `engine/game.py`. It does **not** yet hold movement, combat,
-//! production, legality checking, the status phase, or the agenda phase.
+//! production, legality checking, full status scoring/token choices, or the agenda phase.
 //!
 //! An earlier version of this crate had modules named for all of those. They were removed
 //! rather than adapted: `rules.rs` returned `Ok(true)` from all 23 of its validators,
@@ -24,6 +24,7 @@ pub mod phase;
 pub mod rng;
 pub mod seating;
 pub mod setup;
+pub mod status;
 pub mod strategy;
 
 pub use choice::{
@@ -41,6 +42,7 @@ pub use phase::{
 pub use rng::GameRng;
 pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
 pub use setup::{SetupError, cards_per_player, start_game, start_game_seeded, strategy_card_setup};
+pub use status::{StatusPhaseError, StatusPhaseReport, resolve_status_phase};
 pub use strategy::{
     ACTION_KIND, FOLLOW_SECONDARY_ID, STRATEGIC_ACTION_ID, STRATEGY_KIND, SecondaryResolution,
     StrategyActionError, StrategySecondaryError, StrategySecondaryWindow, begin_strategic_action,

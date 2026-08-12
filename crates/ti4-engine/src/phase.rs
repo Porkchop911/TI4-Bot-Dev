@@ -149,6 +149,8 @@ pub enum PhaseOutcome {
 ///   command token gain, repair, readying;
 /// * end of status phase — the agenda phase (LRR 8).
 ///
+/// `crate::status::resolve_status_phase` now supplies the choice-free bookkeeping. Its scoring
+/// and command-token allocation windows remain deliberately unwired until M04-012 owns them.
 /// Each returns a [`PhaseOutcome`] so a caller can see which step was reached rather than
 /// silently getting a phase flag flipped past unimplemented rules.
 pub fn advance_phase(state: &mut GameState) -> PhaseOutcome {

@@ -60,7 +60,7 @@ actually in the tree and how the two diverged.
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-009 package checkpoint (historical)
 
 - Branch: `wp/m04-009-generic-strategy-secondary`, based on M04-008 package commit `7c27b47`.
 - Last completed package: M04-009 — generic strategic-action secondary window
@@ -74,6 +74,24 @@ actually in the tree and how the two diverged.
 - Content-specific primary and secondary effects, other eligibility gates, event emission, and
   persistent game-step ownership of the window remain intentionally unimplemented.
 - M04-009 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-010-status-phase`, based on M04-009 package commit `3475d01`.
+- Last completed package: M04-010 — deterministic status-phase bookkeeping
+  (`plans/evidence/M04-010.md`).
+- Next dependency-ready package: M04-011 — agenda structural phase.
+- `ti4-engine` has 116 tests. The workspace has 306 passing tests: 121 `ti4-content`,
+  116 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- The status resolver reveals objectives, draws action cards in preserved initiative order,
+  returns board tokens, readies/repairs state, and resets strategy-card/pass bookkeeping. An
+  empty objective deck ends the game before later steps.
+- Status scoring and the per-token allocation choice are intentionally unimplemented; no default
+  allocation or automatic scoring is applied. M04-012 must own those generated decision windows
+  before integrating status resolution into the phase driver.
+- M04-010 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
