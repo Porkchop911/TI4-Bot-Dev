@@ -21,7 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-007b-bounded-corpus`
+- Branch: `wp/m03-007c-native-replay`
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
@@ -72,6 +72,15 @@ three times in one session and is worth re-deriving against the tree.
   recreated every captured byte stream before retained artifacts were written.
 - Next action: investigate M03-007c's native replay boundary against the current generic `Game`.
   M03-016 remains blocked on the unfinished M03-007 parent package and is not being bypassed.
+- M03-007c investigation is now blocked rather than merely pending. The 100 source traces require
+  Save 52/54 scenario/map construction, the full source state/event projection, compatible legal
+  option IDs, and dice-entropy injection. The native `Game` has none of those compatibility
+  surfaces: it accepts a prebuilt Rust state, uses its own ChaCha-derived dice stream, records
+  `Vec<String>` events, and does not expose a source-equivalent canonical projection. Implementing
+  a replay adapter would therefore either ignore source decisions/entropy or invent a parity claim.
+  The next safe work is the dependency package(s) that establish generic native game parity, but
+  strict milestone order currently places M04 after M03's unresolved exit gate. See
+  `plans/evidence/M03-007c.md` for the exact blocking evidence.
 
 ## M04-005 package checkpoint (historical)
 
