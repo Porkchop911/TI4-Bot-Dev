@@ -9,6 +9,13 @@ The previous version of this file claimed the migration was complete; see
 [`AUDIT_2026-08-11_PLAN_VS_TREE.md`](AUDIT_2026-08-11_PLAN_VS_TREE.md) for what was
 actually in the tree and how the two diverged.
 
+## Handover
+
+A session-end handover is at [`HANDOVER_2026-08-12.md`](HANDOVER_2026-08-12.md): current
+measured state, the three guards and how each was proven, the recurring failure modes, and what
+to pick up first. Read it before trusting the "Next actions" list below — that list went stale
+three times in one session and is worth re-deriving against the tree.
+
 ## Current position
 
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
