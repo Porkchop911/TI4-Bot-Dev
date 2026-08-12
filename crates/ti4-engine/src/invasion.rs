@@ -12,7 +12,7 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Table, Window};
 use crate::combat::MAX_ROUNDS;
 use crate::dice::Dice;
 use crate::rng::GameRng;
@@ -437,6 +437,334 @@ pub fn establish_control(
     captured
 }
 
+/// Where an open invasion has reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Stage {
+    /// Choosing which ground forces to land, and where (49.2).
+    Committing,
+    /// Fighting on `planets[index]`, having already resolved the earlier ones.
+    Fighting {
+        planets: Vec<PlanetId>,
+        index: usize,
+        defender: PlayerId,
+    },
+    Done,
+}
+
+/// An invasion, resolvable one decision at a time (LRR 49).
+///
+/// Bombardment happens when the window opens: it involves no choices, and 49.1 puts it before
+/// ground forces are committed, so deferring it would let a player commit knowing what a
+/// bombardment they had not yet suffered was going to do.
+#[derive(Debug, Clone)]
+pub struct InvasionWindow {
+    invader: PlayerId,
+    system: SystemId,
+    stage: Stage,
+    report: InvasionReport,
+}
+
+impl InvasionWindow {
+    /// Open an invasion, resolving bombardment immediately.
+    #[must_use]
+    pub fn new(
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        dice: &mut Dice,
+        rng: &mut GameRng,
+        invader: &PlayerId,
+        system: &SystemId,
+    ) -> Self {
+        let kills = bombardment(state, content, sources, dice, rng, system, invader);
+        Self {
+            invader: invader.clone(),
+            system: system.clone(),
+            stage: Stage::Committing,
+            report: InvasionReport {
+                bombardment_kills: kills,
+                ..InvasionReport::default()
+            },
+        }
+    }
+
+    /// What the invasion did.
+    #[must_use]
+    pub fn into_report(self) -> InvasionReport {
+        self.report
+    }
+
+    /// Ground forces still in the space area, and the planets they could land on.
+    fn landing_options(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Vec<ChoiceOption> {
+        let troops = landable(state, content, sources, &self.invader, &self.system);
+        if troops.is_empty() {
+            return Vec::new();
+        }
+        let planets: Vec<PlanetId> =
+            ti4_content::galaxy::planets_in(content, self.system.as_str(), sources)
+                .into_iter()
+                .map(|planet| PlanetId::new(planet.id()))
+                .collect();
+
+        // One option per (unit type, planet). Two identical infantry landing on the same planet
+        // are one decision written twice, and a sampling decider would land whichever type it
+        // happened to hold more of.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut options = Vec::new();
+        for (index, unit) in troops.iter().enumerate() {
+            for planet in &planets {
+                if !seen.insert((unit.type_id.to_string(), planet.to_string())) {
+                    continue;
+                }
+                options.push(ChoiceOption::labelled(
+                    format!("land|{index}|{planet}"),
+                    LAND_KIND,
+                    format!("land {} on {planet}", unit.type_id),
+                ));
+            }
+        }
+        options
+    }
+
+    /// Who is defending `planet`, if anyone.
+    fn defender_on(&self, state: &GameState, planet: &PlanetId) -> Option<PlayerId> {
+        state
+            .system_state(&self.system)
+            .on_planet(planet)
+            .iter()
+            .find(|unit| unit.owner != self.invader)
+            .map(|unit| unit.owner.clone())
+    }
+
+    /// Move to the next planet that still needs a fight, or finish and take control.
+    fn advance_fighting(
+        &mut self,
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        planets: &[PlanetId],
+        mut index: usize,
+    ) {
+        while index < planets.len() {
+            let planet = &planets[index];
+            let contested = self.defender_on(state, planet).filter(|_| {
+                !state
+                    .system_state(&self.system)
+                    .on_planet_of(planet, &self.invader)
+                    .is_empty()
+            });
+            if let Some(defender) = contested {
+                self.stage = Stage::Fighting {
+                    planets: planets.to_vec(),
+                    index,
+                    defender,
+                };
+                return;
+            }
+            index += 1;
+        }
+        self.report.captured = establish_control(
+            state,
+            content,
+            sources,
+            &self.system,
+            &self.invader,
+            &self.report.committed,
+        );
+        self.stage = Stage::Done;
+    }
+}
+
+impl Window for InvasionWindow {
+    fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        match &self.stage {
+            Stage::Done => None,
+            Stage::Committing => {
+                let mut options = self.landing_options(state, content, sources);
+                if options.is_empty() {
+                    return None;
+                }
+                options.push(ChoiceOption::decline());
+                Some(Choice::new(
+                    self.invader.clone(),
+                    "commit ground forces",
+                    options,
+                ))
+            }
+            Stage::Fighting {
+                planets,
+                index,
+                defender,
+            } => {
+                // One casualty decision at a time; the roll itself happens on resolve.
+                let planet = planets.get(*index)?;
+                let _ = defender;
+                let board = state.system_state(&self.system);
+                if board.on_planet_of(planet, &self.invader).is_empty() {
+                    return None;
+                }
+                Some(Choice::new(
+                    self.invader.clone(),
+                    format!("fight a round on {planet}"),
+                    vec![ChoiceOption::labelled(
+                        "fight",
+                        GROUND_CASUALTY_KIND,
+                        format!("fight a round on {planet}"),
+                    )],
+                ))
+            }
+        }
+    }
+
+    fn resolve(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        answer: ChoiceOption,
+    ) -> Result<(), IllegalChoice> {
+        let (content, sources) = (ctx.content, ctx.sources);
+        let Some(choice) = self.pending_choice(state, content, sources) else {
+            return Ok(());
+        };
+        let option = crate::choice::validate(&choice, answer)?;
+
+        match self.stage.clone() {
+            Stage::Done => {}
+            Stage::Committing => {
+                if option.is_decline() {
+                    let planets = self.report.committed.clone();
+                    if planets.is_empty() {
+                        self.stage = Stage::Done; // 49.2c: straight on to Production
+                    } else {
+                        self.advance_fighting(state, content, sources, &planets, 0);
+                    }
+                } else if let Some(rest) = option.id.strip_prefix("land|") {
+                    let mut parts = rest.splitn(2, '|');
+                    let (Some(index), Some(planet)) = (
+                        parts.next().and_then(|i| i.parse::<usize>().ok()),
+                        parts.next().map(PlanetId::new),
+                    ) else {
+                        return Ok(());
+                    };
+                    let troops = landable(state, content, sources, &self.invader, &self.system);
+                    if let Some(unit) = troops.get(index).cloned() {
+                        state
+                            .system_mut(&self.system)
+                            .remove(std::slice::from_ref(&unit));
+                        state
+                            .system_mut(&self.system)
+                            .planet_units
+                            .entry(planet.clone())
+                            .or_default()
+                            .push(unit);
+                        if !self.report.committed.contains(&planet) {
+                            self.report.committed.push(planet);
+                        }
+                    }
+                }
+            }
+            Stage::Fighting {
+                planets,
+                index,
+                defender,
+            } => {
+                // 42.2: hits are simultaneous, so both sides roll before either loses anything.
+                let planet = planets[index].clone();
+                let attacker_hits = roll_ground(
+                    state,
+                    content,
+                    sources,
+                    ctx.dice,
+                    ctx.rng,
+                    &self.invader,
+                    &self.system,
+                    &planet,
+                );
+                let defender_hits = roll_ground(
+                    state,
+                    content,
+                    sources,
+                    ctx.dice,
+                    ctx.rng,
+                    &defender,
+                    &self.system,
+                    &planet,
+                );
+                state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+                remove_ground(state, &self.system, &planet, &defender, attacker_hits);
+                remove_ground(state, &self.system, &planet, &self.invader, defender_hits);
+
+                let still_contested = !state
+                    .system_state(&self.system)
+                    .on_planet_of(&planet, &self.invader)
+                    .is_empty()
+                    && !state
+                        .system_state(&self.system)
+                        .on_planet_of(&planet, &defender)
+                        .is_empty();
+                if still_contested {
+                    self.stage = Stage::Fighting {
+                        planets,
+                        index,
+                        defender,
+                    };
+                } else {
+                    self.advance_fighting(state, content, sources, &planets, index + 1);
+                }
+            }
+        }
+
+        // Committing settles when nothing is left to land.
+        if matches!(self.stage, Stage::Committing)
+            && self.landing_options(state, content, sources).is_empty()
+        {
+            let planets = self.report.committed.clone();
+            if planets.is_empty() {
+                self.stage = Stage::Done;
+            } else {
+                self.advance_fighting(state, content, sources, &planets, 0);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Remove `hits` of a player's ground forces from a planet, weakest-first.
+///
+/// No choice is offered: every ground force on a planet is interchangeable in this model, so
+/// asking would be a decision between identical options.
+fn remove_ground(
+    state: &mut GameState,
+    system: &SystemId,
+    planet: &PlanetId,
+    player: &PlayerId,
+    hits: usize,
+) {
+    for _ in 0..hits {
+        let doomed = state
+            .system_state(system)
+            .on_planet_of(planet, player)
+            .first()
+            .map(|unit| (*unit).clone());
+        let Some(doomed) = doomed else {
+            return; // 15.2a
+        };
+        state
+            .system_mut(system)
+            .remove_from_planet(planet, std::slice::from_ref(&doomed));
+    }
+}
+
 /// Run a whole invasion for the active player (LRR 49).
 ///
 /// # Errors
@@ -455,23 +783,15 @@ pub fn resolve(
     system: &SystemId,
     invader: &PlayerId,
 ) -> Result<InvasionReport, IllegalChoice> {
-    let mut report = InvasionReport {
-        bombardment_kills: bombardment(state, content, sources, dice, rng, system, invader),
-        ..InvasionReport::default()
+    let mut window = InvasionWindow::new(state, content, sources, dice, rng, invader, system);
+    let mut ctx = Resolving {
+        content,
+        sources,
+        dice,
+        rng,
     };
-
-    report.committed = commit_ground_forces(state, content, sources, table, invader, system)?;
-    if report.committed.is_empty() {
-        return Ok(report); // 49.2c: straight on to Production
-    }
-    for planet in report.committed.clone() {
-        ground_combat(
-            state, content, sources, table, dice, rng, system, &planet, invader,
-        )?;
-    }
-    report.captured =
-        establish_control(state, content, sources, system, invader, &report.committed);
-    Ok(report)
+    window.drive(state, &mut ctx, table)?;
+    Ok(window.into_report())
 }
 
 #[cfg(test)]

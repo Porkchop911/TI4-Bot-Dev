@@ -521,11 +521,9 @@ behaviour is a placeholder.
 Rewritten against the tree as measured on 2026-08-12. The previous list named packages that
 had already shipped — it is worth re-deriving this rather than trusting it.
 
-1. **The `Window` trait — one of three converted.** The trait exists in `choice.rs` and
-   `ProductionWindow` implements it, so production is resumable and its 13 existing tests pass
-   unchanged. **Invasion and combat still ask inline** and are the remaining debt; invasion is
-   the easier of the two (bombardment has no choices, commit and ground combat are flat loops),
-   combat the harder (round → roll → sustain-per-hit → casualty-per-hit).
+1. **The `Window` trait — two of three converted.** Production and invasion implement it and
+   are resumable; both kept their existing tests unchanged. **Combat is the last one**, and the
+   hardest: round → roll → sustain-per-hit → casualty-per-hit.
 2. ~~M01-006 — CI.~~ Done: `.github/workflows/ci.yml` runs fmt, clippy (deny), tests, docs and
    the corpus checksums on Windows.
 3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.

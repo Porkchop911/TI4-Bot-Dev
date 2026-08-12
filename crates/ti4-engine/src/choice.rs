@@ -173,6 +173,20 @@ pub fn validate(choice: &Choice, option: ChoiceOption) -> Result<ChoiceOption, I
     })
 }
 
+/// What a window needs to resolve an answer: the corpus it reads against, and the pinned
+/// random source.
+///
+/// This exists because a window that rolls dice cannot be given a fresh generator per call —
+/// it would silently leave the game's seeded stream, and a replayed game would diverge with
+/// nothing reporting it. Bundling them also keeps [`Window::resolve`] to one shape whether the
+/// subsystem rolls anything or not.
+pub struct Resolving<'a> {
+    pub content: &'a ti4_content::ContentStore,
+    pub sources: ti4_model::content_types::SourceSet,
+    pub dice: &'a mut crate::dice::Dice,
+    pub rng: &'a mut crate::rng::GameRng,
+}
+
 /// A decision sequence the game driver can step one answer at a time.
 ///
 /// The engine had five hand-rolled versions of this shape before it was named — strategy
@@ -197,8 +211,7 @@ pub trait Window {
     fn resolve(
         &mut self,
         state: &mut ti4_model::state::GameState,
-        content: &ti4_content::ContentStore,
-        sources: ti4_model::content_types::SourceSet,
+        ctx: &mut Resolving<'_>,
         answer: ChoiceOption,
     ) -> Result<(), IllegalChoice>;
 
@@ -209,16 +222,15 @@ pub trait Window {
     fn drive(
         &mut self,
         state: &mut ti4_model::state::GameState,
-        content: &ti4_content::ContentStore,
-        sources: ti4_model::content_types::SourceSet,
+        ctx: &mut Resolving<'_>,
         table: &mut Table,
     ) -> Result<(), IllegalChoice>
     where
         Self: Sized,
     {
-        while let Some(choice) = self.pending_choice(state, content, sources) {
+        while let Some(choice) = self.pending_choice(state, ctx.content, ctx.sources) {
             let answer = table.ask(&choice)?;
-            self.resolve(state, content, sources, answer)?;
+            self.resolve(state, ctx, answer)?;
         }
         Ok(())
     }

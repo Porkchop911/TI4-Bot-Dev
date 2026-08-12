@@ -12,7 +12,7 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId, UnitTypeId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table, Window};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Table, Window};
 
 /// The two things a planet card can be exhausted for (LRR 75.2, 47).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -564,10 +564,10 @@ impl Window for ProductionWindow {
     fn resolve(
         &mut self,
         state: &mut GameState,
-        content: &ContentStore,
-        sources: SourceSet,
+        ctx: &mut Resolving<'_>,
         answer: ChoiceOption,
     ) -> Result<(), IllegalChoice> {
+        let (content, sources) = (ctx.content, ctx.sources);
         let Some(choice) = self.pending_choice(state, content, sources) else {
             return Ok(());
         };
@@ -676,7 +676,18 @@ pub fn resolve(
     system: &SystemId,
 ) -> Result<ProductionReport, IllegalChoice> {
     let mut window = ProductionWindow::new(state, content, sources, player, system);
-    window.drive(state, content, sources, table)?;
+    // Production rolls nothing, so these are never drawn from. Kept explicit rather than
+    // hidden behind an Option: if a future rule does roll here, it must be handed the game's
+    // generator instead of finding a convenient throwaway already in scope.
+    let mut dice = crate::dice::Dice::new();
+    let mut rng = crate::rng::GameRng::new(0);
+    let mut ctx = Resolving {
+        content,
+        sources,
+        dice: &mut dice,
+        rng: &mut rng,
+    };
+    window.drive(state, &mut ctx, table)?;
     Ok(window.into_report())
 }
 
@@ -947,9 +958,15 @@ mod tests {
             assert!(snapshot.identical(&state));
 
             let answer = table.ask(&choice).unwrap();
-            window
-                .resolve(&mut state, ContentStore::embedded(), POK, answer)
-                .unwrap();
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut ctx = Resolving {
+                content: ContentStore::embedded(),
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+            };
+            window.resolve(&mut state, &mut ctx, answer).unwrap();
             decisions += 1;
             assert!(decisions < 50, "production should terminate");
         }
