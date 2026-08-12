@@ -337,8 +337,10 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Branch: `wp/m00-014-integrity-guard`, continuing from `f25435b`.
 - Last completed package: M05-004 — driving the tactical action
   (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
-- `ti4-engine` has 230 tests. The workspace has **420 passing tests**: 121 `ti4-content`,
-  230 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- `ti4-engine` has 235 tests. The workspace has **425 passing tests**: 121 `ti4-content`,
+  235 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- A second objective-predicate tranche landed alongside: technology and structures, taking
+  coverage from 6 of the oracle's 32 to 14.
 - **A driven game can now take a tactical action**: activate, move ships one at a time, load
   each hold, roll the route's rifts, finish.
 - The action is offered only when `Game` has a galaxy. Nothing else builds one, so no existing

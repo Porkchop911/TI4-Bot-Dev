@@ -38,8 +38,7 @@ the functions:
 > coverage gaps show up as an objective nobody can take rather than as a bot quietly winning on
 > a rule that was never written.
 
-So this package registers a **first tranche** — the planet-control family, which is everything
-the state and content layers currently support:
+This package registered a **first tranche** — the planet-control family:
 
 | Alias | Requirement |
 |---|---|
@@ -50,7 +49,23 @@ the state and content layers currently support:
 | `research_outposts` | control 3 planets with technology specialties |
 | `brain_trust` | control 5 planets with technology specialties |
 
-The oracle registers 32. **The other 26 are deliberately absent and therefore unscoreable.**
+A **second tranche** followed in the same branch, covering technology and structures:
+
+| Alias | Requirement |
+|---|---|
+| `develop` / `revolutionize` | own 2 / 3 unit-upgrade technologies |
+| `diversify` / `master_science` | own 2 technologies in each of 2 / 4 colours |
+| `build_defenses` / `massive_cities` | have 4 / 7 structures |
+| `infrastructure` / `protect_border` | have structures on 3 / 5 planets outside your home system |
+
+90.7b says unit upgrades have no colour, so they are counted separately rather than as one more
+colour — `unit_upgrades_are_not_counted_as_a_colour` gives a player six upgrades and asserts
+Diversify stays unscoreable, because otherwise a stack sharing no research track would score it.
+`a_ship_in_space_is_not_a_structure` guards the other direction: structures sit on planets, and
+counting hulls would make Build Defenses scoreable off a fleet.
+
+The oracle registers 32; **14 are now covered, and the other 18 are deliberately absent and
+therefore unscoreable.**
 `unregistered_objectives()` reports which revealed objectives no predicate covers, so the gap is
 queryable rather than buried — and two tests pin the tranche itself: every listed alias resolves
 to a predicate, and every listed alias is a real objective in the corpus (a predicate registered

@@ -73,6 +73,49 @@ impl<'a> Position<'a> {
     fn controlled(&self) -> &[Planet<'a>] {
         &self.controlled
     }
+
+    /// How many technologies this player owns carrying a given corpus type.
+    fn technology_types(&self, wanted: &str) -> usize {
+        let Some(seat) = self.state.player(self.player) else {
+            return 0;
+        };
+        seat.technologies
+            .iter()
+            .filter(|alias| {
+                self.content
+                    .get(ContentType::Technologies, alias.as_str())
+                    .is_some_and(|record| record.strings("types").contains(&wanted))
+            })
+            .count()
+    }
+
+    /// Every structure this player has, as (system, planet).
+    fn structures(&self) -> Vec<(String, String)> {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        let mut found = Vec::new();
+        for (system_id, system) in &self.state.board {
+            for (planet, units) in &system.planet_units {
+                for unit in units {
+                    if &unit.owner == self.player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_structure)
+                    {
+                        found.push((system_id.to_string(), planet.to_string()));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// This player's home system, if their faction names one.
+    fn home_system(&self) -> Option<String> {
+        let seat = self.state.player(self.player)?;
+        ti4_content::factions::get(self.content, seat.faction.as_str())
+            .and_then(|faction| faction.home_system())
+            .map(ToOwned::to_owned)
+    }
 }
 
 /// Control `count` planets in non-home systems.
@@ -112,10 +155,52 @@ fn tech_specialties(count: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// Own `count` unit-upgrade technologies.
+fn unit_upgrades(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| position.technology_types("UNITUPGRADE") >= count
+}
+
+/// Own `per_colour` technologies in each of `colours` colours.
+///
+/// Unit upgrades have no colour (90.7b), which is why they are counted separately above rather
+/// than being one more entry in this tally.
+fn colours(per_colour: usize, colours: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        COLOURS
+            .iter()
+            .filter(|colour| position.technology_types(colour) >= per_colour)
+            .count()
+            >= colours
+    }
+}
+
+/// The four technology colours. `UNITUPGRADE` and `NONE` are deliberately absent.
+const COLOURS: [&str; 4] = ["BIOTIC", "CYBERNETIC", "PROPULSION", "WARFARE"];
+
+/// Have `count` or more structures.
+fn structure_count(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| position.structures().len() >= count
+}
+
+/// Have structures on `planets` planets outside your home system.
+fn structures_away(planets: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let home = position.home_system();
+        position
+            .structures()
+            .into_iter()
+            .filter(|(system, _)| Some(system.as_str()) != home.as_deref())
+            .map(|(_, planet)| planet)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            >= planets
+    }
+}
+
 /// The registered requirements, by objective alias.
 ///
-/// This is a **first tranche**: the planet-control family, which is everything the state and
-/// content layers currently support. The oracle registers 32. The rest stay unregistered and
+/// Two tranches so far: the planet-control family, and the technology/structure family. The
+/// oracle registers 32; 14 are covered here. The rest stay unregistered and
 /// therefore unscoreable, which is the designed behaviour for a coverage gap — see the module
 /// documentation. [`unregistered_objectives`] reports which they are.
 #[must_use]
@@ -140,6 +225,30 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     fn brain_trust(p: &Position<'_>) -> bool {
         tech_specialties(5)(p)
     }
+    fn develop(p: &Position<'_>) -> bool {
+        unit_upgrades(2)(p)
+    }
+    fn revolutionize(p: &Position<'_>) -> bool {
+        unit_upgrades(3)(p)
+    }
+    fn diversify(p: &Position<'_>) -> bool {
+        colours(2, 2)(p)
+    }
+    fn master_science(p: &Position<'_>) -> bool {
+        colours(2, 4)(p)
+    }
+    fn build_defenses(p: &Position<'_>) -> bool {
+        structure_count(4)(p)
+    }
+    fn massive_cities(p: &Position<'_>) -> bool {
+        structure_count(7)(p)
+    }
+    fn infrastructure(p: &Position<'_>) -> bool {
+        structures_away(3)(p)
+    }
+    fn protect_border(p: &Position<'_>) -> bool {
+        structures_away(5)(p)
+    }
 
     match alias.as_str() {
         "expand_borders" => Some(expand_borders),
@@ -148,6 +257,14 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
         "unify_colonies" => Some(unify_colonies),
         "research_outposts" => Some(research_outposts),
         "brain_trust" => Some(brain_trust),
+        "develop" => Some(develop),
+        "revolutionize" => Some(revolutionize),
+        "diversify" => Some(diversify),
+        "master_science" => Some(master_science),
+        "build_defenses" => Some(build_defenses),
+        "massive_cities" => Some(massive_cities),
+        "infrastructure" => Some(infrastructure),
+        "protect_border" => Some(protect_border),
         _ => None,
     }
 }
@@ -157,9 +274,17 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
         "brain_trust",
+        "build_defenses",
         "corner",
+        "develop",
+        "diversify",
         "expand_borders",
+        "infrastructure",
+        "massive_cities",
+        "master_science",
+        "protect_border",
         "research_outposts",
+        "revolutionize",
         "subdue",
         "unify_colonies",
     ]
@@ -527,6 +652,139 @@ mod tests {
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
             vec![ObjectiveId::new("expand_borders")]
         );
+    }
+
+    /// Aliases of technologies carrying a given corpus type.
+    fn technologies_of_type(kind: &str, count: usize) -> Vec<String> {
+        ContentStore::embedded()
+            .records(ContentType::Technologies)
+            .iter()
+            .filter(|record| record.strings("types").contains(&kind))
+            .filter_map(|record| record.text("alias"))
+            .map(ToOwned::to_owned)
+            .take(count)
+            .collect()
+    }
+
+    fn give_technologies(state: &mut GameState, player: &str, aliases: &[String]) {
+        let seat = state.player_mut(&PlayerId::new(player)).unwrap();
+        for alias in aliases {
+            seat.technologies
+                .insert(ti4_model::id::TechnologyId::new(alias.clone()));
+        }
+    }
+
+    #[test]
+    fn develop_counts_unit_upgrade_technologies() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("develop")];
+
+        let upgrades = technologies_of_type("UNITUPGRADE", 2);
+        assert_eq!(upgrades.len(), 2, "the corpus has unit upgrades");
+
+        give_technologies(&mut state, "a", &upgrades[..1]);
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "one upgrade is not two"
+        );
+
+        give_technologies(&mut state, "a", &upgrades);
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("develop")]
+        );
+    }
+
+    #[test]
+    fn unit_upgrades_are_not_counted_as_a_colour() {
+        // 90.7b: unit upgrades have no colour. Counting them as one would make Diversify
+        // scoreable off a stack of upgrades that share no research track at all.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("diversify")];
+        give_technologies(&mut state, "a", &technologies_of_type("UNITUPGRADE", 6));
+
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "six upgrades are still no colours"
+        );
+    }
+
+    #[test]
+    fn diversify_needs_two_technologies_in_each_of_two_colours() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("diversify")];
+
+        give_technologies(&mut state, "a", &technologies_of_type("BIOTIC", 2));
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "one colour is not two"
+        );
+
+        give_technologies(&mut state, "a", &technologies_of_type("WARFARE", 2));
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("diversify")]
+        );
+    }
+
+    #[test]
+    fn build_defenses_counts_structures_on_planets() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("build_defenses")];
+
+        let planets = non_home_planets(4);
+        for (index, planet) in planets.iter().enumerate() {
+            let catalogue = all_planets(ContentStore::embedded(), POK);
+            let system = catalogue
+                .get(planet.as_str())
+                .and_then(ti4_content::galaxy::Planet::system_id)
+                .unwrap_or("18");
+            state
+                .system_mut(&SystemId::new(system))
+                .planet_units
+                .entry(PlanetId::new(planet.clone()))
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("spacedock"),
+                    PlayerId::new("a"),
+                ));
+            if index == 2 {
+                assert!(
+                    scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a"))
+                        .is_empty(),
+                    "three structures is not four"
+                );
+            }
+        }
+
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("build_defenses")]
+        );
+    }
+
+    #[test]
+    fn a_ship_in_space_is_not_a_structure() {
+        // Structures sit on planets. Counting hulls would make Build Defenses scoreable from
+        // a fleet, which is the opposite of what the card asks for.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("build_defenses")];
+        for _ in 0..8 {
+            state
+                .system_mut(&SystemId::new("18"))
+                .units
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("dreadnought"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
     }
 
     #[test]
