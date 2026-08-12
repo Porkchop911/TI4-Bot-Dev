@@ -19,7 +19,7 @@ sys.path.insert(0, str(ORACLE_ROOT))
 from engine.game import start_game  # noqa: E402
 from engine.state import SystemState  # noqa: E402
 from engine.units import Unit  # noqa: E402
-from oracle_exporter import state_projection, view_projection  # noqa: E402
+from oracle_exporter import choice_projection, state_projection, view_projection  # noqa: E402
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -95,6 +95,38 @@ class StateProjectionTests(unittest.TestCase):
             json.dumps(first, separators=(",", ":"), ensure_ascii=True),
             json.dumps(second, separators=(",", ":"), ensure_ascii=True),
         )
+
+    def test_choice_projection_preserves_option_order_and_canonicalizes_payload_maps(self) -> None:
+        from engine.choice import Choice, Option
+
+        choice = Choice(
+            "sol",
+            "choose a tactical action",
+            (
+                Option("second", "action", "second option", {"z": 2, "a": ("x", {"b": 1, "a": 0})}),
+                Option("first", "decline", "decline", {"count": 1}),
+            ),
+        )
+
+        projection = choice_projection(choice)
+
+        self.assertEqual([option["id"] for option in projection["options"]], ["second", "first"])
+        self.assertEqual(
+            projection["options"][0]["payload"],
+            {"a": ["x", {"a": 0, "b": 1}], "z": 2},
+        )
+
+    def test_choice_projection_is_byte_identical_and_rejects_unserializable_payloads(self) -> None:
+        from engine.choice import Choice, Option
+
+        choice = Choice("sol", "pick", (Option("x", "action", payload={"b": 2, "a": 1}),))
+        first = json.dumps(choice_projection(choice), separators=(",", ":"), ensure_ascii=True)
+        second = json.dumps(choice_projection(choice), separators=(",", ":"), ensure_ascii=True)
+        self.assertEqual(first, second)
+
+        invalid = Choice("sol", "pick", (Option("x", "action", payload={"bad": object()}),))
+        with self.assertRaises(TypeError):
+            choice_projection(invalid)
 
 
 if __name__ == "__main__":
