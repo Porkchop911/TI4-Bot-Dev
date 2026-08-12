@@ -50,6 +50,7 @@ pub mod setup;
 pub mod status;
 pub mod strategy;
 pub mod strategy_cards;
+pub mod supply;
 pub mod tactical;
 pub mod technology;
 pub mod timing;

@@ -280,15 +280,16 @@ fn place_infantry(
     else {
         return;
     };
+    let type_id = ti4_model::id::UnitTypeId::new(id);
+    if crate::supply::allowed(state, content, sources, player, &type_id, 1) == 0 {
+        return; // 31.4, through the one door
+    }
     state
         .system_mut(system)
         .planet_units
         .entry(planet.clone())
         .or_default()
-        .push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new(id),
-            player.clone(),
-        ));
+        .push(ti4_model::units::Unit::new(type_id, player.clone()));
 }
 
 /// Whether this player owns a technology whose name mentions a war sun.

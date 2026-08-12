@@ -147,6 +147,11 @@ fn place_on_planet(
         return false;
     };
     let type_id = ti4_model::id::UnitTypeId::new(id);
+    // 31.4, through the one door: a mech is plastic and may have none left, while infantry is
+    // cardboard and always passes.
+    if crate::supply::allowed(state, content, sources, player, &type_id, 1) == 0 {
+        return false;
+    }
     state
         .system_mut(&system)
         .planet_units

@@ -443,6 +443,19 @@ impl ProductionWindow {
             if placements(state, content, sources, &self.player, &self.system, kind).is_empty() {
                 continue;
             }
+            // 31.4: a unit with no plastic left in the box is not offered. Offering it would let
+            // a player spend resources on something that cannot be placed.
+            if crate::supply::allowed(
+                state,
+                content,
+                sources,
+                &self.player,
+                &UnitTypeId::new(id.clone()),
+                1,
+            ) == 0
+            {
+                continue;
+            }
             options.push(
                 ChoiceOption::labelled(
                     format!("produce|{id}"),
@@ -456,8 +469,28 @@ impl ProductionWindow {
         options
     }
 
-    /// Put `made` copies of a unit into a placement.
-    fn place(&mut self, state: &mut GameState, id: &str, where_to: &str, made: usize) {
+    /// Put `made` copies of a unit into a placement, up to what the box still holds.
+    ///
+    /// 31.4 is applied here rather than only at the offer, because a two-for-one may be offered
+    /// with one model left: producing two fighters is fine, producing two carriers when one
+    /// remains is not.
+    fn place(
+        &mut self,
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        id: &str,
+        where_to: &str,
+        made: usize,
+    ) {
+        let made = crate::supply::allowed(
+            state,
+            content,
+            sources,
+            &self.player,
+            &UnitTypeId::new(id),
+            made,
+        );
         for _ in 0..made {
             let unit = Unit::new(UnitTypeId::new(id), self.player.clone());
             if where_to == SPACE {
@@ -614,7 +647,7 @@ impl Window for ProductionWindow {
             }
             Stage::Placing { id, made } => {
                 let where_to = option.id.strip_prefix("place|").unwrap_or(SPACE).to_owned();
-                self.place(state, &id, &where_to, made);
+                self.place(state, content, sources, &id, &where_to, made);
                 self.stage = Stage::Choosing;
             }
         }
@@ -640,7 +673,7 @@ impl ProductionWindow {
                     match spots.as_slice() {
                         [only] => {
                             let only = only.clone();
-                            self.place(state, &id, &only, made);
+                            self.place(state, content, sources, &id, &only, made);
                             self.stage = Stage::Choosing;
                         }
                         [] => {
@@ -830,6 +863,44 @@ mod tests {
         let made = producers(&state, ContentStore::embedded(), POK, &player(), &system);
         assert_eq!(made.len(), 1);
         assert_eq!(made[0].1, Some(planet));
+    }
+
+    #[test]
+    fn a_unit_with_no_plastic_left_is_not_offered() {
+        // 31.4, where it actually binds. A batch of random games never builds enough to reach a
+        // cap, so a test that only watches games pass would hold whether or not the rule exists —
+        // and this one did, until it was written against the offer instead.
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.player_mut(&player()).unwrap().trade_goods = 50;
+
+        let carriers_offered = |state: &GameState| {
+            crate::choice::Window::pending_choice(
+                &ProductionWindow::new(state, ContentStore::embedded(), POK, &player(), &system),
+                state,
+                ContentStore::embedded(),
+                POK,
+            )
+            .map_or(0, |choice| {
+                choice
+                    .options
+                    .iter()
+                    .filter(|option| option.id.contains("carrier"))
+                    .count()
+            })
+        };
+
+        assert!(carriers_offered(&state) > 0, "a carrier can be built");
+
+        put(&mut state, &system, "carrier", &player(), 4);
+        assert_eq!(
+            carriers_offered(&state),
+            0,
+            "four carriers are every carrier in the box"
+        );
     }
 
     #[test]

@@ -525,3 +525,56 @@ fn the_driver_still_offers_component_action_cards() {
         "choosing one no longer plays it"
     );
 }
+
+#[test]
+fn a_batch_of_games_never_fields_more_plastic_than_the_box_holds() {
+    // 31.4. Its absence is invisible to scoring analysis — every bot obeys its scoring perfectly
+    // while doing something impossible — and was found in the oracle only when a player looked
+    // at a screenshot: "sol has 5 carriers and there are only 4 available per player".
+    let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+    for seed in 0..6 {
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed);
+        let hub = plain_hub();
+        game = game.with_galaxy(hub.galaxy.clone());
+        let _ = game.run(6, 200_000);
+
+        for player in &players {
+            for base in [
+                "flagship",
+                "warsun",
+                "dreadnought",
+                "cruiser",
+                "destroyer",
+                "carrier",
+                "mech",
+                "pds",
+                "spacedock",
+            ] {
+                let held =
+                    crate::supply::held(&game.state, ContentStore::embedded(), POK, player, base);
+                let limit = crate::supply::plastic(base).unwrap_or(i64::MAX);
+                assert!(
+                    held <= limit,
+                    "seed {seed}: {player} fielded {held} {base} against {limit} in the box"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn every_placement_path_still_asks_the_supply() {
+    // One door. A path that pushes a unit without asking gets the cap wrong by omission, which
+    // is how the rule was missing everywhere for the whole of the oracle's life.
+    for (module, source) in [
+        ("production", include_str!("production.rs")),
+        ("exploration", include_str!("exploration.rs")),
+        ("agenda_effects", include_str!("agenda_effects.rs")),
+    ] {
+        assert!(
+            source.contains("crate::supply::allowed"),
+            "{module} places units without asking what is left in the box"
+        );
+    }
+}
