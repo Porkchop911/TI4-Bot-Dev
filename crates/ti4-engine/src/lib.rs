@@ -23,6 +23,7 @@ pub mod deck;
 pub mod dice;
 pub mod draft;
 pub mod game;
+pub mod movement;
 pub mod objectives;
 pub mod phase;
 pub mod rng;
