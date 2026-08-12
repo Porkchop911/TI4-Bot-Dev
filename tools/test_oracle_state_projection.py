@@ -19,7 +19,13 @@ sys.path.insert(0, str(ORACLE_ROOT))
 from engine.game import start_game  # noqa: E402
 from engine.state import SystemState  # noqa: E402
 from engine.units import Unit  # noqa: E402
-from oracle_exporter import event_projection, choice_projection, state_projection, view_projection  # noqa: E402
+from oracle_exporter import (
+    choice_projection,
+    event_projection,
+    outcome_projection,
+    state_projection,
+    view_projection,
+)  # noqa: E402
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -156,6 +162,33 @@ class StateProjectionTests(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             event_projection(Event("E", {"bad": object()}, uid=4), state)
+
+    def test_outcome_projection_requires_a_finished_game_and_uses_initiative_tie_breaking(self) -> None:
+        from engine.game import Game
+
+        game = Game(start_game(("second", "first")))
+        with self.assertRaises(ValueError):
+            outcome_projection(game.state, "victory_points")
+
+        game.state = game.state.with_player("second", victory_points=10)
+        game.state = game.state.with_player("first", victory_points=10).with_(finished=True)
+        projection = outcome_projection(game.state, "victory_points")
+
+        self.assertTrue(projection["game_over"])
+        self.assertEqual(projection["winner"], "second")
+        self.assertEqual(projection["victory_points"], {"first": 10, "second": 10})
+        self.assertEqual(projection["reason"], "victory_points")
+
+    def test_outcome_projection_is_byte_identical(self) -> None:
+        first_state = start_game(("p1", "p2")).with_player("p1", victory_points=10).with_(finished=True)
+        second_state = start_game(("p1", "p2")).with_player("p1", victory_points=10).with_(finished=True)
+
+        first = outcome_projection(first_state, "victory_points")
+        second = outcome_projection(second_state, "victory_points")
+        self.assertEqual(
+            json.dumps(first, separators=(",", ":"), ensure_ascii=True),
+            json.dumps(second, separators=(",", ":"), ensure_ascii=True),
+        )
 
 
 if __name__ == "__main__":
