@@ -43,9 +43,12 @@ three times in one session and is worth re-deriving against the tree.
   benchmark script cannot produce M00-012's raw monotonic paired report; the Rust benchmark is
   still `todo!()` and no semantic parity corpus qualifies a comparison. See
   `plans/evidence/M00-013.md`. No diagnostic number is accepted as a baseline.
-- Next independent dependency-ready package: **M06-016 — generic reactions**. Its M06-008 and
-  M06-015 dependencies are implemented, and it is required before M05-010b can register card
-  and faction sources for the combat markers.
+- **M06-016 is blocked pending M03-008 through M03-012.** The required typed event/timing
+  resolver does not exist; string event labels are not a safe substitute. See
+  `plans/evidence/M06-016.md`.
+- Next independent dependency-ready package: **M03-008 — typed event model**. It has only its
+  M02 dependency and unblocks the real timing/ability chain without bypassing M03-007's separate
+  legacy-entropy corpus blocker.
 
 ## M04-005 package checkpoint (historical)
 
