@@ -169,16 +169,20 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m04-015-differential-phase`, based on M04-014 package commit `cfb2f2b`.
-- Active package: M04-015 — differential phase suite (**BLOCKED**)
-  (`plans/evidence/M04-015.md`).
-- Blocker: M00-009's required read-only oracle exporter and M00-008 selected fixture corpus do not
-  exist. Without canonical oracle projections, no selected Python/Rust state, choice, event, or
-  error trace can be compared and no differential parity claim is valid.
-- No M04-015 source, test, or fixture was added; substituting Rust-only source-inspection tests
-  would weaken the required differential acceptance criterion.
-- Next safe action: implement M00-008/009's fixture selection and versioned, byte-stable, read-only
-  projection exporter, then resume M04-015.
+- Branch: `wp/m00-009b-state-exporter`, HEAD `9f55db0`.
+- Last completed package: M00-009b — executable state projection
+  (`plans/evidence/M00-009b.md`).
+- M00-008 fixture-selection and M00-009 design documents exist, but they were documentation-only.
+  This package adds the first executable exporter component: deterministic public-state projection.
+- The projection's focused test passes twice with byte-identical compact JSON; oracle HEAD remains
+  `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
+- The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
+  actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
+- M04-015 remains blocked: no CLI/NDJSON exporter, selected generated corpus, choice/event/outcome/
+  error projections, or cross-engine comparison exists.
+- Next dependency-ready package: M00-009c — executable redacted view projection. Alternatively,
+  a narrowly scoped exporter-wiring package may expose the validated state projection through a
+  read-only CLI before adding later projection kinds.
 
 ## Implementation status
 
@@ -202,7 +206,7 @@ behaviour is a placeholder.
 
 | Milestone | Planning | Implementation |
 |---|---|---|
-| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed. No oracle exporter, no fixtures, no differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
+| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state projection is executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
 | M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
 | M03 Choice, timing, replay | Written | **Partial** — 001–006 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice). 007–016 outstanding. |
@@ -221,9 +225,11 @@ behaviour is a placeholder.
 
 ## Open blockers and findings
 
-1. **No oracle exporter exists.** `plans/M00-009_ORACLE_EXPORTER.md` was documented, never
-   built. Until it is, no differential parity claim can be made, and M03-014, M04-015,
-   M05-021, M06-018 and all of M12 are unimplementable. This is the single largest gap.
+1. **The oracle exporter is incomplete.** M00-009b now provides a tested state projection, but no
+   CLI/NDJSON stream, fixture manifest, views, choices, events, outcomes, error projections, or
+   reproducibility campaign exists. Until those are complete, no differential parity claim can be
+   made, and M03-014, M04-015, M05-021, M06-018 and all of M12 remain unimplementable. This is the
+   single largest gap.
 2. ~~No independent review of any code package.~~ Waived by the project owner
    (2026-08-11). Recorded here so the standard and the practice do not silently disagree.
 3. **No CI.** M01-006/007/008/009 are marked complete but nothing runs on a push.
