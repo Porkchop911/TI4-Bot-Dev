@@ -122,14 +122,13 @@ impl AftermathWindow {
     fn new(
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
-        table: &mut Table,
         player: &PlayerId,
         system: &SystemId,
         galaxy: Option<&Galaxy>,
     ) -> Result<Self, GameError> {
         // Movement may take the only carrier out of a system and strand what it was holding, so
         // capacity is settled before anything shoots.
-        crate::fleet::enforce(state, ctx.content, ctx.sources, table, player, system)
+        crate::fleet::enforce(state, ctx.content, ctx.sources, ctx.table, player, system)
             .map_err(GameError::IllegalChoice)?;
 
         // Fired by everyone except the active player, before combat.
@@ -147,7 +146,7 @@ impl AftermathWindow {
                 state,
                 ctx.content,
                 ctx.sources,
-                table,
+                ctx.table,
                 player,
                 system,
                 hits,
@@ -821,16 +820,11 @@ impl<'a> Game<'a> {
             sources: self.sources,
             dice: &mut dice,
             rng: &mut rng,
+            table: &mut self.table,
         };
         let galaxy = self.galaxy.clone();
-        let opened = AftermathWindow::new(
-            &mut self.state,
-            &mut ctx,
-            &mut self.table,
-            &player,
-            &system,
-            galaxy.as_ref(),
-        );
+        let opened =
+            AftermathWindow::new(&mut self.state, &mut ctx, &player, &system, galaxy.as_ref());
         let mut window = match opened {
             Ok(mut window) => {
                 window.settle(&mut self.state, &mut ctx);
@@ -877,6 +871,7 @@ impl<'a> Game<'a> {
             sources: self.sources,
             dice: &mut dice,
             rng: &mut rng,
+            table: &mut self.table,
         };
         let outcome = window.resolve(&mut self.state, &mut ctx, answer);
         self.dice = dice;

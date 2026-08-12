@@ -185,6 +185,13 @@ pub struct Resolving<'a> {
     pub sources: ti4_model::content_types::SourceSet,
     pub dice: &'a mut crate::dice::Dice,
     pub rng: &'a mut crate::rng::GameRng,
+    /// Who answers questions raised *while* resolving.
+    ///
+    /// A window's own decisions come through [`Window::drive`], but resolving one can raise
+    /// another: exploring a planet taken in an invasion draws a card that must be kept or
+    /// discarded. Without the table here those follow-ups had to be decided by the engine on
+    /// the player's behalf, which is a decision made silently rather than asked.
+    pub table: &'a mut Table,
 }
 
 /// A decision sequence the game driver can step one answer at a time.
@@ -223,13 +230,12 @@ pub trait Window {
         &mut self,
         state: &mut ti4_model::state::GameState,
         ctx: &mut Resolving<'_>,
-        table: &mut Table,
     ) -> Result<(), IllegalChoice>
     where
         Self: Sized,
     {
         while let Some(choice) = self.pending_choice(state, ctx.content, ctx.sources) {
-            let answer = table.ask(&choice)?;
+            let answer = ctx.table.ask(&choice)?;
             self.resolve(state, ctx, answer)?;
         }
         Ok(())

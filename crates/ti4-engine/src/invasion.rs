@@ -547,11 +547,11 @@ impl InvasionWindow {
     fn advance_fighting(
         &mut self,
         state: &mut GameState,
-        content: &ContentStore,
-        sources: SourceSet,
+        ctx: &mut Resolving<'_>,
         planets: &[PlanetId],
         mut index: usize,
     ) {
+        let (content, sources) = (ctx.content, ctx.sources);
         while index < planets.len() {
             let planet = &planets[index];
             let contested = self.defender_on(state, planet).filter(|_| {
@@ -589,8 +589,10 @@ impl InvasionWindow {
             let Some(deck) = crate::exploration::trait_of(content, sources, &planet) else {
                 continue;
             };
+            // With the table, so an exploration card that asks a question reaches the player
+            // whose planet it is rather than being answered by a default.
             if let Some(outcome) =
-                crate::exploration::explore(state, content, &self.invader, &deck, Some(&planet))
+                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(&planet))
             {
                 self.report.explored.push((planet, outcome));
             }
@@ -665,7 +667,7 @@ impl Window for InvasionWindow {
                     if planets.is_empty() {
                         self.stage = Stage::Done; // 49.2c: straight on to Production
                     } else {
-                        self.advance_fighting(state, content, sources, &planets, 0);
+                        self.advance_fighting(state, ctx, &planets, 0);
                     }
                 } else if let Some(rest) = option.id.strip_prefix("land|") {
                     let mut parts = rest.splitn(2, '|');
@@ -738,7 +740,7 @@ impl Window for InvasionWindow {
                         defender,
                     };
                 } else {
-                    self.advance_fighting(state, content, sources, &planets, index + 1);
+                    self.advance_fighting(state, ctx, &planets, index + 1);
                 }
             }
         }
@@ -751,7 +753,7 @@ impl Window for InvasionWindow {
             if planets.is_empty() {
                 self.stage = Stage::Done;
             } else {
-                self.advance_fighting(state, content, sources, &planets, 0);
+                self.advance_fighting(state, ctx, &planets, 0);
             }
         }
         Ok(())
@@ -808,8 +810,9 @@ pub fn resolve(
         sources,
         dice,
         rng,
+        table,
     };
-    window.drive(state, &mut ctx, table)?;
+    window.drive(state, &mut ctx)?;
     Ok(window.into_report())
 }
 
@@ -1038,13 +1041,15 @@ mod tests {
             };
             let mut dice = Dice::new();
             let mut rng = GameRng::new(1);
-            let ctx = crate::choice::Resolving {
+            let mut inner = Table::new();
+            let mut ctx = crate::choice::Resolving {
                 content: ContentStore::embedded(),
                 sources: POK,
                 dice: &mut dice,
                 rng: &mut rng,
+                table: &mut inner,
             };
-            window.advance_fighting(&mut state, ctx.content, ctx.sources, &[planet], 0);
+            window.advance_fighting(&mut state, &mut ctx, &[planet], 0);
             Some(window.into_report().explored.len())
         };
 

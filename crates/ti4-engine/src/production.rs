@@ -686,8 +686,9 @@ pub fn resolve(
         sources,
         dice: &mut dice,
         rng: &mut rng,
+        table,
     };
-    window.drive(state, &mut ctx, table)?;
+    window.drive(state, &mut ctx)?;
     Ok(window.into_report())
 }
 
@@ -960,11 +961,13 @@ mod tests {
             let answer = table.ask(&choice).unwrap();
             let mut dice = crate::dice::Dice::new();
             let mut rng = crate::rng::GameRng::new(0);
+            let mut inner = Table::new();
             let mut ctx = Resolving {
                 content: ContentStore::embedded(),
                 sources: POK,
                 dice: &mut dice,
                 rng: &mut rng,
+                table: &mut inner,
             };
             window.resolve(&mut state, &mut ctx, answer).unwrap();
             decisions += 1;
