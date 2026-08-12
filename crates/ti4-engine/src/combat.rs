@@ -15,7 +15,7 @@ use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Table, Window};
 use crate::dice::Dice;
 use crate::rng::GameRng;
 
@@ -455,13 +455,410 @@ fn choose_casualty(
     Ok(units.get(index).unwrap_or(&units[0]).clone())
 }
 
+/// Hits still to be absorbed by one player.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pending {
+    player: PlayerId,
+    hits: usize,
+}
+
+/// Where an open space combat has reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Stage {
+    /// Start of a round: roll, then queue both sides' hits.
+    Rolling {
+        round: u32,
+    },
+    /// Offering Sustain Damage against the hits at the front of the queue (87.1).
+    Sustaining {
+        queue: Vec<Pending>,
+        round: u32,
+    },
+    /// Assigning a casualty for one unabsorbed hit (78.6).
+    Assigning {
+        queue: Vec<Pending>,
+        round: u32,
+    },
+    Done(CombatOutcome),
+}
+
+/// A space combat, resolvable one decision at a time (LRR 78).
+///
+/// The queue is what makes 78.6's simultaneity survive being stepped: both sides' hits are
+/// computed and queued *before* either is absorbed, so a casualty can never reduce return fire
+/// that had already been earned. Resolving one side to completion and then rolling the other —
+/// the obvious way to write a resumable version — would break exactly that rule.
+#[derive(Debug, Clone)]
+pub struct CombatWindow {
+    system: SystemId,
+    attacker: PlayerId,
+    defender: PlayerId,
+    stage: Stage,
+}
+
+impl CombatWindow {
+    /// Open a combat, or finish immediately if fewer than two players have ships (78.1).
+    #[must_use]
+    pub fn new(
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        system: &SystemId,
+    ) -> Self {
+        let sides = combatants(state, content, sources, system);
+        let [attacker, defender] = sides.as_slice() else {
+            return Self {
+                system: system.clone(),
+                attacker: PlayerId::new(""),
+                defender: PlayerId::new(""),
+                stage: Stage::Done(CombatOutcome {
+                    winner: sides.first().cloned(),
+                    rounds: 0,
+                }),
+            };
+        };
+        Self {
+            system: system.clone(),
+            attacker: attacker.clone(),
+            defender: defender.clone(),
+            stage: Stage::Rolling { round: 1 },
+        }
+    }
+
+    /// The result, once the fight is over.
+    #[must_use]
+    pub fn outcome(&self) -> Option<CombatOutcome> {
+        match &self.stage {
+            Stage::Done(outcome) => Some(outcome.clone()),
+            _ => None,
+        }
+    }
+
+    fn over(&self, state: &GameState, content: &ContentStore, sources: SourceSet) -> bool {
+        finished(
+            state,
+            content,
+            sources,
+            &self.system,
+            &self.attacker,
+            &self.defender,
+        )
+    }
+
+    fn conclude(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        rounds: u32,
+    ) -> Stage {
+        Stage::Done(CombatOutcome {
+            winner: winner(
+                state,
+                content,
+                sources,
+                &self.system,
+                &self.attacker,
+                &self.defender,
+            ),
+            rounds,
+        })
+    }
+
+    /// Units of the player at the front of the queue that could still sustain a hit.
+    fn sustainers(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        player: &PlayerId,
+    ) -> Vec<usize> {
+        let types = catalogue(content, sources);
+        state
+            .system_state(&self.system)
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(_, unit)| {
+                &unit.owner == player
+                    && !unit.sustained_damage
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::sustain_damage)
+            })
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Roll a round and queue both sides' hits, or finish.
+    fn roll_round(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>, round: u32) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+
+        if round == 1 {
+            anti_fighter_barrage(
+                state,
+                content,
+                sources,
+                ctx.dice,
+                ctx.rng,
+                &self.system,
+                &self.attacker,
+                &self.defender,
+            );
+            if self.over(state, content, sources) {
+                // 78.3a: a barrage can end the fight before any combat die is rolled.
+                self.stage = self.conclude(state, content, sources, round);
+                return;
+            }
+        }
+
+        // 78.5f: the attacker rolls everything first. 78.6: both sides' hits are computed
+        // before either is absorbed.
+        let attacker_hits = roll_fleet(
+            state,
+            content,
+            sources,
+            ctx.dice,
+            ctx.rng,
+            &self.attacker,
+            &self.system,
+        );
+        let defender_hits = roll_fleet(
+            state,
+            content,
+            sources,
+            ctx.dice,
+            ctx.rng,
+            &self.defender,
+            &self.system,
+        );
+
+        let queue: Vec<Pending> = [
+            Pending {
+                player: self.defender.clone(),
+                hits: attacker_hits,
+            },
+            Pending {
+                player: self.attacker.clone(),
+                hits: defender_hits,
+            },
+        ]
+        .into_iter()
+        .filter(|pending| pending.hits > 0)
+        .collect();
+
+        self.stage = Stage::Sustaining { queue, round };
+        self.settle(state, ctx);
+    }
+
+    /// Advance past anything with no decision left in it.
+    fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        loop {
+            match self.stage.clone() {
+                Stage::Sustaining { queue, round } | Stage::Assigning { queue, round } => {
+                    let Some(front) = queue.first().cloned() else {
+                        // Both sides absorbed: the round is over.
+                        if self.over(state, content, sources) || round >= MAX_ROUNDS {
+                            self.stage = self.conclude(state, content, sources, round);
+                            return;
+                        }
+                        // Straight into the next round rather than returning: a stage that
+                        // owes no decision must never be what `drive` stops on.
+                        self.stage = Stage::Rolling { round: round + 1 };
+                        continue;
+                    };
+                    if front.hits == 0 {
+                        let rest = queue[1..].to_vec();
+                        self.stage = Stage::Sustaining { queue: rest, round };
+                        continue;
+                    }
+                    let alive =
+                        ships_of(state, content, sources, &front.player, &self.system).len();
+                    if alive == 0 {
+                        // 15.2a: hits beyond the units available have no effect.
+                        let rest = queue[1..].to_vec();
+                        self.stage = Stage::Sustaining { queue: rest, round };
+                        continue;
+                    }
+                    // A sustain is only offered when something can take one.
+                    if matches!(self.stage, Stage::Sustaining { .. })
+                        && self
+                            .sustainers(state, content, sources, &front.player)
+                            .is_empty()
+                    {
+                        self.stage = Stage::Assigning { queue, round };
+                        continue;
+                    }
+                    // A single possible casualty is not a decision.
+                    if matches!(self.stage, Stage::Assigning { .. }) && alive == 1 {
+                        let only = ships_of(state, content, sources, &front.player, &self.system)
+                            .remove(0);
+                        state
+                            .system_mut(&self.system)
+                            .remove(std::slice::from_ref(&only));
+                        let mut rest = queue;
+                        rest[0].hits -= 1;
+                        self.stage = Stage::Sustaining { queue: rest, round };
+                        continue;
+                    }
+                    return;
+                }
+                Stage::Rolling { round } => {
+                    if self.over(state, content, sources) {
+                        self.stage = self.conclude(state, content, sources, round - 1);
+                        return;
+                    }
+                    self.roll_round(state, ctx, round);
+                    return;
+                }
+                Stage::Done(_) => return,
+            }
+        }
+    }
+}
+
+impl Window for CombatWindow {
+    fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        match &self.stage {
+            Stage::Done(_) | Stage::Rolling { .. } => None,
+            Stage::Sustaining { queue, .. } => {
+                let front = queue.first()?;
+                let available = self.sustainers(state, content, sources, &front.player);
+                if available.is_empty() {
+                    return None;
+                }
+                // One option per unit *type*: everything here is undamaged by definition, so
+                // two of a type are the same decision written twice, and a sampling decider
+                // would sustain on whichever type it happened to own more of.
+                let mut seen = std::collections::BTreeSet::new();
+                let mut options = Vec::new();
+                for index in available {
+                    let unit = &state.system_state(&self.system).units[index];
+                    if !seen.insert(unit.type_id.to_string()) {
+                        continue;
+                    }
+                    options.push(ChoiceOption::labelled(
+                        format!("sustain|{index}"),
+                        SUSTAIN_KIND,
+                        format!("sustain damage on {}", unit.type_id),
+                    ));
+                }
+                options.push(ChoiceOption::labelled(
+                    crate::choice::DECLINE_ID,
+                    crate::choice::DECLINE_KIND,
+                    "take the hit",
+                ));
+                Some(Choice::new(
+                    front.player.clone(),
+                    format!("cancel a hit at {}", self.system),
+                    options,
+                ))
+            }
+            Stage::Assigning { queue, .. } => {
+                let front = queue.first()?;
+                let units = ships_of(state, content, sources, &front.player, &self.system);
+                if units.len() < 2 {
+                    return None;
+                }
+                // One option per distinguishable loss; damage is part of what distinguishes.
+                let mut seen = std::collections::BTreeSet::new();
+                let mut options = Vec::new();
+                for (index, unit) in units.iter().enumerate() {
+                    if !seen.insert((unit.type_id.to_string(), unit.sustained_damage)) {
+                        continue;
+                    }
+                    let damaged = if unit.sustained_damage {
+                        " (damaged)"
+                    } else {
+                        ""
+                    };
+                    options.push(ChoiceOption::labelled(
+                        format!("destroy|{index}"),
+                        CASUALTY_KIND,
+                        format!("destroy {}{damaged}", unit.type_id),
+                    ));
+                }
+                Some(Choice::new(front.player.clone(), "assign a hit", options))
+            }
+        }
+    }
+
+    fn resolve(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        answer: ChoiceOption,
+    ) -> Result<(), IllegalChoice> {
+        let (content, sources) = (ctx.content, ctx.sources);
+        let Some(choice) = self.pending_choice(state, content, sources) else {
+            return Ok(());
+        };
+        let option = crate::choice::validate(&choice, answer)?;
+
+        match self.stage.clone() {
+            Stage::Done(_) | Stage::Rolling { .. } => {}
+            Stage::Sustaining { mut queue, round } => {
+                if option.is_decline() {
+                    self.stage = Stage::Assigning { queue, round };
+                } else if let Some(index) = option
+                    .id
+                    .strip_prefix("sustain|")
+                    .and_then(|rest| rest.parse::<usize>().ok())
+                {
+                    if let Some(unit) = state.system_mut(&self.system).units.get_mut(index) {
+                        *unit = unit.sustained();
+                    }
+                    if let Some(front) = queue.first_mut() {
+                        front.hits = front.hits.saturating_sub(1);
+                    }
+                    self.stage = Stage::Sustaining { queue, round };
+                }
+            }
+            Stage::Assigning { mut queue, round } => {
+                let Some(front) = queue.first().cloned() else {
+                    return Ok(());
+                };
+                let units = ships_of(state, content, sources, &front.player, &self.system);
+                let index = option
+                    .id
+                    .strip_prefix("destroy|")
+                    .and_then(|rest| rest.parse::<usize>().ok())
+                    .unwrap_or(0);
+                if let Some(doomed) = units.get(index) {
+                    let doomed = doomed.clone();
+                    state
+                        .system_mut(&self.system)
+                        .remove(std::slice::from_ref(&doomed));
+                }
+                if let Some(front) = queue.first_mut() {
+                    front.hits = front.hits.saturating_sub(1);
+                }
+                // Back to sustaining: the next hit may be cancellable even if this one was not.
+                self.stage = Stage::Sustaining { queue, round };
+            }
+        }
+        self.settle(state, ctx);
+        Ok(())
+    }
+}
+
 /// Fight a space combat to its end (LRR 78).
 ///
 /// Returns immediately when fewer than two players have ships (78.1).
 ///
 /// # Errors
-/// [`CombatError::Unresolved`] if the fight has not ended within [`MAX_ROUNDS`], and
 /// [`CombatError::IllegalChoice`] when a decider answers with something not offered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one parameter per distinct input"
+)]
 pub fn resolve(
     state: &mut GameState,
     content: &ContentStore,
@@ -471,71 +868,19 @@ pub fn resolve(
     rng: &mut GameRng,
     system: &SystemId,
 ) -> Result<CombatOutcome, CombatError> {
-    let sides = combatants(state, content, sources, system);
-    let [attacker, defender] = sides.as_slice() else {
-        return Ok(CombatOutcome {
-            winner: sides.first().cloned(),
-            rounds: 0,
-        });
+    let mut window = CombatWindow::new(state, content, sources, system);
+    let mut ctx = Resolving {
+        content,
+        sources,
+        dice,
+        rng,
     };
-    let (attacker, defender) = (attacker.clone(), defender.clone());
-
-    for round in 1..=MAX_ROUNDS {
-        state.combat_round_seq = state.combat_round_seq.saturating_add(1);
-        if finished(state, content, sources, system, &attacker, &defender) {
-            return Ok(CombatOutcome {
-                winner: winner(state, content, sources, system, &attacker, &defender),
-                rounds: round - 1,
-            });
-        }
-
-        if round == 1 {
-            anti_fighter_barrage(
-                state, content, sources, dice, rng, system, &attacker, &defender,
-            );
-            // 78.3a: a barrage can end the fight before any combat dice are rolled.
-            if finished(state, content, sources, system, &attacker, &defender) {
-                return Ok(CombatOutcome {
-                    winner: winner(state, content, sources, system, &attacker, &defender),
-                    rounds: round,
-                });
-            }
-        }
-
-        // 78.5f: the attacker rolls everything first.
-        let attacker_hits = roll_fleet(state, content, sources, dice, rng, &attacker, system);
-        let defender_hits = roll_fleet(state, content, sources, dice, rng, &defender, system);
-
-        // 78.6: hits are simultaneous, so both sides absorb before either is checked. A
-        // sequential resolution would let the attacker's casualties reduce the return fire
-        // they had already earned.
-        absorb_hits(
-            state,
-            content,
-            sources,
-            table,
-            &defender,
-            system,
-            attacker_hits,
-        )?;
-        absorb_hits(
-            state,
-            content,
-            sources,
-            table,
-            &attacker,
-            system,
-            defender_hits,
-        )?;
-
-        if finished(state, content, sources, system, &attacker, &defender) {
-            return Ok(CombatOutcome {
-                winner: winner(state, content, sources, system, &attacker, &defender),
-                rounds: round,
-            });
-        }
-    }
-    Err(CombatError::Unresolved(system.clone()))
+    // Opening does not roll; settle once so a fight that is already over reports so.
+    window.settle(state, &mut ctx);
+    window.drive(state, &mut ctx, table)?;
+    window
+        .outcome()
+        .ok_or_else(|| CombatError::Unresolved(system.clone()))
 }
 
 fn finished(
@@ -1073,6 +1418,89 @@ mod tests {
         };
 
         assert_eq!(fight(11), fight(11), "a seed reproduces its battle");
+    }
+
+    #[test]
+    fn a_stepped_combat_keeps_hits_simultaneous() {
+        // The thing that makes a resumable combat hard: both sides' hits must be computed
+        // before either is absorbed, or a casualty reduces return fire it had already earned.
+        // Resolving one side to completion and then rolling the other - the obvious way to
+        // write this - would break 78.6 exactly there.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        let mut table = Table::new();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(2);
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+        };
+        window.settle(&mut state, &mut ctx);
+
+        let mut steps = 0;
+        while let Some(choice) = window.pending_choice(&state, ContentStore::embedded(), POK) {
+            let answer = table.ask(&choice).unwrap();
+            window.resolve(&mut state, &mut ctx, answer).unwrap();
+            steps += 1;
+            assert!(steps < 500, "a stepped combat must terminate");
+        }
+
+        assert!(window.outcome().is_some(), "the fight concluded");
+        let left = combatants(&state, ContentStore::embedded(), POK, &system);
+        assert!(left.len() <= 1);
+    }
+
+    #[test]
+    fn a_stepped_combat_matches_the_driven_one() {
+        // Stepping and driving are the same fight: Window::drive is only a loop over the
+        // same two methods, and a seed proves they do not diverge.
+        let fight = |stepped: bool| {
+            let (mut state, system) = arena();
+            put(&mut state, &system, "cruiser", &attacker(), 3);
+            put(&mut state, &system, "carrier", &defender(), 2);
+            let mut table = Table::new();
+            let mut dice = Dice::new();
+            let mut rng = GameRng::new(17);
+            if stepped {
+                let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+                let mut ctx = crate::choice::Resolving {
+                    content: ContentStore::embedded(),
+                    sources: POK,
+                    dice: &mut dice,
+                    rng: &mut rng,
+                };
+                window.settle(&mut state, &mut ctx);
+                while let Some(choice) =
+                    window.pending_choice(&state, ContentStore::embedded(), POK)
+                {
+                    let answer = table.ask(&choice).unwrap();
+                    window.resolve(&mut state, &mut ctx, answer).unwrap();
+                }
+                (window.outcome().unwrap(), state)
+            } else {
+                let outcome = resolve(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut table,
+                    &mut dice,
+                    &mut rng,
+                    &system,
+                )
+                .unwrap();
+                (outcome, state)
+            }
+        };
+
+        let (stepped_outcome, stepped_state) = fight(true);
+        let (driven_outcome, driven_state) = fight(false);
+        assert_eq!(stepped_outcome, driven_outcome);
+        assert!(stepped_state.identical(&driven_state));
     }
 
     #[test]
