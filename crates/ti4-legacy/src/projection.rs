@@ -55,6 +55,96 @@ pub fn canonical_state_bytes(state: &GameState) -> Vec<u8> {
     serde_json::to_vec(&state_projection(state)).expect("native state projection is JSON")
 }
 
+/// First deterministic difference between a source public-state projection and a native state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateProjectionDifference {
+    /// JSONPath-like location of the first mismatched value.
+    pub path: String,
+    /// Value emitted by the pinned source projection.
+    pub expected: Value,
+    /// Value emitted by the native projection.
+    pub actual: Value,
+}
+
+/// Compare a native state with a checked source public-state projection.
+///
+/// Collection order is significant because it is part of the source projection contract. Map
+/// keys are compared in their deterministic serialized order, so the first reported mismatch is
+/// reproducible and suitable for fixture evidence.
+#[must_use]
+pub fn first_state_projection_difference(
+    state: &GameState,
+    expected: &Value,
+) -> Option<StateProjectionDifference> {
+    first_difference(expected, &state_projection(state), "$")
+}
+
+fn first_difference(
+    expected: &Value,
+    actual: &Value,
+    path: &str,
+) -> Option<StateProjectionDifference> {
+    match (expected, actual) {
+        (Value::Object(expected_object), Value::Object(actual_object)) => {
+            for (key, expected_value) in expected_object {
+                let key_path = format!("{path}[{key:?}]");
+                let Some(actual_value) = actual_object.get(key) else {
+                    return Some(StateProjectionDifference {
+                        path: key_path,
+                        expected: expected_value.clone(),
+                        actual: Value::Null,
+                    });
+                };
+                if let Some(difference) = first_difference(expected_value, actual_value, &key_path)
+                {
+                    return Some(difference);
+                }
+            }
+            for (key, actual_value) in actual_object {
+                if !expected_object.contains_key(key) {
+                    return Some(StateProjectionDifference {
+                        path: format!("{path}[{key:?}]"),
+                        expected: Value::Null,
+                        actual: actual_value.clone(),
+                    });
+                }
+            }
+            None
+        }
+        (Value::Array(expected_array), Value::Array(actual_array)) => {
+            for (index, expected_value) in expected_array.iter().enumerate() {
+                let Some(actual_value) = actual_array.get(index) else {
+                    return Some(StateProjectionDifference {
+                        path: format!("{path}[{index}]"),
+                        expected: expected_value.clone(),
+                        actual: Value::Null,
+                    });
+                };
+                if let Some(difference) =
+                    first_difference(expected_value, actual_value, &format!("{path}[{index}]"))
+                {
+                    return Some(difference);
+                }
+            }
+            actual_array
+                .iter()
+                .enumerate()
+                .nth(expected_array.len())
+                .map(|(index, actual_value)| StateProjectionDifference {
+                    path: format!("{path}[{index}]"),
+                    expected: Value::Null,
+                    actual: actual_value.clone(),
+                })
+        }
+        _ if expected == actual => None,
+        _ => Some(StateProjectionDifference {
+            path: path.to_owned(),
+            expected: expected.clone(),
+            actual: actual.clone(),
+        }),
+    }
+}
+
 fn player_projection(player: &Player, state: &GameState) -> Value {
     json!({
         "id": player.id.as_str(),
@@ -250,6 +340,38 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<Value>(&canonical_state_bytes(&state)).unwrap(),
             state_projection(&state)
+        );
+    }
+
+    #[test]
+    fn comparison_reports_the_first_nested_difference_with_a_stable_path() {
+        let state = state();
+        let mut expected = state_projection(&state);
+        expected["players"][0]["vp"] = json!(99);
+
+        assert_eq!(
+            first_state_projection_difference(&state, &expected),
+            Some(StateProjectionDifference {
+                path: "$[\"players\"][0][\"vp\"]".to_owned(),
+                expected: json!(99),
+                actual: json!(4),
+            })
+        );
+    }
+
+    #[test]
+    fn comparison_detects_missing_and_extra_fields() {
+        let state = state();
+        let mut expected = state_projection(&state);
+        expected["agenda"]["unmodeled"] = json!(true);
+
+        assert_eq!(
+            first_state_projection_difference(&state, &expected),
+            Some(StateProjectionDifference {
+                path: "$[\"agenda\"][\"unmodeled\"]".to_owned(),
+                expected: json!(true),
+                actual: Value::Null,
+            })
         );
     }
 }

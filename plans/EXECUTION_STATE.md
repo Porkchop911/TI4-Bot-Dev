@@ -85,9 +85,10 @@ three times in one session and is worth re-deriving against the tree.
   prerequisites without faking M03-007c success. M04-015 is split: M04-015a now supplies the
   native canonical public-state projection in the executable source schema, with public-card
   redaction and deterministic bytes. M04-015b now owns a checked two-snapshot source-state intake
-  boundary and validates all 100 retained traces. M04-015c owns scripted entropy/decision/event
-  comparison and remains blocked on native scenario/state construction and entropy consumption.
-  M03-007c remains blocked until those later compatibility surfaces prove semantic equality.
+  boundary and validates all 100 retained traces. M04-015c1 now provides a strict field-path
+  public-state comparator. M04-015c2 owns native scenario/state construction, entropy/decision
+  consumption, event projection, and selected cross-engine comparison. M03-007c remains blocked
+  until those later compatibility surfaces prove semantic equality.
 
 ## M04-005 package checkpoint (historical)
 
