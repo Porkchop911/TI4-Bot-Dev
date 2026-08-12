@@ -441,6 +441,19 @@ are recorded in the package evidence; independent review remains owner-waived.
   test is measuring something other than the pinned data.
 - Every step was run locally before committing; a CI that is red on day one gets ignored.
 
+## Window trait checkpoint (authoritative)
+
+- **479 passing tests**: 121 `ti4-content`, 289 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
+  Workspace clippy-clean under `-D warnings`; CI gate verified locally.
+- `choice::Window` names the shape the engine had hand-rolled five times. Completion is "no
+  choice is owed" rather than a separate flag, so a window cannot claim to be finished while
+  holding a question, or hold one after it is done.
+- `Window::drive` runs a whole sequence against a `Table`, so converting a subsystem does not
+  break callers that do not want to step it — production's 13 tests passed unchanged.
+- `ProductionWindow` is the first conversion. `production_can_be_stepped_one_decision_at_a_time`
+  asserts the game is a whole, inspectable state between every pair of decisions.
+- **Invasion and combat are still inline.** That is the remaining two-thirds of the debt.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -508,9 +521,11 @@ behaviour is a placeholder.
 Rewritten against the tree as measured on 2026-08-12. The previous list named packages that
 had already shipped — it is worth re-deriving this rather than trusting it.
 
-1. **The `Window` trait.** Make combat, invasion and production resumable so the driver keeps
-   its one-decision-per-step contract. Largest architectural debt, and it is now load-bearing
-   rather than tidy.
+1. **The `Window` trait — one of three converted.** The trait exists in `choice.rs` and
+   `ProductionWindow` implements it, so production is resumable and its 13 existing tests pass
+   unchanged. **Invasion and combat still ask inline** and are the remaining debt; invasion is
+   the easier of the two (bombardment has no choices, commit and ground combat are flat loops),
+   combat the harder (round → roll → sustain-per-hit → casualty-per-hit).
 2. ~~M01-006 — CI.~~ Done: `.github/workflows/ci.yml` runs fmt, clippy (deny), tests, docs and
    the corpus checksums on Windows.
 3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.

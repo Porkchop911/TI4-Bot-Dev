@@ -12,7 +12,7 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId, UnitTypeId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table, Window};
 
 /// The two things a planet card can be exhausted for (LRR 75.2, 47).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -361,7 +361,309 @@ pub struct ProductionReport {
     pub unused_capacity: i64,
 }
 
+/// Where an open production step has reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Stage {
+    /// Choosing what to build, or stopping.
+    Choosing,
+    /// Paying for the unit just chosen.
+    Paying {
+        id: String,
+        owed: i64,
+        made: usize,
+    },
+    /// Placing it.
+    Placing {
+        id: String,
+        made: usize,
+    },
+    Done,
+}
+
 /// LRR 68: produce units in the active system, up to capacity, paying for each.
+///
+/// A [`Window`], so the driver can step it one decision at a time.
+#[derive(Debug, Clone)]
+pub struct ProductionWindow {
+    player: PlayerId,
+    system: SystemId,
+    remaining: i64,
+    stage: Stage,
+    report: ProductionReport,
+}
+
+impl ProductionWindow {
+    /// Open production for one player in one system.
+    #[must_use]
+    pub fn new(
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        player: &PlayerId,
+        system: &SystemId,
+    ) -> Self {
+        let remaining = capacity(state, content, sources, player, system);
+        Self {
+            player: player.clone(),
+            system: system.clone(),
+            remaining,
+            stage: if remaining > 0 {
+                Stage::Choosing
+            } else {
+                Stage::Done
+            },
+            report: ProductionReport::default(),
+        }
+    }
+
+    /// What was produced.
+    #[must_use]
+    pub fn into_report(mut self) -> ProductionReport {
+        self.report.unused_capacity = self.remaining.max(0);
+        self.report
+    }
+
+    /// Options for what to build now: affordable, placeable, one per unit type.
+    fn build_options(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Vec<ChoiceOption> {
+        let types = catalogue(content, sources);
+        let mut options = Vec::new();
+        for id in buildable_for(state, &self.player) {
+            let Some(kind) = types.get(id.as_str()) else {
+                continue;
+            };
+            let (cost, made) = price_of(kind);
+            if cost > available(state, content, sources, &self.player, Spend::Resources) {
+                continue;
+            }
+            if placements(state, content, sources, &self.player, &self.system, kind).is_empty() {
+                continue;
+            }
+            options.push(
+                ChoiceOption::labelled(
+                    format!("produce|{id}"),
+                    PRODUCE_KIND,
+                    format!("produce {id} for {cost}"),
+                )
+                .with("cost", cost)
+                .with("units", i64::try_from(made).unwrap_or(1)),
+            );
+        }
+        options
+    }
+
+    /// Put `made` copies of a unit into a placement.
+    fn place(&mut self, state: &mut GameState, id: &str, where_to: &str, made: usize) {
+        for _ in 0..made {
+            let unit = Unit::new(UnitTypeId::new(id), self.player.clone());
+            if where_to == SPACE {
+                state.system_mut(&self.system).units.push(unit);
+            } else {
+                state
+                    .system_mut(&self.system)
+                    .planet_units
+                    .entry(PlanetId::new(where_to))
+                    .or_default()
+                    .push(unit);
+            }
+            self.report
+                .produced
+                .push((UnitTypeId::new(id), where_to.to_owned()));
+        }
+        // 68.1a counts production *capacity*, and a two-for-one still uses one of it.
+        self.remaining -= 1;
+    }
+}
+
+impl Window for ProductionWindow {
+    fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        match &self.stage {
+            Stage::Done => None,
+            Stage::Choosing => {
+                if self.remaining <= 0 {
+                    return None;
+                }
+                let mut options = self.build_options(state, content, sources);
+                if options.is_empty() {
+                    return None;
+                }
+                options.push(ChoiceOption::decline());
+                Some(Choice::new(
+                    self.player.clone(),
+                    format!("produce a unit ({} capacity left)", self.remaining),
+                    options,
+                ))
+            }
+            Stage::Paying { owed, .. } => {
+                let mut options: Vec<ChoiceOption> = spendable_planets(state, &self.player)
+                    .iter()
+                    .map(|planet| {
+                        let worth = planet_value(content, sources, planet, Spend::Resources);
+                        ChoiceOption::labelled(
+                            format!("exhaust|{planet}"),
+                            PAY_KIND,
+                            format!("exhaust {planet} for {worth}"),
+                        )
+                        .with("worth", worth)
+                        .with("owed", *owed)
+                    })
+                    .collect();
+                let goods = state
+                    .player(&self.player)
+                    .map_or(0, |seat| i64::from(seat.trade_goods));
+                if goods > 0 {
+                    options.push(
+                        ChoiceOption::labelled("trade_good", PAY_KIND, "spend a trade good")
+                            .with("worth", 1)
+                            .with("owed", *owed),
+                    );
+                }
+                if options.is_empty() {
+                    return None;
+                }
+                Some(Choice::new(
+                    self.player.clone(),
+                    format!("pay {owed}"),
+                    options,
+                ))
+            }
+            Stage::Placing { id, .. } => {
+                let types = catalogue(content, sources);
+                let kind = types.get(id.as_str())?;
+                let spots = placements(state, content, sources, &self.player, &self.system, kind);
+                if spots.len() < 2 {
+                    return None; // settled without a question
+                }
+                Some(Choice::new(
+                    self.player.clone(),
+                    format!("place the {id}"),
+                    spots
+                        .iter()
+                        .map(|spot| {
+                            ChoiceOption::labelled(
+                                format!("place|{spot}"),
+                                PLACE_KIND,
+                                format!("place on {spot}"),
+                            )
+                        })
+                        .collect(),
+                ))
+            }
+        }
+    }
+
+    fn resolve(
+        &mut self,
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        answer: ChoiceOption,
+    ) -> Result<(), IllegalChoice> {
+        let Some(choice) = self.pending_choice(state, content, sources) else {
+            return Ok(());
+        };
+        let option = crate::choice::validate(&choice, answer)?;
+
+        match self.stage.clone() {
+            Stage::Done => {}
+            Stage::Choosing => {
+                if option.is_decline() {
+                    self.stage = Stage::Done;
+                } else if let Some(id) = option.id.strip_prefix("produce|") {
+                    let types = catalogue(content, sources);
+                    let (cost, made) = types.get(id).map_or((0, 1), price_of);
+                    self.stage = Stage::Paying {
+                        id: id.to_owned(),
+                        owed: cost,
+                        made,
+                    };
+                }
+            }
+            Stage::Paying { id, owed, made } => {
+                // Paid before placed: a unit that could not be afforded must not reach the
+                // board even for an instant, or an ability reacting to placement sees
+                // something never bought.
+                let worth = if option.id == "trade_good" {
+                    if let Some(seat) = state.player_mut(&self.player) {
+                        seat.trade_goods -= 1;
+                    }
+                    1
+                } else if let Some(planet) = option.id.strip_prefix("exhaust|") {
+                    let planet = PlanetId::new(planet);
+                    let worth = planet_value(content, sources, &planet, Spend::Resources);
+                    state.exhaust_planet(planet);
+                    worth
+                } else {
+                    0
+                };
+                let owed = owed - worth;
+                self.stage = if owed > 0 {
+                    Stage::Paying { id, owed, made }
+                } else {
+                    Stage::Placing { id, made }
+                };
+            }
+            Stage::Placing { id, made } => {
+                let where_to = option.id.strip_prefix("place|").unwrap_or(SPACE).to_owned();
+                self.place(state, &id, &where_to, made);
+                self.stage = Stage::Choosing;
+            }
+        }
+        self.settle(state, content, sources);
+        Ok(())
+    }
+}
+
+impl ProductionWindow {
+    /// Advance past any stage that has nothing left to ask.
+    fn settle(&mut self, state: &mut GameState, content: &ContentStore, sources: SourceSet) {
+        loop {
+            match self.stage.clone() {
+                Stage::Placing { id, made } => {
+                    let types = catalogue(content, sources);
+                    let Some(kind) = types.get(id.as_str()).copied() else {
+                        self.stage = Stage::Done;
+                        return;
+                    };
+                    let spots =
+                        placements(state, content, sources, &self.player, &self.system, &kind);
+                    // Exactly one legal placement is not a decision.
+                    match spots.as_slice() {
+                        [only] => {
+                            let only = only.clone();
+                            self.place(state, &id, &only, made);
+                            self.stage = Stage::Choosing;
+                        }
+                        [] => {
+                            self.stage = Stage::Done;
+                            return;
+                        }
+                        _ => return,
+                    }
+                }
+                Stage::Choosing => {
+                    if self.remaining <= 0 || self.build_options(state, content, sources).is_empty()
+                    {
+                        self.stage = Stage::Done;
+                    }
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+}
+
+/// Run production to the end against a table.
 ///
 /// # Errors
 /// [`IllegalChoice`] when a decider answers with something not offered.
@@ -373,116 +675,9 @@ pub fn resolve(
     player: &PlayerId,
     system: &SystemId,
 ) -> Result<ProductionReport, IllegalChoice> {
-    let mut remaining = capacity(state, content, sources, player, system);
-    let mut report = ProductionReport::default();
-    if remaining <= 0 {
-        return Ok(report);
-    }
-
-    let types = catalogue(content, sources);
-    loop {
-        if remaining <= 0 {
-            break;
-        }
-        // One option per affordable, placeable unit type, plus stopping.
-        let mut options = Vec::new();
-        for id in buildable_for(state, player) {
-            let Some(kind) = types.get(id.as_str()) else {
-                continue;
-            };
-            let (cost, _) = price_of(kind);
-            if cost > available(state, content, sources, player, Spend::Resources) {
-                continue;
-            }
-            if placements(state, content, sources, player, system, kind).is_empty() {
-                continue;
-            }
-            options.push(
-                ChoiceOption::labelled(
-                    format!("produce|{id}"),
-                    PRODUCE_KIND,
-                    format!("produce {id} for {cost}"),
-                )
-                .with("cost", cost),
-            );
-        }
-        if options.is_empty() {
-            break;
-        }
-        options.push(ChoiceOption::decline());
-
-        let choice = Choice::new(
-            player.clone(),
-            format!("produce a unit ({remaining} capacity left)"),
-            options,
-        );
-        let answer = table.ask(&choice)?;
-        if answer.is_decline() {
-            break;
-        }
-        let Some(id) = answer.id.strip_prefix("produce|").map(ToOwned::to_owned) else {
-            break;
-        };
-        let Some(kind) = types.get(id.as_str()).copied() else {
-            break;
-        };
-
-        // Paid before placed: a unit that could not be afforded must not reach the board even
-        // for an instant, or an ability reacting to placement sees something never bought.
-        let (cost, made) = price_of(&kind);
-        if !pay(
-            state,
-            content,
-            sources,
-            table,
-            player,
-            cost,
-            Spend::Resources,
-        )? {
-            break;
-        }
-
-        let spots = placements(state, content, sources, player, system, &kind);
-        let where_to = if let [only] = spots.as_slice() {
-            only.clone()
-        } else {
-            let options: Vec<ChoiceOption> = spots
-                .iter()
-                .map(|spot| {
-                    ChoiceOption::labelled(
-                        format!("place|{spot}"),
-                        PLACE_KIND,
-                        format!("place on {spot}"),
-                    )
-                })
-                .collect();
-            let choice = Choice::new(player.clone(), format!("place the {id}"), options);
-            let answer = table.ask(&choice)?;
-            answer.id.strip_prefix("place|").unwrap_or(SPACE).to_owned()
-        };
-
-        for _ in 0..made {
-            let unit = Unit::new(UnitTypeId::new(id.clone()), player.clone());
-            if where_to == SPACE {
-                state.system_mut(system).units.push(unit);
-            } else {
-                state
-                    .system_mut(system)
-                    .planet_units
-                    .entry(PlanetId::new(where_to.clone()))
-                    .or_default()
-                    .push(unit);
-            }
-            report
-                .produced
-                .push((UnitTypeId::new(id.clone()), where_to.clone()));
-        }
-        // 68.1a counts production *capacity*, and a two-for-one still uses one of it.
-        remaining -= 1;
-    }
-
-    report.unused_capacity = remaining.max(0);
-    Ok(report)
+    let mut window = ProductionWindow::new(state, content, sources, player, system);
+    window.drive(state, content, sources, table)?;
+    Ok(window.into_report())
 }
 
 #[cfg(test)]
@@ -728,6 +923,53 @@ mod tests {
             .technologies
             .insert(ti4_model::id::TechnologyId::new("ws"));
         assert!(buildable_for(&state, &player()).contains(&"warsun".to_owned()));
+    }
+
+    #[test]
+    fn production_can_be_stepped_one_decision_at_a_time() {
+        // The point of the Window trait: a caller can inspect the game between decisions,
+        // which the inline version made impossible.
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.player_mut(&player()).unwrap().trade_goods = 10;
+
+        let mut window =
+            ProductionWindow::new(&state, ContentStore::embedded(), POK, &player(), &system);
+        let mut table = Table::new();
+        let mut decisions = 0;
+
+        while let Some(choice) = window.pending_choice(&state, ContentStore::embedded(), POK) {
+            // Between every pair of decisions the game is a whole, inspectable state.
+            let snapshot = state.clone();
+            assert!(snapshot.identical(&state));
+
+            let answer = table.ask(&choice).unwrap();
+            window
+                .resolve(&mut state, ContentStore::embedded(), POK, answer)
+                .unwrap();
+            decisions += 1;
+            assert!(decisions < 50, "production should terminate");
+        }
+
+        assert!(decisions > 1, "more than one decision was owed");
+        assert!(!window.into_report().produced.is_empty());
+    }
+
+    #[test]
+    fn a_window_that_is_finished_owes_no_choice() {
+        let (state, system, _) = seated();
+        let window =
+            ProductionWindow::new(&state, ContentStore::embedded(), POK, &player(), &system);
+        // No producer, so nothing is owed and nothing is produced.
+        assert!(
+            window
+                .pending_choice(&state, ContentStore::embedded(), POK)
+                .is_none()
+        );
+        assert!(window.into_report().produced.is_empty());
     }
 
     #[test]

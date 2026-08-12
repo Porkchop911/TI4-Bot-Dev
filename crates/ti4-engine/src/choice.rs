@@ -173,6 +173,57 @@ pub fn validate(choice: &Choice, option: ChoiceOption) -> Result<ChoiceOption, I
     })
 }
 
+/// A decision sequence the game driver can step one answer at a time.
+///
+/// The engine had five hand-rolled versions of this shape before it was named — strategy
+/// secondary, token gain, scoring, voting, cargo — and three subsystems that skipped it and
+/// asked inline instead, which is what broke the driver's one-decision-per-step contract.
+///
+/// Completion is "no choice is owed" rather than a separate flag, so a window cannot report
+/// itself finished while still holding a question, or hold a question after it is done.
+pub trait Window {
+    /// The decision currently owed, or `None` when the sequence is finished.
+    fn pending_choice(
+        &self,
+        state: &ti4_model::state::GameState,
+        content: &ti4_content::ContentStore,
+        sources: ti4_model::content_types::SourceSet,
+    ) -> Option<Choice>;
+
+    /// Apply one answer.
+    ///
+    /// # Errors
+    /// [`IllegalChoice`] when the answer was not one of the generated options.
+    fn resolve(
+        &mut self,
+        state: &mut ti4_model::state::GameState,
+        content: &ti4_content::ContentStore,
+        sources: ti4_model::content_types::SourceSet,
+        answer: ChoiceOption,
+    ) -> Result<(), IllegalChoice>;
+
+    /// Drive the whole sequence against a table, for callers that do not need to step it.
+    ///
+    /// # Errors
+    /// [`IllegalChoice`] when a decider answers with something not offered.
+    fn drive(
+        &mut self,
+        state: &mut ti4_model::state::GameState,
+        content: &ti4_content::ContentStore,
+        sources: ti4_model::content_types::SourceSet,
+        table: &mut Table,
+    ) -> Result<(), IllegalChoice>
+    where
+        Self: Sized,
+    {
+        while let Some(choice) = self.pending_choice(state, content, sources) {
+            let answer = table.ask(&choice)?;
+            self.resolve(state, content, sources, answer)?;
+        }
+        Ok(())
+    }
+}
+
 /// Anything that can answer a [`Choice`].
 ///
 /// `&mut self` because a decider may carry state — a script position, an RNG stream.
