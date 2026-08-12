@@ -496,6 +496,20 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Not ported: prerequisite waivers (faction, law, AI Development Algorithm), unit-upgrade
   application, starting technology, and the ~2,800 remaining lines of `technology.py`.
 
+## M06-006 checkpoint (authoritative)
+
+- **503 passing tests**; workspace clippy-clean under `-D warnings`.
+- Exploration: a planet explores into its own trait deck (35.2b), the frontier deck needs no
+  planet (35.5), attachments attach, and a card with no handler is announced `Unresolved`
+  rather than dropped — an unimplemented card must be visible as a gap.
+- An attachment drawn from the frontier is *discarded* explicitly, since there is no planet to
+  attach it to.
+- Relic fragments (35.9): three of a trait buy a relic, and **frontier fragments substitute for
+  any trait** — counted towards every other, and spent only after the matching ones, because a
+  wildcard spent while a matching fragment was available is a wildcard wasted.
+- Not ported: the per-card instant/token handlers (the oracle has ~20), relic effects, and the
+  attachment value changes that feed `planet_value_now`.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -573,8 +587,8 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
-5. **M06 — general rules**: payment planner, trade, exploration, relics, action cards,
-   secrets, leaders, reactions. Technology prerequisites and research (M06-004/005) are done.
+5. **M06 — general rules**: payment planner, trade, action cards, secrets, leaders, reactions.
+   Technology (M06-004/005) and exploration/relic fragments (M06-006, part of 007) are done.
 
 ## Decisions in force
 
