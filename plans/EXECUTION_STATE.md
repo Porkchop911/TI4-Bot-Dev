@@ -21,7 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m04-015b-source-state-intake`
+- Branch: `wp/m04-015c2a-public-state-import`
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
@@ -86,9 +86,13 @@ three times in one session and is worth re-deriving against the tree.
   native canonical public-state projection in the executable source schema, with public-card
   redaction and deterministic bytes. M04-015b now owns a checked two-snapshot source-state intake
   boundary and validates all 100 retained traces. M04-015c1 now provides a strict field-path
-  public-state comparator. M04-015c2 owns native scenario/state construction, entropy/decision
-  consumption, event projection, and selected cross-engine comparison. M03-007c remains blocked
-  until those later compatibility surfaces prove semantic equality.
+  public-state comparator. M04-015c2a now reconstructs every retained initial snapshot into an
+  intentionally public-only native `GameState`, proving its public projection is exact while
+  rejecting held strategy cards whose initiative metadata is absent from the source schema.
+  Opaque private-card placeholders make the state non-executable. M04-015c2b owns native
+  executable scenario construction, entropy/decision consumption, event projection, and selected
+  cross-engine comparison. M03-007c remains blocked until those later compatibility surfaces prove
+  semantic equality.
 
 ## M04-005 package checkpoint (historical)
 
