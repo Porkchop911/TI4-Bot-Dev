@@ -42,6 +42,7 @@ pub mod strategy;
 pub mod tactical;
 pub mod technology;
 pub mod tokens;
+pub mod transactions;
 pub mod transit;
 pub mod vote;
 

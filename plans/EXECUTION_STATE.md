@@ -510,6 +510,20 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Not ported: the per-card instant/token handlers (the oracle has ~20), relic effects, and the
   attachment value changes that feed `planet_value_now`.
 
+## M06-002/003 checkpoint (authoritative)
+
+- **513 passing tests**; workspace clippy-clean under `-D warnings`.
+- Transactions: neighbours by shared or adjacent presence (60), and **21.5 — a commodity
+  becomes a trade good the moment it changes hands**. That rule is the whole economy: a
+  commodity is worthless to its owner and valuable to everyone else, which is what makes a deal
+  worth making at all.
+- Both sides are taken before either is given, so a deal cannot be funded with what it is about
+  to receive. Pinned by a test where the proposer holds nothing and the partner is sending four.
+- Wormholes need no special case: they are adjacency as far as `Galaxy` is concerned (60.2), so
+  asking the galaxy is asking the right question.
+- Not ported: promissory notes, action-card trades, Hacan's neighbour exemption, Trade Convoys,
+  and the Keleres I.I.H.Q. reach.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -587,8 +601,9 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
-5. **M06 — general rules**: payment planner, trade, action cards, secrets, leaders, reactions.
-   Technology (M06-004/005) and exploration/relic fragments (M06-006, part of 007) are done.
+5. **M06 — general rules**: payment planner, action cards, secrets, leaders, reactions.
+   Technology (004/005), exploration and relic fragments (006, part of 007), and transactions
+   (002/003) are done.
 
 ## Decisions in force
 
