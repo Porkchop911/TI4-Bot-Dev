@@ -30,6 +30,7 @@ pub mod fixtures;
 pub mod fleet;
 pub mod game;
 pub mod invasion;
+pub mod leaders;
 pub mod movement;
 pub mod objectives;
 pub mod phase;
