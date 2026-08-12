@@ -524,6 +524,21 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Not ported: promissory notes, action-card trades, Hacan's neighbour exemption, Trade Convoys,
   and the Keleres I.I.H.Q. reach.
 
+## M06-010 checkpoint (authoritative)
+
+- **524 passing tests**; workspace clippy-clean under `-D warnings`.
+- Secret objectives: the 45.4 hand limit counting *scored* secrets (a player who has scored two
+  may hold only one more, and one whose every secret is scored has nothing to return — the rules
+  working, not a stuck state), 61.18 scoring, and timing classes.
+- **Only status secrets are offered at status time.** Action and agenda secrets are scored at
+  the event that satisfies them; offering them at status changes both their timing and whether
+  the triggering fact still exists.
+- Requirements are a first tranche of 2, with unregistered secrets unscoreable — the same design
+  the objective registry documents.
+- **The corpus corrected me again.** I registered "4 space docks" from memory; the printed card
+  says 3, and the alias I guessed (`usc`) does not exist. Both found by a test asserting every
+  registered alias is a real card.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -601,9 +616,9 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
-5. **M06 — general rules**: payment planner, action cards, secrets, leaders, reactions.
-   Technology (004/005), exploration and relic fragments (006, part of 007), and transactions
-   (002/003) are done.
+5. **M06 — general rules**: payment planner, action cards, leaders, reactions. Technology
+   (004/005), exploration and relic fragments (006, part of 007), transactions (002/003) and
+   secrets (010) are done.
 
 ## Decisions in force
 

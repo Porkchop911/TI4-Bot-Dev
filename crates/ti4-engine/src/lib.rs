@@ -36,6 +36,7 @@ pub mod phase;
 pub mod production;
 pub mod rng;
 pub mod seating;
+pub mod secrets;
 pub mod setup;
 pub mod status;
 pub mod strategy;
