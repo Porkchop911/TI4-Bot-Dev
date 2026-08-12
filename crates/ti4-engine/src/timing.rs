@@ -1,7 +1,7 @@
 //! Deterministic timing-ability registration.
 //!
 //! This module owns only the data and ordered registry needed to open a timing window. Event
-//! execution and frequency consumption deliberately remain in their later M03 packages.
+//! execution deliberately remains in later M03 packages.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -181,6 +181,9 @@ pub struct Resolver {
     relation_being_resolved: Option<Relation>,
     emission_stack: Vec<(String, u64)>,
     maximum_depth: usize,
+    used: BTreeSet<(String, FrequencyScope)>,
+    round_number: u64,
+    turn_number: u64,
 }
 
 impl Resolver {
@@ -203,6 +206,9 @@ impl Resolver {
             relation_being_resolved: None,
             emission_stack: Vec::new(),
             maximum_depth: Self::DEFAULT_MAXIMUM_DEPTH,
+            used: BTreeSet::new(),
+            round_number: 1,
+            turn_number: 1,
         }
     }
 
@@ -224,6 +230,41 @@ impl Resolver {
     /// Configure the speaker for seating-ordered timing windows.
     pub fn set_speaker(&mut self, speaker: Option<PlayerId>) {
         self.speaker = speaker;
+    }
+
+    /// Advance the turn counter and change the active player.
+    ///
+    /// # Errors
+    /// Returns [`TimingError::CounterExhausted`] instead of wrapping the replay-visible counter.
+    pub fn begin_turn(&mut self, active_player: PlayerId) -> Result<(), TimingError> {
+        self.turn_number = self
+            .turn_number
+            .checked_add(1)
+            .ok_or(TimingError::CounterExhausted("turn"))?;
+        self.active_player = Some(active_player);
+        Ok(())
+    }
+
+    /// Advance the round and turn counters.
+    ///
+    /// Existing usage entries need not be removed: their scope keys include the old counter, so
+    /// they can no longer match. This exactly preserves the oracle's set semantics while keeping
+    /// the mutation path atomic.
+    ///
+    /// # Errors
+    /// Returns [`TimingError::CounterExhausted`] instead of wrapping either counter.
+    pub fn begin_round(&mut self) -> Result<(), TimingError> {
+        let round_number = self
+            .round_number
+            .checked_add(1)
+            .ok_or(TimingError::CounterExhausted("round"))?;
+        let turn_number = self
+            .turn_number
+            .checked_add(1)
+            .ok_or(TimingError::CounterExhausted("turn"))?;
+        self.round_number = round_number;
+        self.turn_number = turn_number;
+        Ok(())
     }
 
     /// Borrow the table that answers optional timing choices.
@@ -359,6 +400,7 @@ impl Resolver {
                         continue;
                     };
                     resolved_here.insert(ability.id.clone());
+                    self.mark_used(&ability, event);
                     self.log.push(format!(
                         "  [{}] {} -> {}",
                         relation_name(relation),
@@ -392,6 +434,7 @@ impl Resolver {
             .filter(|ability| {
                 ability.owner == *player
                     && (ability.repeatable_in_window || !resolved_here.contains(&ability.id))
+                    && !self.is_used(ability, event)
                     && ability
                         .condition
                         .as_ref()
@@ -471,6 +514,27 @@ impl Resolver {
             .cloned()
             .collect()
     }
+
+    fn scope_key(&self, ability: &Ability, event: &Event) -> Option<(String, FrequencyScope)> {
+        let scope = match ability.frequency {
+            Frequency::OncePerTrigger => FrequencyScope::Trigger(event.id),
+            Frequency::OncePerTurn => FrequencyScope::Turn(self.turn_number),
+            Frequency::OncePerRound => FrequencyScope::Round(self.round_number),
+            Frequency::Unlimited => return None,
+        };
+        Some((ability.id.clone(), scope))
+    }
+
+    fn is_used(&self, ability: &Ability, event: &Event) -> bool {
+        self.scope_key(ability, event)
+            .is_some_and(|key| self.used.contains(&key))
+    }
+
+    fn mark_used(&mut self, ability: &Ability, event: &Event) {
+        if let Some(key) = self.scope_key(ability, event) {
+            self.used.insert(key);
+        }
+    }
 }
 
 impl Default for Resolver {
@@ -493,6 +557,16 @@ pub enum TimingError {
         /// Root-to-leaf chain that was already open when the next event was refused.
         event_chain: Vec<(String, u64)>,
     },
+    /// A timing lifecycle counter cannot advance without losing replay identity.
+    #[error("timing {0} counter is exhausted")]
+    CounterExhausted(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum FrequencyScope {
+    Trigger(u64),
+    Turn(u64),
+    Round(u64),
 }
 
 const fn relation_name(relation: Relation) -> &'static str {
@@ -1021,5 +1095,105 @@ mod tests {
                 && event_chain.first() == Some(&("LOOP".to_owned(), 1))
                 && event_chain.last() == Some(&("LOOP".to_owned(), 100))
         ));
+    }
+
+    #[test]
+    fn once_per_trigger_is_available_again_for_a_distinct_event_id() {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([recording_ability(
+            "once",
+            "sol",
+            "E",
+            Relation::When,
+            fired.clone(),
+        )]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing
+            .emit(Event::new(2, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*fired.lock().unwrap(), ["once", "once"]);
+    }
+
+    #[test]
+    fn once_per_turn_lapses_only_when_the_turn_counter_advances() {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([
+            recording_ability("turn", "sol", "E", Relation::When, fired.clone())
+                .with_frequency(Frequency::OncePerTurn),
+        ]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing
+            .emit(Event::new(2, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.begin_turn(player("sol")).unwrap();
+        timing
+            .emit(Event::new(3, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*fired.lock().unwrap(), ["turn", "turn"]);
+    }
+
+    #[test]
+    fn once_per_round_survives_turns_and_lapses_when_the_round_advances() {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([
+            recording_ability("round", "sol", "E", Relation::When, fired.clone())
+                .with_frequency(Frequency::OncePerRound),
+        ]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.begin_turn(player("sol")).unwrap();
+        timing
+            .emit(Event::new(2, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.begin_round().unwrap();
+        timing
+            .emit(Event::new(3, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*fired.lock().unwrap(), ["round", "round"]);
+    }
+
+    #[test]
+    fn unlimited_abilities_remain_available_across_events_and_lifecycle_transitions() {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([recording_ability(
+            "unlimited",
+            "sol",
+            "E",
+            Relation::When,
+            fired.clone(),
+        )
+        .with_frequency(Frequency::Unlimited)]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.begin_turn(player("sol")).unwrap();
+        timing
+            .emit(Event::new(2, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.begin_round().unwrap();
+        timing
+            .emit(Event::new(3, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(
+            *fired.lock().unwrap(),
+            ["unlimited", "unlimited", "unlimited"]
+        );
     }
 }
