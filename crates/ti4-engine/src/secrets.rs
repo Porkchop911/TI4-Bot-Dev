@@ -457,6 +457,102 @@ fn production_eight_in_one_system(position: &Position<'_>) -> bool {
     })
 }
 
+/// Have ships in three systems that are each adjacent to an anomaly.
+///
+/// Three systems beside anomalies, not three anomalies: one system with three anomalous
+/// neighbours is one system.
+fn ships_beside_three_anomalies(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    ship_systems(position)
+        .into_iter()
+        .filter(|here| {
+            galaxy.adjacent(here.as_str()).into_iter().any(|other| {
+                systems
+                    .get(other)
+                    .is_some_and(ti4_content::galaxy::System::is_anomaly)
+            })
+        })
+        .count()
+        >= 3
+}
+
+/// Have a ship in a system adjacent to another player's home system.
+fn ships_beside_a_rival_home(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let mine = position
+        .state
+        .player(position.player)
+        .map(|seat| seat.faction.to_string());
+    let planets = ti4_content::galaxy::all_planets(position.content, position.sources);
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+
+    let is_rival_home = |system_id: &str| {
+        systems.get(system_id).is_some_and(|system| {
+            system.planets().into_iter().any(|planet| {
+                planets
+                    .get(planet)
+                    .and_then(ti4_content::galaxy::Planet::homeworld_of)
+                    .is_some_and(|faction| Some(faction.to_owned()) != mine)
+            })
+        })
+    };
+
+    ship_systems(position).into_iter().any(|here| {
+        galaxy
+            .adjacent(here.as_str())
+            .into_iter()
+            .any(is_rival_home)
+    })
+}
+
+/// Be neighbours with every other player (LRR 60).
+fn neighbours_with_everyone(position: &Position<'_>) -> bool {
+    let Some(galaxy) = position.galaxy else {
+        return false;
+    };
+    let others: Vec<&PlayerId> = position
+        .state
+        .players
+        .iter()
+        .map(|seat| &seat.id)
+        .filter(|id| *id != position.player)
+        .collect();
+    if others.is_empty() {
+        return false; // a table of one is not cohesion
+    }
+    let reached = crate::transactions::neighbours(position.state, galaxy, position.player);
+    others.into_iter().all(|other| reached.contains(other))
+}
+
+/// Have units in the wormhole nexus.
+///
+/// The nexus is a `PoK` system; a board without it simply never satisfies this, which is a legal
+/// state of affairs rather than a gap. No map is needed — the question is only whether the
+/// player has units there.
+fn units_in_the_nexus(position: &Position<'_>) -> bool {
+    ti4_content::galaxy::all_systems(position.content, position.sources)
+        .iter()
+        .filter(|(_, system)| {
+            system
+                .name()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
+        })
+        .any(|(id, _)| {
+            let system = ti4_model::id::SystemId::new(*id);
+            position.state.board.contains_key(&system)
+                && !position
+                    .state
+                    .system_state(&system)
+                    .units_of(position.player)
+                    .is_empty()
+        })
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -513,6 +609,10 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 
     match alias.as_str() {
         "csl" => Some(beside_a_rival_dock),
+        "lsc" => Some(ships_beside_three_anomalies),
+        "te" => Some(ships_beside_a_rival_home),
+        "fc" => Some(neighbours_with_everyone),
+        "dfat" => Some(units_in_the_nexus),
         "btgk" => Some(ships_at_both_wormhole_kinds),
         "ans" => Some(two_faction_technologies),
         "dp" => Some(three_laws_in_play),
@@ -540,8 +640,8 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ans", "btgk", "csl", "ctr", "dp", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp",
-        "mrm", "mtm", "ose", "otf", "pem", "sai", "syc",
+        "ans", "btgk", "csl", "ctr", "dfat", "dp", "eap", "eh", "faa", "fc", "fwm", "gamf", "hrm",
+        "lsc", "mlp", "mp", "mrm", "mtm", "ose", "otf", "pem", "sai", "syc", "te",
     ]
 }
 
@@ -813,6 +913,197 @@ mod tests {
     fn can_score(state: &GameState, alias: &str) -> bool {
         scoreable(state, ContentStore::embedded(), POK, &player())
             .contains(&SecretObjectiveId::new(alias))
+    }
+
+    /// A position with the map attached.
+    fn on_map<'a>(
+        state: &'a GameState,
+        seat: &'a PlayerId,
+        galaxy: &'a ti4_content::galaxy::Galaxy,
+    ) -> Position<'a> {
+        Position {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: seat,
+            galaxy: Some(galaxy),
+        }
+    }
+
+    #[test]
+    fn the_map_shaped_secrets_are_unmet_without_a_map() {
+        let state = game(&["a", "b"]);
+        let seat = player();
+        let blind = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+
+        assert!(!ships_beside_three_anomalies(&blind));
+        assert!(!ships_beside_a_rival_home(&blind));
+        assert!(!neighbours_with_everyone(&blind));
+    }
+
+    #[test]
+    fn learning_the_secrets_counts_systems_not_anomalies() {
+        // A hub whose centre is an anomaly: every ring system is adjacent to it, so ships in
+        // three ring systems satisfy the card and ships in two do not.
+        let anomaly = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| system.is_anomaly() && !system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned());
+        let Some(anomaly) = anomaly else {
+            return; // no anomaly in this corpus
+        };
+        let hub = crate::fixtures::hub_with_centre(&anomaly);
+        let mut state = game(&["a"]);
+        let seat = player();
+
+        for outer in hub.outer.iter().take(2) {
+            crate::fixtures::put(
+                &mut state,
+                &ti4_model::id::SystemId::new(outer.clone()),
+                "cruiser",
+                &seat,
+                3,
+            );
+        }
+        assert!(
+            !ships_beside_three_anomalies(&on_map(&state, &seat, &hub.galaxy)),
+            "two systems beside an anomaly are two, however many ships are in them"
+        );
+
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(hub.outer[2].clone()),
+            "cruiser",
+            &seat,
+            1,
+        );
+        assert!(ships_beside_three_anomalies(&on_map(
+            &state,
+            &seat,
+            &hub.galaxy
+        )));
+    }
+
+    #[test]
+    fn threatening_enemies_needs_a_rivals_home_not_your_own() {
+        let content = ContentStore::embedded();
+        let homes_in = |system: &str| -> Vec<String> {
+            ti4_content::galaxy::planets_in(content, system, POK)
+                .into_iter()
+                .filter_map(|planet| planet.homeworld_of().map(ToOwned::to_owned))
+                .collect()
+        };
+
+        // The ring must hold no homeworld at all, or a second home next door keeps the
+        // requirement true after the player adopts the first faction and the test passes for
+        // the wrong reason. Ordinary systems include homeworlds, so the ring has to be chosen.
+        let (faction, home_system) = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .find_map(|(_, planet)| {
+                planet
+                    .homeworld_of()
+                    .zip(planet.system_id())
+                    .map(|(faction, system)| (faction.to_owned(), system.to_owned()))
+            })
+            .expect("the corpus has a homeworld");
+
+        let mut ids = vec![home_system.clone()];
+        ids.extend(
+            ti4_content::galaxy::all_systems(content, POK)
+                .iter()
+                .filter(|(_, system)| !system.is_anomaly() && !system.is_hyperlane())
+                .map(|(id, _)| (*id).to_owned())
+                .filter(|id| id != &home_system && homes_in(id).is_empty())
+                .take(6),
+        );
+        assert_eq!(ids.len(), 7, "a centre and a ring of six");
+        let hub = crate::fixtures::hub_from(&ids);
+
+        let mut state = game(&["a"]);
+        let seat = player();
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(hub.outer[0].clone()),
+            "cruiser",
+            &seat,
+            1,
+        );
+
+        assert!(
+            ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            "a ship next to somebody else's home"
+        );
+
+        // Playing that faction makes it your own home, and the threat is empty.
+        state.player_mut(&seat).unwrap().faction = ti4_model::id::FactionId::new(faction);
+        assert!(
+            !ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            "your own home is not an enemy to threaten"
+        );
+    }
+
+    #[test]
+    fn fostering_cohesion_needs_every_other_player() {
+        let hub = crate::fixtures::plain_hub();
+        let mut state = game(&["a", "b", "c"]);
+        let seat = player();
+        let centre = ti4_model::id::SystemId::new(hub.centre.clone());
+
+        crate::fixtures::put(&mut state, &centre, "cruiser", &seat, 1);
+        crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("b"), 1);
+        assert!(
+            !neighbours_with_everyone(&on_map(&state, &seat, &hub.galaxy)),
+            "c is not a neighbour, so this is not cohesion"
+        );
+
+        crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("c"), 1);
+        assert!(neighbours_with_everyone(&on_map(
+            &state,
+            &seat,
+            &hub.galaxy
+        )));
+    }
+
+    #[test]
+    fn defying_space_and_time_needs_the_nexus_itself() {
+        let nexus = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| {
+                system
+                    .name()
+                    .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
+            })
+            .map(|(id, _)| (*id).to_owned());
+        let Some(nexus) = nexus else {
+            return; // this corpus has no nexus
+        };
+
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "dfat");
+        let (elsewhere, _) = a_placed_planet();
+        put(&mut state, &elsewhere, "cruiser", &player(), 1);
+        assert!(
+            !can_score(&state, "dfat"),
+            "units elsewhere are not the nexus"
+        );
+
+        // Somebody else's fleet puts the nexus on the board without putting you in it, which is
+        // the difference between "the nexus is in play" and "you have units there".
+        let nexus = ti4_model::id::SystemId::new(nexus);
+        put(&mut state, &nexus, "cruiser", &PlayerId::new("b"), 1);
+        assert!(
+            !can_score(&state, "dfat"),
+            "another player's fleet in the nexus is not yours"
+        );
+
+        put(&mut state, &nexus, "cruiser", &player(), 1);
+        assert!(can_score(&state, "dfat"));
     }
 
     #[test]
