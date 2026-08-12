@@ -18,16 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M05-004 — driving the tactical action
-  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`)
+- Last completed package: M06-001 — space combat
+  (`plans/evidence/M06-001_SPACE_COMBAT.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: space combat (M06), the largest remaining gap — ships of two
-  players can currently share a system indefinitely.
+- Next dependency-ready package: making the combat choice windows resumable so the step driver
+  can fight, replacing `TACTICAL_STEPS_UNRESOLVED`. Same shape as the vote window.
 
 ## M04-005 package checkpoint (historical)
 
@@ -217,8 +217,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M04-016 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
-- Last completed package: M05-004 — driving the tactical action
-  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
+- Last completed package: M06-001 — space combat
+  (`plans/evidence/M06-001_SPACE_COMBAT.md`).
 - `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
   142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
 - `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
@@ -276,8 +276,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M05-003 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `2be9a43`.
-- Last completed package: M05-004 — driving the tactical action
-  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
+- Last completed package: M06-001 — space combat
+  (`plans/evidence/M06-001_SPACE_COMBAT.md`).
 - `ti4-engine` has 193 tests. The workspace has **383 passing tests**: 121 `ti4-content`,
   193 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - `engine/movement.py` ported in full: 58.4a–f, 11.1, 86.1, 59.1/59.1a/59.2, 41.1/41.3.
@@ -294,8 +294,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M05-006 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `a2fedaa`.
-- Last completed package: M05-004 — driving the tactical action
-  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
+- Last completed package: M06-001 — space combat
+  (`plans/evidence/M06-001_SPACE_COMBAT.md`).
 - `ti4-engine` has 210 tests. The workspace has **400 passing tests**: 121 `ti4-content`,
   210 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - `CargoWindow` fills a hold under LRR 95, tracking candidates **by index, never by value**:
@@ -332,11 +332,11 @@ are recorded in the package evidence; independent review remains owner-waived.
   deliberately — the wrong version passed the eye test both times.
 - **Nothing sequences these yet.** A driven game still cannot take a tactical action.
 
-## M05-004 package checkpoint (authoritative)
+## M05-004 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `f25435b`.
-- Last completed package: M05-004 — driving the tactical action
-  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
+- Last completed package: M06-001 — space combat
+  (`plans/evidence/M06-001_SPACE_COMBAT.md`).
 - `ti4-engine` has 235 tests. The workspace has **425 passing tests**: 121 `ti4-content`,
   235 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - A second objective-predicate tranche landed alongside: technology and structures, taking
@@ -352,6 +352,24 @@ are recorded in the package evidence; independent review remains owner-waived.
 - The action *completes* and emits `TACTICAL_STEPS_UNRESOLVED` rather than blocking. Combat,
   invasion and production are unimplemented, so **arriving in an enemy system has no
   consequence** — announced, not hidden.
+
+## M06-001 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `96a562e`.
+- Last completed package: M06-001 — space combat (`plans/evidence/M06-001_SPACE_COMBAT.md`).
+- `ti4-engine` has 249 tests. The workspace has **439 passing tests**: 121 `ti4-content`,
+  249 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- 78.1, 78.5b/c, 78.5f, 78.6, 87.1 and 15.2a are implemented and tested. Hits are simultaneous;
+  resolving sequentially would let casualties reduce return fire already earned.
+- A divergence caught by its own test: the first version rolled one batch **per unit**, where
+  the oracle groups by combat value. The draw count is part of what a seed reproduces, so
+  rolling them apart would silently renumber every later draw.
+- Casualty and sustain options are deduplicated for the reason the choice model documents: a
+  sampling decider draws per option, so five fighters offered five times decided by count
+  rather than by scoring.
+- Choices are asked inline through a `Table`, as the oracle does, so **the step driver does not
+  fight yet** — the position movement was in before its driver landed.
+- Not included: anti-fighter barrage, space cannon, retreats, rerolls, modifiers.
 
 ## Implementation status
 

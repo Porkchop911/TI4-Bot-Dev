@@ -1,0 +1,744 @@
+//! Space combat (LRR 78, with 87 governing Sustain Damage).
+//!
+//! Ported from the oracle's `engine/combat.py`: `combatants`, `effective_hits_on`,
+//! `_roll_combat`, `absorb_hits`, `_offer_sustain`, `_choose_casualty` and the round loop in
+//! `resolve`.
+//!
+//! Choices are asked inline through a [`Table`], as the oracle does, rather than being exposed
+//! as a resumable window. The step driver therefore does not run combat yet — the same shape
+//! movement had before its driver landed, and recorded as an open finding.
+
+use ti4_content::ContentStore;
+use ti4_content::units::{UnitType, catalogue};
+use ti4_model::content_types::SourceSet;
+use ti4_model::id::{PlayerId, SystemId};
+use ti4_model::state::GameState;
+use ti4_model::units::Unit;
+
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::dice::Dice;
+use crate::rng::GameRng;
+
+/// A bound on the round loop, so an unresolvable fight fails loudly instead of hanging.
+pub const MAX_ROUNDS: u32 = 50;
+
+/// The choice kind for cancelling a hit with Sustain Damage.
+pub const SUSTAIN_KIND: &str = "sustain";
+/// The choice kind for assigning a hit to one of your own units.
+pub const CASUALTY_KIND: &str = "casualty";
+
+/// A combat could not be resolved.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CombatError {
+    #[error("space combat in {0} did not finish within {MAX_ROUNDS} rounds")]
+    Unresolved(SystemId),
+    #[error(transparent)]
+    IllegalChoice(#[from] IllegalChoice),
+}
+
+/// How a space combat ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombatOutcome {
+    /// The last player with ships, or `None` if both sides were wiped out.
+    pub winner: Option<PlayerId>,
+    /// Rounds fought.
+    pub rounds: u32,
+}
+
+/// Players with ships in a system, in seating order (78.1).
+#[must_use]
+pub fn combatants(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+) -> Vec<PlayerId> {
+    let types = catalogue(content, sources);
+    let mut found = Vec::new();
+    for player in &state.seating_order {
+        let has_ship = state.system_state(system).units.iter().any(|unit| {
+            &unit.owner == player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ship)
+        });
+        if has_ship {
+            found.push(player.clone());
+        }
+    }
+    found
+}
+
+/// This player's ships in the system, in board order.
+#[must_use]
+pub fn ships_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Vec<Unit> {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_ship)
+        })
+        .cloned()
+        .collect()
+}
+
+/// The value a unit needs to roll, or `None` if it does not fight.
+///
+/// A printed combat value of zero means "does not fight" rather than "hits on 0", which is why
+/// this is an `Option` and not a number with a sentinel.
+#[must_use]
+pub fn hits_on(content: &ContentStore, sources: SourceSet, unit: &Unit) -> Option<i64> {
+    catalogue(content, sources)
+        .get(unit.type_id.as_str())
+        .and_then(UnitType::combat_hits_on)
+}
+
+/// Roll one player's fleet and count the hits (78.5).
+///
+/// Rolled in **ascending order of combat value**, per 78.5b/78.5c, so the sequence a seed
+/// reproduces does not depend on the order units happen to sit in the system.
+pub fn roll_fleet(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let types = catalogue(content, sources);
+    // Grouped by combat value, then rolled ascending (78.5b, 78.5c). Three destroyers are one
+    // roll of three dice, not three rolls of one: the number of draws from the seeded stream is
+    // part of what a seed reproduces, so rolling them apart would silently renumber every later
+    // draw. `BTreeMap` gives the ascending order for free.
+    let mut fighting: std::collections::BTreeMap<i64, i64> = std::collections::BTreeMap::new();
+    for unit in ships_of(state, content, sources, player, system) {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = kind.combat_hits_on() else {
+            continue;
+        };
+        *fighting.entry(value).or_insert(0) += kind.combat_dice();
+    }
+
+    let mut hits = 0;
+    for (value, count) in fighting {
+        let dice_count = usize::try_from(count).unwrap_or(0);
+        if dice_count == 0 {
+            continue;
+        }
+        let threshold = u32::try_from(value).unwrap_or(u32::MAX);
+        let roll = dice.roll(rng, dice_count, "space combat", Some(threshold));
+        hits += roll.hits();
+    }
+    hits
+}
+
+/// 87.1: each undamaged sustaining unit may cancel one hit. Always optional.
+///
+/// Returns the hits still to be absorbed.
+fn offer_sustain(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+    mut hits: usize,
+) -> Result<usize, CombatError> {
+    let types = catalogue(content, sources);
+    while hits > 0 {
+        let available: Vec<usize> = state
+            .system_state(system)
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(_, unit)| {
+                &unit.owner == player
+                    && !unit.sustained_damage
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::sustain_damage)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if available.is_empty() {
+            return Ok(hits);
+        }
+
+        // One option per unit *type*. Every unit here is undamaged by the filter above, so two
+        // of the same type are the same decision written twice — and the copies skew it,
+        // because a sampling decider would sustain on whichever type it happened to own more of.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut options = Vec::new();
+        for index in &available {
+            let unit = &state.system_state(system).units[*index];
+            if !seen.insert(unit.type_id.to_string()) {
+                continue;
+            }
+            options.push(ChoiceOption::labelled(
+                format!("sustain|{index}"),
+                SUSTAIN_KIND,
+                format!("sustain damage on {}", unit.type_id),
+            ));
+        }
+        options.push(ChoiceOption::labelled(
+            crate::choice::DECLINE_ID,
+            crate::choice::DECLINE_KIND,
+            "take the hit",
+        ));
+
+        let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options);
+        let answer = table.ask(&choice)?;
+        if answer.is_decline() {
+            return Ok(hits);
+        }
+        let Some(index) = answer
+            .id
+            .strip_prefix("sustain|")
+            .and_then(|rest| rest.parse::<usize>().ok())
+        else {
+            return Ok(hits);
+        };
+        if let Some(unit) = state.system_mut(system).units.get_mut(index) {
+            *unit = unit.sustained();
+        }
+        hits = hits.saturating_sub(1);
+    }
+    Ok(hits)
+}
+
+/// 78.6: cancel what Sustain Damage can, then lose one ship per remaining hit.
+///
+/// Excess hits beyond the units available simply have no effect (15.2a).
+///
+/// # Errors
+/// [`CombatError::IllegalChoice`] when a decider answers with something not offered.
+pub fn absorb_hits(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+    hits: usize,
+) -> Result<(), CombatError> {
+    let mut remaining = offer_sustain(state, content, sources, table, player, system, hits)?;
+
+    while remaining > 0 {
+        let alive = ships_of(state, content, sources, player, system);
+        if alive.is_empty() {
+            return Ok(()); // 15.2a
+        }
+        let casualty = choose_casualty(table, player, &alive)?;
+        state
+            .system_mut(system)
+            .remove(std::slice::from_ref(&casualty));
+        remaining -= 1;
+    }
+    Ok(())
+}
+
+/// 78.6: the owning player chooses which of their own units dies.
+fn choose_casualty(
+    table: &mut Table,
+    player: &PlayerId,
+    units: &[Unit],
+) -> Result<Unit, CombatError> {
+    if let [only] = units {
+        return Ok(only.clone());
+    }
+    // One option per distinguishable loss. Five fighters are one decision, not five, and
+    // offering it five times mattered: a sampling decider draws per option, so with five
+    // fighters and one dreadnought it destroyed a fighter five times in six whatever it thought
+    // of the trade — the count decided, not the scoring.
+    //
+    // Damage is part of what distinguishes a unit, and goes in the label as well as the key:
+    // losing an already-damaged dreadnought is a different proposition from losing a fresh one.
+    let mut seen = std::collections::BTreeSet::new();
+    let mut options = Vec::new();
+    for (index, unit) in units.iter().enumerate() {
+        if !seen.insert((unit.type_id.to_string(), unit.sustained_damage)) {
+            continue;
+        }
+        let damaged = if unit.sustained_damage {
+            " (damaged)"
+        } else {
+            ""
+        };
+        options.push(ChoiceOption::labelled(
+            format!("destroy|{index}"),
+            CASUALTY_KIND,
+            format!("destroy {}{damaged}", unit.type_id),
+        ));
+    }
+    let choice = Choice::new(player.clone(), "assign a hit", options);
+    let answer = table.ask(&choice)?;
+    let index = answer
+        .id
+        .strip_prefix("destroy|")
+        .and_then(|rest| rest.parse::<usize>().ok())
+        .unwrap_or(0);
+    Ok(units.get(index).unwrap_or(&units[0]).clone())
+}
+
+/// Fight a space combat to its end (LRR 78).
+///
+/// Returns immediately when fewer than two players have ships (78.1).
+///
+/// # Errors
+/// [`CombatError::Unresolved`] if the fight has not ended within [`MAX_ROUNDS`], and
+/// [`CombatError::IllegalChoice`] when a decider answers with something not offered.
+pub fn resolve(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut Table,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+) -> Result<CombatOutcome, CombatError> {
+    let sides = combatants(state, content, sources, system);
+    let [attacker, defender] = sides.as_slice() else {
+        return Ok(CombatOutcome {
+            winner: sides.first().cloned(),
+            rounds: 0,
+        });
+    };
+    let (attacker, defender) = (attacker.clone(), defender.clone());
+
+    for round in 1..=MAX_ROUNDS {
+        state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+        if finished(state, content, sources, system, &attacker, &defender) {
+            return Ok(CombatOutcome {
+                winner: winner(state, content, sources, system, &attacker, &defender),
+                rounds: round - 1,
+            });
+        }
+
+        // 78.5f: the attacker rolls everything first.
+        let attacker_hits = roll_fleet(state, content, sources, dice, rng, &attacker, system);
+        let defender_hits = roll_fleet(state, content, sources, dice, rng, &defender, system);
+
+        // 78.6: hits are simultaneous, so both sides absorb before either is checked. A
+        // sequential resolution would let the attacker's casualties reduce the return fire
+        // they had already earned.
+        absorb_hits(
+            state,
+            content,
+            sources,
+            table,
+            &defender,
+            system,
+            attacker_hits,
+        )?;
+        absorb_hits(
+            state,
+            content,
+            sources,
+            table,
+            &attacker,
+            system,
+            defender_hits,
+        )?;
+
+        if finished(state, content, sources, system, &attacker, &defender) {
+            return Ok(CombatOutcome {
+                winner: winner(state, content, sources, system, &attacker, &defender),
+                rounds: round,
+            });
+        }
+    }
+    Err(CombatError::Unresolved(system.clone()))
+}
+
+fn finished(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    attacker: &PlayerId,
+    defender: &PlayerId,
+) -> bool {
+    ships_of(state, content, sources, attacker, system).is_empty()
+        || ships_of(state, content, sources, defender, system).is_empty()
+}
+
+fn winner(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    attacker: &PlayerId,
+    defender: &PlayerId,
+) -> Option<PlayerId> {
+    let attacker_alive = !ships_of(state, content, sources, attacker, system).is_empty();
+    let defender_alive = !ships_of(state, content, sources, defender, system).is_empty();
+    match (attacker_alive, defender_alive) {
+        (true, false) => Some(attacker.clone()),
+        (false, true) => Some(defender.clone()),
+        // Both wiped out is a draw, and both alive cannot happen at a decision point.
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ti4_model::content_types::POK;
+    use ti4_model::id::UnitTypeId;
+
+    use super::*;
+    use crate::choice::{FirstOption, Scripted};
+    use crate::setup::start_game;
+
+    fn attacker() -> PlayerId {
+        PlayerId::new("a")
+    }
+    fn defender() -> PlayerId {
+        PlayerId::new("b")
+    }
+
+    fn arena() -> (GameState, SystemId) {
+        let players = [attacker(), defender()];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        (state, SystemId::new("18"))
+    }
+
+    fn put(state: &mut GameState, system: &SystemId, kind: &str, owner: &PlayerId, n: usize) {
+        for _ in 0..n {
+            state
+                .system_mut(system)
+                .units
+                .push(Unit::new(UnitTypeId::new(kind), owner.clone()));
+        }
+    }
+
+    fn kit() -> (Table, Dice, GameRng) {
+        (Table::new(), Dice::new(), GameRng::new(7))
+    }
+
+    #[test]
+    fn a_system_with_one_fleet_is_not_a_combat() {
+        // 78.1: fewer than two players with ships, so there is nothing to fight.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 2);
+        let (mut table, mut dice, mut rng) = kit();
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.winner, Some(attacker()));
+        assert_eq!(outcome.rounds, 0);
+        assert_eq!(dice.count(), 0, "no dice were rolled");
+    }
+
+    #[test]
+    fn ground_forces_do_not_make_a_combat() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 1);
+        put(&mut state, &system, "infantry", &defender(), 3);
+
+        assert_eq!(
+            combatants(&state, ContentStore::embedded(), POK, &system),
+            vec![attacker()],
+            "78.1 counts ships"
+        );
+    }
+
+    #[test]
+    fn a_fight_ends_with_one_fleet_standing() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 4);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        let (mut table, mut dice, mut rng) = kit();
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .unwrap();
+
+        assert!(outcome.winner.is_some(), "somebody won");
+        assert!(outcome.rounds >= 1);
+        let survivors = combatants(&state, ContentStore::embedded(), POK, &system);
+        assert!(survivors.len() <= 1, "only one side can remain");
+    }
+
+    #[test]
+    fn a_unit_that_does_not_fight_rolls_nothing() {
+        // A printed combat value of zero means "does not fight", not "hits on 0".
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 1);
+        let (_, mut dice, mut rng) = kit();
+
+        let before = dice.count();
+        let hits = roll_fleet(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &defender(),
+            &system,
+        );
+        assert_eq!(hits, 0);
+        assert_eq!(dice.count(), before, "an empty fleet rolls no dice");
+    }
+
+    #[test]
+    fn every_fighting_ship_rolls() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 3);
+        let (_, mut dice, mut rng) = kit();
+
+        roll_fleet(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &attacker(),
+            &system,
+        );
+
+        // Three destroyers share one combat value, so they roll together as one batch.
+        assert_eq!(dice.count(), 1);
+        assert_eq!(dice.history()[0].faces.len(), 3);
+    }
+
+    #[test]
+    fn hits_are_absorbed_by_destroying_ships() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &defender(), 3);
+        let (mut table, _, _) = kit();
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn excess_hits_have_no_effect() {
+        // 15.2a: more hits than units is not an error, and must not underflow.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &defender(), 2);
+        let (mut table, _, _) = kit();
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            9,
+        )
+        .unwrap();
+
+        assert!(ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).is_empty());
+    }
+
+    #[test]
+    fn sustain_damage_cancels_a_hit_instead_of_losing_the_ship() {
+        // 87.1. FirstOption takes the sustain option, which is offered before the casualty.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        let mut table = Table::with_default(Box::new(FirstOption));
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            1,
+        )
+        .unwrap();
+
+        let survivors = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
+        assert_eq!(survivors.len(), 1, "the ship survived");
+        assert!(survivors[0].sustained_damage, "by taking damage");
+    }
+
+    #[test]
+    fn sustain_is_optional_and_declining_loses_the_ship() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        let mut table = Table::with_default(Box::new(Scripted::new(["decline".to_owned()])));
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            1,
+        )
+        .unwrap();
+
+        assert!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).is_empty(),
+            "87.1 is always optional"
+        );
+    }
+
+    #[test]
+    fn an_already_damaged_ship_cannot_sustain_again() {
+        let (mut state, system) = arena();
+        state
+            .system_mut(&system)
+            .units
+            .push(Unit::new(UnitTypeId::new("dreadnought"), defender()).sustained());
+        let mut table = Table::with_default(Box::new(FirstOption));
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            1,
+        )
+        .unwrap();
+
+        assert!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).is_empty(),
+            "it was already damaged, so the hit lands"
+        );
+    }
+
+    #[test]
+    fn interchangeable_casualties_are_one_decision_not_five() {
+        // With five fighters and one dreadnought, offering per hull destroyed a fighter five
+        // times in six whatever the decider thought of the trade — the count decided.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &defender(), 5);
+        put(&mut state, &system, "cruiser", &defender(), 1);
+        let units = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
+        let mut table = Table::new();
+
+        let taken = choose_casualty(&mut table, &defender(), &units).unwrap();
+        let offered = table.log.records.last().expect("a choice was recorded");
+
+        assert_eq!(offered.offered.len(), 2, "one fighter, one cruiser");
+        assert!(!taken.type_id.as_str().is_empty());
+    }
+
+    #[test]
+    fn a_damaged_ship_is_a_different_casualty_from_a_fresh_one() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        state
+            .system_mut(&system)
+            .units
+            .push(Unit::new(UnitTypeId::new("dreadnought"), defender()).sustained());
+        let units = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
+        let mut table = Table::new();
+
+        choose_casualty(&mut table, &defender(), &units).unwrap();
+        let offered = table.log.records.last().unwrap();
+
+        assert_eq!(offered.offered.len(), 2, "fresh and damaged are distinct");
+    }
+
+    #[test]
+    fn the_same_seed_fights_the_same_battle() {
+        let fight = |seed: u64| {
+            let (mut state, system) = arena();
+            put(&mut state, &system, "cruiser", &attacker(), 3);
+            put(&mut state, &system, "cruiser", &defender(), 3);
+            let mut table = Table::new();
+            let mut dice = Dice::new();
+            let mut rng = GameRng::new(seed);
+            let outcome = resolve(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &mut table,
+                &mut dice,
+                &mut rng,
+                &system,
+            )
+            .unwrap();
+            (outcome, dice.count())
+        };
+
+        assert_eq!(fight(11), fight(11), "a seed reproduces its battle");
+    }
+
+    #[test]
+    fn hits_are_simultaneous() {
+        // 78.6. Two single fighters both hitting must both die: resolving sequentially would
+        // let the first casualty cancel return fire it had already earned.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        let mut table = Table::new();
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            1,
+        )
+        .unwrap();
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &attacker(),
+            &system,
+            1,
+        )
+        .unwrap();
+
+        assert!(
+            combatants(&state, ContentStore::embedded(), POK, &system).is_empty(),
+            "both fleets were destroyed in the same round"
+        );
+    }
+}

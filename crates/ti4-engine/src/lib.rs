@@ -19,6 +19,7 @@
 
 pub mod agenda;
 pub mod choice;
+pub mod combat;
 pub mod deck;
 pub mod dice;
 pub mod draft;
@@ -45,6 +46,7 @@ pub use choice::{
     IllegalChoice, Scripted, SeededRandom, Table, distinct_units, first_of_each, options_from,
     unit_label, validate,
 };
+pub use combat::{CombatError, CombatOutcome, absorb_hits, combatants, resolve};
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
 pub use dice::{Dice, Roll};
 pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};
