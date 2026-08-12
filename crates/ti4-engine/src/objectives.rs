@@ -988,6 +988,27 @@ pub fn pay_for(
     }
 }
 
+/// Whether a revealed objective's requirement is met, whichever deck it came from.
+///
+/// Classified Document Leaks moves a *secret* objective into the public area, where anyone may
+/// score it. Its requirement stays registered in `secrets`, so a public-only lookup would leave
+/// the leaked objective sitting on the table worth nothing to anybody — which is the whole card.
+fn satisfied(position: &Position<'_>, alias: &ObjectiveId) -> bool {
+    if let Some(check) = requirement_for(alias) {
+        return check(position);
+    }
+    let secret = ti4_model::id::SecretObjectiveId::new(alias.as_str());
+    crate::secrets::requirement_for(&secret).is_some_and(|check| {
+        check(&crate::secrets::Position {
+            state: position.state,
+            content: position.content,
+            sources: position.sources,
+            player: position.player,
+            galaxy: position.galaxy,
+        })
+    })
+}
+
 /// Revealed public objectives this player could score right now.
 #[must_use]
 pub fn scoreable(
@@ -1026,7 +1047,7 @@ pub fn scoreable_on(
             // 61.10: a bought objective is offered when it can be afforded. Its price is
             // checked here and charged in `award`, so being asked costs nothing.
             cost_of(alias).map_or_else(
-                || requirement_for(alias).is_some_and(|check| check(&position)),
+                || satisfied(&position, alias),
                 |cost| can_afford(state, content, sources, player, cost),
             )
         })

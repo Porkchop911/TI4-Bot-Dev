@@ -33,23 +33,32 @@ pub fn registered_aliases() -> Vec<&'static str> {
     vec![
         "abolishment",
         "arms_reduction",
+        "classified",
+        "censure",
+        "artifact",
         "constitution",
         "conscription",
         "conventions",
         "core_mining",
+        "crown_of_emphidia",
         "defense_act",
+        "execution",
         "demilitarized_zone",
         "disarmament",
         "holy_planet_of_ixth",
         "miscount",
+        "redistribution",
         "plowshares",
         "regulations",
         "representative_government",
         "revolution",
         "sanctions",
+        "shard_of_the_throne",
+        "secret",
         "schematics",
         "shared_research",
         "travel_ban",
+        "wormhole_research",
         "wormhole_recon",
         "economic_equality",
         "incentive",
@@ -356,6 +365,181 @@ pub fn resolve_with(
     // decides what a "dreadnought" is. PoK, as everywhere else in this engine.
     let (content, sources) = (ctx.content, ctx.sources);
     match agenda {
+        "secret" => {
+            // Archived Secret: the elected player draws a secret objective.
+            if state.player(&PlayerId::new(outcome)).is_some() {
+                let player = PlayerId::new(outcome);
+                let _ = crate::secrets::draw(state, content, ctx.table, &player);
+            }
+        }
+        "censure" | "shard_of_the_throne" | "crown_of_emphidia" => {
+            // All three pay the elected player a point when the card arrives. Only Emphidia's
+            // transfer rule has anywhere to hook (a planet changing hands); the Shard's needs
+            // "win a combat against the owner", which combat does not report.
+            if state.player(&PlayerId::new(outcome)).is_some() {
+                adjust_victory_points(state, &PlayerId::new(outcome), 1);
+            }
+        }
+        "classified" => {
+            // Classified Document Leaks: the elected secret becomes public. A law by type, but
+            // nothing standing survives it — the card is spent the instant the objective moves.
+            //
+            // Whoever already scored it keeps their point (61.8 stops anyone scoring the same
+            // objective twice); everyone else may now score it from the public area.
+            let alias = ti4_model::id::ObjectiveId::new(outcome);
+            let is_secret = content
+                .get(
+                    ti4_model::content_types::ContentType::SecretObjectives,
+                    outcome,
+                )
+                .is_some();
+            if is_secret && !state.revealed_objectives.contains(&alias) {
+                state.revealed_objectives.push(alias);
+            }
+        }
+        "execution" => {
+            // Public Execution: the elected player loses their hand and, if they are speaker,
+            // the chair. 8.16 bars them from the rest of this agenda phase, which this path
+            // cannot express — the vote session owns that.
+            let player = PlayerId::new(outcome);
+            if state.player(&player).is_none() {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            discard_hand(state, &player);
+            if state.speaker == player {
+                // The card's own note says left means clockwise.
+                let order = state.clockwise_from(&player);
+                if let Some(next) = order.get(1) {
+                    state.speaker = next.clone();
+                }
+            }
+            return Effect::Deferred {
+                agenda: agenda.to_owned(),
+                what: "8.16 bars the elected player from voting, which the session owns".to_owned(),
+            };
+        }
+        "redistribution" => {
+            // Colonial Redistribution: wipe the elected planet, then hand it to whoever is
+            // furthest behind. Several may be level, and the controller chooses between them.
+            let controller = controller_of(state, outcome);
+            let system = system_of(state, outcome);
+            clear_planet(state, content, sources, outcome, |_| true, None);
+            let (Some(controller), Some(system)) = (controller, system) else {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            };
+            let fewest = state
+                .players
+                .iter()
+                .map(|seat| seat.victory_points)
+                .min()
+                .unwrap_or(0);
+            let trailing: Vec<PlayerId> = state
+                .players
+                .iter()
+                .filter(|seat| seat.victory_points == fewest)
+                .map(|seat| seat.id.clone())
+                .collect();
+            let chosen = match trailing.as_slice() {
+                [] => None,
+                [only] => Some(only.clone()),
+                many => {
+                    let choice = crate::choice::Choice::new(
+                        controller,
+                        "which of the trailing players may settle the planet",
+                        many.iter()
+                            .map(|player| {
+                                crate::choice::ChoiceOption::labelled(
+                                    player.to_string(),
+                                    "elect",
+                                    player.to_string(),
+                                )
+                            })
+                            .collect(),
+                    );
+                    ctx.table
+                        .ask(&choice)
+                        .ok()
+                        .map(|answer| PlayerId::new(answer.id))
+                }
+            };
+            if let Some(chosen) = chosen {
+                let planet = ti4_model::id::PlanetId::new(outcome);
+                place_infantry(state, content, sources, &chosen, &system, &planet);
+            }
+        }
+        "artifact" => {
+            // Ixthian Artifact: the speaker rolls, and it is either a windfall or a crater.
+            if outcome != FOR {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            let roll = ctx
+                .dice
+                .roll(ctx.rng, 1, "ixthian_artifact", None)
+                .faces
+                .first()
+                .copied()
+                .unwrap_or(0);
+            if roll >= 6 {
+                return Effect::Deferred {
+                    agenda: agenda.to_owned(),
+                    what: "the windfall researches two technologies each, which needs a payer"
+                        .to_owned(),
+                };
+            }
+            // The crater: three damage to every ship in every system, which this engine
+            // models as destruction only for units that cannot sustain.
+            let types = ti4_content::units::catalogue(content, sources);
+            for board in state.board.values_mut() {
+                board.units.retain(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_none_or(|kind| !kind.is_ship() || kind.sustain_damage())
+                });
+            }
+        }
+        "wormhole_research" => {
+            // Wormhole Research: a technology for the brave, then the wormholes eat the fleet.
+            if outcome != FOR {
+                return Effect::Deferred {
+                    agenda: agenda.to_owned(),
+                    what: "Against voters return a command token".to_owned(),
+                };
+            }
+            let Some(galaxy) = galaxy else {
+                return Effect::Deferred {
+                    agenda: agenda.to_owned(),
+                    what: "needs the map to know which systems hold wormholes".to_owned(),
+                };
+            };
+            let systems = ti4_content::galaxy::all_systems(content, sources);
+            let types = ti4_content::units::catalogue(content, sources);
+            for id in galaxy.system_ids() {
+                let kinds = systems.get(id).map(ti4_content::galaxy::System::wormholes);
+                let alpha_or_beta =
+                    kinds.is_some_and(|holes| holes.contains("ALPHA") || holes.contains("BETA"));
+                if !alpha_or_beta {
+                    continue;
+                }
+                let system = ti4_model::id::SystemId::new(id);
+                if let Some(board) = state.board.get_mut(&system) {
+                    board.units.retain(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_none_or(|kind| !kind.is_ship())
+                    });
+                }
+            }
+            return Effect::Deferred {
+                agenda: agenda.to_owned(),
+                what: "the technology it offers first needs a payer".to_owned(),
+            };
+        }
         "regulations" => {
             // Against: everyone gains a fleet token. The For half is the standing cap, and
             // belongs to `laws`.
@@ -847,6 +1031,209 @@ mod tests {
             table: &mut table,
         };
         resolve_with(state, &mut ctx, galaxy, agenda, outcome, &Ballot::default())
+    }
+
+    #[test]
+    fn the_elected_player_takes_the_point_and_nobody_else_does() {
+        for alias in ["censure", "shard_of_the_throne", "crown_of_emphidia"] {
+            let mut state = game(&["a", "b"]);
+
+            run_with(&mut state, None, alias, "b", &[]);
+
+            assert_eq!(
+                state.player(&b()).unwrap().victory_points,
+                1,
+                "{alias} pays the player it elected"
+            );
+            assert_eq!(state.player(&a()).unwrap().victory_points, 0, "{alias}");
+        }
+    }
+
+    #[test]
+    fn an_agenda_electing_nobody_pays_nobody() {
+        let mut state = game(&["a", "b"]);
+        run_with(&mut state, None, "censure", FOR, &[]);
+        assert_eq!(state.player(&a()).unwrap().victory_points, 0);
+        assert_eq!(state.player(&b()).unwrap().victory_points, 0);
+    }
+
+    #[test]
+    fn archived_secret_deals_to_the_player_it_elected() {
+        let mut state = game(&["a", "b"]);
+        state.player_mut(&b()).unwrap().secret_objectives.clear();
+        state.secret_deck = vec![ti4_model::id::SecretObjectiveId::new("some_secret")];
+
+        run_with(&mut state, None, "secret", "b", &[]);
+
+        assert_eq!(state.player(&b()).unwrap().secret_objectives.len(), 1);
+    }
+
+    #[test]
+    fn a_leaked_secret_is_scoreable_by_everybody() {
+        // The whole card: the objective moves into the public area and its requirement, which
+        // stays registered in `secrets`, has to be found from there. A public-only lookup
+        // leaves it on the table worth nothing to anybody.
+        let mut state = game(&["a", "b"]);
+        let leaked = "csl"; // Cut Supply Lines: a rival dock in a system holding your ships
+
+        run_with(&mut state, None, "classified", leaked, &[]);
+
+        assert!(
+            state
+                .revealed_objectives
+                .contains(&ti4_model::id::ObjectiveId::new(leaked)),
+            "the secret is public now"
+        );
+
+        // Satisfy it for a, who never held the card.
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put(&mut state, &system, "cruiser", &a(), 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "spacedock", &b(), 1);
+
+        assert!(
+            crate::objectives::scoreable(
+                &state,
+                ContentStore::embedded(),
+                ti4_model::content_types::POK,
+                &a()
+            )
+            .contains(&ti4_model::id::ObjectiveId::new(leaked)),
+            "a can score it from the public area"
+        );
+    }
+
+    #[test]
+    fn a_public_execution_costs_the_hand_and_the_chair() {
+        let mut state = game(&["a", "b", "c"]);
+        state.speaker = b();
+        state.player_mut(&b()).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("card")];
+
+        let effect = run_with(&mut state, None, "execution", "b", &[]);
+
+        assert!(state.player(&b()).unwrap().action_cards.is_empty());
+        assert_ne!(state.speaker, b(), "the chair passes clockwise");
+        assert!(
+            matches!(effect, Effect::Deferred { .. }),
+            "8.16's voting ban belongs to the session: {effect:?}"
+        );
+    }
+
+    #[test]
+    fn an_execution_of_a_player_who_is_not_speaker_leaves_the_chair_alone() {
+        let mut state = game(&["a", "b"]);
+        state.speaker = a();
+
+        run_with(&mut state, None, "execution", "b", &[]);
+
+        assert_eq!(state.speaker, a());
+    }
+
+    #[test]
+    fn colonial_redistribution_hands_the_planet_to_a_trailing_player() {
+        let mut state = game(&["a", "b", "c"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state.system_mut(&system).set_control(planet.clone(), a());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &a(), 2);
+        state.player_mut(&a()).unwrap().victory_points = 5;
+        // b and c are level at the back, so the controller chooses between them.
+        run_with(&mut state, None, "redistribution", planet.as_str(), &["c"]);
+
+        let units = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(units.len(), 1, "the old garrison went, one settler arrived");
+        assert_eq!(units[0].owner, PlayerId::new("c"), "the controller named c");
+    }
+
+    #[test]
+    fn the_ixthian_artifact_is_a_windfall_or_a_crater() {
+        // Both branches are forced, because a test that took whatever the stream gave would
+        // exercise one and call it the card.
+        for (face, survives) in [(10, true), (1, false)] {
+            let mut state = game(&["a"]);
+            let (system, _) = crate::fixtures::a_placed_planet();
+            crate::fixtures::put(&mut state, &system, "fighter", &a(), 2);
+
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(seed_rolling(face));
+            let mut table = crate::choice::Table::new();
+            let mut ctx = crate::choice::Resolving {
+                content: ContentStore::embedded(),
+                sources: ti4_model::content_types::POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+            };
+            resolve_with(
+                &mut state,
+                &mut ctx,
+                None,
+                "artifact",
+                FOR,
+                &Ballot::default(),
+            );
+
+            let left = state.system_state(&system).units.len();
+            if survives {
+                assert_eq!(left, 2, "a high roll is the windfall, not the crater");
+            } else {
+                assert_eq!(left, 0, "fighters cannot sustain three damage");
+            }
+        }
+    }
+
+    /// The first seed whose next die shows `face`.
+    fn seed_rolling(face: u32) -> u64 {
+        (0..10_000)
+            .find(|seed| {
+                let mut rng = crate::rng::GameRng::new(*seed);
+                crate::dice::Dice::new()
+                    .roll(&mut rng, 1, "probe", None)
+                    .faces
+                    .first()
+                    .copied()
+                    == Some(face)
+            })
+            .expect("some seed rolls it")
+    }
+
+    #[test]
+    fn wormhole_research_eats_the_fleets_in_alpha_and_beta_systems() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        let alpha = ti4_content::galaxy::all_systems(content, sources)
+            .iter()
+            .find(|(_, system)| {
+                (system.wormholes().contains("ALPHA") || system.wormholes().contains("BETA"))
+                    && !system.is_hyperlane()
+            })
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus has an alpha or beta wormhole");
+
+        let hub = crate::fixtures::hub_with_outer(&alpha);
+        let far = hub.across(&alpha);
+        let mut state = game(&["a"]);
+        let hole = ti4_model::id::SystemId::new(alpha.clone());
+        let elsewhere = ti4_model::id::SystemId::new(far);
+        crate::fixtures::put(&mut state, &hole, "cruiser", &a(), 2);
+        crate::fixtures::put(&mut state, &elsewhere, "cruiser", &a(), 1);
+
+        run_with(&mut state, Some(&hub.galaxy), "wormhole_research", FOR, &[]);
+
+        assert_eq!(
+            state.system_state(&hole).units.len(),
+            0,
+            "the wormhole ate them"
+        );
+        assert_eq!(
+            state.system_state(&elsewhere).units.len(),
+            1,
+            "a fleet nowhere near a wormhole is untouched"
+        );
     }
 
     #[test]
