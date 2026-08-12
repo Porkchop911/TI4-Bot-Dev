@@ -21,7 +21,10 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `main`
+- Branch: `wp/m03-009-ability-registration`
+- M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
+  registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
+  User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.

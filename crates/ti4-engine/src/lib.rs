@@ -50,6 +50,7 @@ pub mod strategy;
 pub mod strategy_cards;
 pub mod tactical;
 pub mod technology;
+pub mod timing;
 pub mod tokens;
 pub mod transactions;
 pub mod transit;
@@ -91,6 +92,10 @@ pub use strategy::{
     strategic_action_options, take_strategic_action,
 };
 pub use tactical::{TacticalError, activatable, activate, movable, movement_options};
+pub use timing::{
+    Ability, AbilityCondition, AbilityEffect, AbilityRegistry, Frequency, OptionPayload, Relation,
+    Resolver,
+};
 pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
 pub use transit::{Cargo, CargoSource, CargoWindow, MoveOutcome, apply_move};
 pub use vote::{AGAINST, Ballot, FOR, VoteError, VoteWindow, outcomes, votable_planets};
