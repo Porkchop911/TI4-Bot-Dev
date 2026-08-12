@@ -169,9 +169,9 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-012-benchmark-protocol`, based on M00-011 package commit `9633bdc`.
-- Last completed package: M00-011 remains blocked by an oracle integrity failure. Active package:
-  M00-012 fixed benchmark protocol, which does not execute the oracle.
+- Branch: `wp/m00-014-integrity-guard`, based on M00-012 package commit `849496d`.
+- Last completed package: M00-012 fixed benchmark protocol (`plans/evidence/M00-012.md`).
+  M00-011 remains blocked by an oracle integrity failure. Active package: M00-014e guard tool.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
@@ -204,6 +204,9 @@ are recorded in the package evidence; independent review remains owner-waived.
 - M00-012 replaces the stale alternative-filled benchmark drafts with a fixed 10-warmup/30-sample,
   deterministic interleaving, non-mutating affinity, raw-sample schema, and variance-rejection
   protocol. M00-013 cannot measure until M00-011's oracle integrity blocker is resolved.
+- M00-014e implements and locally tests a fail-closed integrity guard, but its production hash
+  manifest cannot be generated or verified while the oracle is dirty. See
+  `plans/evidence/M00-014e.md`; M00-014 remains partial.
 
 ## Implementation status
 
