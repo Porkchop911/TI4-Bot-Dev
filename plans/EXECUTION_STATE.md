@@ -375,7 +375,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   belongs to the tactical action's post-movement sequence.
 - Not included: retreats, rerolls, combat modifiers, PDS II adjacency, ability suppression.
 
-## M05-004/012-015 checkpoint (authoritative)
+## M05-004/012-015 checkpoint (historical)
 
 - **463 passing tests**: 121 `ti4-content`, 273 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
   Zero warnings, engine Clippy clean. Oracle verified clean before and after.
@@ -391,6 +391,28 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Package IDs in earlier evidence filenames drifted from the master plan and have not been
   renamed: `M05-004_TACTICAL_DRIVER` and `M06-001_SPACE_COMBAT` both sit in slots the plan
   assigns to other packages.
+
+## Velocity refactor + tactical wiring (authoritative)
+
+- **464 passing tests**: 121 `ti4-content`, 274 `ti4-engine`, 68 `ti4-model`, 1 doc-test.
+  Zero rustc warnings; `ti4-engine` clippy-clean apart from two pre-existing `seating`/`setup`
+  items.
+- **The tactical action now fights.** `finish_tactical` runs capacity enforcement, space cannon
+  offense, space combat, and — if the active player holds the space — invasion. Combat, invasion
+  and fleet enforcement were all implemented and uncalled; this is the wiring that lights them.
+- **Contract divergence, deliberate:** those steps resolve inside one `step()` rather than one
+  decision per step, because they ask inline through the `Table`. Every decision is still
+  generated, validated and logged; a caller just cannot inspect between two casualty
+  assignments. Making them resumable is a follow-up. Leaving a whole subsystem dark was worse.
+- Only `PRODUCTION_UNRESOLVED` remains announced at the end of the action.
+- Lints narrowed: dropped clippy `nursery`, allowed `too_many_arguments`, `similar_names`,
+  `many_single_char_names`. Across this project those produced no defect while costing a
+  round-trip each; every real bug came from a test.
+- `fixtures.rs` centralises the test helpers six modules had duplicated, and carries the
+  one-ring geometry trap (`Hub::across`) that was rediscovered independently in two of them.
+- **Not done from the agreed refactor:** the `Ctx` struct bundling content/sources/table/dice/rng
+  (47 signatures), and the generic `Window` trait. The wiring above delivered the visible unblock
+  first; both remain worthwhile and are cheaper now that lints and fixtures are settled.
 
 ## Implementation status
 

@@ -23,6 +23,8 @@ pub mod combat;
 pub mod deck;
 pub mod dice;
 pub mod draft;
+#[cfg(test)]
+pub mod fixtures;
 pub mod fleet;
 pub mod game;
 pub mod invasion;
