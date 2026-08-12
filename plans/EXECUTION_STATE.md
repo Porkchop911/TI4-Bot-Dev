@@ -18,13 +18,66 @@ three times in one session and is worth re-deriving against the tree.
 
 ## Current position
 
-- Oracle repository: `D:\Projects\ti4-engine` (read-only)
+- Oracle repository: `D:\Projects	i4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-009-ability-registration`
+- Branch: `wp/m06-003-structured-transactions` (eight packages, 2026-08-12 evening)
+- **Two agents are working this repository at once.** The M03 timing chain
+  (M03-007a/b, M03-010 through M03-015) is held in `.worktrees/` by the other agent;
+  `timing.rs` and `event.rs` belong to it. The packages below deliberately avoid both files.
 - M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
   registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
   User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
+
+### Measured, 2026-08-12 evening
+
+`cargo test --workspace`: **518 engine + 121 content + 68 model + 1 doc-test, 0 failed.**
+Workspace clippy-clean under `-D warnings`; `cargo fmt --all --check` clean.
+
+Registry coverage, from the ledger in `crates/ti4-engine/src/registry.rs`:
+
+```
+public objectives      40/40   (100%)
+exploration cards      71/80   (89%)
+secret objectives      24/40   (60%)
+agenda effects         19/63   (30%)
+relics                  5/17   (29%)
+action cards            0/122  (0%)
+```
+
+### Packages completed this session
+
+1. **Transactions are negotiable** (94.1a). The last unwired module: an option opens
+   negotiations with a neighbour, deals are proposed and answered, and closing does not end
+   the turn. 94.1 is spent on *opening*, which is also what makes the free action terminate.
+2. **Six more secret objectives**, then **four more** once the map was available.
+3. **Public objectives complete at 40/40.** `Position` gained an optional galaxy, so
+   objectives about the shape of the board (its edge, adjacency to Mecatol) can be answered.
+   Without a map they report unmet rather than being given away.
+4. **Exploration 41 → 71/80.** The blocker was structural: `Resolving` carried no table, so a
+   window resolving a "you may" card answered for the player. It carries one now.
+5. **Twelve more agendas**, with a new `Effect::Deferred` so a known-but-unapplied half is not
+   reported as a coverage gap.
+6. **Relics made reachable.** `use_relic` was called by nothing but its own tests.
+
+Bugs found and fixed on the way, each of which was silent:
+
+- `Position::home_system` read only the faction record, ignoring the seat's own, which inverts
+  every requirement phrased "other than your home system".
+- Dynamis Core read commodities *held* as the faction's commodity *value* — the card backwards.
+- Relics drawn straight off the deck in exploration never scored the Shard of the Throne.
+
+### Next actions, re-derived against the tree
+
+1. The remaining 16 secret objectives are almost all action-phase triggers ("win a combat…",
+   "destroy the last…"), which need the M03 timing windows. They are blocked behind the other
+   agent's chain, not behind content.
+2. Agenda effects 19/63: the next tranche needs the galaxy (Enforced Travel Ban), a table
+   (Homeland Defense Act, Colonial Redistribution) or dice (Ixthian Artifact). `resolve` takes
+   none of the three yet — widening it is the package, not the cards.
+3. Action cards remain 0/122 and still wait on the reaction system.
+4. M00-013, the performance baseline, is still unrun.
+
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
