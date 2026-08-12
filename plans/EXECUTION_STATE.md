@@ -95,7 +95,7 @@ actually in the tree and how the two diverged.
 tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
 are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-011 package checkpoint (historical)
 
 - Branch: `wp/m04-011-agenda-structural`, based on M04-010 package commit `85a122e`.
 - Last completed package: M04-011 — structural agenda reveal/order/ready bookkeeping
@@ -110,6 +110,24 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Agenda resolution is deliberately not integrated into the phase driver. M04-012 owns the legal
   generated decision windows and safe integration alongside outstanding status choices.
 - M04-011 committed after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-012-step-run`, based on M04-011 package commit `b6bef5b`.
+- Last completed package: M04-012 — generated-choice game driver with bounded run metadata
+  (`plans/evidence/M04-012.md`).
+- Next dependency-ready package: M04-013 — random-legal bot.
+- `ti4-engine` has 124 tests. The workspace has 314 passing tests: 121 `ti4-content`,
+  124 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- `Game` now owns generated strategy/action choices, table decision recording, structural follower
+  windows, phase/round progression, observable events, and a bounded `run` API. Legal-choice
+  inspection is side-effect free; each decision step is separate from phase work.
+- Required but unavailable status scoring/token-allocation and agenda voting/tie/effect choices
+  stop at a typed `GameError` boundary. They are not replaced by guessed defaults or reported as
+  a completed game; tactical/component/Fleet Logistics behavior remains outside this driver.
+- M04-012 committed after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 

@@ -90,6 +90,36 @@ impl StrategySecondaryWindow {
         self.next_follower == self.followers.len()
     }
 
+    /// Inspect the next offered secondary without changing the game state.
+    ///
+    /// A game driver needs this to expose legal options without recording tokenless followers
+    /// merely because a client looked at a choice. [`Self::next_choice`] remains the mutating
+    /// resolver used when a step actually advances the window.
+    #[must_use]
+    pub fn pending_choice(&self, state: &GameState) -> Option<Choice> {
+        self.followers[self.next_follower..]
+            .iter()
+            .find(|player_id| {
+                state
+                    .player(player_id)
+                    .is_some_and(|player| player.strategic_tokens > 0)
+            })
+            .map(|player_id| {
+                Choice::new(
+                    player_id.clone(),
+                    format!("{} secondary", self.card),
+                    vec![
+                        ChoiceOption::decline(),
+                        ChoiceOption::labelled(
+                            FOLLOW_SECONDARY_ID,
+                            STRATEGY_KIND,
+                            "spend a strategy token to resolve the secondary",
+                        ),
+                    ],
+                )
+            })
+    }
+
     /// Return the next eligible follower's choice, recording tokenless followers as skipped.
     ///
     /// A content-specific secondary may later impose further eligibility checks. This generic
