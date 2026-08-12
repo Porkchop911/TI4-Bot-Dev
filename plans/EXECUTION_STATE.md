@@ -720,6 +720,18 @@ relics                  3/17   implemented (18%)
 - Guarded in `wiring.rs`. Dropping that call would silently stop every exploration in the game
   while the invasion still looked correct.
 
+## Strategy card abilities (authoritative)
+
+- **641 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- First tranche of strategy-card abilities: **Leadership** (52.2/52.3) and **Technology**
+  (91.2/91.3). Both use machinery already here — token gain, the payment planner, and research
+  — which is why they were the two to start with.
+- This is the first caller of `technology::research` and the second of `payment::plans`, so two
+  more previously-unwired modules now have a real path into play.
+- Not implemented and recorded as such: Leadership's per-token pool choice (the gain goes to
+  the strategy pool), and Technology's second research for six resources.
+- **Still unwired:** `transactions`, which needs a transaction action that does not exist.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its

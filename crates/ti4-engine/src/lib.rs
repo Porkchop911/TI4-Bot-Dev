@@ -46,6 +46,7 @@ pub mod secrets;
 pub mod setup;
 pub mod status;
 pub mod strategy;
+pub mod strategy_cards;
 pub mod tactical;
 pub mod technology;
 pub mod tokens;
