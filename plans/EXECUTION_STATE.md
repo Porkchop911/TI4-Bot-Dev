@@ -454,6 +454,22 @@ are recorded in the package evidence; independent review remains owner-waived.
   asserts the game is a whole, inspectable state between every pair of decisions.
 - **Invasion and combat are still inline.** That is the remaining two-thirds of the debt.
 
+## Window conversion complete (authoritative)
+
+- **481 passing tests**; workspace clippy-clean under `-D warnings`; CI gate verified locally.
+- `choice::Window` + `Resolving` (corpus, source scope, dice, RNG). All three inline subsystems
+  are converted, and `AftermathWindow` composes combat → invasion → production into one
+  resumable sequence the driver steps.
+- **The one-decision-per-step contract is restored.** A caller can inspect the game between two
+  casualty assignments again, which the inline version made impossible.
+- Combat's queue is what keeps 78.6 true under stepping: both sides' hits are computed and
+  queued before either is absorbed, so a casualty cannot reduce return fire already earned.
+- `AftermathWindow` carries a log the driver drains, rather than reaching for `Game::emit` —
+  two event sinks could disagree, one cannot.
+- Bugs found while converting, both by tests: the first invasion draft created a fresh RNG
+  inside `resolve` (would have silently left the seeded stream), and combat's first `settle`
+  returned on a stage that owed no decision, ending fights unresolved.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -521,10 +537,9 @@ behaviour is a placeholder.
 Rewritten against the tree as measured on 2026-08-12. The previous list named packages that
 had already shipped — it is worth re-deriving this rather than trusting it.
 
-1. **The `Window` trait — all three converted.** Production, invasion and combat implement it
-   and are resumable; all kept their existing tests unchanged. **The driver still calls
-   `drive`**, so the one-decision-per-step contract is not restored until `finish_tactical`
-   steps the windows instead. That is the last piece.
+1. ~~The `Window` trait.~~ **Done.** Production, invasion and combat are resumable, and
+   `AftermathWindow` composes them so the driver steps the whole post-movement sequence one
+   decision at a time. The contract divergence introduced in `310d7f5` is closed.
 2. ~~M01-006 — CI.~~ Done: `.github/workflows/ci.yml` runs fmt, clippy (deny), tests, docs and
    the corpus checksums on Windows.
 3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.

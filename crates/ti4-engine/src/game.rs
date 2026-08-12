@@ -8,7 +8,7 @@ use ti4_model::state::{GameState, Phase};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, SeededRandom, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, SeededRandom, Table, Window};
 use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::movement::{Board, MovementRules};
@@ -94,6 +94,182 @@ pub enum RunError {
 /// The action id that opens a tactical action.
 pub const TACTICAL_ACTION_ID: &str = "tactical";
 
+/// The steps after movement, as one resumable sequence (LRR 49 and around it).
+///
+/// Capacity enforcement and space cannon happen when it opens: neither is a player decision in
+/// this engine yet — capacity only asks when something must be removed, and space cannon is
+/// rolled, not chosen — and both must land before combat.
+enum Aftermath {
+    Fighting(Box<crate::combat::CombatWindow>),
+    Invading(Box<crate::invasion::InvasionWindow>),
+    Producing(Box<crate::production::ProductionWindow>),
+    Done,
+}
+
+/// The post-movement sequence for one tactical action.
+struct AftermathWindow {
+    player: PlayerId,
+    system: SystemId,
+    stage: Aftermath,
+    /// Events the window observed, drained by the driver.
+    ///
+    /// A window cannot reach `Game::emit`, and inventing a second event sink would give the
+    /// game two logs that could disagree. Draining keeps one.
+    log: Vec<String>,
+}
+
+impl AftermathWindow {
+    fn new(
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        table: &mut Table,
+        player: &PlayerId,
+        system: &SystemId,
+    ) -> Result<Self, GameError> {
+        // Movement may take the only carrier out of a system and strand what it was holding, so
+        // capacity is settled before anything shoots.
+        crate::fleet::enforce(state, ctx.content, ctx.sources, table, player, system)
+            .map_err(GameError::IllegalChoice)?;
+
+        // Fired by everyone except the active player, before combat.
+        let cannon = crate::combat::space_cannon_offense(
+            state,
+            ctx.content,
+            ctx.sources,
+            ctx.dice,
+            ctx.rng,
+            system,
+            player,
+        );
+        for (_, hits) in cannon {
+            crate::combat::absorb_hits(
+                state,
+                ctx.content,
+                ctx.sources,
+                table,
+                player,
+                system,
+                hits,
+            )?;
+        }
+
+        let mut window = crate::combat::CombatWindow::new(state, ctx.content, ctx.sources, system);
+        window.settle_open(state, ctx);
+        Ok(Self {
+            player: player.clone(),
+            system: system.clone(),
+            stage: Aftermath::Fighting(Box::new(window)),
+            log: Vec::new(),
+        })
+    }
+
+    /// Move to the next step once the current one owes nothing.
+    fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        loop {
+            match &mut self.stage {
+                Aftermath::Fighting(window) => {
+                    if window
+                        .pending_choice(state, ctx.content, ctx.sources)
+                        .is_some()
+                    {
+                        return;
+                    }
+                    // 49: an invasion only happens if the active player still holds the space.
+                    let holds =
+                        crate::combat::combatants(state, ctx.content, ctx.sources, &self.system)
+                            .first()
+                            .is_some_and(|last| last == &self.player);
+                    if let Some(outcome) = window.outcome()
+                        && outcome.rounds > 0
+                    {
+                        self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
+                    }
+                    self.stage = if holds {
+                        Aftermath::Invading(Box::new(crate::invasion::InvasionWindow::new(
+                            state,
+                            ctx.content,
+                            ctx.sources,
+                            ctx.dice,
+                            ctx.rng,
+                            &self.player,
+                            &self.system,
+                        )))
+                    } else {
+                        Aftermath::Producing(Box::new(crate::production::ProductionWindow::new(
+                            state,
+                            ctx.content,
+                            ctx.sources,
+                            &self.player,
+                            &self.system,
+                        )))
+                    };
+                }
+                Aftermath::Invading(window) => {
+                    if window
+                        .pending_choice(state, ctx.content, ctx.sources)
+                        .is_some()
+                    {
+                        return;
+                    }
+                    self.log.push("INVASION_RESOLVED".to_owned());
+                    self.stage =
+                        Aftermath::Producing(Box::new(crate::production::ProductionWindow::new(
+                            state,
+                            ctx.content,
+                            ctx.sources,
+                            &self.player,
+                            &self.system,
+                        )));
+                }
+                Aftermath::Producing(window) => {
+                    if window
+                        .pending_choice(state, ctx.content, ctx.sources)
+                        .is_some()
+                    {
+                        return;
+                    }
+                    self.log.push("PRODUCTION_RESOLVED".to_owned());
+                    self.stage = Aftermath::Done;
+                    return;
+                }
+                Aftermath::Done => return,
+            }
+        }
+    }
+}
+
+impl Window for AftermathWindow {
+    fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        match &self.stage {
+            Aftermath::Fighting(window) => window.pending_choice(state, content, sources),
+            Aftermath::Invading(window) => window.pending_choice(state, content, sources),
+            Aftermath::Producing(window) => window.pending_choice(state, content, sources),
+            Aftermath::Done => None,
+        }
+    }
+
+    fn resolve(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        answer: ChoiceOption,
+    ) -> Result<(), IllegalChoice> {
+        match &mut self.stage {
+            Aftermath::Fighting(window) => window.resolve(state, ctx, answer)?,
+            Aftermath::Invading(window) => window.resolve(state, ctx, answer)?,
+            Aftermath::Producing(window) => window.resolve(state, ctx, answer)?,
+            Aftermath::Done => {}
+        }
+        self.settle(state, ctx);
+        Ok(())
+    }
+}
+
 /// Where an open tactical action has reached.
 ///
 /// The steps after movement — space cannon, space combat, invasion, production — are not
@@ -147,6 +323,8 @@ pub struct Game<'a> {
     galaxy: Option<Galaxy>,
     /// The open tactical action.
     tactical: Option<TacticalWindow>,
+    /// The open post-movement sequence: combat, invasion, production.
+    aftermath: Option<AftermathWindow>,
     /// The pinned source of gravity-rift rolls.
     rng: GameRng,
     dice: Dice,
@@ -195,6 +373,7 @@ impl<'a> Game<'a> {
             voting: None,
             galaxy: None,
             tactical: None,
+            aftermath: None,
             rng: GameRng::new(0),
             dice: Dice::new(),
             status_resolved: false,
@@ -232,6 +411,9 @@ impl<'a> Game<'a> {
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
+        if let Some(window) = &self.aftermath {
+            return window.pending_choice(&self.state, self.content, self.sources);
+        }
         if let Some(window) = &self.tactical {
             return self.tactical_choice(window);
         }
@@ -263,6 +445,9 @@ impl<'a> Game<'a> {
         }
         if self.voting.is_some() {
             return self.step_vote();
+        }
+        if self.aftermath.is_some() {
+            return self.step_aftermath();
         }
         if self.tactical.is_some() {
             return self.step_tactical();
@@ -594,121 +779,94 @@ impl<'a> Game<'a> {
         self.tactical = None;
         let system = self.state.active_system.clone();
 
-        if let (Some(player), Some(system)) = (player, system)
-            && let Err(error) = self.resolve_after_movement(&player, &system)
-        {
-            self.state.active_system = None;
-            self.state.pending = None;
-            return self.result(false, Some(error));
-        }
+        let (Some(player), Some(system)) = (player, system) else {
+            return self.close_tactical();
+        };
 
+        let mut dice = std::mem::take(&mut self.dice);
+        let mut rng = self.rng.clone();
+        let mut ctx = Resolving {
+            content: self.content,
+            sources: self.sources,
+            dice: &mut dice,
+            rng: &mut rng,
+        };
+        let opened =
+            AftermathWindow::new(&mut self.state, &mut ctx, &mut self.table, &player, &system);
+        let mut window = match opened {
+            Ok(mut window) => {
+                window.settle(&mut self.state, &mut ctx);
+                window
+            }
+            Err(error) => {
+                self.dice = dice;
+                self.rng = rng;
+                return self.result(false, Some(error));
+            }
+        };
+        window.settle(&mut self.state, &mut ctx);
+        self.dice = dice;
+        self.rng = rng;
+        self.events.append(&mut window.log);
+
+        if window
+            .pending_choice(&self.state, self.content, self.sources)
+            .is_none()
+        {
+            return self.close_tactical();
+        }
+        self.aftermath = Some(window);
+        self.result(false, None)
+    }
+
+    /// Resolve one decision of the post-movement sequence.
+    fn step_aftermath(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            self.aftermath = None;
+            return self.close_tactical();
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let Some(mut window) = self.aftermath.take() else {
+            unreachable!("an aftermath is open");
+        };
+        let mut dice = std::mem::take(&mut self.dice);
+        let mut rng = self.rng.clone();
+        let mut ctx = Resolving {
+            content: self.content,
+            sources: self.sources,
+            dice: &mut dice,
+            rng: &mut rng,
+        };
+        let outcome = window.resolve(&mut self.state, &mut ctx, answer);
+        self.dice = dice;
+        self.rng = rng;
+        self.events.append(&mut window.log);
+
+        if let Err(error) = outcome {
+            self.aftermath = Some(window);
+            return self.result(false, Some(error.into()));
+        }
+        if window
+            .pending_choice(&self.state, self.content, self.sources)
+            .is_none()
+        {
+            return self.close_tactical();
+        }
+        self.aftermath = Some(window);
+        self.result(true, None)
+    }
+
+    /// Close the action and pass the turn.
+    fn close_tactical(&mut self) -> StepResult {
+        self.aftermath = None;
         self.state.active_system = None;
         self.state.pending = None;
         self.emit("TACTICAL_ACTION_COMPLETE");
         self.advance_turn();
         self.result(false, None)
-    }
-
-    /// LRR 49 and the steps around it: capacity, space cannon, combat, invasion.
-    ///
-    /// **These resolve inside one `step()` rather than one decision per step.** Combat and
-    /// invasion ask their choices inline through the `Table`, as the oracle does, so every
-    /// decision is still generated by the engine, validated, and recorded in the decision log —
-    /// but a caller cannot inspect the game between two casualty assignments. Making them
-    /// resumable is a follow-up; leaving them uncalled meanwhile would have kept a whole
-    /// subsystem dark, which is the worse of the two.
-    ///
-    /// Production closes the action (68).
-    fn resolve_after_movement(
-        &mut self,
-        player: &PlayerId,
-        system: &SystemId,
-    ) -> Result<(), GameError> {
-        // Movement may take the only carrier out of a system and strand what it was holding, so
-        // capacity is settled before anything shoots.
-        crate::fleet::enforce(
-            &mut self.state,
-            self.content,
-            self.sources,
-            &mut self.table,
-            player,
-            system,
-        )
-        .map_err(GameError::IllegalChoice)?;
-
-        // Fired by everyone *except* the active player, before combat.
-        let cannon = crate::combat::space_cannon_offense(
-            &self.state,
-            self.content,
-            self.sources,
-            &mut self.dice,
-            &mut self.rng,
-            system,
-            player,
-        );
-        for (_, hits) in cannon {
-            crate::combat::absorb_hits(
-                &mut self.state,
-                self.content,
-                self.sources,
-                &mut self.table,
-                player,
-                system,
-                hits,
-            )?;
-            self.emit("SPACE_CANNON_HIT");
-        }
-
-        let outcome = crate::combat::resolve(
-            &mut self.state,
-            self.content,
-            self.sources,
-            &mut self.table,
-            &mut self.dice,
-            &mut self.rng,
-            system,
-        )?;
-        if outcome.rounds > 0 {
-            self.emit("SPACE_COMBAT_RESOLVED");
-        }
-
-        // 49: an invasion only happens if the active player still holds the space above.
-        let holds_space =
-            crate::combat::combatants(&self.state, self.content, self.sources, system)
-                .first()
-                .is_some_and(|last| last == player);
-        if holds_space {
-            let report = crate::invasion::resolve(
-                &mut self.state,
-                self.content,
-                self.sources,
-                &mut self.table,
-                &mut self.dice,
-                &mut self.rng,
-                system,
-                player,
-            )
-            .map_err(GameError::IllegalChoice)?;
-            for (planet, _) in &report.captured {
-                self.emit(&format!("PLANET_CONTROL_GAINED:{planet}"));
-            }
-        }
-
-        // 68: the last step of the action. Producing is optional, so a player with capacity
-        // and nothing they want simply declines.
-        let built = crate::production::resolve(
-            &mut self.state,
-            self.content,
-            self.sources,
-            &mut self.table,
-            player,
-            system,
-        )
-        .map_err(GameError::IllegalChoice)?;
-        for (unit, _) in &built.produced {
-            self.emit(&format!("UNIT_PRODUCED:{unit}"));
-        }
-        Ok(())
     }
 
     fn step_secondary(&mut self) -> StepResult {
@@ -1362,7 +1520,16 @@ mod tests {
         ])));
         let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
 
-        for _ in 0..12 {
+        // Every decision arrives on its own step, with the game a whole value in between.
+        // Before the Window conversions the entire post-movement sequence - combat, invasion,
+        // production - resolved inside a single step().
+        let mut steps_with_a_choice = 0;
+        for _ in 0..80 {
+            if game.legal_options().is_some() {
+                steps_with_a_choice += 1;
+                let snapshot = game.state.clone();
+                assert!(snapshot.identical(&game.state));
+            }
             assert_eq!(game.step().error, None, "no tactical step should refuse");
             if game
                 .events
@@ -1372,6 +1539,10 @@ mod tests {
                 break;
             }
         }
+        assert!(
+            steps_with_a_choice >= 3,
+            "activation, movement and the fight were each stepped separately"
+        );
 
         assert!(
             game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),

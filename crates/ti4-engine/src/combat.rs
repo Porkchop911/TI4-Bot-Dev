@@ -652,6 +652,11 @@ impl CombatWindow {
         self.settle(state, ctx);
     }
 
+    /// Settle a freshly opened window, so a fight that is already over reports so.
+    pub fn settle_open(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        self.settle(state, ctx);
+    }
+
     /// Advance past anything with no decision left in it.
     fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         let (content, sources) = (ctx.content, ctx.sources);
