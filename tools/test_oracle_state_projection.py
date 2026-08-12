@@ -19,7 +19,7 @@ sys.path.insert(0, str(ORACLE_ROOT))
 from engine.game import start_game  # noqa: E402
 from engine.state import SystemState  # noqa: E402
 from engine.units import Unit  # noqa: E402
-from oracle_exporter import state_projection  # noqa: E402
+from oracle_exporter import state_projection, view_projection  # noqa: E402
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -62,6 +62,39 @@ class StateProjectionTests(unittest.TestCase):
         first_json = json.dumps(first, separators=(",", ":"), ensure_ascii=True)
         second_json = json.dumps(second, separators=(",", ":"), ensure_ascii=True)
         self.assertEqual(first_json, second_json)
+
+    def test_view_projection_preserves_only_the_viewers_private_identities(self) -> None:
+        state = start_game(("viewer", "opponent"), deck_seed=23)
+        cards = state.action_card_deck
+        state = state.with_player(
+            "viewer", action_cards=cards[:2], secret_objectives=("viewer-secret",)
+        )
+        state = state.with_player(
+            "opponent", action_cards=cards[2:4], secret_objectives=("opponent-secret",)
+        )
+
+        from engine.game import Game
+
+        projection = view_projection(Game(state).view_for("viewer"))
+        players = {player["id"]: player for player in projection["players"]}
+
+        self.assertEqual(players["viewer"]["action_cards"], list(cards[:2]))
+        self.assertEqual(players["viewer"]["secret_objectives"], ["viewer-secret"])
+        self.assertEqual(players["opponent"]["action_cards"], ["?", "?"])
+        self.assertEqual(players["opponent"]["secret_objectives"], ["?"])
+        self.assertNotIn(cards[2], json.dumps(projection, separators=(",", ":")))
+        self.assertNotIn("opponent-secret", json.dumps(projection, separators=(",", ":")))
+
+    def test_same_seed_view_serializes_byte_identically(self) -> None:
+        from engine.game import Game
+
+        first = view_projection(Game(start_game(("p1", "p2"), deck_seed=42)).view_for("p1"))
+        second = view_projection(Game(start_game(("p1", "p2"), deck_seed=42)).view_for("p1"))
+
+        self.assertEqual(
+            json.dumps(first, separators=(",", ":"), ensure_ascii=True),
+            json.dumps(second, separators=(",", ":"), ensure_ascii=True),
+        )
 
 
 if __name__ == "__main__":
