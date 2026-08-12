@@ -169,6 +169,15 @@ impl<'a> MovementRules<'a> {
         self.systems.get(system_id)
     }
 
+    /// Whether a system is a gravity rift, printed or created.
+    ///
+    /// Public because 41.2's destruction roll needs the same answer, and it lives in
+    /// [`crate::transit`] — a consequence of moving rather than a legality question.
+    #[must_use]
+    pub fn is_rift(&self, system_id: &str) -> bool {
+        self.is_gravity_rift(system_id)
+    }
+
     fn is_gravity_rift(&self, system_id: &str) -> bool {
         self.system(system_id).is_some_and(System::is_gravity_rift)
             || self.gravity_rift_systems.contains(system_id)

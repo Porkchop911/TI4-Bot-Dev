@@ -18,16 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M05-003 — movement legality
-  (`plans/evidence/M05-003_MOVEMENT_LEGALITY.md`)
+- Last completed package: M05-006 — applying a move
+  (`plans/evidence/M05-006_MOVE_APPLICATION.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M05-006 — applying a move (the tactical action): transport,
-  capacity, and relocating units. Legality now exists; nothing acts on it.
+- Next dependency-ready package: M05-001/002 — the tactical action itself (activation, then the
+  movement step), which is what will finally call the movement and cargo pieces.
 
 ## M04-005 package checkpoint (historical)
 
@@ -217,8 +217,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M04-016 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
-- Last completed package: M05-003 — movement legality
-  (`plans/evidence/M05-003_MOVEMENT_LEGALITY.md`).
+- Last completed package: M05-006 — applying a move
+  (`plans/evidence/M05-006_MOVE_APPLICATION.md`).
 - `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
   142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
 - `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
@@ -273,11 +273,11 @@ are recorded in the package evidence; independent review remains owner-waived.
   off the printed `target`, as the oracle does. Reading the absent field would have made every
   agenda a silent For/Against with nothing failing.
 
-## M05-003 package checkpoint (authoritative)
+## M05-003 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `2be9a43`.
-- Last completed package: M05-003 — movement legality
-  (`plans/evidence/M05-003_MOVEMENT_LEGALITY.md`).
+- Last completed package: M05-006 — applying a move
+  (`plans/evidence/M05-006_MOVE_APPLICATION.md`).
 - `ti4-engine` has 193 tests. The workspace has **383 passing tests**: 121 `ti4-content`,
   193 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - `engine/movement.py` ported in full: 58.4a–f, 11.1, 86.1, 59.1/59.1a/59.2, 41.1/41.3.
@@ -290,6 +290,26 @@ are recorded in the package evidence; independent review remains owner-waived.
   "opposite". Both earlier versions passed while testing almost nothing about blockades.
 - Nothing calls this yet: there is no tactical action, so movement is knowledge the engine
   cannot act on. That is M05-006.
+
+## M05-006 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `a2fedaa`.
+- Last completed package: M05-006 — applying a move
+  (`plans/evidence/M05-006_MOVE_APPLICATION.md`).
+- `ti4-engine` has 210 tests. The workspace has **400 passing tests**: 121 `ti4-content`,
+  210 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- `CargoWindow` fills a hold under LRR 95, tracking candidates **by index, never by value**:
+  units are plain data, two infantry compare equal, and an equality filter would silently make
+  the second one unloadable while every step reported success.
+- Ground forces loaded from a planet arrive in the destination's *space area*. Landing is
+  invasion, a separate step; dropping them onto a planet would conquer it with nobody choosing.
+- 41.2 rolls one die per rift *exited* — ending in a rift is safe. Nav Suite is honoured here as
+  well as in the legality rules, and rolls no die at all, since a discarded die would still
+  advance the seeded stream and desynchronise replay.
+- 95.1b: a ship lost to a rift takes its cargo down with it.
+- `MoveOutcome` names its passengers rather than counting them; a count cannot be acted on.
+- **Nothing calls this yet.** There is no tactical action, so the pieces exist but the sequence
+  does not. That is M05-001/002.
 
 ## Implementation status
 

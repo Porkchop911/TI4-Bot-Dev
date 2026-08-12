@@ -32,6 +32,7 @@ pub mod setup;
 pub mod status;
 pub mod strategy;
 pub mod tokens;
+pub mod transit;
 pub mod vote;
 
 pub use agenda::{
@@ -64,4 +65,5 @@ pub use strategy::{
     strategic_action_options, take_strategic_action,
 };
 pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
+pub use transit::{Cargo, CargoSource, CargoWindow, MoveOutcome, apply_move};
 pub use vote::{AGAINST, Ballot, FOR, VoteError, VoteWindow, outcomes, votable_planets};
