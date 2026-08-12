@@ -19,7 +19,7 @@ sys.path.insert(0, str(ORACLE_ROOT))
 from engine.game import start_game  # noqa: E402
 from engine.state import SystemState  # noqa: E402
 from engine.units import Unit  # noqa: E402
-from oracle_exporter import choice_projection, state_projection, view_projection  # noqa: E402
+from oracle_exporter import event_projection, choice_projection, state_projection, view_projection  # noqa: E402
 
 
 class StateProjectionTests(unittest.TestCase):
@@ -127,6 +127,35 @@ class StateProjectionTests(unittest.TestCase):
         invalid = Choice("sol", "pick", (Option("x", "action", payload={"bad": object()}),))
         with self.assertRaises(TypeError):
             choice_projection(invalid)
+
+    def test_event_projection_captures_post_resolution_context_and_canonical_payload(self) -> None:
+        from engine.timing import Event, Phase
+
+        state = start_game(("p1", "p2")).with_(phase=Phase.ACTION, round=3, turn_seq=4)
+        event = Event("UNIT_MOVED", {"z": 2, "a": {"b": 1, "a": 0}}, cancelled=True, uid=17)
+
+        projection = event_projection(event, state)
+
+        self.assertEqual(projection["id"], 17)
+        self.assertEqual(projection["event_type"], "UNIT_MOVED")
+        self.assertEqual(projection["phase"], "action")
+        self.assertEqual(projection["turn"], 4)
+        self.assertEqual(projection["round"], 3)
+        self.assertEqual(projection["payload"], {"a": {"a": 0, "b": 1}, "z": 2})
+
+    def test_event_projection_is_byte_identical_and_rejects_unserializable_payloads(self) -> None:
+        from engine.timing import Event
+
+        state = start_game(("p1", "p2"))
+        first = event_projection(Event("E", {"b": 2, "a": 1}, uid=3), state)
+        second = event_projection(Event("E", {"a": 1, "b": 2}, uid=3), state)
+        self.assertEqual(
+            json.dumps(first, separators=(",", ":"), ensure_ascii=True),
+            json.dumps(second, separators=(",", ":"), ensure_ascii=True),
+        )
+
+        with self.assertRaises(TypeError):
+            event_projection(Event("E", {"bad": object()}, uid=4), state)
 
 
 if __name__ == "__main__":

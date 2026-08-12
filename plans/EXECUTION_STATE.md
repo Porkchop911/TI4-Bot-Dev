@@ -169,20 +169,20 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-009d-choice-exporter`, based on M00-009c package commit `89d34b3`.
-- Last completed package: M00-009d — executable choice projection
-  (`plans/evidence/M00-009d.md`).
-- M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through d
-  now provide deterministic public-state, redacted-view, and choice projection components.
-- Six focused tests cover canonical state ordering, state byte stability, viewer-private identity
+- Branch: `wp/m00-009e-event-exporter`, based on M00-009d package commit `6a90f24`.
+- Last completed package: M00-009e — executable resolved-event projection
+  (`plans/evidence/M00-009e.md`).
+- M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through e
+  now provide deterministic public-state, redacted-view, choice, and resolved-event components.
+- Eight focused tests cover canonical state ordering, state byte stability, viewer-private identity
   preservation, opponent redaction, view byte stability, choice option ordering, payload
-  canonicalization, and unsupported-payload refusal. Oracle HEAD remains
+  canonicalization/refusal, and event UID/cancellation/context projection. Oracle HEAD remains
   `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
 - The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
   actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
 - M04-015 remains blocked: no CLI/NDJSON exporter, selected generated corpus, choice/event/outcome/
   error projections, or cross-engine comparison exists.
-- Next dependency-ready package: M00-009e — executable event projection. A later narrow exporter-
+- Next dependency-ready package: M00-009f — executable outcome projection. A later narrow exporter-
   wiring package may expose the validated projections through a read-only CLI.
 
 ## Implementation status
@@ -207,7 +207,7 @@ behaviour is a placeholder.
 
 | Milestone | Planning | Implementation |
 |---|---|---|
-| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, and choice projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
+| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, and resolved-event projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
 | M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
 | M03 Choice, timing, replay | Written | **Partial** — 001–006 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice). 007–016 outstanding. |
@@ -226,9 +226,9 @@ behaviour is a placeholder.
 
 ## Open blockers and findings
 
-1. **The oracle exporter is incomplete.** M00-009b/c/d provide tested state, redacted-view, and
-   choice projections, but no CLI/NDJSON stream, fixture manifest, events, outcomes, error
-   projections, or complete reproducibility campaign exists. Until those are complete, no
+1. **The oracle exporter is incomplete.** M00-009b/c/d/e provide tested state, redacted-view,
+   choice, and resolved-event projections, but no CLI/NDJSON stream, fixture manifest, outcomes,
+   error projections, or complete reproducibility campaign exists. Until those are complete, no
    differential parity claim can be made, and M03-014, M04-015, M05-021, M06-018 and all of M12
    remain unimplementable. This is the single largest gap.
 2. ~~No independent review of any code package.~~ Waived by the project owner
