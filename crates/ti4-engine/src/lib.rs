@@ -46,7 +46,10 @@ pub use choice::{
     IllegalChoice, Scripted, SeededRandom, Table, distinct_units, first_of_each, options_from,
     unit_label, validate,
 };
-pub use combat::{CombatError, CombatOutcome, absorb_hits, combatants, resolve};
+pub use combat::{
+    CombatError, CombatOutcome, absorb_hits, anti_fighter_barrage, combatants, resolve,
+    space_cannon_offense,
+};
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
 pub use dice::{Dice, Roll};
 pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};

@@ -357,8 +357,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `96a562e`.
 - Last completed package: M06-001 — space combat (`plans/evidence/M06-001_SPACE_COMBAT.md`).
-- `ti4-engine` has 249 tests. The workspace has **439 passing tests**: 121 `ti4-content`,
-  249 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- `ti4-engine` has 255 tests. The workspace has **445 passing tests**: 121 `ti4-content`,
+  255 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - 78.1, 78.5b/c, 78.5f, 78.6, 87.1 and 15.2a are implemented and tested. Hits are simultaneous;
   resolving sequentially would let casualties reduce return fire already earned.
 - A divergence caught by its own test: the first version rolled one batch **per unit**, where
@@ -369,7 +369,10 @@ are recorded in the package evidence; independent review remains owner-waived.
   rather than by scoring.
 - Choices are asked inline through a `Table`, as the oracle does, so **the step driver does not
   fight yet** — the position movement was in before its driver landed.
-- Not included: anti-fighter barrage, space cannon, retreats, rerolls, modifiers.
+- Anti-fighter barrage (78.3/78.3a) is implemented and wired into round one; it is simultaneous
+  and its hits fall only on fighters. Space cannon offense is implemented but **uncalled**, as it
+  belongs to the tactical action's post-movement sequence.
+- Not included: retreats, rerolls, combat modifiers, PDS II adjacency, ability suppression.
 
 ## Implementation status
 

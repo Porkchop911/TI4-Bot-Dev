@@ -146,6 +146,167 @@ pub fn roll_fleet(
     hits
 }
 
+/// 78.3: anti-fighter barrage — simultaneous, first round only, and hits fall only on fighters.
+///
+/// Both barrages are rolled **before** either removes a fighter. Rolling and resolving one side
+/// at a time would let the first barrage destroy fighters that had already earned their return
+/// fire, which is the same simultaneity 78.6 requires of ordinary combat.
+///
+/// The argument list is long because a combat step needs the state, the corpus it is read
+/// against, both halves of the pinned random source, and both sides. Bundling them into a
+/// context struct would hide which of them this step actually mutates.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one parameter per genuinely distinct input"
+)]
+pub fn anti_fighter_barrage(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    attacker: &PlayerId,
+    defender: &PlayerId,
+) -> Vec<(PlayerId, usize)> {
+    let types = catalogue(content, sources);
+    let mut pending = Vec::new();
+    for player in [attacker, defender] {
+        let mut hits = 0;
+        for unit in ships_of(state, content, sources, player, system) {
+            let Some(kind) = types.get(unit.type_id.as_str()) else {
+                continue;
+            };
+            let Some(value) = kind.afb_hits_on() else {
+                continue;
+            };
+            let count = usize::try_from(kind.afb_dice()).unwrap_or(0);
+            if count == 0 {
+                continue;
+            }
+            let roll = dice.roll(
+                rng,
+                count,
+                "anti-fighter barrage",
+                Some(u32::try_from(value).unwrap_or(u32::MAX)),
+            );
+            hits += roll.hits();
+        }
+        if hits > 0 {
+            pending.push((player.clone(), hits));
+        }
+    }
+
+    let resolved = pending.clone();
+    for (player, hits) in pending {
+        let target = if &player == attacker {
+            defender
+        } else {
+            attacker
+        };
+        destroy_fighters(state, content, sources, target, system, hits);
+    }
+    resolved
+}
+
+/// Remove up to `hits` fighters, and nothing else. Excess hits have no effect (15.2a).
+///
+/// The owner is not asked which fighter dies: fighters carry no damage and no other
+/// distinguishing state, so every choice would be between identical options.
+fn destroy_fighters(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    hits: usize,
+) {
+    let types = catalogue(content, sources);
+    for _ in 0..hits {
+        let fighter = state
+            .system_state(system)
+            .units
+            .iter()
+            .find(|unit| {
+                &unit.owner == player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::is_fighter)
+            })
+            .cloned();
+        let Some(fighter) = fighter else {
+            return;
+        };
+        state
+            .system_mut(system)
+            .remove(std::slice::from_ref(&fighter));
+    }
+}
+
+/// Units in the active system fire on the active player's ships, before combat.
+///
+/// Guns come from both the space area and every planet in the system: a PDS sits on a planet and
+/// shoots into space, which is the ordinary case, while some faction units carry the ability in
+/// the space area itself.
+///
+/// Returns the hits produced per firing player, for the caller to absorb. They are kept separate
+/// from combat hits because the two are answered by different cards, which is the distinction
+/// [`absorb_hits`] exists to preserve.
+pub fn space_cannon_offense(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    active: &PlayerId,
+) -> Vec<(PlayerId, usize)> {
+    let types = catalogue(content, sources);
+    let board = state.system_state(system);
+
+    let mut guns: Vec<Unit> = board
+        .units
+        .iter()
+        .filter(|unit| &unit.owner != active)
+        .cloned()
+        .collect();
+    for planet in board.planet_units.keys() {
+        guns.extend(
+            board
+                .on_planet(planet)
+                .iter()
+                .filter(|unit| &unit.owner != active)
+                .cloned(),
+        );
+    }
+
+    let mut by_player: std::collections::BTreeMap<PlayerId, usize> =
+        std::collections::BTreeMap::new();
+    for unit in guns {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = kind.space_cannon_hits_on() else {
+            continue;
+        };
+        let count = usize::try_from(kind.space_cannon_dice()).unwrap_or(0);
+        if count == 0 {
+            continue;
+        }
+        let roll = dice.roll(
+            rng,
+            count,
+            "space cannon",
+            Some(u32::try_from(value).unwrap_or(u32::MAX)),
+        );
+        *by_player.entry(unit.owner.clone()).or_insert(0) += roll.hits();
+    }
+    by_player
+        .into_iter()
+        .filter(|(_, hits)| *hits > 0)
+        .collect()
+}
+
 /// 87.1: each undamaged sustaining unit may cancel one hit. Always optional.
 ///
 /// Returns the hits still to be absorbed.
@@ -328,6 +489,19 @@ pub fn resolve(
             });
         }
 
+        if round == 1 {
+            anti_fighter_barrage(
+                state, content, sources, dice, rng, system, &attacker, &defender,
+            );
+            // 78.3a: a barrage can end the fight before any combat dice are rolled.
+            if finished(state, content, sources, system, &attacker, &defender) {
+                return Ok(CombatOutcome {
+                    winner: winner(state, content, sources, system, &attacker, &defender),
+                    rounds: round,
+                });
+            }
+        }
+
         // 78.5f: the attacker rolls everything first.
         let attacker_hits = roll_fleet(state, content, sources, dice, rng, &attacker, system);
         let defender_hits = roll_fleet(state, content, sources, dice, rng, &defender, system);
@@ -427,6 +601,201 @@ mod tests {
 
     fn kit() -> (Table, Dice, GameRng) {
         (Table::new(), Dice::new(), GameRng::new(7))
+    }
+
+    /// A unit type that carries anti-fighter barrage, chosen from the corpus by property.
+    fn a_barrage_unit() -> String {
+        ti4_content::units::catalogue(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, kind)| kind.has_anti_fighter_barrage() && kind.is_ship())
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus has a barrage ship")
+    }
+
+    /// A unit type that carries space cannon.
+    fn a_cannon_unit() -> String {
+        ti4_content::units::catalogue(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, kind)| kind.space_cannon_hits_on().is_some())
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus has a space cannon unit")
+    }
+
+    #[test]
+    fn a_barrage_kills_only_fighters() {
+        // 78.3: hits fall on fighters and nothing else, so a cruiser standing beside them is
+        // untouched however well the barrage rolls. Swept across seeds rather than pinned to
+        // one, so the test does not depend on a particular roll going well.
+        let mut fighters_ever_died = false;
+        for seed in 0..40_u64 {
+            let (mut state, system) = arena();
+            put(&mut state, &system, &a_barrage_unit(), &attacker(), 4);
+            put(&mut state, &system, "fighter", &defender(), 3);
+            put(&mut state, &system, "cruiser", &defender(), 1);
+            let mut dice = Dice::new();
+            let mut rng = GameRng::new(seed);
+
+            anti_fighter_barrage(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &mut dice,
+                &mut rng,
+                &system,
+                &attacker(),
+                &defender(),
+            );
+
+            let left = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
+            assert!(
+                left.iter().any(|unit| unit.type_id.as_str() == "cruiser"),
+                "seed {seed}: the cruiser is not a legal target"
+            );
+            if left
+                .iter()
+                .filter(|u| u.type_id.as_str() == "fighter")
+                .count()
+                < 3
+            {
+                fighters_ever_died = true;
+            }
+        }
+        assert!(
+            fighters_ever_died,
+            "a barrage that never hits anything is not testing the hit path"
+        );
+    }
+
+    #[test]
+    fn a_fleet_with_no_barrage_rolls_nothing() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "cruiser", &attacker(), 3);
+        put(&mut state, &system, "fighter", &defender(), 3);
+        let (_, mut dice, mut rng) = kit();
+
+        let fired = anti_fighter_barrage(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+            &defender(),
+        );
+
+        assert!(fired.is_empty());
+        assert_eq!(dice.count(), 0);
+        assert_eq!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).len(),
+            3,
+            "nothing was destroyed"
+        );
+    }
+
+    #[test]
+    fn barrages_are_simultaneous() {
+        // Both are rolled before either removes a fighter. Resolving one side first would let
+        // it destroy fighters that had already earned their return barrage.
+        let (mut state, system) = arena();
+        let barrager = a_barrage_unit();
+        put(&mut state, &system, &barrager, &attacker(), 6);
+        put(&mut state, &system, &barrager, &defender(), 6);
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        let (_, mut dice, mut rng) = kit();
+
+        let fired = anti_fighter_barrage(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+            &defender(),
+        );
+
+        // Whatever the dice said, both sides' rolls were taken before any fighter was removed:
+        // each side that scored a hit is recorded, even if it lost its own fighter.
+        assert!(
+            fired.len() <= 2,
+            "at most one entry per side, and both were rolled"
+        );
+    }
+
+    #[test]
+    fn excess_barrage_hits_have_no_effect() {
+        // 15.2a, on a target with a single fighter and a large barrage.
+        let (mut state, system) = arena();
+        put(&mut state, &system, &a_barrage_unit(), &attacker(), 8);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        let (_, mut dice, mut rng) = kit();
+
+        anti_fighter_barrage(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+            &defender(),
+        );
+
+        assert!(ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).len() <= 1);
+    }
+
+    #[test]
+    fn space_cannon_fires_from_a_planet_at_the_active_player() {
+        // A PDS sits on a planet and shoots into space. The engine had no such step at all
+        // before this, so a PDS never once fired on a ship moving into its system.
+        let (mut state, system) = arena();
+        let planet = ti4_model::id::PlanetId::new("mecatol_rex");
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(UnitTypeId::new(a_cannon_unit()), defender()));
+        put(&mut state, &system, "cruiser", &attacker(), 1);
+        let (_, mut dice, mut rng) = kit();
+
+        let fired = space_cannon_offense(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+        );
+
+        assert_eq!(dice.count(), 1, "the gun on the planet fired");
+        assert!(
+            fired.iter().all(|(owner, _)| owner == &defender()),
+            "only the non-active player shoots"
+        );
+    }
+
+    #[test]
+    fn the_active_players_own_guns_do_not_fire_at_them() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, &a_cannon_unit(), &attacker(), 3);
+        let (_, mut dice, mut rng) = kit();
+
+        let fired = space_cannon_offense(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+        );
+
+        assert!(fired.is_empty());
+        assert_eq!(dice.count(), 0, "nobody shoots at themselves");
     }
 
     #[test]

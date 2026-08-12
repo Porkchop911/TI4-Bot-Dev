@@ -21,6 +21,7 @@ Ported from `engine/combat.py`: `combatants`, `ships_of`, `_roll_combat`, `absor
 
 | Rule | Behaviour |
 |---|---|
+| 78.3 / 78.3a | Anti-fighter barrage: simultaneous, first round only, hits fall **only** on fighters, and it can end the fight before any combat die is rolled |
 | 78.1 | Fewer than two players with **ships** is not a combat — ground forces do not fight in space |
 | 78.5b/c | Dice are rolled grouped by combat value, ascending |
 | 78.5f | The attacker rolls everything first |
@@ -64,7 +65,9 @@ The same problem the choice model documents, in two new places:
 | Difference | Reason |
 |---|---|
 | Choices are asked inline through a `Table`, not exposed as a resumable window. | Matches the oracle's own shape. It means the step driver does not run combat yet — the position movement was in before its driver landed. |
-| No anti-fighter barrage (78.3a), space cannon offense, or retreats (78.4). | Each is its own body of rules; none is stubbed or approximated. |
+| No retreats (78.4). | Its own body of rules; not stubbed or approximated. |
+| Space cannon offense fires only from the system itself. | PDS II firing into an adjacent system, Linkship copying, and Thunder's Edge ability suppression are all unimplemented. |
+| No Argent strike-wing infantry kills from a barrage. | Faction units are unimplemented. |
 | No rerolls, faction abilities, laws, or Morale Boost in `hits_on`. | `effective_hits_on` in the oracle combines three modifier sources, none of which exist here. The printed value is used unmodified. |
 | Sustain cancels exactly one hit. | Non-Euclidean Shielding cancels two; technology is unimplemented. |
 | `MAX_ROUNDS` returns an error rather than breaking the loop. | A fight that cannot end is an engine bug, and should say so rather than quietly stopping. |
@@ -88,7 +91,19 @@ $ cargo clippy -p ti4-engine --all-targets
 $ cargo fmt --all      # clean
 ```
 
-14 new tests, all in `combat.rs`, including `the_same_seed_fights_the_same_battle`.
+20 tests in `combat.rs`, including `the_same_seed_fights_the_same_battle`.
+
+Anti-fighter barrage and space cannon offense landed alongside. Barrage is wired into round one
+of `resolve`; **space cannon is not called by anything yet**, because it belongs to the tactical
+action's post-movement sequence rather than to combat itself.
+
+`a_barrage_kills_only_fighters` sweeps 40 seeds rather than pinning one: it asserts the cruiser
+survives every time, and that fighters die on at least one seed — a barrage that never hits
+anything would not be testing the hit path at all.
+
+`the_active_players_own_guns_do_not_fire_at_them` is the other half of space cannon: guns belong
+to everyone *except* the active player, and rolling the active player's own PDS would have them
+shooting at themselves.
 
 ## Open findings
 
@@ -96,7 +111,8 @@ $ cargo fmt --all      # clean
    fighting. Wiring combat into the tactical action needs the choice windows made resumable, so
    the step driver can resolve one decision at a time — that is the next package and it is the
    same shape as the vote window.
-2. **No anti-fighter barrage, space cannon, or retreats.**
+2. **Space cannon offense is implemented but uncalled**, since the tactical action does not run
+   its post-movement sequence. **Retreats are not implemented.**
 3. **No invasion or production**, so a won combat still takes no planets.
 4. **Fleet supply and capacity are still unenforced.**
 5. **No independent review.** Waived by the project owner.
