@@ -53,6 +53,8 @@ pub mod tokens;
 pub mod transactions;
 pub mod transit;
 pub mod vote;
+#[cfg(test)]
+mod wiring;
 
 pub use agenda::{
     AGENDAS_PER_PHASE, AgendaPhaseError, AgendaPhaseReport, AgendaResolution, RevealedAgenda,

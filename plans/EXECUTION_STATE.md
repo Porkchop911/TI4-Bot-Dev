@@ -656,9 +656,20 @@ relics                  3/17   implemented (18%)
     two, as a player who has run out of agents.
   - **`check_unlocks` fires on scoring**, not at end of phase (51.7). A hero unlocked by a third
     objective must not wait for a status phase the game may never reach.
-- Worth watching for: this project keeps producing modules that are correct, tested, and
-  uncalled. `combat`, `invasion`, `fleet`, `production` and now `leaders` all had that shape.
-  The registry ledger catches *content* gaps; nothing yet catches an unwired module.
+- ~~Nothing catches an unwired module.~~ `wiring.rs` does, as of the next commit.
+
+## Wiring guard checkpoint (authoritative)
+
+- **604 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- `wiring.rs` closes the process hole this project kept falling into: five modules had arrived
+  correct, fully tested and called by nothing, because **a unit test proves a module works,
+  never that anything uses it**.
+- Two kinds of check. Behavioural: drive a real game and assert each phase and the 81.5 token
+  gain were reached. Structural: assert the driver still names each subsystem, and that the
+  laws which bite are still consulted where they bite.
+- **The guard was verified by breaking it**: removing `leaders::ready_all` from the status phase
+  makes it fail with "81.6 no longer readies leaders", then passes again on restore. A guard
+  nobody has seen fail is decoration.
 
 ## Implementation status
 
