@@ -125,6 +125,7 @@ impl AftermathWindow {
         table: &mut Table,
         player: &PlayerId,
         system: &SystemId,
+        galaxy: Option<&Galaxy>,
     ) -> Result<Self, GameError> {
         // Movement may take the only carrier out of a system and strand what it was holding, so
         // capacity is settled before anything shoots.
@@ -154,6 +155,9 @@ impl AftermathWindow {
         }
 
         let mut window = crate::combat::CombatWindow::new(state, ctx.content, ctx.sources, system);
+        if let Some(galaxy) = galaxy {
+            window = window.with_galaxy(galaxy.clone());
+        }
         window.settle_open(state, ctx);
         Ok(Self {
             player: player.clone(),
@@ -791,8 +795,15 @@ impl<'a> Game<'a> {
             dice: &mut dice,
             rng: &mut rng,
         };
-        let opened =
-            AftermathWindow::new(&mut self.state, &mut ctx, &mut self.table, &player, &system);
+        let galaxy = self.galaxy.clone();
+        let opened = AftermathWindow::new(
+            &mut self.state,
+            &mut ctx,
+            &mut self.table,
+            &player,
+            &system,
+            galaxy.as_ref(),
+        );
         let mut window = match opened {
             Ok(mut window) => {
                 window.settle(&mut self.state, &mut ctx);

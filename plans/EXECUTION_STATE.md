@@ -470,6 +470,18 @@ are recorded in the package evidence; independent review remains owner-waived.
   inside `resolve` (would have silently left the seeded stream), and combat's first `settle`
   returned on a stage that owed no decision, ending fights unresolved.
 
+## M05-011 checkpoint (authoritative)
+
+- **484 passing tests**; workspace clippy-clean under `-D warnings`.
+- Retreat (78.4, 78.7) is in the combat window as two more stages: announcing before any dice,
+  and leaving once the round's hits are absorbed.
+- 78.4b — the defender announcing silences the attacker; 78.4c — a player with nowhere to go is
+  not asked at all; 78.7b — one destination is not a decision, and what the fleet cannot carry
+  is stranded and lost; 78.7d — a command token follows to the destination.
+- Retreat needs a map, so `CombatWindow::with_galaxy` supplies one and the driver passes the
+  game's. Without a map there is nowhere to retreat to and the stage settles silently.
+- M05 now has only combat modifiers/rerolls (M05-010) left of its rules packages.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -542,7 +554,9 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    decision at a time. The contract divergence introduced in `310d7f5` is closed.
 2. ~~M01-006 — CI.~~ Done: `.github/workflows/ci.yml` runs fmt, clippy (deny), tests, docs and
    the corpus checksums on Windows.
-3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.
+3. **M05-010 — combat modifiers and rerolls**, the last tactical rule. (M05-011 retreat is
+   done: announce before dice, defender first, the announcement silences the attacker, and
+   what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
 5. **M06 — general rules**: payment planner, trade, technology, exploration, relics, action

@@ -455,6 +455,96 @@ fn choose_casualty(
     Ok(units.get(index).unwrap_or(&units[0]).clone())
 }
 
+/// The choice kind for announcing a retreat.
+pub const RETREAT_KIND: &str = "retreat";
+/// The choice kind for picking where to retreat to.
+pub const RETREAT_TO_KIND: &str = "retreat_to";
+
+/// 78.7c: adjacent systems that hold this player's units or a planet they control, and no
+/// other player's ships.
+#[must_use]
+pub fn eligible_retreats(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Vec<SystemId> {
+    let types = catalogue(content, sources);
+    galaxy
+        .adjacent(system.as_str())
+        .into_iter()
+        .map(SystemId::new)
+        .filter(|adjacent| {
+            let board = state.system_state(adjacent);
+            let enemy_ship = board.units.iter().any(|unit| {
+                &unit.owner != player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::is_ship)
+            });
+            if enemy_ship {
+                return false;
+            }
+            !board.units_of(player).is_empty() || board.controls_a_planet(player)
+        })
+        .collect()
+}
+
+/// 78.7b: move a player's fleet to `destination`, and lose what it cannot carry.
+///
+/// Only ships with a move value leave under their own power. Anything consuming capacity comes
+/// along only if there is room; the rest is destroyed, which is the cost of a retreat rather
+/// than an oversight.
+pub fn retreat_to(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    destination: &SystemId,
+) -> usize {
+    let types = catalogue(content, sources);
+    let own: Vec<Unit> = state
+        .system_state(system)
+        .units_of(player)
+        .into_iter()
+        .cloned()
+        .collect();
+
+    let mut movers = Vec::new();
+    let mut carried = Vec::new();
+    for unit in own {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        if kind.is_ship() && kind.move_value() > 0 {
+            movers.push(unit);
+        } else if kind.consumes_capacity() {
+            carried.push(unit);
+        }
+    }
+    let room: i64 = movers
+        .iter()
+        .filter_map(|unit| types.get(unit.type_id.as_str()))
+        .map(UnitType::capacity)
+        .sum();
+    let room = usize::try_from(room.max(0)).unwrap_or(0);
+    let stranded = carried.split_off(room.min(carried.len()));
+
+    let mut leaving = movers;
+    leaving.extend(carried);
+    state.move_units(system, destination, &leaving);
+    for unit in &stranded {
+        state.system_mut(system).remove(std::slice::from_ref(unit));
+    }
+
+    // 78.7d: a command token goes to the destination.
+    state.system_mut(destination).place_token(player.clone());
+    stranded.len()
+}
+
 /// Hits still to be absorbed by one player.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Pending {
@@ -465,6 +555,12 @@ struct Pending {
 /// Where an open space combat has reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
+    /// 78.4: retreats are announced before any dice, and the defender decides first.
+    Announcing {
+        round: u32,
+        asking: PlayerId,
+        announced: Vec<PlayerId>,
+    },
     /// Start of a round: roll, then queue both sides' hits.
     Rolling {
         round: u32,
@@ -478,6 +574,11 @@ enum Stage {
     Assigning {
         queue: Vec<Pending>,
         round: u32,
+    },
+    /// 78.7: those who announced are leaving, and must pick where.
+    Retreating {
+        round: u32,
+        leaving: Vec<PlayerId>,
     },
     Done(CombatOutcome),
 }
@@ -494,6 +595,10 @@ pub struct CombatWindow {
     attacker: PlayerId,
     defender: PlayerId,
     stage: Stage,
+    /// The map, when the caller has one. Without it there is nowhere to retreat to.
+    galaxy: Option<ti4_content::galaxy::Galaxy>,
+    /// Players who announced a retreat this round and will leave once it ends (78.7).
+    pending_retreats: Vec<PlayerId>,
 }
 
 impl CombatWindow {
@@ -515,14 +620,42 @@ impl CombatWindow {
                     winner: sides.first().cloned(),
                     rounds: 0,
                 }),
+                galaxy: None,
+                pending_retreats: Vec::new(),
             };
         };
         Self {
             system: system.clone(),
             attacker: attacker.clone(),
             defender: defender.clone(),
-            stage: Stage::Rolling { round: 1 },
+            stage: Stage::Announcing {
+                round: 1,
+                asking: defender.clone(),
+                announced: Vec::new(),
+            },
+            galaxy: None,
+            pending_retreats: Vec::new(),
         }
+    }
+
+    /// Give the fight a map, which is what makes retreat possible (78.7c).
+    #[must_use]
+    pub fn with_galaxy(mut self, galaxy: ti4_content::galaxy::Galaxy) -> Self {
+        self.galaxy = Some(galaxy);
+        self
+    }
+
+    /// Where this player could retreat to right now.
+    fn retreats(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        player: &PlayerId,
+    ) -> Vec<SystemId> {
+        self.galaxy.as_ref().map_or_else(Vec::new, |galaxy| {
+            eligible_retreats(state, content, sources, galaxy, player, &self.system)
+        })
     }
 
     /// The result, once the fight is over.
@@ -658,6 +791,14 @@ impl CombatWindow {
     }
 
     /// Advance past anything with no decision left in it.
+    ///
+    /// One long match rather than several helpers: every arm is a transition in the same state
+    /// machine, and splitting them would hide the fact that each arm's job is to fall through
+    /// to the next stage rather than to do work of its own.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per combat stage, read as a table"
+    )]
     fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         let (content, sources) = (ctx.content, ctx.sources);
         loop {
@@ -669,9 +810,9 @@ impl CombatWindow {
                             self.stage = self.conclude(state, content, sources, round);
                             return;
                         }
-                        // Straight into the next round rather than returning: a stage that
-                        // owes no decision must never be what `drive` stops on.
-                        self.stage = Stage::Rolling { round: round + 1 };
+                        // 78.7: those who announced now leave, before the next round.
+                        let leaving = std::mem::take(&mut self.pending_retreats);
+                        self.stage = Stage::Retreating { round, leaving };
                         continue;
                     };
                     if front.hits == 0 {
@@ -710,6 +851,66 @@ impl CombatWindow {
                     }
                     return;
                 }
+                Stage::Announcing {
+                    round,
+                    asking,
+                    announced,
+                } => {
+                    if self.over(state, content, sources) {
+                        self.stage = self.conclude(state, content, sources, round - 1);
+                        return;
+                    }
+                    // 78.4c: a player with nowhere to go is not asked.
+                    if !self.retreats(state, content, sources, &asking).is_empty() {
+                        return;
+                    }
+                    if asking == self.defender && !announced.contains(&self.defender) {
+                        self.stage = Stage::Announcing {
+                            round,
+                            asking: self.attacker.clone(),
+                            announced,
+                        };
+                        continue;
+                    }
+                    self.pending_retreats = announced;
+                    self.stage = Stage::Rolling { round };
+                }
+                Stage::Retreating { round, leaving } => {
+                    let Some(player) = leaving.first().cloned() else {
+                        // Everyone who announced has gone.
+                        if self.over(state, content, sources) || round >= MAX_ROUNDS {
+                            self.stage = self.conclude(state, content, sources, round);
+                            return;
+                        }
+                        self.stage = Stage::Announcing {
+                            round: round + 1,
+                            asking: self.defender.clone(),
+                            announced: Vec::new(),
+                        };
+                        continue;
+                    };
+                    let destinations = self.retreats(state, content, sources, &player);
+                    match destinations.as_slice() {
+                        // The destination stopped qualifying during the round.
+                        [] => {
+                            let rest = leaving[1..].to_vec();
+                            self.stage = Stage::Retreating {
+                                round,
+                                leaving: rest,
+                            };
+                        }
+                        [only] => {
+                            let only = only.clone();
+                            retreat_to(state, content, sources, &player, &self.system, &only);
+                            let rest = leaving[1..].to_vec();
+                            self.stage = Stage::Retreating {
+                                round,
+                                leaving: rest,
+                            };
+                        }
+                        _ => return,
+                    }
+                }
                 Stage::Rolling { round } => {
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
@@ -733,6 +934,40 @@ impl Window for CombatWindow {
     ) -> Option<Choice> {
         match &self.stage {
             Stage::Done(_) | Stage::Rolling { .. } => None,
+            Stage::Announcing { asking, .. } => {
+                if self.retreats(state, content, sources, asking).is_empty() {
+                    return None; // 78.4c: nothing to retreat to, so nothing to announce
+                }
+                Some(Choice::new(
+                    asking.clone(),
+                    format!("announce a retreat from {}", self.system),
+                    vec![
+                        ChoiceOption::labelled("stay", RETREAT_KIND, "stay and fight"),
+                        ChoiceOption::labelled("retreat", RETREAT_KIND, "announce a retreat"),
+                    ],
+                ))
+            }
+            Stage::Retreating { leaving, .. } => {
+                let player = leaving.first()?;
+                let destinations = self.retreats(state, content, sources, player);
+                if destinations.len() < 2 {
+                    return None; // 78.7b: one destination is not a decision
+                }
+                Some(Choice::new(
+                    player.clone(),
+                    "retreat to which system",
+                    destinations
+                        .iter()
+                        .map(|id| {
+                            ChoiceOption::labelled(
+                                id.to_string(),
+                                RETREAT_TO_KIND,
+                                format!("retreat to {id}"),
+                            )
+                        })
+                        .collect(),
+                ))
+            }
             Stage::Sustaining { queue, .. } => {
                 let front = queue.first()?;
                 let available = self.sustainers(state, content, sources, &front.player);
@@ -809,6 +1044,37 @@ impl Window for CombatWindow {
 
         match self.stage.clone() {
             Stage::Done(_) | Stage::Rolling { .. } => {}
+            Stage::Announcing {
+                round,
+                asking,
+                mut announced,
+            } => {
+                if option.id == "retreat" {
+                    announced.push(asking.clone());
+                }
+                // 78.4b: the defender announcing silences the attacker.
+                let next = if asking == self.defender && !announced.contains(&self.defender) {
+                    Some(self.attacker.clone())
+                } else {
+                    None
+                };
+                self.stage = next.map_or(Stage::Rolling { round }, |asking| Stage::Announcing {
+                    round,
+                    asking,
+                    announced: announced.clone(),
+                });
+                if matches!(self.stage, Stage::Rolling { .. }) && !announced.is_empty() {
+                    self.pending_retreats = announced;
+                }
+            }
+            Stage::Retreating { round, mut leaving } => {
+                if let Some(player) = leaving.first().cloned() {
+                    let destination = SystemId::new(option.id);
+                    retreat_to(state, content, sources, &player, &self.system, &destination);
+                    leaving.remove(0);
+                }
+                self.stage = Stage::Retreating { round, leaving };
+            }
             Stage::Sustaining { mut queue, round } => {
                 if option.is_decline() {
                     self.stage = Stage::Assigning { queue, round };
@@ -1146,6 +1412,114 @@ mod tests {
 
         assert!(fired.is_empty());
         assert_eq!(dice.count(), 0, "nobody shoots at themselves");
+    }
+
+    #[test]
+    fn a_retreat_needs_somewhere_that_is_yours_and_unthreatened() {
+        // 78.7c: adjacent, holds your units or a planet you control, and no enemy ships.
+        let hub = crate::fixtures::plain_hub();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let centre = SystemId::new(hub.centre.clone());
+        let refuge = SystemId::new(hub.outer[0].clone());
+
+        put(&mut state, &centre, "cruiser", &attacker(), 1);
+        assert!(
+            eligible_retreats(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &hub.galaxy,
+                &attacker(),
+                &centre
+            )
+            .is_empty(),
+            "an empty neighbour is not a refuge"
+        );
+
+        put(&mut state, &refuge, "carrier", &attacker(), 1);
+        assert!(
+            eligible_retreats(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &hub.galaxy,
+                &attacker(),
+                &centre
+            )
+            .contains(&refuge),
+            "your own fleet makes it one"
+        );
+
+        put(&mut state, &refuge, "destroyer", &defender(), 1);
+        assert!(
+            !eligible_retreats(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &hub.galaxy,
+                &attacker(),
+                &centre
+            )
+            .contains(&refuge),
+            "an enemy ship there closes it again"
+        );
+    }
+
+    #[test]
+    fn a_retreat_strands_what_it_cannot_carry() {
+        // 78.7b: only ships with a move value leave under their own power, and capacity
+        // decides how much of the rest goes with them. The remainder is lost, which is the
+        // cost of retreating rather than an oversight.
+        let hub = crate::fixtures::plain_hub();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let centre = SystemId::new(hub.centre.clone());
+        let refuge = SystemId::new(hub.outer[0].clone());
+
+        put(&mut state, &centre, "destroyer", &attacker(), 1); // no capacity
+        put(&mut state, &centre, "fighter", &attacker(), 3);
+
+        let stranded = retreat_to(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &attacker(),
+            &centre,
+            &refuge,
+        );
+
+        assert_eq!(stranded, 3, "a destroyer carries nothing");
+        assert!(state.system_state(&centre).units.is_empty());
+        assert_eq!(state.system_state(&refuge).units.len(), 1, "only the hull");
+        assert!(
+            state
+                .system_state(&refuge)
+                .command_tokens
+                .contains(&attacker()),
+            "78.7d: a token goes to the destination"
+        );
+    }
+
+    #[test]
+    fn a_carrier_takes_its_fighters_with_it() {
+        let hub = crate::fixtures::plain_hub();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let centre = SystemId::new(hub.centre.clone());
+        let refuge = SystemId::new(hub.outer[0].clone());
+
+        put(&mut state, &centre, "carrier", &attacker(), 1);
+        put(&mut state, &centre, "fighter", &attacker(), 2);
+
+        let stranded = retreat_to(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &attacker(),
+            &centre,
+            &refuge,
+        );
+
+        assert_eq!(stranded, 0);
+        assert_eq!(state.system_state(&refuge).units.len(), 3);
     }
 
     #[test]
