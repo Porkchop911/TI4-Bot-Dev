@@ -169,9 +169,9 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-011-correctness-baseline`, based on M00-010f package commit `fa5c021`.
-- Last completed package: M00-010f — corpus admission review (`plans/evidence/M00-010f.md`).
-  M00-011 is blocked by an oracle integrity failure; no further oracle execution is permitted.
+- Branch: `wp/m00-012-benchmark-protocol`, based on M00-011 package commit `9633bdc`.
+- Last completed package: M00-011 remains blocked by an oracle integrity failure. Active package:
+  M00-012 fixed benchmark protocol, which does not execute the oracle.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
@@ -201,6 +201,9 @@ are recorded in the package evidence; independent review remains owner-waived.
   further oracle commands. The owner explicitly authorized its exact deletion on 2026-08-12, but
   the execution environment rejected the scoped command before execution. Owner restoration by an
   available local mechanism to the pinned clean state is required; see `plans/evidence/M00-011.md`.
+- M00-012 replaces the stale alternative-filled benchmark drafts with a fixed 10-warmup/30-sample,
+  deterministic interleaving, non-mutating affinity, raw-sample schema, and variance-rejection
+  protocol. M00-013 cannot measure until M00-011's oracle integrity blocker is resolved.
 
 ## Implementation status
 
