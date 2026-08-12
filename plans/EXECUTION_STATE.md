@@ -707,8 +707,18 @@ relics                  3/17   implemented (18%)
 - A scored secret leaves its owner's hand (61.18); a public objective does not. Which module
   owns the card decides which path the award takes.
 - Guarded in `wiring.rs`, since this is precisely the kind of call that falls out silently.
-- **Still unwired:** `technology`, `transactions`, `exploration`. Each needs an action or a
-  trigger that does not exist yet (research, a transaction window, exploring on gaining control).
+- **Still unwired:** `technology` and `transactions`, each waiting on an action that does not
+  exist yet (research, and a transaction window). `exploration` is wired: 35.1 fires on capture.
+
+## Exploration on capture (authoritative)
+
+- **636 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- 35.1 now fires: taking a planet **nobody held** explores it; taking one off a rival does not.
+  `establish_control` already carried the previous holder for exactly this, and nothing used it
+  — a caller told only that control changed would explore every conquest and draw cards the
+  rules do not give.
+- Guarded in `wiring.rs`. Dropping that call would silently stop every exploration in the game
+  while the invasion still looked correct.
 
 ## Implementation status
 

@@ -25,6 +25,8 @@ pub const GROUND_CASUALTY_KIND: &str = "ground_casualty";
 /// What an invasion did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InvasionReport {
+    /// Planets explored on being taken from nobody (35.1), with what the card did.
+    pub explored: Vec<(PlanetId, crate::exploration::Explored)>,
     /// Planets ground forces were committed to.
     pub committed: Vec<PlanetId>,
     /// Planets whose control changed, with who held them before.
@@ -576,6 +578,23 @@ impl InvasionWindow {
             &self.invader,
             &self.report.committed,
         );
+        // 35.1: a planet nobody controlled is explored; one taken off another player is not.
+        // Only this frame knows which, which is why `captured` carries the previous holder — a
+        // caller told merely that control changed would explore every conquest and draw cards
+        // the rules do not give.
+        for (planet, previous) in self.report.captured.clone() {
+            if previous.is_some() {
+                continue;
+            }
+            let Some(deck) = crate::exploration::trait_of(content, sources, &planet) else {
+                continue;
+            };
+            if let Some(outcome) =
+                crate::exploration::explore(state, content, &self.invader, &deck, Some(&planet))
+            {
+                self.report.explored.push((planet, outcome));
+            }
+        }
         self.stage = Stage::Done;
     }
 }
@@ -988,6 +1007,53 @@ mod tests {
             state.exhausted_planets.contains(&planet),
             "taken exhausted, not ready to spend"
         );
+    }
+
+    #[test]
+    fn taking_an_unowned_planet_explores_it_and_taking_one_off_a_rival_does_not() {
+        // 35.1. A caller told merely that control changed would explore every conquest and
+        // draw cards the rules do not give.
+        let explore_once = |previous_holder: Option<PlayerId>| {
+            let (mut state, system, planet) = arena();
+            // A planet with a trait, so it has a deck to explore into.
+            let deck = crate::exploration::trait_of(ContentStore::embedded(), POK, &planet)?;
+            state
+                .exploration_decks
+                .insert(deck, vec!["minent".to_owned()]);
+            if let Some(holder) = previous_holder {
+                state
+                    .system_mut(&system)
+                    .set_control(planet.clone(), holder);
+            }
+            on_planet(&mut state, &system, &planet, "infantry", &invader(), 1);
+
+            let mut window = InvasionWindow {
+                invader: invader(),
+                system: system.clone(),
+                stage: Stage::Done,
+                report: InvasionReport {
+                    committed: vec![planet.clone()],
+                    ..InvasionReport::default()
+                },
+            };
+            let mut dice = Dice::new();
+            let mut rng = GameRng::new(1);
+            let ctx = crate::choice::Resolving {
+                content: ContentStore::embedded(),
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+            };
+            window.advance_fighting(&mut state, ctx.content, ctx.sources, &[planet], 0);
+            Some(window.into_report().explored.len())
+        };
+
+        if let Some(unowned) = explore_once(None) {
+            assert_eq!(unowned, 1, "a planet nobody held is explored");
+        }
+        if let Some(conquered) = explore_once(Some(holder())) {
+            assert_eq!(conquered, 0, "a planet taken off a rival is not");
+        }
     }
 
     #[test]

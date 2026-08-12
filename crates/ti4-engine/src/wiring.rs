@@ -164,6 +164,17 @@ fn the_status_phase_still_readies_leaders() {
 }
 
 #[test]
+fn taking_a_planet_still_explores_it() {
+    // 35.1 only fires on a planet nobody held. Dropping the call would silently stop every
+    // exploration in the game, and the invasion would still look correct.
+    let invasion = include_str!("invasion.rs");
+    assert!(
+        invasion.contains("crate::exploration::explore"),
+        "capturing a planet no longer explores it"
+    );
+}
+
+#[test]
 fn the_scoring_window_still_offers_secrets() {
     // 61.6 lets a player score one public and one secret. Dropping the secrets call would
     // leave satisfied secrets unscoreable all game with nothing failing.
