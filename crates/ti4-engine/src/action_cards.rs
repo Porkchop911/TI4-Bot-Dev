@@ -126,6 +126,66 @@ pub fn discard(state: &mut GameState, player: &PlayerId, index: usize) -> Option
     Some(seat.action_cards.remove(index))
 }
 
+// -- effects (M06-016b) --------------------------------------------------------------------------
+
+/// What playing an action card does.
+///
+/// A card with no entry here is played, announced, and reports itself unresolved — the registry
+/// design used throughout this engine. A card that silently did nothing would be indistinguishable
+/// from one that worked.
+pub type Effect = fn(&mut crate::timing::TimingContext<'_>, &PlayerId);
+
+/// Morale Boost: "+1 to the result of each of your unit's combat rolls during this combat round."
+///
+/// Scoped to [`GameState::combat_round_seq`] rather than a flag, so the bonus expires with the
+/// round it was played in. A flag would improve every later round of the same combat too.
+fn morale_boost(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let round = context.state.combat_round_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.combat_bonus_round = Some(round);
+    }
+}
+
+/// Flank Speed: "+1 to the move value of each of your ships during this tactical action."
+///
+/// Scoped to [`GameState::activation_seq`] for the same reason: the card says *this* tactical
+/// action, and an unscoped bonus would follow the fleet for the rest of the game.
+fn flank_speed(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.move_bonus_activation = Some(activation);
+    }
+}
+
+/// The effect registered for a card, if this engine has one.
+#[must_use]
+pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
+    match alias.as_str() {
+        // Four physical copies each, resolved from the printed name rather than listed by hand:
+        // the registry test catches a *wrong* alias, but nothing catches a *missing* one, and a
+        // fourth copy left off a list stays unplayable for ever with no symptom.
+        "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
+        "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
+        _ => None,
+    }
+}
+
+/// Aliases with a registered effect.
+#[must_use]
+pub fn registered_aliases() -> Vec<&'static str> {
+    vec!["fs1", "fs2", "fs3", "fs4", "mb1", "mb2", "mb3", "mb4"]
+}
+
+/// This player's ships move one further during `activation`, from Flank Speed.
+#[must_use]
+pub fn move_bonus(state: &GameState, player: &PlayerId, activation: u32) -> i32 {
+    i32::from(
+        state
+            .player(player)
+            .is_some_and(|seat| seat.move_bonus_activation == Some(activation)),
+    )
+}
+
 /// Cards this engine has no effect for.
 ///
 /// Every action card is currently unimplemented; the list is exposed so the gap is queryable
@@ -142,6 +202,102 @@ pub fn unimplemented(content: &ContentStore) -> Vec<ActionCardId> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Resolve one card's effect against a state, through a real timing context.
+    fn play_effect(state: &mut GameState, alias: &str, player: &PlayerId) {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+        };
+        effect(&mut context, player);
+    }
+
+    #[test]
+    fn morale_boost_expires_with_the_round_it_was_played_in() {
+        // "During this combat round." Held as the round number rather than a flag, because a
+        // flag would improve every later round of the same combat as well.
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        state.combat_round_seq = 4;
+
+        play_effect(&mut state, "mb1", &player);
+
+        assert_eq!(
+            state.player(&player).unwrap().combat_bonus_round,
+            Some(4),
+            "the bonus belongs to the round it was played in"
+        );
+        assert_ne!(
+            state.player(&player).unwrap().combat_bonus_round,
+            Some(5),
+            "and not to the next one"
+        );
+    }
+
+    #[test]
+    fn flank_speed_expires_with_the_tactical_action_it_was_played_in() {
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        state.activation_seq = 3;
+
+        play_effect(&mut state, "fs1", &player);
+
+        assert_eq!(move_bonus(&state, &player, 3), 1, "this activation");
+        assert_eq!(move_bonus(&state, &player, 4), 0, "not the next one");
+        assert_eq!(
+            move_bonus(&state, &PlayerId::new("b"), 3),
+            0,
+            "and not somebody else's ships"
+        );
+    }
+
+    #[test]
+    fn every_copy_of_a_card_carries_the_same_effect() {
+        // Morale Boost is four physical cards and so is Flank Speed. A list written by hand
+        // catches a wrong alias but never a missing one, and the only symptom of a fourth copy
+        // left off is a slightly lower play rate.
+        let content = ContentStore::embedded();
+        for name in ["Morale Boost", "Flank Speed"] {
+            let copies: Vec<ActionCardId> = content
+                .from_sources(
+                    ti4_model::content_types::ContentType::ActionCards,
+                    ti4_model::content_types::POK,
+                )
+                .filter(|record| record.text("name") == Some(name))
+                .filter_map(|record| record.text("alias").map(ActionCardId::new))
+                .collect();
+            assert!(copies.len() > 1, "{name} is printed more than once");
+            for alias in copies {
+                assert!(
+                    effect_for(&alias).is_some(),
+                    "{alias} is a copy of {name} and must carry its effect"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_registered_alias_is_a_real_action_card() {
+        for alias in registered_aliases() {
+            assert!(
+                ContentStore::embedded()
+                    .get(ti4_model::content_types::ContentType::ActionCards, alias)
+                    .is_some(),
+                "{alias} is not an action card the corpus knows"
+            );
+        }
+    }
+
     use super::*;
     use crate::fixtures::game;
 

@@ -241,9 +241,18 @@ pub fn play(
         return Ok(false);
     }
 
-    // No action card in this engine has an effect yet, so every play is announced unresolved
-    // rather than passed off as having done something. This is the registry design used
-    // everywhere else here: a card with no handler is visible as a gap.
+    // A card with no registered effect is announced unresolved rather than passed off as having
+    // done something. This is the registry design used everywhere else here: a gap is visible.
+    if let Some(effect) = crate::action_cards::effect_for(alias) {
+        effect(context, player);
+    } else {
+        let mut payload = BTreeMap::new();
+        payload.insert("card".to_owned(), alias.to_string().into());
+        let unresolved = context
+            .event_sequence
+            .next("ACTION_CARD_UNRESOLVED", payload)?;
+        resolver.emit_with_context(context, unresolved, |_, _| {})?;
+    }
     Ok(true)
 }
 

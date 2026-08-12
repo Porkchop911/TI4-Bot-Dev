@@ -151,7 +151,8 @@ pub fn movable(
             if !kind.is_ship() {
                 continue;
             }
-            let move_value = i32::try_from(kind.move_value()).unwrap_or(0);
+            let move_value = i32::try_from(kind.move_value()).unwrap_or(0)
+                + crate::action_cards::move_bonus(state, player, state.activation_seq);
             if rules.can_reach(origin.as_str(), move_value) {
                 found.push(Movable {
                     origin: origin.clone(),
@@ -258,6 +259,39 @@ pub fn read_move(choice: &Choice, answer: ChoiceOption) -> Result<MoveSelection,
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn flank_speed_puts_a_system_in_reach_that_was_not() {
+        // The consumer, not the field. Setting `move_bonus_activation` and never reading it
+        // leaves the card doing nothing, and a test that only checks the field cannot tell.
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let far = SystemId::new(hub.across(&hub.outer[0]));
+
+        let mut state = crate::fixtures::game(&["a"]);
+        // A carrier moves 1; the far seat is two systems away across the ring.
+        crate::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        activate(&mut state, &player, &far).unwrap();
+
+        let reach = |state: &GameState| {
+            movable(state, ContentStore::embedded(), POK, &hub.galaxy, &player).len()
+        };
+
+        assert_eq!(reach(&state), 0, "a carrier cannot cross two systems");
+
+        state.player_mut(&player).unwrap().move_bonus_activation = Some(state.activation_seq);
+        assert_eq!(reach(&state), 1, "Flank Speed carries it one further");
+
+        // And only for the activation it was played in.
+        state.player_mut(&player).unwrap().move_bonus_activation = Some(state.activation_seq + 1);
+        assert_eq!(
+            reach(&state),
+            0,
+            "a later activation's bonus is not this one's"
+        );
+    }
+
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;
 

@@ -96,10 +96,10 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "action cards",
             total: count(content, ContentType::ActionCards, sources),
-            // *Playable*, not *implemented*: a reaction card can be played into its window and
-            // still have no effect, which is announced rather than passed off as resolved. No
-            // action card in this engine has an effect yet.
-            implemented: 0,
+            // *Effects*, not playability: a reaction card can be played into its window and
+            // still have no effect, which is announced unresolved rather than passed off as
+            // resolved. The oracle registers 35 of these; this counts what is ported.
+            implemented: crate::action_cards::registered_aliases().len(),
         },
         Coverage {
             registry: "reaction windows",

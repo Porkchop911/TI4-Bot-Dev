@@ -849,7 +849,12 @@ impl<'a> Game<'a> {
             .and_then(|kind| {
                 rules.path_from(
                     origin.as_str(),
-                    i32::try_from(kind.move_value()).unwrap_or(0),
+                    i32::try_from(kind.move_value()).unwrap_or(0)
+                        + crate::action_cards::move_bonus(
+                            &self.state,
+                            &window.player,
+                            self.state.activation_seq,
+                        ),
                 )
             })
             .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
