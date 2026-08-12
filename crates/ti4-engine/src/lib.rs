@@ -38,6 +38,7 @@ pub mod setup;
 pub mod status;
 pub mod strategy;
 pub mod tactical;
+pub mod technology;
 pub mod tokens;
 pub mod transit;
 pub mod vote;

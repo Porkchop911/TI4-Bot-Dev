@@ -482,6 +482,20 @@ are recorded in the package evidence; independent review remains owner-waived.
   game's. Without a map there is nowhere to retreat to and the stage settles silently.
 - M05 now has only combat modifiers/rerolls (M05-010) left of its rules packages.
 
+## M06-004/005 checkpoint (authoritative)
+
+- **494 passing tests**; workspace clippy-clean under `-D warnings`.
+- Technology prerequisites and research: colour tracks, prerequisite counting, planet
+  specialties standing in for prerequisites (90.8), faction-locked technologies (90.11), and
+  `grant` kept separate from `research` because gaining outright (90.5) is not researching.
+- **Another corpus sentinel found by its own test.** `requirements` is written as the literal
+  string `"null"` on some records, not an absent field. A test asserting every requirement
+  letter maps to a track caught it; without that, `"null"` would have parsed as no
+  prerequisites and made those technologies free. The sentinel is now handled explicitly so a
+  future typo is still an error rather than a free technology.
+- Not ported: prerequisite waivers (faction, law, AI Development Algorithm), unit-upgrade
+  application, starting technology, and the ~2,800 remaining lines of `technology.py`.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -559,8 +573,8 @@ had already shipped — it is worth re-deriving this rather than trusting it.
    what a retreating fleet cannot carry is stranded.)
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.
-5. **M06 — general rules**: payment planner, trade, technology, exploration, relics, action
-   cards, secrets, leaders, reactions. Nineteen packages, largely untouched.
+5. **M06 — general rules**: payment planner, trade, exploration, relics, action cards,
+   secrets, leaders, reactions. Technology prerequisites and research (M06-004/005) are done.
 
 ## Decisions in force
 
