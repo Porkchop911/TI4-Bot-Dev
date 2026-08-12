@@ -565,7 +565,7 @@ are recorded in the package evidence; independent review remains owner-waived.
 public objectives      30/40   implemented (75%)
 secret objectives      14/40   implemented (35%)
 action cards            0/122  implemented (0%)
-agenda effects          6/63   implemented (10%)
+agenda effects          7/63   implemented (11%)
 exploration cards      41/80   implemented (51%)
 relics                  3/17   implemented (18%)
 ```

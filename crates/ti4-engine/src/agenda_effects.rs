@@ -30,6 +30,7 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "economic_equality",
         "incentive",
         "mutiny",
+        "unconventional",
         "seed_empire",
     ]
 }
@@ -129,6 +130,27 @@ pub fn resolve(
             if outcome == FOR {
                 for alias in crate::laws::in_play(state) {
                     crate::laws::repeal(state, &alias);
+                }
+            }
+        }
+        "unconventional" => {
+            // Unconventional Measures pays the For voters, or purges them. Either way it acts
+            // on who voted, not on what won.
+            for player in ballot.voted_for(FOR) {
+                if outcome == FOR {
+                    // Two action cards. The hand limit is enforced by the caller that owns a
+                    // table; here the draw is unconditional and the limit applies later.
+                    for _ in 0..2 {
+                        if state.action_card_deck.is_empty() {
+                            break;
+                        }
+                        let top = state.action_card_deck.remove(0);
+                        if let Some(seat) = state.player_mut(&player) {
+                            seat.action_cards.push(top);
+                        }
+                    }
+                } else if let Some(seat) = state.player_mut(&player) {
+                    seat.action_cards.clear();
                 }
             }
         }
@@ -416,6 +438,43 @@ mod tests {
         );
 
         assert_eq!(state.revealed_objectives.len(), before + 1);
+    }
+
+    #[test]
+    fn unconventional_measures_pays_or_purges_the_for_voters() {
+        // It acts on who voted, not on what won.
+        let mut state = game(&["a", "b"]);
+        state.action_card_deck = (0..4)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("c{n}")))
+            .collect();
+        let ballot = ballot_for(&[a()]);
+
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "unconventional",
+            FOR,
+            &ballot,
+            no_choice,
+        );
+        assert_eq!(state.player(&a()).unwrap().action_cards.len(), 2);
+        assert!(
+            state.player(&b()).unwrap().action_cards.is_empty(),
+            "b did not vote for it"
+        );
+
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "unconventional",
+            AGAINST,
+            &ballot,
+            no_choice,
+        );
+        assert!(
+            state.player(&a()).unwrap().action_cards.is_empty(),
+            "the same voters lose their hand on Against"
+        );
     }
 
     #[test]
