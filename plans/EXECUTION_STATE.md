@@ -17,10 +17,32 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
-- Oracle repository: `D:\Projects	i4-engine` (read-only)
+- Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
+
+### Superseded timing-branch checkpoint
+- Branch: `wp/m02-004-system-state`
+- Active package: M02-004 system state; no implementation edits have started on this branch.
+- Last completed package: M02-002 common schema envelope (`b063dcb`).
+- M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
+  WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
+  turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
+  event and `DecisionRecord` fields. M03-014 is complete: a direct pinned-oracle fixture proves
+  line-for-line public trace parity at the WHEN/resolution/AFTER ordering boundary. M03-015 is
+  complete: 128-case generated registries verify termination under rule-consumed repeatable
+  eligibility, exact frequency scopes, ineligibility, duplicate slots, trace determinism, and
+  optional pass termination. The workspace has 121 content, 478 engine, and 68 model tests plus
+  one doc-test, all passing. User waived Pi/external review on 2026-08-12 and authorized
+  self-review; the waiver is recorded in each package evidence file rather than represented as
+  independent review.
+- M03-007's previous evidence claimed a completed translator without source, fixtures, or tests.
+  The original oversized package is now split: M03-007a parses existing bounded oracle traces
+  into explicit selected decisions and dice entropy, and M03-007b retains a generated, checksummed
+  100-trace corpus (12,234,839 NDJSON bytes; four scenarios times seeds 0–24). M03-007c owns
+  native semantic replay and remains blocked on generic-game parity. M03-016 cannot start until
+  the parent package is complete.
 - **Two agents are working this repository at once.** The M03 timing chain
   (M03-007a/b, M03-010 through M03-015) is held in `.worktrees/` by the other agent;
   `timing.rs` and `event.rs` belong to it. The packages below deliberately avoid both files.
@@ -114,9 +136,65 @@ Bugs found and fixed, each of which was silent:
 - Last completed package: **M03-008 — typed event model** (`plans/evidence/M03-008.md`). It has
   trace-local numeric IDs, deterministic payload serialization, cancellation, and validated typed
   reads; 449 engine tests and the workspace suite pass.
-- Next dependency-ready package: **M03-009 — ability registration**, followed by the M03 timing
-  resolver chain that unblocks M06-016 and M05-010b. M03-007 remains separately blocked on its
-  legacy-entropy corpus and is not being bypassed.
+- Last completed package: **M03-007b — bounded oracle trace corpus**
+  (`plans/evidence/M03-007b.md`). Its manifest pins the oracle commit and validates every trace's
+  size, checksum, provenance header, and safe resolved fixture path. The generator's source replay
+  recreated every captured byte stream before retained artifacts were written.
+- Next action: investigate M03-007c's native replay boundary against the current generic `Game`.
+  M03-016 remains blocked on the unfinished M03-007 parent package and is not being bypassed.
+- M03-007c investigation is now blocked rather than merely pending. The 100 source traces require
+  Save 52/54 scenario/map construction, the full source state/event projection, compatible legal
+  option IDs, and dice-entropy injection. The native `Game` has none of those compatibility
+  surfaces: it accepts a prebuilt Rust state, uses its own ChaCha-derived dice stream, records
+  `Vec<String>` events, and does not expose a source-equivalent canonical projection. Implementing
+  a replay adapter would therefore either ignore source decisions/entropy or invent a parity claim.
+  The next safe work is the dependency package(s) that establish generic native game parity, but
+  strict milestone order currently places M04 after M03's unresolved exit gate. See
+  `plans/evidence/M03-007c.md` for the exact blocking evidence.
+- The owner authorized a recorded M03→M04 sequencing exception on 2026-08-12 to construct those
+  prerequisites without faking M03-007c success. M04-015 is split: M04-015a now supplies the
+  native canonical public-state projection in the executable source schema, with public-card
+  redaction and deterministic bytes. M04-015b now owns a checked two-snapshot source-state intake
+  boundary and validates all 100 retained traces. M04-015c1 now provides a strict field-path
+  public-state comparator. M04-015c2a now reconstructs every retained initial snapshot into an
+  intentionally public-only native `GameState`, proving its public projection is exact while
+  rejecting held strategy cards whose initiative metadata is absent from the source schema.
+  Opaque private-card placeholders make the state non-executable. M04-015c2b1 proves that the
+  native driver consumes exactly the shared six-card strategy prefix then refuses the trace's first
+  unsupported `component|expedition|secret` action; it neither skips nor accepts it. M04-015c2b2
+  owns native executable scenario construction, full entropy/decision consumption, event
+  projection, and selected cross-engine comparison. M03-007c remains blocked until those later
+  compatibility surfaces prove semantic equality.
+
+## M03-016b integration checkpoint (2026-08-12)
+
+- Branch: `wp/m03-m06-timing-integration`.
+- The M03 timing chain and `wp/m06-003-structured-transactions` now coexist in one local merge
+  result. `game.rs` and `wiring.rs` merged automatically; their combined result retains the M06
+  driver calls and M03's stateful timing ownership/wiring guard.
+- `plans/EXECUTION_STATE.md` was the only textual conflict. Both historical branch checkpoints
+  remain labelled as superseded above; the current package evidence and this checkpoint supersede
+  their stale branch/next-action fields.
+- No source-rule behavior was introduced as part of conflict resolution. The integration must pass
+  all parent checks before it can be committed or used as the content/timing handoff branch.
+
+## M03-016a package checkpoint (2026-08-12)
+
+- Branch: `wp/m03-016a-stateful-timing`.
+- Status: complete in the focused `Wire stateful timing through strategy selection` commit. This is
+  an owner-authorized corrective child
+  of the blocked M03-016 review, not a completion claim for M03-007c or the M03 exit gate.
+- `Game` now owns a resolver and typed event sequence. A `TimingContext` gives stateful effects the
+  live `GameState`, content/source scope, one game table, dice history, RNG, and nested allocator.
+  The context-free resolver rejects stateful abilities rather than pretending they resolved.
+- `STRATEGY_CARD_CHOSEN` now emits through the driver with source-matching player/card/goods facts;
+  WHEN cancellation is atomic. Resolver frequency counters synchronize from `GameState`, and the
+  wiring guard requires the driver call.
+- Checks: 484 `ti4-engine`, 20 `ti4-legacy`, 72 `ti4-model`, and 1 doc-test passed; workspace
+  strict Clippy, fmt, and diff check passed; oracle integrity guard verified 238 files before and
+  after inspection. See `plans/evidence/M03-016a.md`.
+- Remaining complaint scope: combat, invasion, production, technology, and card triggers require
+  separately settled event vocabulary. Do not bulk-wrap existing string diagnostics as typed events.
 
 ## M04-005 package checkpoint (historical)
 
@@ -845,8 +923,8 @@ behaviour is a placeholder.
 |---|---|---|
 | M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, resolved-event, finished-outcome, and error projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
-| M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
-| M03 Choice, timing, replay | Written | **Partial** — 001–006 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice). 007–016 outstanding. |
+| M02 Content and model | Written | **In progress** — 001–003, 005, 007, 008, 009–012 done. 004, 006, 013–016 outstanding. |
+| M03 Choice, timing, replay | Written | **Partial** — 001–006 and 008–015 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice, event/timing resolver, frequency scopes, canonical hashes, direct timing differential, and generated timing properties). 007 remains blocked; 016 outstanding. |
 | M04 Game skeleton | Written | **Partial** — 001, 002, 003, 004, 006, 007 done. 005 (draft resolution), 008–016 outstanding. Setup now builds deterministic decks and deals setup cards. |
 | M05 … M13 | Written | **Not started** |
 

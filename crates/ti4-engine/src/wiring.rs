@@ -124,6 +124,7 @@ fn every_subsystem_the_driver_owns_is_reachable() {
         "crate::invasion::InvasionWindow",
         "crate::production::ProductionWindow",
         "crate::agenda_effects::resolve",
+        "timing.emit_with_context",
     ] {
         assert!(
             driver.contains(subsystem),
