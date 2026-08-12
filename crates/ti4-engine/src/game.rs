@@ -329,6 +329,8 @@ pub struct Game<'a> {
     tactical: Option<TacticalWindow>,
     /// The open post-movement sequence: combat, invasion, production.
     aftermath: Option<AftermathWindow>,
+    /// The open transaction. Free (94.1a), so closing it does not end the turn.
+    trade: Option<crate::transactions::TradeWindow>,
     /// The pinned source of gravity-rift rolls.
     rng: GameRng,
     dice: Dice,
@@ -378,6 +380,7 @@ impl<'a> Game<'a> {
             galaxy: None,
             tactical: None,
             aftermath: None,
+            trade: None,
             rng: GameRng::new(0),
             dice: Dice::new(),
             status_resolved: false,
@@ -453,6 +456,9 @@ impl<'a> Game<'a> {
         if self.aftermath.is_some() {
             return self.step_aftermath();
         }
+        if self.trade.is_some() {
+            return self.step_trade();
+        }
         if self.tactical.is_some() {
             return self.step_tactical();
         }
@@ -524,6 +530,15 @@ impl<'a> Game<'a> {
                 "take a tactical action",
             ));
         }
+        if let Some(galaxy) = self.galaxy.as_ref() {
+            choice
+                .options
+                .extend(crate::transactions::available_actions(
+                    &self.state,
+                    galaxy,
+                    active,
+                ));
+        }
         Some(choice)
     }
 
@@ -559,6 +574,15 @@ impl<'a> Game<'a> {
                         .passed = true;
                     self.emit("PLAYER_PASSED");
                     self.advance_turn();
+                    return Ok(());
+                }
+                if let Some(partner) = crate::transactions::opens_with(&answer) {
+                    self.trade = Some(crate::transactions::TradeWindow::open(
+                        &mut self.state,
+                        &active,
+                        &partner,
+                    ));
+                    self.emit("TRANSACTION_OPENED");
                     return Ok(());
                 }
                 if answer.kind != ACTION_KIND {
@@ -881,6 +905,51 @@ impl<'a> Game<'a> {
         self.emit("TACTICAL_ACTION_COMPLETE");
         self.advance_turn();
         self.result(false, None)
+    }
+
+    /// Resolve one decision of an open transaction.
+    ///
+    /// Unlike every other window here, finishing does **not** advance the turn: 94.1a puts a
+    /// transaction "at any time during your turn", and the turn continues afterwards.
+    fn step_trade(&mut self) -> StepResult {
+        let Some(galaxy) = self.galaxy.clone() else {
+            self.trade = None;
+            return self.result(false, None);
+        };
+        let choice = self
+            .trade
+            .as_ref()
+            .expect("checked above")
+            .pending_choice(&self.state);
+        let Some(choice) = choice else {
+            self.trade = None;
+            return self.result(false, None);
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let outcome = self.trade.as_mut().expect("window remains open").resolve(
+            &mut self.state,
+            &galaxy,
+            &answer,
+        );
+        self.emit(match outcome {
+            crate::transactions::Traded::Resolved => "TRANSACTION",
+            crate::transactions::Traded::Refused => "TRANSACTION_REFUSED",
+            crate::transactions::Traded::Offered => "TRANSACTION_OFFERED",
+            crate::transactions::Traded::Countered => "COUNTEROFFER",
+            crate::transactions::Traded::Rejected(_) => "TRANSACTION_REJECTED",
+            crate::transactions::Traded::NothingOffered => "TRANSACTION_ABANDONED",
+        });
+        if self
+            .trade
+            .as_ref()
+            .is_some_and(crate::transactions::TradeWindow::is_complete)
+        {
+            self.trade = None;
+        }
+        self.result(true, None)
     }
 
     fn step_secondary(&mut self) -> StepResult {

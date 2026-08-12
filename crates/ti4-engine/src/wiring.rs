@@ -222,3 +222,83 @@ fn the_laws_that_bite_are_still_consulted() {
         assert!(source.contains(hook), "{module} no longer consults {hook}");
     }
 }
+
+#[test]
+fn a_turn_can_open_and_close_a_transaction_without_ending() {
+    // 94.1a: a transaction happens "at any time during your turn" and costs nothing. If closing
+    // it advanced the turn, trading would silently cost a player their action — and every seeded
+    // game would trade its turns away.
+    let hub = plain_hub();
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+    state.phase = ti4_model::state::Phase::Action;
+    state.active = Some(PlayerId::new("a"));
+
+    let centre = SystemId::new(hub.centre.clone());
+    put(&mut state, &centre, "cruiser", &PlayerId::new("a"), 1);
+    put(&mut state, &centre, "cruiser", &PlayerId::new("b"), 1);
+    for player in &players {
+        let seat = state.player_mut(player).unwrap();
+        seat.commodities = 3;
+        seat.trade_goods = 0;
+    }
+
+    let table = Table::with_default(Box::new(Scripted::new([
+        "trade|b".to_owned(),
+        "cc3".to_owned(),
+        "accept".to_owned(),
+    ])));
+    let mut game =
+        Game::with_table(state, ContentStore::embedded(), table).with_galaxy(hub.galaxy.clone());
+
+    for _ in 0..8 {
+        if game.events.iter().any(|event| event == "TRANSACTION") {
+            break;
+        }
+        if game.step().error.is_some() {
+            break;
+        }
+    }
+
+    assert!(
+        game.events
+            .iter()
+            .any(|event| event == "TRANSACTION_OPENED"),
+        "the free action was never offered; events {:?}",
+        game.events
+    );
+    assert!(
+        game.events.iter().any(|event| event == "TRANSACTION"),
+        "the deal never closed; events {:?}",
+        game.events
+    );
+    assert!(
+        !game.events.iter().any(|event| event == "TURN_PASSED"),
+        "a transaction is free and must not end the turn; events {:?}",
+        game.events
+    );
+    assert_eq!(
+        game.state.active,
+        Some(PlayerId::new("a")),
+        "the trading player still holds the turn"
+    );
+    assert_eq!(
+        game.state.player(&PlayerId::new("a")).unwrap().trade_goods,
+        3,
+        "21.5 turned the commodities into trade goods on the way over"
+    );
+}
+
+#[test]
+fn the_driver_still_offers_transactions() {
+    // Every other subsystem here failed this way first: correct, tested, and called by nothing.
+    let driver = include_str!("game.rs");
+    assert!(
+        driver.contains("crate::transactions::available_actions"),
+        "no turn offers a transaction any more"
+    );
+    assert!(
+        driver.contains("crate::transactions::TradeWindow::open"),
+        "opening a transaction no longer opens a negotiation"
+    );
+}
