@@ -194,19 +194,25 @@ are recorded in the package evidence; independent review remains owner-waived.
   M00-008 contains no executable 100-scenario manifest (including the distinct three-/four-player
   definitions), and no approved artifact-retention policy exists for traces that may contain hidden
   card identities. See `plans/evidence/M00-010f.md`. No oracle paths are writable.
-- M00-011 overrides the oracle's project-local pytest temp setting and cache provider so complete
-  suite execution cannot write under `D:\Projects\ti4-engine`; the attempted Windows `--basetemp`
-  override was interpreted by pytest as a relative oracle path and created untracked
-  `Projectsti4-engine-rs.tmp-m00-011/`. The oracle guard is now dirty. Per P4, do not clean or run
-  further oracle commands. The owner explicitly authorized its exact deletion on 2026-08-12, but
-  the execution environment rejected the scoped command before execution. Owner restoration by an
-  available local mechanism to the pinned clean state is required; see `plans/evidence/M00-011.md`.
+- M00-011 **is resolved as of 2026-08-12; the oracle guard passes again.** Its `--basetemp`
+  override had been passed unquoted to a Bash-family shell, which stripped the backslashes, leaving
+  the drive-relative path `D:Projectsti4-engine-rs...` that resolved inside the oracle — not a
+  pytest path-reinterpretation. The stray tree was moved (not deleted) into the package's own
+  gitignored `.tmp-m00-011/basetemp-recovered/`, and the oracle verified clean, at the pinned
+  commit, with a pristine tracked tree. Future oracle runs must pass the override with forward
+  slashes (`--basetemp=D:/Projects/ti4-engine-rs/.tmp-m00-011`), which no shell here mangles.
+  The run's captured log also shows the **full oracle suite passed: 2,097 of 2,097 in 491.65 s** —
+  recorded but not yet accepted as the baseline, which is the package owner's call. See
+  `plans/evidence/M00-011.md`.
 - M00-012 replaces the stale alternative-filled benchmark drafts with a fixed 10-warmup/30-sample,
   deterministic interleaving, non-mutating affinity, raw-sample schema, and variance-rejection
-  protocol. M00-013 cannot measure until M00-011's oracle integrity blocker is resolved.
-- M00-014e implements and locally tests a fail-closed integrity guard, but its production hash
-  manifest cannot be generated or verified while the oracle is dirty. See
-  `plans/evidence/M00-014e.md`; M00-014 remains partial.
+  protocol. M00-013's dependency on M00-011 is now discharged.
+- M00-014e is **complete.** With the oracle clean, `tools/generate_oracle_manifest.py` produced
+  `plans/oracle_integrity_manifest.json` — 238 files (`engine/`, `bridge/`, `tests/`, `data/`,
+  `configs/`, `pyproject.toml`) at the pinned commit — and the guard verifies it in production
+  (`oracle integrity verified: 238 files`, exit 0). Fail-closed was proven against the real oracle,
+  not only fixtures: a zeroed digest is rejected with exit 2. Automatic pipeline integration is
+  still a separate, unclaimed package. See `plans/evidence/M00-014e.md`.
 
 ## Implementation status
 
