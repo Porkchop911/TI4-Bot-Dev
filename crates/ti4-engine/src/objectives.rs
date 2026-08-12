@@ -118,6 +118,89 @@ impl<'a> Position<'a> {
     }
 }
 
+/// Systems where this player has a flagship or a war sun.
+fn flagship_or_war_sun(position: &Position<'_>) -> Vec<String> {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    position
+        .state
+        .board
+        .iter()
+        .filter(|(_, board)| {
+            board.units.iter().any(|unit| {
+                &unit.owner == position.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| matches!(kind.base_type(), "flagship" | "warsun"))
+            })
+        })
+        .map(|(id, _)| id.to_string())
+        .collect()
+}
+
+/// The home planets of everyone except this player.
+///
+/// A seat's own record wins over its faction's, so a tournament replica home is the one that
+/// counts — the same order the oracle resolves them in.
+fn rival_home_planets(position: &Position<'_>) -> std::collections::BTreeSet<String> {
+    let mut planets = std::collections::BTreeSet::new();
+    for seat in &position.state.players {
+        if &seat.id == position.player {
+            continue;
+        }
+        if !seat.home_planets.is_empty() {
+            planets.extend(seat.home_planets.iter().map(ToString::to_string));
+            continue;
+        }
+        if let Some(faction) = ti4_content::factions::get(position.content, seat.faction.as_str()) {
+            planets.extend(faction.home_planets().iter().map(|&id| id.to_owned()));
+        }
+    }
+    planets
+}
+
+/// The home systems of everyone except this player.
+fn rival_home_systems(position: &Position<'_>) -> std::collections::BTreeSet<String> {
+    let mut systems = std::collections::BTreeSet::new();
+    for seat in &position.state.players {
+        if &seat.id == position.player {
+            continue;
+        }
+        if let Some(home) = &seat.home_system {
+            systems.insert(home.to_string());
+            continue;
+        }
+        if let Some(home) = ti4_content::factions::get(position.content, seat.faction.as_str())
+            .and_then(|faction| faction.home_system())
+        {
+            systems.insert(home.to_owned());
+        }
+    }
+    systems
+}
+
+/// Control one planet in another player's home system.
+fn conquer_the_weak(position: &Position<'_>) -> bool {
+    let rivals = rival_home_planets(position);
+    position
+        .controlled()
+        .iter()
+        .any(|planet| rivals.contains(planet.id()))
+}
+
+/// Have your flagship or a war sun on the game board.
+fn engineer_a_marvel(position: &Position<'_>) -> bool {
+    !flagship_or_war_sun(position).is_empty()
+}
+
+/// Have your flagship or war sun in another player's home system, or Mecatol Rex's.
+fn achieve_supremacy(position: &Position<'_>) -> bool {
+    let mut theirs = rival_home_systems(position);
+    theirs.insert(crate::seating::MECATOL.to_owned());
+    flagship_or_war_sun(position)
+        .iter()
+        .any(|system| theirs.contains(system))
+}
+
 /// Control `count` planets in non-home systems.
 fn non_home(count: usize) -> impl Fn(&Position<'_>) -> bool {
     move |position| {
@@ -367,6 +450,9 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     }
 
     match alias.as_str() {
+        "conquer" => Some(conquer_the_weak),
+        "engineer_marvel" => Some(engineer_a_marvel),
+        "supremacy" => Some(achieve_supremacy),
         "expand_borders" => Some(expand_borders),
         "subdue" => Some(subdue),
         "corner" => Some(corner),
@@ -399,6 +485,9 @@ pub fn registered_aliases() -> Vec<&'static str> {
     vec![
         "brain_trust",
         "build_defenses",
+        "conquer",
+        "engineer_marvel",
+        "supremacy",
         "corner",
         "develop",
         "diversify",
@@ -478,6 +567,12 @@ pub enum Cost {
     TradeGoods(i32),
     /// Spend command tokens from any pools.
     Tokens(i32),
+    /// Spend this much influence, this many resources **and** this many trade goods.
+    ///
+    /// All three, not any one of them, and the planets exhausted for resources cannot also pay
+    /// the influence: a planet is exhausted once. Paying it twice is the mistake this variant
+    /// exists to make impossible.
+    AllThree(i64),
 }
 
 /// An objective's stage, derived from its printed points (61.13).
@@ -516,6 +611,7 @@ pub fn reveal_stage(
 #[must_use]
 pub fn bought_aliases() -> Vec<&'static str> {
     vec![
+        "amass_wealth",
         "centralize_trade",
         "galvanize",
         "golden_age",
@@ -524,6 +620,7 @@ pub fn bought_aliases() -> Vec<&'static str> {
         "monument",
         "sway_council",
         "trade_routes",
+        "vast_reserves",
     ]
 }
 
@@ -552,9 +649,51 @@ pub fn cost_of(alias: &ObjectiveId) -> Option<Cost> {
         "centralize_trade" => Cost::TradeGoods(10),
         "lead" => Cost::Tokens(3),
         "galvanize" => Cost::Tokens(6),
+        "amass_wealth" => Cost::AllThree(3),
+        "vast_reserves" => Cost::AllThree(6),
         _ => return None,
     };
     Some(cost)
+}
+
+/// A disjoint pair of plans paying `amount` resources and `amount` influence, plus the trade
+/// goods both plans and the printed cost need.
+///
+/// Returned rather than checked so affording and paying cannot disagree: paying re-plans against
+/// the same state and takes the same first answer.
+fn all_three_plan(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    amount: i64,
+) -> Option<(crate::payment::Plan, crate::payment::Plan)> {
+    use crate::production::Spend;
+    let held = state.player(player)?.trade_goods;
+    let resources =
+        crate::payment::plans(state, content, sources, player, amount, Spend::Resources);
+    let influence =
+        crate::payment::plans(state, content, sources, player, amount, Spend::Influence);
+
+    for paying_resources in &resources {
+        for paying_influence in &influence {
+            // A planet exhausted for resources is exhausted; it cannot also pay the influence.
+            if paying_resources
+                .planets
+                .iter()
+                .any(|planet| paying_influence.planets.contains(planet))
+            {
+                continue;
+            }
+            let goods = paying_resources.trade_goods
+                + paying_influence.trade_goods
+                + i32::try_from(amount).unwrap_or(i32::MAX);
+            if goods <= held {
+                return Some((paying_resources.clone(), paying_influence.clone()));
+            }
+        }
+    }
+    None
 }
 
 /// Whether this player could pay for a bought objective right now.
@@ -573,6 +712,7 @@ pub fn can_afford(
         Cost::TradeGoods(amount) => state
             .player(player)
             .is_some_and(|seat| seat.trade_goods >= amount),
+        Cost::AllThree(amount) => all_three_plan(state, content, sources, player, amount).is_some(),
         Cost::Tokens(amount) => state
             .player(player)
             .is_some_and(|seat| seat.total_tokens() >= amount),
@@ -608,6 +748,25 @@ pub fn pay_for(
         Cost::TradeGoods(amount) => {
             if let Some(seat) = state.player_mut(player) {
                 seat.trade_goods -= amount;
+            }
+            true
+        }
+        Cost::AllThree(amount) => {
+            let Some((resources, influence)) =
+                all_three_plan(state, content, sources, player, amount)
+            else {
+                return false;
+            };
+            // Both halves and the printed trade goods, or none of it: a half-paid objective
+            // takes planets off the table and gives nothing back.
+            if !crate::payment::apply(state, player, &resources) {
+                return false;
+            }
+            if !crate::payment::apply(state, player, &influence) {
+                return false;
+            }
+            if let Some(seat) = state.player_mut(player) {
+                seat.trade_goods -= i32::try_from(amount).unwrap_or(i32::MAX);
             }
             true
         }
@@ -947,11 +1106,13 @@ mod tests {
         // take, never as a bot winning on a rule that was never written.
         let players = ids(&["a"]);
         let mut state = game(&players);
+        // Populate the Outer Rim needs the edge of the map, which `Position` cannot see, so it
+        // is genuinely uncovered rather than merely chosen for this test.
         state
             .revealed_objectives
-            .push(ObjectiveId::new("supremacy"));
+            .push(ObjectiveId::new("outer_rim"));
 
-        assert!(requirement_for(&ObjectiveId::new("supremacy")).is_none());
+        assert!(requirement_for(&ObjectiveId::new("outer_rim")).is_none());
         assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
     }
 
@@ -961,13 +1122,189 @@ mod tests {
         let mut state = game(&players);
         state.revealed_objectives = vec![
             ObjectiveId::new("expand_borders"),
-            ObjectiveId::new("supremacy"),
+            ObjectiveId::new("outer_rim"),
         ];
 
         assert_eq!(
             unregistered_objectives(&state),
-            vec![ObjectiveId::new("supremacy")]
+            vec![ObjectiveId::new("outer_rim")]
         );
+    }
+
+    #[test]
+    fn conquering_the_weak_needs_a_rivals_home_not_your_own() {
+        let players = ids(&["a", "b"]);
+        let mut state = game(&players);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+
+        // b's home is recorded on the seat, which wins over their faction's record.
+        state.player_mut(&PlayerId::new("b")).unwrap().home_planets = vec![planet.clone()];
+        state.player_mut(&PlayerId::new("a")).unwrap().home_planets = vec![planet.clone()];
+
+        let position = |state: &GameState| {
+            conquer_the_weak(&Position::new(
+                state,
+                ContentStore::embedded(),
+                POK,
+                &PlayerId::new("a"),
+            ))
+        };
+        assert!(!position(&state), "controlling nothing conquers nothing");
+
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), PlayerId::new("a"));
+        assert!(
+            position(&state),
+            "the planet is b's home as well, which is what the card asks for"
+        );
+
+        // And a planet that is only *your* home is not a conquest.
+        state.player_mut(&PlayerId::new("b")).unwrap().home_planets = Vec::new();
+        assert!(!position(&state));
+    }
+
+    #[test]
+    fn a_marvel_is_a_flagship_or_a_war_sun_and_nothing_else() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let (system, _) = crate::fixtures::a_placed_planet();
+        let seat = PlayerId::new("a");
+        let marvel = |state: &GameState| {
+            engineer_a_marvel(&Position::new(state, ContentStore::embedded(), POK, &seat))
+        };
+
+        crate::fixtures::put(&mut state, &system, "dreadnought", &seat, 3);
+        assert!(!marvel(&state), "three dreadnoughts are not a marvel");
+
+        crate::fixtures::put(&mut state, &system, "warsun", &seat, 1);
+        assert!(marvel(&state));
+    }
+
+    #[test]
+    fn supremacy_needs_the_war_sun_where_it_hurts() {
+        let players = ids(&["a", "b"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+        let (elsewhere, _) = crate::fixtures::a_placed_planet();
+        let home = SystemId::new("some_home_system");
+        state.player_mut(&PlayerId::new("b")).unwrap().home_system = Some(home.clone());
+
+        let supreme = |state: &GameState| {
+            achieve_supremacy(&Position::new(state, ContentStore::embedded(), POK, &seat))
+        };
+
+        crate::fixtures::put(&mut state, &elsewhere, "warsun", &seat, 1);
+        assert!(!supreme(&state), "a war sun at home is not supremacy");
+
+        crate::fixtures::put(&mut state, &home, "warsun", &seat, 1);
+        assert!(supreme(&state));
+    }
+
+    #[test]
+    fn supremacy_counts_mecatol_too() {
+        let players = ids(&["a", "b"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(crate::seating::MECATOL),
+            "flagship",
+            &seat,
+            1,
+        );
+
+        assert!(achieve_supremacy(&Position::new(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &seat
+        )));
+    }
+
+    #[test]
+    fn amassing_wealth_cannot_exhaust_one_planet_for_two_costs() {
+        // The trap this cost exists for: a planet with 3 resources and 3 influence looks like it
+        // pays both halves of Amass Wealth on its own. It pays one of them.
+        let content = ContentStore::embedded();
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        let dual = ti4_content::galaxy::all_planets(content, POK)
+            .into_iter()
+            .find(|(_, planet)| planet.resources() >= 3 && planet.influence() >= 3)
+            .map(|(id, _)| PlanetId::new(id));
+        let Some(dual) = dual else {
+            return; // no such planet in this corpus
+        };
+
+        let (system, _) = crate::fixtures::a_placed_planet();
+        state.system_mut(&system).set_control(dual, seat.clone());
+        state.player_mut(&seat).unwrap().trade_goods = 3;
+
+        assert!(
+            !can_afford(&state, content, POK, &seat, Cost::AllThree(3)),
+            "one planet cannot pay both the resources and the influence"
+        );
+    }
+
+    #[test]
+    fn amassing_wealth_spends_all_three_when_it_can() {
+        let content = ContentStore::embedded();
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+
+        // Two planets each worth 3 or more of one thing, plus the trade goods.
+        let mut rich: Vec<PlanetId> = ti4_content::galaxy::all_planets(content, POK)
+            .into_iter()
+            .filter(|(_, planet)| planet.resources() >= 3 || planet.influence() >= 3)
+            .map(|(id, _)| PlanetId::new(id))
+            .take(6)
+            .collect();
+        rich.sort();
+        let (system, _) = crate::fixtures::a_placed_planet();
+        for planet in &rich {
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), seat.clone());
+        }
+        state.player_mut(&seat).unwrap().trade_goods = 10;
+
+        if !can_afford(&state, content, POK, &seat, Cost::AllThree(3)) {
+            return; // this corpus cannot make the position; the trap test above still holds
+        }
+        assert!(pay_for(&mut state, content, POK, &seat, Cost::AllThree(3)));
+
+        let after = state.player(&seat).unwrap();
+        assert!(
+            after.trade_goods <= 7,
+            "the three printed trade goods were spent: {} left",
+            after.trade_goods
+        );
+        assert!(
+            !state.exhausted_planets.is_empty(),
+            "planets were exhausted to pay for it"
+        );
+    }
+
+    #[test]
+    fn every_bought_objective_has_a_price() {
+        // A bought objective with no cost is free, and one with a cost but no registration is
+        // unscoreable. Both are silent.
+        for alias in bought_aliases() {
+            assert!(
+                cost_of(&ObjectiveId::new(alias)).is_some(),
+                "{alias} is bought but has no price"
+            );
+            assert!(
+                ContentStore::embedded()
+                    .get(ContentType::PublicObjectives, alias)
+                    .is_some(),
+                "{alias} is not an objective the corpus knows"
+            );
+        }
     }
 
     #[test]
