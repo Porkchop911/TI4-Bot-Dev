@@ -169,9 +169,10 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-009j-bounded-replay`, based on M00-009i package commit `dca1feb`.
+- Branch: `wp/m00-010f-corpus-campaign`, based on M00-009j package commit `4c35313`.
 - Last completed package: M00-009j — bounded-game scripted replay
-  (`plans/evidence/M00-009j.md`), pending its focused package commit.
+  (`plans/evidence/M00-009j.md`). M00-010f corpus admission review is complete and records the
+  current campaign blocker.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
@@ -182,17 +183,18 @@ are recorded in the package evidence; independent review remains owner-waived.
   `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
 - The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
   actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
-- M04-015 remains blocked: bounded generated traces exist, but there is no selected generated corpus
-  or Rust/Python cross-engine comparison.
+- M04-015 remains blocked: bounded generated traces exist, but no approved selected generated
+  corpus or Rust/Python cross-engine comparison exists.
 - M00-009h is split before implementation: M00-009h1 wires and validates a deterministic,
   read-only initial-setup NDJSON stream; M00-009h2 completed its reproducibility campaign. This
   preserves the original acceptance requirement without pretending the still-unimplemented full
   causal event trace exists.
 - M00-009i observes a bounded seeded scenario's generated choices, resolved events, final state,
   and dice history. M00-009j replays its captured option IDs and proves byte-identical bounded-game
-  streams, including across the executable replay CLI. Next ready package: M00-010 corpus campaign,
-  after its fixture/output policy is reconciled. No oracle paths are writable. The earlier campaign's
-  five reproducible scratch outputs remain untracked only under ignored `.tmp-m00-009h2`.
+  streams, including across the executable replay CLI. M00-010 is now blocked before generation:
+  M00-008 contains no executable 100-scenario manifest (including the distinct three-/four-player
+  definitions), and no approved artifact-retention policy exists for traces that may contain hidden
+  card identities. See `plans/evidence/M00-010f.md`. No oracle paths are writable.
 
 ## Implementation status
 
