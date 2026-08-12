@@ -271,7 +271,7 @@ pub fn survives_gravity_rifts(
     rules: &MovementRules<'_>,
     path: &[String],
 ) -> bool {
-    if rules.anomalies_ignored {
+    if rules.anomalies_ignored || rules.rifts_ignored {
         return true;
     }
     for _ in rifts_exited(rules, path) {
@@ -695,6 +695,27 @@ mod tests {
             assert_eq!(dice.count(), 1, "exactly one die per rift exited");
         }
         assert!(survived > 0 && lost > 0, "{survived} survived, {lost} lost");
+    }
+
+    #[test]
+    fn the_circlet_owner_never_rolls_for_a_rift() {
+        // The immunity is read where the roll happens, so it cannot be honoured in the
+        // legality rules and forgotten here - which is exactly what Nav Suite nearly did.
+        let (galaxy, rift, ids) = rift_setup();
+        let mut rules = MovementRules::new(
+            &galaxy,
+            ContentStore::embedded(),
+            POK,
+            &ids[0],
+            Board::default(),
+        );
+        rules.rifts_ignored = true;
+        let path = vec![rift, ids[0].clone()];
+
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        assert!(survives_gravity_rifts(&mut dice, &mut rng, &rules, &path));
+        assert_eq!(dice.count(), 0, "no die was even rolled");
     }
 
     #[test]

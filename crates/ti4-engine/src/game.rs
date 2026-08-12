@@ -702,13 +702,14 @@ impl<'a> Game<'a> {
             .map(|unit| (*unit).clone())
             .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
 
-        let rules = MovementRules::new(
+        let mut rules = MovementRules::new(
             &galaxy,
             self.content,
             self.sources,
             active.as_str(),
             Board::for_player(&self.state, self.content, self.sources, &window.player),
         );
+        rules.rifts_ignored = crate::relics::ignores_gravity_rifts(&self.state, &window.player);
         let path = ti4_content::units::catalogue(self.content, self.sources)
             .get(ship.type_id.as_str())
             .and_then(|kind| {
@@ -761,13 +762,15 @@ impl<'a> Game<'a> {
             .active_system
             .clone()
             .expect("a move needs an active system");
-        let rules = MovementRules::new(
+        let mut rules = MovementRules::new(
             &galaxy,
             self.content,
             self.sources,
             active.as_str(),
             Board::default(),
         );
+        // The Circlet's owner never rolls, so the immunity is read where the roll happens.
+        rules.rifts_ignored = crate::relics::ignores_gravity_rifts(&self.state, &ship.owner);
         let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
         apply_move(&mut self.state, origin, &active, ship, cargo, survives)
     }

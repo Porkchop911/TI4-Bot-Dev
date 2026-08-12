@@ -135,6 +135,11 @@ pub struct MovementRules<'a> {
     pub barred_transit: BTreeSet<String>,
     /// Systems made into gravity rifts by Dimensional Tears.
     pub gravity_rift_systems: BTreeSet<String>,
+    /// The Circlet of the Void: this player's units never roll for a rift.
+    ///
+    /// Kept beside the other modifiers rather than checked at the card, so the immunity is
+    /// honoured wherever the roll happens — the mistake Nav Suite nearly made.
+    pub rifts_ignored: bool,
 }
 
 impl<'a> MovementRules<'a> {
@@ -176,6 +181,7 @@ impl<'a> MovementRules<'a> {
             token_wormhole_systems: BTreeSet::new(),
             barred_transit: BTreeSet::new(),
             gravity_rift_systems: BTreeSet::new(),
+            rifts_ignored: false,
         }
     }
 

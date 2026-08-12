@@ -40,6 +40,7 @@ pub mod payment;
 pub mod phase;
 pub mod production;
 pub mod registry;
+pub mod relics;
 pub mod rng;
 pub mod seating;
 pub mod secrets;

@@ -567,7 +567,7 @@ secret objectives      10/40   implemented (25%)
 action cards            0/122  implemented (0%)
 agenda effects          3/63   implemented (5%)
 exploration cards       0/80   implemented (0%)
-relics                  0/17   implemented (0%)
+relics                  3/17   implemented (18%)
 ```
 
 - This exists because the registry design — an unhandled card is *unavailable*, never silently
@@ -634,6 +634,18 @@ relics                  0/17   implemented (0%)
 - `movement.rs` had a `nebulae_open` flag that had existed unused since M05-003 — Shared
   Research is the first thing that can set it, via `MovementRules::with_laws`.
 - `laws::unimplemented` reports the rest, so the gap stays queryable.
+
+## Relics checkpoint (authoritative)
+
+- **595 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- First relic tranche: Dynamis Core, Book of Latvinia, and the Circlet of the Void.
+- Dynamis Core's two halves are applied together — its standing "+2 commodity value" is folded
+  into the gain its action pays, so the halves cannot disagree about the number.
+- **The Circlet is read where the roll happens**, not at the card. `MovementRules` gained a
+  `rifts_ignored` flag beside the other modifiers, so the immunity cannot be honoured in the
+  legality rules and forgotten in `transit` — which is precisely the mistake Nav Suite nearly
+  made and that M05-006's evidence flagged.
+- `relics::unimplemented` reports the other fourteen.
 
 ## Implementation status
 

@@ -88,7 +88,8 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "relics",
             total: count(content, ContentType::Relics, sources),
-            implemented: 0,
+            // Plus the Circlet, whose effect is standing rather than an action.
+            implemented: crate::relics::registered_aliases().len() + 1,
         },
     ]
 }
