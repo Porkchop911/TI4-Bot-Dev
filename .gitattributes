@@ -9,3 +9,11 @@ crates/ti4-content/content/CHECKSUMS.sha256 -text
 *.rs text eol=lf
 *.toml text eol=lf
 *.md text eol=lf
+
+# The bounded legacy trace corpus is checksummed and byte-counted in its own manifest, for the
+# same reason and with the same consequence: end-of-line conversion adds one byte per line on a
+# Windows checkout and every size and digest stops matching. This is not hypothetical — the
+# corpus passed in the worktree that generated it, where the files were never re-checked-out,
+# and failed on the first fresh checkout of the same commit.
+fixtures/legacy_entropy/**/*.ndjson -text
+fixtures/legacy_entropy/**/*.json -text
