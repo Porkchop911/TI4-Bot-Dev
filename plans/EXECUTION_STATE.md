@@ -169,23 +169,23 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-009f-outcome-exporter`, based on M00-009e package commit `7c19315`.
-- Last completed package: M00-009f — executable finished-game outcome projection
-  (`plans/evidence/M00-009f.md`).
-- M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through f
-  now provide deterministic public-state, redacted-view, choice, resolved-event, and outcome
-  components.
-- Ten focused tests cover canonical state ordering, state byte stability, viewer-private identity
+- Branch: `wp/m00-009g-error-exporter`, based on M00-009f package commit `59b00f6`.
+- Last completed package: M00-009g — executable deterministic error projection
+  (`plans/evidence/M00-009g.md`).
+- M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
+  now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
+  structured-error components.
+- Twelve focused tests cover canonical state ordering, state byte stability, viewer-private identity
   preservation, opponent redaction, view byte stability, choice option ordering, payload
-  canonicalization/refusal, event UID/cancellation/context, and finished-outcome tie-breaking.
-  Oracle HEAD remains
+  canonicalization/refusal, event UID/cancellation/context, finished-outcome tie-breaking, and
+  deterministic structured errors. Oracle HEAD remains
   `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
 - The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
   actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
-- M04-015 remains blocked: no CLI/NDJSON exporter, selected generated corpus, choice/event/outcome/
-  error projections, or cross-engine comparison exists.
-- Next dependency-ready package: M00-009g — executable error projection. A later narrow exporter-
-  wiring package may expose the validated projections through a read-only CLI.
+- M04-015 remains blocked: no CLI/NDJSON exporter, selected generated corpus, or cross-engine
+  comparison exists.
+- Next dependency-ready package: M00-009h — byte-identical reproducibility verification, which
+  first requires a narrowly scoped read-only CLI/NDJSON wiring package.
 
 ## Implementation status
 
@@ -209,7 +209,7 @@ behaviour is a placeholder.
 
 | Milestone | Planning | Implementation |
 |---|---|---|
-| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, resolved-event, and finished-outcome projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
+| M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, resolved-event, finished-outcome, and error projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
 | M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
 | M03 Choice, timing, replay | Written | **Partial** — 001–006 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice). 007–016 outstanding. |
@@ -228,9 +228,9 @@ behaviour is a placeholder.
 
 ## Open blockers and findings
 
-1. **The oracle exporter is incomplete.** M00-009b/c/d/e/f provide tested state, redacted-view,
-   choice, resolved-event, and finished-outcome projections, but no CLI/NDJSON stream, fixture
-   manifest, error projection, or complete reproducibility campaign exists. Until those are complete, no
+1. **The oracle exporter is incomplete.** M00-009b/c/d/e/f/g provide tested state, redacted-view,
+   choice, resolved-event, finished-outcome, and structured-error projections, but no CLI/NDJSON
+   stream, fixture manifest, or complete reproducibility campaign exists. Until those are complete, no
    differential parity claim can be made, and M03-014, M04-015, M05-021, M06-018 and all of M12
    remain unimplementable. This is the single largest gap.
 2. ~~No independent review of any code package.~~ Waived by the project owner

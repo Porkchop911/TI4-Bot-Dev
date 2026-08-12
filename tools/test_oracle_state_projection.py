@@ -22,6 +22,7 @@ from engine.units import Unit  # noqa: E402
 from oracle_exporter import (
     choice_projection,
     event_projection,
+    error_projection,
     outcome_projection,
     state_projection,
     view_projection,
@@ -189,6 +190,42 @@ class StateProjectionTests(unittest.TestCase):
             json.dumps(first, separators=(",", ":"), ensure_ascii=True),
             json.dumps(second, separators=(",", ":"), ensure_ascii=True),
         )
+
+    def test_error_projection_captures_exception_and_explicit_context(self) -> None:
+        from engine.choice import IllegalChoice
+        from engine.timing import Phase
+
+        state = start_game(("p1", "p2")).with_(phase=Phase.ACTION, round=3, turn_seq=4, active="p2")
+        projection = error_projection(
+            IllegalChoice("p2 chose 'bad'"), state, option_id="bad", card_id="skilled_retreat"
+        )
+
+        self.assertEqual(projection["error_type"], "IllegalChoice")
+        self.assertEqual(projection["message"], "p2 chose 'bad'")
+        self.assertEqual(
+            projection["context"],
+            {
+                "turn": 4,
+                "round": 3,
+                "phase": "action",
+                "player": "p2",
+                "option_id": "bad",
+                "card_id": "skilled_retreat",
+            },
+        )
+        self.assertIsNone(projection["stack_trace"])
+
+    def test_error_projection_is_byte_identical_and_validates_optional_context(self) -> None:
+        state = start_game(("p1", "p2"))
+        first = error_projection(RuntimeError("stalled"), state)
+        second = error_projection(RuntimeError("stalled"), state)
+        self.assertEqual(
+            json.dumps(first, separators=(",", ":"), ensure_ascii=True),
+            json.dumps(second, separators=(",", ":"), ensure_ascii=True),
+        )
+
+        with self.assertRaises(TypeError):
+            error_projection(RuntimeError("stalled"), state, option_id=3)
 
 
 if __name__ == "__main__":
