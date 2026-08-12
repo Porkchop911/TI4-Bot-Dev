@@ -4,7 +4,7 @@
 //!
 //! Small, and honest about it. It holds setup, the phase state machine, and turn order,
 //! ported from the oracle's `engine/game.py`. It does **not** yet hold movement, combat,
-//! production, legality checking, full status scoring/token choices, or the agenda phase.
+//! production, legality checking, full status scoring/token choices, or agenda voting/effects.
 //!
 //! An earlier version of this crate had modules named for all of those. They were removed
 //! rather than adapted: `rules.rs` returned `Ok(true)` from all 23 of its validators,
@@ -16,6 +16,7 @@
 //! What replaces them is ported against a named oracle source with the oracle's own tests
 //! mirrored, and what is not ported yet is absent rather than faked.
 
+pub mod agenda;
 pub mod choice;
 pub mod deck;
 pub mod dice;
@@ -27,6 +28,10 @@ pub mod setup;
 pub mod status;
 pub mod strategy;
 
+pub use agenda::{
+    AGENDAS_PER_PHASE, AgendaPhaseError, AgendaPhaseReport, AgendaResolution, RevealedAgenda,
+    resolve_agenda_phase,
+};
 pub use choice::{
     AlwaysDecline, Choice, ChoiceOption, Decider, DecisionLog, DecisionRecord, FirstOption,
     IllegalChoice, Scripted, SeededRandom, Table, distinct_units, first_of_each, options_from,

@@ -151,6 +151,8 @@ pub enum PhaseOutcome {
 ///
 /// `crate::status::resolve_status_phase` now supplies the choice-free bookkeeping. Its scoring
 /// and command-token allocation windows remain deliberately unwired until M04-012 owns them.
+/// `crate::agenda::resolve_agenda_phase` similarly owns only reveal/order/ready bookkeeping;
+/// voting, ties, and effects remain deliberately unwired until M04-012.
 /// Each returns a [`PhaseOutcome`] so a caller can see which step was reached rather than
 /// silently getting a phase flag flipped past unimplemented rules.
 pub fn advance_phase(state: &mut GameState) -> PhaseOutcome {

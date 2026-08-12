@@ -77,7 +77,7 @@ actually in the tree and how the two diverged.
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-010 package checkpoint (historical)
 
 - Branch: `wp/m04-010-status-phase`, based on M04-009 package commit `3475d01`.
 - Last completed package: M04-010 — deterministic status-phase bookkeeping
@@ -92,6 +92,24 @@ actually in the tree and how the two diverged.
   allocation or automatic scoring is applied. M04-012 must own those generated decision windows
   before integrating status resolution into the phase driver.
 - M04-010 is ready to commit after scoped formatting, focused and affected-crate tests, workspace
+tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-011-agenda-structural`, based on M04-010 package commit `85a122e`.
+- Last completed package: M04-011 — structural agenda reveal/order/ready bookkeeping
+  (`plans/evidence/M04-011.md`).
+- Next dependency-ready package: M04-012 — choice-window and generated-decision API.
+- `ti4-engine` has 119 tests. The workspace has 309 passing tests: 121 `ti4-content`,
+  119 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- `resolve_agenda_phase` atomically rejects illegal entry, reveals at most two agenda aliases,
+  records speaker-clockwise voting order, and readies planets after its two slots (including an
+  empty deck). Every agenda resolution is explicitly deferred; no vote, tie-break, or agenda effect
+  is invented.
+- Agenda resolution is deliberately not integrated into the phase driver. M04-012 owns the legal
+  generated decision windows and safe integration alongside outstanding status choices.
+- M04-011 committed after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
