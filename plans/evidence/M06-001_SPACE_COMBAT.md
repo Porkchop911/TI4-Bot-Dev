@@ -80,10 +80,10 @@ oracle integrity verified: 238 files
 
 $ cargo test --workspace
 121 passed  (ti4-content)
-249 passed  (ti4-engine)
+255 passed  (ti4-engine)
  68 passed  (ti4-model)
   1 passed  (doc-test)
-439 total, 0 failed        (425 before this package)
+445 total, 0 failed        (425 before this package)
 
 $ cargo clippy -p ti4-engine --all-targets
 0 findings in combat.rs
