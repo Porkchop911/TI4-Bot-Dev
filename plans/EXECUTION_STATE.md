@@ -565,7 +565,7 @@ are recorded in the package evidence; independent review remains owner-waived.
 public objectives      27/40   implemented (68%)
 secret objectives      10/40   implemented (25%)
 action cards            0/122  implemented (0%)
-agenda effects          0/63   implemented (0%)
+agenda effects          3/63   implemented (5%)
 exploration cards       0/80   implemented (0%)
 relics                  0/17   implemented (0%)
 ```
@@ -610,6 +610,17 @@ relics                  0/17   implemented (0%)
   split to the player; this fixed order is a simplification and is recorded as one.
 - The payment planner from M06-001 does the resource and influence purchases, which is the
   first caller to use it.
+
+## Agenda effects checkpoint (authoritative)
+
+- **574 passing tests**; workspace clippy-clean under `-D warnings`; zero failures across all
+  four crates (counted explicitly, not inferred from passing lines).
+- First tranche of agenda effects: Economic Equality, Mutiny, Seed of an Empire. Unregistered
+  agendas still resolve their vote and announce the effect unresolved.
+- Mutiny reads the **ballot**, not the outcome — who voted which way is the whole card.
+- Economic Equality wipes before it pays, so on Against it is purely destructive.
+- Seed of an Empire's tie is the **speaker's decision** (8.18), passed in as a callback. With no
+  decider the point is simply not awarded, rather than handed to whoever sorts first.
 
 ## Implementation status
 

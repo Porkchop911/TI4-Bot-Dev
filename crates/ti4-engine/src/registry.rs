@@ -77,8 +77,7 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "agenda effects",
             total: count(content, ContentType::Agendas, sources),
-            // Votes resolve; the effects behind them do not.
-            implemented: 0,
+            implemented: crate::agenda_effects::registered_aliases().len(),
         },
         Coverage {
             registry: "exploration cards",
