@@ -18,16 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M04-003 — deterministic deck construction and setup dealing
-  (`plans/evidence/M04-003.md`)
+- Last completed package: M04-016 — the status phase's command-token gain, LRR 81.5
+  (`plans/evidence/M04-016_STATUS_TOKEN_GAIN.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M04-005 — strategy-card draft resolution. Decks and
-  setup dealing now complete the prerequisites for generated strategy choices.
+- Next dependency-ready package: M04-017 — objective scoring (LRR 81.1), the last step
+  before a generic game can complete a round.
 
 ## M04-005 package checkpoint (historical)
 
@@ -214,6 +214,27 @@ are recorded in the package evidence; independent review remains owner-waived.
   not only fixtures: a zeroed digest is rejected with exit 2. Automatic pipeline integration is
   still a separate, unclaimed package. See `plans/evidence/M00-014e.md`.
 
+## M04-016 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
+- Last completed package: M04-016 — the status phase's command-token gain, LRR 81.5
+  (`plans/evidence/M04-016_STATUS_TOKEN_GAIN.md`).
+- `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
+  142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
+- `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
+  own rule, shared with Leadership, which is why it lives in `tokens.rs` and not in the status
+  phase.
+- The status phase is split into `resolve_before_token_gain` (81.2–81.4) and
+  `resolve_after_token_gain` (81.6–81.8) so the 81.5 window sits where the rules put it.
+  `resolve_status_phase` still runs both for callers with no decider, and a test pins that the
+  halves compose to the whole.
+- The old `StatusChoicesUnimplemented` covered two unrelated gaps. It is now
+  `StatusScoringUnimplemented` and names only LRR 81.1, which is the single remaining obstacle
+  to a generic game completing a round.
+- Two pre-existing status tests used strategy-card ids that do not exist in the corpus
+  (`leadership` rather than `pok1leadership`), so they silently tested seating order rather than
+  initiative order. Fixed; no production code was wrong.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -271,22 +292,31 @@ behaviour is a placeholder.
    extended.
 6. **`Galaxy` is not wired into the engine.** Adjacency exists and is unused until movement
    is written.
-7. **The status and agenda phases are boundaries, not implementations.** A caller driving a
-   full round reaches `PhaseOutcome::StatusBegan` and finds nothing happens.
+7. **The status phase is implemented except for scoring; the agenda phase except for voting.**
+   A driven round now performs status steps 81.2–81.8 including the real 81.5 token choice, and
+   stops at `StatusScoringUnimplemented` (81.1). The agenda phase reveals and orders, then stops
+   at `AgendaChoicesUnimplemented`. Neither invents a default.
 
 ## Next actions
 
 In dependency order. Each is one package under `PI_WORK_PACKAGE_STANDARD.md`.
 
-1. **M04-005/012 — option generation.** The choice model exists but nothing fills it. Port
-   the oracle's `Game._strategy_options` and `_action_options` so a seated game can take a
-   turn.
-2. **M05-003/006 — ship movement.** The first real use of `ti4-content::galaxy`: legality
+This list was stale — it still named option generation and the status phase, both of which
+shipped in M04-005/008/009/010/012. Rewritten against the tree as measured on 2026-08-12.
+
+1. **M04-017 — objective scoring (LRR 81.1).** The last thing standing between the engine and
+   a completed round. Needs the `objectives.scoreable` predicate registry (~40 requirements),
+   `award`, the secret-objective window from `_score_secret`, and the 98.7 victory check. The
+   oracle's design is that an objective with no registered predicate is simply unscoreable, so
+   this can land as tranches of predicates without pretending to cover more than it does.
+2. **M04-018 — agenda voting.** The remaining `AgendaChoicesUnimplemented` boundary: votes,
+   tie-breaks, and law/directive effects.
+3. **M05-003/006 — ship movement.** The first real use of `ti4-content::galaxy`: legality
    from adjacency and move value, then atomic application.
-3. **M04-010 — the status phase.** `advance_phase` currently reaches `StatusBegan` and
-   stops.
-4. **M00-009 — build the oracle exporter.** Unblocks every differential deliverable.
-5. **M01-006 — CI**, so that the 291 tests actually gate a change.
+4. **M01-006 — CI**, so that the 332 tests actually gate a change. Now more valuable than it
+   was: the integrity guard gives CI something meaningful to run before any oracle work.
+5. **M00-010 — the fixture manifest**, still blocked on an executable 100-scenario definition
+   and an artifact-retention policy for traces that may contain hidden card identities.
 
 ## Decisions in force
 

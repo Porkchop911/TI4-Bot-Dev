@@ -16,6 +16,11 @@ pub struct StatusPhaseReport {
     pub readied_planets: Vec<PlanetId>,
     /// Strategy cards returned at step 81.8, in player holding order.
     pub returned_strategy_cards: Vec<(PlayerId, StrategyCardId)>,
+    /// Initiative order as it stood before step 81.8 returned the strategy cards.
+    ///
+    /// Captured because steps 81.3 and 81.5 both use it, and 81.8 destroys it — reading it
+    /// afterwards yields seating order instead.
+    pub initiative_order: Vec<PlayerId>,
     /// Damaged space units repaired at step 81.7.
     pub repaired_units: usize,
     /// The objective deck was exhausted, so the game ended before later status steps.
@@ -29,15 +34,36 @@ pub enum StatusPhaseError {
     WrongPhase(Phase),
 }
 
-/// Resolve the deterministic, choice-free parts of LRR 81.
+/// Resolve every choice-free part of LRR 81, in order.
 ///
-/// Objective scoring and the two status command-token allocation choices are deliberately
-/// excluded: both require a live choice driver, which M04-012 will provide. This function
-/// preserves initiative order until strategy cards return at step 81.8.
+/// Convenience for callers with no choice driver: it runs the steps before the token gain and
+/// then those after it, skipping 81.5 entirely. A driver that can ask questions should call
+/// [`resolve_before_token_gain`] and [`resolve_after_token_gain`] around a
+/// [`crate::tokens::TokenGain`] window instead, so tokens are gained in their real position.
+///
+/// Objective scoring (81.1) is excluded from both: it needs the scoreability predicates.
 ///
 /// # Errors
 /// [`StatusPhaseError::WrongPhase`] unless `state` is currently in [`Phase::Status`].
 pub fn resolve_status_phase(state: &mut GameState) -> Result<StatusPhaseReport, StatusPhaseError> {
+    let mut report = resolve_before_token_gain(state)?;
+    if !report.game_ended {
+        resolve_after_token_gain(state, &mut report);
+    }
+    Ok(report)
+}
+
+/// Steps 81.2 to 81.4: reveal, draw action cards, and recall command tokens from the board.
+///
+/// Stops after 81.4 so that the caller can run the 81.5 token gain — a real choice — before
+/// the remaining bookkeeping. The returned report carries `initiative_order` because 81.5 needs
+/// it and step 81.8 destroys it.
+///
+/// # Errors
+/// [`StatusPhaseError::WrongPhase`] unless `state` is currently in [`Phase::Status`].
+pub fn resolve_before_token_gain(
+    state: &mut GameState,
+) -> Result<StatusPhaseReport, StatusPhaseError> {
     if state.phase != Phase::Status {
         return Err(StatusPhaseError::WrongPhase(state.phase));
     }
@@ -55,6 +81,7 @@ pub fn resolve_status_phase(state: &mut GameState) -> Result<StatusPhaseReport, 
     // 81.3: all action-card draws use the still-intact initiative order. `nm` is Neural
     // Motivator, whose status-only replacement draw is one additional card.
     let initiative = state.initiative_order();
+    report.initiative_order.clone_from(&initiative);
     for player_id in initiative {
         let requested_draws = 1 + usize::from(
             state
@@ -85,6 +112,15 @@ pub fn resolve_status_phase(state: &mut GameState) -> Result<StatusPhaseReport, 
         );
     }
 
+    Ok(report)
+}
+
+/// Steps 81.6 to 81.8: ready cards, repair damaged units, and return the strategy cards.
+///
+/// Separate from [`resolve_before_token_gain`] so the 81.5 token gain sits between them, where
+/// LRR 81 puts it. Extends `report` rather than returning its own, so one status phase is
+/// described by one report however it was driven.
+pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseReport) {
     // 81.6: ready exhausted technology and planet cards. 81.7 then repairs space units.
     for player in &mut state.players {
         player.exhausted_technologies.clear();
@@ -115,8 +151,6 @@ pub fn resolve_status_phase(state: &mut GameState) -> Result<StatusPhaseReport, 
             player.passed = false;
         }
     }
-
-    Ok(report)
 }
 
 #[cfg(test)]
@@ -157,11 +191,11 @@ mod tests {
         state.phase = Phase::Status;
         state.deal_strategy_card(
             &PlayerId::new("b"),
-            ti4_model::id::StrategyCardId::new("leadership"),
+            ti4_model::id::StrategyCardId::new("pok1leadership"),
         );
         state.deal_strategy_card(
             &PlayerId::new("a"),
-            ti4_model::id::StrategyCardId::new("imperial"),
+            ti4_model::id::StrategyCardId::new("pok8imperial"),
         );
         state
             .player_mut(&PlayerId::new("a"))
@@ -249,6 +283,56 @@ mod tests {
         assert_eq!(
             state.player(&PlayerId::new("a")).unwrap().action_cards,
             before_hand
+        );
+    }
+
+    #[test]
+    fn the_two_halves_compose_into_the_whole() {
+        // The split exists so 81.5 can sit between them. If driving the halves by hand ever
+        // stopped matching the single call, the phase would silently depend on how it was run.
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut whole = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        whole.phase = Phase::Status;
+        let mut halves = whole.clone();
+
+        let whole_report = resolve_status_phase(&mut whole).unwrap();
+
+        let mut halves_report = resolve_before_token_gain(&mut halves).unwrap();
+        resolve_after_token_gain(&mut halves, &mut halves_report);
+
+        assert_eq!(whole_report, halves_report);
+        assert!(whole.identical(&halves));
+    }
+
+    #[test]
+    fn initiative_order_is_captured_before_step_818_destroys_it() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Status;
+        // Real corpus ids: a bare "leadership" is not a card, and an unknown card sorts at
+        // initiative 99, which silently degrades the order back to seating.
+        state.deal_strategy_card(
+            &PlayerId::new("b"),
+            ti4_model::id::StrategyCardId::new("pok1leadership"),
+        );
+        state.deal_strategy_card(
+            &PlayerId::new("a"),
+            ti4_model::id::StrategyCardId::new("pok8imperial"),
+        );
+        let expected = state.initiative_order();
+        assert_eq!(
+            expected,
+            vec![PlayerId::new("b"), PlayerId::new("a")],
+            "Leadership (1) precedes Imperial (8), against seating order"
+        );
+
+        let report = resolve_status_phase(&mut state).unwrap();
+
+        assert_eq!(report.initiative_order, expected);
+        assert_ne!(
+            state.initiative_order(),
+            report.initiative_order,
+            "after 81.8 the live order has degraded to seating order"
         );
     }
 

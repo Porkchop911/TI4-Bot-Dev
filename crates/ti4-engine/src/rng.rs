@@ -167,7 +167,7 @@ mod tests {
         for _ in 0..1000 {
             busy.die(domain::DICE, 10);
         }
-        busy.shuffled(domain::RELICS, &deck());
+        let _ = busy.shuffled(domain::RELICS, &deck()); // drawn for the side effect
         assert_eq!(busy.shuffled(domain::AGENDAS, &deck()), expected);
     }
 
@@ -237,7 +237,7 @@ mod tests {
     fn active_domains_are_reported_deterministically() {
         let mut rng = GameRng::new(1);
         rng.die(domain::DICE, 10);
-        rng.shuffled(domain::AGENDAS, &deck());
+        let _ = rng.shuffled(domain::AGENDAS, &deck()); // drawn for the side effect
         assert_eq!(rng.active_domains(), vec![domain::AGENDAS, domain::DICE]);
     }
 }

@@ -29,6 +29,7 @@ pub mod seating;
 pub mod setup;
 pub mod status;
 pub mod strategy;
+pub mod tokens;
 
 pub use agenda::{
     AGENDAS_PER_PHASE, AgendaPhaseError, AgendaPhaseReport, AgendaResolution, RevealedAgenda,
@@ -50,9 +51,13 @@ pub use phase::{
 pub use rng::GameRng;
 pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
 pub use setup::{SetupError, cards_per_player, start_game, start_game_seeded, strategy_card_setup};
-pub use status::{StatusPhaseError, StatusPhaseReport, resolve_status_phase};
+pub use status::{
+    StatusPhaseError, StatusPhaseReport, resolve_after_token_gain, resolve_before_token_gain,
+    resolve_status_phase,
+};
 pub use strategy::{
     ACTION_KIND, FOLLOW_SECONDARY_ID, STRATEGIC_ACTION_ID, STRATEGY_KIND, SecondaryResolution,
     StrategyActionError, StrategySecondaryError, StrategySecondaryWindow, begin_strategic_action,
     strategic_action_options, take_strategic_action,
 };
+pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};

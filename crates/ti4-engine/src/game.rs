@@ -8,11 +8,14 @@ use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, SeededRandom, Table};
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::phase::{PhaseOutcome, advance_phase, advance_turn, begin_next_round};
-use crate::status::{StatusPhaseError, resolve_status_phase};
+use crate::status::{
+    StatusPhaseError, StatusPhaseReport, resolve_after_token_gain, resolve_before_token_gain,
+};
 use crate::strategy::{
     ACTION_KIND, SecondaryResolution, StrategyActionError, StrategySecondaryError,
     StrategySecondaryWindow, begin_strategic_action, strategic_action_options,
 };
+use crate::tokens::{TokenGain, TokenGainError};
 
 /// Metadata returned after one attempted game step.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,8 +51,10 @@ pub enum GameError {
     MissingActivePlayer,
     #[error("action {0:?} is not implemented by the structural game driver")]
     UnsupportedAction(String),
-    #[error("status scoring and command-token allocation choices are not implemented")]
-    StatusChoicesUnimplemented,
+    #[error(transparent)]
+    TokenGain(#[from] TokenGainError),
+    #[error("status objective scoring (LRR 81.1) is not implemented")]
+    StatusScoringUnimplemented,
     #[error("agenda voting, ties, and effects are not implemented")]
     AgendaChoicesUnimplemented,
 }
@@ -78,6 +83,8 @@ pub struct Game<'a> {
     content: &'a ContentStore,
     strategy_cards: Vec<StrategyCardId>,
     secondary: Option<StrategySecondaryWindow>,
+    /// The open 81.5 token gain, and the report its remaining steps will extend.
+    tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
     status_resolved: bool,
     agenda_resolved: bool,
     blocked: Option<GameError>,
@@ -114,6 +121,7 @@ impl<'a> Game<'a> {
             events: Vec::new(),
             content,
             secondary: None,
+            tokens: None,
             status_resolved: false,
             agenda_resolved: false,
             blocked: None,
@@ -125,6 +133,9 @@ impl<'a> Game<'a> {
     pub fn legal_options(&self) -> Option<Choice> {
         if self.state.finished || self.blocked.is_some() {
             return None;
+        }
+        if let Some((window, _)) = &self.tokens {
+            return window.pending_choice();
         }
         match self.state.phase {
             Phase::Strategy => strategy_options(&self.state, self.content),
@@ -145,6 +156,9 @@ impl<'a> Game<'a> {
 
         if self.secondary.is_some() {
             return self.step_secondary();
+        }
+        if self.tokens.is_some() {
+            return self.step_token_gain();
         }
         if self.state.phase == Phase::Status && !self.status_resolved {
             return self.step_status();
@@ -290,21 +304,72 @@ impl<'a> Game<'a> {
         self.result(true, None)
     }
 
+    /// Steps 81.2 to 81.4, then open the 81.5 token gain.
+    ///
+    /// Scoring (81.1) is not resolved, so this deliberately runs the status phase from 81.2.
+    /// The boundary for the missing scoring step is raised once the phase completes, not here,
+    /// so that the steps which *are* implemented still happen and can be inspected.
     fn step_status(&mut self) -> StepResult {
         self.status_resolved = true;
-        match resolve_status_phase(&mut self.state) {
+        match resolve_before_token_gain(&mut self.state) {
             Ok(report) if report.game_ended => {
                 self.emit("GAME_FINISHED");
                 self.result(false, None)
             }
-            Ok(_) => {
+            Ok(report) => {
                 self.emit("STATUS_BOOKKEEPING_RESOLVED");
-                let error = GameError::StatusChoicesUnimplemented;
-                self.blocked = Some(error.clone());
-                self.result(false, Some(error))
+                self.tokens = Some((
+                    TokenGain::for_status(&report.initiative_order),
+                    Box::new(report),
+                ));
+                self.result(false, None)
             }
             Err(error) => self.result(false, Some(error.into())),
         }
+    }
+
+    /// Resolve one token of the 81.5 gain, finishing the status phase when the window closes.
+    fn step_token_gain(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            return self.finish_status_phase();
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        // Taken out and put back so the window and `state` are not borrowed from `self` at
+        // once. On the error path it goes back unchanged, leaving the token still owed.
+        let Some((mut window, report)) = self.tokens.take() else {
+            unreachable!("the token window is open");
+        };
+        let outcome = window.resolve(&mut self.state, answer);
+        let complete = window.is_complete();
+        self.tokens = Some((window, report));
+
+        match outcome {
+            Ok(pool) => {
+                self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
+                if complete {
+                    return self.finish_status_phase();
+                }
+                self.result(true, None)
+            }
+            Err(error) => self.result(false, Some(error.into())),
+        }
+    }
+
+    /// Steps 81.6 to 81.8, then stop at the one status step still missing.
+    fn finish_status_phase(&mut self) -> StepResult {
+        let Some((_, mut report)) = self.tokens.take() else {
+            unreachable!("the token window was open");
+        };
+        resolve_after_token_gain(&mut self.state, &mut report);
+        self.emit("COMMAND_TOKENS_GAINED");
+        self.emit("STATUS_PHASE_RESOLVED");
+
+        let error = GameError::StatusScoringUnimplemented;
+        self.blocked = Some(error.clone());
+        self.result(false, Some(error))
     }
 
     fn step_agenda(&mut self) -> StepResult {
@@ -374,6 +439,7 @@ mod tests {
     use super::*;
     use crate::choice::AlwaysDecline;
     use crate::setup::start_game;
+    use crate::tokens::STATUS_TOKENS;
 
     #[test]
     fn one_step_resolves_exactly_one_generated_strategy_choice() {
@@ -448,7 +514,7 @@ mod tests {
 
         assert_eq!(
             game.run(1, 200),
-            Err(RunError::Step(GameError::StatusChoicesUnimplemented))
+            Err(RunError::Step(GameError::StatusScoringUnimplemented))
         );
         assert_eq!(game.state.phase, Phase::Status);
         assert!(game.events.contains(&"ACTION_PHASE_BEGAN".to_owned()));
@@ -467,7 +533,7 @@ mod tests {
 
             assert_eq!(
                 game.run(1, 500),
-                Err(RunError::Step(GameError::StatusChoicesUnimplemented)),
+                Err(RunError::Step(GameError::StatusScoringUnimplemented)),
                 "seed {seed}, players {player_count}"
             );
             assert_eq!(game.state.phase, Phase::Status, "seed {seed}");
@@ -549,22 +615,61 @@ mod tests {
     }
 
     #[test]
-    fn status_bookkeeping_stops_at_the_unimplemented_choice_boundary() {
+    fn the_status_phase_gains_tokens_then_stops_only_at_missing_scoring() {
         let players = [PlayerId::new("a")];
         let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
         state.phase = Phase::Status;
+        let before = state.player(&PlayerId::new("a")).unwrap().clone();
         let mut game = Game::new(state, ContentStore::embedded());
 
-        let result = game.step();
+        // 81.2 to 81.4, then the 81.5 window opens rather than the phase failing outright.
+        assert_eq!(game.step().error, None);
+        assert!(game.legal_options().is_some(), "a token is owed");
 
-        assert_eq!(result.error, Some(GameError::StatusChoicesUnimplemented));
-        assert_eq!(game.events, vec!["STATUS_BOOKKEEPING_RESOLVED"]);
-        let after_first_step = game.state.clone();
+        // One step per token, each a real generated choice.
+        assert!(game.step().resolved_choice);
+        let last = game.step();
+        assert_eq!(
+            last.error,
+            Some(GameError::StatusScoringUnimplemented),
+            "the only remaining gap is 81.1"
+        );
+
+        let after = game.state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(
+            after.total_tokens(),
+            before.total_tokens() + i32::try_from(STATUS_TOKENS).unwrap(),
+            "both tokens were placed"
+        );
+        assert!(game.events.contains(&"STATUS_PHASE_RESOLVED".to_owned()));
+
+        // The boundary is sticky: stepping again neither retries nor mutates.
+        let settled = game.state.clone();
         assert_eq!(
             game.step().error,
-            Some(GameError::StatusChoicesUnimplemented)
+            Some(GameError::StatusScoringUnimplemented)
         );
-        assert!(game.state.identical(&after_first_step));
+        assert!(game.state.identical(&settled));
+    }
+
+    #[test]
+    fn a_token_gained_in_the_status_phase_goes_where_it_was_chosen() {
+        let players = [PlayerId::new("a")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Status;
+        let before = state.player(&PlayerId::new("a")).unwrap().clone();
+        let table = Table::new(); // FirstOption always takes the tactic pool.
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+
+        while game.step().error.is_none() {}
+
+        let after = game.state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(
+            after.tactic_tokens,
+            before.tactic_tokens + i32::try_from(STATUS_TOKENS).unwrap()
+        );
+        assert_eq!(after.fleet_tokens, before.fleet_tokens);
+        assert_eq!(after.strategic_tokens, before.strategic_tokens);
     }
 
     #[test]
