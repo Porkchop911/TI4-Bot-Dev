@@ -107,7 +107,12 @@ moved unilaterally while another agent was running.
 | 2 + 3 | The 13 remaining secret objectives, all action-phase triggers, and the action-card deck. |
 | — | `GameState` recording its own source scope; independent of M03, and the last structural item that touches no M03 file. |
 
-Keep the action-card deck in proportion: the oracle implements exactly **one** action card, so
-that deck is unwritten design in both engines rather than a porting backlog of 122. See the
-table in `crates/ti4-engine/src/registry.rs` for the measured oracle-versus-engine counts per
-registry, and re-measure rather than trusting it.
+**Correction (same evening).** This document originally said the oracle implements exactly one
+action card. It implements **35** of 142. The count came from a pattern matching
+`@implements("alias")` alone, and `action_cards.py` is the one oracle module that also uses
+multi-argument decorators and `implements_every_copy`, which expands a printed name to all four
+physical copies. The other registries re-measured unchanged.
+
+So the action-card deck is a real porting backlog of 35 effects, not unwritten design — the
+largest single piece of porting left. See the table in `crates/ti4-engine/src/registry.rs`, and
+re-measure rather than trusting it.

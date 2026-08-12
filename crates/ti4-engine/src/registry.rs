@@ -20,11 +20,19 @@
 //! | secret objectives | 27 | 27 |
 //! | agenda effects | 34 | 34 |
 //! | exploration cards | 33 | 36 |
-//! | action cards | **1** | 0 |
+//! | action cards | **35** | 0 |
 //!
-//! So "action cards 0/122" is one card behind the oracle, not 122. The rest of that deck is
-//! unwritten in both engines and waits on the reaction system, not on porting effort. Re-measure
-//! rather than trusting this table: it was true on the date above and nothing keeps it true.
+//! So "action cards 0/122" is a real porting gap of **35**, and the largest one left. The other
+//! 107 are unwritten in the oracle too.
+//!
+//! That figure was first recorded here as 1, which was wrong by a factor of thirty-five. The
+//! count came from a pattern matching `@implements("alias")` alone, and `action_cards.py` is the
+//! one oracle module that also uses multi-argument decorators and `implements_every_copy`, which
+//! expands a printed name to all four physical copies. Every other registry in this table uses
+//! plain single-argument decorators and re-measured unchanged.
+//!
+//! Re-measure rather than trusting this table, and count by what the module *registers* rather
+//! than by one decorator shape: it was true on the date above and nothing keeps it true.
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};

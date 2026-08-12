@@ -73,9 +73,14 @@ action cards            0/122  (0%)
 **Those denominators are the corpus, not the oracle, and reading them as migration progress
 overstates the gap badly.** Measured against the oracle at the pinned commit by comparing
 registered aliases: public objectives 32, secrets 27, agendas 34, exploration 33, **action
-cards 1**. Every content registry in this engine is now at or ahead of oracle parity, and the
-action-card deck is one card behind — not 122. The remainder of each deck is unimplemented in
-the oracle too and waits on the reaction system, not on porting effort.
+cards 35**. Every registry except action cards is at or ahead of oracle parity. Action cards are
+a genuine porting gap of 35 effects — the largest remaining — and M06-016 has now made them
+playable, so the effects are the only thing missing.
+
+The action-card figure was recorded here as 1 on 2026-08-12 and corrected the same evening. It
+came from a pattern matching `@implements("alias")` only, and `action_cards.py` is the one oracle
+module that also uses multi-argument decorators and `implements_every_copy`, which expands one
+printed name to all four physical copies. Every other number in this list re-measured unchanged.
 
 ### Packages completed this session
 
