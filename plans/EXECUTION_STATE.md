@@ -555,6 +555,27 @@ are recorded in the package evidence; independent review remains owner-waived.
 - A missing `# Errors` doc slipped past into a commit and would have failed the new CI on its
   first push. Caught and fixed in the following commit — the gate works.
 
+## M06-017 checkpoint (authoritative)
+
+- **555 passing tests**; workspace clippy-clean under `-D warnings`.
+- `registry::ledger` counts coverage per registry, so the gap is a number rather than an
+  impression. Measured now (PoK scope):
+
+```
+public objectives      14/40   implemented (35%)
+secret objectives       2/40   implemented (5%)
+action cards            0/122  implemented (0%)
+agenda effects          0/63   implemented (0%)
+exploration cards       0/80   implemented (0%)
+relics                  0/17   implemented (0%)
+```
+
+- This exists because the registry design — an unhandled card is *unavailable*, never silently
+  free — is right but makes coverage invisible from outside: a game where nobody can score looks
+  identical to one where nobody has met a requirement.
+- `implemented_never_exceeds_total` guards a registered alias the corpus does not have, from the
+  opposite side to the per-registry alias tests.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
