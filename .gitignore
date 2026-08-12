@@ -23,6 +23,7 @@ __pycache__/
 .pi-control/
 *.log
 /.tmp-m00-*/
+/.tmp-m00-011/
 
 # IDE
 .idea/

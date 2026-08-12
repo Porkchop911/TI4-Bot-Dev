@@ -169,10 +169,9 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-010f-corpus-campaign`, based on M00-009j package commit `4c35313`.
-- Last completed package: M00-009j — bounded-game scripted replay
-  (`plans/evidence/M00-009j.md`). M00-010f corpus admission review is complete and records the
-  current campaign blocker.
+- Branch: `wp/m00-011-correctness-baseline`, based on M00-010f package commit `fa5c021`.
+- Last completed package: M00-010f — corpus admission review (`plans/evidence/M00-010f.md`).
+  M00-011 is blocked by an oracle integrity failure; no further oracle execution is permitted.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
@@ -195,6 +194,12 @@ are recorded in the package evidence; independent review remains owner-waived.
   M00-008 contains no executable 100-scenario manifest (including the distinct three-/four-player
   definitions), and no approved artifact-retention policy exists for traces that may contain hidden
   card identities. See `plans/evidence/M00-010f.md`. No oracle paths are writable.
+- M00-011 overrides the oracle's project-local pytest temp setting and cache provider so complete
+  suite execution cannot write under `D:\Projects\ti4-engine`; the attempted Windows `--basetemp`
+  override was interpreted by pytest as a relative oracle path and created untracked
+  `Projectsti4-engine-rs.tmp-m00-011/`. The oracle guard is now dirty. Per P4, do not clean or run
+  further oracle commands. Owner restoration to the pinned clean state is required; see
+  `plans/evidence/M00-011.md`.
 
 ## Implementation status
 
