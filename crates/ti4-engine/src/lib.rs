@@ -25,6 +25,7 @@ pub mod combat;
 pub mod deck;
 pub mod dice;
 pub mod draft;
+pub mod event;
 pub mod exploration;
 #[cfg(test)]
 pub mod fixtures;

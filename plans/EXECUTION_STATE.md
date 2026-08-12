@@ -46,9 +46,12 @@ three times in one session and is worth re-deriving against the tree.
 - **M06-016 is blocked pending M03-008 through M03-012.** The required typed event/timing
   resolver does not exist; string event labels are not a safe substitute. See
   `plans/evidence/M06-016.md`.
-- Next independent dependency-ready package: **M03-008 — typed event model**. It has only its
-  M02 dependency and unblocks the real timing/ability chain without bypassing M03-007's separate
-  legacy-entropy corpus blocker.
+- Last completed package: **M03-008 — typed event model** (`plans/evidence/M03-008.md`). It has
+  trace-local numeric IDs, deterministic payload serialization, cancellation, and validated typed
+  reads; 449 engine tests and the workspace suite pass.
+- Next dependency-ready package: **M03-009 — ability registration**, followed by the M03 timing
+  resolver chain that unblocks M06-016 and M05-010b. M03-007 remains separately blocked on its
+  legacy-entropy corpus and is not being bypassed.
 
 ## M04-005 package checkpoint (historical)
 
