@@ -198,8 +198,9 @@ are recorded in the package evidence; independent review remains owner-waived.
   suite execution cannot write under `D:\Projects\ti4-engine`; the attempted Windows `--basetemp`
   override was interpreted by pytest as a relative oracle path and created untracked
   `Projectsti4-engine-rs.tmp-m00-011/`. The oracle guard is now dirty. Per P4, do not clean or run
-  further oracle commands. Owner restoration to the pinned clean state is required; see
-  `plans/evidence/M00-011.md`.
+  further oracle commands. The owner explicitly authorized its exact deletion on 2026-08-12, but
+  the execution environment rejected the scoped command before execution. Owner restoration by an
+  available local mechanism to the pinned clean state is required; see `plans/evidence/M00-011.md`.
 
 ## Implementation status
 
