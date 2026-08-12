@@ -21,7 +21,9 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m04-015c2a-public-state-import`
+- Branch: `wp/m02-004-system-state`
+- Active package: M02-004 system state; no implementation edits have started on this branch.
+- Last completed package: M02-002 common schema envelope (`b063dcb`).
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
