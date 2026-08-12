@@ -625,10 +625,111 @@ impl AbilityRegistry {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
 
     use super::*;
-    use crate::choice::Scripted;
+    use crate::choice::{AlwaysDecline, Scripted};
+    use proptest::prelude::*;
+
+    type GeneratedAbility = (u8, bool, bool, bool, u8, bool);
+
+    fn generated_registry() -> impl Strategy<Value = Vec<GeneratedAbility>> {
+        prop::collection::vec(
+            (
+                0_u8..2,
+                any::<bool>(),
+                any::<bool>(),
+                any::<bool>(),
+                0_u8..4,
+                any::<bool>(),
+            ),
+            0..25,
+        )
+    }
+
+    const fn generated_frequency(value: u8) -> Frequency {
+        match value {
+            0 => Frequency::OncePerTrigger,
+            1 => Frequency::OncePerTurn,
+            2 => Frequency::OncePerRound,
+            3 => Frequency::Unlimited,
+            _ => unreachable!(),
+        }
+    }
+
+    fn generated_owner(value: u8) -> &'static str {
+        match value {
+            0 => "sol",
+            1 => "letnev",
+            _ => unreachable!(),
+        }
+    }
+
+    fn generated_relation(is_when: bool) -> Relation {
+        if is_when {
+            Relation::When
+        } else {
+            Relation::After
+        }
+    }
+
+    fn generated_ability(
+        id: String,
+        (owner, is_when, event_matches, enabled, frequency, repeatable): GeneratedAbility,
+        fired: Arc<Mutex<Vec<String>>>,
+    ) -> Ability {
+        let available = Arc::new(AtomicBool::new(enabled));
+        let condition_available = available.clone();
+        let effect_available = available.clone();
+        let effect_id = id.clone();
+        Ability::new(
+            id,
+            PlayerId::new(generated_owner(owner)),
+            if event_matches { "E" } else { "OTHER" },
+            generated_relation(is_when),
+            Arc::new(move |_, _| {
+                fired.lock().unwrap().push(effect_id.clone());
+                // An unlimited repeatable reaction slot is legal only while its backing
+                // rule resource remains available. Model its effect consuming that resource
+                // so generated cases exercise this real termination precondition.
+                effect_available.store(false, Ordering::SeqCst);
+                Ok(())
+            }),
+        )
+        .with_condition(Arc::new(move |_, _| {
+            condition_available.load(Ordering::SeqCst)
+        }))
+        .with_frequency(generated_frequency(frequency))
+        .with_repeatable_in_window(repeatable)
+    }
+
+    fn generated_trace(specification: &[GeneratedAbility]) -> Vec<String> {
+        let fired = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol", "letnev"], "sol");
+        timing.register(specification.iter().enumerate().map(
+            |(index, &(owner, is_when, event_matches, enabled, frequency, repeatable))| {
+                generated_ability(
+                    format!("generated-{index}"),
+                    (
+                        owner,
+                        is_when,
+                        event_matches,
+                        enabled,
+                        frequency,
+                        repeatable,
+                    ),
+                    fired.clone(),
+                )
+            },
+        ));
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+        timing.log().to_vec()
+    }
 
     fn ability(id: &str, event_type: &str, relation: Relation) -> Ability {
         Ability::new(
@@ -1219,5 +1320,148 @@ mod tests {
                 "  [after] sol -> after",
             ]
         );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn generated_self_consuming_registries_terminate(specification in generated_registry()) {
+            let fired = Arc::new(Mutex::new(Vec::new()));
+            let mut timing = resolver(&["sol", "letnev"], "sol");
+            timing.register(specification.iter().enumerate().map(
+                |(index, &(owner, is_when, event_matches, enabled, frequency, repeatable))| {
+                    generated_ability(
+                        format!("generated-{index}"),
+                        (owner, is_when, event_matches, enabled, frequency, repeatable),
+                        fired.clone(),
+                    )
+                },
+            ));
+
+            timing.emit(Event::new(1, "E", BTreeMap::new()), |_| {}).unwrap();
+
+            let maximum_resolutions = specification
+                .iter()
+                .filter(|(_, _, event_matches, enabled, _, _)| *event_matches && *enabled)
+                .count();
+            prop_assert!(fired.lock().unwrap().len() <= maximum_resolutions);
+        }
+
+        #[test]
+        fn frequency_scopes_bound_each_generated_ability(frequencies in prop::collection::vec(0_u8..4, 1..17)) {
+            let fired = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
+            let mut timing = resolver(&["sol"], "sol");
+            timing.register(frequencies.iter().enumerate().map(|(index, &frequency)| {
+                let id = format!("frequency-{index}");
+                let effect_id = id.clone();
+                let fired = fired.clone();
+                Ability::new(
+                    id,
+                    player("sol"),
+                    "E",
+                    Relation::When,
+                    Arc::new(move |_, _| {
+                        *fired.lock().unwrap().entry(effect_id.clone()).or_default() += 1;
+                        Ok(())
+                    }),
+                )
+                .with_frequency(generated_frequency(frequency))
+            }));
+
+            for event_id in [1, 2] {
+                timing.emit(Event::new(event_id, "E", BTreeMap::new()), |_| {}).unwrap();
+            }
+            timing.begin_turn(player("sol")).unwrap();
+            timing.emit(Event::new(3, "E", BTreeMap::new()), |_| {}).unwrap();
+            timing.begin_round().unwrap();
+            timing.emit(Event::new(4, "E", BTreeMap::new()), |_| {}).unwrap();
+
+            let counts = fired.lock().unwrap();
+            for (index, &frequency) in frequencies.iter().enumerate() {
+                let expected = match generated_frequency(frequency) {
+                    Frequency::OncePerTrigger | Frequency::Unlimited => 4,
+                    Frequency::OncePerTurn => 3,
+                    Frequency::OncePerRound => 2,
+                };
+                prop_assert_eq!(counts[&format!("frequency-{index}")], expected);
+            }
+        }
+
+        #[test]
+        fn generated_ineligible_abilities_never_execute(specification in generated_registry()) {
+            let fired = Arc::new(Mutex::new(Vec::new()));
+            let mut timing = resolver(&["sol", "letnev"], "sol");
+            timing.register(specification.iter().enumerate().map(
+                |(index, &(owner, is_when, event_matches, enabled, frequency, repeatable))| {
+                    generated_ability(
+                        format!("generated-{index}"),
+                        (owner, is_when, event_matches, enabled, frequency, repeatable),
+                        fired.clone(),
+                    )
+                },
+            ));
+            timing.emit(Event::new(1, "E", BTreeMap::new()), |_| {}).unwrap();
+
+            let eligible_ids = specification
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, _, event_matches, enabled, _, _))| *event_matches && *enabled)
+                .map(|(index, _)| format!("generated-{index}"))
+                .collect::<BTreeSet<_>>();
+            prop_assert!(fired.lock().unwrap().iter().all(|id| eligible_ids.contains(id)));
+        }
+
+        #[test]
+        fn nonrepeatable_duplicate_identifiers_resolve_once_per_window(slot_ids in prop::collection::vec(0_u8..6, 0..25)) {
+            let fired = Arc::new(Mutex::new(Vec::new()));
+            let mut timing = resolver(&["sol"], "sol");
+            timing.register(slot_ids.iter().enumerate().map(|(index, slot_id)| {
+                let fired = fired.clone();
+                let effect_slot = format!("slot-{index}");
+                Ability::new(
+                    format!("duplicate-{slot_id}"),
+                    player("sol"),
+                    "E",
+                    Relation::When,
+                    Arc::new(move |_, _| {
+                        fired.lock().unwrap().push(effect_slot.clone());
+                        Ok(())
+                    }),
+                )
+            }));
+            timing.emit(Event::new(1, "E", BTreeMap::new()), |_| {}).unwrap();
+
+            prop_assert!(fired.lock().unwrap().len() <= slot_ids.iter().collect::<BTreeSet<_>>().len());
+        }
+
+        #[test]
+        fn generated_registry_trace_is_deterministic(specification in generated_registry()) {
+            prop_assert_eq!(generated_trace(&specification), generated_trace(&specification));
+        }
+
+        #[test]
+        fn generated_optional_passes_terminate(slot_owners in prop::collection::vec(0_u8..2, 1..25)) {
+            let mut timing = Resolver::new(
+                vec![player("sol"), player("letnev")],
+                Some(player("sol")),
+                Table::with_default(Box::new(AlwaysDecline)),
+            );
+            timing.register(slot_owners.iter().enumerate().map(|(index, owner)| {
+                Ability::new(
+                    format!("optional-{index}"),
+                    PlayerId::new(generated_owner(*owner)),
+                    "E",
+                    Relation::When,
+                    Arc::new(|_, _| Ok(())),
+                )
+                .with_optional(true)
+            }));
+            timing.emit(Event::new(1, "E", BTreeMap::new()), |_| {}).unwrap();
+
+            let pass_count = timing.log().iter().filter(|line| line.contains("declines")).count();
+            prop_assert!(pass_count <= 2);
+            prop_assert!(!timing.log().iter().any(|line| line.contains("-> optional-")));
+        }
     }
 }

@@ -21,15 +21,18 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-014-differential-timing`
+- Branch: `wp/m03-015-timing-properties`
 - M03-009 through M03-012 are complete on this resolver chain: deterministic ability registration,
   WHEN/resolution/AFTER windows, bounded depth-first nested emission, and typed once-per-trigger,
   turn, and round scopes. M03-013 is integrated: versioned SHA-256 hashes cover all replay-visible
   event and `DecisionRecord` fields. M03-014 is complete: a direct pinned-oracle fixture proves
-  line-for-line public trace parity at the WHEN/resolution/AFTER ordering boundary. The workspace
-  has 121 content, 472 engine, and 68 model tests plus one doc-test, all passing. User waived
-  Pi/external review on 2026-08-12 and authorized self-review; the waiver is recorded in each
-  package evidence file rather than represented as independent review.
+  line-for-line public trace parity at the WHEN/resolution/AFTER ordering boundary. M03-015 is
+  complete: 128-case generated registries verify termination under rule-consumed repeatable
+  eligibility, exact frequency scopes, ineligibility, duplicate slots, trace determinism, and
+  optional pass termination. The workspace has 121 content, 478 engine, and 68 model tests plus
+  one doc-test, all passing. User waived Pi/external review on 2026-08-12 and authorized
+  self-review; the waiver is recorded in each package evidence file rather than represented as
+  independent review.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
@@ -57,9 +60,9 @@ three times in one session and is worth re-deriving against the tree.
 - Last completed package: **M03-008 — typed event model** (`plans/evidence/M03-008.md`). It has
   trace-local numeric IDs, deterministic payload serialization, cancellation, and validated typed
   reads; 449 engine tests and the workspace suite pass.
-- Next dependency-ready package: **M03-015 — timing property/fuzz suite**, which follows the
-  completed resolver chain. M03-007 remains separately blocked on its legacy-entropy corpus and is
-  not being bypassed.
+- Next dependency-ready package: **M03-016 — critical timing review**, which follows the completed
+  property suite. M03-007 remains separately blocked on its legacy-entropy corpus and is not being
+  bypassed.
 
 ## M04-005 package checkpoint (historical)
 
@@ -789,7 +792,7 @@ behaviour is a placeholder.
 | M00 Oracle and baseline | Written | **Partial** — corpus imported and checksummed; deterministic public-state, redacted-view, choice, resolved-event, finished-outcome, and error projections are executable. No complete oracle exporter, generated fixtures, or differential corpus. Correctness baseline was only collected, never run. Performance baseline disputed (see audit). |
 | M01 Repository bootstrap | Written | **Partial** — workspace, toolchain, lints, profiles exist. No CI, no coverage or mutation harness, no benchmark harness, no `benches/`. |
 | M02 Content and model | Written | **In progress** — 001, 003, 005, 007, 008, 009–012 done. 002, 004, 006, 013–016 outstanding. |
-| M03 Choice, timing, replay | Written | **Partial** — 001–006 and 008–014 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice, event/timing resolver, frequency scopes, canonical hashes, and direct timing differential). 007 remains blocked; 015–016 outstanding. |
+| M03 Choice, timing, replay | Written | **Partial** — 001–006 and 008–015 done (choice, validation, deciders, decision log, pinned RNG with domain separation, dice, event/timing resolver, frequency scopes, canonical hashes, direct timing differential, and generated timing properties). 007 remains blocked; 016 outstanding. |
 | M04 Game skeleton | Written | **Partial** — 001, 002, 003, 004, 006, 007 done. 005 (draft resolution), 008–016 outstanding. Setup now builds deterministic decks and deals setup cards. |
 | M05 … M13 | Written | **Not started** |
 
