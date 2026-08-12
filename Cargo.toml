@@ -68,7 +68,9 @@ unused_variables = "warn"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
-cargo = { level = "warn", priority = -1 }
+# The `cargo` group checks publishability — description, license, keywords, categories. These
+# crates are a private workspace and are not published, so it only ever produces noise.
+cargo = { level = "allow", priority = -1 }
 
 # Dropped `nursery`: across this project's history it produced no finding that was a defect,
 # while costing a round-trip each time on code that was already correct and tested. Every real
@@ -80,6 +82,9 @@ cargo = { level = "warn", priority = -1 }
 too_many_arguments = "allow"
 similar_names = "allow"
 many_single_char_names = "allow"
+# A data model with hundreds of accessors does not benefit from `#[must_use]` on each; the
+# attribute stops meaning anything once it is everywhere.
+must_use_candidate = "allow"
 
 [profile.release]
 lto = "thin"

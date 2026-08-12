@@ -211,9 +211,9 @@ mod tests {
 
         assert_eq!(game.revealed_objectives.len(), 2);
         assert_eq!(game.objective_deck.len(), 8);
-        assert!(game.action_card_deck.len() > 0);
-        assert!(game.agenda_deck.len() > 0);
-        assert!(game.relic_deck.len() > 0);
+        assert!(!game.action_card_deck.is_empty());
+        assert!(!game.agenda_deck.is_empty());
+        assert!(!game.relic_deck.is_empty());
         assert_eq!(game.exploration_decks.len(), 4);
         assert!(
             game.players

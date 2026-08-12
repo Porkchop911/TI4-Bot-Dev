@@ -15,6 +15,7 @@ impl PlayerId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -34,6 +35,7 @@ impl FactionId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -53,6 +55,7 @@ impl PlanetId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -72,6 +75,7 @@ impl SystemId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -91,6 +95,7 @@ impl UnitTypeId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -110,6 +115,7 @@ impl TechnologyId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -129,6 +135,7 @@ impl ActionCardId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -148,6 +155,7 @@ impl ObjectiveId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -167,6 +175,7 @@ impl SecretObjectiveId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -186,6 +195,7 @@ impl LeaderId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -205,6 +215,7 @@ impl PromissoryNoteId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -224,6 +235,7 @@ impl RelicId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -243,6 +255,7 @@ impl ExplorationCardId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -262,6 +275,7 @@ impl FragmentId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -283,6 +297,7 @@ impl TokenId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -302,6 +317,7 @@ impl AgendaId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -321,6 +337,7 @@ impl LawId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -340,6 +357,7 @@ impl StrategyCardId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -359,6 +377,7 @@ impl CommandId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -380,6 +399,7 @@ impl ExpeditionTileId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -399,6 +419,7 @@ impl BreakthroughId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -420,6 +441,7 @@ impl EventId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -439,6 +461,7 @@ impl ChoiceId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -458,6 +481,7 @@ impl OptionId {
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -475,6 +499,7 @@ impl fmt::Display for OptionId {
 pub const UNSEATED: PlayerId = PlayerId(String::new());
 
 impl PlayerId {
+    #[must_use]
     pub fn is_unseated(&self) -> bool {
         self.0.is_empty()
     }

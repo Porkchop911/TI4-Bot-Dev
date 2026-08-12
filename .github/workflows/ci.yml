@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # A warning that reaches main is a warning nobody will ever fix.
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    # Windows is the supported runtime platform (MASTER_PLAN, quality gates).
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Docs
+        run: cargo doc --workspace --no-deps
+
+      # The corpus is committed byte-identical and checksummed. If it drifts, every
+      # content-derived test is measuring something other than the pinned data.
+      - name: Verify content corpus checksums
+        shell: bash
+        run: |
+          cd crates/ti4-content/content
+          sha256sum --check --ignore-missing CHECKSUMS.sha256

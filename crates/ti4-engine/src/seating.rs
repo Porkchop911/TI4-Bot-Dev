@@ -249,7 +249,7 @@ mod tests {
             "got {all:?}"
         );
         assert!(
-            !all.iter().any(|u| *u == "mech"),
+            !all.contains(&"mech"),
             "a generic mech means resolution failed: {all:?}"
         );
     }
@@ -284,7 +284,8 @@ mod tests {
                 continue;
             }
             let player = PlayerId::new("a");
-            let mut state = start_game(content(), &[player.clone()], POK, None).unwrap();
+            let mut state =
+                start_game(content(), std::slice::from_ref(&player), POK, None).unwrap();
             deploy(&mut state, content(), &player, &FactionId::new(alias), POK)
                 .unwrap_or_else(|e| panic!("{alias}: {e}"));
 
@@ -299,7 +300,7 @@ mod tests {
     #[test]
     fn seating_an_unknown_faction_fails_rather_than_seating_nothing() {
         let player = PlayerId::new("a");
-        let mut state = start_game(content(), &[player.clone()], POK, None).unwrap();
+        let mut state = start_game(content(), std::slice::from_ref(&player), POK, None).unwrap();
         let err = deploy(
             &mut state,
             content(),

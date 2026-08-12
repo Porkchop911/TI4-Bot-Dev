@@ -428,6 +428,19 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Largest architectural debt: combat, invasion and production all resolve inside one `step()`,
   breaking the one-decision-per-step contract. The generic `Window` trait fixes it.
 
+## M01-006 checkpoint
+
+- **CI exists and the workspace is clippy-clean.** `.github/workflows/ci.yml` runs on Windows —
+  the supported platform per `MASTER_PLAN` — with `RUSTFLAGS: -D warnings`, so a warning cannot
+  reach `main`.
+- Getting there took the workspace from **181 clippy warnings to 0**: `--fix` cleared 71, the
+  `cargo` group was allowed (these crates are private, not published), `must_use_candidate` was
+  allowed (a data model with hundreds of accessors gains nothing from it on each), and the
+  remaining 27 were fixed by hand.
+- CI also verifies the content corpus checksums. If the corpus drifts, every content-derived
+  test is measuring something other than the pinned data.
+- Every step was run locally before committing; a CI that is red on day one gets ignored.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
@@ -498,7 +511,8 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 1. **The `Window` trait.** Make combat, invasion and production resumable so the driver keeps
    its one-decision-per-step contract. Largest architectural debt, and it is now load-bearing
    rather than tidy.
-2. **M01-006 — CI.** 477 tests currently gate nothing on push.
+2. ~~M01-006 — CI.~~ Done: `.github/workflows/ci.yml` runs fmt, clippy (deny), tests, docs and
+   the corpus checksums on Windows.
 3. **M05-010/011 — combat modifiers and retreat**, the last two tactical rules.
 4. **M00-013 — the performance baseline**, unblocked since the oracle was cleaned and the thing
    that validates the premise of the rewrite.

@@ -1,6 +1,6 @@
 //! The content corpus taxonomy: categories, identity keys, and expansion sources.
 //!
-//! These 28 categories are exactly the JSON files extracted from AsyncTI4 by the oracle's
+//! These 28 categories are exactly the JSON files extracted from `AsyncTI4` by the oracle's
 //! `tools/extract_asyncti4.py`; the oracle reads them through `engine/content.py`. The names,
 //! the identity key of each category, and the source tags are all properties of the corpus,
 //! not choices made here — `ti4-content` has a test that fails if this enum and the files on
@@ -12,7 +12,7 @@ use strum::{Display, EnumCount, EnumIter, EnumString, VariantNames};
 /// A category of content records, one per JSON file in the corpus.
 ///
 /// `Display`/`FromStr` use the category name as it appears in the corpus (the file stem),
-/// which is snake_case for every category except `genericcards`.
+/// which is `snake_case` for every category except `genericcards`.
 #[derive(
     Debug,
     Clone,
@@ -96,7 +96,7 @@ pub const ALL_CONTENT_TYPES: &[ContentType] = &[
 
 /// Which field carries a record's identity within its category.
 ///
-/// AsyncTI4 is not consistent about this, so a generic index has to ask the category.
+/// `AsyncTI4` is not consistent about this, so a generic index has to ask the category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityKey {
     /// The `id` field.
@@ -229,7 +229,7 @@ pub type SourceSet = EnumSet<Source>;
 
 /// The original boxed game only.
 ///
-/// AsyncTI4 tags the classic set `base` even where a record id carries a `pok` prefix, so
+/// `AsyncTI4` tags the classic set `base` even where a record id carries a `pok` prefix, so
 /// filter on source rather than on the shape of an id.
 pub const BASE: SourceSet = enum_set!(Source::Base);
 

@@ -3,10 +3,7 @@
 
 fn main() {
     println!(
-        "ti4 v{} (schema {}, content {}, RNG {})",
-        env!("CARGO_PKG_VERSION"),
-        "1",
-        "1",
-        "1"
+        "ti4 v{} (schema 1, content 1, RNG 1)",
+        env!("CARGO_PKG_VERSION")
     );
 }

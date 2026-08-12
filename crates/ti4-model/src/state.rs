@@ -1481,9 +1481,9 @@ mod tests {
         let mut g = game(&["a"]);
         let (from, to) = (SystemId::new("18"), SystemId::new("19"));
         let carrier = unit("carrier", "a");
-        g.system_mut(&from).add(&[carrier.clone()]);
+        g.system_mut(&from).add(std::slice::from_ref(&carrier));
 
-        g.move_units(&from, &to, &[carrier.clone()]);
+        g.move_units(&from, &to, std::slice::from_ref(&carrier));
         assert!(g.units_in(&from).is_empty());
         assert_eq!(g.units_in(&to), &[carrier]);
     }
@@ -1498,7 +1498,7 @@ mod tests {
         g.system_mut(&system)
             .add(&[fighter.clone(), fighter.clone(), fighter.clone()]);
 
-        g.destroy_units(&system, &[fighter.clone()]);
+        g.destroy_units(&system, std::slice::from_ref(&fighter));
         assert_eq!(g.units_in(&system).len(), 2);
     }
 
@@ -1511,7 +1511,8 @@ mod tests {
         g.system_mut(&system)
             .add(&[infantry.clone(), unit("carrier", "a")]);
 
-        g.system_mut(&system).land(&planet, &[infantry.clone()]);
+        g.system_mut(&system)
+            .land(&planet, std::slice::from_ref(&infantry));
         assert_eq!(g.system_state(&system).on_planet(&planet), &[infantry]);
         assert_eq!(g.units_in(&system).len(), 1, "the carrier stays in space");
     }
