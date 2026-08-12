@@ -21,7 +21,7 @@ three times in one session and is worth re-deriving against the tree.
 - Oracle repository: `D:\Projects\ti4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m03-012-frequency-scopes`
+- Branch: `wp/m03-014-differential-timing`
 - M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
   registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
   User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
@@ -35,8 +35,13 @@ three times in one session and is worth re-deriving against the tree.
   review. M03-012 frequency scopes is complete: deterministic typed scope keys govern eligibility
   across event, turn, and round boundaries, while unlimited remains unrestricted. The full
   workspace passes. User waived Pi/external review on 2026-08-12 and authorized the agent's own
-  invariant review. M03-014 is next only after M03-013's hash branch is integrated with this
-  resolver chain; M03-013 remains committed on its disjoint package branch.
+  invariant review. M03-013 event/decision hashes are also integrated on this timing-resolver
+  chain: a versioned JSON envelope and SHA-256 cover all replay-visible event and decision fields.
+  M03-014 differential timing evidence is now in progress.
+- M03-013 event/decision hashes are complete in this isolated worktree. It uses a versioned JSON
+  envelope and SHA-256 to hash all replay-visible event and `DecisionRecord` fields; 452 engine
+  tests and the full workspace suite pass. User waived Pi/external review on 2026-08-12 and
+  authorized the agent's own invariant review.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.

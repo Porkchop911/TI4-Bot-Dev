@@ -27,6 +27,7 @@ pub mod dice;
 pub mod draft;
 pub mod event;
 pub mod exploration;
+pub mod fingerprint;
 #[cfg(test)]
 pub mod fixtures;
 pub mod fleet;
@@ -74,6 +75,7 @@ pub use combat::{
 pub use deck::{EXPLORATION_TRAITS, StartingDecks, build_starting_decks};
 pub use dice::{Dice, Roll};
 pub use draft::{DraftError, STRATEGY_CARD_KIND, strategy_options, take_strategy_card};
+pub use fingerprint::{CanonicalHash, CanonicalHashVersion, decision_hash, event_hash};
 pub use game::{Game, GameError, RunError, StepResult};
 pub use phase::{
     PhaseOutcome, advance_phase, advance_turn, begin_action_turn, begin_next_round,
