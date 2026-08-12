@@ -840,6 +840,19 @@ impl CombatWindow {
         let (content, sources) = (ctx.content, ctx.sources);
         state.combat_round_seq = state.combat_round_seq.saturating_add(1);
 
+        // Announced before anything is rolled, because eight action cards read "at the start of
+        // a combat round" and Morale Boost scopes its bonus to `combat_round_seq`. Emitting after
+        // the round would apply it to the next one.
+        let mut payload = std::collections::BTreeMap::new();
+        payload.insert("system".to_owned(), self.system.to_string().into());
+        payload.insert("round".to_owned(), i64::from(round).into());
+        if round == 1 {
+            let mut opening = payload.clone();
+            opening.insert("player".to_owned(), self.attacker.to_string().into());
+            let _ = ctx.emit(state, "SPACE_COMBAT_STARTED", opening);
+        }
+        let _ = ctx.emit(state, "COMBAT_ROUND_STARTED", payload);
+
         if round == 1 {
             anti_fighter_barrage(
                 state,
@@ -1258,6 +1271,7 @@ pub fn resolve(
         dice,
         rng,
         table,
+        timing: None,
     };
     // Opening does not roll; settle once so a fight that is already over reports so.
     window.settle(state, &mut ctx);
@@ -2148,6 +2162,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             table: &mut inner,
+            timing: None,
         };
         window.settle(&mut state, &mut ctx);
 
@@ -2184,6 +2199,7 @@ mod tests {
                     dice: &mut dice,
                     rng: &mut rng,
                     table: &mut inner,
+                    timing: None,
                 };
                 window.settle(&mut state, &mut ctx);
                 while let Some(choice) =

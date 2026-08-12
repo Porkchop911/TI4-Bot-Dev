@@ -158,9 +158,14 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
 /// A window mapped to an event nobody emits is a table entry, not a connection — the distinction
 /// this project keeps having to relearn.
 pub const EMITTED_EVENTS: &[&str] = &[
+    "ACTION_CARD_PLAYED",
+    "AGENDA_REVEALED",
+    "COMBAT_ROUND_STARTED",
+    "INVASION_BEGAN",
+    "PRODUCTION_USED",
+    "SPACE_COMBAT_STARTED",
     "STRATEGY_CARD_CHOSEN",
     "SYSTEM_ACTIVATED",
-    "ACTION_CARD_PLAYED",
 ];
 
 /// Where this card hooks, or `None` if it is not a reaction card at all.

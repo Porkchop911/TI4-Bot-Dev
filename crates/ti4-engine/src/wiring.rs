@@ -578,3 +578,39 @@ fn every_placement_path_still_asks_the_supply() {
         );
     }
 }
+
+#[test]
+fn the_windows_the_table_maps_are_windows_the_engine_opens() {
+    // A mapped window whose event nobody emits is a table entry, not a connection — and the
+    // ledger counts it as covered, so a wrong entry here inflates coverage rather than failing.
+    // This drives real games and checks the events actually happen.
+    let hub = plain_hub();
+    let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for seed in 0..12 {
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed)
+            .with_galaxy(hub.galaxy.clone());
+        let _ = game.run(8, 200_000);
+        seen.extend(
+            game.events
+                .iter()
+                .map(|event| event.split(':').next().unwrap_or(event).to_owned()),
+        );
+    }
+
+    // Only the windows a bare hub can reach. Nobody deploys a fleet here, so there is no
+    // combat or invasion to announce, and nobody takes Mecatol Rex so no agenda is revealed —
+    // `ti4-sim`'s seated batch covers those, because it is the fixture that produces them.
+    for event in [
+        "SYSTEM_ACTIVATED",
+        "PRODUCTION_USED",
+        "STRATEGY_CARD_CHOSEN",
+    ] {
+        assert!(
+            seen.contains(event),
+            "{event} is counted as reachable but no game emitted it; saw {seen:?}"
+        );
+    }
+}

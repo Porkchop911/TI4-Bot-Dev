@@ -811,6 +811,7 @@ pub fn resolve(
         dice,
         rng,
         table,
+        timing: None,
     };
     window.drive(state, &mut ctx)?;
     Ok(window.into_report())
@@ -1048,6 +1049,7 @@ mod tests {
                 dice: &mut dice,
                 rng: &mut rng,
                 table: &mut inner,
+                timing: None,
             };
             window.advance_fighting(&mut state, &mut ctx, &[planet], 0);
             Some(window.into_report().explored.len())

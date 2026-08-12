@@ -379,6 +379,13 @@ mod tests {
             "INVASION_RESOLVED",
             "SPACE_COMBAT_RESOLVED",
             "STATUS_SCORING_BEGAN",
+            // The typed windows reaction cards hang off. A window whose event nothing emits is
+            // counted as covered by the ledger, so a wrong entry inflates coverage rather than
+            // failing — this is where that shows up.
+            "COMBAT_ROUND_STARTED",
+            "SPACE_COMBAT_STARTED",
+            "INVASION_BEGAN",
+            "PRODUCTION_USED",
         ]);
         assert!(
             silent.is_empty(),

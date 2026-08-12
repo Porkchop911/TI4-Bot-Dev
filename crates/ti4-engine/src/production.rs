@@ -720,6 +720,7 @@ pub fn resolve(
         dice: &mut dice,
         rng: &mut rng,
         table,
+        timing: None,
     };
     window.drive(state, &mut ctx)?;
     Ok(window.into_report())
@@ -1039,6 +1040,7 @@ mod tests {
                 dice: &mut dice,
                 rng: &mut rng,
                 table: &mut inner,
+                timing: None,
             };
             window.resolve(&mut state, &mut ctx, answer).unwrap();
             decisions += 1;

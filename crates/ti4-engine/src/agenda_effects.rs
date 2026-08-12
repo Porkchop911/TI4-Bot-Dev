@@ -355,6 +355,7 @@ pub fn resolve(
         dice: &mut dice,
         rng: &mut rng,
         table: &mut table,
+        timing: None,
     };
     resolve_with(state, &mut ctx, None, agenda, outcome, ballot)
 }
@@ -1045,6 +1046,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             table: &mut table,
+            timing: None,
         };
         resolve_with(state, &mut ctx, galaxy, agenda, outcome, &Ballot::default())
     }
@@ -1183,6 +1185,7 @@ mod tests {
                 dice: &mut dice,
                 rng: &mut rng,
                 table: &mut table,
+                timing: None,
             };
             resolve_with(
                 &mut state,
@@ -1841,6 +1844,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             table: &mut table,
+            timing: None,
         };
 
         resolve_with(

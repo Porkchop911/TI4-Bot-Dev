@@ -198,6 +198,18 @@ impl AftermathWindow {
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
                     }
                     self.stage = if holds {
+                        // Two cards read "at the start of an invasion", so the window opens
+                        // before the invasion does rather than after it has resolved.
+                        let mut payload = BTreeMap::new();
+                        payload.insert(
+                            "player".to_owned(),
+                            serde_json::Value::String(self.player.to_string()),
+                        );
+                        payload.insert(
+                            "system".to_owned(),
+                            serde_json::Value::String(self.system.to_string()),
+                        );
+                        let _ = ctx.emit(state, "INVASION_BEGAN", payload);
                         Aftermath::Invading(Box::new(crate::invasion::InvasionWindow::new(
                             state,
                             ctx.content,
@@ -241,6 +253,18 @@ impl AftermathWindow {
                     {
                         return;
                     }
+                    // "When 1 or more of your units use PRODUCTION" — after the step, which is
+                    // when the units have used it.
+                    let mut payload = BTreeMap::new();
+                    payload.insert(
+                        "player".to_owned(),
+                        serde_json::Value::String(self.player.to_string()),
+                    );
+                    payload.insert(
+                        "system".to_owned(),
+                        serde_json::Value::String(self.system.to_string()),
+                    );
+                    let _ = ctx.emit(state, "PRODUCTION_USED", payload);
                     self.log.push("PRODUCTION_RESOLVED".to_owned());
                     self.stage = Aftermath::Done;
                     return;
@@ -1013,14 +1037,24 @@ impl<'a> Game<'a> {
 
         let mut dice = std::mem::take(&mut self.dice);
         let mut rng = self.rng.clone();
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        // The same timing handle the stepping path gets. Most of an aftermath happens here, in
+        // the settle that runs it forward until something needs asking — so leaving this one
+        // without a resolver meant combat rounds, invasions and production all passed unannounced
+        // while the stepping path looked correctly wired.
         let mut ctx = Resolving {
             content: self.content,
             sources: self.sources,
             dice: &mut dice,
             rng: &mut rng,
             table: &mut self.table,
+            timing: Some(crate::choice::TimingHandle {
+                resolver: &mut self.timing,
+                sequence: &mut self.event_sequence,
+                galaxy: galaxy.as_ref(),
+            }),
         };
-        let galaxy = self.galaxy.clone();
         let opened =
             AftermathWindow::new(&mut self.state, &mut ctx, &player, &system, galaxy.as_ref());
         let mut window = match opened {
@@ -1031,12 +1065,14 @@ impl<'a> Game<'a> {
             Err(error) => {
                 self.dice = dice;
                 self.rng = rng;
+                self.mirror_timing_log(logged);
                 return self.result(false, Some(error));
             }
         };
         window.settle(&mut self.state, &mut ctx);
         self.dice = dice;
         self.rng = rng;
+        self.mirror_timing_log(logged);
         self.events.append(&mut window.log);
 
         if window
@@ -1064,16 +1100,29 @@ impl<'a> Game<'a> {
         };
         let mut dice = std::mem::take(&mut self.dice);
         let mut rng = self.rng.clone();
-        let mut ctx = Resolving {
-            content: self.content,
-            sources: self.sources,
-            dice: &mut dice,
-            rng: &mut rng,
-            table: &mut self.table,
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        // With the timing machinery, so combat, invasion and production can emit at the moment
+        // the thing happens rather than after it. A reaction to "at the start of a combat round"
+        // that fires once the round has resolved applies its bonus to the wrong round.
+        let outcome = {
+            let mut ctx = Resolving {
+                content: self.content,
+                sources: self.sources,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut self.table,
+                timing: Some(crate::choice::TimingHandle {
+                    resolver: &mut self.timing,
+                    sequence: &mut self.event_sequence,
+                    galaxy: galaxy.as_ref(),
+                }),
+            };
+            window.resolve(&mut self.state, &mut ctx, answer)
         };
-        let outcome = window.resolve(&mut self.state, &mut ctx, answer);
         self.dice = dice;
         self.rng = rng;
+        self.mirror_timing_log(logged);
         self.events.append(&mut window.log);
 
         if let Err(error) = outcome {
@@ -1423,6 +1472,7 @@ impl<'a> Game<'a> {
                 dice: &mut dice,
                 rng: &mut rng,
                 table: &mut self.table,
+                timing: None,
             };
             let effect = crate::agenda_effects::resolve_with(
                 &mut self.state,

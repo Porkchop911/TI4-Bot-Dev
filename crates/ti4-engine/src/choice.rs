@@ -192,6 +192,62 @@ pub struct Resolving<'a> {
     /// discarded. Without the table here those follow-ups had to be decided by the engine on
     /// the player's behalf, which is a decision made silently rather than asked.
     pub table: &'a mut Table,
+    /// The typed-event machinery, when the caller has it.
+    ///
+    /// A subsystem has to be able to emit *at the moment the thing happens*, not afterwards. A
+    /// reaction to "at the start of a combat round" that fires once the round has resolved
+    /// applies its bonus to the wrong round, so a driver that emitted around the window instead
+    /// of inside it would be wrong rather than merely coarse.
+    ///
+    /// Optional because several callers — tests, and paths with no timing machinery — have no
+    /// resolver to offer. Without one [`Resolving::emit`] does nothing and says so.
+    pub timing: Option<TimingHandle<'a>>,
+}
+
+/// The pieces needed to put a typed event through the resolver.
+pub struct TimingHandle<'a> {
+    /// The resolver whose windows the event opens.
+    pub resolver: &'a mut crate::timing::Resolver,
+    /// The game's typed-event allocator, shared so nested emissions keep one numbering.
+    pub sequence: &'a mut crate::event::EventSequence,
+    /// The map, for rules that ask about the shape of the board.
+    pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
+}
+
+impl Resolving<'_> {
+    /// Emit a typed event, opening its WHEN and AFTER windows.
+    ///
+    /// Returns whether the event survived: a cancelled event did not happen, and its caller must
+    /// not carry on as though it did.
+    ///
+    /// # Errors
+    /// [`crate::timing::TimingError`] when a decider answers illegally or the event id space is
+    /// exhausted.
+    pub fn emit(
+        &mut self,
+        state: &mut ti4_model::state::GameState,
+        event_type: &str,
+        payload: std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> Result<bool, crate::timing::TimingError> {
+        let Some(handle) = self.timing.as_mut() else {
+            return Ok(true); // no resolver: nothing can react, and the event still happened
+        };
+        let event = handle.sequence.next(event_type, payload)?;
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: self.content,
+            sources: self.sources,
+            table: self.table,
+            dice: self.dice,
+            rng: self.rng,
+            event_sequence: handle.sequence,
+            galaxy: handle.galaxy,
+        };
+        let emitted = handle
+            .resolver
+            .emit_with_context(&mut context, event, |_, _| {})?;
+        Ok(!emitted.cancelled)
+    }
 }
 
 /// A decision sequence the game driver can step one answer at a time.

@@ -439,6 +439,7 @@ pub fn explore(
         dice: &mut dice,
         rng: &mut rng,
         table: &mut table,
+        timing: None,
     };
     explore_with(state, &mut ctx, player, deck, planet)
 }
@@ -763,6 +764,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             table: &mut table,
+            timing: None,
         };
         state
             .exploration_decks
