@@ -149,7 +149,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-014 package checkpoint (historical)
 
 - Branch: `wp/m04-014-completion-suite`, based on M04-013 package commit `d509d87`.
 - Last completed package: M04-014 — 100-seed native generic structural campaign
@@ -166,6 +166,19 @@ are recorded in the package evidence; independent review remains owner-waived.
 - M04-014 committed after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-015-differential-phase`, based on M04-014 package commit `cfb2f2b`.
+- Active package: M04-015 — differential phase suite (**BLOCKED**)
+  (`plans/evidence/M04-015.md`).
+- Blocker: M00-009's required read-only oracle exporter and M00-008 selected fixture corpus do not
+  exist. Without canonical oracle projections, no selected Python/Rust state, choice, event, or
+  error trace can be compared and no differential parity claim is valid.
+- No M04-015 source, test, or fixture was added; substituting Rust-only source-inspection tests
+  would weaken the required differential acceptance criterion.
+- Next safe action: implement M00-008/009's fixture selection and versioned, byte-stable, read-only
+  projection exporter, then resume M04-015.
 
 ## Implementation status
 
