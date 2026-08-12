@@ -10,6 +10,8 @@ use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
 use crate::objectives::VICTORY_TARGET;
+use ti4_content::ContentStore;
+
 use crate::vote::{AGAINST, Ballot, FOR};
 
 /// What an effect did, for the caller to announce.
@@ -52,6 +54,7 @@ fn everyone(state: &GameState) -> Vec<PlayerId> {
 /// unwritten tie-break. It is passed in so this stays free of the choice machinery.
 pub fn resolve(
     state: &mut GameState,
+    content: &ti4_content::ContentStore,
     agenda: &str,
     outcome: &str,
     ballot: &Ballot,
@@ -132,10 +135,11 @@ pub fn resolve(
             }
         }
         "incentive" => {
-            // Incentive Program reveals a stage I (For) or stage II (Against) objective. The
-            // stage split is unmodelled here, so this reveals from the top either way and the
-            // difference is recorded rather than pretended away.
-            state.reveal_objective();
+            // Stage I on For, stage II on Against. Not the top card: the deck is stage I then
+            // stage II in order, so taking the top reveals the wrong stage while any stage I
+            // remains, and the card would quietly do the opposite of what it says.
+            let stage = if outcome == FOR { 1 } else { 2 };
+            crate::objectives::reveal_stage(state, content, stage);
         }
         _ => {
             return Effect::Unresolved {
@@ -183,6 +187,7 @@ mod tests {
         let mut state = game(&["a"]);
         let effect = resolve(
             &mut state,
+            ContentStore::embedded(),
             "not_an_agenda",
             FOR,
             &Ballot::default(),
@@ -200,6 +205,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "economic_equality",
             AGAINST,
             &Ballot::default(),
@@ -217,6 +223,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "economic_equality",
             FOR,
             &Ballot::default(),
@@ -233,7 +240,14 @@ mod tests {
         let mut state = game(&["a", "b"]);
         let ballot = ballot_for(&[a()]);
 
-        resolve(&mut state, "mutiny", FOR, &ballot, no_choice);
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "mutiny",
+            FOR,
+            &ballot,
+            no_choice,
+        );
         assert_eq!(state.player(&a()).unwrap().victory_points, 1);
         assert_eq!(
             state.player(&b()).unwrap().victory_points,
@@ -241,7 +255,14 @@ mod tests {
             "b did not vote for it"
         );
 
-        resolve(&mut state, "mutiny", AGAINST, &ballot, no_choice);
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "mutiny",
+            AGAINST,
+            &ballot,
+            no_choice,
+        );
         assert_eq!(
             state.player(&a()).unwrap().victory_points,
             0,
@@ -255,6 +276,7 @@ mod tests {
         let mut state = game(&["a"]);
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "mutiny",
             AGAINST,
             &ballot_for(&[a()]),
@@ -270,6 +292,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "seed_empire",
             FOR,
             &Ballot::default(),
@@ -287,6 +310,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "seed_empire",
             AGAINST,
             &Ballot::default(),
@@ -305,6 +329,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "seed_empire",
             FOR,
             &Ballot::default(),
@@ -313,9 +338,14 @@ mod tests {
         assert_eq!(state.player(&a()).unwrap().victory_points, 0);
         assert_eq!(state.player(&b()).unwrap().victory_points, 0);
 
-        resolve(&mut state, "seed_empire", FOR, &Ballot::default(), |tied| {
-            tied.last().cloned()
-        });
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "seed_empire",
+            FOR,
+            &Ballot::default(),
+            |tied| tied.last().cloned(),
+        );
         assert_eq!(state.player(&b()).unwrap().victory_points, 1);
     }
 
@@ -329,6 +359,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "abolishment",
             "sanctions",
             &Ballot::default(),
@@ -347,6 +378,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "constitution",
             AGAINST,
             &Ballot::default(),
@@ -360,6 +392,7 @@ mod tests {
 
         resolve(
             &mut state,
+            ContentStore::embedded(),
             "constitution",
             FOR,
             &Ballot::default(),
@@ -373,7 +406,14 @@ mod tests {
         let mut state = game(&["a"]);
         let before = state.revealed_objectives.len();
 
-        resolve(&mut state, "incentive", FOR, &Ballot::default(), no_choice);
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            "incentive",
+            FOR,
+            &Ballot::default(),
+            no_choice,
+        );
 
         assert_eq!(state.revealed_objectives.len(), before + 1);
     }

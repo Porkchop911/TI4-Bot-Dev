@@ -480,6 +480,38 @@ pub enum Cost {
     Tokens(i32),
 }
 
+/// An objective's stage, derived from its printed points (61.13).
+///
+/// The corpus carries no stage field — a stage I is worth one point and a stage II two — so it
+/// is read from the points rather than from a field that does not exist.
+#[must_use]
+pub fn stage_of(content: &ContentStore, alias: &ObjectiveId) -> Option<u8> {
+    match points_for(content, alias)? {
+        1 => Some(1),
+        2 => Some(2),
+        _ => None,
+    }
+}
+
+/// Reveal the first facedown objective of a given stage (61.13, 61.14a).
+///
+/// **Not simply the top card.** The deck is stage I then stage II in order, so taking the top
+/// would reveal the wrong stage whenever any stage I remains — and an agenda that names the
+/// stage would then quietly do the opposite of what it says.
+pub fn reveal_stage(
+    state: &mut GameState,
+    content: &ContentStore,
+    stage: u8,
+) -> Option<ObjectiveId> {
+    let index = state
+        .objective_deck
+        .iter()
+        .position(|alias| stage_of(content, alias) == Some(stage))?;
+    let alias = state.objective_deck.remove(index);
+    state.revealed_objectives.push(alias.clone());
+    Some(alias)
+}
+
 /// Objectives bought rather than achieved (61.10).
 #[must_use]
 pub fn bought_aliases() -> Vec<&'static str> {
@@ -1210,6 +1242,45 @@ mod tests {
         assert_eq!(
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
             vec![ObjectiveId::new("ancient_monuments")]
+        );
+    }
+
+    #[test]
+    fn revealing_a_stage_skips_past_the_wrong_stage() {
+        // The deck is stage I then stage II in order, so taking the top card reveals the wrong
+        // stage while any stage I remains. An agenda naming the stage would then do the
+        // opposite of what it says.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+
+        let by_stage = |stage: u8| -> Vec<ObjectiveId> {
+            ContentStore::embedded()
+                .records(ContentType::PublicObjectives)
+                .iter()
+                .filter_map(|record| record.text("alias"))
+                .map(ObjectiveId::new)
+                .filter(|alias| stage_of(ContentStore::embedded(), alias) == Some(stage))
+                .take(2)
+                .collect()
+        };
+        let stage_one = by_stage(1);
+        let stage_two = by_stage(2);
+        assert!(!stage_one.is_empty() && !stage_two.is_empty());
+
+        // Stage I sits on top, as in a real deck.
+        state.objective_deck = stage_one.iter().chain(&stage_two).cloned().collect();
+        state.revealed_objectives.clear();
+
+        let revealed = reveal_stage(&mut state, ContentStore::embedded(), 2).unwrap();
+
+        assert_eq!(
+            stage_of(ContentStore::embedded(), &revealed),
+            Some(2),
+            "it reached past the stage I cards"
+        );
+        assert!(
+            state.objective_deck.contains(&stage_one[0]),
+            "and left them in the deck"
         );
     }
 
