@@ -10,8 +10,6 @@ use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
 use crate::objectives::VICTORY_TARGET;
-use ti4_content::ContentStore;
-
 use crate::vote::{AGAINST, Ballot, FOR};
 
 /// What an effect did, for the caller to announce.
@@ -156,6 +154,8 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+
+    use ti4_content::ContentStore;
 
     use super::*;
     use crate::fixtures::game;
