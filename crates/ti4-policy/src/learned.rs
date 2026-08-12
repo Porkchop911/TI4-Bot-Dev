@@ -3,7 +3,9 @@
 pub struct LearnedPolicy;
 
 impl LearnedPolicy {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     pub fn load(&self, _path: &str) -> Result<(), anyhow::Error> {
         todo!("M09: implement learned policy loading")
