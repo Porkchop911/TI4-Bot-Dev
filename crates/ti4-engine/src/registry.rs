@@ -82,8 +82,9 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "exploration cards",
             total: count(content, ContentType::Explores, sources),
-            // Fragments and attachments resolve; the instant and token cards do not.
-            implemented: 0,
+            // Fragments and attachments always resolve; instants need a handler each.
+            implemented: count(content, ContentType::Explores, sources)
+                - crate::exploration::unimplemented(content, sources).len(),
         },
         Coverage {
             registry: "relics",

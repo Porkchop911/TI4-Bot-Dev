@@ -132,6 +132,27 @@ fn every_subsystem_the_driver_owns_is_reachable() {
 }
 
 #[test]
+fn only_test_support_modules_are_test_gated() {
+    // `exploration` was accidentally `#[cfg(test)]` for several commits: it compiled, its own
+    // tests passed because they run under cfg(test), and nothing outside tests could call it.
+    // A module that vanishes from the library is invisible to every other check here.
+    let lib = include_str!("lib.rs");
+    let gated: Vec<&str> = lib
+        .lines()
+        .zip(lib.lines().skip(1))
+        .filter(|(attr, _)| attr.trim() == "#[cfg(test)]")
+        .filter_map(|(_, decl)| decl.trim().strip_prefix("pub mod "))
+        .map(|name| name.trim_end_matches(';'))
+        .collect();
+
+    assert_eq!(
+        gated,
+        vec!["fixtures"],
+        "only test-support modules may be test-gated"
+    );
+}
+
+#[test]
 fn the_status_phase_still_readies_leaders() {
     // Leaders were built, tested, and uncalled for four commits. This is the guard.
     let status = include_str!("status.rs");

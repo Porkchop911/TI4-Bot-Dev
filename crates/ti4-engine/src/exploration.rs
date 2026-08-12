@@ -25,6 +25,8 @@ pub enum Explored {
     Attached { card: String },
     /// Drawn, but this engine has no handler for it. Announced, never silently dropped.
     Unresolved { card: String },
+    /// An instant card this engine resolved.
+    Resolved { card: String },
     /// An attachment drawn from the frontier, which has no planet to attach to.
     Discarded { card: String },
 }
@@ -57,6 +59,60 @@ pub fn resolution(content: &ContentStore, card: &str) -> Option<String> {
         .get(ContentType::Explores, card)
         .and_then(|record| record.text("resolution"))
         .map(ToOwned::to_owned)
+}
+
+/// Exploration cards this engine resolves.
+///
+/// The rest are drawn, announced [`Explored::Unresolved`], and do nothing — the registry design
+/// used throughout. `unimplemented` reports them.
+#[must_use]
+pub fn registered_cards() -> Vec<&'static str> {
+    vec!["dw", "ent", "kel1", "kel2", "majent", "minent"]
+}
+
+/// Cards the engine draws but cannot resolve.
+#[must_use]
+pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> {
+    let known = registered_cards();
+    content
+        .from_sources(ContentType::Explores, sources)
+        .filter(|record| !matches!(record.text("resolution"), Some("Fragment" | "Attach")))
+        .filter_map(|record| record.text("id").or_else(|| record.text("alias")))
+        .filter(|id| !known.contains(id))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+/// Resolve an instant card this engine knows.
+///
+/// Returns `false` for a card with no handler, so the caller announces it unresolved rather
+/// than reporting a card that did nothing as having worked.
+fn resolve_instant(state: &mut GameState, player: &PlayerId, card: &str) -> bool {
+    // Command tokens go to the strategy pool. LRR 52.4 lets the player choose, and this does
+    // not ask — recorded as a simplification rather than passed off as the rule.
+    let (tokens, goods) = match card {
+        "minent" => (1, 1),
+        "ent" => (1, 2),
+        "majent" => (1, 3),
+        "kel1" | "kel2" => (2, 0),
+        "dw" => {
+            // Draw 1 relic.
+            let Some(relic) = state.relic_deck.first().cloned() else {
+                return true; // an empty deck gives nothing, which is not a failure
+            };
+            state.relic_deck.remove(0);
+            if let Some(seat) = state.player_mut(player) {
+                seat.relics.push(relic);
+            }
+            return true;
+        }
+        _ => return false,
+    };
+    if let Some(seat) = state.player_mut(player) {
+        seat.gain_token(ti4_model::state::TokenPool::Strategic, tokens);
+        seat.trade_goods += goods;
+    }
+    true
 }
 
 /// Explore a planet, resolving one card (35.2).
@@ -99,9 +155,16 @@ pub fn explore(
                 .push(card.clone());
             Explored::Attached { card }
         }
-        // Instant and token cards need per-card handlers, which this engine does not have.
-        // Announced rather than dropped: an unresolved card must be visible as a gap.
-        _ => Explored::Unresolved { card },
+        // Instant and token cards need per-card handlers. Those this engine has are resolved;
+        // the rest are announced rather than dropped, so an unimplemented card is visible as a
+        // gap instead of passing for one that did nothing on purpose.
+        _ => {
+            if resolve_instant(state, player, &card) {
+                Explored::Resolved { card }
+            } else {
+                Explored::Unresolved { card }
+            }
+        }
     };
     Some(outcome)
 }
@@ -253,6 +316,102 @@ mod tests {
             None,
         );
         assert!(matches!(outcome, Some(Explored::Discarded { .. })));
+    }
+
+    #[test]
+    fn an_instant_card_pays_what_it_says() {
+        // Minor, ordinary and major Entities differ only by the trade goods, so a handler that
+        // confused them would be invisible without checking the numbers.
+        for (card, tokens, goods) in [("minent", 1, 1), ("ent", 1, 2), ("majent", 1, 3)] {
+            let mut state = game(&["a"]);
+            state
+                .exploration_decks
+                .insert("CULTURAL".to_owned(), vec![card.to_owned()]);
+            let before = state.player(&player()).unwrap().clone();
+
+            let outcome = explore(
+                &mut state,
+                ContentStore::embedded(),
+                &player(),
+                "CULTURAL",
+                None,
+            );
+
+            assert!(matches!(outcome, Some(Explored::Resolved { .. })), "{card}");
+            let after = state.player(&player()).unwrap();
+            assert_eq!(
+                after.trade_goods,
+                before.trade_goods + goods,
+                "{card} goods"
+            );
+            assert_eq!(
+                after.total_tokens(),
+                before.total_tokens() + tokens,
+                "{card} tokens"
+            );
+        }
+    }
+
+    #[test]
+    fn a_derelict_vessel_draws_a_relic() {
+        let mut state = game(&["a"]);
+        state.relic_deck = vec![RelicId::new("some_relic")];
+        state
+            .exploration_decks
+            .insert(FRONTIER.to_owned(), vec!["dw".to_owned()]);
+
+        explore(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            FRONTIER,
+            None,
+        );
+
+        assert_eq!(state.player(&player()).unwrap().relics.len(), 1);
+        assert!(state.relic_deck.is_empty());
+    }
+
+    #[test]
+    fn an_empty_relic_deck_is_not_a_failure() {
+        // The card still resolved; there was simply nothing to take.
+        let mut state = game(&["a"]);
+        state.relic_deck.clear();
+        state
+            .exploration_decks
+            .insert(FRONTIER.to_owned(), vec!["dw".to_owned()]);
+
+        let outcome = explore(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            FRONTIER,
+            None,
+        );
+
+        assert!(matches!(outcome, Some(Explored::Resolved { .. })));
+        assert!(state.player(&player()).unwrap().relics.is_empty());
+    }
+
+    #[test]
+    fn the_unresolved_exploration_cards_are_reported() {
+        let missing = unimplemented(ContentStore::embedded(), POK);
+        assert!(!missing.is_empty(), "most instants are still unresolved");
+        for card in registered_cards() {
+            assert!(!missing.contains(&card.to_owned()));
+        }
+    }
+
+    #[test]
+    fn every_registered_card_is_a_real_one() {
+        for card in registered_cards() {
+            assert!(
+                ContentStore::embedded()
+                    .get(ContentType::Explores, card)
+                    .is_some(),
+                "{card} is not an exploration card the corpus knows"
+            );
+        }
     }
 
     #[test]

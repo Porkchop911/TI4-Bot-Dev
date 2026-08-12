@@ -566,7 +566,7 @@ public objectives      27/40   implemented (68%)
 secret objectives      10/40   implemented (25%)
 action cards            0/122  implemented (0%)
 agenda effects          3/63   implemented (5%)
-exploration cards       0/80   implemented (0%)
+exploration cards      41/80   implemented (51%)
 relics                  3/17   implemented (18%)
 ```
 
@@ -670,6 +670,20 @@ relics                  3/17   implemented (18%)
 - **The guard was verified by breaking it**: removing `leaders::ready_all` from the status phase
   makes it fail with "81.6 no longer readies leaders", then passes again on restore. A guard
   nobody has seen fail is decoration.
+
+## Exploration handlers checkpoint (authoritative)
+
+- **610 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- Exploration coverage 0/80 → **41/80 (51%)** — fragments and attachments always resolved; six
+  instant handlers now do too (the three Entity cards, both Kelres cards, Derelict Vessel).
+- **A real bug the new guard found immediately.** `pub mod exploration;` had been sitting under
+  a stray `#[cfg(test)]` since the module was added: it compiled, its own tests passed because
+  they run under `cfg(test)`, and **nothing outside tests could call it**. The module was
+  effectively absent from the library for several commits.
+- `only_test_support_modules_are_test_gated` now asserts `fixtures` is the only test-gated
+  module. Verified by gating `laws` and watching it fail with `["fixtures", "laws"]`.
+- That is the second guard in `wiring.rs` proven by breaking it, and the first one it caught was
+  a mistake I had already shipped.
 
 ## Implementation status
 
