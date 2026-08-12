@@ -1,15 +1,20 @@
 //! Game-level choice stepping and bounded execution.
 
 use ti4_content::ContentStore;
+use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
-use ti4_model::id::{PlayerId, StrategyCardId};
+use ti4_model::id::{PlayerId, StrategyCardId, SystemId};
 use ti4_model::state::{GameState, Phase};
+use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, SeededRandom, Table};
+use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
+use crate::movement::{Board, MovementRules};
 use crate::objectives::{ScoringError, ScoringWindow};
 use crate::phase::{PhaseOutcome, advance_phase, advance_turn, begin_next_round};
+use crate::rng::GameRng;
 use crate::status::{
     StatusPhaseError, StatusPhaseReport, resolve_after_token_gain, resolve_before_token_gain,
 };
@@ -17,7 +22,12 @@ use crate::strategy::{
     ACTION_KIND, SecondaryResolution, StrategyActionError, StrategySecondaryError,
     StrategySecondaryWindow, begin_strategic_action, strategic_action_options,
 };
+use crate::tactical::{
+    MoveSelection, TacticalError, activate, activation_options, movable, movement_options,
+    read_move,
+};
 use crate::tokens::{TokenGain, TokenGainError};
+use crate::transit::{CargoError, CargoWindow, MoveOutcome, apply_move, survives_gravity_rifts};
 use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
 
 /// Metadata returned after one attempted game step.
@@ -59,6 +69,10 @@ pub enum GameError {
     #[error(transparent)]
     Scoring(#[from] ScoringError),
     #[error(transparent)]
+    Tactical(#[from] TacticalError),
+    #[error(transparent)]
+    Cargo(#[from] CargoError),
+    #[error(transparent)]
     Vote(#[from] VoteError),
 }
 
@@ -73,6 +87,35 @@ pub enum RunError {
         round: u32,
         phase: Phase,
     },
+}
+
+/// The action id that opens a tactical action.
+pub const TACTICAL_ACTION_ID: &str = "tactical";
+
+/// Where an open tactical action has reached.
+///
+/// The steps after movement — space cannon, space combat, invasion, production — are not
+/// implemented. The action *finishes* rather than blocking, announcing `TACTICAL_STEPS_UNRESOLVED`
+/// so the gap is visible: moving into an enemy system currently has no consequence.
+#[derive(Debug, Clone)]
+enum TacticalStage {
+    /// Choosing which system to activate (89.1).
+    Activating,
+    /// Choosing a ship to move, or finishing (89.2b).
+    Moving,
+    /// Filling the selected ship's hold before it sails (LRR 95).
+    Loading {
+        origin: SystemId,
+        ship: Box<Unit>,
+        path: Vec<String>,
+        window: Box<CargoWindow>,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct TacticalWindow {
+    player: PlayerId,
+    stage: TacticalStage,
 }
 
 /// The stateful owner of generated choices, their decision log, and observable events.
@@ -98,6 +141,13 @@ pub struct Game<'a> {
     tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
     /// The open agenda vote, and the agendas still to be put after it.
     voting: Option<(Box<VoteWindow>, Vec<String>)>,
+    /// The map, when one has been built. Without it no tactical action is offered.
+    galaxy: Option<Galaxy>,
+    /// The open tactical action.
+    tactical: Option<TacticalWindow>,
+    /// The pinned source of gravity-rift rolls.
+    rng: GameRng,
+    dice: Dice,
     status_resolved: bool,
     agenda_resolved: bool,
     blocked: Option<GameError>,
@@ -117,11 +167,14 @@ impl<'a> Game<'a> {
     /// potentially divergent RNG seed to each seat.
     #[must_use]
     pub fn with_seeded_random(state: GameState, content: &'a ContentStore, seed: u64) -> Self {
-        Self::with_table(
+        let mut game = Self::with_table(
             state,
             content,
             Table::with_default(Box::new(SeededRandom::new(seed))),
-        )
+        );
+        // The dice share the game's seed, so a replayed game rolls the same rifts.
+        game.rng = GameRng::new(seed);
+        game
     }
 
     /// Create a game with explicit deciders for generated choices.
@@ -138,10 +191,21 @@ impl<'a> Game<'a> {
             scoring: None,
             tokens: None,
             voting: None,
+            galaxy: None,
+            tactical: None,
+            rng: GameRng::new(0),
+            dice: Dice::new(),
             status_resolved: false,
             agenda_resolved: false,
             blocked: None,
         }
+    }
+
+    /// Give the game its map, which is what makes a tactical action possible.
+    #[must_use]
+    pub fn with_galaxy(mut self, galaxy: Galaxy) -> Self {
+        self.galaxy = Some(galaxy);
+        self
     }
 
     /// Play under a different source scope than the `PoK` default.
@@ -165,6 +229,9 @@ impl<'a> Game<'a> {
         }
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
+        }
+        if let Some(window) = &self.tactical {
+            return self.tactical_choice(window);
         }
         match self.state.phase {
             Phase::Strategy => strategy_options(&self.state, self.content),
@@ -194,6 +261,9 @@ impl<'a> Game<'a> {
         }
         if self.voting.is_some() {
             return self.step_vote();
+        }
+        if self.tactical.is_some() {
+            return self.step_tactical();
         }
         if self.state.phase == Phase::Status && !self.status_resolved {
             return self.step_status();
@@ -245,13 +315,36 @@ impl<'a> Game<'a> {
             return window.pending_choice(&self.state);
         }
         let active = self.state.active.as_ref()?;
-        strategic_action_options(&self.state, self.content, active).or_else(|| {
-            Some(Choice::new(
-                active.clone(),
-                "action phase",
-                vec![ChoiceOption::labelled("pass", ACTION_KIND, "pass")],
-            ))
-        })
+        let mut choice = strategic_action_options(&self.state, self.content, active)
+            .unwrap_or_else(|| {
+                Choice::new(
+                    active.clone(),
+                    "action phase",
+                    vec![ChoiceOption::labelled("pass", ACTION_KIND, "pass")],
+                )
+            });
+        // Appended rather than inserted: a table that always takes the first option keeps
+        // taking the action it took before, so adding this does not silently rewrite the
+        // behaviour of every existing seeded game.
+        if self.can_take_tactical(active) {
+            choice.options.push(ChoiceOption::labelled(
+                TACTICAL_ACTION_ID,
+                ACTION_KIND,
+                "take a tactical action",
+            ));
+        }
+        Some(choice)
+    }
+
+    /// 89.1 needs a map and a tactic token to spend.
+    ///
+    /// Without a galaxy there is no board to activate anything on, so a game built without one
+    /// is never offered the action at all rather than being offered one that cannot resolve.
+    fn can_take_tactical(&self, player: &PlayerId) -> bool {
+        let Some(galaxy) = self.galaxy.as_ref() else {
+            return false;
+        };
+        activation_options(&self.state, galaxy, player).is_some()
     }
 
     fn apply_choice(&mut self, choice: &Choice, answer: ChoiceOption) -> Result<(), GameError> {
@@ -280,6 +373,14 @@ impl<'a> Game<'a> {
                 if answer.kind != ACTION_KIND {
                     return Err(GameError::UnsupportedAction(answer.id));
                 }
+                if answer.id == TACTICAL_ACTION_ID {
+                    self.tactical = Some(TacticalWindow {
+                        player: active,
+                        stage: TacticalStage::Activating,
+                    });
+                    self.emit("TACTICAL_ACTION_BEGAN");
+                    return Ok(());
+                }
                 self.secondary = Some(begin_strategic_action(
                     &mut self.state,
                     self.content,
@@ -293,6 +394,207 @@ impl<'a> Game<'a> {
                 Err(GameError::UnsupportedAction(choice.prompt.clone()))
             }
         }
+    }
+
+    /// The decision an open tactical action currently owes.
+    fn tactical_choice(&self, window: &TacticalWindow) -> Option<Choice> {
+        let galaxy = self.galaxy.as_ref()?;
+        match &window.stage {
+            TacticalStage::Activating => activation_options(&self.state, galaxy, &window.player),
+            TacticalStage::Moving => Some(movement_options(
+                &window.player,
+                &movable(
+                    &self.state,
+                    self.content,
+                    self.sources,
+                    galaxy,
+                    &window.player,
+                ),
+            )),
+            TacticalStage::Loading { window, .. } => window.pending_choice(),
+        }
+    }
+
+    /// Resolve one decision of the open tactical action.
+    fn step_tactical(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            // Nothing left to ask: the action is over.
+            return self.finish_tactical();
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let Some(window) = self.tactical.take() else {
+            unreachable!("a tactical action is open");
+        };
+        match self.apply_tactical(window, &choice, answer) {
+            Ok(result) => result,
+            Err(error) => self.result(false, Some(error)),
+        }
+    }
+
+    fn apply_tactical(
+        &mut self,
+        mut window: TacticalWindow,
+        choice: &Choice,
+        answer: ChoiceOption,
+    ) -> Result<StepResult, GameError> {
+        match window.stage {
+            TacticalStage::Activating => {
+                let system = SystemId::new(answer.id);
+                activate(&mut self.state, &window.player, &system)?;
+                self.emit(&format!("SYSTEM_ACTIVATED:{system}"));
+                window.stage = TacticalStage::Moving;
+                self.tactical = Some(window);
+                Ok(self.result(true, None))
+            }
+            TacticalStage::Moving => match read_move(choice, answer)? {
+                MoveSelection::Done => {
+                    self.tactical = Some(window);
+                    Ok(self.finish_tactical())
+                }
+                MoveSelection::Ship { origin, index } => {
+                    self.begin_one_move(window, &origin, index)
+                }
+            },
+            TacticalStage::Loading {
+                origin,
+                ship,
+                path,
+                window: mut hold,
+            } => {
+                hold.resolve(answer)?;
+                if hold.is_complete() {
+                    let cargo = hold.cargo();
+                    let outcome = self.sail(&origin, &ship, &path, cargo);
+                    self.emit(match outcome {
+                        MoveOutcome::Arrived { .. } => "SHIP_MOVED",
+                        MoveOutcome::LostToGravityRift { .. } => "SHIP_LOST_TO_GRAVITY_RIFT",
+                    });
+                    window.stage = TacticalStage::Moving;
+                } else {
+                    window.stage = TacticalStage::Loading {
+                        origin,
+                        ship,
+                        path,
+                        window: hold,
+                    };
+                }
+                self.tactical = Some(window);
+                Ok(self.result(true, None))
+            }
+        }
+    }
+
+    /// Select one ship and open its hold.
+    ///
+    /// The route is computed once, here, and carried through loading. Cargo cannot change which
+    /// systems the ship passes, and recomputing the route after the hold was filled would risk
+    /// rolling rifts for a different path than the one that was legal when the move was offered.
+    fn begin_one_move(
+        &mut self,
+        mut window: TacticalWindow,
+        origin: &SystemId,
+        index: usize,
+    ) -> Result<StepResult, GameError> {
+        let galaxy = self.galaxy.clone().ok_or(TacticalError::NoActiveSystem)?;
+        let active = self
+            .state
+            .active_system
+            .clone()
+            .ok_or(TacticalError::NoActiveSystem)?;
+        let ship = self
+            .state
+            .ships_of(&window.player, origin)
+            .get(index)
+            .map(|unit| (*unit).clone())
+            .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
+
+        let rules = MovementRules::new(
+            &galaxy,
+            self.content,
+            self.sources,
+            active.as_str(),
+            Board::for_player(&self.state, self.content, self.sources, &window.player),
+        );
+        let path = ti4_content::units::catalogue(self.content, self.sources)
+            .get(ship.type_id.as_str())
+            .and_then(|kind| {
+                rules.path_from(
+                    origin.as_str(),
+                    i32::try_from(kind.move_value()).unwrap_or(0),
+                )
+            })
+            .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
+
+        let hold = CargoWindow::for_ship(
+            &self.state,
+            self.content,
+            self.sources,
+            &window.player,
+            origin,
+            &ship,
+        );
+        if hold.is_complete() {
+            // No capacity, or nothing to carry: sail immediately.
+            let outcome = self.sail(origin, &ship, &path, Vec::new());
+            self.emit(match outcome {
+                MoveOutcome::Arrived { .. } => "SHIP_MOVED",
+                MoveOutcome::LostToGravityRift { .. } => "SHIP_LOST_TO_GRAVITY_RIFT",
+            });
+            window.stage = TacticalStage::Moving;
+        } else {
+            window.stage = TacticalStage::Loading {
+                origin: origin.clone(),
+                ship: Box::new(ship),
+                path,
+                window: Box::new(hold),
+            };
+        }
+        self.tactical = Some(window);
+        Ok(self.result(true, None))
+    }
+
+    /// Roll the route's gravity rifts, then move the ship or lose it.
+    fn sail(
+        &mut self,
+        origin: &SystemId,
+        ship: &Unit,
+        path: &[String],
+        cargo: Vec<crate::transit::Cargo>,
+    ) -> MoveOutcome {
+        let galaxy = self.galaxy.clone().expect("a tactical action needs a map");
+        let active = self
+            .state
+            .active_system
+            .clone()
+            .expect("a move needs an active system");
+        let rules = MovementRules::new(
+            &galaxy,
+            self.content,
+            self.sources,
+            active.as_str(),
+            Board::default(),
+        );
+        let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
+        apply_move(&mut self.state, origin, &active, ship, cargo, survives)
+    }
+
+    /// End the tactical action.
+    ///
+    /// Space cannon, space combat, invasion and production are unimplemented. The oracle runs
+    /// all four here. Announcing the gap and moving on keeps a driven game playable while making
+    /// it plain that moving into an enemy system currently has no consequence — the same choice
+    /// made for unimplemented agenda effects.
+    fn finish_tactical(&mut self) -> StepResult {
+        self.tactical = None;
+        self.state.active_system = None;
+        self.state.pending = None;
+        self.emit("TACTICAL_STEPS_UNRESOLVED");
+        self.emit("TACTICAL_ACTION_COMPLETE");
+        self.advance_turn();
+        self.result(false, None)
     }
 
     fn step_secondary(&mut self) -> StepResult {
@@ -578,7 +880,7 @@ mod tests {
     use ti4_model::state::Phase;
 
     use super::*;
-    use crate::choice::AlwaysDecline;
+    use crate::choice::{AlwaysDecline, Scripted};
     use crate::setup::start_game;
     use crate::tokens::STATUS_TOKENS;
 
@@ -810,6 +1112,158 @@ mod tests {
         );
         assert_eq!(after.fleet_tokens, before.fleet_tokens);
         assert_eq!(after.strategic_tokens, before.strategic_tokens);
+    }
+
+    /// A one-ring map plus a fleet, ready to take a tactical action.
+    fn tactical_fixture() -> (GameState, ti4_content::galaxy::Galaxy, Vec<SystemId>) {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let ids: Vec<String> = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .filter(|(_, system)| !system.is_anomaly() && !system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned())
+            .take(7)
+            .collect();
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let galaxy =
+            ti4_content::galaxy::Galaxy::build(ContentStore::embedded(), &refs, POK, 1).unwrap();
+        let ids: Vec<SystemId> = ids.into_iter().map(SystemId::new).collect();
+
+        state.phase = Phase::Action;
+        state.active = Some(PlayerId::new("a"));
+        (state, galaxy, ids)
+    }
+
+    #[test]
+    fn a_tactical_action_is_not_offered_without_a_map() {
+        // Without a galaxy there is no board to activate anything on, so the action is never
+        // offered rather than being offered and then failing to resolve.
+        let (state, _, _) = tactical_fixture();
+        let game = Game::new(state, ContentStore::embedded());
+
+        let choice = game.legal_options().unwrap();
+        assert!(
+            !choice.ids().contains(&TACTICAL_ACTION_ID),
+            "no map, no tactical action"
+        );
+    }
+
+    #[test]
+    fn a_tactical_action_is_offered_once_the_map_exists() {
+        let (state, galaxy, _) = tactical_fixture();
+        let game = Game::new(state, ContentStore::embedded()).with_galaxy(galaxy);
+
+        let choice = game.legal_options().unwrap();
+        assert!(choice.ids().contains(&TACTICAL_ACTION_ID));
+    }
+
+    #[test]
+    fn a_player_with_no_tactic_token_is_not_offered_one() {
+        let (mut state, galaxy, _) = tactical_fixture();
+        state.player_mut(&PlayerId::new("a")).unwrap().tactic_tokens = 0;
+        let game = Game::new(state, ContentStore::embedded()).with_galaxy(galaxy);
+
+        let choice = game.legal_options().unwrap();
+        assert!(!choice.ids().contains(&TACTICAL_ACTION_ID));
+    }
+
+    #[test]
+    fn a_driven_tactical_action_activates_moves_and_completes() {
+        // The end-to-end join: activation, then a real move through the movement rules, then
+        // the action finishing. Scripted so the route is the one under test rather than
+        // whatever a sampler happened to pick.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let ship = Unit::new(
+            ti4_model::id::UnitTypeId::new("destroyer"),
+            PlayerId::new("a"),
+        );
+        state.system_mut(&ids[1]).units.push(ship);
+        let tokens_before = state.player(&PlayerId::new("a")).unwrap().tactic_tokens;
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+        for _ in 0..8 {
+            let result = game.step();
+            assert_eq!(result.error, None, "no tactical step should refuse");
+            if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                break;
+            }
+        }
+
+        assert!(game.events.iter().any(|e| e == "TACTICAL_ACTION_BEGAN"));
+        assert!(
+            game.events
+                .iter()
+                .any(|e| e.starts_with("SYSTEM_ACTIVATED:")),
+            "89.1 placed a token"
+        );
+        assert!(game.events.iter().any(|e| e == "SHIP_MOVED"));
+        assert!(
+            game.events.iter().any(|e| e == "TACTICAL_STEPS_UNRESOLVED"),
+            "the missing combat/invasion/production steps are announced, not skipped silently"
+        );
+
+        assert_eq!(
+            game.state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .tactic_tokens,
+            tokens_before - 1,
+            "the activation was paid for"
+        );
+        assert!(
+            game.state.system_state(&ids[1]).units.is_empty(),
+            "the ship left"
+        );
+        assert_eq!(
+            game.state.system_state(&ids[0]).units.len(),
+            1,
+            "and arrived in the active system"
+        );
+        assert!(
+            game.state.active_system.is_none(),
+            "the action closed the active system"
+        );
+    }
+
+    #[test]
+    fn a_carrier_is_asked_what_to_load_before_it_sails() {
+        // LRR 95: the hold is filled before the ship moves, so a carrier produces an extra
+        // decision that a destroyer does not.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let player = PlayerId::new("a");
+        state.system_mut(&ids[1]).units.push(Unit::new(
+            ti4_model::id::UnitTypeId::new("carrier"),
+            player.clone(),
+        ));
+        state.system_mut(&ids[1]).units.push(Unit::new(
+            ti4_model::id::UnitTypeId::new("infantry"),
+            player,
+        ));
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+        for _ in 0..3 {
+            assert_eq!(game.step().error, None);
+        }
+
+        let hold = game.legal_options().expect("the hold is open");
+        assert_eq!(hold.prompt, "load which unit");
+        assert!(
+            hold.options.iter().any(|o| o.id.starts_with("load|")),
+            "the infantry is offered as cargo"
+        );
     }
 
     #[test]

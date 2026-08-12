@@ -18,17 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M05-001/002 — the tactical action's activation and movement step
-  (`plans/evidence/M05-001_002_TACTICAL_ACTION.md`)
+- Last completed package: M05-004 — driving the tactical action
+  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: wiring the tactical action into the step driver — activation
-  window, then a movement window per ship with its cargo sub-window. Every piece now exists;
-  nothing sequences them.
+- Next dependency-ready package: space combat (M06), the largest remaining gap — ships of two
+  players can currently share a system indefinitely.
 
 ## M04-005 package checkpoint (historical)
 
@@ -218,8 +217,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M04-016 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
-- Last completed package: M05-001/002 — the tactical action's activation and movement step
-  (`plans/evidence/M05-001_002_TACTICAL_ACTION.md`).
+- Last completed package: M05-004 — driving the tactical action
+  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
 - `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
   142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
 - `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
@@ -277,8 +276,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M05-003 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `2be9a43`.
-- Last completed package: M05-001/002 — the tactical action's activation and movement step
-  (`plans/evidence/M05-001_002_TACTICAL_ACTION.md`).
+- Last completed package: M05-004 — driving the tactical action
+  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
 - `ti4-engine` has 193 tests. The workspace has **383 passing tests**: 121 `ti4-content`,
   193 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - `engine/movement.py` ported in full: 58.4a–f, 11.1, 86.1, 59.1/59.1a/59.2, 41.1/41.3.
@@ -295,8 +294,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M05-006 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `a2fedaa`.
-- Last completed package: M05-001/002 — the tactical action's activation and movement step
-  (`plans/evidence/M05-001_002_TACTICAL_ACTION.md`).
+- Last completed package: M05-004 — driving the tactical action
+  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
 - `ti4-engine` has 210 tests. The workspace has **400 passing tests**: 121 `ti4-content`,
   210 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
 - `CargoWindow` fills a hold under LRR 95, tracking candidates **by index, never by value**:
@@ -312,7 +311,7 @@ are recorded in the package evidence; independent review remains owner-waived.
 - **Nothing calls this yet.** There is no tactical action, so the pieces exist but the sequence
   does not. That is M05-001/002.
 
-## M05-001/002 package checkpoint (authoritative)
+## M05-001/002 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `9381fb5`.
 - Last completed package: M05-001/002 — activation and the movement step
@@ -332,6 +331,25 @@ are recorded in the package evidence; independent review remains owner-waived.
   can be two seats round the ring, by a route that never touches the centre. Recorded twice
   deliberately — the wrong version passed the eye test both times.
 - **Nothing sequences these yet.** A driven game still cannot take a tactical action.
+
+## M05-004 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `f25435b`.
+- Last completed package: M05-004 — driving the tactical action
+  (`plans/evidence/M05-004_TACTICAL_DRIVER.md`).
+- `ti4-engine` has 230 tests. The workspace has **420 passing tests**: 121 `ti4-content`,
+  230 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- **A driven game can now take a tactical action**: activate, move ships one at a time, load
+  each hold, roll the route's rifts, finish.
+- The action is offered only when `Game` has a galaxy. Nothing else builds one, so no existing
+  test or the 100-seed campaign changed behaviour; the option is appended rather than inserted,
+  so a first-option table keeps taking the action it took before.
+- The route is computed when the ship is selected and carried through loading, so rifts are
+  rolled for the path that was legal when the move was offered.
+- `with_seeded_random` seeds the `GameRng` too, so a replayed game rolls the same rifts.
+- The action *completes* and emits `TACTICAL_STEPS_UNRESOLVED` rather than blocking. Combat,
+  invasion and production are unimplemented, so **arriving in an enemy system has no
+  consequence** — announced, not hidden.
 
 ## Implementation status
 
