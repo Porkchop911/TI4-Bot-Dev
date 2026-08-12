@@ -18,16 +18,16 @@ actually in the tree and how the two diverged.
 - Planning: **M00–M13 documents written.** Implementation status is separate and below.
 - Implementation: **M02 and M04 in progress.** Content, galaxy, state model, hidden views,
   setup, phases and turn order done. Movement, combat, production and legality are not.
-- Last completed package: M04-017 — objective scoring, LRR 61/81.1/98
-  (`plans/evidence/M04-017_OBJECTIVE_SCORING.md`)
+- Last completed package: M04-018 — agenda voting, LRR 8.2ii–8.21
+  (`plans/evidence/M04-018_AGENDA_VOTING.md`)
 - Previous packages: the choice model (`plans/evidence/M03-001_TO_005_CHOICE_MODEL.md`);
   faction seating (`plans/evidence/M04-004_FACTION_SEATING.md`);
   state model, views, phases and turn order
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: M04-018 — agenda voting, the last structural boundary left in
-  the round loop.
+- Next dependency-ready package: M05-003/006 — ship movement, the first real use of
+  `ti4-content::galaxy`. The round loop itself no longer has a structural boundary.
 
 ## M04-005 package checkpoint (historical)
 
@@ -217,8 +217,8 @@ are recorded in the package evidence; independent review remains owner-waived.
 ## M04-016 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `c44e8cf`.
-- Last completed package: M04-017 — objective scoring, LRR 61/81.1/98
-  (`plans/evidence/M04-017_OBJECTIVE_SCORING.md`).
+- Last completed package: M04-018 — agenda voting, LRR 8.2ii–8.21
+  (`plans/evidence/M04-018_AGENDA_VOTING.md`).
 - `ti4-engine` has 142 tests. The workspace has **332 passing tests**: 121 `ti4-content`,
   142 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. The build is warning-free.
 - `TokenGain` asks once per token, so a player may split a grant between pools — the oracle's
@@ -235,7 +235,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   (`leadership` rather than `pok1leadership`), so they silently tested seating order rather than
   initiative order. Fixed; no production code was wrong.
 
-## M04-017 package checkpoint (authoritative)
+## M04-017 package checkpoint (historical)
 
 - Branch: `wp/m00-014-integrity-guard`, continuing from `3a78709`.
 - Last completed package: M04-017 — objective scoring
@@ -253,6 +253,25 @@ are recorded in the package evidence; independent review remains owner-waived.
 - Two defects found and fixed during the package: resolving controlled planets per predicate was
   quadratic enough to stop the campaign terminating, and completing the status phase turned a
   previously-safe unbounded test loop into a hang. Both are recorded in the evidence.
+
+## M04-018 package checkpoint (authoritative)
+
+- Branch: `wp/m00-014-integrity-guard`, continuing from `0e2265a`.
+- Last completed package: M04-018 — agenda voting (`plans/evidence/M04-018_AGENDA_VOTING.md`).
+- `ti4-engine` has 174 tests. The workspace has **364 passing tests**: 121 `ti4-content`,
+  174 `ti4-engine`, 68 `ti4-model`, and 1 doc-test. Build and engine Clippy are clean.
+- **`AgendaChoicesUnimplemented` is gone.** The round loop contains no structural boundary:
+  strategy, action, status and agenda all resolve through generated choices.
+- `VoteWindow` is a resumable state machine (outcome, then a planet per vote, then the speaker),
+  because this driver resolves one decision per step where the oracle uses nested loops.
+- Encoded with tests: the speaker votes last (8.2ii), a planet casts its full influence (8.6a),
+  an abstention is not a vote (8.14), a tie *or a silent table* goes to the speaker (8.19) and
+  that decision is not a vote (8.19a), a passed law stays in play (8.20/8.21).
+- Agenda *effects* are not applied. Every resolution emits `AGENDA_EFFECT_UNRESOLVED`, which is
+  what the oracle does when no handler is registered. Laws are recorded but nothing reads them.
+- The agenda corpus has **no `electType` field** — it is null on every card. Elections are read
+  off the printed `target`, as the oracle does. Reading the absent field would have made every
+  agenda a silent For/Against with nothing failing.
 
 ## Implementation status
 

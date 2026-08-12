@@ -31,6 +31,7 @@ pub mod setup;
 pub mod status;
 pub mod strategy;
 pub mod tokens;
+pub mod vote;
 
 pub use agenda::{
     AGENDAS_PER_PHASE, AgendaPhaseError, AgendaPhaseReport, AgendaResolution, RevealedAgenda,
@@ -62,3 +63,4 @@ pub use strategy::{
     strategic_action_options, take_strategic_action,
 };
 pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
+pub use vote::{AGAINST, Ballot, FOR, VoteError, VoteWindow, outcomes, votable_planets};

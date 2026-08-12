@@ -18,6 +18,7 @@ use crate::strategy::{
     StrategySecondaryWindow, begin_strategic_action, strategic_action_options,
 };
 use crate::tokens::{TokenGain, TokenGainError};
+use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
 
 /// Metadata returned after one attempted game step.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,8 +58,8 @@ pub enum GameError {
     TokenGain(#[from] TokenGainError),
     #[error(transparent)]
     Scoring(#[from] ScoringError),
-    #[error("agenda voting, ties, and effects are not implemented")]
-    AgendaChoicesUnimplemented,
+    #[error(transparent)]
+    Vote(#[from] VoteError),
 }
 
 /// A bounded `run` stopped instead of silently looping forever.
@@ -87,7 +88,7 @@ pub struct Game<'a> {
     ///
     /// Held here because `GameState` does not carry it. A game set up under a different scope
     /// and then driven with the default would resolve its planet catalogue against the wrong
-    /// corpus, so this is set explicitly by [`Game::with_sources`] when it is not PoK.
+    /// corpus, so this is set explicitly by [`Game::with_sources`] when it is not `PoK`.
     sources: SourceSet,
     strategy_cards: Vec<StrategyCardId>,
     secondary: Option<StrategySecondaryWindow>,
@@ -95,6 +96,8 @@ pub struct Game<'a> {
     scoring: Option<ScoringWindow>,
     /// The open 81.5 token gain, and the report its remaining steps will extend.
     tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
+    /// The open agenda vote, and the agendas still to be put after it.
+    voting: Option<(Box<VoteWindow>, Vec<String>)>,
     status_resolved: bool,
     agenda_resolved: bool,
     blocked: Option<GameError>,
@@ -134,13 +137,14 @@ impl<'a> Game<'a> {
             secondary: None,
             scoring: None,
             tokens: None,
+            voting: None,
             status_resolved: false,
             agenda_resolved: false,
             blocked: None,
         }
     }
 
-    /// Play under a different source scope than the PoK default.
+    /// Play under a different source scope than the `PoK` default.
     #[must_use]
     pub const fn with_sources(mut self, sources: SourceSet) -> Self {
         self.sources = sources;
@@ -158,6 +162,9 @@ impl<'a> Game<'a> {
         }
         if let Some((window, _)) = &self.tokens {
             return window.pending_choice();
+        }
+        if let Some((window, _)) = &self.voting {
+            return window.pending_choice(&self.state, self.content, self.sources);
         }
         match self.state.phase {
             Phase::Strategy => strategy_options(&self.state, self.content),
@@ -184,6 +191,9 @@ impl<'a> Game<'a> {
         }
         if self.tokens.is_some() {
             return self.step_token_gain();
+        }
+        if self.voting.is_some() {
+            return self.step_vote();
         }
         if self.state.phase == Phase::Status && !self.status_resolved {
             return self.step_status();
@@ -432,6 +442,7 @@ impl<'a> Game<'a> {
         self.result(false, None)
     }
 
+    /// Reveal this phase's agendas and put the first one to a vote.
     fn step_agenda(&mut self) -> StepResult {
         self.agenda_resolved = true;
         match resolve_agenda_phase(&mut self.state) {
@@ -439,14 +450,84 @@ impl<'a> Game<'a> {
                 self.emit("AGENDA_PHASE_RESOLVED");
                 self.result(false, None)
             }
-            Ok(_) => {
-                self.emit("AGENDA_REVEALED");
-                let error = GameError::AgendaChoicesUnimplemented;
-                self.blocked = Some(error.clone());
-                self.result(false, Some(error))
+            Ok(report) => {
+                let queue: Vec<String> = report.agendas.iter().map(|a| a.alias.clone()).collect();
+                self.open_next_vote(queue)
             }
             Err(error) => self.result(false, Some(error.into())),
         }
+    }
+
+    /// Put the next revealed agenda to a vote, or finish the phase when none remain.
+    ///
+    /// An agenda whose election has no legal candidate is discarded rather than voted on —
+    /// 8.19 with an empty ballot is not a decision anyone can be asked to make.
+    fn open_next_vote(&mut self, mut queue: Vec<String>) -> StepResult {
+        while let Some(alias) = queue.first().cloned() {
+            queue.remove(0);
+            self.emit(&format!("AGENDA_REVEALED:{alias}"));
+            let choices = outcomes(&self.state, self.content, self.sources, &alias);
+            if choices.is_empty() {
+                self.emit(&format!("AGENDA_DISCARDED:{alias}"));
+                continue;
+            }
+            let mut window = VoteWindow::new(&self.state, &alias, choices);
+            window.open(&self.state, self.content, self.sources);
+            self.voting = Some((Box::new(window), queue));
+            return self.result(false, None);
+        }
+        self.voting = None;
+        self.emit("AGENDA_PHASE_RESOLVED");
+        self.result(false, None)
+    }
+
+    /// Resolve one vote decision, applying the outcome when the vote closes.
+    fn step_vote(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            return self.close_vote();
+        };
+        let answer = match self.table.ask(&choice) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let Some((mut window, queue)) = self.voting.take() else {
+            unreachable!("a vote is open");
+        };
+        let outcome = window.resolve(&mut self.state, self.content, self.sources, answer);
+        let complete = window.is_complete();
+        self.voting = Some((window, queue));
+
+        match outcome {
+            Ok(()) => {
+                if complete {
+                    return self.close_vote();
+                }
+                self.result(true, None)
+            }
+            Err(error) => self.result(false, Some(error.into())),
+        }
+    }
+
+    /// Record a finished vote's outcome, then move to the next agenda.
+    ///
+    /// No agenda *effect* is applied: this engine has no effect registry. The oracle emits
+    /// `AGENDA_EFFECT_UNRESOLVED` in exactly this situation rather than silently doing
+    /// nothing, and so does this — proceeding without saying so is how a rule goes missing.
+    fn close_vote(&mut self) -> StepResult {
+        let Some((window, queue)) = self.voting.take() else {
+            unreachable!("a vote was open");
+        };
+        let alias = window.alias().to_owned();
+        if let Some(outcome) = window.winner() {
+            self.emit(&format!("AGENDA_RESOLVED:{alias}:{outcome}"));
+            self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
+            // 8.20: an elected or "For" law stays in play. 8.21: everything else is discarded.
+            if is_law(self.content, &alias) && outcome != AGAINST {
+                self.state.enact_law(&alias, outcome);
+                self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
+            }
+        }
+        self.open_next_vote(queue)
     }
 
     fn step_phase(&mut self) -> StepResult {
@@ -729,6 +810,101 @@ mod tests {
         );
         assert_eq!(after.fleet_tokens, before.fleet_tokens);
         assert_eq!(after.strategic_tokens, before.strategic_tokens);
+    }
+
+    #[test]
+    fn an_agenda_is_voted_on_and_a_passed_law_stays_in_play() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+
+        // A For/Against law, so the vote has the ordinary two outcomes and passing it
+        // leaves something behind on the table.
+        let law = ContentStore::embedded()
+            .records(ti4_model::content_types::ContentType::Agendas)
+            .iter()
+            .find(|record| {
+                record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
+            })
+            .and_then(|record| record.text("alias"))
+            .expect("the corpus has a For/Against law")
+            .to_owned();
+        state.agenda_deck = vec![law.clone()];
+
+        // Give both players influence so the vote is decided by votes, not by the speaker.
+        let catalogue = ti4_content::galaxy::all_planets(ContentStore::embedded(), POK);
+        for (index, (id, record)) in catalogue
+            .iter()
+            .filter(|(_, p)| p.influence() > 0 && !p.is_placed_during_play())
+            .take(2)
+            .enumerate()
+        {
+            state
+                .system_mut(&ti4_model::id::SystemId::new(
+                    record.system_id().unwrap_or("18"),
+                ))
+                .set_control(ti4_model::id::PlanetId::new(*id), players[index].clone());
+        }
+
+        // FirstOption always takes the first offered option: vote "for", then exhaust the
+        // first planet, then decline further planets.
+        let mut game = Game::new(state, ContentStore::embedded());
+        let mut guard = 0;
+        while game.state.phase == Phase::Agenda && guard < 60 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+
+        assert!(
+            game.events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_RESOLVED:")),
+            "the agenda was put to a vote and decided"
+        );
+        assert!(
+            game.events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_EFFECT_UNRESOLVED:")),
+            "an unimplemented effect must be announced, not silently skipped"
+        );
+        assert_eq!(
+            game.state.laws.get(&law).map(String::as_str),
+            Some("for"),
+            "8.20: a passed law stays in play"
+        );
+    }
+
+    #[test]
+    fn an_agenda_vote_records_only_offered_options() {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+        state.agenda_deck = ContentStore::embedded()
+            .records(ti4_model::content_types::ContentType::Agendas)
+            .iter()
+            .filter_map(|record| record.text("alias"))
+            .take(2)
+            .map(ToOwned::to_owned)
+            .collect();
+
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 11);
+        let mut guard = 0;
+        while game.state.phase == Phase::Agenda && guard < 200 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+
+        assert!(game.state.phase != Phase::Agenda, "the phase completed");
+        assert!(
+            game.table
+                .log
+                .records
+                .iter()
+                .all(|record| record.offered.contains(&record.chosen)),
+            "every recorded decision was one the engine offered"
+        );
     }
 
     #[test]
