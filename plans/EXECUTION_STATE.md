@@ -11,23 +11,26 @@ actually in the tree and how the two diverged.
 
 ## Handover
 
-A session-end handover is at [`HANDOVER_2026-08-12.md`](HANDOVER_2026-08-12.md): current
-measured state, the three guards and how each was proven, the recurring failure modes, and what
-to pick up first. Read it before trusting the "Next actions" list below — that list went stale
-three times in one session and is worth re-deriving against the tree.
+See the compact handover at the end of this file, written before context compaction.
+
+Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
 - Oracle repository: `D:\Projects	i4-engine` (read-only)
 - Oracle branch: `codex/fully-learned-policy`
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Branch: `wp/m06-003-structured-transactions` (eight packages, 2026-08-12 evening)
+- Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 - **Two agents are working this repository at once.** The M03 timing chain
   (M03-007a/b, M03-010 through M03-015) is held in `.worktrees/` by the other agent;
   `timing.rs` and `event.rs` belong to it. The packages below deliberately avoid both files.
 - M03-009 ability registration is complete: `Resolver` owns deterministic `(event, relation)`
   registrations and persistent cannot rules, and ability callbacks have its concrete typed API.
   User waived Pi/external review on 2026-08-12 and authorized the agent's own invariant review.
+- Five quality packages landed this session: `Dice::from_faces` (1), `unimplemented()` gaps
+  for secrets/agenda_effects (2), wiring guard for five subsystems (3), runnable doc-examples
+  on Table/Decider/ContentStore (4), and `plans/evidence/INDEX.md` separating 86 written
+  evidence from 344 placeholder stubs (5). See handover for details.
 
 ### Measured, 2026-08-12 evening
 
@@ -917,56 +920,40 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ```
 Objective:
-M02 and M04. Continue the Rust rewrite with M04-005 strategy-card draft resolution.
+Five quality packages landed this session; next is M00-013 performance baseline.
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M04-003 deck construction complete; M04-005 strategy-card draft resolution next.
+M06 partial (M00-013 performance baseline next; M03 timing chain held in .worktrees/).
 Status:
-All six setup decks now derive from deterministic, source-scoped native RNG domains; setup
-reveals two stage-I objectives and deals one secret to each player. `ti4-engine` remains
-partial: no option generator can yet drive the existing draft state machine.
+Sixty-three-two tests passing (542 engine + 121 content + 68 model), 0 failed.
+Workspace clippy-clean under -D warnings; cargo fmt clean. Doc-tests: 3 runnable
+(Table, Decider, ContentStore embedded) + 2 ignored (Window, TradeWindow).
+Registry coverage: public objectives 40/40, exploration 71/80, secrets 27/40,
+agenda effects 34/63, relics 5/17. Content parity reached against oracle at pinned
+commit; remaining gaps are blocked behind the reaction system (M06-016).
 Working-tree state:
-Clean after the M04-003 package commit (`Build deterministic setup decks`) on
-`wp/m04-003-deck-construction`; exact HEAD is recorded at handoff.
+Clean (only untracked .worktrees/ from co-agent). Five new commits on wp/m06-003.
 Tests last run and exact results:
-`cargo test --workspace` -> 121 `ti4-content`, 101 `ti4-engine`, 68 `ti4-model`, 1 doc-test
-passed; 0 failed. `cargo clippy -p ti4-engine --lib` passed with pre-existing dependency and
-workspace warnings. Scoped `rustfmt --check` passed.
+cargo test --workspace -> 542 engine + 121 content + 68 model passed; 0 failed.
+cargo test --doc --workspace -> 3 runnable + 2 ignored passed; 0 failed.
+cargo clippy --workspace --all-targets -> clean. cargo fmt --all --check -> clean.
 Compatibility evidence:
-`plans/evidence/M04-003.md`: source membership, stage ordering, fake-relic exclusion,
-setup dealing, and deterministic domain-separated streams are covered. Native order is not
-Python-order parity because native ChaCha8 is an approved intentional divergence; no
-differential fixture exists.
+plans/oracle_integrity_manifest.json (238 files) verifies oracle clean.
+plans/evidence/INDEX.md separates 86 written evidence from 344 placeholder stubs.
 Decisions made and rationale:
-- Content compiled in via include_str!, with from_dir retained and proven equivalent
-- Record counts cross-checked against manifest.json at load
-- Unknown source tags are load errors, not silent filter misses
-- ContentType taxonomy replaced: the previous list invented 14 categories and omitted 14
-- Hex geometry lives in ti4-model (pure); Galaxy lives in ti4-content (needs records)
-- 12 planets with no tileId are placed during play, modelled rather than allowlisted
-- 2,866 lines of placeholder engine deleted rather than adapted; they modelled a game
-  with no legality checks, distance always 1, and every unit's combat value 1
-- GameState equality reproduces the oracle's compare=False fields, board included, with
-  GameState::identical() added for a full structural comparison
-- Galaxy::build now rejects a duplicate system id; silently keeping the last placement
-  left placement and coords disagreeing and shifted every later tile round the spiral
-- neutral_systems returns corpus order rather than a seeded shuffle; seeded map selection
-  belongs with the simulation harness
-- SeededRandom uses ChaCha8, not Python's Mersenne Twister, so the same seed plays a
-  different legal game; reproducing an oracle game needs its decision log replayed
-- GameRng splits by domain (SHA-256 of seed || domain name), so adding a die roll cannot
-  reshuffle a deck and a seed-pinned test fails only for the reason it was testing
-- Setup defaults to seed zero for backwards API compatibility; `start_game_seeded` exposes
-  the seed without ambient randomness.
+- Dice::from_faces replaces duplicated seed_rolling in relics.rs and agenda_effects.rs
+- unimplemented() functions in secrets.rs and agenda_effects.rs report gaps non-empty
+- wiring.rs guard added for agenda, draft, objectives, transit, vote subsystems
+- Doc-examples made runnable where self-contained; Window/TradeWindow remain ignore
+- INDEX.md classification rule: stubs have "## Package details", "## Package specification",
+  or "status: COMPLETE"; all others are written evidence
 Open review findings or blockers:
-Independent review remains owner-waived. No oracle exporter. No CI. Whole-workspace format
-and strict-Clippy gates are pre-existingly blocked by untouched stubs, package metadata,
-and lint debt; details are recorded in M04-003 evidence.
+Independent review owner-waived. M03 timing chain held in .worktrees/ by co-agent.
+M06-016 blocked on M03-008 through M03-012. M05-010b blocked on M06-016.
 Next exact action:
-Create `wp/m04-005-strategy-draft` from the M04 integration branch and inspect
-`D:\Projects\ti4-engine\engine\game.py` strategy-option functions plus their tests.
+Execute M00-013 performance baseline per plans/M00_ORACLE_AND_BASELINE.md.
 Files to read first:
-`plans/EXECUTION_STATE.md`, `plans/evidence/M04-003.md`, `plans/M04_GAME_SKELETON.md`,
-and `D:\Projects\ti4-engine\engine\game.py` strategy-option functions.
+plans/EXECUTION_STATE.md, plans/M00_ORACLE_AND_BASELINE.md,
+plans/evidence/M00-012.md (benchmark protocol), plans/evidence/INDEX.md
 ```

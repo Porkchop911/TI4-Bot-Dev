@@ -330,68 +330,70 @@ fn every_relic_arrives_through_one_door() {
 }
 
 #[test]
-fn the_driver_still_wires_the_missing_subsystems() {
-    // Subsystems that had a guard before this commit:
-    //   agenda_effects (resolve), combat (space_cannon_offense, CombatWindow),
-    //   fleet (enforce), invasion (InvasionWindow), production (ProductionWindow),
-    //   leaders (ready_all, check_unlocks), exploration (explore), secrets
-    //   (scoreable, award), laws (fleet_pool_cap, action_card_limit,
-    //   nebulae_passable), transactions (available_actions, TradeWindow::open),
-    //   relics (available_actions, perform, gain), phase (via phase machine),
-    //   status (via phase machine), tactical (via tactical action),
-    //   tokens (via token gain).
+fn a_driven_round_lets_somebody_actually_score() {
+    // The strongest guard the scoring path can have: not that `ScoringWindow` is mentioned in
+    // the driver, but that a player who has met a revealed objective takes the point.
     //
-    // Subsystems that lacked a guard and now have one:
-    //   agenda (resolve_agenda_phase), draft (strategy_options, take_strategy_card),
-    //   objectives (ScoringWindow), transit (CargoWindow), vote (VoteWindow).
-    //
-    // Each guard was proven by breaking it: the corresponding call was temporarily
-    // removed from game.rs, the test failed, and the code was restored.
+    // A text guard cannot see the difference. Opening the window over an *empty* initiative
+    // order leaves the name in place, kills scoring outright, and every test in this crate
+    // still passed when that was tried.
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+
+    // Engineer a Marvel: have your flagship or a war sun on the board. Chosen because it is
+    // satisfied by placing one unit, so this test fails for wiring reasons and nothing else.
+    state
+        .revealed_objectives
+        .push(ti4_model::id::ObjectiveId::new("engineer_marvel"));
+    let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+    put(&mut state, &system, "warsun", &PlayerId::new("a"), 1);
+
+    // The default table takes the first option offered, and `decline` is appended last, so a
+    // player who *can* score does. A sampling decider might refuse and the guard would go
+    // quiet for a reason that has nothing to do with wiring.
+    let mut game = Game::new(state, ContentStore::embedded());
+    game.run(1, 800).expect("a round completes");
+
+    assert!(
+        game.events
+            .iter()
+            .any(|event| event.starts_with("OBJECTIVE_SCORED:")),
+        "nobody could score a satisfied objective; events {:?}",
+        game.events
+    );
+}
+
+#[test]
+fn a_driven_round_deals_strategy_cards() {
+    // The draft is the first thing a round does, and everything downstream — initiative order,
+    // who is active, which secondaries are offered — is built on it.
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+    let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 11);
+    game.run(1, 800).expect("a round completes");
+
+    assert!(
+        game.events.iter().any(|event| event == "STRATEGY_CARD_CHOSEN"),
+        "no strategy card was drafted; events {:?}",
+        game.events
+    );
+}
+
+#[test]
+fn the_driver_still_reaches_the_subsystems_with_no_behavioural_guard() {
+    // Kept as a text guard only for the subsystems a driven round cannot be made to prove
+    // cheaply. It is the weakest kind of check here: it cannot tell a live call from a dead
+    // one, so anything provable by driving a game is proved that way above instead.
     let driver = include_str!("game.rs");
-    // Imported with `use crate::...` — these appear in the use line, not as calls.
-    assert!(
-        driver.contains("agenda::"),
-        "agenda module is no longer imported by the driver"
-    );
-    assert!(
-        driver.contains("resolve_agenda_phase"),
-        "resolve_agenda_phase is no longer called by the driver"
-    );
-    assert!(
-        driver.contains("draft::"),
-        "draft module is no longer imported by the driver"
-    );
-    assert!(
-        driver.contains("strategy_options"),
-        "strategy_options is no longer called by the driver"
-    );
-    assert!(
-        driver.contains("take_strategy_card"),
-        "take_strategy_card is no longer called by the driver"
-    );
-    // Called with the full crate:: path — or at least the module::Name pattern.
-    assert!(
-        driver.contains("objectives::{"),
-        "objectives module is no longer imported by the driver"
-    );
-    assert!(
-        driver.contains("ScoringWindow"),
-        "ScoringWindow is no longer used by the driver"
-    );
-    assert!(
-        driver.contains("transit::{"),
-        "transit module is no longer imported by the driver"
-    );
-    assert!(
-        driver.contains("CargoWindow"),
-        "CargoWindow is no longer used by the driver"
-    );
-    assert!(
-        driver.contains("vote::{"),
-        "vote module is no longer imported by the driver"
-    );
-    assert!(
-        driver.contains("VoteWindow"),
-        "VoteWindow is no longer used by the driver"
-    );
+    for call in [
+        "CargoWindow::for_ship(",
+        "VoteWindow::new(&self.state, &alias, choices)",
+        "resolve_agenda_phase(",
+        "ScoringWindow::new(&self.state.initiative_order())",
+    ] {
+        assert!(
+            driver.contains(call),
+            "{call} is no longer reached by the driver"
+        );
+    }
 }
