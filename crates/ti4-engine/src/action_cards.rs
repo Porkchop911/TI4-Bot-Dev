@@ -50,6 +50,9 @@ pub fn first_of_each(content: &ContentStore, hand: &[ActionCardId]) -> BTreeMap<
 /// Returns what was drawn. An empty deck draws nothing rather than reshuffling: this engine
 /// tracks no discard pile, so there is nothing to shuffle back, and inventing a fresh deck
 /// would hand out cards that are already in someone's hand.
+///
+/// # Errors
+/// [`IllegalChoice`] when a decider answers the hand-limit discard with something not offered.
 pub fn draw(
     state: &mut GameState,
     content: &ContentStore,
