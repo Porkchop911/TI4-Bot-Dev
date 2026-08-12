@@ -197,10 +197,70 @@ fn structures_away(planets: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// Have `ships` or more non-fighter ships in a single system.
+///
+/// One system, not a total: a fleet spread across the board is not an armada, which is the
+/// whole point of the card.
+fn fleet_in_one_system(ships: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let types = ti4_content::units::catalogue(position.content, position.sources);
+        position.state.board.values().any(|system| {
+            system
+                .units_of(position.player)
+                .into_iter()
+                .filter(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.is_ship() && !kind.is_fighter())
+                })
+                .count()
+                >= ships
+        })
+    }
+}
+
+/// Have units in `count` systems that contain no planets.
+fn planetless_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+        position
+            .state
+            .board
+            .iter()
+            .filter(|(_, board)| !board.units_of(position.player).is_empty())
+            .filter(|(id, _)| {
+                systems
+                    .get(id.as_str())
+                    .is_some_and(|system| system.planets().is_empty())
+            })
+            .count()
+            >= count
+    }
+}
+
+/// Control `count` planets that have an exploration attachment.
+fn attached_planets(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        position
+            .state
+            .controlled_planets(position.player)
+            .into_iter()
+            .filter(|(_, planet)| {
+                position
+                    .state
+                    .planet_attachments
+                    .get(*planet)
+                    .is_some_and(|attached| !attached.is_empty())
+            })
+            .count()
+            >= count
+    }
+}
+
 /// The registered requirements, by objective alias.
 ///
-/// Two tranches so far: the planet-control family, and the technology/structure family. The
-/// oracle registers 32; 14 are covered here. The rest stay unregistered and
+/// Three tranches: planet control, technology and structures, and fleets/space. The oracle
+/// registers 32; 19 are covered here. The rest stay unregistered and
 /// therefore unscoreable, which is the designed behaviour for a coverage gap — see the module
 /// documentation. [`unregistered_objectives`] reports which they are.
 #[must_use]
@@ -249,6 +309,21 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     fn protect_border(p: &Position<'_>) -> bool {
         structures_away(5)(p)
     }
+    fn raise_fleet(p: &Position<'_>) -> bool {
+        fleet_in_one_system(5)(p)
+    }
+    fn command_armada(p: &Position<'_>) -> bool {
+        fleet_in_one_system(8)(p)
+    }
+    fn deep_space(p: &Position<'_>) -> bool {
+        planetless_systems(3)(p)
+    }
+    fn vast_territories(p: &Position<'_>) -> bool {
+        planetless_systems(5)(p)
+    }
+    fn ancient_monuments(p: &Position<'_>) -> bool {
+        attached_planets(3)(p)
+    }
 
     match alias.as_str() {
         "expand_borders" => Some(expand_borders),
@@ -265,6 +340,11 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
         "massive_cities" => Some(massive_cities),
         "infrastructure" => Some(infrastructure),
         "protect_border" => Some(protect_border),
+        "raise_fleet" => Some(raise_fleet),
+        "command_armada" => Some(command_armada),
+        "deep_space" => Some(deep_space),
+        "vast_territories" => Some(vast_territories),
+        "ancient_monuments" => Some(ancient_monuments),
         _ => None,
     }
 }
@@ -282,11 +362,16 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "infrastructure",
         "massive_cities",
         "master_science",
+        "ancient_monuments",
+        "command_armada",
+        "deep_space",
         "protect_border",
+        "raise_fleet",
         "research_outposts",
         "revolutionize",
         "subdue",
         "unify_colonies",
+        "vast_territories",
     ]
 }
 
@@ -785,6 +870,137 @@ mod tests {
         }
 
         assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
+    }
+
+    #[test]
+    fn an_armada_must_be_in_one_system() {
+        // A fleet spread across the board is not an armada, which is the whole point of the
+        // card — so this counts per system rather than in total.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("raise_fleet")];
+        let systems = crate::fixtures::plain_systems(2);
+
+        // Five cruisers, split three and two: no single system has five.
+        for (index, count) in [(0, 3), (1, 2)] {
+            for _ in 0..count {
+                state
+                    .system_mut(&SystemId::new(systems[index].clone()))
+                    .units
+                    .push(ti4_model::units::Unit::new(
+                        ti4_model::id::UnitTypeId::new("cruiser"),
+                        PlayerId::new("a"),
+                    ));
+            }
+        }
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "three plus two is not five in one place"
+        );
+
+        for _ in 0..2 {
+            state
+                .system_mut(&SystemId::new(systems[0].clone()))
+                .units
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("cruiser"),
+                    PlayerId::new("a"),
+                ));
+        }
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("raise_fleet")]
+        );
+    }
+
+    #[test]
+    fn fighters_do_not_make_an_armada() {
+        // The card counts non-fighter ships.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("raise_fleet")];
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        for _ in 0..9 {
+            state
+                .system_mut(&system)
+                .units
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("fighter"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
+    }
+
+    #[test]
+    fn deep_space_counts_systems_without_planets() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("deep_space")];
+
+        let empty: Vec<String> = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .filter(|(_, system)| system.planets().is_empty() && !system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned())
+            .take(3)
+            .collect();
+        if empty.len() < 3 {
+            return;
+        }
+
+        for id in &empty[..2] {
+            state
+                .system_mut(&SystemId::new(id.clone()))
+                .units
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("cruiser"),
+                    PlayerId::new("a"),
+                ));
+        }
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "two is not three"
+        );
+
+        state
+            .system_mut(&SystemId::new(empty[2].clone()))
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                PlayerId::new("a"),
+            ));
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("deep_space")]
+        );
+    }
+
+    #[test]
+    fn ancient_monuments_needs_planets_with_attachments() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("ancient_monuments")];
+        let planets = non_home_planets(3);
+        for planet in &planets {
+            give(&mut state, planet, "a");
+        }
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "controlling them is not enough without attachments"
+        );
+
+        for planet in &planets {
+            state
+                .planet_attachments
+                .entry(PlanetId::new(planet.clone()))
+                .or_default()
+                .push("some_attachment".to_owned());
+        }
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("ancient_monuments")]
+        );
     }
 
     #[test]

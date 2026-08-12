@@ -562,7 +562,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   impression. Measured now (PoK scope):
 
 ```
-public objectives      14/40   implemented (35%)
+public objectives      19/40   implemented (48%)
 secret objectives       2/40   implemented (5%)
 action cards            0/122  implemented (0%)
 agenda effects          0/63   implemented (0%)
@@ -575,6 +575,17 @@ relics                  0/17   implemented (0%)
   identical to one where nobody has met a requirement.
 - `implemented_never_exceeds_total` guards a registered alias the corpus does not have, from the
   opposite side to the per-registry alias tests.
+
+## Objective tranche 3 checkpoint (authoritative)
+
+- **559 passing tests**; workspace clippy-clean under `-D warnings`.
+- Objective coverage 14/40 → **19/40 (48%)**, and the ledger reports it without anyone
+  retyping a number.
+- Third tranche is the fleet-and-space family: armadas in a *single* system (a fleet spread
+  across the board is not an armada, which is the whole point of the card), units in
+  planetless systems, and planets carrying exploration attachments.
+- `fighters_do_not_make_an_armada` pins that the card counts non-fighter ships — nine fighters
+  in one system score nothing.
 
 ## Implementation status
 
