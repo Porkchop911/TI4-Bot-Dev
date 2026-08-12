@@ -14,6 +14,8 @@ pub struct StatusPhaseReport {
     pub returned_command_tokens: Vec<(SystemId, PlayerId)>,
     /// Planet cards readied at step 81.6.
     pub readied_planets: Vec<PlanetId>,
+    /// Leaders readied at step 81.6, per player.
+    pub readied_leaders: Vec<(PlayerId, usize)>,
     /// Strategy cards returned at step 81.8, in player holding order.
     pub returned_strategy_cards: Vec<(PlayerId, StrategyCardId)>,
     /// Initiative order as it stood before step 81.8 returned the strategy cards.
@@ -121,9 +123,22 @@ pub fn resolve_before_token_gain(
 /// LRR 81 puts it. Extends `report` rather than returning its own, so one status phase is
 /// described by one report however it was driven.
 pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseReport) {
-    // 81.6: ready exhausted technology and planet cards. 81.7 then repairs space units.
+    // 81.6: ready exhausted technology, planet and leader cards. 81.7 then repairs units.
     for player in &mut state.players {
         player.exhausted_technologies.clear();
+    }
+    // Leaders ready here too. An exhausted agent that never readies reads, after a round or
+    // two, as a player who has simply run out of agents.
+    let seats: Vec<PlayerId> = state
+        .players
+        .iter()
+        .map(|player| player.id.clone())
+        .collect();
+    for player in seats {
+        let readied = crate::leaders::ready_all(state, &player).len();
+        if readied > 0 {
+            report.readied_leaders.push((player, readied));
+        }
     }
     report.readied_planets = state.exhausted_planets.iter().cloned().collect();
     state.ready_all_planets();
@@ -284,6 +299,40 @@ mod tests {
             state.player(&PlayerId::new("a")).unwrap().action_cards,
             before_hand
         );
+    }
+
+    #[test]
+    fn leaders_ready_in_the_status_phase() {
+        // 81.6. An exhausted agent that never readies reads, after a round or two, as a
+        // player who has simply run out of agents.
+        let players = [PlayerId::new("a")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Status;
+        crate::leaders::deploy(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &PlayerId::new("a"),
+        );
+        let Some(agent) = crate::leaders::of_kind(
+            &state,
+            ContentStore::embedded(),
+            &PlayerId::new("a"),
+            crate::leaders::AGENT,
+        )
+        .first()
+        .cloned() else {
+            return;
+        };
+        crate::leaders::exhaust(&mut state, &PlayerId::new("a"), &agent);
+
+        let report = resolve_status_phase(&mut state).unwrap();
+
+        assert_eq!(
+            crate::leaders::status(&state, &PlayerId::new("a"), &agent),
+            Some(ti4_model::state::LeaderStatus::Readied)
+        );
+        assert!(!report.readied_leaders.is_empty(), "and it is reported");
     }
 
     #[test]

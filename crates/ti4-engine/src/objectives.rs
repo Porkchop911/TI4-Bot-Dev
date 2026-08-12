@@ -631,11 +631,16 @@ pub fn award(
     }
 
     state.record_score(player, alias.clone());
-    let seat = state
-        .player_mut(player)
-        .ok_or_else(|| ScoreError::PlayerMissing(player.clone()))?;
-    // 98.4a: a player cannot hold more than the target.
-    seat.victory_points = (seat.victory_points + points).min(VICTORY_TARGET);
+    {
+        let seat = state
+            .player_mut(player)
+            .ok_or_else(|| ScoreError::PlayerMissing(player.clone()))?;
+        // 98.4a: a player cannot hold more than the target.
+        seat.victory_points = (seat.victory_points + points).min(VICTORY_TARGET);
+    }
+    // 51.7: leaders unlock the moment their condition is met, not at end of phase. A hero
+    // unlocked by a third objective must not wait for a status phase the game may never reach.
+    crate::leaders::check_unlocks(state, content, player);
     Ok(points)
 }
 
@@ -1303,6 +1308,65 @@ mod tests {
             points
         );
         assert!(state.scored_by(&PlayerId::new("a")).contains(&alias));
+    }
+
+    #[test]
+    fn scoring_a_third_objective_unlocks_a_hero_at_once() {
+        // 51.7: leaders unlock the moment their condition is met. A hero waiting for the end
+        // of the phase might wait for a status phase the game never reaches.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let faction = ti4_content::factions::catalogue(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(alias, _)| {
+                crate::leaders::for_faction(ContentStore::embedded(), POK, alias)
+                    .iter()
+                    .any(|leader| {
+                        crate::leaders::kind_of(ContentStore::embedded(), leader).as_deref()
+                            == Some(crate::leaders::HERO)
+                    })
+            })
+            .map(|(alias, _)| (*alias).to_owned());
+        let Some(faction) = faction else { return };
+        state.player_mut(&PlayerId::new("a")).unwrap().faction =
+            ti4_model::id::FactionId::new(faction);
+        crate::leaders::deploy(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &PlayerId::new("a"),
+        );
+        let hero = crate::leaders::of_kind(
+            &state,
+            ContentStore::embedded(),
+            &PlayerId::new("a"),
+            crate::leaders::HERO,
+        )
+        .first()
+        .cloned()
+        .unwrap();
+
+        state.record_score(&PlayerId::new("a"), ObjectiveId::new("o1"));
+        state.record_score(&PlayerId::new("a"), ObjectiveId::new("o2"));
+        assert_eq!(
+            crate::leaders::status(&state, &PlayerId::new("a"), &hero),
+            Some(ti4_model::state::LeaderStatus::Locked)
+        );
+
+        award(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &PlayerId::new("a"),
+            &ObjectiveId::new("expand_borders"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            crate::leaders::status(&state, &PlayerId::new("a"), &hero),
+            Some(ti4_model::state::LeaderStatus::Unlocked),
+            "the third objective unlocked it there and then"
+        );
     }
 
     #[test]

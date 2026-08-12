@@ -647,6 +647,19 @@ relics                  3/17   implemented (18%)
   made and that M05-006's evidence flagged.
 - `relics::unimplemented` reports the other fourteen.
 
+## Integration checkpoint (authoritative)
+
+- **597 passing tests**; workspace clippy-clean under `-D warnings`; zero failures; oracle
+  verified.
+- Two modules were built and never called. Both are wired now:
+  - **Leaders ready at 81.6.** An exhausted agent that never readies reads, after a round or
+    two, as a player who has run out of agents.
+  - **`check_unlocks` fires on scoring**, not at end of phase (51.7). A hero unlocked by a third
+    objective must not wait for a status phase the game may never reach.
+- Worth watching for: this project keeps producing modules that are correct, tested, and
+  uncalled. `combat`, `invasion`, `fleet`, `production` and now `leaders` all had that shape.
+  The registry ledger catches *content* gaps; nothing yet catches an unwired module.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
