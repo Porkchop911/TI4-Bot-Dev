@@ -1107,12 +1107,51 @@ impl<'a> Game<'a> {
         };
         let alias = window.alias().to_owned();
         if let Some(outcome) = window.winner() {
+            let outcome = outcome.to_owned();
             self.emit(&format!("AGENDA_RESOLVED:{alias}:{outcome}"));
-            self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
-            // 8.20: an elected or "For" law stays in play. 8.21: everything else is discarded.
+
+            // 8.20 first: an elected or "For" law stays in play, and an effect that reads the
+            // laws must see this one already there. 8.21 discards everything else.
             if is_law(self.content, &alias) && outcome != AGAINST {
-                self.state.enact_law(&alias, outcome);
+                self.state.enact_law(&alias, &outcome);
                 self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
+            }
+
+            // The speaker resolves a tie the card cannot (8.18). Answered through the table so
+            // it is a generated decision like any other.
+            let speaker = self.state.speaker.clone();
+            let table = &mut self.table;
+            let effect = crate::agenda_effects::resolve(
+                &mut self.state,
+                self.content,
+                &alias,
+                &outcome,
+                window.ballot(),
+                |tied| {
+                    let options: Vec<ChoiceOption> = tied
+                        .iter()
+                        .map(|player| {
+                            ChoiceOption::labelled(player.to_string(), "elect", player.to_string())
+                        })
+                        .collect();
+                    let choice = Choice::new(
+                        speaker.clone(),
+                        "which tied player does the agenda name",
+                        options,
+                    );
+                    table
+                        .ask(&choice)
+                        .ok()
+                        .map(|answer| PlayerId::new(answer.id))
+                },
+            );
+            match effect {
+                crate::agenda_effects::Effect::Resolved { .. } => {
+                    self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
+                }
+                crate::agenda_effects::Effect::Unresolved { .. } => {
+                    self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
+                }
             }
         }
         self.open_next_vote(queue)
@@ -1664,6 +1703,39 @@ mod tests {
             game.state.laws.get(&law).map(String::as_str),
             Some("for"),
             "8.20: a passed law stays in play"
+        );
+    }
+
+    #[test]
+    fn a_resolved_agenda_runs_its_effect() {
+        // agenda_effects existed and nothing called it - the sixth module in this project to
+        // arrive correct, tested and unwired.
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+        state.agenda_deck = vec!["economic_equality".to_owned()];
+        state.player_mut(&PlayerId::new("a")).unwrap().trade_goods = 9;
+
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 6);
+        for _ in 0..80 {
+            if game.state.phase != Phase::Agenda {
+                break;
+            }
+            assert_eq!(game.step().error, None);
+        }
+
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event.starts_with("AGENDA_EFFECT_RESOLVED:")),
+            "the effect ran; events {:?}",
+            game.events
+        );
+        assert_ne!(
+            game.state.player(&PlayerId::new("a")).unwrap().trade_goods,
+            9,
+            "and it actually touched the state"
         );
     }
 

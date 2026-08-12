@@ -57,7 +57,7 @@ pub fn resolve(
     agenda: &str,
     outcome: &str,
     ballot: &Ballot,
-    speaker_choice: impl Fn(&[PlayerId]) -> Option<PlayerId>,
+    mut speaker_choice: impl FnMut(&[PlayerId]) -> Option<PlayerId>,
 ) -> Effect {
     match agenda {
         "economic_equality" => {

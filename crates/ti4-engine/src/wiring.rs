@@ -123,6 +123,7 @@ fn every_subsystem_the_driver_owns_is_reachable() {
         "crate::combat::CombatWindow",
         "crate::invasion::InvasionWindow",
         "crate::production::ProductionWindow",
+        "crate::agenda_effects::resolve",
     ] {
         assert!(
             driver.contains(subsystem),

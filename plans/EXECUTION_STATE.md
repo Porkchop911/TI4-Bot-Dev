@@ -685,6 +685,18 @@ relics                  3/17   implemented (18%)
 - That is the second guard in `wiring.rs` proven by breaking it, and the first one it caught was
   a mistake I had already shipped.
 
+## Agenda effects wired (authoritative)
+
+- **628 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- `agenda_effects` was the **sixth** module here to arrive correct, tested and uncalled. It is
+  now wired into `close_vote` and added to the `wiring.rs` guard list.
+- Order matters and is now right: 8.20 enacts a passing law *before* the effect runs, so an
+  effect that reads the laws in play sees the one just passed.
+- Seed of an Empire's tie goes through the `Table` as a generated decision, like every other
+  choice, rather than being decided inside the effect.
+- Incentive Program now reveals by **stage**, not off the top. The deck is stage I then stage II
+  in order, so the first version would have revealed the wrong stage for most of a game.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
