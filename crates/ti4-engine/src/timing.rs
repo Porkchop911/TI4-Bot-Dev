@@ -11,11 +11,15 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ti4_model::id::PlayerId;
+use ti4_model::{content_types::SourceSet, state::GameState};
 
 use crate::{
     choice::{Choice, ChoiceOption, IllegalChoice, Table},
-    event::Event,
+    dice::Dice,
+    event::{Event, EventSequence, EventSequenceError},
+    rng::GameRng,
 };
+use ti4_content::ContentStore;
 use ti4_model::state::Phase;
 
 /// The point relative to an event at which an ability may resolve.
@@ -46,11 +50,48 @@ pub enum Frequency {
 pub type AbilityEffect =
     Arc<dyn Fn(&mut Event, &mut Resolver) -> Result<(), TimingError> + Send + Sync>;
 
+/// A timing ability effect that can make a checked game-state transition.
+///
+/// Unlike [`AbilityEffect`], this can only run through [`Resolver::emit_with_context`]. This
+/// prevents an isolated resolver test or a detached caller from presenting a stateful rule as
+/// having resolved without the state, table, content scope, dice, and RNG it requires.
+pub type StatefulAbilityEffect = Arc<
+    dyn for<'a> Fn(&mut Event, &mut Resolver, &mut TimingContext<'a>) -> Result<(), TimingError>
+        + Send
+        + Sync,
+>;
+
 /// A rule-specific eligibility predicate.
 pub type AbilityCondition = Arc<dyn Fn(&Event, &Resolver) -> bool + Send + Sync>;
 
+/// A state-aware eligibility predicate for a timing ability.
+pub type StatefulAbilityCondition =
+    Arc<dyn for<'a> Fn(&Event, &Resolver, &TimingContext<'a>) -> bool + Send + Sync>;
+
 /// Factual context copied onto a choice offered for an optional ability.
 pub type OptionPayload = Arc<dyn Fn(&Event, &Resolver) -> BTreeMap<String, Value> + Send + Sync>;
+
+/// The mutable game services a stateful timing rule may use.
+///
+/// The driver creates this only while resolving a typed event. It deliberately carries the same
+/// game-owned table, RNG, and dice history as ordinary actions, so a timing ability cannot make a
+/// detached choice or consume a different entropy stream.
+pub struct TimingContext<'a> {
+    /// Game state the event and its timing abilities may transition.
+    pub state: &'a mut GameState,
+    /// Immutable content corpus used for rule lookups.
+    pub content: &'a ContentStore,
+    /// Expansion scope for the current game.
+    pub sources: SourceSet,
+    /// The game's single legal-choice table.
+    pub table: &'a mut Table,
+    /// The game's recorded dice history.
+    pub dice: &'a mut Dice,
+    /// The game's domain-separated random stream.
+    pub rng: &'a mut GameRng,
+    /// The game's typed-event allocator, shared by nested rule emissions.
+    pub event_sequence: &'a mut EventSequence,
+}
 
 /// An ability registered against one deterministic timing window.
 #[derive(Clone)]
@@ -65,8 +106,12 @@ pub struct Ability {
     pub relation: Relation,
     /// Fallible rule effect invoked by the timing resolver.
     pub effect: AbilityEffect,
+    /// State-aware effect, if this ability needs the active game's mutation context.
+    pub stateful_effect: Option<StatefulAbilityEffect>,
     /// Optional rule-specific eligibility gate.
     pub condition: Option<AbilityCondition>,
+    /// State-aware eligibility condition, evaluated only with a driver context.
+    pub stateful_condition: Option<StatefulAbilityCondition>,
     /// Cross-window usage metadata.
     pub frequency: Frequency,
     /// Whether a decider may decline this ability.
@@ -93,7 +138,9 @@ impl Ability {
             event_type: event_type.into(),
             relation,
             effect,
+            stateful_effect: None,
             condition: None,
+            stateful_condition: None,
             frequency: Frequency::OncePerTrigger,
             optional: false,
             repeatable_in_window: false,
@@ -101,10 +148,31 @@ impl Ability {
         }
     }
 
+    /// Construct an ability whose effect mutates the active game through [`TimingContext`].
+    #[must_use]
+    pub fn stateful(
+        id: impl Into<String>,
+        owner: PlayerId,
+        event_type: impl Into<String>,
+        relation: Relation,
+        effect: StatefulAbilityEffect,
+    ) -> Self {
+        let mut ability = Self::new(id, owner, event_type, relation, Arc::new(|_, _| Ok(())));
+        ability.stateful_effect = Some(effect);
+        ability
+    }
+
     /// Attach a rule-specific eligibility predicate.
     #[must_use]
     pub fn with_condition(mut self, condition: AbilityCondition) -> Self {
         self.condition = Some(condition);
+        self
+    }
+
+    /// Attach an eligibility predicate that reads the active game state.
+    #[must_use]
+    pub fn with_stateful_condition(mut self, condition: StatefulAbilityCondition) -> Self {
+        self.stateful_condition = Some(condition);
         self
     }
 
@@ -232,6 +300,15 @@ impl Resolver {
         self.speaker = speaker;
     }
 
+    /// Synchronize frequency-scope counters from the game driver before an emission.
+    ///
+    /// The state owns these counters. Copying their exact values prevents a timing ability from
+    /// retaining once-per-turn or once-per-round usage past the driver's corresponding boundary.
+    pub(crate) fn sync_lifecycle(&mut self, round_number: u32, turn_number: u32) {
+        self.round_number = u64::from(round_number);
+        self.turn_number = u64::from(turn_number);
+    }
+
     /// Advance the turn counter and change the active player.
     ///
     /// # Errors
@@ -346,6 +423,60 @@ impl Resolver {
         result
     }
 
+    /// Emit a driver-owned event through timing windows with the active game services.
+    ///
+    /// WHEN abilities run before `resolve`, and may cancel the event. The ordinary transition
+    /// and AFTER abilities therefore share the same [`TimingContext`] and cannot escape the
+    /// game's choice or entropy boundaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TimingError`] for an invalid timing choice, depth exhaustion, or an attempt to
+    /// evaluate a stateful rule outside the supplied context.
+    pub fn emit_with_context(
+        &mut self,
+        context: &mut TimingContext<'_>,
+        mut event: Event,
+        resolve: impl FnOnce(&mut Event, &mut TimingContext<'_>),
+    ) -> Result<Event, TimingError> {
+        if self.emission_stack.len() == self.maximum_depth {
+            return Err(TimingError::NestedEmissionDepthExceeded {
+                maximum_depth: self.maximum_depth,
+                event_chain: self.emission_stack.clone(),
+            });
+        }
+        self.emission_stack
+            .push((event.event_type.clone(), event.id));
+        self.log
+            .push(format!("emit {}#{}", event.event_type, event.id));
+        let result = (|| {
+            self.run_window_with_context(&mut event, Relation::When, context)?;
+
+            if event.cancelled {
+                self.log
+                    .push(format!("  {}#{} cancelled", event.event_type, event.id));
+                return Ok(event);
+            }
+
+            if let Some(label) = self.is_forbidden(&event).map(str::to_owned) {
+                event.cancel();
+                self.log.push(format!(
+                    "  {}#{} forbidden by {label}",
+                    event.event_type, event.id
+                ));
+                return Ok(event);
+            }
+
+            self.log
+                .push(format!("  resolve {}#{}", event.event_type, event.id));
+            resolve(&mut event, context);
+            self.run_window_with_context(&mut event, Relation::After, context)?;
+            Ok(event)
+        })();
+        self.emission_stack.pop();
+        result
+    }
+
     /// Register abilities in the supplied order.
     pub fn register(&mut self, abilities: impl IntoIterator<Item = Ability>) {
         self.registry.register(abilities);
@@ -395,6 +526,9 @@ impl Resolver {
                         passed.insert(player);
                         continue;
                     };
+                    if ability.stateful_effect.is_some() || ability.stateful_condition.is_some() {
+                        return Err(TimingError::StatefulContextRequired(ability.id));
+                    }
                     resolved_here.insert(ability.id.clone());
                     self.mark_used(&ability, event);
                     self.log.push(format!(
@@ -404,6 +538,67 @@ impl Resolver {
                         ability.id
                     ));
                     (ability.effect)(event, self)?;
+                    resolved_this_pass = true;
+                    if event.cancelled {
+                        return Ok(());
+                    }
+                }
+                if !resolved_this_pass {
+                    return Ok(());
+                }
+                passed.clear();
+            }
+        })();
+        self.relation_being_resolved = previous;
+        result
+    }
+
+    fn run_window_with_context(
+        &mut self,
+        event: &mut Event,
+        relation: Relation,
+        context: &mut TimingContext<'_>,
+    ) -> Result<(), TimingError> {
+        let previous = self.relation_being_resolved;
+        self.relation_being_resolved = Some(relation);
+        let mut resolved_here = BTreeSet::<String>::new();
+        let result = (|| {
+            let mut passed = BTreeSet::<PlayerId>::new();
+            loop {
+                let mut resolved_this_pass = false;
+                for player in self.player_order() {
+                    if passed.contains(&player) {
+                        continue;
+                    }
+                    let eligible = self.eligible_with_context(
+                        event,
+                        &player,
+                        relation,
+                        &resolved_here,
+                        context,
+                    );
+                    if eligible.is_empty() {
+                        continue;
+                    }
+                    let Some(ability) =
+                        self.pick_with_context(eligible, event, &player, relation, context)?
+                    else {
+                        passed.insert(player);
+                        continue;
+                    };
+                    resolved_here.insert(ability.id.clone());
+                    self.mark_used(&ability, event);
+                    self.log.push(format!(
+                        "  [{}] {} -> {}",
+                        relation_name(relation),
+                        player,
+                        ability.id
+                    ));
+                    if let Some(effect) = ability.stateful_effect {
+                        effect(event, self, context)?;
+                    } else {
+                        (ability.effect)(event, self)?;
+                    }
                     resolved_this_pass = true;
                     if event.cancelled {
                         return Ok(());
@@ -440,6 +635,32 @@ impl Resolver {
             .collect()
     }
 
+    fn eligible_with_context(
+        &self,
+        event: &Event,
+        player: &PlayerId,
+        relation: Relation,
+        resolved_here: &BTreeSet<String>,
+        context: &TimingContext<'_>,
+    ) -> Vec<Ability> {
+        self.for_event(&event.event_type, relation)
+            .filter(|ability| {
+                ability.owner == *player
+                    && (ability.repeatable_in_window || !resolved_here.contains(&ability.id))
+                    && !self.is_used(ability, event)
+                    && ability
+                        .condition
+                        .as_ref()
+                        .is_none_or(|condition| condition(event, self))
+                    && ability
+                        .stateful_condition
+                        .as_ref()
+                        .is_none_or(|condition| condition(event, self, context))
+            })
+            .cloned()
+            .collect()
+    }
+
     fn pick(
         &mut self,
         eligible: Vec<Ability>,
@@ -471,6 +692,52 @@ impl Resolver {
             options,
         );
         let chosen = self
+            .table
+            .ask(&choice)
+            .map_err(TimingError::IllegalChoice)?;
+        if chosen.is_decline() {
+            self.log.push(format!(
+                "  [{}] {} declines",
+                relation_name(relation),
+                player
+            ));
+            return Ok(None);
+        }
+        Ok(eligible.into_iter().find(|ability| ability.id == chosen.id))
+    }
+
+    fn pick_with_context(
+        &mut self,
+        eligible: Vec<Ability>,
+        event: &Event,
+        player: &PlayerId,
+        relation: Relation,
+        context: &mut TimingContext<'_>,
+    ) -> Result<Option<Ability>, TimingError> {
+        if eligible.len() == 1 && !eligible[0].optional {
+            return Ok(eligible.into_iter().next());
+        }
+        let declinable = eligible.iter().any(|ability| ability.optional);
+        let mut options = eligible
+            .iter()
+            .map(|ability| {
+                let mut option = ChoiceOption::labelled(&ability.id, "ability", &ability.id)
+                    .with("event", event.event_type.clone());
+                if let Some(payload) = &ability.option_payload {
+                    option.payload.extend(payload(event, self));
+                }
+                option
+            })
+            .collect::<Vec<_>>();
+        if declinable {
+            options.push(ChoiceOption::decline());
+        }
+        let choice = Choice::new(
+            player.clone(),
+            format!("{} {}", relation_name(relation), event.event_type),
+            options,
+        );
+        let chosen = context
             .table
             .ask(&choice)
             .map_err(TimingError::IllegalChoice)?;
@@ -540,7 +807,7 @@ impl Default for Resolver {
 }
 
 /// A resolver failure at the generated-choice boundary.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TimingError {
     /// A decider attempted to choose an option that this timing window did not offer.
     #[error(transparent)]
@@ -556,6 +823,12 @@ pub enum TimingError {
     /// A timing lifecycle counter cannot advance without losing replay identity.
     #[error("timing {0} counter is exhausted")]
     CounterExhausted(&'static str),
+    /// A stateful rule could not allocate a distinct nested typed event.
+    #[error(transparent)]
+    EventSequence(#[from] EventSequenceError),
+    /// A stateful rule was emitted without the active game's services.
+    #[error("stateful timing ability {0:?} requires a game timing context")]
+    StatefulContextRequired(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -632,7 +905,10 @@ mod tests {
 
     use super::*;
     use crate::choice::{AlwaysDecline, Scripted};
+    use crate::{dice::Dice, rng::GameRng};
     use proptest::prelude::*;
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::POK;
 
     type GeneratedAbility = (u8, bool, bool, bool, u8, bool);
 
@@ -832,6 +1108,137 @@ mod tests {
             Some(player(active_player)),
             Table::default(),
         )
+    }
+
+    fn stateful_context<'a>(
+        state: &'a mut GameState,
+        table: &'a mut Table,
+        dice: &'a mut Dice,
+        rng: &'a mut GameRng,
+        event_sequence: &'a mut EventSequence,
+    ) -> TimingContext<'a> {
+        TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table,
+            dice,
+            rng,
+            event_sequence,
+        }
+    }
+
+    #[test]
+    fn stateful_abilities_mutate_the_active_game_context() {
+        let owner = player("sol");
+        let mut state = GameState::new(std::slice::from_ref(&owner), &[], BTreeMap::new(), None, 1);
+        let mut table = Table::new();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(0);
+        let mut event_sequence = EventSequence::new();
+        let mut context = stateful_context(
+            &mut state,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &mut event_sequence,
+        );
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([Ability::stateful(
+            "gain-point",
+            owner.clone(),
+            "E",
+            Relation::When,
+            Arc::new(move |_, _, context| {
+                context
+                    .state
+                    .player_mut(&owner)
+                    .expect("owner is seated")
+                    .victory_points += 1;
+                Ok(())
+            }),
+        )]);
+
+        timing
+            .emit_with_context(
+                &mut context,
+                Event::new(1, "E", BTreeMap::new()),
+                |_, context| {
+                    context.state.round = 2;
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            context.state.player(&player("sol")).unwrap().victory_points,
+            1
+        );
+        assert_eq!(context.state.round, 2);
+    }
+
+    #[test]
+    fn stateful_nested_events_share_the_game_event_sequence() {
+        let owner = player("sol");
+        let mut state = GameState::new(std::slice::from_ref(&owner), &[], BTreeMap::new(), None, 1);
+        let mut table = Table::new();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(0);
+        let mut event_sequence = EventSequence::new();
+        let mut context = stateful_context(
+            &mut state,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &mut event_sequence,
+        );
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([Ability::stateful(
+            "nested",
+            owner,
+            "OUTER",
+            Relation::When,
+            Arc::new(|_, resolver, context| {
+                let inner = context.event_sequence.next("INNER", BTreeMap::new())?;
+                resolver.emit_with_context(context, inner, |_, _| {})?;
+                Ok(())
+            }),
+        )]);
+
+        let outer = context
+            .event_sequence
+            .next("OUTER", BTreeMap::new())
+            .unwrap();
+        timing
+            .emit_with_context(&mut context, outer, |_, _| {})
+            .unwrap();
+
+        assert_eq!(
+            timing.log(),
+            [
+                "emit OUTER#1",
+                "  [when] sol -> nested",
+                "emit INNER#2",
+                "  resolve INNER#2",
+                "  resolve OUTER#1",
+            ]
+        );
+    }
+
+    #[test]
+    fn stateful_abilities_are_refused_without_a_game_context() {
+        let mut timing = resolver(&["sol"], "sol");
+        timing.register([Ability::stateful(
+            "stateful",
+            player("sol"),
+            "E",
+            Relation::When,
+            Arc::new(|_, _, _| Ok(())),
+        )]);
+
+        assert!(matches!(
+            timing.emit(Event::new(1, "E", BTreeMap::new()), |_| {}),
+            Err(TimingError::StatefulContextRequired(id)) if id == "stateful"
+        ));
     }
 
     fn recording_ability(

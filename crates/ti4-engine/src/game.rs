@@ -1,5 +1,7 @@
 //! Game-level choice stepping and bounded execution.
 
+use std::collections::BTreeMap;
+
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
@@ -11,6 +13,7 @@ use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, SeededRandom, Table, Window};
 use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
+use crate::event::{EventSequence, EventSequenceError};
 use crate::movement::{Board, MovementRules};
 use crate::objectives::{ScoringError, ScoringWindow};
 use crate::phase::{PhaseOutcome, advance_phase, advance_turn, begin_next_round};
@@ -26,6 +29,7 @@ use crate::tactical::{
     MoveSelection, TacticalError, activate, activation_options, movable, movement_options,
     read_move,
 };
+use crate::timing::{Resolver, TimingContext, TimingError};
 use crate::tokens::{TokenGain, TokenGainError};
 use crate::transit::{CargoError, CargoWindow, MoveOutcome, apply_move, survives_gravity_rifts};
 use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
@@ -49,6 +53,10 @@ pub struct StepResult {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GameError {
     #[error(transparent)]
+    Timing(#[from] TimingError),
+    #[error(transparent)]
+    EventSequence(#[from] EventSequenceError),
+    #[error(transparent)]
     IllegalChoice(#[from] IllegalChoice),
     #[error(transparent)]
     Draft(#[from] DraftError),
@@ -64,6 +72,8 @@ pub enum GameError {
     MissingActivePlayer,
     #[error("action {0:?} is not implemented by the structural game driver")]
     UnsupportedAction(String),
+    #[error("timing cancelled required game event {0:?}")]
+    TimingEventCancelled(String),
     #[error(transparent)]
     TokenGain(#[from] TokenGainError),
     #[error(transparent)]
@@ -308,6 +318,10 @@ pub struct Game<'a> {
     pub state: GameState,
     pub table: Table,
     pub events: Vec<String>,
+    /// The resolver that owns registered timing abilities for this game.
+    timing: Resolver,
+    /// One-based allocator for driver-emitted typed timing events.
+    event_sequence: EventSequence,
     content: &'a ContentStore,
     /// The source scope this game is played under.
     ///
@@ -364,11 +378,14 @@ impl<'a> Game<'a> {
     /// Create a game with explicit deciders for generated choices.
     #[must_use]
     pub fn with_table(state: GameState, content: &'a ContentStore, table: Table) -> Self {
+        let timing = Resolver::new(state.initiative_order(), state.active.clone(), Table::new());
         Self {
             strategy_cards: state.unclaimed_strategy_cards.clone(),
             state,
             table,
             events: Vec::new(),
+            timing,
+            event_sequence: EventSequence::new(),
             content,
             sources: POK,
             secondary: None,
@@ -398,6 +415,14 @@ impl<'a> Game<'a> {
     pub const fn with_sources(mut self, sources: SourceSet) -> Self {
         self.sources = sources;
         self
+    }
+
+    /// Register or inspect timing abilities owned by this game.
+    ///
+    /// The driver synchronizes resolver priority metadata before each timed event and provides its
+    /// single choice table through [`TimingContext`].
+    pub fn timing_mut(&mut self) -> &mut Resolver {
+        &mut self.timing
     }
 
     /// The choice currently offered, without resolving automatic followers or phase work.
@@ -541,7 +566,7 @@ impl<'a> Game<'a> {
     fn apply_choice(&mut self, choice: &Choice, answer: ChoiceOption) -> Result<(), GameError> {
         match self.state.phase {
             Phase::Strategy => {
-                let player = take_strategy_card(&mut self.state, self.content, answer)?;
+                let player = self.take_timed_strategy_card(&choice.player, answer)?;
                 self.emit("STRATEGY_CARD_CHOSEN");
                 debug_assert_eq!(player, choice.player);
                 Ok(())
@@ -1182,6 +1207,76 @@ impl<'a> Game<'a> {
         }
     }
 
+    fn take_timed_strategy_card(
+        &mut self,
+        player: &PlayerId,
+        answer: ChoiceOption,
+    ) -> Result<PlayerId, GameError> {
+        self.sync_timing_context();
+        let card = StrategyCardId::new(answer.id.clone());
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(player.to_string()),
+        );
+        payload.insert(
+            "card".to_owned(),
+            serde_json::Value::String(answer.id.clone()),
+        );
+        payload.insert(
+            "goods".to_owned(),
+            serde_json::Value::from(
+                self.state
+                    .strategy_card_goods
+                    .get(&card)
+                    .copied()
+                    .unwrap_or_default(),
+            ),
+        );
+        let event = self.event_sequence.next("STRATEGY_CARD_CHOSEN", payload)?;
+        let content = self.content;
+        let sources = self.sources;
+        let mut selected = None;
+        let emitted = {
+            let (state, table, timing, dice, rng, event_sequence) = (
+                &mut self.state,
+                &mut self.table,
+                &mut self.timing,
+                &mut self.dice,
+                &mut self.rng,
+                &mut self.event_sequence,
+            );
+            let mut context = TimingContext {
+                state,
+                content,
+                sources,
+                table,
+                dice,
+                rng,
+                event_sequence,
+            };
+            timing.emit_with_context(&mut context, event, |_, context| {
+                selected = Some(take_strategy_card(context.state, content, answer));
+            })?
+        };
+        if emitted.cancelled {
+            return Err(GameError::TimingEventCancelled(emitted.event_type));
+        }
+        selected
+            .ok_or(GameError::TimingEventCancelled(emitted.event_type))?
+            .map_err(GameError::Draft)
+    }
+
+    fn sync_timing_context(&mut self) {
+        self.timing.set_phase(self.state.phase);
+        self.timing
+            .sync_lifecycle(self.state.round, self.state.turn_seq);
+        self.timing
+            .set_seating_order(self.state.seating_order.clone());
+        self.timing.set_active_player(self.state.active.clone());
+        self.timing.set_speaker(Some(self.state.speaker.clone()));
+    }
+
     fn emit(&mut self, event: &str) {
         self.events.push(event.to_owned());
     }
@@ -1199,6 +1294,8 @@ impl<'a> Game<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
     use ti4_model::id::PlayerId;
@@ -1207,6 +1304,7 @@ mod tests {
     use super::*;
     use crate::choice::{AlwaysDecline, Scripted};
     use crate::setup::start_game;
+    use crate::timing::{Ability, Relation};
     use crate::tokens::STATUS_TOKENS;
 
     #[test]
@@ -1222,6 +1320,121 @@ mod tests {
         assert_eq!(game.table.log.len(), 1);
         assert_eq!(game.state.unclaimed_strategy_cards.len(), 7);
         assert_eq!(game.events, vec!["STRATEGY_CARD_CHOSEN"]);
+    }
+
+    #[test]
+    fn strategy_selection_reaches_stateful_timing_with_the_games_table_and_state() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_table(
+            state,
+            ContentStore::embedded(),
+            Table::with_default(Box::new(Scripted::new(["pok1leadership", "decline"]))),
+        );
+        game.timing_mut().register([Ability::stateful(
+            "strategy-point",
+            PlayerId::new("a"),
+            "STRATEGY_CARD_CHOSEN",
+            Relation::When,
+            Arc::new(|event, _, context| {
+                assert_eq!(event.text("player"), Some("a"));
+                assert_eq!(event.text("card"), Some("pok1leadership"));
+                assert_eq!(event.integer("goods"), Some(0));
+                context
+                    .state
+                    .player_mut(&PlayerId::new("a"))
+                    .expect("timing owner is seated")
+                    .victory_points += 1;
+                Ok(())
+            }),
+        )
+        .with_optional(true)]);
+
+        let result = game.step();
+
+        assert!(result.error.is_none());
+        assert_eq!(
+            game.state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .victory_points,
+            0
+        );
+        assert_eq!(game.table.log.len(), 2, "one table answered both decisions");
+        assert_eq!(game.table.log.records[1].chosen, "decline");
+        assert!(
+            game.timing
+                .log()
+                .iter()
+                .any(|line| line.contains("declines")),
+            "the driver did not run the registered timing ability"
+        );
+    }
+
+    #[test]
+    fn timing_cancellation_keeps_a_strategy_card_on_the_mat() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::new(state, ContentStore::embedded());
+        game.timing_mut().register([Ability::stateful(
+            "cancel-strategy-pick",
+            PlayerId::new("a"),
+            "STRATEGY_CARD_CHOSEN",
+            Relation::When,
+            Arc::new(|event, _, _| {
+                event.cancel();
+                Ok(())
+            }),
+        )]);
+
+        let result = game.step();
+
+        assert!(matches!(
+            result.error,
+            Some(GameError::TimingEventCancelled(ref event)) if event == "STRATEGY_CARD_CHOSEN"
+        ));
+        assert_eq!(game.state.unclaimed_strategy_cards.len(), 8);
+        assert!(
+            game.state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .strategy_cards
+                .is_empty()
+        );
+        assert!(game.events.is_empty());
+    }
+
+    #[test]
+    fn mandatory_stateful_timing_effect_mutates_the_live_game() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::new(state, ContentStore::embedded());
+        game.timing_mut().register([Ability::stateful(
+            "strategy-point",
+            PlayerId::new("a"),
+            "STRATEGY_CARD_CHOSEN",
+            Relation::When,
+            Arc::new(|_, _, context| {
+                context
+                    .state
+                    .player_mut(&PlayerId::new("a"))
+                    .expect("timing owner is seated")
+                    .victory_points += 1;
+                Ok(())
+            }),
+        )]);
+
+        let result = game.step();
+
+        assert!(result.error.is_none());
+        assert_eq!(
+            game.state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .victory_points,
+            1
+        );
+        assert_eq!(game.state.unclaimed_strategy_cards.len(), 7);
     }
 
     #[test]

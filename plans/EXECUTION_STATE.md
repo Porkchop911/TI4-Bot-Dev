@@ -98,6 +98,24 @@ three times in one session and is worth re-deriving against the tree.
   projection, and selected cross-engine comparison. M03-007c remains blocked until those later
   compatibility surfaces prove semantic equality.
 
+## M03-016a package checkpoint (2026-08-12)
+
+- Branch: `wp/m03-016a-stateful-timing`.
+- Status: complete in the focused `Wire stateful timing through strategy selection` commit. This is
+  an owner-authorized corrective child
+  of the blocked M03-016 review, not a completion claim for M03-007c or the M03 exit gate.
+- `Game` now owns a resolver and typed event sequence. A `TimingContext` gives stateful effects the
+  live `GameState`, content/source scope, one game table, dice history, RNG, and nested allocator.
+  The context-free resolver rejects stateful abilities rather than pretending they resolved.
+- `STRATEGY_CARD_CHOSEN` now emits through the driver with source-matching player/card/goods facts;
+  WHEN cancellation is atomic. Resolver frequency counters synchronize from `GameState`, and the
+  wiring guard requires the driver call.
+- Checks: 484 `ti4-engine`, 20 `ti4-legacy`, 72 `ti4-model`, and 1 doc-test passed; workspace
+  strict Clippy, fmt, and diff check passed; oracle integrity guard verified 238 files before and
+  after inspection. See `plans/evidence/M03-016a.md`.
+- Remaining complaint scope: combat, invasion, production, technology, and card triggers require
+  separately settled event vocabulary. Do not bulk-wrap existing string diagnostics as typed events.
+
 ## M04-005 package checkpoint (historical)
 
 - Branch: `wp/m04-005-strategy-draft`, based on unmerged M04-003 package commit `8f97ffb`.
