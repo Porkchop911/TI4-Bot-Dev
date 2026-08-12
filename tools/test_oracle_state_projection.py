@@ -299,6 +299,19 @@ class StateProjectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_records([{"type": "header"}, {"type": "state"}])
 
+    def test_bounded_game_observer_records_choices_events_and_dice(self) -> None:
+        from oracle_exporter.runner import bounded_game_records
+
+        records = bounded_game_records("save54_base", seed=7, rounds=1)
+
+        self.assertEqual(records[0]["type"], "header")
+        self.assertEqual(records[0]["export_scope"], "bounded_game")
+        self.assertEqual(records[1]["type"], "state")
+        self.assertTrue(any(record["type"] == "choice" and "selected" in record for record in records))
+        self.assertTrue(any(record["type"] == "event" for record in records))
+        self.assertEqual(records[-2]["type"], "state")
+        self.assertEqual(records[-1]["type"], "entropy")
+
 
 if __name__ == "__main__":
     unittest.main()
