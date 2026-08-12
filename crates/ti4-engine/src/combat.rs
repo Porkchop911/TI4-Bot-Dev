@@ -104,6 +104,54 @@ pub fn hits_on(content: &ContentStore, sources: SourceSet, unit: &Unit) -> Optio
         .and_then(UnitType::combat_hits_on)
 }
 
+/// The threshold a unit needs in this combat round after its round-scoped effects.
+///
+/// Effects store the sequence in which they were created rather than a flag that a later combat
+/// exit path must remember to clear. That is load-bearing: a combat can end after barrage,
+/// casualties, or retreat, and a flag leaks from whichever exit forgot it. A sequence marker
+/// simply stops matching when the next round starts.
+#[must_use]
+pub fn effective_hits_on(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    unit: &Unit,
+) -> Option<i64> {
+    let threshold = hits_on(content, sources, unit)?;
+    let morale_is_current = state
+        .player(player)
+        .is_some_and(|seat| seat.combat_bonus_round == Some(state.combat_round_seq));
+    Some(threshold - i64::from(morale_is_current))
+}
+
+/// Replace the missed dice in one space-combat batch when Munitions Reserves is current.
+///
+/// Paying for the ability and opening its reaction window belong to the faction/reaction layer.
+/// Combat owns the other half: applying the already-recorded marker at the one place a space
+/// combat roll becomes final. The original is already in `Dice` history; `reroll` deliberately
+/// records the replacement beside it so a replay preserves both draws.
+fn reroll_munitions_misses(
+    state: &GameState,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    player: &PlayerId,
+    roll: &crate::dice::Roll,
+) -> crate::dice::Roll {
+    let active = state
+        .player(player)
+        .is_some_and(|seat| seat.munitions_round == Some(state.combat_round_seq));
+    if !active {
+        return roll.clone();
+    }
+    let misses = roll.missed(None);
+    if misses.is_empty() {
+        return roll.clone();
+    }
+    let reason = format!("munitions:{player}");
+    dice.reroll(rng, roll, misses, Some(&reason))
+}
+
 /// Roll one player's fleet and count the hits (78.5).
 ///
 /// Rolled in **ascending order of combat value**, per 78.5b/78.5c, so the sequence a seed
@@ -123,14 +171,25 @@ pub fn roll_fleet(
     // part of what a seed reproduces, so rolling them apart would silently renumber every later
     // draw. `BTreeMap` gives the ascending order for free.
     let mut fighting: std::collections::BTreeMap<i64, i64> = std::collections::BTreeMap::new();
+    let extra_die = state.player(player).and_then(|seat| {
+        (seat.extra_die_round == Some(state.combat_round_seq))
+            .then_some(seat.extra_die_unit.as_ref())
+            .flatten()
+    });
+    let mut extra_die_added = false;
     for unit in ships_of(state, content, sources, player, system) {
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
         };
-        let Some(value) = kind.combat_hits_on() else {
+        let Some(value) = effective_hits_on(state, content, sources, player, &unit) else {
             continue;
         };
-        *fighting.entry(value).or_insert(0) += kind.combat_dice();
+        let mut dice_count = kind.combat_dice();
+        if !extra_die_added && extra_die.is_some_and(|selected| selected == &unit.type_id) {
+            dice_count += 1;
+            extra_die_added = true;
+        }
+        *fighting.entry(value).or_insert(0) += dice_count;
     }
 
     let mut hits = 0;
@@ -141,7 +200,7 @@ pub fn roll_fleet(
         }
         let threshold = u32::try_from(value).unwrap_or(u32::MAX);
         let roll = dice.roll(rng, dice_count, "space combat", Some(threshold));
-        hits += roll.hits();
+        hits += reroll_munitions_misses(state, dice, rng, player, &roll).hits();
     }
     hits
 }
@@ -1360,6 +1419,105 @@ mod tests {
         );
 
         assert!(ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).len() <= 1);
+    }
+
+    #[test]
+    fn morale_changes_only_its_owners_current_combat_round() {
+        let (mut state, _) = arena();
+        let cruiser = Unit::new(UnitTypeId::new("cruiser"), attacker());
+        let printed = hits_on(ContentStore::embedded(), POK, &cruiser).unwrap();
+        state.combat_round_seq = 7;
+        state.player_mut(&attacker()).unwrap().combat_bonus_round = Some(7);
+
+        assert_eq!(
+            effective_hits_on(&state, ContentStore::embedded(), POK, &attacker(), &cruiser),
+            Some(printed - 1),
+            "Morale Boost is +1 to this player's combat roll"
+        );
+        assert_eq!(
+            effective_hits_on(&state, ContentStore::embedded(), POK, &defender(), &cruiser),
+            Some(printed),
+            "the opponent's threshold is untouched"
+        );
+
+        state.combat_round_seq = 8;
+        assert_eq!(
+            effective_hits_on(&state, ContentStore::embedded(), POK, &attacker(), &cruiser),
+            Some(printed),
+            "the marker lapses without a cleanup path"
+        );
+    }
+
+    #[test]
+    fn the_selected_unit_rolls_exactly_one_extra_die_in_its_round() {
+        let (mut plain, system) = arena();
+        let mut marked = plain.clone();
+        put(&mut plain, &system, "cruiser", &attacker(), 2);
+        put(&mut marked, &system, "cruiser", &attacker(), 2);
+        marked.combat_round_seq = 4;
+        let seat = marked.player_mut(&attacker()).unwrap();
+        seat.extra_die_round = Some(4);
+        seat.extra_die_unit = Some(UnitTypeId::new("cruiser"));
+
+        let (_, mut plain_dice, mut plain_rng) = kit();
+        let (_, mut marked_dice, mut marked_rng) = kit();
+        roll_fleet(
+            &plain,
+            ContentStore::embedded(),
+            POK,
+            &mut plain_dice,
+            &mut plain_rng,
+            &attacker(),
+            &system,
+        );
+        roll_fleet(
+            &marked,
+            ContentStore::embedded(),
+            POK,
+            &mut marked_dice,
+            &mut marked_rng,
+            &attacker(),
+            &system,
+        );
+
+        assert_eq!(
+            plain_dice.history()[0].faces.len() + 1,
+            marked_dice.history()[0].faces.len()
+        );
+    }
+
+    #[test]
+    fn munitions_rerolls_only_misses_and_lapses_after_its_round() {
+        let (mut state, _) = arena();
+        state.combat_round_seq = 9;
+        state.player_mut(&attacker()).unwrap().munitions_round = Some(9);
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(3);
+        let original = crate::dice::Roll {
+            reason: "space combat".to_owned(),
+            faces: vec![1, 10],
+            hits_on: Some(7),
+            rerolled: std::collections::BTreeSet::new(),
+        };
+        let rerolled = reroll_munitions_misses(&state, &mut dice, &mut rng, &attacker(), &original);
+
+        assert_eq!(rerolled.rerolled, std::collections::BTreeSet::from([0]));
+        assert_eq!(rerolled.faces[1], 10, "a hit is not rerolled");
+        assert_eq!(
+            dice.count(),
+            1,
+            "the replacement is recorded; callers already recorded the original batch"
+        );
+        assert_eq!(dice.history()[0].reason, "munitions:a");
+
+        state.combat_round_seq = 10;
+        let before = dice.count();
+        assert_eq!(
+            reroll_munitions_misses(&state, &mut dice, &mut rng, &attacker(), &original),
+            original,
+            "a marker from an earlier round does nothing"
+        );
+        assert_eq!(dice.count(), before);
     }
 
     #[test]

@@ -33,8 +33,14 @@ three times in one session and is worth re-deriving against the tree.
   (`plans/evidence/M02-003_005_008_M04-003_006_007_STATE_AND_PHASES.md`); galaxy
   (`plans/evidence/M04-001_002_GALAXY.md`); content layer
   (`plans/evidence/M02-009_TO_012_CONTENT_LAYER.md`)
-- Next dependency-ready package: making the combat choice windows resumable so the step driver
-  can fight, replacing `TACTICAL_STEPS_UNRESOLVED`. Same shape as the vote window.
+- Last completed package: **M05-010a — combat roll effects**
+  (`plans/evidence/M05-010.md`). It applies the existing sequence-scoped morale, extra-die and
+  Munitions markers at the deterministic space-combat boundary; 444 engine tests and the full
+  workspace are green, and the oracle guard passes.
+- M05-010b remains deferred: source registration and payment require the M06-016 reaction/event
+  resolver and must not be invented as a direct action-card path.
+- Next dependency-ready package: **M00-013 — performance baseline**. It is unblocked now that
+  the oracle guard verifies the clean pinned tree.
 
 ## M04-005 package checkpoint (historical)
 
