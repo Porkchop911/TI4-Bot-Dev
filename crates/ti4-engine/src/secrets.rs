@@ -553,6 +553,100 @@ fn units_in_the_nexus(position: &Position<'_>) -> bool {
         })
 }
 
+/// Relic fragments this player holds, of any trait.
+fn fragment_count(state: &GameState, player: &PlayerId) -> i32 {
+    state.player(player).map_or(0, |seat| {
+        seat.relic_fragments
+            .values()
+            .filter(|held| **held > 0)
+            .sum()
+    })
+}
+
+/// Hold two relic fragments of any type — and purge them to score (see [`pay_for`]).
+fn two_relic_fragments(position: &Position<'_>) -> bool {
+    fragment_count(position.state, position.player) >= 2
+}
+
+/// Hold five action cards, which scoring then discards.
+fn five_action_cards(position: &Position<'_>) -> bool {
+    position
+        .state
+        .player(position.player)
+        .is_some_and(|seat| seat.action_cards.len() >= 5)
+}
+
+/// Have another player's promissory note in your play area.
+fn holds_a_rivals_note(position: &Position<'_>) -> bool {
+    let Some(seat) = position.state.player(position.player) else {
+        return false;
+    };
+    // Support for the Throne has its own field, because it is the one note whose position is
+    // worth a victory point. Reading only the general map would miss the commonest case.
+    if position
+        .state
+        .support_holders
+        .iter()
+        .any(|(owner, holder)| holder == position.player && owner != position.player)
+    {
+        return true;
+    }
+    position
+        .state
+        .promissory_notes
+        .iter()
+        .filter(|(_, holder)| *holder == position.player)
+        .any(|(note, _)| {
+            // A note is "another player's" when the corpus attributes it to a faction that is
+            // not this seat's. A note with no faction is a generic one, which anybody's copy
+            // could be, so it cannot show whose it was.
+            position
+                .content
+                .get(ContentType::PromissoryNotes, note)
+                .and_then(|record| record.text("faction"))
+                .is_some_and(|faction| faction != seat.faction.as_str())
+        })
+}
+
+/// What scoring a secret costs, beyond meeting its requirement.
+///
+/// Two secrets are *paid for* rather than achieved: the fragments are purged and the cards are
+/// discarded as part of scoring. Charged in [`award`] and never in the requirement, so being
+/// offered the objective costs nothing — a requirement that spent as a side effect would charge
+/// a player for merely being asked.
+fn pay_for(state: &mut GameState, player: &PlayerId, alias: &SecretObjectiveId) -> bool {
+    match alias.as_str() {
+        "dhw" => {
+            if fragment_count(state, player) < 2 {
+                return false;
+            }
+            let Some(seat) = state.player_mut(player) else {
+                return false;
+            };
+            let mut owed = 2;
+            for held in seat.relic_fragments.values_mut() {
+                while owed > 0 && *held > 0 {
+                    *held -= 1;
+                    owed -= 1;
+                }
+            }
+            seat.relic_fragments.retain(|_, held| *held > 0);
+            owed == 0
+        }
+        "fsn" => {
+            let Some(seat) = state.player_mut(player) else {
+                return false;
+            };
+            if seat.action_cards.len() < 5 {
+                return false;
+            }
+            seat.action_cards.drain(..5);
+            true
+        }
+        _ => true,
+    }
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -609,6 +703,9 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 
     match alias.as_str() {
         "csl" => Some(beside_a_rival_dock),
+        "dhw" => Some(two_relic_fragments),
+        "fsn" => Some(five_action_cards),
+        "sb" => Some(holds_a_rivals_note),
         "lsc" => Some(ships_beside_three_anomalies),
         "te" => Some(ships_beside_a_rival_home),
         "fc" => Some(neighbours_with_everyone),
@@ -640,8 +737,9 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ans", "btgk", "csl", "ctr", "dfat", "dp", "eap", "eh", "faa", "fc", "fwm", "gamf", "hrm",
-        "lsc", "mlp", "mp", "mrm", "mtm", "ose", "otf", "pem", "sai", "syc", "te",
+        "ans", "btgk", "csl", "ctr", "dfat", "dhw", "dp", "eap", "eh", "faa", "fc", "fsn", "fwm",
+        "gamf", "hrm", "lsc", "mlp", "mp", "mrm", "mtm", "ose", "otf", "pem", "sai", "sb", "syc",
+        "te",
     ]
 }
 
@@ -703,6 +801,11 @@ pub fn award(
         .player(player)
         .is_some_and(|seat| seat.secret_objectives.contains(alias));
     if !held {
+        return None;
+    }
+    // Paid for before it is recorded: a secret whose price cannot be met is not scored, and a
+    // score recorded first would be kept even when the payment failed.
+    if !pay_for(state, player, alias) {
         return None;
     }
     let points = content
@@ -1104,6 +1207,105 @@ mod tests {
 
         put(&mut state, &nexus, "cruiser", &player(), 1);
         assert!(can_score(&state, "dfat"));
+    }
+
+    #[test]
+    fn destroying_heretical_works_purges_the_fragments_it_needs() {
+        let mut state = game(&["a"]);
+        holding(&mut state, "dhw");
+        state.player_mut(&player()).unwrap().relic_fragments =
+            [("CULTURAL".to_owned(), 1)].into_iter().collect();
+        assert!(!can_score(&state, "dhw"), "one fragment is not two");
+
+        state
+            .player_mut(&player())
+            .unwrap()
+            .relic_fragments
+            .insert("INDUSTRIAL".to_owned(), 1);
+        assert!(can_score(&state, "dhw"), "two of any type");
+
+        let points = award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("dhw"),
+        );
+
+        assert_eq!(points, Some(1));
+        assert_eq!(
+            fragment_count(&state, &player()),
+            0,
+            "both fragments were purged to pay for it"
+        );
+    }
+
+    #[test]
+    fn a_secret_whose_price_cannot_be_met_is_not_scored() {
+        // The requirement and the price are checked at different moments, so a hand that
+        // shrank in between must not score — and must not record a score it did not pay for.
+        let mut state = game(&["a"]);
+        holding(&mut state, "fsn");
+        state.player_mut(&player()).unwrap().action_cards = (0..4)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("card{n}")))
+            .collect();
+        let before = state.player(&player()).unwrap().victory_points;
+
+        let points = award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("fsn"),
+        );
+
+        assert_eq!(points, None);
+        assert_eq!(state.player(&player()).unwrap().victory_points, before);
+        assert_eq!(
+            state.player(&player()).unwrap().action_cards.len(),
+            4,
+            "and nothing was taken"
+        );
+        assert_eq!(
+            state.player(&player()).unwrap().secret_objectives.len(),
+            1,
+            "the card stays in hand"
+        );
+    }
+
+    #[test]
+    fn forming_a_spy_network_discards_five_cards_and_no_more() {
+        let mut state = game(&["a"]);
+        holding(&mut state, "fsn");
+        state.player_mut(&player()).unwrap().action_cards = (0..7)
+            .map(|n| ti4_model::id::ActionCardId::new(format!("card{n}")))
+            .collect();
+        assert!(can_score(&state, "fsn"));
+
+        award(
+            &mut state,
+            ContentStore::embedded(),
+            &player(),
+            &SecretObjectiveId::new("fsn"),
+        );
+
+        assert_eq!(
+            state.player(&player()).unwrap().action_cards.len(),
+            2,
+            "five discarded, the rest kept"
+        );
+    }
+
+    #[test]
+    fn strengthening_bonds_needs_somebody_elses_note() {
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "sb");
+        assert!(!can_score(&state, "sb"));
+
+        // Your own Support for the Throne, sitting in your own play area, is not a bond.
+        state.support_holders.insert(player(), player());
+        assert!(!can_score(&state, "sb"), "your own note is not another's");
+
+        state.support_holders.insert(PlayerId::new("b"), player());
+        assert!(can_score(&state, "sb"));
     }
 
     #[test]
