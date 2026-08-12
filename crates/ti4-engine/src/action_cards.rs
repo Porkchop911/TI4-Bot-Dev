@@ -90,7 +90,8 @@ pub fn enforce_hand_limit(
             .player(player)
             .map(|seat| seat.action_cards.clone())
             .unwrap_or_default();
-        if hand.len() <= HAND_LIMIT {
+        // Sanctions caps the hand at three; without it the printed seven applies.
+        if hand.len() <= crate::laws::action_card_limit(state, HAND_LIMIT) {
             return Ok(());
         }
 
@@ -215,6 +216,29 @@ mod tests {
 
         assert!(drawn.is_empty());
         assert!(hand(&state).is_empty());
+    }
+
+    #[test]
+    fn sanctions_tightens_the_hand_limit_to_three() {
+        // A law that is enacted but not enforced is a list nothing reads; this one bites.
+        let mut state = game(&["a"]);
+        set_hand(&mut state, &[]);
+        state.enact_law("sanctions", "for");
+        state.action_card_deck = (0..10)
+            .map(|n| ActionCardId::new(format!("c{n}")))
+            .collect();
+        let mut table = Table::new();
+
+        draw(
+            &mut state,
+            ContentStore::embedded(),
+            &mut table,
+            &player(),
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(hand(&state).len(), 3, "not the printed seven");
     }
 
     #[test]

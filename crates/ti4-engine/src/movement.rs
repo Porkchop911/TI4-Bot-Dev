@@ -147,12 +147,26 @@ impl<'a> MovementRules<'a> {
         active_system: &str,
         board: Board,
     ) -> Self {
+        Self::with_laws(galaxy, content, sources, active_system, board, None)
+    }
+
+    /// Rules that also honour the laws in play.
+    #[must_use]
+    pub fn with_laws(
+        galaxy: &'a Galaxy,
+        content: &'a ContentStore,
+        sources: SourceSet,
+        active_system: &str,
+        board: Board,
+        state: Option<&GameState>,
+    ) -> Self {
         Self {
             galaxy,
             systems: all_systems(content, sources),
             active_system: active_system.to_owned(),
             board,
-            nebulae_open: false,
+            // Shared Research is the law that opens them; without it this stays false.
+            nebulae_open: state.is_some_and(crate::laws::nebulae_passable),
             asteroid_fields_open: false,
             supernovae_open: false,
             anomalies_ignored: false,
@@ -573,6 +587,37 @@ mod tests {
         let into = movement_rules(&hub, &nebula, Board::default());
         assert!(into.can_enter(&nebula), "it is the destination");
         assert!(into.can_reach(&near_a, 1));
+    }
+
+    #[test]
+    fn shared_research_opens_the_nebulae_to_movement() {
+        // The nebulae_open flag existed unused until a law could set it. 59.1 bars a nebula as
+        // an intermediate; the law lifts that.
+        let nebula = a_system_where("nebula");
+        let hub = hub_with_centre(&nebula);
+        let (near_a, near_b) = (hub.outer[0].clone(), hub.across(&hub.outer[0]));
+        let mut state = crate::fixtures::game(&["a"]);
+
+        let closed = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            POK,
+            &near_b,
+            Board::default(),
+            Some(&state),
+        );
+        assert!(!closed.can_reach(&near_a, 2), "the nebula blocks the route");
+
+        state.enact_law("shared_research", "for");
+        let opened = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            POK,
+            &near_b,
+            Board::default(),
+            Some(&state),
+        );
+        assert!(opened.can_reach(&near_a, 2), "the law opens it");
     }
 
     #[test]

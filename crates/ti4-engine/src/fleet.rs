@@ -23,11 +23,13 @@ pub fn counts_against_supply(kind: &UnitType<'_>) -> bool {
 
 /// How many non-fighter ships this player may keep in one system.
 ///
-/// The fleet pool is the command tokens in it. Laws and faction abilities that raise or cap it
-/// are unimplemented, so this is the printed rule.
+/// The fleet pool is the command tokens in it, capped by any law that caps it — Fleet
+/// Regulations holds it to four however many tokens a player has piled up. Faction abilities
+/// that raise it are still unimplemented.
 #[must_use]
 pub fn limit(state: &GameState, player: &PlayerId) -> i32 {
-    state.player(player).map_or(0, |seat| seat.fleet_tokens)
+    let base = state.player(player).map_or(0, |seat| seat.fleet_tokens);
+    crate::laws::fleet_pool_cap(state, base)
 }
 
 /// Ships beyond the cap in this system, if any.
@@ -235,6 +237,25 @@ mod tests {
             over_supply(&state, ContentStore::embedded(), POK, &player, &system),
             0,
             "one carrier fits a supply of one, and fighters are not counted"
+        );
+    }
+
+    #[test]
+    fn fleet_regulations_tightens_the_supply() {
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 8;
+        put(&mut state, &system, "cruiser", &player, 6);
+        assert_eq!(
+            over_supply(&state, ContentStore::embedded(), POK, &player, &system),
+            0,
+            "eight tokens hold six ships"
+        );
+
+        state.enact_law("regulations", "for");
+        assert_eq!(
+            over_supply(&state, ContentStore::embedded(), POK, &player, &system),
+            2,
+            "the law caps the pool at four"
         );
     }
 

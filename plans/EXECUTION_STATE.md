@@ -622,6 +622,19 @@ relics                  0/17   implemented (0%)
 - Seed of an Empire's tie is the **speaker's decision** (8.18), passed in as a callback. With no
   decider the point is simply not awarded, rather than handed to whoever sorts first.
 
+## Laws checkpoint (authoritative)
+
+- **586 passing tests**; workspace clippy-clean under `-D warnings`; zero failures.
+- **`state.laws` was a list nothing read.** The engine could enact every law and enforced none.
+  Four now bite: Fleet Regulations caps the fleet pool at four, Sanctions caps the action-card
+  hand at three, Shared Research opens the nebulae, and repealing Public Censure takes its
+  victory point back.
+- That last one matters: a repeal that only deleted the entry would leave the point behind for
+  good.
+- `movement.rs` had a `nebulae_open` flag that had existed unused since M05-003 — Shared
+  Research is the first thing that can set it, via `MovementRules::with_laws`.
+- `laws::unimplemented` reports the rest, so the gap stays queryable.
+
 ## Implementation status
 
 Measured, not claimed. "Scaffold" means the file compiles and has a plausible shape but its
