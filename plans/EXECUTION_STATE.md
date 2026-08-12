@@ -113,7 +113,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 
-## Current package checkpoint (authoritative)
+## M04-012 package checkpoint (historical)
 
 - Branch: `wp/m04-012-step-run`, based on M04-011 package commit `b6bef5b`.
 - Last completed package: M04-012 — generated-choice game driver with bounded run metadata
@@ -128,6 +128,24 @@ are recorded in the package evidence; independent review remains owner-waived.
   stop at a typed `GameError` boundary. They are not replaced by guessed defaults or reported as
   a completed game; tactical/component/Fleet Logistics behavior remains outside this driver.
 - M04-012 committed after scoped formatting, focused and affected-crate tests, workspace
+  tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
+  are recorded in the package evidence; independent review remains owner-waived.
+
+## Current package checkpoint (authoritative)
+
+- Branch: `wp/m04-013-random-legal-bot`, based on M04-012 package commit `d316107`.
+- Last completed package: M04-013 — shared-stream seeded random-legal game constructor
+  (`plans/evidence/M04-013.md`).
+- Next dependency-ready package: M04-014 — generic completion suite.
+- `ti4-engine` has 128 tests. The workspace has 318 passing tests: 121 `ti4-content`,
+  128 `ti4-engine`, 68 `ti4-model`, and 1 doc-test.
+- `Game::with_seeded_random` applies one ChaCha8-backed `SeededRandom` default to every unseated
+  player, preserving global decision order and the generated-choice validation boundary. Same
+  native seed repeats its event/decision trace; different seeds select different legal traces.
+- A random run reaches the explicit `StatusChoicesUnimplemented` boundary rather than hanging or
+  pretending the absent status scoring/token choices completed. Python seed parity is intentionally
+  not claimed because the native stream is ChaCha8, not Mersenne Twister.
+- M04-013 committed after scoped formatting, focused and affected-crate tests, workspace
   tests, normal engine Clippy, and whitespace validation passed. Existing workspace lint warnings
   are recorded in the package evidence; independent review remains owner-waived.
 

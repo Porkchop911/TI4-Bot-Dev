@@ -5,7 +5,7 @@ use ti4_model::id::{PlayerId, StrategyCardId};
 use ti4_model::state::{GameState, Phase};
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, SeededRandom, Table};
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::phase::{PhaseOutcome, advance_phase, advance_turn, begin_next_round};
 use crate::status::{StatusPhaseError, resolve_status_phase};
@@ -88,6 +88,20 @@ impl<'a> Game<'a> {
     #[must_use]
     pub fn new(state: GameState, content: &'a ContentStore) -> Self {
         Self::with_table(state, content, Table::new())
+    }
+
+    /// Create a game whose every unseated player draws uniformly from one seeded legal stream.
+    ///
+    /// This is the oracle's `Table(default=SeededRandom(seed))` shape: the stream advances in
+    /// decision order across all players, so it remains reproducible without assigning a
+    /// potentially divergent RNG seed to each seat.
+    #[must_use]
+    pub fn with_seeded_random(state: GameState, content: &'a ContentStore, seed: u64) -> Self {
+        Self::with_table(
+            state,
+            content,
+            Table::with_default(Box::new(SeededRandom::new(seed))),
+        )
     }
 
     /// Create a game with explicit deciders for generated choices.
@@ -374,6 +388,71 @@ mod tests {
         assert_eq!(game.table.log.len(), 1);
         assert_eq!(game.state.unclaimed_strategy_cards.len(), 7);
         assert_eq!(game.events, vec!["STRATEGY_CARD_CHOSEN"]);
+    }
+
+    #[test]
+    fn seeded_random_game_records_only_offered_choices() {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 42);
+
+        for _ in 0..6 {
+            assert!(game.step().error.is_none());
+        }
+
+        assert_eq!(game.table.log.len(), 6);
+        assert!(
+            game.table
+                .log
+                .records
+                .iter()
+                .all(|record| record.offered.contains(&record.chosen))
+        );
+    }
+
+    #[test]
+    fn seeded_random_game_repeats_its_event_and_decision_trace() {
+        let trace = |seed| {
+            let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+            let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+            let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed);
+            for _ in 0..12 {
+                assert!(game.step().error.is_none());
+            }
+            (game.events, game.table.log)
+        };
+
+        assert_eq!(trace(2024), trace(2024));
+    }
+
+    #[test]
+    fn different_seeded_games_choose_different_legal_traces() {
+        let trace = |seed| {
+            let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+            let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+            let mut game = Game::with_seeded_random(state, ContentStore::embedded(), seed);
+            for _ in 0..6 {
+                assert!(game.step().error.is_none());
+            }
+            game.table.log
+        };
+
+        assert_ne!(trace(1), trace(2));
+    }
+
+    #[test]
+    fn seeded_random_run_reaches_the_explicit_status_boundary() {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 7);
+
+        assert_eq!(
+            game.run(1, 200),
+            Err(RunError::Step(GameError::StatusChoicesUnimplemented))
+        );
+        assert_eq!(game.state.phase, Phase::Status);
+        assert!(game.events.contains(&"ACTION_PHASE_BEGAN".to_owned()));
+        assert!(game.events.contains(&"STATUS_PHASE_BEGAN".to_owned()));
     }
 
     #[test]
