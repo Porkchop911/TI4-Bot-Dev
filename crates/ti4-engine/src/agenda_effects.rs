@@ -1158,8 +1158,8 @@ mod tests {
             let (system, _) = crate::fixtures::a_placed_planet();
             crate::fixtures::put(&mut state, &system, "fighter", &a(), 2);
 
-            let mut dice = crate::dice::Dice::new();
-            let mut rng = crate::rng::GameRng::new(seed_rolling(face));
+            let mut dice = crate::dice::Dice::from_faces([face]);
+            let mut rng = crate::rng::GameRng::new(0);
             let mut table = crate::choice::Table::new();
             let mut ctx = crate::choice::Resolving {
                 content: ContentStore::embedded(),
@@ -1184,21 +1184,6 @@ mod tests {
                 assert_eq!(left, 0, "fighters cannot sustain three damage");
             }
         }
-    }
-
-    /// The first seed whose next die shows `face`.
-    fn seed_rolling(face: u32) -> u64 {
-        (0..10_000)
-            .find(|seed| {
-                let mut rng = crate::rng::GameRng::new(*seed);
-                crate::dice::Dice::new()
-                    .roll(&mut rng, 1, "probe", None)
-                    .faces
-                    .first()
-                    .copied()
-                    == Some(face)
-            })
-            .expect("some seed rolls it")
     }
 
     #[test]

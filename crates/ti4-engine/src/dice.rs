@@ -60,6 +60,10 @@ impl Roll {
 pub struct Dice {
     sides: u32,
     history: Vec<Roll>,
+    /// Pre-loaded faces for tests. Drained left-to-right; exhausted slots fall through
+    /// to the RNG. Only populated when constructed via [`Dice::from_faces`].
+    #[cfg(test)]
+    preload: Option<Vec<u32>>,
 }
 
 impl Default for Dice {
@@ -74,15 +78,37 @@ impl Dice {
         Self {
             sides: SIDES,
             history: Vec::new(),
+            #[cfg(test)]
+            preload: None,
         }
     }
 
+    /// A roller with a non-standard die, for content that calls for one.
     /// A roller with a non-standard die, for content that calls for one.
     #[must_use]
     pub const fn with_sides(sides: u32) -> Self {
         Self {
             sides,
             history: Vec::new(),
+            #[cfg(test)]
+            preload: None,
+        }
+    }
+
+    /// A roller that yields the given faces in order, then falls back to the RNG.
+    ///
+    /// For tests that must force a specific branch of an ability. When the sequence
+    /// runs out, subsequent rolls draw from `rng` as normal — this lets a test preload
+    /// only the faces it needs without draining the seeded stream.
+    ///
+    /// **For tests and content only.** Do not use in production code.
+    #[cfg(test)]
+    #[must_use]
+    pub fn from_faces(faces: impl IntoIterator<Item = u32>) -> Self {
+        Self {
+            sides: SIDES,
+            history: Vec::new(),
+            preload: Some(faces.into_iter().collect()),
         }
     }
 
@@ -97,9 +123,11 @@ impl Dice {
         reason: &str,
         hits_on: Option<u32>,
     ) -> Roll {
-        let faces = (0..count)
-            .map(|_| rng.die(domain::DICE, self.sides))
-            .collect();
+        let faces = if count == 0 {
+            Vec::new()
+        } else {
+            self.roll_with_rng(rng, count)
+        };
         let record = Roll {
             reason: reason.to_owned(),
             faces,
@@ -108,6 +136,32 @@ impl Dice {
         };
         self.history.push(record.clone());
         record
+    }
+
+    /// Roll `count` dice using `rng`, respecting preload in test builds.
+    #[cfg(not(test))]
+    fn roll_with_rng(&self, rng: &mut GameRng, count: usize) -> Vec<u32> {
+        (0..count)
+            .map(|_| rng.die(domain::DICE, self.sides))
+            .collect()
+    }
+
+    #[cfg(test)]
+    fn roll_with_rng(&mut self, rng: &mut GameRng, count: usize) -> Vec<u32> {
+        if let Some(ref mut preload) = self.preload {
+            (0..count)
+                .map(|_| {
+                    preload
+                        .drain(..1)
+                        .next()
+                        .unwrap_or_else(|| rng.die(domain::DICE, self.sides))
+                })
+                .collect()
+        } else {
+            (0..count)
+                .map(|_| rng.die(domain::DICE, self.sides))
+                .collect()
+        }
     }
 
     /// Roll named dice again, keeping the rest (LRR: a reroll replaces the result).

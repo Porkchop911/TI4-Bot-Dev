@@ -351,24 +351,6 @@ mod tests {
         assert_eq!(gain(&mut state, &player()), None);
     }
 
-    /// The first seed whose next die shows `face`.
-    ///
-    /// There are no loaded dice here, and a test that took whatever the stream gave would
-    /// exercise one branch of this card and call it the card.
-    fn seed_rolling(face: u32) -> u64 {
-        (0..10_000)
-            .find(|seed| {
-                let mut rng = crate::rng::GameRng::new(*seed);
-                crate::dice::Dice::new()
-                    .roll(&mut rng, 1, "probe", None)
-                    .faces
-                    .first()
-                    .copied()
-                    == Some(face)
-            })
-            .expect("some seed rolls it")
-    }
-
     #[test]
     fn the_silver_flame_scores_on_a_ten_and_burns_you_otherwise() {
         // Both halves are reachable, so the roll is forced rather than hoped for: a test that
@@ -384,13 +366,13 @@ mod tests {
             state.system_mut(&home);
             let before = state.player(&player()).unwrap().victory_points;
 
-            let mut dice = crate::dice::Dice::new();
+            let mut dice = crate::dice::Dice::from_faces([face]);
             use_relic(
                 &mut state,
                 ContentStore::embedded(),
                 POK,
                 &mut dice,
-                &mut crate::rng::GameRng::new(seed_rolling(face)),
+                &mut crate::rng::GameRng::new(0),
                 &player(),
                 &relic,
             );
