@@ -272,6 +272,63 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
     context.state.combat_draw_round = Some(context.state.combat_round_seq);
 }
 
+/// Imperial Rider: "predict aloud an outcome of this agenda. If your prediction is correct, gain
+/// 1 victory point." The cost is the vote: a player who predicts cannot vote on that agenda.
+///
+/// The prediction is read from the event rather than from the game, because the card is played
+/// into the `AGENDA_REVEALED` window and the outcomes are what that event carries.
+fn imperial_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let choices: Vec<String> = context.state.agenda_choices.clone();
+    let Some(first) = choices.first().cloned() else {
+        return; // nothing to predict, so the card cannot resolve (22.3)
+    };
+    let predicted = if choices.len() == 1 {
+        first
+    } else {
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "Imperial Rider: predict the agenda outcome",
+            choices
+                .iter()
+                .map(|outcome| {
+                    crate::choice::ChoiceOption::labelled(
+                        outcome.clone(),
+                        "prediction",
+                        format!("predict {outcome}"),
+                    )
+                })
+                .collect(),
+        );
+        match context.table.ask(&choice) {
+            Ok(answer) => answer.id,
+            Err(_) => return,
+        }
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), predicted);
+}
+
+/// Pay every correct Imperial Rider once the outcome is known, and clear the predictions.
+///
+/// Called when a vote closes. Clearing matters: a prediction left behind would pay again on the
+/// next agenda, for a card that was spent on this one.
+pub fn resolve_predictions(state: &mut GameState, outcome: &str) -> Vec<PlayerId> {
+    let predictions = std::mem::take(&mut state.agenda_predictions);
+    let mut paid = Vec::new();
+    for (player, predicted) in predictions {
+        if predicted == outcome {
+            if let Some(seat) = state.player_mut(&player) {
+                seat.victory_points =
+                    (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+            }
+            paid.push(player);
+        }
+    }
+    paid
+}
+
 /// Apply every movement modifier this player currently owns to a set of rules.
 ///
 /// One door, called wherever rules are built for a real move. Reading the fields at each
@@ -304,6 +361,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         // fourth copy left off a list stays unplayable for ever with no symptom.
         "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
+        "imp_rider" => Some(imperial_rider),
         "nav_suite" => Some(nav_suite),
         "s_retreat1" | "s_retreat2" | "s_retreat3" | "s_retreat4" => Some(skilled_retreat),
         "silence_space" => Some(in_the_silence_of_space),
@@ -319,6 +377,7 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "fs2",
         "fs3",
         "fs4",
+        "imp_rider",
         "mb1",
         "mb2",
         "mb3",
@@ -441,6 +500,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_correct_prediction_is_worth_a_point_and_a_wrong_one_is_not() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "for".to_owned());
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("b"), "against".to_owned());
+
+        let paid = resolve_predictions(&mut state, "for");
+
+        assert_eq!(paid, vec![PlayerId::new("a")]);
+        assert_eq!(state.player(&PlayerId::new("a")).unwrap().victory_points, 1);
+        assert_eq!(state.player(&PlayerId::new("b")).unwrap().victory_points, 0);
+    }
+
+    #[test]
+    fn predictions_do_not_survive_the_agenda_they_were_made_on() {
+        // The card is spent on one agenda. A prediction left behind pays again on the next.
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "for".to_owned());
+
+        resolve_predictions(&mut state, "for");
+        assert!(state.agenda_predictions.is_empty());
+
+        let paid_again = resolve_predictions(&mut state, "for");
+        assert!(paid_again.is_empty(), "and cannot pay a second time");
+        assert_eq!(state.player(&PlayerId::new("a")).unwrap().victory_points, 1);
     }
 
     #[test]

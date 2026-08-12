@@ -1248,6 +1248,20 @@ impl<'a> Game<'a> {
                 self.emit(&format!("AGENDA_DISCARDED:{alias}"));
                 continue;
             }
+
+            // The outcomes have to be on the state before the window opens, because a card
+            // played into it predicts one of them. Nineteen action cards read "when" or "after
+            // an agenda is revealed", and this is the event they hang off.
+            self.state.agenda_choices.clone_from(&choices);
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "agenda".to_owned(),
+                serde_json::Value::String(alias.clone()),
+            );
+            if let Err(error) = self.emit_typed("AGENDA_REVEALED", payload) {
+                return self.result(false, Some(error));
+            }
+
             let mut window = VoteWindow::new(&self.state, &alias, choices);
             window.open(&self.state, self.content, self.sources);
             self.voting = Some((Box::new(window), queue));
@@ -1295,9 +1309,22 @@ impl<'a> Game<'a> {
             unreachable!("a vote was open");
         };
         let alias = window.alias().to_owned();
+        self.state.agenda_choices.clear();
+        if window.winner().is_none() {
+            // No outcome, so nobody predicted correctly — but the cards were still spent, and a
+            // prediction left behind would pay out on the next agenda.
+            self.state.agenda_predictions.clear();
+        }
         if let Some(outcome) = window.winner() {
             let outcome = outcome.to_owned();
             self.emit(&format!("AGENDA_RESOLVED:{alias}:{outcome}"));
+
+            // Imperial Rider pays out before the agenda's own effect, and clears the
+            // predictions. A prediction left behind would pay again on the next agenda, for a
+            // card that was spent on this one.
+            for player in crate::action_cards::resolve_predictions(&mut self.state, &outcome) {
+                self.emit(&format!("AGENDA_PREDICTION_CORRECT:{player}"));
+            }
 
             // 8.20 first: an elected or "For" law stays in play, and an effect that reads the
             // laws must see this one already there. 8.21 discards everything else.

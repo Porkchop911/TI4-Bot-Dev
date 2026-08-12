@@ -711,6 +711,17 @@ pub struct GameState {
     pub gravleash_move_values: BTreeMap<SystemId, i32>,
 
     // -- transactions (LRR 94) -----------------------------------------------------
+    /// The outcomes on offer for the agenda currently being voted on.
+    ///
+    /// Set when the agenda is revealed and read by anything played into that window, which is
+    /// what lets Imperial Rider predict one of them without reaching into the vote.
+    pub agenda_choices: Vec<String>,
+    /// Imperial Rider: the outcome each player predicted for the agenda being voted on.
+    ///
+    /// Held on the game rather than the seat because it belongs to one agenda, not to a player,
+    /// and is cleared when that agenda resolves. A player with an entry here has given up their
+    /// vote on it — the card's own cost.
+    pub agenda_predictions: BTreeMap<PlayerId, String>,
     /// Who each player has already transacted with this turn. LRR 94.1 caps it at one per
     /// neighbour, so this clears when the turn passes. Not compared.
     pub transactions_this_turn: BTreeMap<PlayerId, BTreeSet<PlayerId>>,
@@ -856,6 +867,8 @@ impl GameState {
             production_discount_remaining: 0,
             production_value_swapped_planet: None,
             gravleash_move_values: BTreeMap::new(),
+            agenda_choices: Vec::new(),
+            agenda_predictions: BTreeMap::new(),
             transactions_this_turn: BTreeMap::new(),
             traded_goods: BTreeMap::new(),
             traded_goods_for_promissory: BTreeMap::new(),
@@ -879,6 +892,8 @@ impl GameState {
             && self.expedition_slices == other.expedition_slices
             && self.wormhole_tokens == other.wormhole_tokens
             && self.gravleash_move_values == other.gravleash_move_values
+            && self.agenda_choices == other.agenda_choices
+            && self.agenda_predictions == other.agenda_predictions
             && self.transactions_this_turn == other.transactions_this_turn
             && self.traded_goods == other.traded_goods
             && self.traded_goods_for_promissory == other.traded_goods_for_promissory

@@ -236,6 +236,10 @@ impl VoteWindow {
     #[must_use]
     pub fn new(state: &GameState, alias: &str, choices: Vec<String>) -> Self {
         let mut order = state.clockwise_from(&state.speaker);
+        // Imperial Rider's cost: a player who predicted this agenda's outcome gives up their
+        // vote on it. Dropped from the order rather than skipped later, so nothing downstream
+        // has to remember they are barred.
+        order.retain(|player| !state.agenda_predictions.contains_key(player));
         if !order.is_empty() {
             order.rotate_left(1); // drop the speaker from the front...
             order.pop();
@@ -463,6 +467,48 @@ impl VoteWindow {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_player_who_predicted_the_outcome_does_not_vote_on_it() {
+        // Imperial Rider's cost. Without this the card is a free victory point.
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("a");
+        let choices = for_against();
+
+        let open = VoteWindow::new(&state, "some_agenda", choices.clone());
+        let before = open
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .map(|choice| choice.player);
+        assert!(before.is_some(), "somebody votes first");
+
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("b"), "for".to_owned());
+        let barred = VoteWindow::new(&state, "some_agenda", choices);
+
+        let mut asked = Vec::new();
+        let mut window = barred;
+        while let Some(choice) = window.pending_choice(&state, ContentStore::embedded(), POK) {
+            asked.push(choice.player.clone());
+            let answer = choice.options.first().cloned().expect("an option");
+            if window
+                .resolve(&mut state, ContentStore::embedded(), POK, answer)
+                .is_err()
+            {
+                break;
+            }
+            if asked.len() > 6 {
+                break;
+            }
+        }
+
+        assert!(
+            !asked.contains(&PlayerId::new("b")),
+            "b predicted, so b does not vote; asked {asked:?}"
+        );
+        assert!(asked.contains(&PlayerId::new("a")), "a still votes");
+    }
+
     use ti4_model::content_types::POK;
 
     use super::*;
