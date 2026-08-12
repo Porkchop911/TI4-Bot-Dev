@@ -328,3 +328,70 @@ fn every_relic_arrives_through_one_door() {
         "exploration draws relics without going through relics::gain"
     );
 }
+
+#[test]
+fn the_driver_still_wires_the_missing_subsystems() {
+    // Subsystems that had a guard before this commit:
+    //   agenda_effects (resolve), combat (space_cannon_offense, CombatWindow),
+    //   fleet (enforce), invasion (InvasionWindow), production (ProductionWindow),
+    //   leaders (ready_all, check_unlocks), exploration (explore), secrets
+    //   (scoreable, award), laws (fleet_pool_cap, action_card_limit,
+    //   nebulae_passable), transactions (available_actions, TradeWindow::open),
+    //   relics (available_actions, perform, gain), phase (via phase machine),
+    //   status (via phase machine), tactical (via tactical action),
+    //   tokens (via token gain).
+    //
+    // Subsystems that lacked a guard and now have one:
+    //   agenda (resolve_agenda_phase), draft (strategy_options, take_strategy_card),
+    //   objectives (ScoringWindow), transit (CargoWindow), vote (VoteWindow).
+    //
+    // Each guard was proven by breaking it: the corresponding call was temporarily
+    // removed from game.rs, the test failed, and the code was restored.
+    let driver = include_str!("game.rs");
+    // Imported with `use crate::...` — these appear in the use line, not as calls.
+    assert!(
+        driver.contains("agenda::"),
+        "agenda module is no longer imported by the driver"
+    );
+    assert!(
+        driver.contains("resolve_agenda_phase"),
+        "resolve_agenda_phase is no longer called by the driver"
+    );
+    assert!(
+        driver.contains("draft::"),
+        "draft module is no longer imported by the driver"
+    );
+    assert!(
+        driver.contains("strategy_options"),
+        "strategy_options is no longer called by the driver"
+    );
+    assert!(
+        driver.contains("take_strategy_card"),
+        "take_strategy_card is no longer called by the driver"
+    );
+    // Called with the full crate:: path — or at least the module::Name pattern.
+    assert!(
+        driver.contains("objectives::{"),
+        "objectives module is no longer imported by the driver"
+    );
+    assert!(
+        driver.contains("ScoringWindow"),
+        "ScoringWindow is no longer used by the driver"
+    );
+    assert!(
+        driver.contains("transit::{"),
+        "transit module is no longer imported by the driver"
+    );
+    assert!(
+        driver.contains("CargoWindow"),
+        "CargoWindow is no longer used by the driver"
+    );
+    assert!(
+        driver.contains("vote::{"),
+        "vote module is no longer imported by the driver"
+    );
+    assert!(
+        driver.contains("VoteWindow"),
+        "VoteWindow is no longer used by the driver"
+    );
+}
