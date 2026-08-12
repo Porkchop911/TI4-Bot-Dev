@@ -1221,6 +1221,9 @@ impl<'a> Game<'a> {
                 crate::agenda_effects::Effect::Unresolved { .. } => {
                     self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
                 }
+                crate::agenda_effects::Effect::Deferred { .. } => {
+                    self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
+                }
             }
         }
         self.open_next_vote(queue)
@@ -1721,14 +1724,21 @@ mod tests {
 
         // A For/Against law, so the vote has the ordinary two outcomes and passing it
         // leaves something behind on the table.
+        // Deliberately one with no registered effect, because the point of this test is that
+        // an agenda the engine cannot resolve still goes through the whole vote and says so.
+        let registered = crate::agenda_effects::registered_aliases();
         let law = ContentStore::embedded()
             .records(ti4_model::content_types::ContentType::Agendas)
             .iter()
             .find(|record| {
-                record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
+                record.text("type") == Some("Law")
+                    && record.text("target") == Some("For/Against")
+                    && record
+                        .text("alias")
+                        .is_some_and(|alias| !registered.contains(&alias))
             })
             .and_then(|record| record.text("alias"))
-            .expect("the corpus has a For/Against law")
+            .expect("the corpus has an unregistered For/Against law")
             .to_owned();
         state.agenda_deck = vec![law.clone()];
 

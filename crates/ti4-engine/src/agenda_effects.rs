@@ -19,6 +19,12 @@ pub enum Effect {
     Resolved { agenda: String },
     /// No handler is registered for this agenda.
     Unresolved { agenda: String },
+    /// The handler ran, but this outcome's half needs machinery the engine does not have.
+    ///
+    /// Distinct from [`Effect::Unresolved`] on purpose: an unregistered agenda is a gap in
+    /// coverage, while this is a known half that was deliberately not applied. Reporting the
+    /// second as the first would hide a card that is otherwise complete.
+    Deferred { agenda: String, what: String },
 }
 
 /// Agendas this engine can resolve.
@@ -26,7 +32,19 @@ pub enum Effect {
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
         "abolishment",
+        "arms_reduction",
         "constitution",
+        "conscription",
+        "conventions",
+        "core_mining",
+        "demilitarized_zone",
+        "disarmament",
+        "holy_planet_of_ixth",
+        "plowshares",
+        "representative_government",
+        "revolution",
+        "schematics",
+        "wormhole_recon",
         "economic_equality",
         "incentive",
         "mutiny",
@@ -46,11 +64,172 @@ fn everyone(state: &GameState) -> Vec<PlayerId> {
     state.seating_order.clone()
 }
 
+/// Discard a player's whole hand of action cards.
+///
+/// The cards leave the hand and are gone. This engine keeps no discard pile — nothing reads one
+/// yet — so a card that returns them (The Codex) will need one before it can be written.
+fn discard_hand(state: &mut GameState, player: &PlayerId) -> usize {
+    let Some(seat) = state.player_mut(player) else {
+        return 0;
+    };
+    std::mem::take(&mut seat.action_cards).len()
+}
+
+/// The system a planet sits in, according to the board.
+fn system_of(state: &GameState, planet: &str) -> Option<ti4_model::id::SystemId> {
+    let planet = ti4_model::id::PlanetId::new(planet);
+    state
+        .board
+        .iter()
+        .find(|(_, board)| {
+            board.planet_units.contains_key(&planet) || board.planet_control.contains_key(&planet)
+        })
+        .map(|(id, _)| id.clone())
+}
+
+/// Who controls a planet, if anybody.
+fn controller_of(state: &GameState, planet: &str) -> Option<PlayerId> {
+    let planet = ti4_model::id::PlanetId::new(planet);
+    state
+        .board
+        .values()
+        .find_map(|board| board.planet_control.get(&planet).cloned())
+}
+
+/// Remove units from a planet, keeping those the filter rejects, and report how many died.
+fn clear_planet(
+    state: &mut GameState,
+    content: &ti4_content::ContentStore,
+    sources: ti4_model::content_types::SourceSet,
+    planet: &str,
+    doomed: impl Fn(&str) -> bool,
+    limit: Option<usize>,
+) -> usize {
+    let Some(system) = system_of(state, planet) else {
+        return 0;
+    };
+    let types = ti4_content::units::catalogue(content, sources);
+    let planet = ti4_model::id::PlanetId::new(planet);
+    let Some(units) = state.system_mut(&system).planet_units.get_mut(&planet) else {
+        return 0;
+    };
+    let mut destroyed = 0;
+    units.retain(|unit| {
+        if limit.is_some_and(|cap| destroyed >= cap) {
+            return true;
+        }
+        let hit = types
+            .get(unit.type_id.as_str())
+            .is_some_and(|kind| doomed(kind.base_type()));
+        if hit {
+            destroyed += 1;
+        }
+        !hit
+    });
+    destroyed
+}
+
+/// Reduce a player to `keep` ships of one base type, destroying the rest.
+fn cull_ships(
+    state: &mut GameState,
+    content: &ti4_content::ContentStore,
+    sources: ti4_model::content_types::SourceSet,
+    player: &PlayerId,
+    base_type: &str,
+    keep: usize,
+) -> usize {
+    let types = ti4_content::units::catalogue(content, sources);
+    let matches = |unit: &ti4_model::units::Unit| {
+        &unit.owner == player
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == base_type)
+    };
+    let held: usize = state
+        .board
+        .values()
+        .map(|board| board.units.iter().filter(|unit| matches(unit)).count())
+        .sum();
+    let mut over = held.saturating_sub(keep);
+    let destroyed = over;
+    // Board order, which is stable: the *rule* does not say which ships go, so the choice must
+    // at least be reproducible rather than depending on map iteration.
+    for board in state.board.values_mut() {
+        if over == 0 {
+            break;
+        }
+        board.units.retain(|unit| {
+            if over > 0 && matches(unit) {
+                over -= 1;
+                return false;
+            }
+            true
+        });
+    }
+    destroyed
+}
+
+/// Place one infantry for this player on a planet.
+fn place_infantry(
+    state: &mut GameState,
+    content: &ti4_content::ContentStore,
+    sources: ti4_model::content_types::SourceSet,
+    player: &PlayerId,
+    system: &ti4_model::id::SystemId,
+    planet: &ti4_model::id::PlanetId,
+) {
+    let faction = state
+        .player(player)
+        .map(|seat| seat.faction.to_string())
+        .unwrap_or_default();
+    let generic = ti4_content::units::catalogue(content, sources)
+        .get("infantry")
+        .map(|unit| unit.id().to_owned());
+    let Some(id) = ti4_content::units::faction_unit(content, &faction, "infantry", sources)
+        .map(|unit| unit.id().to_owned())
+        .or(generic)
+    else {
+        return;
+    };
+    state
+        .system_mut(system)
+        .planet_units
+        .entry(planet.clone())
+        .or_default()
+        .push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new(id),
+            player.clone(),
+        ));
+}
+
+/// Whether this player owns a technology whose name mentions a war sun.
+fn owns_a_war_sun_technology(
+    state: &GameState,
+    content: &ti4_content::ContentStore,
+    player: &PlayerId,
+) -> bool {
+    state.player(player).is_some_and(|seat| {
+        seat.technologies.iter().any(|alias| {
+            content
+                .get(
+                    ti4_model::content_types::ContentType::Technologies,
+                    alias.as_str(),
+                )
+                .and_then(|record| record.text("name"))
+                .is_some_and(|name| name.to_ascii_lowercase().contains("war sun"))
+        })
+    })
+}
+
 /// Resolve one agenda's effect.
 ///
 /// `speaker_choice` breaks a tie where the card names one player and several are level — 8.18
 /// makes resolving the outcome the speaker's job, which is a decision rather than a guess at an
 /// unwritten tie-break. It is passed in so this stays free of the choice machinery.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per agenda: the list is the point, and splitting it hides the set"
+)]
 pub fn resolve(
     state: &mut GameState,
     content: &ti4_content::ContentStore,
@@ -59,7 +238,187 @@ pub fn resolve(
     ballot: &Ballot,
     mut speaker_choice: impl FnMut(&[PlayerId]) -> Option<PlayerId>,
 ) -> Effect {
+    // Every effect that touches units needs the unit catalogue, and the scope it is read under
+    // decides what a "dreadnought" is. PoK, as everywhere else in this engine.
+    let sources = ti4_model::content_types::POK;
     match agenda {
+        "disarmament" => {
+            // The elected planet's ground forces are bought out, and its controller is paid for
+            // them — so a planet nobody controls destroys its garrison for nothing.
+            let controller = controller_of(state, outcome);
+            let destroyed = clear_planet(
+                state,
+                content,
+                sources,
+                outcome,
+                |base| matches!(base, "infantry" | "mech"),
+                None,
+            );
+            if let Some(controller) = controller
+                && destroyed > 0
+                && let Some(seat) = state.player_mut(&controller)
+            {
+                seat.trade_goods += i32::try_from(destroyed).unwrap_or(i32::MAX);
+            }
+        }
+        "plowshares" => {
+            // For: half of everyone's infantry, rounded *up*, bought back as trade goods.
+            // Rounding down would leave a lone infantry standing, which the card does not.
+            //
+            // Against is the opposite card: everyone *arms*, one infantry per planet held. An
+            // effect that did nothing on Against would make voting it down free, when it is the
+            // half that puts troops on the board.
+            if outcome != FOR {
+                for player in everyone(state) {
+                    let held: Vec<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> = state
+                        .controlled_planets(&player)
+                        .into_iter()
+                        .map(|(system, planet)| (system.clone(), planet.clone()))
+                        .collect();
+                    for (system, planet) in held {
+                        place_infantry(state, content, sources, &player, &system, &planet);
+                    }
+                }
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            for player in everyone(state) {
+                let mut destroyed = 0;
+                let held_planets: Vec<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> = state
+                    .controlled_planets(&player)
+                    .into_iter()
+                    .map(|(system, planet)| (system.clone(), planet.clone()))
+                    .collect();
+                for (system, planet) in held_planets {
+                    let types = ti4_content::units::catalogue(content, sources);
+                    let held: Vec<usize> = state
+                        .system_state(&system)
+                        .planet_units
+                        .get(&planet)
+                        .map(|units| {
+                            units
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, unit)| {
+                                    unit.owner == player
+                                        && types
+                                            .get(unit.type_id.as_str())
+                                            .is_some_and(|kind| kind.base_type() == "infantry")
+                                })
+                                .map(|(index, _)| index)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let losses = held.len().div_ceil(2);
+                    if let Some(units) = state.system_mut(&system).planet_units.get_mut(&planet) {
+                        for index in held.into_iter().take(losses).rev() {
+                            units.remove(index);
+                        }
+                    }
+                    destroyed += losses;
+                }
+                if let Some(seat) = state.player_mut(&player) {
+                    seat.trade_goods += i32::try_from(destroyed).unwrap_or(i32::MAX);
+                }
+            }
+        }
+        "arms_reduction" => {
+            if outcome != FOR {
+                // Against exhausts planets with a technology specialty, which needs an exhaust
+                // this effect cannot ask for. Deferred rather than silently skipped.
+                return Effect::Deferred {
+                    agenda: agenda.to_owned(),
+                    what: "exhaust planets with a technology specialty".to_owned(),
+                };
+            }
+            for player in everyone(state) {
+                cull_ships(state, content, sources, &player, "dreadnought", 2);
+                cull_ships(state, content, sources, &player, "cruiser", 4);
+            }
+        }
+        "conventions" => {
+            // Against: everyone who voted Against loses their hand. Voting for a law that
+            // fails costs nothing; voting against one that fails costs everything.
+            if outcome == FOR {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            for player in ballot.voted_for(AGAINST) {
+                discard_hand(state, &player);
+            }
+        }
+        "schematics" => {
+            if outcome == FOR {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            for player in everyone(state) {
+                if owns_a_war_sun_technology(state, content, &player) {
+                    discard_hand(state, &player);
+                }
+            }
+        }
+        "conscription" => {
+            // Against does nothing. The For half is a standing rule and belongs to `laws`,
+            // which is why this arm exists at all: an agenda with no arm is *unavailable*.
+        }
+        "core_mining" => {
+            // An infantry pays for the seam. The planet's +2 resources is the law itself.
+            clear_planet(
+                state,
+                content,
+                sources,
+                outcome,
+                |base| base == "infantry",
+                Some(1),
+            );
+        }
+        "demilitarized_zone" => {
+            // Everything on the planet dies; the standing ban is the law.
+            clear_planet(state, content, sources, outcome, |_| true, None);
+        }
+        "holy_planet_of_ixth" => {
+            if let Some(controller) = controller_of(state, outcome) {
+                adjust_victory_points(state, &controller, 1);
+            }
+        }
+        "wormhole_recon" => {
+            // Against: a command token in each wormhole system holding one of your ships.
+            if outcome == FOR {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            let systems = ti4_content::galaxy::all_systems(content, sources);
+            for (id, board) in state.board.clone() {
+                let has_wormhole = systems
+                    .get(id.as_str())
+                    .is_some_and(|system| !system.wormholes().is_empty());
+                if !has_wormhole {
+                    continue;
+                }
+                for player in everyone(state) {
+                    if !board.units_of(&player).is_empty() {
+                        state.system_mut(&id).command_tokens.insert(player);
+                    }
+                }
+            }
+        }
+        "revolution" | "representative_government" => {
+            // Both Against halves exhaust planets by a rule this effect cannot ask for.
+            if outcome == FOR {
+                return Effect::Resolved {
+                    agenda: agenda.to_owned(),
+                };
+            }
+            return Effect::Deferred {
+                agenda: agenda.to_owned(),
+                what: "Against voters exhaust planets".to_owned(),
+            };
+        }
         "economic_equality" => {
             // Everyone's trade goods go back to the supply first, then For pays five each.
             // Doing it in that order matters: on Against, the card is purely destructive.
@@ -175,6 +534,302 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// Resolve one agenda with a given outcome and ballot, with no speaker on hand.
+    fn run(state: &mut GameState, agenda: &str, outcome: &str, ballot: &Ballot) -> Effect {
+        resolve(
+            state,
+            ti4_content::ContentStore::embedded(),
+            agenda,
+            outcome,
+            ballot,
+            |_| None,
+        )
+    }
+
+    fn no_votes() -> Ballot {
+        Ballot::default()
+    }
+
+    /// A player controlling one planet, with `infantry` infantry on it.
+    fn garrison(count: usize) -> (GameState, ti4_model::id::PlanetId, PlayerId) {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, count);
+        (state, planet, player)
+    }
+
+    fn on_planet(state: &GameState, planet: &ti4_model::id::PlanetId) -> usize {
+        state
+            .board
+            .values()
+            .filter_map(|board| board.planet_units.get(planet))
+            .map(Vec::len)
+            .sum()
+    }
+
+    #[test]
+    fn compensated_disarmament_pays_the_controller_for_the_garrison() {
+        let (mut state, planet, player) = garrison(3);
+        state.player_mut(&player).unwrap().trade_goods = 0;
+
+        run(&mut state, "disarmament", planet.as_str(), &no_votes());
+
+        assert_eq!(on_planet(&state, &planet), 0, "the garrison was disarmed");
+        assert_eq!(
+            state.player(&player).unwrap().trade_goods,
+            3,
+            "and paid for, one trade good each"
+        );
+    }
+
+    #[test]
+    fn swords_to_plowshares_rounds_the_losses_up() {
+        // Three infantry lose two, not one: rounding down would leave a garrison standing that
+        // the card removes.
+        let (mut state, planet, player) = garrison(3);
+        state.player_mut(&player).unwrap().trade_goods = 0;
+
+        run(&mut state, "plowshares", FOR, &no_votes());
+
+        assert_eq!(on_planet(&state, &planet), 1);
+        assert_eq!(state.player(&player).unwrap().trade_goods, 2);
+    }
+
+    #[test]
+    fn swords_to_plowshares_arms_everyone_when_it_fails() {
+        // The Against half is the opposite card. Doing nothing here would make voting it down
+        // free, when it is the half that puts troops on the board.
+        let (mut state, planet, _) = garrison(0);
+
+        run(&mut state, "plowshares", AGAINST, &no_votes());
+
+        assert_eq!(
+            on_planet(&state, &planet),
+            1,
+            "one infantry on each planet held"
+        );
+    }
+
+    #[test]
+    fn arms_reduction_keeps_two_dreadnoughts_and_four_cruisers() {
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put(&mut state, &system, "dreadnought", &player, 5);
+        crate::fixtures::put(&mut state, &system, "cruiser", &player, 6);
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 3);
+
+        run(&mut state, "arms_reduction", FOR, &no_votes());
+
+        let count = |base: &str| {
+            let types = ti4_content::units::catalogue(
+                ti4_content::ContentStore::embedded(),
+                ti4_model::content_types::POK,
+            );
+            state
+                .system_state(&system)
+                .units
+                .iter()
+                .filter(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == base)
+                })
+                .count()
+        };
+        assert_eq!(count("dreadnought"), 2);
+        assert_eq!(count("cruiser"), 4);
+        assert_eq!(count("carrier"), 3, "the card names two hulls, not three");
+    }
+
+    #[test]
+    fn arms_reduction_defers_its_against_half_rather_than_claiming_it() {
+        let mut state = crate::fixtures::game(&["a"]);
+        let effect = run(&mut state, "arms_reduction", AGAINST, &no_votes());
+
+        assert!(
+            matches!(effect, Effect::Deferred { .. }),
+            "the Against half needs an exhaust this cannot ask for: {effect:?}"
+        );
+    }
+
+    #[test]
+    fn conventions_of_war_burns_the_hands_of_those_who_voted_against() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for player in [PlayerId::new("a"), PlayerId::new("b")] {
+            state.player_mut(&player).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("card")];
+        }
+        let ballot = Ballot {
+            votes: [(PlayerId::new("a"), AGAINST.to_owned())]
+                .into_iter()
+                .collect(),
+            counts: std::collections::BTreeMap::new(),
+        };
+
+        run(&mut state, "conventions", AGAINST, &ballot);
+
+        assert!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .action_cards
+                .is_empty(),
+            "a voted against and lost the hand"
+        );
+        assert_eq!(
+            state
+                .player(&PlayerId::new("b"))
+                .unwrap()
+                .action_cards
+                .len(),
+            1,
+            "b did not vote against and keeps it"
+        );
+    }
+
+    #[test]
+    fn conventions_of_war_costs_nothing_when_it_passes() {
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&PlayerId::new("a")).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("card")];
+        let ballot = Ballot {
+            votes: [(PlayerId::new("a"), AGAINST.to_owned())]
+                .into_iter()
+                .collect(),
+            counts: std::collections::BTreeMap::new(),
+        };
+
+        run(&mut state, "conventions", FOR, &ballot);
+
+        assert_eq!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .action_cards
+                .len(),
+            1,
+            "the law passed, so the Against half never happens"
+        );
+    }
+
+    #[test]
+    fn core_mining_takes_exactly_one_infantry() {
+        let (mut state, planet, _) = garrison(3);
+
+        run(&mut state, "core_mining", planet.as_str(), &no_votes());
+
+        assert_eq!(
+            on_planet(&state, &planet),
+            2,
+            "one infantry paid for the seam"
+        );
+    }
+
+    #[test]
+    fn a_demilitarized_zone_clears_everything_on_the_planet() {
+        let (mut state, planet, player) = garrison(2);
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &player, 1);
+
+        run(
+            &mut state,
+            "demilitarized_zone",
+            planet.as_str(),
+            &no_votes(),
+        );
+
+        assert_eq!(on_planet(&state, &planet), 0, "structures go too");
+    }
+
+    #[test]
+    fn the_holy_planet_scores_for_whoever_holds_it() {
+        let (mut state, planet, player) = garrison(0);
+        let before = state.player(&player).unwrap().victory_points;
+
+        run(
+            &mut state,
+            "holy_planet_of_ixth",
+            planet.as_str(),
+            &no_votes(),
+        );
+
+        assert_eq!(
+            state.player(&player).unwrap().victory_points,
+            before + 1,
+            "the controller takes the point at once"
+        );
+    }
+
+    #[test]
+    fn publicize_schematics_only_burns_hands_that_hold_a_war_sun() {
+        let content = ti4_content::ContentStore::embedded();
+        let war_sun = content
+            .from_sources(
+                ti4_model::content_types::ContentType::Technologies,
+                ti4_model::content_types::POK,
+            )
+            .find(|record| {
+                record
+                    .text("name")
+                    .is_some_and(|name| name.to_ascii_lowercase().contains("war sun"))
+            })
+            .and_then(|record| record.text("alias").map(ToOwned::to_owned));
+        let Some(war_sun) = war_sun else {
+            panic!("the corpus has a war sun technology");
+        };
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for player in [PlayerId::new("a"), PlayerId::new("b")] {
+            state.player_mut(&player).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("card")];
+        }
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new(war_sun));
+
+        run(&mut state, "schematics", AGAINST, &no_votes());
+
+        assert!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .action_cards
+                .is_empty(),
+            "a owns the technology"
+        );
+        assert_eq!(
+            state
+                .player(&PlayerId::new("b"))
+                .unwrap()
+                .action_cards
+                .len(),
+            1,
+            "b does not"
+        );
+    }
+
+    #[test]
+    fn every_registered_agenda_resolves_to_something() {
+        // A registered alias whose match has no arm falls through to Unresolved, which would
+        // read as a coverage gap in a card that is listed as covered.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for alias in registered_aliases() {
+            let effect = run(&mut state, alias, FOR, &no_votes());
+            assert!(
+                !matches!(effect, Effect::Unresolved { .. }),
+                "{alias} is registered but has no arm"
+            );
+        }
+    }
+
     use std::collections::BTreeMap;
 
     use ti4_content::ContentStore;
