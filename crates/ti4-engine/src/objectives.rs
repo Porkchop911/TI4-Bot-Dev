@@ -257,10 +257,42 @@ fn attached_planets(count: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// Have units in `count` systems holding a legendary planet, Mecatol Rex, or an anomaly.
+///
+/// "Notable" is the card's word for places worth contesting, and it is read from the corpus
+/// rather than from a hand-written tile list — a list would go stale the moment the corpus does.
+fn in_notable_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+        let planets = all_planets(position.content, position.sources);
+        position
+            .state
+            .board
+            .iter()
+            .filter(|(_, board)| !board.units_of(position.player).is_empty())
+            .filter(|(id, _)| {
+                if id.as_str() == crate::seating::MECATOL {
+                    return true;
+                }
+                let Some(system) = systems.get(id.as_str()) else {
+                    return false;
+                };
+                system.is_anomaly()
+                    || system.planets().iter().any(|planet| {
+                        planets
+                            .get(planet)
+                            .is_some_and(ti4_content::galaxy::Planet::is_legendary)
+                    })
+            })
+            .count()
+            >= count
+    }
+}
+
 /// The registered requirements, by objective alias.
 ///
 /// Three tranches: planet control, technology and structures, and fleets/space. The oracle
-/// registers 32; 19 are covered here. The rest stay unregistered and
+/// registers 32; 22 are covered here, plus the eight bought ones. The rest stay unregistered and
 /// therefore unscoreable, which is the designed behaviour for a coverage gap — see the module
 /// documentation. [`unregistered_objectives`] reports which they are.
 #[must_use]
@@ -324,6 +356,15 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     fn ancient_monuments(p: &Position<'_>) -> bool {
         attached_planets(3)(p)
     }
+    fn lost_outposts(p: &Position<'_>) -> bool {
+        attached_planets(2)(p)
+    }
+    fn make_history(p: &Position<'_>) -> bool {
+        in_notable_systems(2)(p)
+    }
+    fn become_legend(p: &Position<'_>) -> bool {
+        in_notable_systems(4)(p)
+    }
 
     match alias.as_str() {
         "expand_borders" => Some(expand_borders),
@@ -345,6 +386,9 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
         "deep_space" => Some(deep_space),
         "vast_territories" => Some(vast_territories),
         "ancient_monuments" => Some(ancient_monuments),
+        "lost_outposts" => Some(lost_outposts),
+        "make_history" => Some(make_history),
+        "become_legend" => Some(become_legend),
         _ => None,
     }
 }
@@ -360,9 +404,12 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "diversify",
         "expand_borders",
         "infrastructure",
+        "lost_outposts",
+        "make_history",
         "massive_cities",
         "master_science",
         "ancient_monuments",
+        "become_legend",
         "command_armada",
         "deep_space",
         "protect_border",
@@ -857,9 +904,9 @@ mod tests {
         let mut state = game(&players);
         state
             .revealed_objectives
-            .push(ObjectiveId::new("make_history"));
+            .push(ObjectiveId::new("supremacy"));
 
-        assert!(requirement_for(&ObjectiveId::new("make_history")).is_none());
+        assert!(requirement_for(&ObjectiveId::new("supremacy")).is_none());
         assert!(scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty());
     }
 
@@ -869,12 +916,12 @@ mod tests {
         let mut state = game(&players);
         state.revealed_objectives = vec![
             ObjectiveId::new("expand_borders"),
-            ObjectiveId::new("make_history"),
+            ObjectiveId::new("supremacy"),
         ];
 
         assert_eq!(
             unregistered_objectives(&state),
-            vec![ObjectiveId::new("make_history")]
+            vec![ObjectiveId::new("supremacy")]
         );
     }
 
