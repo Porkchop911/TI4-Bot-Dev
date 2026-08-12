@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -226,6 +228,76 @@ class StateProjectionTests(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             error_projection(RuntimeError("stalled"), state, option_id=3)
+
+    def test_cli_exports_a_valid_byte_identical_initial_setup_stream(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:
+            first = Path(temporary) / "first.ndjson"
+            second = Path(temporary) / "second.ndjson"
+            command = [
+                sys.executable,
+                str(REPO_ROOT / "tools" / "oracle_export.py"),
+                "--game-id",
+                "stable",
+                "--seed",
+                "42",
+                "--seats",
+                "alpha,beta",
+                "--output",
+            ]
+            environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            subprocess.run(command + [str(first), "--validate-schema"], check=True, env=environment)
+            subprocess.run(command + [str(second), "--validate-schema"], check=True, env=environment)
+
+            first_bytes = first.read_bytes()
+            self.assertEqual(first_bytes, second.read_bytes())
+            records = [json.loads(line) for line in first_bytes.splitlines()]
+            self.assertEqual(records[0]["type"], "header")
+            self.assertEqual(records[0]["seed"], 42)
+            self.assertEqual(records[0]["seats"], ["alpha", "beta"])
+            self.assertEqual(
+                [record["type"] for record in records],
+                ["header", "state", "view", "view", "choice"],
+            )
+            self.assertEqual([record["viewer"] for record in records[2:4]], ["alpha", "beta"])
+
+    def test_cli_changes_output_for_distinct_seed_seats_and_sources(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:
+            temporary_path = Path(temporary)
+            environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+            def exported(name: str, *arguments: str) -> bytes:
+                output = temporary_path / f"{name}.ndjson"
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(REPO_ROOT / "tools" / "oracle_export.py"),
+                        "--game-id",
+                        "variant",
+                        "--seed",
+                        "42",
+                        "--seats",
+                        "alpha,beta",
+                        "--output",
+                        str(output),
+                        *arguments,
+                    ],
+                    check=True,
+                    env=environment,
+                )
+                return output.read_bytes()
+
+            baseline = exported("baseline")
+            self.assertNotEqual(baseline, exported("different-seed", "--seed", "43"))
+            self.assertNotEqual(baseline, exported("different-seats", "--seats", "beta,alpha"))
+            self.assertNotEqual(baseline, exported("different-sources", "--sources", "base"))
+
+    def test_cli_rejects_outside_output_and_malformed_stream(self) -> None:
+        from oracle_exporter.cli import _output_path, validate_records
+
+        with self.assertRaises(ValueError):
+            _output_path(str(ORACLE_ROOT / "forbidden.ndjson"))
+        with self.assertRaises(ValueError):
+            validate_records([{"type": "header"}, {"type": "state"}])
 
 
 if __name__ == "__main__":

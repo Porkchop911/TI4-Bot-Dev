@@ -169,9 +169,9 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-009g-error-exporter`, based on M00-009f package commit `59b00f6`.
+- Branch: `wp/m00-009h1-cli-wiring`, based on M00-009g package commit `5ab009e`.
 - Last completed package: M00-009g — executable deterministic error projection
-  (`plans/evidence/M00-009g.md`).
+  (`plans/evidence/M00-009g.md`). M00-009h1 is validated and awaiting its focused package commit.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
@@ -182,10 +182,14 @@ are recorded in the package evidence; independent review remains owner-waived.
   `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
 - The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
   actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
-- M04-015 remains blocked: no CLI/NDJSON exporter, selected generated corpus, or cross-engine
-  comparison exists.
-- Next dependency-ready package: M00-009h — byte-identical reproducibility verification, which
-  first requires a narrowly scoped read-only CLI/NDJSON wiring package.
+- M04-015 remains blocked: the new setup-only CLI/NDJSON exporter has no selected generated corpus,
+  complete causal trace, or cross-engine comparison.
+- M00-009h is split before implementation: M00-009h1 wires and validates a deterministic,
+  read-only initial-setup NDJSON stream; M00-009h2 will run the reproducibility campaign over that
+  executable stream. This preserves the original acceptance requirement without pretending the
+  still-unimplemented full causal event trace exists.
+- After committing M00-009h1, the next ready package is M00-009h2 — reproducibility verification
+  over the executable initial-setup stream. No oracle paths are writable.
 
 ## Implementation status
 
