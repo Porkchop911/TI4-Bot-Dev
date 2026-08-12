@@ -58,7 +58,10 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "public objectives",
             total: count(content, ContentType::PublicObjectives, sources),
-            implemented: crate::objectives::registered_aliases().len(),
+            // Bought objectives (61.10) are covered by their price, not a predicate, so they
+            // count here too — otherwise the ledger would under-report by eight.
+            implemented: crate::objectives::registered_aliases().len()
+                + crate::objectives::bought_aliases().len(),
         },
         Coverage {
             registry: "secret objectives",

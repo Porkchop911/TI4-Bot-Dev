@@ -562,7 +562,7 @@ are recorded in the package evidence; independent review remains owner-waived.
   impression. Measured now (PoK scope):
 
 ```
-public objectives      19/40   implemented (48%)
+public objectives      27/40   implemented (68%)
 secret objectives      10/40   implemented (25%)
 action cards            0/122  implemented (0%)
 agenda effects          0/63   implemented (0%)
@@ -596,6 +596,20 @@ relics                  0/17   implemented (0%)
 - `four_technologies_of_one_colour_is_not_four_technologies` is the one worth keeping: one
   technology in each of four tracks is the *opposite* of what the card asks for, and a naive
   count would have scored it.
+
+## Purchase objectives checkpoint (authoritative)
+
+- **565 passing tests**; workspace clippy-clean under `-D warnings`.
+- Objective coverage 19/40 → **27/40 (68%)**. The eight bought objectives (61.10) are covered by
+  their *price* rather than a predicate, and the ledger counts them — otherwise it would
+  under-report by eight.
+- **Affordable to offer, paid to take.** Being asked spends nothing; `award` charges. A
+  predicate that spent as a side effect would bill a player for merely being offered the card,
+  and an unaffordable purchase now returns `Unaffordable` with the state untouched.
+- Token costs are taken strategy pool first, then fleet, then tactic. The oracle leaves the
+  split to the player; this fixed order is a simplification and is recorded as one.
+- The payment planner from M06-001 does the resource and influence purchases, which is the
+  first caller to use it.
 
 ## Implementation status
 

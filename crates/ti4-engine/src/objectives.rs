@@ -415,6 +415,146 @@ pub fn controls_home_system(position: &Position<'_>) -> bool {
         .all(|planet| controlled.iter().any(|(_, held)| held.as_str() == *planet))
 }
 
+/// What an objective scored by spending costs (61.10).
+///
+/// These are the objectives you *buy* rather than achieve. They are affordable to **offer** and
+/// paid to **take**, which is why the cost is a separate lookup from the requirement: a
+/// predicate that spent as a side effect would charge a player for merely being asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cost {
+    /// Exhaust planets and spend trade goods for resources or influence.
+    Spend {
+        amount: i64,
+        kind: crate::production::Spend,
+    },
+    /// Spend trade goods alone.
+    TradeGoods(i32),
+    /// Spend command tokens from any pools.
+    Tokens(i32),
+}
+
+/// Objectives bought rather than achieved (61.10).
+#[must_use]
+pub fn bought_aliases() -> Vec<&'static str> {
+    vec![
+        "centralize_trade",
+        "galvanize",
+        "golden_age",
+        "lead",
+        "manipulate_law",
+        "monument",
+        "sway_council",
+        "trade_routes",
+    ]
+}
+
+/// The price of an objective, if it is bought rather than achieved.
+#[must_use]
+pub fn cost_of(alias: &ObjectiveId) -> Option<Cost> {
+    use crate::production::Spend;
+    let cost = match alias.as_str() {
+        "monument" => Cost::Spend {
+            amount: 8,
+            kind: Spend::Resources,
+        },
+        "golden_age" => Cost::Spend {
+            amount: 16,
+            kind: Spend::Resources,
+        },
+        "sway_council" => Cost::Spend {
+            amount: 8,
+            kind: Spend::Influence,
+        },
+        "manipulate_law" => Cost::Spend {
+            amount: 16,
+            kind: Spend::Influence,
+        },
+        "trade_routes" => Cost::TradeGoods(5),
+        "centralize_trade" => Cost::TradeGoods(10),
+        "lead" => Cost::Tokens(3),
+        "galvanize" => Cost::Tokens(6),
+        _ => return None,
+    };
+    Some(cost)
+}
+
+/// Whether this player could pay for a bought objective right now.
+#[must_use]
+pub fn can_afford(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    cost: Cost,
+) -> bool {
+    match cost {
+        Cost::Spend { amount, kind } => {
+            crate::payment::affordable(state, content, sources, player, amount, kind)
+        }
+        Cost::TradeGoods(amount) => state
+            .player(player)
+            .is_some_and(|seat| seat.trade_goods >= amount),
+        Cost::Tokens(amount) => state
+            .player(player)
+            .is_some_and(|seat| seat.total_tokens() >= amount),
+    }
+}
+
+/// Pay for a bought objective. `false` without spending anything if it cannot be met.
+///
+/// Token costs are taken from the strategy pool first, then fleet, then tactic. The oracle
+/// leaves the split to the player; taking a fixed order here is a simplification, and it is
+/// recorded rather than hidden because a player who wanted to keep strategy tokens has had that
+/// choice made for them.
+pub fn pay_for(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    cost: Cost,
+) -> bool {
+    if !can_afford(state, content, sources, player, cost) {
+        return false;
+    }
+    match cost {
+        Cost::Spend { amount, kind } => {
+            let Some(plan) = crate::payment::plans(state, content, sources, player, amount, kind)
+                .into_iter()
+                .next()
+            else {
+                return false;
+            };
+            crate::payment::apply(state, player, &plan)
+        }
+        Cost::TradeGoods(amount) => {
+            if let Some(seat) = state.player_mut(player) {
+                seat.trade_goods -= amount;
+            }
+            true
+        }
+        Cost::Tokens(amount) => {
+            let mut owed = amount;
+            for pool in [
+                ti4_model::state::TokenPool::Strategic,
+                ti4_model::state::TokenPool::Fleet,
+                ti4_model::state::TokenPool::Tactic,
+            ] {
+                if owed == 0 {
+                    break;
+                }
+                let Some(seat) = state.player_mut(player) else {
+                    return false;
+                };
+                let held = seat.tokens(pool);
+                let take = held.min(owed);
+                seat.gain_token(pool, -take);
+                owed -= take;
+            }
+            owed == 0
+        }
+    }
+}
+
 /// Revealed public objectives this player could score right now.
 #[must_use]
 pub fn scoreable(
@@ -432,7 +572,14 @@ pub fn scoreable(
         .revealed_objectives
         .iter()
         .filter(|alias| !already.contains(*alias))
-        .filter(|alias| requirement_for(alias).is_some_and(|check| check(&position)))
+        .filter(|alias| {
+            // 61.10: a bought objective is offered when it can be afforded. Its price is
+            // checked here and charged in `award`, so being asked costs nothing.
+            cost_of(alias).map_or_else(
+                || requirement_for(alias).is_some_and(|check| check(&position)),
+                |cost| can_afford(state, content, sources, player, cost),
+            )
+        })
         .cloned()
         .collect()
 }
@@ -456,6 +603,8 @@ pub enum ScoreError {
     UnknownObjective(ObjectiveId),
     #[error("player {0} is not seated")]
     PlayerMissing(PlayerId),
+    #[error("objective {0} could not be paid for")]
+    Unaffordable(ObjectiveId),
 }
 
 /// Score an objective, capping victory points at the target (98.4a).
@@ -466,11 +615,20 @@ pub enum ScoreError {
 pub fn award(
     state: &mut GameState,
     content: &ContentStore,
+    sources: SourceSet,
     player: &PlayerId,
     alias: &ObjectiveId,
 ) -> Result<i32, ScoreError> {
     let points =
         points_for(content, alias).ok_or_else(|| ScoreError::UnknownObjective(alias.clone()))?;
+
+    // 61.10: paid on taking, not on being offered. Nothing is scored if the price cannot be
+    // met, so a bought objective can never be taken for free.
+    if let Some(cost) = cost_of(alias)
+        && !pay_for(state, content, sources, player, cost)
+    {
+        return Err(ScoreError::Unaffordable(alias.clone()));
+    }
 
     state.record_score(player, alias.clone());
     let seat = state
@@ -626,7 +784,7 @@ impl ScoringWindow {
             return Ok(None);
         }
         let alias = ObjectiveId::new(option.id);
-        award(state, content, &player, &alias)?;
+        award(state, content, sources, &player, &alias)?;
         if winner(state).is_some() {
             state.finished = true;
         }
@@ -1004,6 +1162,111 @@ mod tests {
     }
 
     #[test]
+    fn a_bought_objective_is_offered_when_affordable_and_charged_when_taken() {
+        // 61.10. Being asked costs nothing; taking it charges. A predicate that spent as a
+        // side effect would bill a player for merely being offered the card.
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("trade_routes")];
+
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
+            "no trade goods, so it is not offered"
+        );
+
+        state.player_mut(&PlayerId::new("a")).unwrap().trade_goods = 5;
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
+            vec![ObjectiveId::new("trade_routes")]
+        );
+        assert_eq!(
+            state.player(&PlayerId::new("a")).unwrap().trade_goods,
+            5,
+            "being offered spent nothing"
+        );
+
+        award(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &PlayerId::new("a"),
+            &ObjectiveId::new("trade_routes"),
+        )
+        .unwrap();
+        assert_eq!(
+            state.player(&PlayerId::new("a")).unwrap().trade_goods,
+            0,
+            "taking it charged the five"
+        );
+    }
+
+    #[test]
+    fn an_unaffordable_purchase_scores_nothing() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("centralize_trade")];
+        let before = state.clone();
+
+        assert_eq!(
+            award(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &PlayerId::new("a"),
+                &ObjectiveId::new("centralize_trade")
+            ),
+            Err(ScoreError::Unaffordable(ObjectiveId::new(
+                "centralize_trade"
+            )))
+        );
+        assert!(state.identical(&before), "nothing was spent or scored");
+    }
+
+    #[test]
+    fn a_token_purchase_spends_command_tokens() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives = vec![ObjectiveId::new("lead")];
+        let before = state.player(&PlayerId::new("a")).unwrap().total_tokens();
+        assert!(before >= 3, "a fresh player has tokens");
+
+        award(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &PlayerId::new("a"),
+            &ObjectiveId::new("lead"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.player(&PlayerId::new("a")).unwrap().total_tokens(),
+            before - 3
+        );
+    }
+
+    #[test]
+    fn every_bought_objective_is_a_real_card() {
+        for alias in [
+            "monument",
+            "golden_age",
+            "sway_council",
+            "manipulate_law",
+            "trade_routes",
+            "centralize_trade",
+            "lead",
+            "galvanize",
+        ] {
+            let alias = ObjectiveId::new(alias);
+            assert!(cost_of(&alias).is_some());
+            assert!(
+                points_for(ContentStore::embedded(), &alias).is_some(),
+                "{alias} is not an objective the corpus knows"
+            );
+        }
+    }
+
+    #[test]
     fn an_already_scored_objective_is_not_offered_again() {
         // 61.8: each objective scores once per game, per player.
         let players = ids(&["a"]);
@@ -1028,6 +1291,7 @@ mod tests {
         let points = award(
             &mut state,
             ContentStore::embedded(),
+            POK,
             &PlayerId::new("a"),
             &alias,
         )
@@ -1055,6 +1319,7 @@ mod tests {
         award(
             &mut state,
             ContentStore::embedded(),
+            POK,
             &PlayerId::new("a"),
             &ObjectiveId::new("expand_borders"),
         )
@@ -1077,6 +1342,7 @@ mod tests {
             award(
                 &mut state,
                 ContentStore::embedded(),
+                POK,
                 &PlayerId::new("a"),
                 &alias
             ),
