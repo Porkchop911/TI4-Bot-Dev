@@ -252,15 +252,10 @@ fn resolve_instant(
         "majent" => (1, 3),
         "kel1" | "kel2" => (2, 0),
         "dw" => {
-            // Draw 1 relic.
-            let Some(relic) = state.relic_deck.first().cloned() else {
-                return true; // an empty deck gives nothing, which is not a failure
-            };
-            state.relic_deck.remove(0);
-            if let Some(seat) = state.player_mut(player) {
-                seat.relics.push(relic);
-            }
-            return true;
+            // Draw 1 relic, through `relics::gain` — a relic can be worth a point the moment it
+            // arrives, and taking it off the deck here scored nobody the Shard.
+            crate::relics::gain(state, player);
+            return true; // an empty deck gives nothing, which is not a failure
         }
         "aw1" | "aw2" | "aw3" | "aw4" => {
             let chosen = ask(

@@ -302,3 +302,29 @@ fn the_driver_still_offers_transactions() {
         "opening a transaction no longer opens a negotiation"
     );
 }
+
+#[test]
+fn the_driver_still_offers_relic_actions() {
+    // Relics were built, tested, and reachable from nothing: `use_relic` was called only by its
+    // own tests, so a relic could be drawn, held and counted while being unusable all game.
+    let driver = include_str!("game.rs");
+    assert!(
+        driver.contains("crate::relics::available_actions"),
+        "no turn offers a relic action any more"
+    );
+    assert!(
+        driver.contains("crate::relics::perform"),
+        "taking a relic action no longer resolves it"
+    );
+}
+
+#[test]
+fn every_relic_arrives_through_one_door() {
+    // A relic can be worth a point the moment it arrives, so a path that takes one off the deck
+    // by hand scores nobody the Shard. Exploration did exactly that.
+    let exploration = include_str!("exploration.rs");
+    assert!(
+        exploration.contains("crate::relics::gain"),
+        "exploration draws relics without going through relics::gain"
+    );
+}

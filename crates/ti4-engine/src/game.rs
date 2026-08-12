@@ -538,6 +538,12 @@ impl<'a> Game<'a> {
                     active,
                 ));
         }
+        choice.options.extend(crate::relics::available_actions(
+            &self.state,
+            self.content,
+            self.sources,
+            active,
+        ));
         Some(choice)
     }
 
@@ -572,6 +578,30 @@ impl<'a> Game<'a> {
                         .expect("active player exists")
                         .passed = true;
                     self.emit("PLAYER_PASSED");
+                    self.advance_turn();
+                    return Ok(());
+                }
+                // 22.1: a component action costs the whole turn, so unlike a transaction this
+                // advances it whether or not the relic did anything worth having.
+                if answer.kind == crate::relics::ACTION_KIND {
+                    let mut dice = std::mem::take(&mut self.dice);
+                    let mut rng = self.rng.clone();
+                    let done = crate::relics::perform(
+                        &mut self.state,
+                        self.content,
+                        self.sources,
+                        &mut dice,
+                        &mut rng,
+                        &active,
+                        &answer,
+                    );
+                    self.dice = dice;
+                    self.rng = rng;
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
                     self.advance_turn();
                     return Ok(());
                 }

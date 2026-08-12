@@ -30,7 +30,7 @@ pub enum Used {
 /// Relics this engine can resolve.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["bookoflatvinia", "dynamiscore"]
+    vec!["bookoflatvinia", "dynamiscore", "shard", "thesilverflame"]
 }
 
 /// Whether a player holds a relic.
@@ -75,11 +75,43 @@ fn controls_all_four_specialties(
     found.len() >= 4
 }
 
+/// A faction's printed commodity value (21.1).
+fn commodity_value(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
+    state.player(player).map_or(0, |seat| {
+        ti4_content::factions::get(content, seat.faction.as_str())
+            .map_or(0, |faction| faction.commodities())
+    })
+}
+
+/// The Shard of the Throne, which is worth a victory point simply for being held.
+pub const SHARD: &str = "shard";
+
+/// Draw the top relic (73.2).
+///
+/// Every path that hands a player a relic goes through here, because a relic can be worth a
+/// point the moment it arrives: the Shard was worth nothing when exploration drew it straight
+/// off the deck, and would have been worth nothing again for the next path written.
+pub fn gain(state: &mut GameState, player: &PlayerId) -> Option<RelicId> {
+    let top = state.relic_deck.first().cloned()?; // 73.2a: an empty deck yields nothing
+    state.relic_deck.remove(0);
+    if let Some(seat) = state.player_mut(player) {
+        seat.relics.push(top.clone());
+    }
+    if top.as_str() == SHARD
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+    }
+    Some(top)
+}
+
 /// Use a relic's action, purging it.
 pub fn use_relic(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
+    dice: &mut crate::dice::Dice,
+    rng: &mut crate::rng::GameRng,
     player: &PlayerId,
     relic: &RelicId,
 ) -> Used {
@@ -93,9 +125,10 @@ pub fn use_relic(
             // "Gain trade goods equal to your commodity value, then purge this card." The
             // card's other half — commodity value increased by 2 — is a standing modifier, and
             // is applied here to the gain so the two halves cannot disagree about the number.
-            let value = state
-                .player(player)
-                .map_or(0, |seat| seat.commodities.max(0) + 2);
+            // Commodity *value* is the faction's printed number, not how many commodities the
+            // player happens to be holding. Reading the holding pays a full seat nothing and an
+            // empty one two, which is the card backwards.
+            let value = commodity_value(state, content, player) + 2;
             if let Some(seat) = state.player_mut(player) {
                 seat.trade_goods += value;
             }
@@ -110,6 +143,43 @@ pub fn use_relic(
                 state.speaker = player.clone();
             }
         }
+        "thesilverflame" => {
+            // A ten scores; anything else consumes the home system and bars this player from
+            // public objectives for the rest of the game. The roll happens either way, so the
+            // card is purged before the branch rather than in one arm of it.
+            let roll = dice
+                .roll(rng, 1, "silver_flame", None)
+                .faces
+                .first()
+                .copied()
+                .unwrap_or(0);
+            purge(state, player, relic);
+            if roll == 10 {
+                if let Some(seat) = state.player_mut(player) {
+                    seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+                }
+                return Used::Purged {
+                    relic: relic.clone(),
+                };
+            }
+            let home = state.player(player).and_then(|seat| {
+                seat.home_system.clone().or_else(|| {
+                    ti4_content::factions::get(content, seat.faction.as_str())
+                        .and_then(|faction| faction.home_system())
+                        .map(ti4_model::id::SystemId::new)
+                })
+            });
+            if let Some(seat) = state.player_mut(player) {
+                seat.public_objectives_forbidden = true;
+            }
+            if let Some(home) = home {
+                state.board.remove(&home);
+                state.purged_systems.insert(home);
+            }
+            return Used::Purged {
+                relic: relic.clone(),
+            };
+        }
         _ => {
             return Used::Unresolved {
                 relic: relic.clone(),
@@ -120,6 +190,98 @@ pub fn use_relic(
     Used::Purged {
         relic: relic.clone(),
     }
+}
+
+// -- the component action (22) -----------------------------------------------------------------
+
+/// The kind of a relic component action.
+pub const ACTION_KIND: &str = "component";
+
+/// The prefix of an option that purges fragments, and of one that uses a held relic.
+const PURGE_PREFIX: &str = "purge|";
+const USE_PREFIX: &str = "relic|";
+
+/// Component actions this player could take with relics and fragments right now.
+///
+/// Two kinds, and only the first ever existed here: purging three fragments for a new relic,
+/// and using a relic already in the play area. Without the second a relic could be drawn,
+/// held and counted while being unusable for the whole game.
+#[must_use]
+pub fn available_actions(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<crate::choice::ChoiceOption> {
+    let mut options: Vec<crate::choice::ChoiceOption> =
+        crate::exploration::purgeable(state, player)
+            .into_iter()
+            .map(|trait_name| {
+                crate::choice::ChoiceOption::labelled(
+                    format!("{PURGE_PREFIX}{trait_name}"),
+                    ACTION_KIND,
+                    format!(
+                        "purge 3 {} relic fragments for a relic",
+                        trait_name.to_lowercase()
+                    ),
+                )
+            })
+            .collect();
+
+    let held = state
+        .player(player)
+        .map(|seat| seat.relics.clone())
+        .unwrap_or_default();
+    let known = registered_aliases();
+    options.extend(
+        held.into_iter()
+            // 22.3: an action that cannot fully resolve is never offered, and a relic with no
+            // handler cannot resolve at all.
+            .filter(|relic| known.contains(&relic.as_str()))
+            .filter(|relic| relic.as_str() != SHARD) // held for its point; it has no action
+            .map(|relic| {
+                crate::choice::ChoiceOption::labelled(
+                    format!("{USE_PREFIX}{relic}"),
+                    ACTION_KIND,
+                    format!("use {relic}"),
+                )
+            }),
+    );
+    let _ = (content, sources);
+    options
+}
+
+/// Perform a relic component action. Returns `false` for an option that is not one.
+pub fn perform(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut crate::dice::Dice,
+    rng: &mut crate::rng::GameRng,
+    player: &PlayerId,
+    option: &crate::choice::ChoiceOption,
+) -> bool {
+    if let Some(trait_name) = option.id.strip_prefix(PURGE_PREFIX) {
+        // The fragments are spent by `purge_for_relic`, which draws straight from the deck, so
+        // the Shard's point is applied here rather than being lost on this one path.
+        let before = state.player(player).map(|seat| seat.relics.len());
+        let gained = crate::exploration::purge_for_relic(state, player, trait_name);
+        if let (Some(relic), Some(_)) = (gained.as_ref(), before)
+            && relic.as_str() == SHARD
+            && let Some(seat) = state.player_mut(player)
+        {
+            seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+        }
+        return gained.is_some();
+    }
+    if let Some(alias) = option.id.strip_prefix(USE_PREFIX) {
+        let relic = RelicId::new(alias);
+        return matches!(
+            use_relic(state, content, sources, dice, rng, player, &relic),
+            Used::Purged { .. }
+        );
+    }
+    false
 }
 
 /// Relics in the corpus that nothing here resolves.
@@ -156,6 +318,170 @@ mod tests {
     }
 
     #[test]
+    fn the_shard_is_worth_a_point_the_moment_it_arrives() {
+        let mut state = game(&["a"]);
+        state.relic_deck = vec![RelicId::new(SHARD)];
+        let before = state.player(&player()).unwrap().victory_points;
+
+        let gained = gain(&mut state, &player());
+
+        assert_eq!(gained, Some(RelicId::new(SHARD)));
+        assert_eq!(
+            state.player(&player()).unwrap().victory_points,
+            before + 1,
+            "held, not used: the point comes with the card"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_relic_is_worth_no_points() {
+        let mut state = game(&["a"]);
+        state.relic_deck = vec![RelicId::new("dynamiscore")];
+        let before = state.player(&player()).unwrap().victory_points;
+
+        gain(&mut state, &player());
+
+        assert_eq!(state.player(&player()).unwrap().victory_points, before);
+    }
+
+    #[test]
+    fn an_empty_relic_deck_gives_nothing() {
+        let mut state = game(&["a"]);
+        state.relic_deck.clear();
+        assert_eq!(gain(&mut state, &player()), None);
+    }
+
+    /// The first seed whose next die shows `face`.
+    ///
+    /// There are no loaded dice here, and a test that took whatever the stream gave would
+    /// exercise one branch of this card and call it the card.
+    fn seed_rolling(face: u32) -> u64 {
+        (0..10_000)
+            .find(|seed| {
+                let mut rng = crate::rng::GameRng::new(*seed);
+                crate::dice::Dice::new()
+                    .roll(&mut rng, 1, "probe", None)
+                    .faces
+                    .first()
+                    .copied()
+                    == Some(face)
+            })
+            .expect("some seed rolls it")
+    }
+
+    #[test]
+    fn the_silver_flame_scores_on_a_ten_and_burns_you_otherwise() {
+        // Both halves are reachable, so the roll is forced rather than hoped for: a test that
+        // takes whatever the stream gives would exercise one branch and call it the card.
+        for (face, scored) in [(10, true), (1, false)] {
+            let mut state = game(&["a"]);
+            let relic = give(&mut state, "thesilverflame");
+            state.player_mut(&player()).unwrap().faction = ti4_model::id::FactionId::new("sol");
+            let home = ti4_content::factions::get(ContentStore::embedded(), "sol")
+                .and_then(|faction| faction.home_system())
+                .map(ti4_model::id::SystemId::new)
+                .expect("sol has a home system");
+            state.system_mut(&home);
+            let before = state.player(&player()).unwrap().victory_points;
+
+            let mut dice = crate::dice::Dice::new();
+            use_relic(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &mut dice,
+                &mut crate::rng::GameRng::new(seed_rolling(face)),
+                &player(),
+                &relic,
+            );
+
+            let seat = state.player(&player()).unwrap();
+            assert!(!holds(&state, &player(), &relic), "purged either way");
+            if scored {
+                assert_eq!(seat.victory_points, before + 1);
+                assert!(!seat.public_objectives_forbidden);
+                assert!(state.purged_systems.is_empty());
+            } else {
+                assert_eq!(seat.victory_points, before);
+                assert!(
+                    seat.public_objectives_forbidden,
+                    "the price is every public objective for the rest of the game"
+                );
+                assert!(state.purged_systems.contains(&home), "and the home system");
+            }
+        }
+    }
+
+    #[test]
+    fn a_relic_with_no_handler_is_never_offered_as_an_action() {
+        // 22.3: an action that cannot fully resolve is not offered. A relic the engine cannot
+        // resolve would otherwise be a turn spent on nothing.
+        let mut state = game(&["a"]);
+        let unknown = unimplemented(ContentStore::embedded(), POK)
+            .into_iter()
+            .next()
+            .expect("some relic is still unimplemented");
+        state.player_mut(&player()).unwrap().relics = vec![unknown.clone()];
+
+        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+
+        assert!(
+            offered.is_empty(),
+            "{unknown} has no handler and must not be offered: {offered:?}"
+        );
+    }
+
+    #[test]
+    fn a_held_relic_is_offered_and_using_it_purges_it() {
+        let mut state = game(&["a"]);
+        let relic = give(&mut state, "dynamiscore");
+
+        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        let option = offered
+            .iter()
+            .find(|option| option.id.contains(relic.as_str()))
+            .cloned()
+            .expect("the relic is offered");
+
+        assert!(perform(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &option,
+        ));
+        assert!(!holds(&state, &player(), &relic));
+    }
+
+    #[test]
+    fn fragments_are_offered_as_an_action_and_buy_a_relic() {
+        let mut state = game(&["a"]);
+        state.relic_deck = vec![RelicId::new("dynamiscore")];
+        state.player_mut(&player()).unwrap().relic_fragments =
+            [("CULTURAL".to_owned(), 3)].into_iter().collect();
+
+        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        let option = offered
+            .iter()
+            .find(|option| option.id.starts_with("purge|"))
+            .cloned()
+            .expect("three fragments buy a relic");
+
+        assert!(perform(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &option,
+        ));
+        assert_eq!(state.player(&player()).unwrap().relics.len(), 1);
+    }
+
+    #[test]
     fn a_relic_you_do_not_hold_does_nothing() {
         let mut state = game(&["a"]);
         let before = state.clone();
@@ -163,6 +489,8 @@ mod tests {
             &mut state,
             ContentStore::embedded(),
             POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
             &player(),
             &RelicId::new("dynamiscore"),
         );
@@ -175,7 +503,15 @@ mod tests {
         let mut state = game(&["a"]);
         let relic = give(&mut state, "nanoforge");
 
-        let used = use_relic(&mut state, ContentStore::embedded(), POK, &player(), &relic);
+        let used = use_relic(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &relic,
+        );
 
         assert!(matches!(used, Used::Unresolved { .. }));
         assert!(holds(&state, &player(), &relic), "it was not purged");
@@ -183,19 +519,33 @@ mod tests {
 
     #[test]
     fn dynamis_core_counts_its_own_bonus_into_the_gain() {
-        // The card's standing half raises commodity value by 2, and its action gains that
-        // value. Applying the halves separately is how the two end up disagreeing.
+        // The card's standing half raises commodity *value* by 2, and its action gains that
+        // value. Value is the faction's printed number: reading the commodities in hand pays a
+        // full seat nothing extra and an empty one two, which is the card backwards.
         let mut state = game(&["a"]);
         let relic = give(&mut state, "dynamiscore");
-        state.player_mut(&player()).unwrap().commodities = 3;
-        state.player_mut(&player()).unwrap().trade_goods = 0;
+        let seat = state.player_mut(&player()).unwrap();
+        seat.faction = ti4_model::id::FactionId::new("sol");
+        seat.commodities = 0;
+        seat.trade_goods = 0;
+        let printed = ti4_content::factions::get(ContentStore::embedded(), "sol")
+            .expect("sol is a faction")
+            .commodities();
 
-        use_relic(&mut state, ContentStore::embedded(), POK, &player(), &relic);
+        use_relic(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &relic,
+        );
 
         assert_eq!(
             state.player(&player()).unwrap().trade_goods,
-            5,
-            "three commodities plus the card's own two"
+            printed + 2,
+            "the printed value plus the card's own two, with none in hand"
         );
         assert!(!holds(&state, &player(), &relic), "and it purged itself");
     }
@@ -206,7 +556,15 @@ mod tests {
         state.speaker = PlayerId::new("b");
         let relic = give(&mut state, "bookoflatvinia");
 
-        use_relic(&mut state, ContentStore::embedded(), POK, &player(), &relic);
+        use_relic(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &relic,
+        );
 
         assert_eq!(state.speaker, player());
         assert_eq!(state.player(&player()).unwrap().victory_points, 0);
@@ -241,7 +599,15 @@ mod tests {
             return;
         }
 
-        use_relic(&mut state, ContentStore::embedded(), POK, &player(), &relic);
+        use_relic(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(0),
+            &player(),
+            &relic,
+        );
 
         assert_eq!(state.player(&player()).unwrap().victory_points, 1);
         assert_eq!(state.speaker, PlayerId::new("b"), "the token did not move");
