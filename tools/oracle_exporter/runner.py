@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+import itertools
+import json
+from typing import Any, Iterable
 
 from .cli import EXPORT_SCOPE, ORACLE_COMMIT, SCHEMA_VERSION, _load_oracle
 from .projections.choice import choice_projection
@@ -50,11 +52,14 @@ def _scenario_game(scenario: str, seed: int, table: Any) -> tuple[Any, list[str]
 class _RecordingTable:
     """Delegate generated legal choices while preserving the exact selected option ID."""
 
-    def __init__(self, seed: int, records: list[dict[str, Any]]) -> None:
+    def __init__(
+        self, seed: int, records: list[dict[str, Any]], decisions: Iterable[str] | None = None
+    ) -> None:
         _, _, _ = _load_oracle()
-        from engine.choice import SeededRandom, Table
+        from engine.choice import Scripted, SeededRandom, Table
 
-        self._table = Table(default=SeededRandom(seed))
+        default = SeededRandom(seed) if decisions is None else Scripted(decisions)
+        self._table = Table(default=default)
         self._records = records
 
     def ask(self, choice: Any) -> Any:
@@ -89,7 +94,9 @@ def _dice_entropy(game: Any) -> dict[str, Any]:
     }
 
 
-def bounded_game_records(scenario: str, seed: int, rounds: int) -> list[dict[str, Any]]:
+def bounded_game_records(
+    scenario: str, seed: int, rounds: int, decisions: Iterable[str] | None = None
+) -> list[dict[str, Any]]:
     """Run a bounded seeded scenario and return its observable replay inputs/outputs.
 
     The original oracle exception is deliberately allowed to propagate.  Callers may use
@@ -99,8 +106,15 @@ def bounded_game_records(scenario: str, seed: int, rounds: int) -> list[dict[str
 
     if rounds <= 0:
         raise ValueError("rounds must be positive")
+    # Event IDs are allocated from an oracle module-global iterator. An export must be
+    # independent of earlier exports in this interpreter, so establish the documented
+    # per-trace origin before constructing any event-producing game objects.
+    _load_oracle()
+    from engine import timing
+
+    timing._uid_counter = itertools.count(1)
     records: list[dict[str, Any]] = []
-    table = _RecordingTable(seed, records)
+    table = _RecordingTable(seed, records, decisions)
     game, seats, sources = _scenario_game(scenario, seed, table)
     records.extend(
         [
@@ -140,3 +154,25 @@ def bounded_game_records(scenario: str, seed: int, rounds: int) -> list[dict[str
         records.append(outcome_projection(game.state, reason))
     records.append(_dice_entropy(game))
     return records
+
+
+def bounded_ndjson_bytes(records: Iterable[dict[str, Any]]) -> bytes:
+    """Encode a bounded-game stream canonically, including its terminal newline."""
+
+    return b"".join(
+        json.dumps(record, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii") + b"\n"
+        for record in records
+    )
+
+
+def replay_records(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rebuild a bounded run from its stable selected option IDs."""
+
+    materialized = list(records)
+    if not materialized or materialized[0].get("type") != "header":
+        raise ValueError("replay input must start with a header")
+    header = materialized[0]
+    if header.get("export_scope") != "bounded_game":
+        raise ValueError("replay input is not a bounded-game export")
+    decisions = [record["selected"] for record in materialized if record.get("type") == "choice"]
+    return bounded_game_records(header["scenario"], header["seed"], header["rounds"], decisions)

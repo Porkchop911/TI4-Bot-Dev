@@ -169,29 +169,30 @@ are recorded in the package evidence; independent review remains owner-waived.
 
 ## Current package checkpoint (authoritative)
 
-- Branch: `wp/m00-009i-causal-export-gap`, based on M00-009h2 package commit `e4dfb2b`.
-- Last completed package: M00-009i — bounded-game observation layer
-  (`plans/evidence/M00-009i.md`), pending its focused package commit.
+- Branch: `wp/m00-009j-bounded-replay`, based on M00-009i package commit `dca1feb`.
+- Last completed package: M00-009j — bounded-game scripted replay
+  (`plans/evidence/M00-009j.md`), pending its focused package commit.
 - M00-008 fixture-selection and M00-009 design documents existed without code. M00-009b through g
   now provide deterministic public-state, redacted-view, choice, resolved-event, outcome, and
   structured-error components.
-- Twelve focused tests cover canonical state ordering, state byte stability, viewer-private identity
+- Eighteen focused tests cover canonical state ordering, state byte stability, viewer-private identity
   preservation, opponent redaction, view byte stability, choice option ordering, payload
   canonicalization/refusal, event UID/cancellation/context, finished-outcome tie-breaking, and
   deterministic structured errors. Oracle HEAD remains
   `37061c511a4780d4c0719e0342533a498cd4b457` and its tree is clean.
 - The stale M00-007a draft schema named fields absent from the pinned oracle. M00-009b records the
   actual-field reconciliation; it cannot yet be advertised as an exact shared Rust/Python schema.
-- M04-015 remains blocked: the new setup-only CLI/NDJSON exporter has no selected generated corpus,
-  complete causal trace, or cross-engine comparison.
+- M04-015 remains blocked: bounded generated traces exist, but there is no selected generated corpus
+  or Rust/Python cross-engine comparison.
 - M00-009h is split before implementation: M00-009h1 wires and validates a deterministic,
   read-only initial-setup NDJSON stream; M00-009h2 completed its reproducibility campaign. This
   preserves the original acceptance requirement without pretending the still-unimplemented full
   causal event trace exists.
 - M00-009i observes a bounded seeded scenario's generated choices, resolved events, final state,
-  and dice history. Next ready package: script replay over that stream. No oracle paths are
-  writable. The earlier campaign's five reproducible scratch outputs remain untracked only under
-  ignored `.tmp-m00-009h2`.
+  and dice history. M00-009j replays its captured option IDs and proves byte-identical bounded-game
+  streams, including across the executable replay CLI. Next ready package: M00-010 corpus campaign,
+  after its fixture/output policy is reconciled. No oracle paths are writable. The earlier campaign's
+  five reproducible scratch outputs remain untracked only under ignored `.tmp-m00-009h2`.
 
 ## Implementation status
 

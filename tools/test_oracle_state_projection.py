@@ -312,6 +312,35 @@ class StateProjectionTests(unittest.TestCase):
         self.assertEqual(records[-2]["type"], "state")
         self.assertEqual(records[-1]["type"], "entropy")
 
+    def test_bounded_game_replay_is_byte_identical(self) -> None:
+        from oracle_exporter.runner import bounded_game_records, bounded_ndjson_bytes, replay_records
+
+        exported = bounded_game_records("save54_base", seed=11, rounds=1)
+        replayed = replay_records(exported)
+
+        self.assertEqual(bounded_ndjson_bytes(exported), bounded_ndjson_bytes(replayed))
+
+    def test_bounded_replay_cli_recreates_export_bytes(self) -> None:
+        from oracle_exporter.runner import bounded_game_records, bounded_ndjson_bytes
+
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary:
+            source = Path(temporary) / "export.ndjson"
+            replay = Path(temporary) / "replay.ndjson"
+            source.write_bytes(bounded_ndjson_bytes(bounded_game_records("save54_base", seed=13, rounds=1)))
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "tools" / "oracle_replay.py"),
+                    "--input",
+                    str(source),
+                    "--output",
+                    str(replay),
+                ],
+                check=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertEqual(source.read_bytes(), replay.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()
