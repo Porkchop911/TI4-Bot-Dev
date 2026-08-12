@@ -259,6 +259,88 @@ fn same_colour_technologies(count: usize) -> impl Fn(&Position<'_>) -> bool {
     }
 }
 
+/// Control a legendary planet.
+fn a_legendary_planet() -> impl Fn(&Position<'_>) -> bool {
+    |position| {
+        let catalogue = ti4_content::galaxy::all_planets(position.content, position.sources);
+        position
+            .state
+            .controlled_planets(position.player)
+            .into_iter()
+            .any(|(_, planet)| {
+                catalogue
+                    .get(planet.as_str())
+                    .is_some_and(ti4_content::galaxy::Planet::is_legendary)
+            })
+    }
+}
+
+/// Control Mecatol Rex and have `ships` or more ships in its system.
+fn hold_mecatol(ships: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let mecatol = ti4_model::id::SystemId::new(crate::seating::MECATOL);
+        let board = position.state.system_state(&mecatol);
+        if !board.controls_a_planet(position.player) {
+            return false;
+        }
+        let types = ti4_content::units::catalogue(position.content, position.sources);
+        board
+            .units_of(position.player)
+            .into_iter()
+            .filter(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+            })
+            .count()
+            >= ships
+    }
+}
+
+/// Have `count` mechs, each on a different planet.
+///
+/// Four mechs on one planet is not four planets, which is the whole shape of the card.
+fn mechs_on_distinct_planets(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let types = ti4_content::units::catalogue(position.content, position.sources);
+        let mut planets = std::collections::BTreeSet::new();
+        for board in position.state.board.values() {
+            for (planet, units) in &board.planet_units {
+                if units.iter().any(|unit| {
+                    &unit.owner == position.player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(|kind| kind.base_type() == "mech")
+                }) {
+                    planets.insert(planet.clone());
+                }
+            }
+        }
+        planets.len() >= count
+    }
+}
+
+/// Have `count` or more ground forces on one planet.
+fn ground_forces_on_one_planet(count: usize) -> impl Fn(&Position<'_>) -> bool {
+    move |position| {
+        let types = ti4_content::units::catalogue(position.content, position.sources);
+        position.state.board.values().any(|board| {
+            board.planet_units.values().any(|units| {
+                units
+                    .iter()
+                    .filter(|unit| {
+                        &unit.owner == position.player
+                            && types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                    })
+                    .count()
+                    >= count
+            })
+        })
+    }
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -300,7 +382,24 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         same_colour_technologies(4)(p)
     }
 
+    fn legendary(p: &Position<'_>) -> bool {
+        a_legendary_planet()(p)
+    }
+    fn mecatol_with_three(p: &Position<'_>) -> bool {
+        hold_mecatol(3)(p)
+    }
+    fn four_mechs(p: &Position<'_>) -> bool {
+        mechs_on_distinct_planets(4)(p)
+    }
+    fn nine_ground_forces(p: &Position<'_>) -> bool {
+        ground_forces_on_one_planet(9)(p)
+    }
+
     match alias.as_str() {
+        "sai" => Some(legendary),
+        "ose" => Some(mecatol_with_three),
+        "mtm" => Some(four_mechs),
+        "otf" => Some(nine_ground_forces),
         "eap" => Some(four_pds),
         "fwm" => Some(three_docks),
         "gamf" => Some(five_dreadnoughts),
@@ -319,7 +418,8 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ctr", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp", "mrm",
+        "ctr", "eap", "eh", "faa", "fwm", "gamf", "hrm", "mlp", "mp", "mrm", "mtm", "ose", "otf",
+        "sai",
     ]
 }
 
@@ -564,6 +664,65 @@ mod tests {
         }
 
         assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
+    }
+
+    #[test]
+    fn four_mechs_on_one_planet_is_not_four_planets() {
+        // The card counts planets, not mechs, which is its whole shape.
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("mtm")];
+        let (system, planet) = a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("mech"),
+                    player(),
+                ));
+        }
+
+        assert!(
+            scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty(),
+            "four mechs, one planet"
+        );
+    }
+
+    #[test]
+    fn holding_mecatol_needs_the_planet_and_the_ships() {
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("ose")];
+        let mecatol = ti4_model::id::SystemId::new(crate::seating::MECATOL);
+
+        // Ships alone are not control.
+        for _ in 0..3 {
+            state
+                .system_mut(&mecatol)
+                .units
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("cruiser"),
+                    player(),
+                ));
+        }
+        assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
+
+        // Control without enough ships is not enough either.
+        let rex =
+            ti4_content::galaxy::planets_in(ContentStore::embedded(), crate::seating::MECATOL, POK)
+                .first()
+                .map(|planet| ti4_model::id::PlanetId::new(planet.id()));
+        let Some(rex) = rex else { return };
+        state.system_mut(&mecatol).set_control(rex, player());
+
+        assert_eq!(
+            scoreable(&state, ContentStore::embedded(), POK, &player()),
+            vec![SecretObjectiveId::new("ose")],
+            "control plus three ships scores it"
+        );
     }
 
     #[test]
