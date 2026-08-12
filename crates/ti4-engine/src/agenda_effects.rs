@@ -6,6 +6,8 @@
 //! effect unresolved — the same design every other registry here uses, and the same one the
 //! oracle uses via `AGENDA_EFFECT_UNRESOLVED`.
 
+use ti4_content::ContentStore;
+use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
@@ -66,6 +68,18 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "unconventional",
         "seed_empire",
     ]
+}
+
+/// Agendas in the corpus that have no registered effect.
+#[must_use]
+pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> {
+    let known = registered_aliases();
+    content
+        .from_sources(ContentType::Agendas, sources)
+        .filter_map(|record| record.text("alias"))
+        .filter(|alias| !known.contains(alias))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// 98.4a caps a player at the target; a loss cannot take them below zero.
@@ -973,6 +987,7 @@ pub fn resolve_with(
 
 #[cfg(test)]
 mod tests {
+    use ti4_model::content_types::POK;
 
     /// Resolve one agenda with a given outcome and ballot, with no speaker on hand.
     fn run(state: &mut GameState, agenda: &str, outcome: &str, ballot: &Ballot) -> Effect {
@@ -1952,6 +1967,18 @@ mod tests {
                     .get(ti4_model::content_types::ContentType::Agendas, alias)
                     .is_some(),
                 "{alias} is not an agenda the corpus knows"
+            );
+        }
+    }
+
+    #[test]
+    fn the_unimplemented_agendas_are_reported() {
+        let missing = unimplemented(ContentStore::embedded(), POK);
+        assert!(!missing.is_empty(), "most agendas are still unimplemented");
+        for alias in registered_aliases() {
+            assert!(
+                !missing.contains(&alias.to_owned()),
+                "{alias} is registered and must not appear in unimplemented"
             );
         }
     }

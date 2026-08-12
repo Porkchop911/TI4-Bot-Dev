@@ -743,6 +743,18 @@ pub fn registered_aliases() -> Vec<&'static str> {
     ]
 }
 
+/// Secret objectives in the corpus that have no registered requirement.
+#[must_use]
+pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<SecretObjectiveId> {
+    let known = registered_aliases();
+    content
+        .from_sources(ContentType::SecretObjectives, sources)
+        .filter_map(|record| record.text("alias"))
+        .filter(|alias| !known.contains(alias))
+        .map(SecretObjectiveId::new)
+        .collect()
+}
+
 /// Status-phase secrets this player may score now.
 ///
 /// Action and agenda secrets are deliberately excluded: they are offered at the event that
@@ -1736,5 +1748,17 @@ mod tests {
             assert!(requirement_for(&SecretObjectiveId::new(alias)).is_some());
         }
         let _ = put;
+    }
+
+    #[test]
+    fn the_unimplemented_secrets_are_reported() {
+        let missing = unimplemented(ContentStore::embedded(), POK);
+        assert!(!missing.is_empty(), "most secrets are still unimplemented");
+        for alias in registered_aliases() {
+            assert!(
+                !missing.contains(&SecretObjectiveId::new(alias)),
+                "{alias} is registered and must not appear in unimplemented"
+            );
+        }
     }
 }
