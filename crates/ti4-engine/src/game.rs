@@ -608,6 +608,7 @@ impl<'a> Game<'a> {
                 .options
                 .extend(crate::transactions::available_actions(
                     &self.state,
+                    self.content,
                     galaxy,
                     active,
                 ));

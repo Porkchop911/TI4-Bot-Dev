@@ -27,9 +27,12 @@ pub fn counts_against_supply(kind: &UnitType<'_>) -> bool {
 /// Regulations holds it to four however many tokens a player has piled up. Faction abilities
 /// that raise it are still unimplemented.
 #[must_use]
-pub fn limit(state: &GameState, player: &PlayerId) -> i32 {
+pub fn limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
     let base = state.player(player).map_or(0, |seat| seat.fleet_tokens);
-    crate::laws::fleet_pool_cap(state, base)
+    let capped = crate::laws::fleet_pool_cap(state, base);
+    // The law caps first and the ability lifts afterwards, which is the order that lets Letnev's
+    // Armada mean something under Fleet Regulations rather than being erased by it.
+    crate::faction_abilities::fleet_supply(state, content, player, capped)
 }
 
 /// Ships beyond the cap in this system, if any.
@@ -52,7 +55,7 @@ pub fn over_supply(
                 .is_some_and(counts_against_supply)
         })
         .count();
-    present.saturating_sub(usize::try_from(limit(state, player).max(0)).unwrap_or(0))
+    present.saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
 }
 
 /// Capacity-consuming units that cannot legally remain in this space area (16.3).

@@ -123,7 +123,10 @@ pub fn effective_hits_on(
     let morale_is_current = state
         .player(player)
         .is_some_and(|seat| seat.combat_bonus_round == Some(state.combat_round_seq));
-    Some(threshold - i64::from(morale_is_current))
+    // A faction shift applies to the *roll*, so it moves the threshold the other way: Sardakk's
+    // Unrelenting adds one to each die, which is the same as needing one less.
+    let faction = crate::faction_abilities::combat_modifier(state, content, player, "space");
+    Some(threshold - i64::from(morale_is_current) - faction)
 }
 
 /// Replace the missed dice in one space-combat batch when Munitions Reserves is current.

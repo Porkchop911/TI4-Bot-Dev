@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 
+use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
@@ -109,6 +110,29 @@ pub fn neighbours(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> Vec<
         .filter(|other| are_neighbours(state, galaxy, player, other))
         .cloned()
         .collect()
+}
+
+/// Everyone this player may transact with, given their faction.
+///
+/// Hacan's Guild Ships makes the whole table a neighbour, so the map stops deciding who they may
+/// deal with. Kept beside `neighbours` rather than inside it, because 60.1 is a fact about the
+/// board and this is a fact about a card.
+#[must_use]
+pub fn partners(
+    state: &GameState,
+    content: &ContentStore,
+    galaxy: &Galaxy,
+    player: &PlayerId,
+) -> Vec<PlayerId> {
+    if crate::faction_abilities::ignores_neighbours(state, content, player) {
+        return state
+            .seating_order
+            .iter()
+            .filter(|other| *other != player)
+            .cloned()
+            .collect();
+    }
+    neighbours(state, galaxy, player)
 }
 
 /// Whether a player holds what they offered.
@@ -260,11 +284,12 @@ const NOTE_PRICE: i32 = 2;
 #[must_use]
 pub fn available_actions(
     state: &GameState,
+    content: &ContentStore,
     galaxy: &Galaxy,
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
     let already = state.transacted_with(player);
-    neighbours(state, galaxy, player)
+    partners(state, content, galaxy, player)
         .into_iter()
         .filter(|other| !already.contains(other))
         .map(|other| {
@@ -887,7 +912,7 @@ mod tests {
         // action would never stop being offered.
         let (hub, mut state) = trading_partners();
         assert_eq!(
-            available_actions(&state, &hub.galaxy, &a()).len(),
+            available_actions(&state, ContentStore::embedded(), &hub.galaxy, &a()).len(),
             1,
             "b is a neighbour and has not been dealt with"
         );
@@ -901,7 +926,7 @@ mod tests {
             "declining to offer ends the negotiation"
         );
         assert!(
-            available_actions(&state, &hub.galaxy, &a()).is_empty(),
+            available_actions(&state, ContentStore::embedded(), &hub.galaxy, &a()).is_empty(),
             "the opportunity is gone even though no deal was struck"
         );
         assert!(choice.ids().contains(&"cc3"), "a swap was on the table");

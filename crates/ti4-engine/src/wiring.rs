@@ -654,3 +654,31 @@ fn the_agenda_phase_opens_its_windows() {
         );
     }
 }
+
+#[test]
+fn the_subsystems_still_ask_the_faction_layer() {
+    // A faction ability that nothing queries is a table of numbers. Each of these is the one
+    // place its subsystem decides the value the ability is meant to change.
+    for (module, source, hook) in [
+        (
+            "fleet",
+            include_str!("fleet.rs"),
+            "crate::faction_abilities::fleet_supply",
+        ),
+        (
+            "combat",
+            include_str!("combat.rs"),
+            "crate::faction_abilities::combat_modifier",
+        ),
+        (
+            "transactions",
+            include_str!("transactions.rs"),
+            "crate::faction_abilities::ignores_neighbours",
+        ),
+    ] {
+        assert!(
+            source.contains(hook),
+            "{module} no longer asks the faction layer through {hook}"
+        );
+    }
+}

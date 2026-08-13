@@ -27,6 +27,7 @@ pub mod dice;
 pub mod draft;
 pub mod event;
 pub mod exploration;
+pub mod faction_abilities;
 pub mod fingerprint;
 #[cfg(test)]
 pub mod fixtures;
