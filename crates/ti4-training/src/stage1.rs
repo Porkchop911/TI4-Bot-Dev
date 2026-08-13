@@ -24,7 +24,7 @@ use ti4_policy::learned::{DEFAULT_DIMENSIONS, Profile, blank_profile};
 
 use crate::gradient::{Step, Telemetry, apply, batch_statistics};
 use crate::reward::{Reward, Stage};
-use crate::rollout::{Horizon, play};
+use crate::rollout::Horizon;
 
 /// How a run is set up.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,19 +150,16 @@ pub fn train(content: &'static ContentStore, plan: &Plan) -> Run {
         let first = plan
             .seed
             .wrapping_add((index as u64).wrapping_mul(plan.games));
-        let rollouts: Vec<crate::rollout::Rollout> = (first..first + plan.games)
-            .map(|seed| {
-                play(
-                    content,
-                    &plan.players,
-                    &profiles,
-                    POK,
-                    seed,
-                    horizon,
-                    ti4_engine::opening::DEFAULT_REQUIREMENT,
-                )
-            })
-            .collect();
+        let seeds: Vec<u64> = (first..first + plan.games).collect();
+        let rollouts = crate::rollout::play_batch(
+            content,
+            &plan.players,
+            &profiles,
+            POK,
+            &seeds,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+        );
 
         let errors = rollouts.iter().filter(|one| one.error.is_some()).count();
         let collected = batch_statistics(&rollouts, &profiles, &reward);

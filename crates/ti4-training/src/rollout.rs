@@ -265,6 +265,79 @@ fn failed(seed: u64, error: String) -> Rollout {
     }
 }
 
+/// Play a batch of rollouts in parallel, returning results in seed order.
+///
+/// Each seed gets its own game; profiles are shared read-only. Results are
+/// collected by seed, not by completion, so the order is deterministic
+/// regardless of thread scheduling.
+///
+/// # Parallelism
+///
+/// Seeds are divided into chunks proportional to `available_parallelism()`.
+/// Each chunk is processed by one thread. The caller should ensure that
+/// `profiles` is `Send + Sync` (which it is when cloned as `Arc<Profile>`
+/// or borrowed as `&Profile` behind a shared pointer).
+///
+/// # Determinism
+///
+/// The same seeds produce the same rollouts regardless of worker count,
+/// because each seed's game is independent and results are sorted by seed.
+pub fn play_batch(
+    content: &'static ContentStore,
+    players: &[PlayerId],
+    profiles: &BTreeMap<PlayerId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Vec<Rollout> {
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+
+    let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let chunk = seeds.len().div_ceil(workers.max(1)).max(1);
+
+    // Clone profiles for each thread — cheap (Arc under the hood).
+    let profiles_clone = profiles.clone();
+    let players_owned = players.to_vec();
+
+    let mut results: Vec<Rollout> = std::thread::scope(|scope| {
+        let handles: Vec<_> = seeds
+            .chunks(chunk)
+            .map(|batch| {
+                let players = players_owned.clone();
+                let profiles = profiles_clone.clone();
+                scope.spawn(move || {
+                    batch
+                        .iter()
+                        .map(|seed| {
+                            play(
+                                content,
+                                &players,
+                                &profiles,
+                                sources,
+                                *seed,
+                                horizon,
+                                requirement,
+                            )
+                        })
+                        .collect::<Vec<Rollout>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .flatten()
+            .collect()
+    });
+
+    // Sort by seed so the order is deterministic regardless of thread scheduling.
+    results.sort_by_key(|r| r.seed);
+    results
+}
+
 /// The default opening bar.
 #[must_use]
 pub const fn default_requirement() -> Requirement {
@@ -433,5 +506,92 @@ mod tests {
             credited.iter().all(|value| value.is_finite()),
             "a non-finite return would poison every weight it touched"
         );
+    }
+
+    #[test]
+    fn play_batch_produces_one_rollout_per_seed() {
+        let seeds = vec![100, 101, 102, 103];
+        let rollouts = play_batch(
+            ContentStore::embedded(),
+            &seats(&["a", "b", "c"]),
+            &BTreeMap::new(),
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        assert_eq!(rollouts.len(), 4);
+        for (i, rollout) in rollouts.iter().enumerate() {
+            assert_eq!(rollout.seed, seeds[i]);
+            assert_eq!(rollout.error, None, "seed {} should not error", seeds[i]);
+            assert_eq!(rollout.seats.len(), 3);
+        }
+    }
+
+    #[test]
+    fn play_batch_returns_results_in_seed_order() {
+        let seeds = vec![110, 105, 100, 108];
+        let mut sorted = seeds.clone();
+        sorted.sort();
+        let rollouts = play_batch(
+            ContentStore::embedded(),
+            &seats(&["a", "b", "c"]),
+            &BTreeMap::new(),
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        // Results must be sorted by seed value regardless of input order.
+        for (i, seed) in sorted.iter().enumerate() {
+            assert_eq!(
+                rollouts[i].seed, *seed,
+                "seed {} at position {}", seed, i
+            );
+        }
+    }
+
+    #[test]
+    fn play_batch_is_deterministic_across_runs() {
+        let seeds = vec![120, 121, 122];
+        let once = play_batch(
+            ContentStore::embedded(),
+            &seats(&["a", "b", "c"]),
+            &BTreeMap::new(),
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        let twice = play_batch(
+            ContentStore::embedded(),
+            &seats(&["a", "b", "c"]),
+            &BTreeMap::new(),
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        for (a, b) in once.iter().zip(&twice) {
+            assert_eq!(a.seed, b.seed);
+            assert_eq!(a.seats.len(), b.seats.len());
+            for (sa, sb) in a.seats.iter().zip(&b.seats) {
+                assert_eq!(sa.episode.steps, sb.episode.steps);
+            }
+        }
+    }
+
+    #[test]
+    fn play_batch_empty_input_returns_empty() {
+        let rollouts = play_batch(
+            ContentStore::embedded(),
+            &seats(&["a", "b", "c"]),
+            &BTreeMap::new(),
+            POK,
+            &[],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        assert!(rollouts.is_empty());
     }
 }
