@@ -39,7 +39,7 @@ fn main() {
     for (player, faction) in &factions {
         state.player_mut(player).unwrap().faction = faction.clone();
     }
-    let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 18, POK)
+    let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 30, POK)
         .into_iter()
         .map(|system| system.to_string())
         .collect();

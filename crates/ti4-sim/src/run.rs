@@ -151,7 +151,7 @@ fn seat(content: &ContentStore, table: &Table, seed: u64) -> Result<(GameState, 
     }
 
     // Enough neutral tiles to sit between the homes and Mecatol.
-    let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 18, table.sources)
+    let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 30, table.sources)
         .into_iter()
         .map(|system| system.to_string())
         .collect();

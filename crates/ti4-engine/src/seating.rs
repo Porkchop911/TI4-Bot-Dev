@@ -25,6 +25,8 @@ pub enum SeatingError {
     NoHomeSystem(String),
     #[error("no player {0:?} in this game")]
     UnknownPlayer(String),
+    #[error("the board needs {wanted} filler tiles to space the homes, but was given {given}")]
+    NotEnoughFiller { wanted: usize, given: usize },
     #[error(transparent)]
     Fleet(#[from] FleetError),
     #[error(transparent)]
@@ -120,15 +122,33 @@ pub fn deploy(
     Ok(())
 }
 
-/// A board with Mecatol at the centre, a ring of filler systems, and the home systems beyond.
+/// How many tiles each ring of a three-ring board holds, from the centre out.
+const RING_SIZES: [usize; 4] = [1, 6, 12, 18];
+
+/// A board with Mecatol at the centre, filler between, and the home systems **spaced** around
+/// the outer ring.
 ///
 /// Not real map setup — there is no draft — but a legal board with somewhere to expand into.
-/// The filler ring matters more than it looks: with only Mecatol and home systems on the
-/// board there is nothing explorable (their traits are `MR` and faction homeworlds), so
-/// exploration could never fire and conquest would have nowhere to go.
+///
+/// The spacing is the part that took a measurement to get right. [`Galaxy::build`] fills a spiral
+/// positionally, so appending the homes to the end of the id list dropped all six into
+/// *consecutive* outer-ring slots: every neighbouring pair of players started one tile apart, in
+/// a huddle occupying a third of the ring. The consequences reached everything downstream —
+/// home systems were being invaded in round one, a fifth of all scoring windows were refused by
+/// 61.16, and no seat ever developed an economy because every seat was under immediate attack.
+/// None of that is TI4; it was a board nobody had looked at.
+///
+/// Homes now sit at every third outer slot, which is where a real six-player board puts them, and
+/// filler occupies the rest. That needs enough filler to complete both the inner rings and the
+/// gaps — [`SeatingError::NotEnoughFiller`] says so rather than silently huddling them again.
+///
+/// The filler matters more than it looks for a second reason: with only Mecatol and home systems
+/// on the board there is nothing explorable, so exploration could never fire and conquest would
+/// have nowhere to go.
 ///
 /// # Errors
-/// Any [`SeatingError`].
+/// [`SeatingError::NotEnoughFiller`] when the filler cannot fill the inner rings and the gaps
+/// between homes, or any other [`SeatingError`].
 pub fn build_board(
     content: &ContentStore,
     assignments: &BTreeMap<PlayerId, FactionId>,
@@ -136,9 +156,45 @@ pub fn build_board(
     sources: SourceSet,
 ) -> Result<Galaxy, SeatingError> {
     let homes = home_systems(content, assignments)?;
+    let outer = RING_SIZES[3];
+    // Evenly spaced: with six homes on an eighteen-tile ring that is every third slot. With
+    // fewer players the stride grows, which is what keeps them apart rather than clustered at
+    // the start of the ring.
+    let stride = if homes.is_empty() {
+        outer
+    } else {
+        outer / homes.len()
+    };
+
+    let inner: usize = RING_SIZES[..3].iter().sum::<usize>() - 1; // less Mecatol at the centre
+    // Only up to the last home: outer slots beyond it can stay empty, because `Galaxy::build`
+    // stops where the id list stops. Slots *before* it cannot — the spiral is filled
+    // positionally, so a missing tile would slide every home one place round the ring.
+    let outer_used = homes.len().saturating_sub(1) * stride + usize::from(!homes.is_empty());
+    let wanted = inner + outer_used.saturating_sub(homes.len());
+    if filler.len() < wanted {
+        return Err(SeatingError::NotEnoughFiller {
+            wanted,
+            given: filler.len(),
+        });
+    }
+
     let mut ids: Vec<&str> = vec![MECATOL];
-    ids.extend(filler.iter().copied());
-    ids.extend(homes.iter().map(SystemId::as_str));
+    let mut filler = filler.iter().copied();
+    for _ in 0..inner {
+        if let Some(tile) = filler.next() {
+            ids.push(tile);
+        }
+    }
+    let mut placed = 0usize;
+    for slot in 0..outer_used {
+        if slot % stride == 0 && placed < homes.len() {
+            ids.push(homes[placed].as_str());
+            placed += 1;
+        } else if let Some(tile) = filler.next() {
+            ids.push(tile);
+        }
+    }
 
     // Three rings hold 37 tiles, enough for Mecatol plus six homes and filler.
     let rings = 3;
@@ -329,6 +385,90 @@ mod tests {
 
     // -- the board ------------------------------------------------------------------
 
+    /// Enough filler for the inner rings and the gaps between six homes.
+    fn full_filler() -> Vec<SystemId> {
+        neutral_systems(content(), 30, POK)
+    }
+
+    fn six_seats() -> BTreeMap<PlayerId, FactionId> {
+        assignments(&[
+            ("a", "sol"),
+            ("b", "hacan"),
+            ("c", "letnev"),
+            ("d", "xxcha"),
+            ("e", "jolnar"),
+            ("f", "l1z1x"),
+        ])
+    }
+
+    #[test]
+    fn homes_are_spaced_around_the_outer_ring_not_huddled_at_the_start_of_it() {
+        // This is the check nobody had. `Galaxy::build` fills a spiral positionally, so appending
+        // the homes to the end of the id list put all six in *consecutive* outer slots: every
+        // neighbouring pair started one tile apart. Nothing failed, because nothing looked — the
+        // board was legal, connected, and wrong.
+        //
+        // What it cost, measured over twelve games before the fix: twenty of seventy-two seats
+        // lost a home planet, six of them in round one, and a fifth of every scoring window was
+        // refused by 61.16. After it, one seat of seventy-two, in round six.
+        let seats = six_seats();
+        let filler = full_filler();
+        let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let galaxy = build_board(content(), &seats, &refs, POK).unwrap();
+
+        let homes = home_systems(content(), &seats).unwrap();
+        let mut closest = i32::MAX;
+        for (index, one) in homes.iter().enumerate() {
+            for other in homes.iter().skip(index + 1) {
+                let apart = galaxy
+                    .distance(one.as_str(), other.as_str())
+                    .expect("both homes are on the board");
+                closest = closest.min(apart);
+            }
+        }
+        assert!(
+            closest >= 3,
+            "the closest pair of homes is {closest} tiles apart; a six-player board seats them 3"
+        );
+    }
+
+    #[test]
+    fn every_home_is_the_same_distance_from_mecatol() {
+        // The other half of a fair board. Homes evenly spaced but at different radii would give
+        // one seat a shorter run at the centre, which decides games on its own.
+        let seats = six_seats();
+        let filler = full_filler();
+        let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let galaxy = build_board(content(), &seats, &refs, POK).unwrap();
+
+        let reach: std::collections::BTreeSet<i32> = home_systems(content(), &seats)
+            .unwrap()
+            .iter()
+            .map(|home| {
+                galaxy
+                    .distance(home.as_str(), MECATOL)
+                    .expect("Mecatol is on the board")
+            })
+            .collect();
+        assert_eq!(
+            reach.len(),
+            1,
+            "seats sit at different distances from Mecatol: {reach:?}"
+        );
+    }
+
+    #[test]
+    fn a_board_without_the_filler_to_space_the_homes_is_refused() {
+        // Refused rather than huddled. Silently falling back to consecutive slots is exactly the
+        // failure this whole test group exists for, and it would be invisible again.
+        let seats = six_seats();
+        let filler = neutral_systems(content(), 18, POK);
+        let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+
+        let err = build_board(content(), &seats, &refs, POK).unwrap_err();
+        assert!(matches!(err, SeatingError::NotEnoughFiller { .. }), "{err}");
+    }
+
     #[test]
     fn home_systems_are_read_from_the_faction_records() {
         let homes = home_systems(content(), &assignments(&[("a", "sol"), ("b", "hacan")])).unwrap();
@@ -356,7 +496,7 @@ mod tests {
     #[test]
     fn a_seated_game_places_mecatol_at_the_centre() {
         let pairs = [("a", "sol"), ("b", "hacan")];
-        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let filler: Vec<SystemId> = neutral_systems(content(), 30, POK);
         let filler_refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
         let galaxy = build_board(content(), &assignments(&pairs), &filler_refs, POK).unwrap();
 
@@ -367,7 +507,7 @@ mod tests {
     #[test]
     fn neutral_systems_separate_the_homes_from_mecatol() {
         let pairs = [("a", "sol"), ("b", "hacan")];
-        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let filler: Vec<SystemId> = neutral_systems(content(), 30, POK);
         let filler_refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
         let galaxy = build_board(content(), &assignments(&pairs), &filler_refs, POK).unwrap();
 
@@ -383,12 +523,12 @@ mod tests {
     #[test]
     fn a_board_is_deterministic() {
         let pairs = assignments(&[("a", "sol"), ("b", "hacan")]);
-        let filler: Vec<SystemId> = neutral_systems(content(), 6, POK);
+        let filler: Vec<SystemId> = neutral_systems(content(), 30, POK);
         let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
         assert_eq!(
             build_board(content(), &pairs, &refs, POK).unwrap(),
             build_board(content(), &pairs, &refs, POK).unwrap()
         );
-        assert_eq!(filler, neutral_systems(content(), 6, POK));
+        assert_eq!(filler, neutral_systems(content(), 30, POK));
     }
 }
