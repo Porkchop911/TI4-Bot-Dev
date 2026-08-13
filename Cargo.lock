@@ -1762,6 +1762,8 @@ dependencies = [
  "anyhow",
  "bincode",
  "itertools 0.14.0",
+ "rand",
+ "rand_chacha",
  "rstest",
  "serde",
  "serde_json",

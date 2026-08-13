@@ -23,9 +23,9 @@
 use std::collections::BTreeMap;
 
 use ti4_content::ContentStore;
+use ti4_engine::choice::Observed;
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
-use ti4_model::state::GameState;
 
 /// Rough trade-good prices. Deliberately close to build cost, adjusted for utility.
 ///
@@ -89,9 +89,7 @@ pub fn unit_value(content: &ContentStore, sources: SourceSet, unit_id: &str) -> 
 /// Named, clamped context factors. Named so a score can be explained.
 #[must_use]
 pub fn planet_multipliers(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
+    seen: &Observed<'_>,
     player: &PlayerId,
     planet: &ti4_content::galaxy::Planet<'_>,
 ) -> BTreeMap<&'static str, f64> {
@@ -105,8 +103,8 @@ pub fn planet_multipliers(
     if planet.id() == "mr" {
         factors.insert("mecatol", 2.5); // a victory point a round via Imperial
     }
-    let own_faction = state
-        .player(player)
+    let own_faction = seen
+        .seat(player)
         .map(|seat| seat.faction.to_string())
         .unwrap_or_default();
     if planet
@@ -117,29 +115,23 @@ pub fn planet_multipliers(
     }
     factors.insert(
         "objective_pressure",
-        clamp(1.0 + 0.15 * objective_pressure(state, content, sources, player)),
+        clamp(1.0 + 0.15 * objective_pressure(seen, player)),
     );
     factors
 }
 
 /// How close the player is to a revealed objective they could still score.
-fn objective_pressure(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    player: &PlayerId,
-) -> f64 {
-    let _ = (content, sources);
-    let scored = state.scored_by(player);
-    let outstanding = state
-        .revealed_objectives
+fn objective_pressure(seen: &Observed<'_>, player: &PlayerId) -> f64 {
+    let scored = seen.scored_by(player);
+    let outstanding = seen
+        .revealed_objectives()
         .iter()
         .filter(|alias| ti4_engine::objectives::requirement_for(alias).is_some())
         .any(|alias| !scored.contains(alias));
     if !outstanding {
         return 0.0;
     }
-    let held = state.controlled_planets(player).len();
+    let held = seen.controlled_planets(player).len();
     #[expect(
         clippy::cast_precision_loss,
         reason = "a planet count is far below 2^53"
@@ -150,14 +142,8 @@ fn objective_pressure(
 
 /// What taking (or holding) a planet is worth right now.
 #[must_use]
-pub fn planet_value(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    player: &PlayerId,
-    planet: &PlanetId,
-) -> f64 {
-    let all = ti4_content::galaxy::all_planets(content, sources);
+pub fn planet_value(seen: &Observed<'_>, player: &PlayerId, planet: &PlanetId) -> f64 {
+    let all = ti4_content::galaxy::all_planets(seen.content(), seen.sources());
     let Some(record) = all.get(planet.as_str()) else {
         return 0.0;
     };
@@ -167,7 +153,7 @@ pub fn planet_value(
     )]
     let base = record.resources() as f64 + 0.5 * record.influence() as f64;
     let mut total = base + 1.0; // every planet is worth something as a body count
-    for factor in planet_multipliers(state, content, sources, player, record).values() {
+    for factor in planet_multipliers(seen, player, record).values() {
         total *= factor;
     }
     total
@@ -177,18 +163,16 @@ pub fn planet_value(
 
 /// What activating a system is worth: what can be taken, less what defends it.
 #[must_use]
-pub fn system_value(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    galaxy: &ti4_content::galaxy::Galaxy,
-    player: &PlayerId,
-    system: &SystemId,
-) -> f64 {
+pub fn system_value(seen: &Observed<'_>, player: &PlayerId, system: &SystemId) -> f64 {
+    let Some(galaxy) = seen.galaxy() else {
+        return 0.0; // no map, so no board to read
+    };
     if galaxy.coord_of(system.as_str()).is_none() {
         return 0.0; // not on this map, so there is nothing here to take
     }
-    let board = state.system_state(system);
+    let board = seen.system(system);
+    let content = seen.content();
+    let sources = seen.sources();
     let types = ti4_content::units::catalogue(content, sources);
 
     let mut prize = 0.0;
@@ -197,7 +181,7 @@ pub fn system_value(
         if board.planet_control.get(&planet) == Some(player) {
             continue; // already ours
         }
-        prize += planet_value(state, content, sources, player, &planet);
+        prize += planet_value(seen, player, &planet);
     }
 
     let defenders: f64 = board
@@ -224,16 +208,11 @@ pub fn system_value(
 
 /// What this player's ships in one system are worth.
 #[must_use]
-pub fn fleet_strength(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    player: &PlayerId,
-    system: &SystemId,
-) -> f64 {
+pub fn fleet_strength(seen: &Observed<'_>, player: &PlayerId, system: &SystemId) -> f64 {
+    let content = seen.content();
+    let sources = seen.sources();
     let types = ti4_content::units::catalogue(content, sources);
-    state
-        .system_state(system)
+    seen.system(system)
         .units_of(player)
         .into_iter()
         .filter(|unit| {
@@ -247,19 +226,12 @@ pub fn fleet_strength(
 
 /// Ground forces sitting on planets with nothing carrying them anywhere.
 #[must_use]
-pub fn stranded_troops(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    player: &PlayerId,
-) -> usize {
-    let types = ti4_content::units::catalogue(content, sources);
-    state
-        .systems_with_units_of(player)
+pub fn stranded_troops(seen: &Observed<'_>, player: &PlayerId) -> usize {
+    let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+    seen.systems_with_units_of(player)
         .into_iter()
         .map(|system| {
-            state
-                .system_state(system)
+            seen.system(system)
                 .planet_units
                 .values()
                 .flatten()
@@ -283,8 +255,21 @@ mod tests {
         ContentStore::embedded()
     }
 
-    fn table() -> GameState {
+    fn table() -> ti4_model::state::GameState {
         ti4_engine::fixtures::game(&["a", "b"])
+    }
+
+    /// A position with no map. Enough for anything that reads seats and planets.
+    fn watching(state: &ti4_model::state::GameState) -> Observed<'_> {
+        Observed::new(state, store(), POK, None)
+    }
+
+    /// A position on a map.
+    fn watching_map<'a>(
+        state: &'a ti4_model::state::GameState,
+        galaxy: &'a ti4_content::galaxy::Galaxy,
+    ) -> Observed<'a> {
+        Observed::new(state, store(), POK, Some(galaxy))
     }
 
     #[test]
@@ -324,7 +309,7 @@ mod tests {
         // Its resources and influence are ordinary; what makes it worth taking is Imperial.
         let state = table();
         let player = PlayerId::new("a");
-        let mecatol = planet_value(&state, store(), POK, &player, &PlanetId::new("mr"));
+        let mecatol = planet_value(&watching(&state), &player, &PlanetId::new("mr"));
 
         let all = ti4_content::galaxy::all_planets(store(), POK);
         let record = all.get("mr").expect("Mecatol Rex is in the corpus");
@@ -351,7 +336,7 @@ mod tests {
         let state = table();
         let all = ti4_content::galaxy::all_planets(store(), POK);
         let record = all.get("mr").unwrap();
-        let factors = planet_multipliers(&state, store(), POK, &PlayerId::new("a"), record);
+        let factors = planet_multipliers(&watching(&state), &PlayerId::new("a"), record);
 
         assert!(factors.contains_key("mecatol"));
         assert!(factors.contains_key("objective_pressure"));
@@ -367,7 +352,7 @@ mod tests {
             .revealed_objectives
             .push(ti4_model::id::ObjectiveId::new("no_such_objective"));
         assert!(
-            objective_pressure(&state, store(), POK, &player).abs() < f64::EPSILON,
+            objective_pressure(&watching(&state), &player).abs() < f64::EPSILON,
             "an unscorable objective applies no pressure"
         );
     }
@@ -379,7 +364,7 @@ mod tests {
         let player = PlayerId::new("a");
         let target = SystemId::new(hub.outer[0].clone());
 
-        let empty = system_value(&state, store(), POK, &hub.galaxy, &player, &target);
+        let empty = system_value(&watching_map(&state, &hub.galaxy), &player, &target);
 
         let mut defended = table();
         ti4_engine::fixtures::put(
@@ -389,7 +374,7 @@ mod tests {
             &PlayerId::new("b"),
             2,
         );
-        let held = system_value(&defended, store(), POK, &hub.galaxy, &player, &target);
+        let held = system_value(&watching_map(&defended, &hub.galaxy), &player, &target);
 
         assert!(
             held < empty,
@@ -404,13 +389,13 @@ mod tests {
         let player = PlayerId::new("a");
         let target = SystemId::new(hub.outer[0].clone());
 
-        let before = system_value(&state, store(), POK, &hub.galaxy, &player, &target);
+        let before = system_value(&watching_map(&state, &hub.galaxy), &player, &target);
         for record in ti4_content::galaxy::planets_in(store(), target.as_str(), POK) {
             state
                 .system_mut(&target)
                 .set_control(PlanetId::new(record.id()), player.clone());
         }
-        let after = system_value(&state, store(), POK, &hub.galaxy, &player, &target);
+        let after = system_value(&watching_map(&state, &hub.galaxy), &player, &target);
 
         assert!(
             after < before,
@@ -437,6 +422,6 @@ mod tests {
         // ground-force filter is never exercised: a cruiser in space is excluded by where it is.
         ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &mine, 1);
 
-        assert_eq!(stranded_troops(&state, store(), POK, &mine), 3);
+        assert_eq!(stranded_troops(&watching(&state), &mine), 3);
     }
 }

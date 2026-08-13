@@ -9,7 +9,8 @@
 //! * the engine is authoritative, because options are generated, never accepted from outside;
 //! * a bot or an LLM can only ever select a legal option, with no channel to invent one;
 //! * decisions are recorded, so a game replays exactly from a seed plus its decision log;
-//! * an actor sees only the [`Choice`] it is handed, never the full game state.
+//! * an actor sees only the [`Choice`] it is handed and the public facts in [`Observed`],
+//!   never another player's hand.
 //!
 //! [`Decider`] is deliberately tiny. Human input, a scripted conformance test, a seeded
 //! random smoke run, and a scored bot are all the same interface.
@@ -23,7 +24,11 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ti4_model::id::{PlayerId, UnitTypeId};
+use ti4_content::ContentStore;
+use ti4_content::galaxy::Galaxy;
+use ti4_model::content_types::SourceSet;
+use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SystemId, UnitTypeId};
+use ti4_model::state::{GameState, SystemState};
 use ti4_model::units::Unit;
 
 /// The kind used by a declining option.
@@ -356,6 +361,197 @@ pub trait Window {
     }
 }
 
+// --- what a decider may see -------------------------------------------------------------------
+
+/// The public position, offered to a decider alongside the choice.
+///
+/// A choice on its own is not enough to play well. "Activate a system" lists ids; whether one of
+/// them is worth a command token depends on what is in it, what defends it, and whether anything
+/// of yours can reach it - facts about the board, not about the choice. A bot without them
+/// activates systems its fleet cannot reach, which is legal, achieves nothing, and is exactly how
+/// a scored bot came to move twice as many ships as a random one and still not score.
+///
+/// **Only public facts are reachable through this type.** The state is held privately and every
+/// accessor answers something any player at the table may read: the board, who controls what, how
+/// many cards somebody holds. A hand's *contents* are reachable only through
+/// [`Observed::redacted_for`], which copies and redacts - named so that reading private
+/// information is a deliberate act with a visible cost, rather than a field access.
+///
+/// The Rust counterpart of the oracle's `views.GameView`, differently shaped for the reason it
+/// exists at all: the oracle hands a bot a facade over a live game, and Rust cannot hand a decider
+/// a reference to the game that owns it.
+pub struct Observed<'a> {
+    state: &'a GameState,
+    content: &'a ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&'a Galaxy>,
+}
+
+impl<'a> Observed<'a> {
+    /// Wrap a position. Public so tests and sibling crates can build one.
+    #[must_use]
+    pub const fn new(
+        state: &'a GameState,
+        content: &'a ContentStore,
+        sources: SourceSet,
+        galaxy: Option<&'a Galaxy>,
+    ) -> Self {
+        Self {
+            state,
+            content,
+            sources,
+            galaxy,
+        }
+    }
+
+    /// The content corpus this game is played from.
+    #[must_use]
+    pub const fn content(&self) -> &'a ContentStore {
+        self.content
+    }
+
+    /// The source scope in play.
+    #[must_use]
+    pub const fn sources(&self) -> SourceSet {
+        self.sources
+    }
+
+    /// The map, when the game has one.
+    #[must_use]
+    pub const fn galaxy(&self) -> Option<&'a Galaxy> {
+        self.galaxy
+    }
+
+    /// The round number.
+    #[must_use]
+    pub const fn round(&self) -> u32 {
+        self.state.round
+    }
+
+    /// Every system holding anything. Absent systems are empty.
+    #[must_use]
+    pub const fn board(&self) -> &'a BTreeMap<SystemId, SystemState> {
+        &self.state.board
+    }
+
+    /// One system's contents.
+    #[must_use]
+    pub fn system(&self, system: &SystemId) -> SystemState {
+        self.state.system_state(system)
+    }
+
+    /// `(system, planet)` for every planet a player controls.
+    #[must_use]
+    pub fn controlled_planets(&self, player: &PlayerId) -> Vec<(&'a SystemId, &'a PlanetId)> {
+        self.state.controlled_planets(player)
+    }
+
+    /// Systems holding any of a player's units.
+    #[must_use]
+    pub fn systems_with_units_of(&self, player: &PlayerId) -> BTreeSet<&'a SystemId> {
+        self.state.systems_with_units_of(player)
+    }
+
+    /// Systems already holding a player's command token, which 89.1 forbids activating.
+    #[must_use]
+    pub fn systems_with_token(&self, player: &PlayerId) -> BTreeSet<&'a SystemId> {
+        self.state.systems_with_token(player)
+    }
+
+    /// A seat's public standing: what anybody at the table can count.
+    #[must_use]
+    pub fn seat(&self, player: &PlayerId) -> Option<PublicSeat<'a>> {
+        self.state.player(player).map(|seat| PublicSeat {
+            faction: &seat.faction,
+            victory_points: seat.victory_points,
+            trade_goods: seat.trade_goods,
+            commodities: seat.commodities,
+            tactic_tokens: seat.tactic_tokens,
+            fleet_tokens: seat.fleet_tokens,
+            strategic_tokens: seat.strategic_tokens,
+            technologies: &seat.technologies,
+            action_cards_held: seat.action_cards.len(),
+            secret_objectives_held: seat.secret_objectives.len(),
+            passed: seat.passed,
+        })
+    }
+
+    /// The seats, in seating order.
+    #[must_use]
+    pub fn players(&self) -> Vec<&'a PlayerId> {
+        self.state.players.iter().map(|seat| &seat.id).collect()
+    }
+
+    /// Objectives revealed so far, which are faceup and public.
+    #[must_use]
+    pub const fn revealed_objectives(&self) -> &'a [ObjectiveId] {
+        self.state.revealed_objectives.as_slice()
+    }
+
+    /// What a player has already scored, which is public once scored (61.18).
+    #[must_use]
+    pub fn scored_by(&self, player: &PlayerId) -> BTreeSet<ObjectiveId> {
+        self.state.scored_by(player)
+    }
+
+    /// A full state with every other player's private holdings replaced by markers.
+    ///
+    /// Copies. That is the point: reading private information should cost something visible, so
+    /// nobody reaches for it to answer a question the public accessors already answer.
+    #[must_use]
+    pub fn redacted_for(&self, viewer: &PlayerId) -> GameState {
+        let mut view = self.state.clone();
+        for seat in &mut view.players {
+            if &seat.id != viewer {
+                seat.action_cards = seat
+                    .action_cards
+                    .iter()
+                    .map(|_| ti4_model::id::ActionCardId::new(HIDDEN))
+                    .collect();
+                seat.secret_objectives = seat
+                    .secret_objectives
+                    .iter()
+                    .map(|_| ti4_model::id::SecretObjectiveId::new(HIDDEN))
+                    .collect();
+            }
+        }
+        view
+    }
+}
+
+/// Stands in for a card whose identity is private.
+///
+/// Not a valid alias anywhere, so a lookup against real content fails rather than quietly matching
+/// something.
+pub const HIDDEN: &str = "?";
+
+/// A seat as the rest of the table sees it: counts, never identities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicSeat<'a> {
+    /// Which faction sits here.
+    pub faction: &'a ti4_model::id::FactionId,
+    /// Points scored so far.
+    pub victory_points: i32,
+    /// Trade goods, which sit faceup in the play area.
+    pub trade_goods: i32,
+    /// Commodities, likewise faceup.
+    pub commodities: i32,
+    /// Tokens in the tactic pool.
+    pub tactic_tokens: i32,
+    /// Tokens in the fleet pool.
+    pub fleet_tokens: i32,
+    /// Tokens in the strategy pool.
+    pub strategic_tokens: i32,
+    /// Technologies owned, which are faceup.
+    pub technologies: &'a BTreeSet<ti4_model::id::TechnologyId>,
+    /// How many cards, never which. At a table you can see a hand's size.
+    pub action_cards_held: usize,
+    /// The same for unscored secrets (61.17).
+    pub secret_objectives_held: usize,
+    /// Whether this seat has passed for the round.
+    pub passed: bool,
+}
+
 /// Anything that can answer a [`Choice`].
 ///
 /// `&mut self` because a decider may carry state — a script position, an RNG stream.
@@ -378,6 +574,24 @@ pub trait Decider {
     /// [`IllegalChoice`] if the decider cannot answer, e.g. an exhausted script whose next
     /// wanted option was not offered.
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice>;
+
+    /// Answer a choice with the public position in hand.
+    ///
+    /// Defaulted to [`Decider::choose`], so a scripted test or a random smoke run needs to know
+    /// nothing about the board, and a scorer overrides only this one. The engine calls this at
+    /// every site that has a position to offer, and calls `choose` at the rest — a window that
+    /// owns a slice of the game rather than the whole of it cannot honestly produce one.
+    ///
+    /// # Errors
+    /// As [`Decider::choose`].
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &Observed<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        let _ = seen;
+        self.choose(choice)
+    }
 }
 
 /// Always take the first option. Deterministic; the default in tests.
@@ -605,6 +819,36 @@ impl Table {
             .get_mut(&choice.player)
             .unwrap_or(&mut self.default);
         let answer = decider.choose(choice)?;
+        self.settle(choice, answer)
+    }
+
+    /// Put a choice to its actor along with the public position.
+    ///
+    /// Identical to [`Table::ask`] except for what the decider is shown, and the answer goes
+    /// through the same validation and the same log — so a game driven through this path replays
+    /// through the other one.
+    ///
+    /// # Errors
+    /// As [`Table::ask`].
+    pub fn ask_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &Observed<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        let decider = self
+            .deciders
+            .get_mut(&choice.player)
+            .unwrap_or(&mut self.default);
+        let answer = decider.choose_seeing(choice, seen)?;
+        self.settle(choice, answer)
+    }
+
+    /// Validate an answer and record it. Shared, so the two ask paths cannot drift.
+    fn settle(
+        &mut self,
+        choice: &Choice,
+        answer: ChoiceOption,
+    ) -> Result<ChoiceOption, IllegalChoice> {
         let option = validate(choice, answer)?;
         self.log.record(choice, &option);
         Ok(option)
@@ -1027,5 +1271,127 @@ mod tests {
     fn a_choice_round_trips_through_json() {
         let json = serde_json::to_string(&three()).unwrap();
         assert_eq!(serde_json::from_str::<Choice>(&json).unwrap(), three());
+    }
+
+    // --- what a decider may see ---------------------------------------------------------------
+
+    use ti4_model::content_types::POK;
+
+    fn watched() -> ti4_model::state::GameState {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let seat = state.player_mut(&pid("b")).unwrap();
+        seat.action_cards = vec![
+            ti4_model::id::ActionCardId::new("sabotage"),
+            ti4_model::id::ActionCardId::new("direct_hit"),
+        ];
+        seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("become_a_legend")];
+        seat.victory_points = 4;
+        state
+    }
+
+    #[test]
+    fn a_seat_is_seen_as_counts_never_as_identities() {
+        // The whole point of the type. At a table you can count somebody's cards without reading
+        // them, and `PublicSeat` has no field that could carry one.
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let rival = seen.seat(&pid("b")).expect("b is seated");
+
+        assert_eq!(rival.action_cards_held, 2);
+        assert_eq!(rival.secret_objectives_held, 1);
+        assert_eq!(rival.victory_points, 4, "and public facts survive");
+    }
+
+    #[test]
+    fn reading_a_hand_costs_a_copy_and_returns_markers() {
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let view = seen.redacted_for(&pid("a"));
+
+        let rival = view.player(&pid("b")).unwrap();
+        assert_eq!(rival.action_cards.len(), 2, "the count is public");
+        assert!(
+            rival
+                .action_cards
+                .iter()
+                .all(|card| card.as_str() == HIDDEN),
+            "the names are not: {:?}",
+            rival.action_cards
+        );
+        assert_eq!(rival.secret_objectives[0].as_str(), HIDDEN);
+
+        let own = view.player(&pid("a")).unwrap();
+        assert_eq!(own.id, pid("a"), "your own seat is untouched");
+    }
+
+    #[test]
+    fn you_can_read_your_own_hand() {
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let view = seen.redacted_for(&pid("b"));
+
+        assert_eq!(
+            view.player(&pid("b")).unwrap().action_cards[0].as_str(),
+            "sabotage"
+        );
+    }
+
+    #[test]
+    fn the_marker_matches_no_real_card() {
+        // A redacted hand must not resolve against content, or a bot reading it would find a card
+        // nobody holds rather than failing.
+        assert!(
+            ContentStore::embedded()
+                .get(ti4_model::content_types::ContentType::ActionCards, HIDDEN)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_decider_that_does_not_look_gets_the_same_answer_either_way() {
+        // The default on `choose_seeing` is what lets every scripted test and random smoke run
+        // stay ignorant of the board. If it ever stopped delegating, those would silently change.
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let asked = three();
+
+        let mut blind = FirstOption;
+        assert_eq!(
+            blind.choose(&asked).unwrap(),
+            blind.choose_seeing(&asked, &seen).unwrap()
+        );
+    }
+
+    #[test]
+    fn both_ask_paths_validate_and_record_alike() {
+        // A game driven through `ask_seeing` must replay through `ask`, which needs the log and
+        // the validation to be the same on both. They share `settle` for exactly that reason.
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+
+        let mut blind = Table::new();
+        blind.ask(&three()).unwrap();
+        let mut looking = Table::new();
+        looking.ask_seeing(&three(), &seen).unwrap();
+
+        assert_eq!(blind.log.records, looking.log.records);
+    }
+
+    #[test]
+    fn an_answer_that_was_not_offered_is_refused_on_the_seeing_path_too() {
+        struct Inventing;
+        impl Decider for Inventing {
+            fn choose(&mut self, _choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::new("not_offered", "invented"))
+            }
+        }
+        let state = watched();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+
+        let mut table = Table::with_default(Box::new(Inventing));
+        assert!(
+            table.ask_seeing(&three(), &seen).is_err(),
+            "the boundary holds on both paths"
+        );
     }
 }

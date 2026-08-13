@@ -10,7 +10,9 @@ use ti4_model::state::{GameState, Phase};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, SeededRandom, Table, Window};
+use crate::choice::{
+    Choice, ChoiceOption, IllegalChoice, Observed, Resolving, SeededRandom, Table, Window,
+};
 use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::event::{EventSequence, EventSequenceError};
@@ -545,7 +547,16 @@ impl<'a> Game<'a> {
         let Some(choice) = self.legal_options() else {
             return self.step_phase();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -788,7 +799,16 @@ impl<'a> Game<'a> {
             // Nothing left to ask: the action is over.
             return self.finish_tactical();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1219,7 +1239,16 @@ impl<'a> Game<'a> {
             self.aftermath = None;
             return self.close_tactical();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1295,7 +1324,16 @@ impl<'a> Game<'a> {
             self.trade = None;
             return self.result(false, None);
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1334,7 +1372,16 @@ impl<'a> Game<'a> {
             self.advance_turn();
             return self.result(false, None);
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1393,7 +1440,16 @@ impl<'a> Game<'a> {
         let Some(choice) = self.legal_options() else {
             return self.begin_status_bookkeeping();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1466,7 +1522,16 @@ impl<'a> Game<'a> {
         let Some(choice) = self.legal_options() else {
             return self.finish_status_phase();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
@@ -1560,7 +1625,16 @@ impl<'a> Game<'a> {
         let Some(choice) = self.legal_options() else {
             return self.close_vote();
         };
-        let answer = match self.table.ask(&choice) {
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
             Ok(answer) => answer,
             Err(error) => return self.result(false, Some(error.into())),
         };
