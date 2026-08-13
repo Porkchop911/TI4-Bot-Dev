@@ -1,0 +1,186 @@
+[
+ {
+  "kind": "action",
+  "head": "turn"
+ },
+ {
+  "kind": "activate",
+  "head": "activation"
+ },
+ {
+  "kind": "move",
+  "head": "movement"
+ },
+ {
+  "kind": "load",
+  "head": "cargo"
+ },
+ {
+  "kind": "land",
+  "head": "other"
+ },
+ {
+  "kind": "commit",
+  "head": "landing"
+ },
+ {
+  "kind": "produce",
+  "head": "production"
+ },
+ {
+  "kind": "place",
+  "head": "other"
+ },
+ {
+  "kind": "pay",
+  "head": "payment"
+ },
+ {
+  "kind": "spend",
+  "head": "other"
+ },
+ {
+  "kind": "research",
+  "head": "development"
+ },
+ {
+  "kind": "ready",
+  "head": "production"
+ },
+ {
+  "kind": "ready_technology",
+  "head": "other"
+ },
+ {
+  "kind": "casualty",
+  "head": "combat"
+ },
+ {
+  "kind": "ground_casualty",
+  "head": "other"
+ },
+ {
+  "kind": "sustain",
+  "head": "other"
+ },
+ {
+  "kind": "reaction",
+  "head": "other"
+ },
+ {
+  "kind": "retreat",
+  "head": "combat"
+ },
+ {
+  "kind": "retreat_to",
+  "head": "other"
+ },
+ {
+  "kind": "score",
+  "head": "scoring"
+ },
+ {
+  "kind": "return",
+  "head": "other"
+ },
+ {
+  "kind": "discard",
+  "head": "other"
+ },
+ {
+  "kind": "remove",
+  "head": "other"
+ },
+ {
+  "kind": "vote",
+  "head": "agenda"
+ },
+ {
+  "kind": "vote_planet",
+  "head": "agenda"
+ },
+ {
+  "kind": "pool",
+  "head": "tokens"
+ },
+ {
+  "kind": "transaction",
+  "head": "trade"
+ },
+ {
+  "kind": "offer",
+  "head": "trade"
+ },
+ {
+  "kind": "open_transaction",
+  "head": "other"
+ },
+ {
+  "kind": "answer",
+  "head": "other"
+ },
+ {
+  "kind": "strategy",
+  "head": "secondary"
+ },
+ {
+  "kind": "strategy_card",
+  "head": "strategy"
+ },
+ {
+  "kind": "tiebreak",
+  "head": "agenda"
+ },
+ {
+  "kind": "explore",
+  "head": "exploration"
+ },
+ {
+  "kind": "leader",
+  "head": "ability"
+ },
+ {
+  "kind": "transit",
+  "head": "transit"
+ },
+ {
+  "kind": "agenda",
+  "head": "agenda"
+ },
+ {
+  "kind": "colour",
+  "head": "other"
+ },
+ {
+  "prompt": "pok1leadership secondary",
+  "head": "secondary"
+ },
+ {
+  "prompt": "movement",
+  "head": "movement"
+ },
+ {
+  "prompt": "produce a unit",
+  "head": "production"
+ },
+ {
+  "prompt": "pay 3",
+  "head": "payment"
+ },
+ {
+  "prompt": "transaction with d",
+  "head": "trade"
+ },
+ {
+  "prompt": "assign a hit",
+  "head": "combat"
+ },
+ {
+  "prompt": "whatever",
+  "head": "other"
+ },
+ {
+  "prompt": "score an objective",
+  "head": "other"
+ }
+]

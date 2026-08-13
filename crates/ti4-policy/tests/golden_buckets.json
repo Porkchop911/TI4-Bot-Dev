@@ -1,0 +1,290 @@
+[
+ {
+  "name": "",
+  "dimensions": 512,
+  "bucket": "h0228",
+  "sign": -1.0
+ },
+ {
+  "name": "",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": -1.0
+ },
+ {
+  "name": "",
+  "dimensions": 7,
+  "bucket": "h0004",
+  "sign": -1.0
+ },
+ {
+  "name": "",
+  "dimensions": 4096,
+  "bucket": "h1764",
+  "sign": -1.0
+ },
+ {
+  "name": "a",
+  "dimensions": 512,
+  "bucket": "h0064",
+  "sign": 1.0
+ },
+ {
+  "name": "a",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "a",
+  "dimensions": 7,
+  "bucket": "h0001",
+  "sign": 1.0
+ },
+ {
+  "name": "a",
+  "dimensions": 4096,
+  "bucket": "h2112",
+  "sign": 1.0
+ },
+ {
+  "name": "kind=strategy",
+  "dimensions": 512,
+  "bucket": "h0418",
+  "sign": 1.0
+ },
+ {
+  "name": "kind=strategy",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "kind=strategy",
+  "dimensions": 7,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "kind=strategy",
+  "dimensions": 4096,
+  "bucket": "h0930",
+  "sign": 1.0
+ },
+ {
+  "name": "prompt:activate a system",
+  "dimensions": 512,
+  "bucket": "h0240",
+  "sign": 1.0
+ },
+ {
+  "name": "prompt:activate a system",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "prompt:activate a system",
+  "dimensions": 7,
+  "bucket": "h0002",
+  "sign": 1.0
+ },
+ {
+  "name": "prompt:activate a system",
+  "dimensions": 4096,
+  "bucket": "h1776",
+  "sign": 1.0
+ },
+ {
+  "name": "option|18",
+  "dimensions": 512,
+  "bucket": "h0144",
+  "sign": 1.0
+ },
+ {
+  "name": "option|18",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "option|18",
+  "dimensions": 7,
+  "bucket": "h0002",
+  "sign": 1.0
+ },
+ {
+  "name": "option|18",
+  "dimensions": 4096,
+  "bucket": "h3728",
+  "sign": 1.0
+ },
+ {
+  "name": "player.trade_goods",
+  "dimensions": 512,
+  "bucket": "h0125",
+  "sign": -1.0
+ },
+ {
+  "name": "player.trade_goods",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": -1.0
+ },
+ {
+  "name": "player.trade_goods",
+  "dimensions": 7,
+  "bucket": "h0006",
+  "sign": -1.0
+ },
+ {
+  "name": "player.trade_goods",
+  "dimensions": 4096,
+  "bucket": "h2173",
+  "sign": -1.0
+ },
+ {
+  "name": "board.planets=6",
+  "dimensions": 512,
+  "bucket": "h0362",
+  "sign": -1.0
+ },
+ {
+  "name": "board.planets=6",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": -1.0
+ },
+ {
+  "name": "board.planets=6",
+  "dimensions": 7,
+  "bucket": "h0003",
+  "sign": -1.0
+ },
+ {
+  "name": "board.planets=6",
+  "dimensions": 4096,
+  "bucket": "h3946",
+  "sign": -1.0
+ },
+ {
+  "name": "unicode:\u00e9\u00fc",
+  "dimensions": 512,
+  "bucket": "h0483",
+  "sign": 1.0
+ },
+ {
+  "name": "unicode:\u00e9\u00fc",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "unicode:\u00e9\u00fc",
+  "dimensions": 7,
+  "bucket": "h0006",
+  "sign": 1.0
+ },
+ {
+  "name": "unicode:\u00e9\u00fc",
+  "dimensions": 4096,
+  "bucket": "h2019",
+  "sign": 1.0
+ },
+ {
+  "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "dimensions": 512,
+  "bucket": "h0086",
+  "sign": 1.0
+ },
+ {
+  "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "dimensions": 7,
+  "bucket": "h0003",
+  "sign": 1.0
+ },
+ {
+  "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "dimensions": 4096,
+  "bucket": "h0086",
+  "sign": 1.0
+ },
+ {
+  "name": "head=movement|opt=move|16|0",
+  "dimensions": 512,
+  "bucket": "h0384",
+  "sign": -1.0
+ },
+ {
+  "name": "head=movement|opt=move|16|0",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": -1.0
+ },
+ {
+  "name": "head=movement|opt=move|16|0",
+  "dimensions": 7,
+  "bucket": "h0001",
+  "sign": -1.0
+ },
+ {
+  "name": "head=movement|opt=move|16|0",
+  "dimensions": 4096,
+  "bucket": "h0384",
+  "sign": -1.0
+ },
+ {
+  "name": "faction=sol",
+  "dimensions": 512,
+  "bucket": "h0443",
+  "sign": 1.0
+ },
+ {
+  "name": "faction=sol",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": 1.0
+ },
+ {
+  "name": "faction=sol",
+  "dimensions": 7,
+  "bucket": "h0005",
+  "sign": 1.0
+ },
+ {
+  "name": "faction=sol",
+  "dimensions": 4096,
+  "bucket": "h3003",
+  "sign": 1.0
+ },
+ {
+  "name": "round=9",
+  "dimensions": 512,
+  "bucket": "h0319",
+  "sign": -1.0
+ },
+ {
+  "name": "round=9",
+  "dimensions": 1,
+  "bucket": "h0000",
+  "sign": -1.0
+ },
+ {
+  "name": "round=9",
+  "dimensions": 7,
+  "bucket": "h0001",
+  "sign": -1.0
+ },
+ {
+  "name": "round=9",
+  "dimensions": 4096,
+  "bucket": "h0319",
+  "sign": -1.0
+ }
+]
