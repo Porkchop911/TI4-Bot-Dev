@@ -532,7 +532,7 @@ mod tests {
     fn play_batch_returns_results_in_seed_order() {
         let seeds = vec![110, 105, 100, 108];
         let mut sorted = seeds.clone();
-        sorted.sort();
+        sorted.sort_unstable();
         let rollouts = play_batch(
             ContentStore::embedded(),
             &seats(&["a", "b", "c"]),
@@ -544,10 +544,7 @@ mod tests {
         );
         // Results must be sorted by seed value regardless of input order.
         for (i, seed) in sorted.iter().enumerate() {
-            assert_eq!(
-                rollouts[i].seed, *seed,
-                "seed {} at position {}", seed, i
-            );
+            assert_eq!(rollouts[i].seed, *seed, "seed {seed} at position {i}");
         }
     }
 
