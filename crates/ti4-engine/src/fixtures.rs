@@ -4,8 +4,9 @@
 //! Beyond the duplication that cost a real bug twice: the one-ring geometry trap in
 //! [`Hub::across`] was rediscovered independently in `movement.rs` and `tactical.rs`, because
 //! each had written its own fixture and neither knew what the other had learned.
-
-#![cfg(test)]
+//!
+//! Compiled unconditionally so sibling crates can use the same board; see the note on the module
+//! declaration in `lib.rs` for why a cargo feature cannot do that job.
 
 use ti4_content::ContentStore;
 use ti4_content::galaxy::{Galaxy, System};

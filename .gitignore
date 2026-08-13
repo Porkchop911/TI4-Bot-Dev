@@ -47,3 +47,6 @@ fixtures/*
 fixtures/legacy_entropy/*
 !fixtures/legacy_entropy/bounded-v1/
 !fixtures/legacy_entropy/bounded-v1/**
+
+# Local git worktrees. Gitlinks to them are meaningless to a clone.
+.worktrees/

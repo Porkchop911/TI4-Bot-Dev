@@ -134,10 +134,13 @@ fn every_subsystem_the_driver_owns_is_reachable() {
 }
 
 #[test]
-fn only_test_support_modules_are_test_gated() {
+fn no_module_is_test_gated() {
     // `exploration` was accidentally `#[cfg(test)]` for several commits: it compiled, its own
     // tests passed because they run under cfg(test), and nothing outside tests could call it.
     // A module that vanishes from the library is invisible to every other check here.
+    //
+    // The list is empty now that `fixtures` is shared with sibling crates, so any gate at all is
+    // a mistake — which makes this stricter than the version that allowed a named exception.
     let lib = include_str!("lib.rs");
     let gated: Vec<&str> = lib
         .lines()
@@ -147,10 +150,9 @@ fn only_test_support_modules_are_test_gated() {
         .map(|name| name.trim_end_matches(';'))
         .collect();
 
-    assert_eq!(
-        gated,
-        vec!["fixtures"],
-        "only test-support modules may be test-gated"
+    assert!(
+        gated.is_empty(),
+        "no module may be test-gated, but these are: {gated:?}"
     );
 }
 

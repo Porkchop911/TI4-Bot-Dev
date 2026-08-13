@@ -29,7 +29,16 @@ pub mod event;
 pub mod exploration;
 pub mod faction_abilities;
 pub mod fingerprint;
-#[cfg(test)]
+/// Test scaffolding: a small galaxy, and helpers that place units on it.
+///
+/// Compiled unconditionally rather than behind `#[cfg(test)]` or a feature, so sibling crates can
+/// build a position to score without each inventing its own board. Two crates disagreeing about
+/// what "a plain hub" means is how a passing test in one becomes a false negative in the other.
+///
+/// A feature was tried first and does not work: cargo resolves a dependency's features once for
+/// the whole build, so a `dev-dependencies` entry cannot switch one on for a sibling's unit tests
+/// without also switching it on everywhere. This crate is workspace-internal and never published,
+/// so carrying the module is the cheaper of the two costs.
 pub mod fixtures;
 pub mod fleet;
 pub mod game;
