@@ -203,6 +203,17 @@ pub fn all_planets(store: &ContentStore, sources: SourceSet) -> BTreeMap<&str, P
         .collect()
 }
 
+/// One planet by id, within a source scope.
+///
+/// A point lookup against the store's index, where [`all_planets`] materialises the whole
+/// catalogue. Callers that want one planet should use this: building a hundred-entry map to
+/// answer a single question was a third of a simulated game's running time.
+#[must_use]
+pub fn planet<'a>(store: &'a ContentStore, id: &str, sources: SourceSet) -> Option<Planet<'a>> {
+    let resolved = store.resolve_id(ContentType::Planets, id, sources)?;
+    store.get(ContentType::Planets, resolved).map(Planet::new)
+}
+
 /// The planets that sit in a given system.
 #[must_use]
 pub fn planets_in<'a>(

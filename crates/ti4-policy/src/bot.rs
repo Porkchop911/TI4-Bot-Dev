@@ -390,8 +390,10 @@ impl ScoredBot {
         let Some(unit_id) = unit_id else {
             return self.raw_score(choice, option);
         };
-        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
-        let Some(unit) = types.get(unit_id) else {
+        // A point lookup, not a catalogue: building the whole map to answer one question was a
+        // third of a game's running time across every site that did it.
+        let Some(unit) = ti4_content::units::unit_type(seen.content(), unit_id, seen.sources())
+        else {
             return self.raw_score(choice, option);
         };
         let mut score = if unit.is_ground_force() {
@@ -477,8 +479,8 @@ impl ScoredBot {
     ) -> Components {
         let mut score = self.score_produce(option);
         let unit_id = option.id.strip_prefix("produce|").unwrap_or(&option.id);
-        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
-        let Some(unit) = types.get(unit_id) else {
+        let Some(unit) = ti4_content::units::unit_type(seen.content(), unit_id, seen.sources())
+        else {
             return score;
         };
         let stranded = crate::valuation::stranded_troops(seen, &choice.player);

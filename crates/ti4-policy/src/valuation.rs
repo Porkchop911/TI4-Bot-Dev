@@ -77,8 +77,10 @@ pub fn unit_value(content: &ContentStore, sources: SourceSet, unit_id: &str) -> 
     if let Some(value) = base_unit_value(unit_id) {
         return value;
     }
-    let types = ti4_content::units::catalogue(content, sources);
-    let Some(stats) = types.get(unit_id) else {
+    // A point lookup against the store's index. This is called once per option on every
+    // casualty and production choice, and building the whole catalogue to answer it was the
+    // single hottest thing the bot did.
+    let Some(stats) = ti4_content::units::unit_type(content, unit_id, sources) else {
         return 1.0;
     };
     base_unit_value(stats.base_type()).unwrap_or_else(|| stats.cost().max(1.0))
@@ -163,8 +165,8 @@ fn objective_pressure(seen: &Observed<'_>, player: &PlayerId) -> f64 {
 /// What taking (or holding) a planet is worth right now.
 #[must_use]
 pub fn planet_value(seen: &Observed<'_>, player: &PlayerId, planet: &PlanetId) -> f64 {
-    let all = ti4_content::galaxy::all_planets(seen.content(), seen.sources());
-    let Some(record) = all.get(planet.as_str()) else {
+    let Some(record) = ti4_content::galaxy::planet(seen.content(), planet.as_str(), seen.sources())
+    else {
         return 0.0;
     };
     #[expect(
@@ -173,7 +175,7 @@ pub fn planet_value(seen: &Observed<'_>, player: &PlayerId, planet: &PlanetId) -
     )]
     let base = record.resources() as f64 + 0.5 * record.influence() as f64;
     let mut total = base + 1.0; // every planet is worth something as a body count
-    for factor in planet_multipliers(seen, player, record).values() {
+    for factor in planet_multipliers(seen, player, &record).values() {
         total *= factor;
     }
     total
