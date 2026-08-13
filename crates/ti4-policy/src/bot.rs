@@ -30,6 +30,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::production::Spend;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::SystemId;
 
@@ -159,6 +160,7 @@ impl ScoredBot {
             "load" => self.score_load_seen(choice, option, seen),
             "land" => self.score_land_seen(choice, option, seen),
             "produce" => self.score_produce_seen(choice, option, seen),
+            "pay" => Self::score_pay_seen(choice, option, seen),
             "research" => self.score_research_seen(choice, option, seen),
             "pool" => Self::score_pool_seen(choice, option, seen),
             _ => self.raw_score(choice, option),
@@ -256,6 +258,32 @@ impl ScoredBot {
         seen.revealed_objectives()
             .iter()
             .any(|goal| aliases.contains(&goal.as_str()) && !scored.contains(goal))
+    }
+
+    /// The nearest public single-kind purchase objective worth protecting this round.
+    ///
+    /// The oracle's full planner selects one active path and only protects a goal that is already
+    /// plausible. This compact policy slice has no schedule, so it takes the smallest revealed
+    /// unscored threshold that is at least half funded. It never consults secret objectives.
+    fn public_purchase_reserve(seen: &Observed<'_>, choice: &Choice, kind: Spend) -> Option<i64> {
+        let goals: &[(&str, i64)] = match kind {
+            Spend::Resources => &[("monument", 8), ("golden_age", 16)],
+            Spend::Influence => &[("sway_council", 8), ("manipulate_law", 16)],
+        };
+        let available = seen.available_spend(&choice.player, kind);
+        let scored = seen.scored_by(&choice.player);
+        goals
+            .iter()
+            .filter(|(alias, need)| {
+                available >= (need + 1) / 2
+                    && seen
+                        .revealed_objectives()
+                        .iter()
+                        .any(|goal| goal.as_str() == *alias)
+                    && !scored.contains(&ti4_model::id::ObjectiveId::new(*alias))
+            })
+            .map(|(_, need)| *need)
+            .min()
     }
 
     /// The public part of the oracle's `_score_move`: a hull is valuable when it has a job at
@@ -508,6 +536,37 @@ impl ScoredBot {
         }
         // Among options that settle, the tightest fit wastes the least.
         score.and("overpayment", -0.5 * (worth - owed).max(0.0))
+    }
+
+    /// Preserve the next plausible public purchase-objective balance when payment metadata tells
+    /// us whether this legal option spends resources or influence.
+    fn score_pay_seen(choice: &Choice, option: &ChoiceOption, seen: &Observed<'_>) -> Components {
+        let score = Self::score_pay(option);
+        let kind = match option
+            .payload
+            .get("payment_kind")
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("resources") => Spend::Resources,
+            Some("influence") => Spend::Influence,
+            _ => return score,
+        };
+        let Some(reserve) = Self::public_purchase_reserve(seen, choice, kind) else {
+            return score;
+        };
+        let worth = option
+            .payload
+            .get("worth")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        let remaining = seen.available_spend(&choice.player, kind) - worth;
+        let shortfall = (reserve - remaining).max(0);
+        if shortfall == 0 {
+            score
+        } else {
+            let capped_shortfall = i32::try_from(shortfall).unwrap_or(i32::MAX);
+            score.and("objective_reserve", -2.0 * f64::from(capped_shortfall))
+        }
     }
 
     /// An affordable Leadership purchase turns visible influence into an extra command token.
@@ -1329,6 +1388,88 @@ mod tests {
         );
 
         assert!(score_of(&bot, &bills, 1) > score_of(&bot, &bills, 0));
+    }
+
+    #[test]
+    fn public_purchase_objective_preserves_the_smallest_resource_payment() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet, player.clone());
+        state.player_mut(&player).unwrap().trade_goods = 3;
+        state
+            .revealed_objectives
+            .push(ti4_model::id::ObjectiveId::new("monument"));
+        let bills = Choice::new(
+            player,
+            "pay 5",
+            vec![
+                ChoiceOption::new("large", "pay")
+                    .with("worth", 5)
+                    .with("owed", 5)
+                    .with("payment_kind", "resources"),
+                ChoiceOption::new("small", "pay")
+                    .with("worth", 1)
+                    .with("owed", 5)
+                    .with("payment_kind", "resources"),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "small",
+            "the public Monument reserve outvalues settling an unrelated bill in one card"
+        );
+        assert!(
+            bot.decisions[0].breakdown["small"]
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "objective_reserve")
+        );
+    }
+
+    #[test]
+    fn unseen_purchase_objective_keeps_the_existing_settlement_preference() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet, player.clone());
+        state.player_mut(&player).unwrap().trade_goods = 3;
+        let bills = Choice::new(
+            player,
+            "pay 5",
+            vec![
+                ChoiceOption::new("large", "pay")
+                    .with("worth", 5)
+                    .with("owed", 5)
+                    .with("payment_kind", "resources"),
+                ChoiceOption::new("small", "pay")
+                    .with("worth", 1)
+                    .with("owed", 5)
+                    .with("payment_kind", "resources"),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "large"
+        );
+        assert!(
+            bot.decisions[0].breakdown["large"]
+                .parts()
+                .iter()
+                .all(|(name, _)| *name != "objective_reserve")
+        );
     }
 
     #[test]

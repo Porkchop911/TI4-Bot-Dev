@@ -21,6 +21,13 @@ pub enum Spend {
     Influence,
 }
 
+const fn spend_name(kind: Spend) -> &'static str {
+    match kind {
+        Spend::Resources => "resources",
+        Spend::Influence => "influence",
+    }
+}
+
 /// The choice kind for exhausting a planet to pay.
 pub const PAY_KIND: &str = "pay";
 /// The choice kind for producing one unit.
@@ -149,13 +156,15 @@ pub fn pay(
                 )
                 .with("worth", worth)
                 .with("owed", cost - paid)
+                .with("payment_kind", spend_name(kind))
             })
             .collect();
         if goods > 0 {
             options.push(
                 ChoiceOption::labelled("trade_good", PAY_KIND, "spend a trade good")
                     .with("worth", 1)
-                    .with("owed", cost - paid),
+                    .with("owed", cost - paid)
+                    .with("payment_kind", spend_name(kind)),
             );
         }
         if options.is_empty() {
@@ -548,6 +557,7 @@ impl Window for ProductionWindow {
                         )
                         .with("worth", worth)
                         .with("owed", *owed)
+                        .with("payment_kind", spend_name(Spend::Resources))
                     })
                     .collect();
                 let goods = state
@@ -557,7 +567,8 @@ impl Window for ProductionWindow {
                     options.push(
                         ChoiceOption::labelled("trade_good", PAY_KIND, "spend a trade good")
                             .with("worth", 1)
-                            .with("owed", *owed),
+                            .with("owed", *owed)
+                            .with("payment_kind", spend_name(Spend::Resources)),
                     );
                 }
                 if options.is_empty() {
@@ -737,6 +748,24 @@ mod tests {
         PlayerId::new("a")
     }
 
+    struct PaymentKindChecking(&'static str);
+
+    impl crate::choice::Decider for PaymentKindChecking {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            assert!(
+                choice.options.iter().all(|option| {
+                    option
+                        .payload
+                        .get("payment_kind")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(self.0)
+                }),
+                "every payment option carries the engine's spend kind"
+            );
+            Ok(choice.options[0].clone())
+        }
+    }
+
     fn seated() -> (GameState, SystemId, PlanetId) {
         let state = game(&["a", "b"]);
         let (system, planet) = a_placed_planet();
@@ -772,6 +801,32 @@ mod tests {
             ),
             3
         );
+    }
+
+    #[test]
+    fn payment_options_label_the_resource_or_influence_they_spend() {
+        for (kind, name) in [
+            (Spend::Resources, "resources"),
+            (Spend::Influence, "influence"),
+        ] {
+            let (mut state, _, _) = seated();
+            state.player_mut(&player()).unwrap().trade_goods = 1;
+            let mut table = Table::new();
+            table.seat(player(), Box::new(PaymentKindChecking(name)));
+
+            assert!(
+                pay(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut table,
+                    &player(),
+                    1,
+                    kind,
+                )
+                .unwrap()
+            );
+        }
     }
 
     #[test]

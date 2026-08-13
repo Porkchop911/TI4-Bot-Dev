@@ -126,6 +126,22 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   revealed unscored public purchase-objective reservation; keep secret objectives and payment
   execution out of scope.
 
+### M08-007e public purchase-objective reservation checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007e-public-purchase-reserves`; focused package commit follows this state
+  update.
+- Resource/influence payment options now carry additive `payment_kind` metadata. For a revealed,
+  unscored, at-least-half-funded public single-kind purchase objective, observed payment scoring
+  favors the smaller legal expenditure that preserves more public capacity. Payment legality,
+  option IDs, and execution did not change.
+- Verification passed: oracle guard; focused engine/policy boundaries; format; 705 engine unit +
+  5 doc tests; 53 policy tests; clippy `-D warnings`; and diff check. Zeroing the reserve penalty
+  selected the larger payment and was restored. An initial precise-cast lint was corrected before
+  final verification.
+- Evidence: `plans/evidence/M08-007e.md`. Next safe M08-007 child: public trade-good or token
+  reserve facts, or another non-overlapping revealed public goal family; do not add secret or
+  mixed-cost planning without a dedicated public fact model.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
