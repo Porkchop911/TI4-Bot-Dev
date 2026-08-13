@@ -1,0 +1,435 @@
+//! Playing from a fitted profile, and recording what was played (M09-004, M09-013).
+//!
+//! Ported from the oracle's fully-learned branch of `ScoredBot._choose`, its `_policy_probabilities`
+//! and `_sample`, and `learned_policy.trajectory_record`.
+//!
+//! # Legality only
+//!
+//! The one structural difference from the authored bot: a learned policy is offered **every legal
+//! option**, never a shortlist. [`crate::bot::ScoredBot`] filters with `worth_considering` before
+//! it samples, which is an authored judgement about what is worth thinking about — exactly the
+//! kind of thing that must not reach a policy claiming its utility is entirely learned. A filtered
+//! option is one the policy can never be taught to want, and its absence would be invisible in
+//! every metric.
+//!
+//! # Sampling, not argmax
+//!
+//! Softmax over the legal set at the profile's temperature. An argmax policy is solvable, plays
+//! the same game from a given position every time, and gives a policy-gradient trainer one
+//! trajectory where it needs a distribution — the probabilities recorded here are what the update
+//! divides by.
+
+use std::collections::BTreeMap;
+
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+
+use crate::features::{FeatureVector, option_features};
+use crate::learned::{Profile, decision_head};
+
+/// One learned decision, in the form a policy-gradient trainer consumes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrajectoryStep {
+    /// Which head decided this.
+    pub head: String,
+    /// The option taken.
+    pub chosen: String,
+    /// The hashed features of the option taken.
+    ///
+    /// Only the chosen option's, because that is what the gradient of the log-probability needs
+    /// alongside the expectation over the rest.
+    pub features: FeatureVector,
+    /// The features of every legal option, so the update can compute the expectation the chosen
+    /// option is measured against.
+    pub legal: BTreeMap<String, FeatureVector>,
+    /// What the policy thought each legal option's chance was.
+    pub probabilities: BTreeMap<String, f64>,
+    /// Which round the decision was taken in, so the two stages can weigh it.
+    pub round: u32,
+}
+
+/// Softmax over the legal set.
+///
+/// Shifted by the best score before exponentiating, which changes no probability and stops a large
+/// score overflowing to infinity — at which point every probability becomes `NaN` and the sample
+/// silently falls back to the first option.
+#[must_use]
+pub fn probabilities(scores: &BTreeMap<String, f64>, temperature: f64) -> BTreeMap<String, f64> {
+    if scores.is_empty() {
+        return BTreeMap::new();
+    }
+    if scores.len() == 1 {
+        return scores.keys().map(|id| (id.clone(), 1.0)).collect();
+    }
+    let temperature = temperature.max(1e-6);
+    let best = scores.values().copied().fold(f64::NEG_INFINITY, f64::max);
+    let weights: Vec<(String, f64)> = scores
+        .iter()
+        .map(|(id, score)| (id.clone(), ((score - best) / temperature).exp()))
+        .collect();
+    let total: f64 = weights.iter().map(|(_, weight)| weight).sum();
+    if !total.is_finite() || total <= 0.0 {
+        // Uniform rather than a fabricated preference: an unusable score distribution is a bug to
+        // notice, and a policy that quietly favours whatever sorted first would hide it.
+        #[expect(clippy::cast_precision_loss, reason = "option counts are small")]
+        let share = 1.0 / weights.len() as f64;
+        return weights.into_iter().map(|(id, _)| (id, share)).collect();
+    }
+    weights
+        .into_iter()
+        .map(|(id, weight)| (id, weight / total))
+        .collect()
+}
+
+/// A bot that plays from a fitted profile and nothing else.
+pub struct LearnedBot {
+    profile: Profile,
+    rng: ChaCha8Rng,
+    /// The decisions taken, when recording.
+    pub trajectory: Vec<TrajectoryStep>,
+    recording: bool,
+}
+
+impl LearnedBot {
+    /// Play from `profile`, with its own deterministic stream.
+    #[must_use]
+    pub fn new(profile: Profile, seed: u64) -> Self {
+        Self {
+            profile,
+            rng: ChaCha8Rng::seed_from_u64(seed),
+            trajectory: Vec::new(),
+            recording: false,
+        }
+    }
+
+    /// Record every decision, for training. Off by default: a batch run does not want one.
+    #[must_use]
+    pub const fn recording(mut self) -> Self {
+        self.recording = true;
+        self
+    }
+
+    /// The profile being played.
+    #[must_use]
+    pub const fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    /// Score every legal option, and say what each one's chance is.
+    ///
+    /// Returned together because a trainer needs both: the scores to check a fit, and the
+    /// probabilities the sample was actually drawn from.
+    #[must_use]
+    pub fn consider(
+        &self,
+        seen: &Observed<'_>,
+        choice: &Choice,
+    ) -> (BTreeMap<String, FeatureVector>, BTreeMap<String, f64>) {
+        let dimensions = self.profile.dimensions();
+        let legal: BTreeMap<String, FeatureVector> = choice
+            .options
+            .iter()
+            .map(|option| {
+                (
+                    option.id.clone(),
+                    option_features(seen, choice, option, &choice.player, dimensions),
+                )
+            })
+            .collect();
+        let scores: BTreeMap<String, f64> = legal
+            .iter()
+            .map(|(id, vector)| (id.clone(), self.profile.score_vector(vector)))
+            .collect();
+        let chances = probabilities(&scores, self.profile.learned.temperature);
+        (legal, chances)
+    }
+}
+
+impl Decider for LearnedBot {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        // Without a position there are no facts to read, so every option scores alike and the
+        // sample is uniform. Refused rather than guessed at: a learned policy asked to decide
+        // blind has nothing to decide with, and quietly answering would look like play.
+        choice
+            .options
+            .first()
+            .cloned()
+            .ok_or_else(|| IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            })
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &Observed<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.is_empty() {
+            return Err(IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            });
+        }
+        let (legal, chances) = self.consider(seen, choice);
+
+        // Every legal option, in the order the engine offered them. No shortlist: a filtered
+        // option is one the policy can never learn to want.
+        let mut roll = self.rng.random_range(0.0..1.0);
+        let mut chosen = choice.options.last().expect("options are not empty");
+        for option in &choice.options {
+            roll -= chances.get(&option.id).copied().unwrap_or(0.0);
+            if roll <= 0.0 {
+                chosen = option;
+                break;
+            }
+        }
+
+        if self.recording {
+            self.trajectory.push(TrajectoryStep {
+                head: decision_head(choice).to_owned(),
+                chosen: chosen.id.clone(),
+                features: legal.get(&chosen.id).cloned().unwrap_or_default(),
+                legal,
+                probabilities: chances,
+                round: seen.round(),
+            });
+        }
+        Ok(chosen.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::learned::{DEFAULT_DIMENSIONS, blank_profile, bucket};
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::POK;
+    use ti4_model::id::PlayerId;
+    use ti4_model::state::GameState;
+
+    fn table() -> GameState {
+        ti4_engine::fixtures::game(&["a", "b"])
+    }
+
+    fn asked(kinds: &[(&str, &str)]) -> Choice {
+        Choice::new(
+            PlayerId::new("a"),
+            "activate a system",
+            kinds
+                .iter()
+                .map(|(id, kind)| ChoiceOption::labelled(*id, *kind, *id))
+                .collect::<Vec<ChoiceOption>>(),
+        )
+    }
+
+    #[test]
+    fn an_untrained_policy_plays_uniformly() {
+        // The honest starting point. A blank profile scores everything zero, so a softmax over it
+        // is flat — and if it were not, the shape would be coming from somewhere nobody fitted.
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
+
+        let bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
+        let (_, chances) = bot.consider(&seen, &choice);
+        for chance in chances.values() {
+            assert!((chance - 1.0 / 3.0).abs() < 1e-9, "{chance}");
+        }
+    }
+
+    #[test]
+    fn a_trained_weight_moves_the_odds() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate")]);
+
+        let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
+        // Teach it that options mentioning "18" are worth something.
+        let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
+        profile.learned.weights.insert(slot, 5.0 * sign);
+
+        let bot = LearnedBot::new(profile, 1);
+        let (_, chances) = bot.consider(&seen, &choice);
+        assert!(chances["18"] > chances["26"], "{chances:?}");
+    }
+
+    #[test]
+    fn every_legal_option_keeps_a_chance() {
+        // The legality-only property. The authored bot filters before it samples; a policy whose
+        // utility is entirely learned must not, because a filtered option is one it can never be
+        // taught to want and its absence shows up in no metric.
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
+
+        let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
+        let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
+        profile.learned.weights.insert(slot, 20.0 * sign);
+
+        let bot = LearnedBot::new(profile, 1);
+        let (legal, chances) = bot.consider(&seen, &choice);
+        assert_eq!(legal.len(), 3, "every option was scored");
+        assert_eq!(chances.len(), 3);
+        for (id, chance) in &chances {
+            assert!(*chance > 0.0, "{id} was given no chance at all");
+        }
+    }
+
+    #[test]
+    fn the_probabilities_are_a_distribution() {
+        let scores: BTreeMap<String, f64> = [("a", 3.0), ("b", -1.0), ("c", 0.5)]
+            .into_iter()
+            .map(|(id, score)| (id.to_owned(), score))
+            .collect();
+        let chances = probabilities(&scores, 1.0);
+        let total: f64 = chances.values().sum();
+        assert!((total - 1.0).abs() < 1e-12, "{total}");
+        assert!(chances["a"] > chances["c"] && chances["c"] > chances["b"]);
+    }
+
+    #[test]
+    fn a_huge_score_does_not_overflow_into_nothing() {
+        // Without the shift by the best score, `exp` overflows to infinity, every probability
+        // becomes NaN, and the sample silently falls back to whatever sorted first. That is a bug
+        // that looks exactly like a confident policy.
+        let scores: BTreeMap<String, f64> = [("a", 1_000.0), ("b", 999.0)]
+            .into_iter()
+            .map(|(id, score)| (id.to_owned(), score))
+            .collect();
+        let chances = probabilities(&scores, 1.0);
+
+        assert!(chances.values().all(|chance| chance.is_finite()));
+        let total: f64 = chances.values().sum();
+        assert!((total - 1.0).abs() < 1e-12, "{total}");
+        assert!(chances["a"] > chances["b"]);
+    }
+
+    #[test]
+    fn a_colder_policy_commits_harder() {
+        let scores: BTreeMap<String, f64> = [("a", 2.0), ("b", 1.0)]
+            .into_iter()
+            .map(|(id, score)| (id.to_owned(), score))
+            .collect();
+        let warm = probabilities(&scores, 5.0);
+        let cold = probabilities(&scores, 0.1);
+        assert!(cold["a"] > warm["a"], "{} against {}", cold["a"], warm["a"]);
+    }
+
+    #[test]
+    fn the_sample_follows_the_odds() {
+        // A distribution nobody draws from is a report, not a policy.
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate")]);
+
+        // The weight is found by measuring rather than assumed. Buckets collide — that is the
+        // hashing trick working — so one weight does not move one option's score by one, and a
+        // test that assumed it would was testing arithmetic that does not happen.
+        let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
+        let odds_at = |weight: f64| {
+            let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
+            profile.learned.weights.insert(slot.clone(), weight * sign);
+            LearnedBot::new(profile, 7).consider(&seen, &choice).1["18"]
+        };
+        let weight = [0.05, 0.1, 0.2, 0.4, 0.8]
+            .into_iter()
+            .find(|weight| (0.55..0.95).contains(&odds_at(*weight)))
+            .expect("some weight states a preference short of certainty");
+
+        let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
+        profile.learned.weights.insert(slot, weight * sign);
+        let mut bot = LearnedBot::new(profile, 7);
+        let expected = bot.consider(&seen, &choice).1["18"];
+
+        let mut favoured = 0;
+        for _ in 0..400 {
+            if bot.choose_seeing(&choice, &seen).unwrap().id == "18" {
+                favoured += 1;
+            }
+        }
+        let rate = f64::from(favoured) / 400.0;
+        assert!(
+            (rate - expected).abs() < 0.08,
+            "drew {rate} against a stated {expected}"
+        );
+        assert!(favoured < 400, "and the other option still happened");
+    }
+
+    #[test]
+    fn the_same_seed_plays_the_same_game() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
+
+        let played = |seed| {
+            let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), seed);
+            (0..30)
+                .map(|_| bot.choose_seeing(&choice, &seen).unwrap().id)
+                .collect::<Vec<String>>()
+        };
+        assert_eq!(played(4), played(4));
+        assert_ne!(played(4), played(5), "and a different seed does not");
+    }
+
+    #[test]
+    fn a_recording_bot_keeps_what_a_trainer_needs() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate")]);
+
+        let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2).recording();
+        let taken = bot.choose_seeing(&choice, &seen).unwrap();
+
+        let step = bot.trajectory.first().expect("it was recorded");
+        assert_eq!(step.chosen, taken.id);
+        assert_eq!(step.head, "activation");
+        assert_eq!(
+            step.legal.len(),
+            2,
+            "every legal option's features are kept"
+        );
+        assert_eq!(
+            step.features, step.legal[&taken.id],
+            "and the chosen one's are the ones it took"
+        );
+        assert!((step.probabilities.values().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert_eq!(step.round, seen.round());
+    }
+
+    #[test]
+    fn a_bot_that_is_not_recording_keeps_nothing() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate")]);
+        let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2);
+        bot.choose_seeing(&choice, &seen).unwrap();
+        assert!(bot.trajectory.is_empty());
+    }
+
+    #[test]
+    fn it_only_ever_answers_with_an_option_it_was_offered() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
+        let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 3);
+
+        for _ in 0..200 {
+            let answer = bot.choose_seeing(&choice, &seen).unwrap();
+            assert!(choice.ids().contains(&answer.id.as_str()));
+        }
+    }
+
+    #[test]
+    fn an_empty_choice_is_refused_rather_than_answered() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let nothing = Choice::new(PlayerId::new("a"), "pick", Vec::new());
+        let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
+        assert!(bot.choose_seeing(&nothing, &seen).is_err());
+        assert!(bot.choose(&nothing).is_err());
+    }
+}

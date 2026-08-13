@@ -343,6 +343,18 @@ impl Profile {
         self.learned.weights.len()
     }
 
+    /// Score an already-hashed sparse vector: the dot product with the weights.
+    ///
+    /// The inference path. The signs are baked into the vector when it is built, so this is a
+    /// plain dot product and not a second hashing.
+    #[must_use]
+    pub fn score_vector(&self, features: &std::collections::BTreeMap<String, f64>) -> f64 {
+        features
+            .iter()
+            .map(|(slot, value)| self.learned.weights.get(slot).copied().unwrap_or(0.0) * value)
+            .sum()
+    }
+
     /// Score one feature vector: the dot product of its hashed buckets with the weights.
     #[must_use]
     pub fn score(&self, features: &[(String, f64)]) -> f64 {
