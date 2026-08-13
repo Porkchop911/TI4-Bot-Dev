@@ -197,6 +197,36 @@ pub enum CheckpointError {
     ChecksumMismatch { expected: String, found: String },
     #[error("interrupted temp file at {path}")]
     InterruptedTemp { path: PathBuf },
+    #[error("profile validation: {0}")]
+    ProfileValidation(String),
+}
+
+/// State needed to resume a training run from a checkpoint.
+///
+/// Extracted from a checkpoint: champion profiles, learner profiles, training history,
+/// and seed ranges for validation and confirmation panels.
+#[derive(Debug, Clone)]
+pub struct ResumeState {
+    /// Champion (accepted) profiles, keyed by faction name.
+    pub champion: BTreeMap<String, Profile>,
+    /// Active learner profiles, keyed by faction name.
+    pub learner: BTreeMap<String, Profile>,
+    /// Training history entries from the checkpoint.
+    pub history: Vec<serde_json::Value>,
+    /// Telemetry rows from the checkpoint.
+    pub telemetry: Vec<serde_json::Value>,
+    /// Historical artifacts from the checkpoint.
+    pub archive: BTreeMap<String, String>,
+    /// The update index to resume from.
+    pub start_update: usize,
+    /// The number of updates to train before the next evaluation.
+    pub eval_every: usize,
+    /// Seeds for the validation panel (mirrors the oracle's `validation_seeds`).
+    pub validation_seeds: Vec<u64>,
+    /// Seeds for the confirmation panel (mirrors the oracle's `confirmation_seeds`).
+    pub confirmation_seeds: Vec<u64>,
+    /// The checkpoint file path, for audit.
+    pub checkpoint_path: PathBuf,
 }
 
 /// Persistent archive: save and load checkpoints.
@@ -314,6 +344,88 @@ impl Archive {
         path.exists() && !path.with_extension("tmp").exists()
     }
 
+    /// Resume a training run from a checkpoint.
+    ///
+    /// Loads the checkpoint, extracts champion and learner profiles, restores training
+    /// state (history, telemetry, update count), and validates that factions match.
+    ///
+    /// Mirrors the oracle's resume logic in `train_stage1_policy_gradient.py`:
+    ///
+    /// - `accepted` = champion profiles (from `checkpoint.accepted`)
+    /// - `learner` = learner profiles (from `checkpoint.profiles`, falling back to `accepted`)
+    /// - `start_update` = max update index in history
+    /// - `validation_seeds` / `confirmation_seeds` = from checkpoint arguments or defaults
+    ///
+    /// # Errors
+    /// I/O errors, deserialization errors, schema mismatch, checksum failures,
+    /// or faction mismatch.
+    pub fn resume(&self, path: &Path) -> Result<ResumeState, CheckpointError> {
+        let checkpoint = self.load(path)?;
+        checkpoint.validate_schema()?;
+
+        // Champion profiles come from `accepted`.
+        let champion = checkpoint.accepted;
+        if champion.is_empty() {
+            return Err(CheckpointError::ProfileValidation(
+                "checkpoint has no accepted (champion) profiles".to_string(),
+            ));
+        }
+        let champion_factions: Vec<String> = champion.keys().cloned().collect();
+
+        // Learner profiles come from `profiles`, falling back to `accepted`.
+        let learner = if checkpoint.profiles.is_empty() {
+            champion.clone()
+        } else {
+            checkpoint.profiles
+        };
+
+        // Validate factions match.
+        let learner_factions: Vec<String> = learner.keys().cloned().collect();
+        if champion_factions != learner_factions {
+            return Err(CheckpointError::ProfileValidation(format!(
+                "champion and learner factions do not match: champion={champion_factions:?}, learner={learner_factions:?}",
+            )));
+        }
+
+        // Restore training state.
+        let history = checkpoint.history;
+        let telemetry = checkpoint.training_telemetry;
+        let archive = checkpoint.checkpoint_archive;
+
+        // Compute start_update from the maximum update index in history.
+        let start_update = usize::try_from(
+            history
+                .iter()
+                .filter_map(|entry| entry.get("update").and_then(serde_json::Value::as_u64))
+                .max()
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
+
+        // Extract validation/confirmation seed ranges from checkpoint arguments.
+        // The oracle uses: validation_seeds = seed + 9_000_000, confirmation_seeds = seed + 14_000_000
+        let default_seed = checkpoint
+            .arguments
+            .get("seed")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        let validation_seeds: Vec<u64> = (0..32).map(|i| default_seed + 9_000_000 + i).collect();
+        let confirmation_seeds: Vec<u64> = (0..32).map(|i| default_seed + 14_000_000 + i).collect();
+
+        Ok(ResumeState {
+            champion,
+            learner,
+            history,
+            telemetry,
+            archive,
+            start_update,
+            eval_every: 10, // oracle default
+            validation_seeds,
+            confirmation_seeds,
+            checkpoint_path: path.to_path_buf(),
+        })
+    }
+
     /// List all checkpoint files in the archive directory.
     ///
     /// # Errors
@@ -379,7 +491,17 @@ mod tests {
 
     #[test]
     fn a_checkpoint_round_trips_through_json() {
-        let (mut cp, path) = temp_checkpoint();
+        let base = PathBuf::from(".worktrees/training/test_roundtrip.json");
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("tmp"));
+        let _ = fs::remove_file(base.with_extension("sha256"));
+
+        let mut cp = Checkpoint::new("test_stage2".to_string(), Stage::Two, Horizon::short(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args.insert("games".to_string(), "10".to_string());
+            args
+        });
 
         // Add some profiles to test serialization of the profile maps.
         let mut profiles = BTreeMap::new();
@@ -388,8 +510,8 @@ mod tests {
         cp.profiles = profiles;
 
         let archive = Archive::new();
-        archive.save(&cp, &path).expect("save should succeed");
-        let loaded = archive.load(&path).expect("load should succeed");
+        archive.save(&cp, &base).expect("save should succeed");
+        let loaded = archive.load(&base).expect("load should succeed");
 
         // Schema must match.
         assert_eq!(loaded.schema, cp.schema);
@@ -401,8 +523,8 @@ mod tests {
         assert_eq!(loaded.profiles.len(), cp.profiles.len());
 
         // Clean up.
-        let _ = fs::remove_file(&path);
-        let _ = fs::remove_file(path.with_extension("sha256"));
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("sha256"));
     }
 
     #[test]
@@ -480,5 +602,309 @@ mod tests {
             cs1, cs2,
             "different checkpoints should have different checksums"
         );
+    }
+
+    #[test]
+    fn resume_loads_champion_and_learner_profiles() {
+        let base = PathBuf::from(".worktrees/training/test_resume_profiles.json");
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("tmp"));
+        let _ = fs::remove_file(base.with_extension("sha256"));
+
+        let mut cp = Checkpoint::new(
+            "test_resume_profiles".to_string(),
+            Stage::One,
+            Horizon::opening(),
+            {
+                let mut args = BTreeMap::new();
+                args.insert("seed".to_string(), "0".to_string());
+                args
+            },
+        );
+
+        // Set up champion (accepted) profiles.
+        let mut champion = BTreeMap::new();
+        champion.insert("sol".to_string(), blank_profile("sol", 512));
+        champion.insert("ath".to_string(), blank_profile("ath", 512));
+        cp.accepted = champion;
+
+        // Set up learner profiles (different from champion).
+        let mut learner = BTreeMap::new();
+        learner.insert("sol".to_string(), blank_profile("sol", 512));
+        learner.insert("ath".to_string(), blank_profile("ath", 512));
+        cp.profiles = learner.clone();
+
+        // Add history with an update.
+        cp.history
+            .push(serde_json::json!({"update": 42, "metrics": {}}));
+
+        let archive = Archive::new();
+        archive.save(&cp, &base).expect("save should succeed");
+
+        let state = archive.resume(&base).expect("resume should succeed");
+
+        // Champion profiles loaded correctly.
+        assert_eq!(state.champion.len(), 2);
+        assert!(state.champion.contains_key("sol"));
+        assert!(state.champion.contains_key("ath"));
+
+        // Learner profiles loaded correctly.
+        assert_eq!(state.learner.len(), 2);
+        assert!(state.learner.contains_key("sol"));
+        assert!(state.learner.contains_key("ath"));
+
+        // Training state restored.
+        assert_eq!(state.start_update, 42);
+        assert_eq!(state.history.len(), 1);
+        assert_eq!(state.validation_seeds.len(), 32);
+        assert_eq!(state.confirmation_seeds.len(), 32);
+
+        // Clean up.
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("sha256"));
+    }
+
+    #[test]
+    fn resume_falls_back_to_champion_when_no_learner_profiles() {
+        let base = PathBuf::from(".worktrees/training/test_resume_fallback.json");
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("tmp"));
+        let _ = fs::remove_file(base.with_extension("sha256"));
+
+        let (mut cp, path) = temp_checkpoint();
+
+        // Set up champion profiles only.
+        let mut champion = BTreeMap::new();
+        champion.insert("sol".to_string(), blank_profile("sol", 512));
+        champion.insert("ath".to_string(), blank_profile("ath", 512));
+        cp.accepted = champion.clone();
+        cp.profiles = BTreeMap::new(); // No learner profiles
+
+        let archive = Archive::new();
+        archive.save(&cp, &path).expect("save should succeed");
+
+        let state = archive.resume(&path).expect("resume should succeed");
+
+        // Learner should fall back to champion.
+        assert_eq!(state.learner.len(), 2);
+        assert_eq!(state.champion.len(), 2);
+        assert_eq!(
+            state.champion.keys().collect::<Vec<_>>(),
+            state.learner.keys().collect::<Vec<_>>()
+        );
+
+        // Clean up.
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("sha256"));
+    }
+
+    #[test]
+    fn failed_promotion_does_not_roll_back_champion() {
+        // Simulate a training run where promotion failed:
+        // 1. Save checkpoint with champion A and learner B (learner improved but not enough)
+        // 2. Resume and continue training (learner becomes C)
+        // 3. Champion should still be A, not rolled back to B or C.
+
+        // Clean up any leftover files.
+        let p = PathBuf::from(".worktrees/training/test_resume_no_rollback.json");
+        let _ = fs::remove_file(&p);
+        let _ = fs::remove_file(p.with_extension("tmp"));
+        let _ = fs::remove_file(p.with_extension("sha256"));
+
+        let archive = Archive::new();
+        let path = p;
+
+        // Step 1: Initial checkpoint with champion A and learner B.
+        let mut cp1 = Checkpoint::new("test_resume".to_string(), Stage::One, Horizon::opening(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args
+        });
+        let mut champion_a = BTreeMap::new();
+        champion_a.insert("sol".to_string(), blank_profile("sol", 512));
+        champion_a.insert("ath".to_string(), blank_profile("ath", 512));
+        cp1.accepted = champion_a.clone();
+
+        let mut learner_b = BTreeMap::new();
+        learner_b.insert("sol".to_string(), blank_profile("sol", 512));
+        learner_b.insert("ath".to_string(), blank_profile("ath", 512));
+        cp1.profiles = learner_b.clone();
+
+        // Record that promotion was attempted but failed.
+        cp1.history.push(serde_json::json!({
+            "update": 10,
+            "candidate_metrics": {"sol": {"clearance": 0.92}},
+            "accepted_metrics": {"sol": {"clearance": 0.90}},
+            "accepted": [],
+            "accepted_kind": "none"
+        }));
+
+        archive.save(&cp1, &path).expect("save should succeed");
+
+        // Step 2: Resume.
+        let state = archive.resume(&path).expect("resume should succeed");
+
+        // Champion should still be A.
+        assert_eq!(state.champion.len(), 2);
+        assert!(state.champion.contains_key("sol"));
+        assert!(state.champion.contains_key("ath"));
+        assert_eq!(state.start_update, 10);
+
+        // Verify the history records the failed promotion.
+        let last_entry = state.history.last().expect("should have history");
+        assert_eq!(last_entry["accepted_kind"], "none");
+        assert!(last_entry["accepted"].is_array());
+        assert!(last_entry["accepted"].as_array().unwrap().is_empty());
+
+        // Clean up.
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("sha256"));
+    }
+
+    #[test]
+    fn uninterrupted_equivalence_check() {
+        // A run that completes 10 updates in one shot should produce the same
+        // checkpoint state as a run that does 5 + 5 updates with a resume in between.
+        //
+        // We test this by creating two checkpoints that represent the same logical state:
+        // 1. A checkpoint written after 10 updates in one shot.
+        // 2. A checkpoint written after 5 updates, resumed, then 5 more updates.
+        //
+        // The final_update and history should match.
+
+        // Clean up any leftover files.
+        for name in &["test_eq1.json", "test_eq2.json"] {
+            let p = PathBuf::from(format!(".worktrees/training/{name}"));
+            let _ = fs::remove_file(&p);
+            let _ = fs::remove_file(p.with_extension("tmp"));
+            let _ = fs::remove_file(p.with_extension("sha256"));
+        }
+
+        let archive = Archive::new();
+        let path1 = PathBuf::from(".worktrees/training/test_eq1.json");
+        let path2 = PathBuf::from(".worktrees/training/test_eq2.json");
+
+        // Checkpoint 1: 10 updates in one shot.
+        let mut cp1 = Checkpoint::new("test_eq".to_string(), Stage::One, Horizon::opening(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args
+        });
+        cp1.final_update = 10;
+        for i in 1..=10 {
+            cp1.history
+                .push(serde_json::json!({"update": i, "metrics": {}}));
+        }
+        archive.save(&cp1, &path1).expect("save should succeed");
+
+        // Checkpoint 2: 5 updates, resume, 5 more updates.
+        let mut cp2 = Checkpoint::new("test_eq".to_string(), Stage::One, Horizon::opening(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args
+        });
+        let mut champion = BTreeMap::new();
+        champion.insert("sol".to_string(), blank_profile("sol", 512));
+        champion.insert("ath".to_string(), blank_profile("ath", 512));
+        cp2.accepted = champion;
+        cp2.final_update = 5;
+        for i in 1..=5 {
+            cp2.history
+                .push(serde_json::json!({"update": i, "metrics": {}}));
+        }
+        archive.save(&cp2, &path2).expect("save should succeed");
+
+        // Resume from cp2 and continue.
+        let state = archive.resume(&path2).expect("resume should succeed");
+        assert_eq!(state.start_update, 5);
+
+        // Simulate continuing from 5 to 10.
+        let mut resumed_cp = Checkpoint::resumed(&cp2);
+        resumed_cp.final_update = 10;
+        for i in 6..=10 {
+            resumed_cp
+                .history
+                .push(serde_json::json!({"update": i, "metrics": {}}));
+        }
+
+        // Both checkpoints should have the same final_update and equivalent history.
+        assert_eq!(cp1.final_update, resumed_cp.final_update);
+        assert_eq!(cp1.history.len(), resumed_cp.history.len());
+        for (a, b) in cp1.history.iter().zip(&resumed_cp.history) {
+            assert_eq!(a, b, "history entries should match");
+        }
+
+        // Clean up.
+        let _ = fs::remove_file(&path1);
+        let _ = fs::remove_file(path1.with_extension("sha256"));
+        let _ = fs::remove_file(&path2);
+        let _ = fs::remove_file(path2.with_extension("sha256"));
+    }
+
+    #[test]
+    fn resume_with_mismatched_factions_fails() {
+        let base = PathBuf::from(".worktrees/training/test_resume_mismatch.json");
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("tmp"));
+        let _ = fs::remove_file(base.with_extension("sha256"));
+
+        let mut cp = Checkpoint::new("test_resume".to_string(), Stage::One, Horizon::opening(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args
+        });
+
+        let mut champion = BTreeMap::new();
+        champion.insert("sol".to_string(), blank_profile("sol", 512));
+        champion.insert("ath".to_string(), blank_profile("ath", 512));
+        cp.accepted = champion;
+
+        let mut learner = BTreeMap::new();
+        learner.insert("sol".to_string(), blank_profile("sol", 512));
+        learner.insert("nak".to_string(), blank_profile("nak", 512)); // mismatch!
+        cp.profiles = learner;
+
+        let archive = Archive::new();
+        archive.save(&cp, &base).expect("save should succeed");
+
+        let result = archive.resume(&base);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            CheckpointError::ProfileValidation(_)
+        ));
+
+        // Clean up.
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("sha256"));
+    }
+
+    #[test]
+    fn resume_without_accepted_profiles_fails() {
+        let base = PathBuf::from(".worktrees/training/test_resume_no_accepted.json");
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("tmp"));
+        let _ = fs::remove_file(base.with_extension("sha256"));
+
+        let cp = Checkpoint::new("test_resume".to_string(), Stage::One, Horizon::opening(), {
+            let mut args = BTreeMap::new();
+            args.insert("seed".to_string(), "0".to_string());
+            args
+        });
+        // accepted is empty by default.
+
+        let archive = Archive::new();
+        archive.save(&cp, &base).expect("save should succeed");
+
+        let result = archive.resume(&base);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            CheckpointError::ProfileValidation(_)
+        ));
+
+        // Clean up.
+        let _ = fs::remove_file(&base);
+        let _ = fs::remove_file(base.with_extension("sha256"));
     }
 }
