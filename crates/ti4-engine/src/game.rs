@@ -177,6 +177,10 @@ impl AftermathWindow {
     }
 
     /// Move to the next step once the current one owes nothing.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per aftermath stage, read as a table"
+    )]
     fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         loop {
             match &mut self.stage {
@@ -195,6 +199,21 @@ impl AftermathWindow {
                     if let Some(outcome) = window.outcome()
                         && outcome.rounds > 0
                     {
+                        // "After you win a space combat." A draw wins nothing, so a fight that
+                        // ended without a winner opens no window — which is what Skilled Retreat
+                        // is for.
+                        if let Some(winner) = outcome.winner.clone() {
+                            let mut payload = BTreeMap::new();
+                            payload.insert(
+                                "player".to_owned(),
+                                serde_json::Value::String(winner.to_string()),
+                            );
+                            payload.insert(
+                                "system".to_owned(),
+                                serde_json::Value::String(self.system.to_string()),
+                            );
+                            let _ = ctx.emit(state, "SPACE_COMBAT_WON", payload);
+                        }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
                     }
                     self.stage = if holds {
@@ -642,6 +661,12 @@ impl<'a> Game<'a> {
                         .expect("active player exists")
                         .passed = true;
                     self.emit("PLAYER_PASSED");
+                    let mut payload = BTreeMap::new();
+                    payload.insert(
+                        "player".to_owned(),
+                        serde_json::Value::String(active.to_string()),
+                    );
+                    self.emit_typed("PLAYER_PASSED", payload)?;
                     self.advance_turn();
                     return Ok(());
                 }
@@ -897,6 +922,15 @@ impl<'a> Game<'a> {
                 if hold.is_complete() {
                     let cargo = hold.cargo();
                     let outcome = self.sail(&origin, &ship, &path, cargo);
+                    if matches!(outcome, MoveOutcome::Arrived { .. }) {
+                        // Three printed windows read "after a player moves ships into" a system.
+                        let mut payload = BTreeMap::new();
+                        payload.insert(
+                            "player".to_owned(),
+                            serde_json::Value::String(window.player.to_string()),
+                        );
+                        let _ = self.emit_typed("SHIP_MOVED", payload);
+                    }
                     self.emit(match outcome {
                         MoveOutcome::Arrived { .. } => "SHIP_MOVED",
                         MoveOutcome::LostToGravityRift { .. } => "SHIP_LOST_TO_GRAVITY_RIFT",
@@ -1411,9 +1445,17 @@ impl<'a> Game<'a> {
         let Some((mut window, queue)) = self.voting.take() else {
             unreachable!("a vote is open");
         };
+        let voter = choice.player.clone();
         let outcome = window.resolve(&mut self.state, self.content, self.sources, answer);
         let complete = window.is_complete();
         self.voting = Some((window, queue));
+        // "After you cast votes on an outcome of an agenda", and "after the speaker votes".
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(voter.to_string()),
+        );
+        let _ = self.emit_typed("VOTES_CAST", payload);
 
         match outcome {
             Ok(()) => {
@@ -1445,6 +1487,20 @@ impl<'a> Game<'a> {
         if let Some(outcome) = window.winner() {
             let outcome = outcome.to_owned();
             self.emit(&format!("AGENDA_RESOLVED:{alias}:{outcome}"));
+            // The outcome names a player when the agenda elects one, which is what the "when
+            // you are elected" windows read.
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "agenda".to_owned(),
+                serde_json::Value::String(alias.clone()),
+            );
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(outcome.clone()),
+            );
+            if let Err(error) = self.emit_typed("AGENDA_RESOLVED", payload) {
+                return self.result(false, Some(error));
+            }
 
             // Imperial Rider pays out before the agenda's own effect, and clears the
             // predictions. A prediction left behind would pay again on the next agenda, for a
@@ -1508,7 +1564,13 @@ impl<'a> Game<'a> {
         match outcome {
             PhaseOutcome::ActionBegan(_) => self.emit("ACTION_PHASE_BEGAN"),
             PhaseOutcome::StatusBegan => self.emit("STATUS_PHASE_BEGAN"),
-            PhaseOutcome::AgendaBegan => self.emit("AGENDA_PHASE_BEGAN"),
+            PhaseOutcome::AgendaBegan => {
+                self.emit("AGENDA_PHASE_BEGAN");
+                // Two cards read "at the start of the agenda phase".
+                if let Err(error) = self.emit_typed("AGENDA_PHASE_BEGAN", BTreeMap::new()) {
+                    return self.result(false, Some(error));
+                }
+            }
             PhaseOutcome::RoundEnded => {
                 begin_next_round(&mut self.state, self.strategy_cards.clone());
                 self.status_resolved = false;

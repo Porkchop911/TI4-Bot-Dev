@@ -386,6 +386,10 @@ mod tests {
             "SPACE_COMBAT_STARTED",
             "INVASION_BEGAN",
             "PRODUCTION_USED",
+            "SHIP_MOVED",
+            "PLAYER_PASSED",
+            "PLANET_CONTROL_GAINED",
+            "SPACE_COMBAT_WON",
         ]);
         assert!(
             silent.is_empty(),

@@ -74,6 +74,11 @@ fn actor_is_not(event: &Event, player: &PlayerId) -> bool {
         .is_some_and(|who| who != player.as_str())
 }
 
+/// Anybody at all — the window applies whoever the event names.
+fn anyone(_: &Event, _: &PlayerId) -> bool {
+    true
+}
+
 const fn window(event: &'static str, relation: Relation) -> Window {
     Window {
         event,
@@ -96,6 +101,10 @@ const fn guarded(event: &'static str, relation: Relation, guard: Guard) -> Windo
 /// reworded card would otherwise silently produce a card that can never be played, which is the
 /// state this module exists to end.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one row per printed window: the table is the point, and splitting it hides the set"
+)]
 pub fn window_table() -> BTreeMap<&'static str, Window> {
     use Relation::{After, When};
     [
@@ -135,6 +144,67 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             "When another player plays an action card other than 'Sabotage'",
             guarded("ACTION_CARD_PLAYED", When, actor_is_not),
         ),
+        // Activation, seen from either chair. Five printed windows, one event: what separates
+        // them is whose activation it was, which is exactly what the guard is for.
+        (
+            "After you activate a system that contains another player's ships",
+            guarded("SYSTEM_ACTIVATED", After, actor_is),
+        ),
+        (
+            "After you activate an anomaly",
+            guarded("SYSTEM_ACTIVATED", After, actor_is),
+        ),
+        (
+            "After another player activates a system that contains your units",
+            guarded("SYSTEM_ACTIVATED", After, actor_is_not),
+        ),
+        (
+            "After another player activates a system that contains 1 of your command tokens",
+            guarded("SYSTEM_ACTIVATED", After, actor_is_not),
+        ),
+        (
+            "After another player activates a system that contains 1 or more of your structures",
+            guarded("SYSTEM_ACTIVATED", After, actor_is_not),
+        ),
+        ("At the start of a combat", window("COMBAT_ROUND_STARTED", After)),
+        (
+            "When another player chooses a strategy card during the strategy phase",
+            guarded("STRATEGY_CARD_CHOSEN", After, actor_is_not),
+        ),
+        (
+            "At the start of an invasion in a system that contains 1 or more of your opponents' PDS units",
+            window("INVASION_BEGAN", After),
+        ),
+        (
+            "After the active player moves ships into the active system during a tactical action",
+            guarded("SHIP_MOVED", After, actor_is),
+        ),
+        (
+            "After a player moves ships into a system that contains your ships",
+            guarded("SHIP_MOVED", After, anyone),
+        ),
+        ("At the end of a player's turn, if you have passed", window("PLAYER_PASSED", After)),
+        (
+            "When you are elected as the outcome of an agenda",
+            guarded("AGENDA_RESOLVED", When, actor_is),
+        ),
+        (
+            "When another player is elected as the outcome of an agenda",
+            guarded("AGENDA_RESOLVED", When, actor_is_not),
+        ),
+        (
+            "When you gain control of a planet",
+            guarded("PLANET_CONTROL_GAINED", When, actor_is),
+        ),
+        (
+            "After another player gains control of a planet you control",
+            guarded("PLANET_CONTROL_GAINED", After, actor_is_not),
+        ),
+        (
+            "After you cast votes on an outcome of an agenda",
+            guarded("VOTES_CAST", After, actor_is),
+        ),
+        ("After the speaker votes on an agenda", window("VOTES_CAST", After)),
         (
             "At the start of an invasion",
             window("INVASION_BEGAN", After),
@@ -159,14 +229,79 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
 /// this project keeps having to relearn.
 pub const EMITTED_EVENTS: &[&str] = &[
     "ACTION_CARD_PLAYED",
+    "AGENDA_RESOLVED",
+    "PLANET_CONTROL_GAINED",
+    "PLAYER_PASSED",
+    "SHIP_MOVED",
+    "VOTES_CAST",
+    "AGENDA_PHASE_BEGAN",
     "AGENDA_REVEALED",
     "COMBAT_ROUND_STARTED",
     "INVASION_BEGAN",
     "PRODUCTION_USED",
     "SPACE_COMBAT_STARTED",
+    "SPACE_COMBAT_WON",
     "STRATEGY_CARD_CHOSEN",
     "SYSTEM_ACTIVATED",
 ];
+
+/// Printed windows that name a moment this engine does not have, with the reason.
+///
+/// Listed rather than counted, so the gap stays a set of reasons instead of a number. Every one
+/// of these needs a point *inside* a resolution step — between rolling and assigning, or as a
+/// unit dies — and the combat and invasion windows resolve those steps whole.
+#[must_use]
+pub fn unsupported_windows() -> BTreeMap<&'static str, &'static str> {
+    [
+        (
+            "Before you assign hits to your ships during a space combat",
+            "hits are assigned inside one step; there is no window between rolling and assigning",
+        ),
+        (
+            "Before you assign hits produced by another player's SPACE CANNON roll",
+            "space cannon resolves whole, with no window before its hits land",
+        ),
+        (
+            "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your \
+             units or abilities",
+            "sustain is chosen and applied inside hit assignment, and is not announced",
+        ),
+        (
+            "When one of your ships uses SUSTAIN DAMAGE during combat",
+            "sustain is chosen and applied inside hit assignment, and is not announced",
+        ),
+        (
+            "After 1 of your ships is destroyed during a space combat",
+            "units are removed in bulk; no event names a single destroyed ship",
+        ),
+        (
+            "When your last ship in the active system is destroyed",
+            "units are removed in bulk; no event names a single destroyed ship",
+        ),
+        (
+            "After your opponent declares a retreat during a space combat",
+            "a retreat is resolved as part of the round rather than announced first",
+        ),
+        (
+            "After your ground forces make combat rolls during a round of ground combat",
+            "ground rolls are not emitted separately from the invasion",
+        ),
+        (
+            "After another player commits units to land on a planet you control",
+            "committing is a stage of the invasion window rather than an event",
+        ),
+        (
+            "At the start of the strategy phase",
+            "the strategy phase does not emit a start event",
+        ),
+        (
+            "At the start of the 'Announce Retreats' step of space combat, if you are the defender",
+            "the retreat step is inside the combat round and is not announced",
+        ),
+    ]
+    .into_iter()
+    .collect()
+}
 
 /// Where this card hooks, or `None` if it is not a reaction card at all.
 ///
@@ -512,8 +647,11 @@ mod tests {
         // The table is keyed on exact printed text. A typo produces a key nothing matches, and
         // the cards it was meant to cover stay unplayable with nothing to say so.
         let content = ContentStore::embedded();
+        // The whole corpus, not one scope. `window_for` looks a card up against everything a
+        // card might say — which cards are in a deck is decided by deck building — and Rescue
+        // prints its window only in the Thunder's Edge source.
         let printed: std::collections::BTreeSet<String> = content
-            .from_sources(ContentType::ActionCards, POK)
+            .from_sources(ContentType::ActionCards, ti4_model::content_types::FULL)
             .filter_map(|record| record.text("window"))
             .map(|window| window.trim().to_owned())
             .collect();

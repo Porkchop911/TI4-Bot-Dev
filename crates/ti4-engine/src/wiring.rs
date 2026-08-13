@@ -614,3 +614,43 @@ fn the_windows_the_table_maps_are_windows_the_engine_opens() {
         );
     }
 }
+
+#[test]
+fn the_agenda_phase_opens_its_windows() {
+    // Nineteen cards read "when" or "after an agenda is revealed", and more read "when you are
+    // elected" or "after you cast votes". None of them is reachable in a random batch, because
+    // nobody takes Mecatol Rex — so the agenda path is driven directly here instead.
+    let players = [PlayerId::new("a"), PlayerId::new("b")];
+    let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+    state.phase = ti4_model::state::Phase::Agenda;
+    state.custodians_removed = true;
+    let law = ContentStore::embedded()
+        .records(ti4_model::content_types::ContentType::Agendas)
+        .iter()
+        .find(|record| {
+            record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
+        })
+        .and_then(|record| record.text("alias"))
+        .expect("the corpus has a For/Against law")
+        .to_owned();
+    state.agenda_deck = vec![law];
+
+    let mut game = Game::new(state, ContentStore::embedded());
+    let mut guard = 0;
+    while game.state.phase == ti4_model::state::Phase::Agenda && guard < 60 {
+        if game.step().error.is_some() {
+            break;
+        }
+        guard += 1;
+    }
+
+    // AGENDA_PHASE_BEGAN is deliberately absent: it fires on the phase *transition*, and this
+    // test starts the game already in the agenda phase in order to reach a vote at all.
+    for event in ["AGENDA_REVEALED", "VOTES_CAST", "AGENDA_RESOLVED"] {
+        assert!(
+            game.events.iter().any(|seen| seen == event),
+            "{event} never opened its window; events {:?}",
+            game.events
+        );
+    }
+}

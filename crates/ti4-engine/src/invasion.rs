@@ -570,6 +570,7 @@ impl InvasionWindow {
             }
             index += 1;
         }
+        let taken_before = self.report.captured.len();
         self.report.captured = establish_control(
             state,
             content,
@@ -578,6 +579,15 @@ impl InvasionWindow {
             &self.invader,
             &self.report.committed,
         );
+        // Two printed windows read "when you gain control of a planet", so a capture is
+        // announced before the exploration that follows it.
+        for (planet, _) in self.report.captured.iter().skip(taken_before) {
+            let mut payload = std::collections::BTreeMap::new();
+            payload.insert("player".to_owned(), self.invader.to_string().into());
+            payload.insert("planet".to_owned(), planet.to_string().into());
+            let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
+        }
+
         // 35.1: a planet nobody controlled is explored; one taken off another player is not.
         // Only this frame knows which, which is why `captured` carries the previous holder — a
         // caller told merely that control changed would explore every conquest and draw cards
