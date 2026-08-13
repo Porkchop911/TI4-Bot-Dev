@@ -59,6 +59,22 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   payment/trade scoring, after checking which choice windows exist and whether their terms are
   publicly represented.
 
+### M08-006b economy closeout checkpoint (2026-08-13)
+
+- Active branch: `wp/m08-006-economy-development`; focused local package commit follows this
+  state update.
+- Completed scope: exact-fit payment preserves trade goods; legal Leadership token spends beat
+  decline; generated trade offers value mutual Support, commodity conversion, exchange balance,
+  and gifts. Termless transaction acceptance/counter and opening windows intentionally remain
+  unscored, because their choices do not contain a deal to value.
+- Verification: oracle integrity guard passed; `cargo fmt --all --check`; `cargo test -p
+  ti4-policy` (48 passed); `cargo test -p ti4-engine` (703 unit + 5 doc tests passed); `cargo
+  clippy -p ti4-policy -p ti4-engine --all-targets -- -D warnings`; and `git diff --check` all
+  passed. A zeroed Support mutation failed the focused trade ranking and was restored.
+- Evidence: `plans/evidence/M08-006b.md`. M08-006 is closed through M08-006a/b. Next safe
+  package: M08-007 objective planning, beginning with the existing public objective/schedule
+  facts and explicit private-secret boundary.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.

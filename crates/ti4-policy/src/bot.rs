@@ -119,6 +119,8 @@ impl ScoredBot {
 
             "produce" => self.score_produce(option),
             "pay" => Self::score_pay(option),
+            "spend" => Self::score_spend(choice, option),
+            "offer" => Self::score_offer(option),
             "casualty" | "ground_casualty" => self.score_casualty(option),
             "sustain" => Components::of("absorb", 6.0),
             "research" => Components::of("technology", 6.0),
@@ -457,6 +459,11 @@ impl ScoredBot {
     /// smaller planet when a larger offered one settles the remainder forces an avoidable second
     /// exhaustion. Human deciders still see every option.
     fn score_pay(option: &ChoiceOption) -> Components {
+        if option.id == "trade_good" {
+            // Trade goods are flexible future resources. A planet that can settle the same bill
+            // should be exhausted first, matching the oracle's explicit preservation penalty.
+            return Components::of("spare_trade_good", -3.0);
+        }
         let worth = option
             .payload
             .get("worth")
@@ -473,6 +480,43 @@ impl ScoredBot {
         }
         // Among options that settle, the tightest fit wastes the least.
         score.and("overpayment", -0.5 * (worth - owed).max(0.0))
+    }
+
+    /// An affordable Leadership purchase turns visible influence into an extra command token.
+    /// The specific pool allocation remains the later `pool` choice; this is only the decision
+    /// whether to buy at the offered three-influence rate.
+    fn score_spend(choice: &Choice, option: &ChoiceOption) -> Components {
+        if option.id == "buy" && choice.prompt.contains("command token") {
+            return Components::of("command_token", 6.0).and("influence", -3.0);
+        }
+        Components::of("spend", 1.0)
+    }
+
+    /// Trade offers carry their complete public terms in a stable option id.  Score the net
+    /// immediately usable value and recognise the one mutual-support exchange that gives each
+    /// player a point. Accept/counter choices deliberately have no terms, so stay unscored.
+    fn score_offer(option: &ChoiceOption) -> Components {
+        if option.id == "ss" {
+            return Components::of("support_exchange", 20.0);
+        }
+        if let Some(count) = option.id.strip_prefix("cc").and_then(parse_count) {
+            return Components::of("commodity_conversion", f64::from(count));
+        }
+        if let Some((give, receive)) = option.id.strip_prefix("ct").and_then(parse_trade_pair) {
+            return Components::of("trade_balance", f64::from(receive - give));
+        }
+        if let Some((give, receive)) = option.id.strip_prefix("tc").and_then(parse_trade_pair) {
+            return Components::of("trade_balance", f64::from(receive - give));
+        }
+        if let Some((give, receive)) = parse_trade_pair(&option.id) {
+            return Components::of("trade_balance", f64::from(receive - give));
+        }
+        if let Some((gift, _)) = option.id.strip_prefix('c').and_then(parse_trade_pair) {
+            return Components::of("gift", -f64::from(gift));
+        }
+        // Promissory-note prices depend on the particular note; a generic policy must not claim
+        // that every note is worth its flat engine price.
+        Components::of("unknown_trade", 0.0)
     }
 
     /// Lose the cheapest thing. The one combat judgement available without the board: the label
@@ -743,6 +787,15 @@ fn land_index_and_planet(id: &str) -> Option<(usize, &str)> {
     parts.next().is_none().then_some((index, planet))
 }
 
+fn parse_count(text: &str) -> Option<i32> {
+    text.parse().ok().filter(|count: &i32| *count >= 0)
+}
+
+fn parse_trade_pair(text: &str) -> Option<(i32, i32)> {
+    let (give, receive) = text.split_once(':')?;
+    Some((parse_count(give)?, parse_count(receive)?))
+}
+
 fn ground_riders(
     system: &ti4_model::state::SystemState,
     player: &ti4_model::id::PlayerId,
@@ -806,10 +859,9 @@ impl Decider for ScoredBot {
 #[must_use]
 pub fn unscored_kinds() -> Vec<&'static str> {
     vec![
-        // Raised inside a transaction; scoring one needs to know what the other seat is offering
-        // and what this seat can spare, which is a negotiation model rather than a component.
+        // Acceptance/counter choices omit the proposed terms. Scoring one would require a
+        // negotiation model rather than inventing a preference from an opaque prompt.
         "transaction",
-        "offer",
         "open_transaction",
         "answer",
         // Explore and colour are cosmetic or forced in practice.
@@ -817,7 +869,6 @@ pub fn unscored_kinds() -> Vec<&'static str> {
         "colour",
         // A tiebreak is by definition between options this bot could not separate.
         "tiebreak",
-        "spend",
         "ready",
         "ready_technology",
         "order",
@@ -1202,6 +1253,44 @@ mod tests {
             score_of(&bot, &bills, 1) > score_of(&bot, &bills, 2),
             "and the tightest fit wastes the least"
         );
+    }
+
+    #[test]
+    fn paying_with_a_trade_good_loses_to_an_exact_planet() {
+        let bot = ScoredBot::new(1);
+        let bills = Choice::new(
+            PlayerId::new("a"),
+            "pay 2 resources",
+            vec![
+                ChoiceOption::new("trade_good", "pay").with("worth", 1),
+                ChoiceOption::new("pay|exact", "pay")
+                    .with("worth", 2)
+                    .with("owed", 2),
+            ],
+        );
+
+        assert!(score_of(&bot, &bills, 1) > score_of(&bot, &bills, 0));
+    }
+
+    #[test]
+    fn affordable_token_spend_beats_declining() {
+        let mut bot = ScoredBot::new(4).at_temperature(0.01);
+        let purchase = Choice::new(
+            PlayerId::new("a"),
+            "spend 3 influence for a command token",
+            vec![ChoiceOption::new("buy", "spend"), ChoiceOption::decline()],
+        );
+
+        assert_eq!(bot.choose(&purchase).unwrap().id, "buy");
+    }
+
+    #[test]
+    fn trade_terms_prefer_conversion_and_support_over_a_gift() {
+        let bot = ScoredBot::new(1);
+        let offers = choice("offer", &["c2:0", "cc2", "ss"]);
+
+        assert!(score_of(&bot, &offers, 1) > score_of(&bot, &offers, 0));
+        assert!(score_of(&bot, &offers, 2) > score_of(&bot, &offers, 1));
     }
 
     #[test]
