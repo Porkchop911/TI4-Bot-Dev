@@ -675,6 +675,31 @@ fn the_subsystems_still_ask_the_faction_layer() {
             include_str!("transactions.rs"),
             "crate::faction_abilities::ignores_neighbours",
         ),
+        (
+            "technology",
+            include_str!("technology.rs"),
+            "crate::faction_abilities::waived_prerequisites",
+        ),
+        (
+            "invasion (control)",
+            include_str!("invasion.rs"),
+            "crate::faction_abilities::control_gained",
+        ),
+        (
+            "invasion (ground rounds)",
+            include_str!("invasion.rs"),
+            "crate::faction_abilities::ground_combat_round_ended",
+        ),
+        (
+            "game (component actions)",
+            include_str!("game.rs"),
+            "crate::faction_abilities::component_actions",
+        ),
+        (
+            "game (strategy resolved)",
+            include_str!("game.rs"),
+            "crate::faction_abilities::strategy_resolved",
+        ),
     ] {
         assert!(
             source.contains(hook),

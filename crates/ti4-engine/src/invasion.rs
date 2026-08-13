@@ -381,6 +381,15 @@ pub fn ground_combat(
         // 42.2: simultaneous, as in space.
         absorb_ground(state, table, &defender, system, planet, attacker_hits)?;
         absorb_ground(state, table, invader, system, planet, defender_hits)?;
+
+        // L1Z1X's Harrow bombards again at the end of each round. The hits are assigned here
+        // rather than by the faction layer, because who loses a unit is the invasion's decision.
+        let harrow = crate::faction_abilities::ground_combat_round_ended(
+            state, content, sources, dice, rng, invader, system,
+        );
+        if harrow > 0 {
+            absorb_ground(state, table, &defender, system, planet, harrow)?;
+        }
     }
 
     let invader_left = !state

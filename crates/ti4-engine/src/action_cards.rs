@@ -494,7 +494,7 @@ fn spot(id: &str) -> Option<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> 
 }
 
 /// Place `count` units of a base type, capped by what the box still holds (31.4).
-fn place(
+pub fn place_units(
     context: &mut crate::timing::TimingContext<'_>,
     player: &PlayerId,
     system: &ti4_model::id::SystemId,
@@ -592,7 +592,7 @@ fn planets_holding(
 fn rise_of_a_messiah(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     for (id, _) in controlled_spots(context.state, player) {
         if let Some((system, planet)) = spot(&id) {
-            place(context, player, &system, Some(&planet), "infantry", 1);
+            place_units(context, player, &system, Some(&planet), "infantry", 1);
         }
     }
 }
@@ -610,7 +610,7 @@ fn frontline_deployment(context: &mut crate::timing::TimingContext<'_>, player: 
         return;
     };
     if let Some((system, planet)) = spot(&chosen) {
-        place(context, player, &system, Some(&planet), "infantry", 3);
+        place_units(context, player, &system, Some(&planet), "infantry", 3);
     }
 }
 
@@ -656,7 +656,7 @@ fn war_effort(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     ) else {
         return;
     };
-    place(
+    place_units(
         context,
         player,
         &ti4_model::id::SystemId::new(chosen),
@@ -1042,7 +1042,7 @@ fn ghost_ship(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     ) else {
         return;
     };
-    place(
+    place_units(
         context,
         player,
         &ti4_model::id::SystemId::new(chosen),

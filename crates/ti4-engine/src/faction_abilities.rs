@@ -302,6 +302,183 @@ pub fn secondary_is_free(
     })
 }
 
+/// The kind of a faction component action.
+pub const ACTION_KIND: &str = "component";
+
+/// Component actions this player's faction offers on their turn.
+#[must_use]
+pub fn component_actions(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+) -> Vec<crate::choice::ChoiceOption> {
+    let mut options = Vec::new();
+    if has(state, content, player, "orbital_drop")
+        && state
+            .player(player)
+            .is_some_and(|seat| seat.tokens(ti4_model::state::TokenPool::Strategic) > 0)
+        && !state.controlled_planets(player).is_empty()
+    {
+        options.push(crate::choice::ChoiceOption::labelled(
+            "faction|orbital_drop",
+            ACTION_KIND,
+            "Orbital Drop: spend a strategy token to land 2 infantry",
+        ));
+    }
+    options
+}
+
+/// Perform a faction component action. Returns `false` for an option that is not one.
+pub fn perform_component(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    option: &crate::choice::ChoiceOption,
+) -> bool {
+    if option.id != "faction|orbital_drop" {
+        return false;
+    }
+    if !has(context.state, context.content, player, "orbital_drop") {
+        return false;
+    }
+    let spots: Vec<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> = context
+        .state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(system, planet)| (system.clone(), planet.clone()))
+        .collect();
+    let Some((system, planet)) = spots.first().cloned() else {
+        return false;
+    };
+    let tokens = context.state.player(player).map_or(0, |seat| {
+        seat.tokens(ti4_model::state::TokenPool::Strategic)
+    });
+    if tokens <= 0 {
+        return false; // 22.3: it cannot resolve, so it is not performed
+    }
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.gain_token(ti4_model::state::TokenPool::Strategic, -1);
+    }
+    crate::action_cards::place_units(context, player, &system, Some(&planet), "infantry", 2);
+    true
+}
+
+/// Empty, unowned planets in or next to a system this player already holds (Xxcha's Peace
+/// Accords).
+///
+/// "Does not contain any units" is checked against *every* unit on the planet, not only other
+/// players' — a planet with your own troops on it is not empty either, and reading it as "no
+/// enemy units" would let Xxcha annex around the rules.
+#[must_use]
+pub fn annexable(
+    state: &GameState,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+) -> Vec<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> {
+    let mine: std::collections::BTreeSet<String> = state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(system, _)| system.to_string())
+        .collect();
+    if mine.is_empty() {
+        return Vec::new();
+    }
+    let mut reachable = mine.clone();
+    for system in &mine {
+        reachable.extend(galaxy.adjacent(system).into_iter().map(ToOwned::to_owned));
+    }
+
+    let mut found = Vec::new();
+    for system in reachable {
+        let id = ti4_model::id::SystemId::new(&system);
+        let board = state.system_state(&id);
+        for planet in ti4_content::galaxy::planets_in(
+            ti4_content::ContentStore::embedded(),
+            &system,
+            ti4_model::content_types::POK,
+        ) {
+            let planet = ti4_model::id::PlanetId::new(planet.id());
+            if board.planet_control.contains_key(&planet) {
+                continue; // somebody holds it
+            }
+            if board
+                .planet_units
+                .get(&planet)
+                .is_some_and(|units| !units.is_empty())
+            {
+                continue; // anybody's units, not only a rival's
+            }
+            found.push((id.clone(), planet));
+        }
+    }
+    found
+}
+
+/// Resolve anything a faction does when a strategy card finishes for this player.
+///
+/// Xxcha's Peace Accords annex a planet after Diplomacy.
+pub fn strategy_resolved(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    card: &str,
+) {
+    if !has(context.state, context.content, player, "peace_accords")
+        || !card.eq_ignore_ascii_case("diplomacy")
+    {
+        return;
+    }
+    let Some(galaxy) = context.galaxy else {
+        return; // "in or next to" needs the map
+    };
+    let candidates = annexable(context.state, galaxy, player);
+    let Some((system, planet)) = candidates.first().cloned() else {
+        return;
+    };
+    context
+        .state
+        .system_mut(&system)
+        .set_control(planet, player.clone());
+}
+
+/// Bombard a planet again at the end of a ground-combat round (L1Z1X's Harrow).
+///
+/// Returns the hits produced. The caller assigns them, because who loses a unit is the invasion's
+/// decision and not this layer's.
+pub fn ground_combat_round_ended(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut crate::dice::Dice,
+    rng: &mut crate::rng::GameRng,
+    player: &PlayerId,
+    system: &ti4_model::id::SystemId,
+) -> usize {
+    if !has(state, content, player, "harrow") {
+        return 0;
+    }
+    let types = ti4_content::units::catalogue(content, sources);
+    let mut hits = 0;
+    for unit in state.system_state(system).units_of(player) {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        if !kind.has_bombardment() {
+            continue;
+        }
+        let count = usize::try_from(kind.bombard_dice()).unwrap_or(0);
+        if count == 0 {
+            continue;
+        }
+        let roll = dice.roll(
+            rng,
+            count,
+            "harrow",
+            kind.bombard_hits_on().and_then(|on| u32::try_from(on).ok()),
+        );
+        hits += roll.hits();
+    }
+    hits
+}
+
 // -- coverage ------------------------------------------------------------------------------------
 
 /// Every ability the corpus prints, by id.
@@ -325,7 +502,10 @@ pub fn registered() -> Vec<&'static str> {
         "brilliant",
         "fragile",
         "guild_ships",
+        "harrow",
         "master_of_trade",
+        "orbital_drop",
+        "peace_accords",
         "unrelenting",
         "versatile",
     ]
@@ -611,6 +791,159 @@ mod tests {
                 units.iter().filter(|unit| unit.owner == player).count()
             });
         assert_eq!(taken, 0, "there is no seventh PDS to take it with");
+    }
+
+    /// Run a faction hook with a real context.
+    fn with_context<T>(
+        state: &mut GameState,
+        galaxy: Option<&ti4_content::galaxy::Galaxy>,
+        run: impl FnOnce(&mut crate::timing::TimingContext<'_>) -> T,
+    ) -> T {
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy,
+        };
+        run(&mut context)
+    }
+
+    #[test]
+    fn orbital_drop_costs_a_strategy_token_and_lands_two() {
+        let Some(sol) = faction_with("orbital_drop") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&sol);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state
+            .player_mut(&player)
+            .unwrap()
+            .gain_token(ti4_model::state::TokenPool::Strategic, 1);
+        let before = state
+            .player(&player)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Strategic);
+
+        let offered = component_actions(&state, content, &player);
+        assert_eq!(offered.len(), 1, "it is offered on your turn");
+
+        let done = with_context(&mut state, None, |context| {
+            perform_component(context, &player, &offered[0])
+        });
+
+        assert!(done);
+        assert_eq!(
+            state
+                .player(&player)
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Strategic),
+            before - 1,
+            "the token was spent"
+        );
+        assert_eq!(
+            state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .map_or(0, Vec::len),
+            2,
+            "two infantry landed"
+        );
+    }
+
+    #[test]
+    fn orbital_drop_is_not_offered_without_a_token() {
+        let Some(sol) = faction_with("orbital_drop") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&sol);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet, player.clone());
+        let held = state
+            .player(&player)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Strategic);
+        state
+            .player_mut(&player)
+            .unwrap()
+            .gain_token(ti4_model::state::TokenPool::Strategic, -held);
+
+        assert!(component_actions(&state, content, &player).is_empty());
+    }
+
+    #[test]
+    fn peace_accords_annex_only_an_empty_unowned_planet() {
+        // "Does not contain any units" means anybody's units. Reading it as "no enemy units"
+        // would let Xxcha annex a planet their own troops are standing on.
+        let Some(xxcha) = faction_with("peace_accords") else {
+            return;
+        };
+        let hub = crate::fixtures::plain_hub();
+        let (mut state, player) = seated(&xxcha);
+        let mine = ti4_model::id::SystemId::new(hub.centre.clone());
+        let held =
+            ti4_content::galaxy::planets_in(ContentStore::embedded(), hub.centre.as_str(), POK)
+                .first()
+                .map(|planet| ti4_model::id::PlanetId::new(planet.id()));
+        let Some(held) = held else {
+            return;
+        };
+        state.system_mut(&mine).set_control(held, player.clone());
+
+        let open = annexable(&state, &hub.galaxy, &player);
+        assert!(!open.is_empty(), "a neighbouring empty planet is annexable");
+
+        // Put a unit of this player's own on the first candidate: it stops being empty.
+        let (system, planet) = open[0].clone();
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, 1);
+        let after = annexable(&state, &hub.galaxy, &player);
+        assert!(
+            !after.contains(&(system, planet)),
+            "your own troops make it not empty either"
+        );
+    }
+
+    #[test]
+    fn harrow_bombards_again_at_the_end_of_a_ground_round() {
+        let Some(l1z1x) = faction_with("harrow") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&l1z1x);
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put(&mut state, &system, "dreadnought", &player, 1);
+        let mut dice = crate::dice::Dice::from_faces(vec![10, 10, 10]);
+        let mut rng = crate::rng::GameRng::new(0);
+
+        let hits =
+            ground_combat_round_ended(&state, content, POK, &mut dice, &mut rng, &player, &system);
+        assert!(hits > 0, "a bombarding hull rolls again");
+
+        // The control needs the same fleet, or it returns zero because there is nothing to
+        // bombard with rather than because the faction lacks the ability.
+        let (mut plain, other) = seated("sol");
+        crate::fixtures::put(&mut plain, &system, "dreadnought", &other, 1);
+        let mut dice = crate::dice::Dice::from_faces(vec![10, 10, 10]);
+        assert_eq!(
+            ground_combat_round_ended(&plain, content, POK, &mut dice, &mut rng, &other, &system),
+            0,
+            "and nobody else gets it"
+        );
     }
 
     #[test]

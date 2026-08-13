@@ -619,6 +619,14 @@ impl<'a> Game<'a> {
             self.sources,
             active,
         ));
+        // A faction's own component actions — Sol's Orbital Drop is the first.
+        choice
+            .options
+            .extend(crate::faction_abilities::component_actions(
+                &self.state,
+                self.content,
+                active,
+            ));
         // 22.1: cards whose printed window is "Action" are played on your turn. Without this
         // every such card is drawn, held, discarded to the hand limit, and never played.
         choice
@@ -642,6 +650,10 @@ impl<'a> Game<'a> {
         activation_options(&self.state, galaxy, player).is_some()
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per kind of turn action, read as a table of what a turn may be"
+    )]
     fn apply_choice(&mut self, choice: &Choice, answer: ChoiceOption) -> Result<(), GameError> {
         match self.state.phase {
             Phase::Strategy => {
@@ -673,6 +685,16 @@ impl<'a> Game<'a> {
                 }
                 // 22.1: a component action costs the whole turn, so unlike a transaction this
                 // advances it whether or not the relic did anything worth having.
+                if answer.id.starts_with("faction|") {
+                    let done = self.play_faction_action(&active, &answer);
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    self.advance_turn();
+                    return Ok(());
+                }
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
                     let _ = index;
                     let played = self.play_component_action(&active, &answer);
@@ -875,6 +897,61 @@ impl<'a> Game<'a> {
         };
         self.mirror_timing_log(logged);
         played
+    }
+
+    /// Perform a faction component action through the game's own timing context.
+    fn play_faction_action(&mut self, player: &PlayerId, answer: &ChoiceOption) -> bool {
+        let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        let done = {
+            let (state, table, dice, rng, event_sequence) = (
+                &mut self.state,
+                &mut self.table,
+                &mut self.dice,
+                &mut self.rng,
+                &mut self.event_sequence,
+            );
+            let mut context = TimingContext {
+                state,
+                content,
+                sources,
+                table,
+                dice,
+                rng,
+                event_sequence,
+                galaxy: galaxy.as_ref(),
+            };
+            crate::faction_abilities::perform_component(&mut context, player, answer)
+        };
+        self.mirror_timing_log(logged);
+        done
+    }
+
+    /// Let a faction react to a strategy card finishing.
+    fn resolve_faction_strategy(&mut self, player: &PlayerId, card: &str) {
+        let name =
+            crate::strategy_cards::card_name(self.content, card).unwrap_or_else(|| card.to_owned());
+        let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
+        let (state, table, dice, rng, event_sequence) = (
+            &mut self.state,
+            &mut self.table,
+            &mut self.dice,
+            &mut self.rng,
+            &mut self.event_sequence,
+        );
+        let mut context = TimingContext {
+            state,
+            content,
+            sources,
+            table,
+            dice,
+            rng,
+            event_sequence,
+            galaxy: galaxy.as_ref(),
+        };
+        crate::faction_abilities::strategy_resolved(&mut context, player, &name);
     }
 
     fn apply_tactical(
@@ -1266,6 +1343,12 @@ impl<'a> Game<'a> {
             SecondaryResolution::Ineligible => unreachable!("ineligible followers are automatic"),
         });
         if complete {
+            // Xxcha's Peace Accords annex a planet once Diplomacy has finished resolving.
+            if let Some(window) = self.secondary.as_ref() {
+                let card = window.card().to_string();
+                let player = window.primary_player().clone();
+                self.resolve_faction_strategy(&player, &card);
+            }
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
             self.advance_turn();
