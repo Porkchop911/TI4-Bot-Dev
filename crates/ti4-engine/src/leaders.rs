@@ -13,6 +13,136 @@ pub const AGENT: &str = "agent";
 pub const COMMANDER: &str = "commander";
 pub const HERO: &str = "hero";
 
+/// Commanders that unlock on a condition this engine can check.
+///
+/// A commander behind a condition nobody registered can never leave the locked state — and an
+/// ability behind an unreachable unlock is unreachable however well it is written. The oracle
+/// records exactly that for Jol-Nar's, which had no check at all.
+#[must_use]
+pub fn commander_unlocks() -> Vec<&'static str> {
+    vec![
+        "hacancommander",
+        "jolnarcommander",
+        "l1z1xcommander",
+        "letnevcommander",
+        "naalucommander",
+        "solcommander",
+        "xxchacommander",
+    ]
+}
+
+/// The combined resource or influence value of everything this player controls.
+fn controlled_total(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: crate::production::Spend,
+) -> i64 {
+    state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(_, planet)| crate::production::planet_value(content, sources, planet, kind))
+        .sum()
+}
+
+/// How many units of one base type this player has in space, across the board.
+fn ships_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    base_type: &str,
+) -> usize {
+    let types = ti4_content::units::catalogue(content, sources);
+    state
+        .board
+        .values()
+        .flat_map(|board| board.units.iter())
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == base_type)
+        })
+        .count()
+}
+
+/// Whether this commander's unlock condition is met.
+///
+/// `None` for a commander with no registered check, which keeps it locked rather than letting an
+/// unknown condition read as satisfied.
+#[must_use]
+pub fn commander_unlocked(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    player: &PlayerId,
+    leader: &LeaderId,
+) -> Option<bool> {
+    use crate::production::Spend;
+    let met = match leader.as_str() {
+        // Control planets with a combined total of at least 12 resources.
+        "solcommander" => controlled_total(state, content, sources, player, Spend::Resources) >= 12,
+        // The same, in influence.
+        "xxchacommander" => {
+            controlled_total(state, content, sources, player, Spend::Influence) >= 12
+        }
+        "hacancommander" => state
+            .player(player)
+            .is_some_and(|seat| seat.trade_goods >= 10),
+        "jolnarcommander" => state
+            .player(player)
+            .is_some_and(|seat| seat.technologies.len() >= 8),
+        "l1z1xcommander" => ships_of(state, content, sources, player, "dreadnought") >= 4,
+        // Five non-fighter ships in *one* system, not five across the board.
+        "letnevcommander" => {
+            let types = ti4_content::units::catalogue(content, sources);
+            state.board.values().any(|board| {
+                board
+                    .units_of(player)
+                    .into_iter()
+                    .filter(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(|kind| kind.is_ship() && !kind.is_fighter())
+                    })
+                    .count()
+                    >= 5
+            })
+        }
+        // Ground forces in or adjacent to Mecatol Rex.
+        "naalucommander" => {
+            let Some(galaxy) = galaxy else {
+                return Some(false); // without a map there is no "adjacent"
+            };
+            let types = ti4_content::units::catalogue(content, sources);
+            let mut nearby: std::collections::BTreeSet<String> = galaxy
+                .adjacent(crate::seating::MECATOL)
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect();
+            nearby.insert(crate::seating::MECATOL.to_owned());
+            nearby.iter().any(|system| {
+                let board = state.system_state(&ti4_model::id::SystemId::new(system));
+                board
+                    .units
+                    .iter()
+                    .chain(board.planet_units.values().flatten())
+                    .filter(|unit| &unit.owner == player)
+                    .any(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                    })
+            })
+        }
+        _ => return None,
+    };
+    Some(met)
+}
+
 /// 51.7: a hero unlocks once its owner has scored three objectives.
 pub const HERO_OBJECTIVES: usize = 3;
 
@@ -111,8 +241,28 @@ pub fn of_kind(
 pub fn check_unlocks(
     state: &mut GameState,
     content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
 ) -> Vec<LeaderId> {
+    // Commanders unlock on their own condition, not on scored objectives. A commander whose
+    // check is unregistered stays locked rather than being treated as satisfied.
+    let commanders: Vec<LeaderId> = state.player(player).map_or_else(Vec::new, |seat| {
+        seat.leaders
+            .iter()
+            .filter(|(_, status)| **status == LeaderStatus::Locked)
+            .map(|(leader, _)| leader.clone())
+            .filter(|leader| {
+                commander_unlocked(state, content, sources, galaxy, player, leader).unwrap_or(false)
+            })
+            .collect()
+    });
+    if let Some(seat) = state.player_mut(player) {
+        for leader in &commanders {
+            seat.leaders.insert(leader.clone(), LeaderStatus::Unlocked);
+        }
+    }
+
     let scored = state.scored_by(player).len();
     let heroes: Vec<LeaderId> = state.player(player).map_or_else(Vec::new, |seat| {
         seat.leaders
@@ -123,14 +273,14 @@ pub fn check_unlocks(
             .collect()
     });
     if scored < HERO_OBJECTIVES {
-        return Vec::new();
+        return commanders;
     }
     if let Some(seat) = state.player_mut(player) {
         for leader in &heroes {
             seat.leaders.insert(leader.clone(), LeaderStatus::Unlocked);
         }
     }
-    heroes
+    commanders.into_iter().chain(heroes).collect()
 }
 
 /// 81.6: exhausted cards ready in the status phase, agents among them.
@@ -196,6 +346,121 @@ pub fn usable(state: &GameState, content: &ContentStore, player: &PlayerId) -> V
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_commander_with_no_registered_check_stays_locked() {
+        // An unknown condition must not read as satisfied: a commander that unlocks itself is
+        // worse than one that never unlocks, because nothing says it happened.
+        let state = game(&["a"]);
+        assert_eq!(
+            commander_unlocked(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &player(),
+                &LeaderId::new("nobodyscommander")
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn each_commander_unlocks_on_its_own_condition() {
+        let content = ContentStore::embedded();
+        let hacan = LeaderId::new("hacancommander");
+        let jolnar = LeaderId::new("jolnarcommander");
+
+        let mut state = game(&["a"]);
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &hacan),
+            Some(false)
+        );
+
+        state.player_mut(&player()).unwrap().trade_goods = 10;
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &hacan),
+            Some(true),
+            "ten trade goods"
+        );
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &jolnar),
+            Some(false),
+            "and it is not somebody else's condition"
+        );
+    }
+
+    #[test]
+    fn letnev_counts_five_ships_in_one_system_not_five_anywhere() {
+        let content = ContentStore::embedded();
+        let letnev = LeaderId::new("letnevcommander");
+        let mut state = game(&["a"]);
+        let systems = crate::fixtures::plain_systems(2);
+        let (first, second) = (
+            ti4_model::id::SystemId::new(systems[0].clone()),
+            ti4_model::id::SystemId::new(systems[1].clone()),
+        );
+        crate::fixtures::put(&mut state, &first, "cruiser", &player(), 3);
+        crate::fixtures::put(&mut state, &second, "cruiser", &player(), 3);
+
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &letnev),
+            Some(false),
+            "six ships, but three and three"
+        );
+
+        crate::fixtures::put(&mut state, &first, "cruiser", &player(), 2);
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &letnev),
+            Some(true),
+            "five in one system"
+        );
+    }
+
+    #[test]
+    fn letnev_does_not_count_fighters() {
+        let content = ContentStore::embedded();
+        let letnev = LeaderId::new("letnevcommander");
+        let mut state = game(&["a"]);
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put(&mut state, &system, "fighter", &player(), 8);
+
+        assert_eq!(
+            commander_unlocked(&state, content, POK, None, &player(), &letnev),
+            Some(false),
+            "the card says non-fighter ships"
+        );
+    }
+
+    #[test]
+    fn a_commander_unlocks_without_waiting_for_three_objectives() {
+        // Heroes need three scored objectives; commanders do not, and gating both on the hero
+        // condition would leave every commander locked for most of a game.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("hacancommander"), LeaderStatus::Locked);
+        state.player_mut(&player()).unwrap().trade_goods = 10;
+
+        let unlocked = check_unlocks(&mut state, content, POK, None, &player());
+
+        assert!(
+            unlocked.contains(&LeaderId::new("hacancommander")),
+            "nothing has been scored, and it still unlocked"
+        );
+        assert_eq!(
+            state
+                .player(&player())
+                .unwrap()
+                .leaders
+                .get(&LeaderId::new("hacancommander")),
+            Some(&LeaderStatus::Unlocked)
+        );
+    }
+
     use ti4_model::content_types::POK;
 
     use super::*;
@@ -299,11 +564,13 @@ mod tests {
         for alias in ["o1", "o2"] {
             state.record_score(&player(), ti4_model::id::ObjectiveId::new(alias));
         }
-        assert!(check_unlocks(&mut state, ContentStore::embedded(), &player()).is_empty());
+        assert!(
+            check_unlocks(&mut state, ContentStore::embedded(), POK, None, &player()).is_empty()
+        );
         assert_eq!(status(&state, &player(), &hero), Some(LeaderStatus::Locked));
 
         state.record_score(&player(), ti4_model::id::ObjectiveId::new("o3"));
-        let unlocked = check_unlocks(&mut state, ContentStore::embedded(), &player());
+        let unlocked = check_unlocks(&mut state, ContentStore::embedded(), POK, None, &player());
 
         assert!(unlocked.contains(&hero));
         assert_eq!(
@@ -320,7 +587,7 @@ mod tests {
         for alias in ["o1", "o2", "o3", "o4"] {
             state.record_score(&player(), ti4_model::id::ObjectiveId::new(alias));
         }
-        check_unlocks(&mut state, ContentStore::embedded(), &player());
+        check_unlocks(&mut state, ContentStore::embedded(), POK, None, &player());
 
         for commander in of_kind(&state, ContentStore::embedded(), &player(), COMMANDER) {
             assert_eq!(
@@ -342,13 +609,13 @@ mod tests {
         state.record_score(&player(), ti4_model::id::ObjectiveId::new("o1"));
         state.record_score(&player(), ti4_model::id::ObjectiveId::new("o2"));
         state.record_score(&player(), ti4_model::id::ObjectiveId::new("o3"));
-        check_unlocks(&mut state, ContentStore::embedded(), &player());
+        check_unlocks(&mut state, ContentStore::embedded(), POK, None, &player());
 
         assert!(purge(&mut state, &player(), &hero));
         assert_eq!(status(&state, &player(), &hero), Some(LeaderStatus::Purged));
 
         ready_all(&mut state, &player());
-        check_unlocks(&mut state, ContentStore::embedded(), &player());
+        check_unlocks(&mut state, ContentStore::embedded(), POK, None, &player());
         assert_eq!(
             status(&state, &player(), &hero),
             Some(LeaderStatus::Purged),

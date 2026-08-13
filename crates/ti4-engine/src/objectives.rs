@@ -1131,7 +1131,9 @@ pub fn award(
     }
     // 51.7: leaders unlock the moment their condition is met, not at end of phase. A hero
     // unlocked by a third objective must not wait for a status phase the game may never reach.
-    crate::leaders::check_unlocks(state, content, player);
+    // No galaxy here: only Naalu's commander asks about the map, and awarding an objective is
+    // not where that condition changes. The status phase checks again with one.
+    crate::leaders::check_unlocks(state, content, sources, None, player);
     Ok(points)
 }
 

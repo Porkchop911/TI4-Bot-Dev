@@ -1422,6 +1422,28 @@ impl<'a> Game<'a> {
     /// Steps 81.2 to 81.4, then open the 81.5 token gain.
     fn begin_status_bookkeeping(&mut self) -> StepResult {
         self.scoring = None;
+        // 51.7 again, with the map this time. A commander unlocks on a condition that changes
+        // during play — trade goods, planets held, ships in a system — not only when an
+        // objective is scored, so the check has to happen somewhere a round reaches.
+        let seats: Vec<PlayerId> = self
+            .state
+            .players
+            .iter()
+            .map(|seat| seat.id.clone())
+            .collect();
+        let galaxy = self.galaxy.clone();
+        for player in seats {
+            let unlocked = crate::leaders::check_unlocks(
+                &mut self.state,
+                self.content,
+                self.sources,
+                galaxy.as_ref(),
+                &player,
+            );
+            for leader in unlocked {
+                self.events.push(format!("LEADER_UNLOCKED:{leader}"));
+            }
+        }
         match resolve_before_token_gain(&mut self.state) {
             Ok(report) if report.game_ended => {
                 self.emit("GAME_FINISHED");
