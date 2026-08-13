@@ -28,7 +28,7 @@ use ti4_engine::game::Game;
 use ti4_engine::objectives::{Position, controls_home_system, requirement_for};
 use ti4_engine::setup::start_game_seeded;
 use ti4_model::content_types::POK;
-use ti4_model::id::{FactionId, PlayerId};
+use ti4_model::id::PlayerId;
 use ti4_model::state::Phase;
 
 /// What the seats' positions looked like when scoring windows opened.
@@ -210,15 +210,7 @@ fn percent(part: usize, whole: usize) -> f64 {
 
 fn seated<'a>(content: &'a ContentStore, players: &[PlayerId], seed: u64) -> Game<'a> {
     let mut state = start_game_seeded(content, players, POK, None, seed).expect("setup");
-    let available: Vec<String> = ti4_content::factions::catalogue(content, POK)
-        .keys()
-        .map(|alias| (*alias).to_owned())
-        .collect();
-    let factions: BTreeMap<PlayerId, FactionId> = players
-        .iter()
-        .cloned()
-        .zip(available.into_iter().map(FactionId::new))
-        .collect();
+    let factions = ti4_engine::seating::seat_in_scope(players);
     for (player, faction) in &factions {
         state.player_mut(player).unwrap().faction = faction.clone();
     }

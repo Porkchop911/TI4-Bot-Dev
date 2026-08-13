@@ -499,6 +499,125 @@ mod tests {
         assert!(matches!(err, SeatingError::NotEnoughFiller { .. }), "{err}");
     }
 
+    // -- scope ----------------------------------------------------------------------
+
+    #[test]
+    fn the_six_in_scope_factions_are_the_six_named() {
+        // A list, asserted as a list. Changing who this project plays should be a deliberate edit
+        // to a test, not a side effect of a catalogue reordering.
+        assert_eq!(
+            IN_SCOPE_FACTIONS,
+            ["sol", "hacan", "letnev", "xxcha", "jolnar", "l1z1x"]
+        );
+    }
+
+    #[test]
+    fn every_in_scope_faction_exists_in_the_corpus() {
+        // A typo here seats a faction that does not exist, and `deploy` fails at setup with an
+        // error about an unknown faction rather than about a misspelled constant.
+        for alias in IN_SCOPE_FACTIONS {
+            assert!(
+                ti4_content::factions::get(content(), alias).is_some(),
+                "{alias} is not a faction in the corpus"
+            );
+        }
+    }
+
+    #[test]
+    fn every_in_scope_faction_is_one_this_engine_has_actually_ported() {
+        // The point of a scope. A faction in this list with no leaders registered would be seated
+        // in every game and every training rollout while contributing nothing but its starting
+        // fleet — which is exactly what Arborec, Argent and the Cabal were doing when the seating
+        // took whatever the catalogue listed first.
+        for alias in IN_SCOPE_FACTIONS {
+            let leaders = crate::leaders::for_faction(content(), POK, alias);
+            assert!(
+                !leaders.is_empty(),
+                "{alias} is in scope but has no leaders in the corpus"
+            );
+            let known = crate::leaders::registered_abilities();
+            let standing = crate::leaders::modifiers();
+            let ported = leaders.iter().filter(|leader| {
+                known.contains(&leader.as_str()) || standing.contains_key(leader.as_str())
+            });
+            assert!(
+                ported.count() > 0,
+                "{alias} is in scope but not one of its leaders is implemented"
+            );
+        }
+    }
+
+    #[test]
+    fn a_table_is_seated_from_the_scope_and_from_nothing_else() {
+        let players = [
+            PlayerId::new("a"),
+            PlayerId::new("b"),
+            PlayerId::new("c"),
+            PlayerId::new("d"),
+            PlayerId::new("e"),
+            PlayerId::new("f"),
+        ];
+        let seated = seat_in_scope(&players);
+
+        assert_eq!(seated.len(), 6);
+        for faction in seated.values() {
+            assert!(
+                IN_SCOPE_FACTIONS.contains(&faction.as_str()),
+                "{faction} was seated and is not in scope"
+            );
+        }
+        let distinct: std::collections::BTreeSet<&str> =
+            seated.values().map(FactionId::as_str).collect();
+        assert_eq!(distinct.len(), 6, "six seats, six factions: {distinct:?}");
+    }
+
+    #[test]
+    fn a_table_larger_than_the_scope_still_plays_in_scope_factions() {
+        // Falling off the end of the list is how an unported faction gets seated. Reusing it is
+        // wrong as a matchup and right as a scope, and a duplicated faction is visible where a
+        // silently unported one is not.
+        let players: Vec<PlayerId> = (0..8)
+            .map(|index| PlayerId::new(format!("p{index}")))
+            .collect();
+        let seated = seat_in_scope(&players);
+
+        assert_eq!(seated.len(), 8);
+        for faction in seated.values() {
+            assert!(
+                IN_SCOPE_FACTIONS.contains(&faction.as_str()),
+                "{faction} was seated and is not in scope"
+            );
+        }
+    }
+
+    #[test]
+    fn the_firmament_is_not_in_scope() {
+        // Out by owner decision, and it is in the corpus, so nothing else would stop it being
+        // seated.
+        assert!(
+            ti4_content::factions::get(content(), "firmament").is_some(),
+            "the corpus does carry it"
+        );
+        assert!(!IN_SCOPE_FACTIONS.contains(&"firmament"));
+    }
+
+    #[test]
+    fn every_in_scope_faction_can_actually_be_deployed() {
+        // A faction in scope that cannot be seated would fail every game at setup rather than at
+        // the point somebody chose it.
+        for alias in IN_SCOPE_FACTIONS {
+            let player = PlayerId::new("a");
+            let mut state =
+                start_game(content(), std::slice::from_ref(&player), POK, None).unwrap();
+            deploy(&mut state, content(), &player, &FactionId::new(alias), POK)
+                .unwrap_or_else(|error| panic!("{alias} could not be deployed: {error}"));
+            assert!(
+                !state.board.is_empty(),
+                "{alias} deployed nothing onto the board"
+            );
+        }
+    }
+
     #[test]
     fn home_systems_are_read_from_the_faction_records() {
         let homes = home_systems(content(), &assignments(&[("a", "sol"), ("b", "hacan")])).unwrap();
