@@ -13,7 +13,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::game::Game;
 use ti4_engine::objectives::VICTORY_TARGET;
-use ti4_engine::setup::start_game;
+use ti4_engine::setup::start_game_seeded;
 use ti4_model::content_types::{POK, SourceSet};
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_model::state::GameState;
@@ -134,8 +134,14 @@ impl Table {
 /// so it drafts strategy cards, passes, and ends with nobody having scored. Forty such games ran
 /// clean and reported a completion rate of 1.00, which is how a harness can measure nothing at
 /// all and look healthy doing it.
-fn seat(content: &ContentStore, table: &Table) -> Result<(GameState, Galaxy), String> {
-    let mut state = start_game(content, &table.players, table.sources, None)
+fn seat(content: &ContentStore, table: &Table, seed: u64) -> Result<(GameState, Galaxy), String> {
+    // The seed reaches setup, not only the decisions. Without this every game in every batch is
+    // dealt the same objective deck, the same secrets and the same agenda order: `start_game`
+    // fixes the deck seed at zero, so a hundred seeds produced a hundred replays of one deck.
+    // An audit of twelve games found all twelve revealing the identical ten objectives, which is
+    // one scenario sampled twelve times rather than twelve games — and the worst possible corpus
+    // to train a policy on, because overfitting to it would look like learning.
+    let mut state = start_game_seeded(content, &table.players, table.sources, None, seed)
         .map_err(|error| format!("setup: {error}"))?;
 
     for (player, faction) in &table.factions {
@@ -189,7 +195,7 @@ pub fn play_with(
 ) -> GameResult {
     let started = Instant::now();
     let table = Table::seated(content, players, sources);
-    let (state, galaxy) = match seat(content, &table) {
+    let (state, galaxy) = match seat(content, &table, seed) {
         Ok(seated) => seated,
         Err(error) => return failed(seed, players, started, error),
     };
@@ -407,6 +413,43 @@ mod tests {
             distinct.len() > 1,
             "eight seeds produced one outcome: {distinct:?}"
         );
+    }
+
+    #[test]
+    fn different_seeds_are_dealt_different_decks() {
+        // The seed has to reach *setup*, not only the decisions. It did not for a long time:
+        // `start_game` fixes the deck seed at zero, so every game in every batch revealed the
+        // same ten objectives, dealt the same secrets and stacked the same agendas. Twelve games
+        // audited, twelve identical decks — a batch that looked like twelve samples and was one.
+        //
+        // Asserted on the revealed objectives because those are what a game is scored against:
+        // a batch that never varies them measures one puzzle however many times it is run.
+        let players = seats(&["a", "b"]);
+        let decks: std::collections::BTreeSet<Vec<String>> = (0..8)
+            .map(|seed| {
+                let table = Table::seated(ContentStore::embedded(), &players, POK);
+                let (state, _) = seat(ContentStore::embedded(), &table, seed).expect("seated");
+                state
+                    .revealed_objectives
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>()
+            })
+            .collect();
+
+        assert!(decks.len() > 1, "eight seeds dealt one deck: {decks:?}");
+    }
+
+    #[test]
+    fn the_same_seed_is_dealt_the_same_deck() {
+        // The other half of the property. Varying by seed is worthless if it does not replay.
+        let players = seats(&["a", "b"]);
+        let table = Table::seated(ContentStore::embedded(), &players, POK);
+        let (once, _) = seat(ContentStore::embedded(), &table, 3).expect("seated");
+        let (twice, _) = seat(ContentStore::embedded(), &table, 3).expect("seated");
+
+        assert_eq!(once.revealed_objectives, twice.revealed_objectives);
+        assert_eq!(once.objective_deck, twice.objective_deck);
     }
 
     #[test]

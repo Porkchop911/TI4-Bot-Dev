@@ -456,6 +456,15 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// The map this game is played on, when it has one.
+    ///
+    /// Read-only: the driver owns the board, and a caller that could swap it mid-game could move
+    /// a system out from under an open tactical action.
+    #[must_use]
+    pub const fn galaxy(&self) -> Option<&Galaxy> {
+        self.galaxy.as_ref()
+    }
+
     /// Give the game its map, which is what makes a tactical action possible.
     #[must_use]
     pub fn with_galaxy(mut self, galaxy: Galaxy) -> Self {

@@ -55,7 +55,9 @@ fn main() {
         for (index, player) in players.iter().enumerate() {
             table.seat(
                 player.clone(),
-                Box::new(ti4_policy::bot::ScoredBot::new(5000 + index as u64)),
+                Box::new(ti4_policy::bot::ScoredBot::new(
+                    5000 + u64::try_from(index).unwrap_or(0),
+                )),
             );
         }
     }
