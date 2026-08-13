@@ -26,21 +26,21 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 - Active branch: `wp/m08-005b-tactical-scoring`, based on `8a72a4f`; the focused local package
   commit is `Score tactical activations from public board state` (see current Git HEAD).
-- Completed scope: M08-005b public-board activation/movement plus M08-005c cargo/landing scoring.
-  `Observed` reports the active system and derives public movement reachability;
-  `ScoredBot::choose_seeing` values systems, removes useless activations from its own shortlist,
-  declines idle reinforcements, loads transport toward a prize, and avoids surplus landings.
-  Plain `choose` remains the blind dispatcher fallback.
-- Deferred by the recorded M08-005 split: M08-005d production and combat scoring; then M08-006
-  economy/development and M08-007 objectives.
+- Completed scope: M08-005 tactical scoring is closed through M08-005b/d. `Observed` reports the
+  active system and derives public movement reachability; `ScoredBot::choose_seeing` values
+  systems, removes useless activations from its own shortlist, declines idle reinforcements, loads
+  transport toward a prize, avoids surplus landings, and favors lift when troops are stranded.
+  Planet-only stranded troops are correctly counted. Existing casualty/sustain/retreat rules
+  remain in the shared dispatcher; plain `choose` remains the blind fallback.
+- Next package: M08-006 economy/development scoring, followed by M08-007 objectives.
 - Verification: `cargo fmt --all --check`; `cargo test -p ti4-policy` (40 passed); `cargo test -p
   ti4-engine` (703 unit + 5 doc tests passed); `cargo clippy -p ti4-policy -p ti4-engine
   --all-targets -- -D warnings`; and `git diff --check` all passed. Oracle integrity guard passed
   before and after. Focused mutation checks failed as intended and were restored.
-- Simulator diagnostic: 24 scored games, 88 objective scores, top VP range 2–6; all still end
+- Simulator diagnostic: 24 scored games, 80 objective scores, top VP range 1–6; all still end
   `objectives_exhausted` in round 9. This is progress evidence only, not a parity or speed claim.
-- Evidence: `plans/evidence/M08-005b.md`, `plans/evidence/M08-005c.md`. Next safe action after
-  committing is M08-005d.
+- Evidence: `plans/evidence/M08-005b.md`, `plans/evidence/M08-005c.md`,
+  `plans/evidence/M08-005d.md`. Next safe action after committing is M08-006.
 
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`

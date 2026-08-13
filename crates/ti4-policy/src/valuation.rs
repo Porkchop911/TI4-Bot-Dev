@@ -228,10 +228,10 @@ pub fn fleet_strength(seen: &Observed<'_>, player: &PlayerId, system: &SystemId)
 #[must_use]
 pub fn stranded_troops(seen: &Observed<'_>, player: &PlayerId) -> usize {
     let types = ti4_content::units::catalogue(seen.content(), seen.sources());
-    seen.systems_with_units_of(player)
-        .into_iter()
+    seen.board()
+        .values()
         .map(|system| {
-            seen.system(system)
+            system
                 .planet_units
                 .values()
                 .flatten()
@@ -417,9 +417,8 @@ mod tests {
             &PlayerId::new("b"),
             2,
         );
-        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &mine, 1);
-        // A structure sits on the planet too, and is not a troop. Without one on the *planet* the
-        // ground-force filter is never exercised: a cruiser in space is excluded by where it is.
+        // A structure sits on the planet too, and is not a troop. There is deliberately no unit
+        // in space: troops waiting only on a planet are exactly the stranded case this counts.
         ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &mine, 1);
 
         assert_eq!(stranded_troops(&watching(&state), &mine), 3);

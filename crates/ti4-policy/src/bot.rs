@@ -154,6 +154,7 @@ impl ScoredBot {
             "move" => self.score_move_seen(choice, option, seen),
             "load" => self.score_load_seen(choice, option, seen),
             "land" => self.score_land_seen(choice, option, seen),
+            "produce" => self.score_produce_seen(choice, option, seen),
             _ => self.raw_score(choice, option),
         }
     }
@@ -317,6 +318,30 @@ impl ScoredBot {
             "planet_value",
             crate::valuation::planet_value(seen, &choice.player, &planet),
         )
+    }
+
+    /// The public-board part of the oracle's production scorer.  A transport is worth more when
+    /// ground forces are visibly stranded on planets, because a fleet that cannot lift troops
+    /// cannot turn its production into captured planets.
+    #[must_use]
+    fn score_produce_seen(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        let mut score = self.score_produce(option);
+        let unit_id = option.id.strip_prefix("produce|").unwrap_or(&option.id);
+        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+        let Some(unit) = types.get(unit_id) else {
+            return score;
+        };
+        let stranded = crate::valuation::stranded_troops(seen, &choice.player);
+        if unit.capacity() > 0 && stranded > 2 {
+            let capacity = i32::try_from(unit.capacity()).unwrap_or(i32::MAX);
+            score = score.and("lift_shortage", 5.0 * (f64::from(capacity) / 4.0).min(1.0));
+        }
+        score
     }
 
     /// Acting beats passing, and a strategic action beats an ordinary one because a strategy card
@@ -923,6 +948,53 @@ mod tests {
                 .id,
             "decline",
             "a superior friendly garrison does not need another troop"
+        );
+    }
+
+    #[test]
+    fn seeing_stranded_troops_prefers_lift_without_changing_blind_production() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let target = ti4_model::id::SystemId::new(hub.centre.clone());
+        let planet = first_planet(&target);
+        state.active_system = Some(target.clone());
+        ti4_engine::fixtures::put_on_planet(&mut state, &target, &planet, "infantry", &player, 3);
+        let production = Choice::new(
+            player.clone(),
+            "produce",
+            vec![
+                ChoiceOption::new("produce|carrier", "produce")
+                    .with("cost", 4)
+                    .with("units", 1),
+                ChoiceOption::new("produce|cruiser", "produce")
+                    .with("cost", 1)
+                    .with("units", 1),
+            ],
+        );
+        let mut blind = ScoredBot::new(4).at_temperature(0.01);
+        assert!(
+            score_of(&blind, &production, 1) > score_of(&blind, &production, 0),
+            "the blind value-per-resource rule prefers the cruiser"
+        );
+        assert_eq!(blind.choose(&production).unwrap().id, "produce|cruiser");
+
+        let mut seeing = ScoredBot::new(4).at_temperature(0.01).remembering();
+        assert_eq!(
+            seeing
+                .choose_seeing(&production, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "produce|carrier",
+            "publicly stranded troops make lift the better production"
+        );
+        assert!(
+            seeing.decisions[0]
+                .breakdown
+                .get("produce|carrier")
+                .is_some_and(|score| score
+                    .parts()
+                    .iter()
+                    .any(|(name, _)| *name == "lift_shortage"))
         );
     }
 
