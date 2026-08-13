@@ -50,3 +50,6 @@ fixtures/legacy_entropy/*
 
 # Local git worktrees. Gitlinks to them are meaningless to a clone.
 .worktrees/
+
+# Local git bundles taken before handing the repo to another agent.
+.backup/
