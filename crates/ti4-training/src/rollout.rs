@@ -118,7 +118,9 @@ fn seated(
         }
     }
 
-    let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 30, sources)
+    // Drawn by seed, so a batch plays many boards rather than one. A policy trained on a single
+    // map learns that map, and no batch report would say so.
+    let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, sources, seed)
         .into_iter()
         .map(|system| system.to_string())
         .collect();

@@ -256,6 +256,30 @@ pub fn neutral_systems(content: &ContentStore, count: usize, sources: SourceSet)
         .collect()
 }
 
+/// Filler tiles for one map, shuffled by seed.
+///
+/// [`neutral_systems`] returns the corpus in a stable order, which gives every game the same
+/// board. That is right for a test — a board-dependent assertion needs a fixed board — and wrong
+/// for training: a policy fitted on one map learns that map, and nothing in a batch report would
+/// say so.
+///
+/// The shuffle is seeded and domain-separated, so a seed names a map and the same seed always
+/// draws it. `count` tiles are taken *after* the shuffle rather than before, so the whole corpus
+/// is in the draw rather than the first thirty entries of it.
+#[must_use]
+pub fn map_filler(
+    content: &ContentStore,
+    count: usize,
+    sources: SourceSet,
+    seed: u64,
+) -> Vec<SystemId> {
+    let mut pool = neutral_systems(content, usize::MAX, sources);
+    let mut rng = crate::rng::GameRng::new(seed);
+    rng.shuffle(crate::rng::domain::GALAXY, &mut pool);
+    pool.truncate(count);
+    pool
+}
+
 fn is_home_tile(content: &ContentStore, system_id: &str, sources: SourceSet) -> bool {
     ti4_content::galaxy::planets_in(content, system_id, sources)
         .iter()
@@ -614,6 +638,101 @@ mod tests {
             assert!(
                 !state.board.is_empty(),
                 "{alias} deployed nothing onto the board"
+            );
+        }
+    }
+
+    #[test]
+    fn a_seed_names_a_map_and_different_seeds_name_different_ones() {
+        // Every game in this project was played on one board until now: `neutral_systems` returns
+        // the corpus in a stable order, so a batch of a thousand games was a thousand games on one
+        // map. A policy fitted on it learns it, and no batch report would say so.
+        let drawn: std::collections::BTreeSet<Vec<String>> = (0..8)
+            .map(|seed| {
+                map_filler(content(), 30, POK, seed)
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .collect();
+        assert!(drawn.len() > 1, "eight seeds drew one map");
+
+        let once = map_filler(content(), 30, POK, 3);
+        let twice = map_filler(content(), 30, POK, 3);
+        assert_eq!(once, twice, "and a seed must always draw the same one");
+    }
+
+    #[test]
+    fn a_drawn_map_is_made_of_tiles_that_belong_on_one() {
+        // The shuffle must not reach past the filter: a home tile or an anomaly in the filler ring
+        // would put two homes in one system or a hazard where expansion is meant to be.
+        let drawn = map_filler(content(), 30, POK, 11);
+        assert_eq!(drawn.len(), 30);
+
+        let allowed: std::collections::BTreeSet<SystemId> =
+            neutral_systems(content(), usize::MAX, POK)
+                .into_iter()
+                .collect();
+        for tile in &drawn {
+            assert!(
+                allowed.contains(tile),
+                "{tile} is not an ordinary filler tile"
+            );
+        }
+        let distinct: std::collections::BTreeSet<&SystemId> = drawn.iter().collect();
+        assert_eq!(distinct.len(), drawn.len(), "a tile was drawn twice");
+    }
+
+    #[test]
+    fn the_whole_corpus_is_in_the_draw_not_just_its_first_entries() {
+        // Taking `count` before the shuffle would draw from the same thirty tiles every time and
+        // only reorder them, which looks like variety and is not.
+        let mut seen: std::collections::BTreeSet<SystemId> = std::collections::BTreeSet::new();
+        for seed in 0..24 {
+            seen.extend(map_filler(content(), 30, POK, seed));
+        }
+        let first_thirty: std::collections::BTreeSet<SystemId> =
+            neutral_systems(content(), 30, POK).into_iter().collect();
+        assert!(
+            seen.len() > first_thirty.len(),
+            "twenty-four maps used only {} tiles, the same {} the stable order returns",
+            seen.len(),
+            first_thirty.len()
+        );
+    }
+
+    #[test]
+    fn every_drawn_map_still_seats_the_homes_properly() {
+        // The board fix is not allowed to depend on which tiles were drawn. Homes three apart,
+        // everyone the same distance from Mecatol — on every map, not just the fixed one.
+        let seats = six_seats();
+        for seed in 0..6 {
+            let filler = map_filler(content(), 30, POK, seed);
+            let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+            let galaxy = build_board(content(), &seats, &refs, POK)
+                .unwrap_or_else(|error| panic!("map {seed} could not be built: {error}"));
+
+            let homes = home_systems(content(), &seats).unwrap();
+            let mut closest = i32::MAX;
+            for (index, one) in homes.iter().enumerate() {
+                for other in homes.iter().skip(index + 1) {
+                    closest = closest.min(
+                        galaxy
+                            .distance(one.as_str(), other.as_str())
+                            .expect("both homes are placed"),
+                    );
+                }
+            }
+            assert!(closest >= 3, "map {seed} seated two homes {closest} apart");
+
+            let reach: std::collections::BTreeSet<i32> = homes
+                .iter()
+                .map(|home| galaxy.distance(home.as_str(), MECATOL).expect("placed"))
+                .collect();
+            assert_eq!(
+                reach.len(),
+                1,
+                "map {seed} gave someone a shorter run at Mecatol"
             );
         }
     }

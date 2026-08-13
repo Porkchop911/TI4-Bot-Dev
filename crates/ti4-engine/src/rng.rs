@@ -43,6 +43,9 @@ pub mod domain {
     pub const SECRETS: &str = "deck:secrets";
     /// Shuffling the relic deck.
     pub const RELICS: &str = "deck:relics";
+    /// Map tile selection. Its own stream, so drawing a different board does not shift the
+    /// dice or the decks — a seed has to name one thing at a time or nothing is reproducible.
+    pub const GALAXY: &str = "galaxy";
     /// Shuffling the exploration decks.
     pub const EXPLORATION: &str = "deck:exploration";
     /// Selecting map tiles.

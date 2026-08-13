@@ -23,7 +23,7 @@ use ti4_policy::learned::Profile;
 /// Per-faction metrics from a panel of games.
 ///
 /// Mirrors the oracle's `metrics()` output for Stage 1.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PanelMetrics {
     /// Per-faction metrics.
     pub per_faction: BTreeMap<String, FactionMetrics>,

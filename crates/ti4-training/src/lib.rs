@@ -6,6 +6,7 @@
 
 pub mod archive;
 pub mod capture;
+pub mod evaluation;
 pub mod gradient;
 pub mod promotion;
 pub mod reward;
@@ -15,6 +16,7 @@ pub mod stage2;
 
 pub use archive::*;
 pub use capture::*;
+pub use evaluation::*;
 pub use gradient::*;
 pub use promotion::*;
 pub use reward::*;
