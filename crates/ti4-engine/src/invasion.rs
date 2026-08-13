@@ -58,6 +58,10 @@ pub fn bombardable(
     if has_warsun {
         return true;
     }
+    // L1Z1X's commander ignores a planetary shield outright, which is the whole card.
+    if crate::leaders::ignores_planetary_shield(state, invader) {
+        return true;
+    }
     !board.on_planet(planet).iter().any(|unit| {
         types
             .get(unit.type_id.as_str())

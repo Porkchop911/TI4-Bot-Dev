@@ -344,8 +344,359 @@ pub fn usable(state: &GameState, content: &ContentStore, player: &PlayerId) -> V
     })
 }
 
+// -- abilities (M07-002 to M07-009) --------------------------------------------------------------
+
+/// Leaders whose effect is a standing modifier rather than anything you use.
+///
+/// They live where they modify rather than in this registry, and are named here so coverage
+/// counts them as implemented instead of reporting a gap that is not one — the same reason
+/// `laws::enforced_aliases` exists.
+#[must_use]
+pub fn modifiers() -> std::collections::BTreeMap<&'static str, &'static str> {
+    [
+        ("xxchacommander", "leaders::vote_bonus, read by vote::cast"),
+        ("hacancommander", "leaders::vote_bonus, read by vote::cast"),
+        (
+            "l1z1xcommander",
+            "leaders::ignores_planetary_shield, read by invasion::can_bombard",
+        ),
+    ]
+    .into_iter()
+    .collect()
+}
+
+/// Extra votes this player casts, from an unlocked commander.
+///
+/// Read where votes are counted rather than applied at the card, so the bonus cannot be honoured
+/// in one voting path and forgotten in another.
+#[must_use]
+pub fn vote_bonus(state: &GameState, player: &PlayerId) -> i64 {
+    let Some(seat) = state.player(player) else {
+        return 0;
+    };
+    seat.leaders
+        .iter()
+        .filter(|(_, status)| **status == LeaderStatus::Unlocked)
+        .map(|(leader, _)| match leader.as_str() {
+            // Xxcha's Elder Qanoj and Hacan's Gila the Silvertongue both add votes.
+            "xxchacommander" | "hacancommander" => 3,
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Whether this player's units ignore a planetary shield when bombarding.
+#[must_use]
+pub fn ignores_planetary_shield(state: &GameState, player: &PlayerId) -> bool {
+    state.player(player).is_some_and(|seat| {
+        seat.leaders.iter().any(|(leader, status)| {
+            leader.as_str() == "l1z1xcommander" && *status == LeaderStatus::Unlocked
+        })
+    })
+}
+
+/// Leaders this engine can use, by id.
+#[must_use]
+pub fn registered_abilities() -> Vec<&'static str> {
+    vec![
+        "hacanagent",
+        "hacanhero",
+        "letnevagent",
+        "letnevhero",
+        "solagent",
+        "solcommander",
+        "solhero",
+        "xxchaagent",
+    ]
+}
+
+/// Leaders of these factions that still do nothing, by any of the three routes.
+#[must_use]
+pub fn unimplemented(content: &ContentStore, factions: &[&str]) -> Vec<LeaderId> {
+    let known = registered_abilities();
+    let standing = modifiers();
+    factions
+        .iter()
+        .flat_map(|faction| for_faction(content, ti4_model::content_types::POK, faction))
+        .filter(|leader| {
+            !known.contains(&leader.as_str()) && !standing.contains_key(leader.as_str())
+        })
+        .collect()
+}
+
+/// Use an unlocked or readied leader's ability.
+///
+/// Returns `false` when the leader cannot be used — locked, purged, already exhausted, or with
+/// no registered ability. A leader that reports success without doing anything is worse than one
+/// that refuses, because nothing counts the gap.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per leader: the list is the point, and splitting it hides the set"
+)]
+pub fn use_leader(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    leader: &LeaderId,
+) -> bool {
+    if !usable(context.state, context.content, player).contains(leader) {
+        return false;
+    }
+    let done = match leader.as_str() {
+        // Evelyn DeLouis and Viscount Unlenn: one unit in the active system rolls an extra die
+        // this combat round. Held as the round number, so it expires with the round it was used
+        // in rather than improving every later one.
+        "solagent" | "letnevagent" => {
+            let round = context.state.combat_round_seq;
+            let wanted = if leader.as_str() == "solagent" {
+                "infantry"
+            } else {
+                "cruiser"
+            };
+            let unit = ti4_content::units::faction_unit(
+                context.content,
+                &context
+                    .state
+                    .player(player)
+                    .map(|seat| seat.faction.to_string())
+                    .unwrap_or_default(),
+                wanted,
+                context.sources,
+            )
+            .map_or_else(
+                || ti4_model::id::UnitTypeId::new(wanted),
+                |kind| ti4_model::id::UnitTypeId::new(kind.id()),
+            );
+            if let Some(seat) = context.state.player_mut(player) {
+                seat.extra_die_round = Some(round);
+                seat.extra_die_unit = Some(unit);
+            }
+            true
+        }
+        // Claire Gibson: an infantry onto a planet you control, as a ground combat opens.
+        "solcommander" => {
+            let spot = context
+                .state
+                .controlled_planets(player)
+                .first()
+                .map(|(system, planet)| ((*system).clone(), (*planet).clone()));
+            match spot {
+                Some((system, planet)) => {
+                    crate::action_cards::place_units(
+                        context,
+                        player,
+                        &system,
+                        Some(&planet),
+                        "infantry",
+                        1,
+                    );
+                    true
+                }
+                None => false,
+            }
+        }
+        // Jace X: every command token off the board, back to reinforcements.
+        "solhero" => {
+            for board in context.state.board.values_mut() {
+                board.command_tokens.remove(player);
+            }
+            true
+        }
+        // Elder Qanoj: ready any planet, not only one of yours.
+        "xxchaagent" => {
+            let any = context.state.exhausted_planets.iter().next().cloned();
+            match any {
+                Some(planet) => {
+                    context.state.exhausted_planets.remove(&planet);
+                    true
+                }
+                None => false,
+            }
+        }
+        // Carth of Golden Sands: two commodities.
+        "hacanagent" => {
+            let limit = context
+                .state
+                .player(player)
+                .and_then(|seat| {
+                    ti4_content::factions::get(context.content, seat.faction.as_str())
+                        .map(|faction| faction.commodities())
+                })
+                .unwrap_or(0);
+            if let Some(seat) = context.state.player_mut(player) {
+                seat.commodities = (seat.commodities + 2).min(limit);
+            }
+            true
+        }
+        // Harrugh Gefhara: this use of PRODUCTION costs nothing. Marks the use rather than
+        // acting now, so a later production in the same game is not free as well.
+        "hacanhero" => {
+            let seq = context.state.production_seq;
+            if let Some(seat) = context.state.player_mut(player) {
+                seat.free_production_use = Some(seq);
+            }
+            true
+        }
+        // Darktalon Treilla: fleet supply is limited by neither laws nor the pool this round.
+        "letnevhero" => {
+            let round = context.state.round;
+            if let Some(seat) = context.state.player_mut(player) {
+                seat.fleet_supply_unlimited_until = Some(round);
+            }
+            true
+        }
+        _ => false,
+    };
+    if done {
+        // An agent exhausts; a hero is purged once used (51.9, 51.10).
+        if kind_of(context.content, leader).as_deref() == Some(HERO) {
+            purge(context.state, player, leader);
+        } else {
+            exhaust(context.state, player, leader);
+        }
+    }
+    done
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// Give this player a leader in a usable state.
+    fn holding(state: &mut GameState, leader: &str, status: LeaderStatus) -> LeaderId {
+        let id = LeaderId::new(leader);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .leaders
+            .insert(id.clone(), status);
+        id
+    }
+
+    fn use_it(state: &mut GameState, leader: &LeaderId) -> bool {
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        use_leader(&mut context, &player(), leader)
+    }
+
+    #[test]
+    fn a_locked_leader_cannot_be_used() {
+        let mut state = game(&["a"]);
+        let leader = holding(&mut state, "solhero", LeaderStatus::Locked);
+        assert!(!use_it(&mut state, &leader));
+    }
+
+    #[test]
+    fn an_agent_exhausts_and_a_hero_is_purged() {
+        // 51.9, 51.10. An agent that never exhausts is usable every turn for ever; a hero that
+        // is not purged is a second hero.
+        let mut state = game(&["a"]);
+        let agent = holding(&mut state, "xxchaagent", LeaderStatus::Readied);
+        state
+            .exhausted_planets
+            .insert(ti4_model::id::PlanetId::new("somewhere"));
+        assert!(use_it(&mut state, &agent));
+        assert_eq!(
+            state.player(&player()).unwrap().leaders.get(&agent),
+            Some(&LeaderStatus::Exhausted)
+        );
+        assert!(!use_it(&mut state, &agent), "and not again this round");
+
+        let hero = holding(&mut state, "solhero", LeaderStatus::Unlocked);
+        assert!(use_it(&mut state, &hero));
+        assert_eq!(
+            state.player(&player()).unwrap().leaders.get(&hero),
+            Some(&LeaderStatus::Purged)
+        );
+    }
+
+    #[test]
+    fn jace_takes_every_token_off_the_board() {
+        let mut state = game(&["a", "b"]);
+        let hero = holding(&mut state, "solhero", LeaderStatus::Unlocked);
+        let systems = crate::fixtures::plain_systems(3);
+        for id in &systems {
+            let system = ti4_model::id::SystemId::new(id.clone());
+            state.system_mut(&system).command_tokens.insert(player());
+            state
+                .system_mut(&system)
+                .command_tokens
+                .insert(PlayerId::new("b"));
+        }
+
+        assert!(use_it(&mut state, &hero));
+
+        for id in &systems {
+            let board = state.system_state(&ti4_model::id::SystemId::new(id.clone()));
+            assert!(!board.command_tokens.contains(&player()), "yours came back");
+            assert!(
+                board.command_tokens.contains(&PlayerId::new("b")),
+                "and nobody else's moved"
+            );
+        }
+    }
+
+    #[test]
+    fn an_extra_die_expires_with_the_round_it_was_used_in() {
+        let mut state = game(&["a"]);
+        let agent = holding(&mut state, "letnevagent", LeaderStatus::Readied);
+        state.combat_round_seq = 5;
+
+        assert!(use_it(&mut state, &agent));
+
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(seat.extra_die_round, Some(5));
+        assert!(
+            seat.extra_die_unit.is_some(),
+            "and names which unit rolls it"
+        );
+    }
+
+    #[test]
+    fn a_commander_adds_votes_only_once_unlocked() {
+        let mut state = game(&["a"]);
+        assert_eq!(vote_bonus(&state, &player()), 0);
+
+        holding(&mut state, "xxchacommander", LeaderStatus::Locked);
+        assert_eq!(vote_bonus(&state, &player()), 0, "locked is not unlocked");
+
+        holding(&mut state, "xxchacommander", LeaderStatus::Unlocked);
+        assert_eq!(vote_bonus(&state, &player()), 3);
+    }
+
+    #[test]
+    fn the_l1z1x_commander_ignores_a_planetary_shield() {
+        let mut state = game(&["a"]);
+        assert!(!ignores_planetary_shield(&state, &player()));
+
+        holding(&mut state, "l1z1xcommander", LeaderStatus::Unlocked);
+        assert!(ignores_planetary_shield(&state, &player()));
+    }
+
+    #[test]
+    fn a_standing_modifier_counts_as_implemented() {
+        // Naming them keeps coverage honest: a leader whose effect lives where it modifies is
+        // not a gap, and reporting it as one trains the reader to ignore the list.
+        let missing = unimplemented(ContentStore::embedded(), &["xxcha"]);
+        assert!(
+            !missing.contains(&LeaderId::new("xxchacommander")),
+            "its effect lives in vote_bonus"
+        );
+        assert!(
+            missing.contains(&LeaderId::new("xxchahero")),
+            "and the one that genuinely does nothing is still reported"
+        );
+    }
 
     #[test]
     fn a_commander_with_no_registered_check_stays_locked() {

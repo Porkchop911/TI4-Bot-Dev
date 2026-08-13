@@ -681,6 +681,16 @@ fn the_subsystems_still_ask_the_faction_layer() {
             "crate::faction_abilities::waived_prerequisites",
         ),
         (
+            "invasion (shield)",
+            include_str!("invasion.rs"),
+            "crate::leaders::ignores_planetary_shield",
+        ),
+        (
+            "vote (commander votes)",
+            include_str!("vote.rs"),
+            "crate::leaders::vote_bonus",
+        ),
+        (
             "game (ceasefire)",
             include_str!("game.rs"),
             "crate::promissory::denies_movement_into",

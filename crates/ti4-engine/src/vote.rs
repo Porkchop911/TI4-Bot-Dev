@@ -364,7 +364,7 @@ impl VoteWindow {
                     let player = &self.order[*index];
                     if votable_planets(state, content, sources, player).is_empty() {
                         let (index, outcome, votes) = (*index, outcome.clone(), *votes);
-                        self.record(index, &outcome, votes);
+                        self.record(state, index, &outcome, votes);
                         self.stage = Stage::Outcome(index + 1);
                         continue;
                     }
@@ -376,10 +376,15 @@ impl VoteWindow {
     }
 
     /// Bank one player's votes, ignoring an outcome nobody actually paid for (8.14).
-    fn record(&mut self, index: usize, outcome: &str, votes: i64) {
+    ///
+    /// A commander's bonus is added here rather than at the card, so it cannot be honoured on
+    /// one voting path and forgotten on another. It rides on votes actually cast: a player who
+    /// exhausts nothing casts nothing, and a bonus alone is not a vote.
+    fn record(&mut self, state: &GameState, index: usize, outcome: &str, votes: i64) {
         if votes <= 0 {
             return;
         }
+        let votes = votes + crate::leaders::vote_bonus(state, &self.order[index]);
         self.ballot
             .votes
             .insert(self.order[index].clone(), outcome.to_owned());
@@ -438,7 +443,7 @@ impl VoteWindow {
                 votes,
             } => {
                 if option.is_decline() {
-                    self.record(index, &outcome, votes);
+                    self.record(state, index, &outcome, votes);
                     self.stage = Stage::Outcome(index + 1);
                 } else {
                     let planet = PlanetId::new(option.id);
