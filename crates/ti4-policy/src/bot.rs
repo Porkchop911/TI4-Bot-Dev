@@ -98,7 +98,9 @@ impl ScoredBot {
     pub fn raw_score(&self, choice: &Choice, option: &ChoiceOption) -> Components {
         match option.kind.as_str() {
             // Scoring is the only thing that wins a game, so it dominates every other reason.
-            "score" => Components::of("victory", 100.0),
+            // When two legal objectives are available, their printed points decide which score
+            // finishes the status window.
+            "score" => self.score_objective(option),
 
             // Declining is worth something — a real option, often the right one — but it is the
             // baseline every other option is measured against, not a competitor for the top.
@@ -517,6 +519,25 @@ impl ScoredBot {
         // Promissory-note prices depend on the particular note; a generic policy must not claim
         // that every note is worth its flat engine price.
         Components::of("unknown_trade", 0.0)
+    }
+
+    /// Every available objective is already legal and in this player's scoring window. Its
+    /// identity is therefore safe to inspect even for a secret: the choice itself is private to
+    /// its owner. Prefer the larger printed point award without reading unoffered secrets or
+    /// inventing a schedule from future hidden cards.
+    fn score_objective(&self, option: &ChoiceOption) -> Components {
+        let alias = option.id.strip_prefix("score|").unwrap_or(&option.id);
+        let points = [ContentType::PublicObjectives, ContentType::SecretObjectives]
+            .into_iter()
+            .find_map(|category| {
+                self.content
+                    .get(category, alias)
+                    .filter(|record| record.in_sources(self.sources))
+                    .and_then(|record| record.int("points"))
+                    .and_then(|points| i32::try_from(points).ok())
+            })
+            .unwrap_or(1);
+        Components::of("victory", 100.0 * f64::from(points))
     }
 
     /// Lose the cheapest thing. The one combat judgement available without the board: the label
@@ -1166,6 +1187,18 @@ mod tests {
         for _ in 0..50 {
             assert_eq!(bot.choose(&offer).unwrap().id, "score|expand_borders");
         }
+    }
+
+    #[test]
+    fn a_two_point_objective_beats_a_one_point_objective() {
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+        let objectives = choice("score", &["expand_borders", "master_science"]);
+
+        assert_eq!(bot.choose(&objectives).unwrap().id, "master_science");
+        assert!(
+            (bot.decisions[0].breakdown["master_science"].total() - 200.0).abs() < f64::EPSILON,
+            "the explanation preserves the printed two-point award"
+        );
     }
 
     #[test]
