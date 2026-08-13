@@ -42,6 +42,23 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Evidence: `plans/evidence/M08-005b.md`, `plans/evidence/M08-005c.md`,
   `plans/evidence/M08-005d.md`. Next safe action after committing is M08-006.
 
+### M08-006a public development checkpoint (2026-08-13)
+
+- Active branch: `wp/m08-006-economy-development`, based on `7fa7460`; focused local package
+  commit follows this state update.
+- Completed scope: observed research favours a missing colour path or a progressing unit-upgrade
+  route from face-up cards; strategy-card choice uses printed public roles; observed token gain
+  uses oracle `6 / 5 / 3` diminishing-return pool needs. Unknown or out-of-scope content retains
+  the blind fallback.
+- Verification: oracle integrity guard passed; `cargo fmt --all --check`; `cargo test -p
+  ti4-policy` (45 passed); `cargo test -p ti4-engine` (703 unit + 5 doc tests passed); `cargo
+  clippy -p ti4-policy -p ti4-engine --all-targets -- -D warnings`; and `git diff --check` all
+  passed. A deliberately inverted colour-gap mutation failed its focused decision-boundary test
+  and was restored.
+- Evidence: `plans/evidence/M08-006a.md`. Next safe package: M08-006b strategy-secondary and
+  payment/trade scoring, after checking which choice windows exist and whether their terms are
+  publicly represented.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.

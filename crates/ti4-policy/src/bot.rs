@@ -30,7 +30,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
-use ti4_model::content_types::{POK, SourceSet};
+use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::SystemId;
 
 use crate::scoring::{Components, Decision};
@@ -122,7 +122,7 @@ impl ScoredBot {
             "casualty" | "ground_casualty" => self.score_casualty(option),
             "sustain" => Components::of("absorb", 6.0),
             "research" => Components::of("technology", 6.0),
-            "strategy" | "strategy_card" => Self::score_strategy(option),
+            "strategy" | "strategy_card" => self.score_strategy(option),
             "vote" | "vote_planet" => Components::of("influence", 1.0),
             "reaction" | "ability" | "component" => Components::of("use", 4.0),
             "discard" | "return" | "remove" => Components::of("give_up", -1.0),
@@ -155,8 +155,77 @@ impl ScoredBot {
             "load" => self.score_load_seen(choice, option, seen),
             "land" => self.score_land_seen(choice, option, seen),
             "produce" => self.score_produce_seen(choice, option, seen),
+            "research" => self.score_research_seen(choice, option, seen),
+            "pool" => Self::score_pool_seen(choice, option, seen),
             _ => self.raw_score(choice, option),
         }
+    }
+
+    /// Public technology cards expose both their category and every player's existing face-up
+    /// technologies.  Before objective planning exists, prefer a missing colour path or the
+    /// next unit upgrade rather than letting legal research choices tie at random.
+    #[must_use]
+    fn score_research_seen(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        let Some(card) = self
+            .content
+            .get(ContentType::Technologies, &option.id)
+            .filter(|card| card.in_sources(self.sources))
+        else {
+            return self.raw_score(choice, option);
+        };
+        let Some(seat) = seen.seat(&choice.player) else {
+            return self.raw_score(choice, option);
+        };
+        let types = card.strings("types");
+        if types.contains(&"UNITUPGRADE") {
+            let held = f64::from(
+                i32::try_from(
+                    seat.technologies
+                        .iter()
+                        .filter(|technology| {
+                            self.content
+                                .get(ContentType::Technologies, technology.as_str())
+                                .filter(|known| known.in_sources(self.sources))
+                                .is_some_and(|known| {
+                                    known.strings("types").contains(&"UNITUPGRADE")
+                                })
+                        })
+                        .count(),
+                )
+                .expect("technology corpus count fits in i32"),
+            );
+            return Components::of("technology", 6.0)
+                .and("unit_upgrade", 2.0)
+                .and("upgrade_gap", 3.0 / (1.0 + held));
+        }
+        let Some(colour) = types
+            .into_iter()
+            .find(|kind| matches!(*kind, "PROPULSION" | "BIOTIC" | "CYBERNETIC" | "WARFARE"))
+        else {
+            return Components::of("technology", 6.0);
+        };
+        let held = f64::from(
+            i32::try_from(
+                seat.technologies
+                    .iter()
+                    .filter(|technology| {
+                        self.content
+                            .get(ContentType::Technologies, technology.as_str())
+                            .filter(|known| known.in_sources(self.sources))
+                            .is_some_and(|known| known.strings("types").contains(&colour))
+                    })
+                    .count(),
+            )
+            .expect("technology corpus count fits in i32"),
+        );
+        Components::of("technology", 6.0)
+            .and("colour_path", 2.0)
+            .and("colour_gap", 3.0 / (1.0 + held))
     }
 
     /// The public part of the oracle's `_score_move`: a hull is valuable when it has a job at
@@ -425,16 +494,30 @@ impl ScoredBot {
         Components::of("loss", -worth * damaged)
     }
 
-    /// Prefer a low initiative number, which moves earlier in every phase.
-    ///
-    /// Crude and deliberately so: which card is best depends on what a player is trying to do,
-    /// and that is [`crate::valuation`] territory the bot cannot reach from here.
-    fn score_strategy(option: &ChoiceOption) -> Components {
+    /// Strategy cards have printed, public economic roles.  The oracle's card preference is a
+    /// better default than treating initiative as the entire choice; later objective planning
+    /// may add demand-specific components without changing these baseline roles.
+    fn score_strategy(&self, option: &ChoiceOption) -> Components {
         let initiative = option
             .payload
             .get("initiative")
             .and_then(serde_json::Value::as_f64);
-        let mut score = Components::of("take_card", 5.0);
+        let name = self
+            .content
+            .get(ContentType::StrategyCards, &option.id)
+            .filter(|card| card.in_sources(self.sources))
+            .and_then(|card| card.text("name"));
+        let preference = match name {
+            Some("Imperial") => 9.0,
+            Some("Technology") => 7.0,
+            Some("Leadership") => 6.0,
+            Some("Warfare") => 5.0,
+            Some("Construction" | "Trade") => 4.0,
+            Some("Politics") => 3.0,
+            Some("Diplomacy") => 2.0,
+            _ => 1.0,
+        };
+        let mut score = Components::of("card_preference", preference);
         if let Some(initiative) = initiative {
             score = score.and("initiative", -0.3 * initiative);
         }
@@ -449,6 +532,22 @@ impl ScoredBot {
             id if id.contains("fleet") => Components::of("tokens", 2.0),
             _ => Components::of("tokens", 1.5),
         }
+    }
+
+    /// The value of a command token diminishes with the visible number already in that pool.
+    /// Strategy-pool tokens are deliberately close to tactics when empty: they enable every
+    /// secondary ability, instead of being starved by a static tactic-first ranking.
+    fn score_pool_seen(choice: &Choice, option: &ChoiceOption, seen: &Observed<'_>) -> Components {
+        let Some(seat) = seen.seat(&choice.player) else {
+            return Self::score_pool(choice, option);
+        };
+        let (need, held) = match option.id.as_str() {
+            "tactic_tokens" => (6.0, seat.tactic_tokens),
+            "strategic_tokens" => (5.0, seat.strategic_tokens),
+            "fleet_tokens" => (3.0, seat.fleet_tokens),
+            _ => return Self::score_pool(choice, option),
+        };
+        Components::of("pool_need", need / (1.0 + f64::from(held.max(0))))
     }
 
     /// The options this bot will pick between, which is not always all of them.
@@ -1102,6 +1201,73 @@ mod tests {
         assert!(
             score_of(&bot, &bills, 1) > score_of(&bot, &bills, 2),
             "and the tightest fit wastes the least"
+        );
+    }
+
+    #[test]
+    fn public_research_prefers_a_missing_colour_path() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        state
+            .player_mut(&player)
+            .expect("fixture has player a")
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("amd"));
+        let research = choice("research", &["gd", "nm"]);
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&research, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "nm",
+            "a second propulsion card loses to starting the visible biotic path"
+        );
+        assert!(
+            bot.decisions[0].breakdown["nm"]
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "colour_gap")
+        );
+    }
+
+    #[test]
+    fn printed_strategy_roles_outweigh_initiative_alone() {
+        let mut bot = ScoredBot::new(4).at_temperature(0.01);
+        let cards = choice("strategy_card", &["base2", "pok1leadership"]);
+
+        assert_eq!(
+            bot.choose(&cards).unwrap().id,
+            "pok1leadership",
+            "Leadership's token economy beats Diplomacy's earlier initiative by its printed role"
+        );
+    }
+
+    #[test]
+    fn public_empty_strategy_pool_beats_a_crowded_tactic_pool() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let seat = state.player_mut(&player).expect("fixture has player a");
+        seat.tactic_tokens = 5;
+        seat.strategic_tokens = 0;
+        seat.fleet_tokens = 2;
+        let pools = choice(
+            "pool",
+            &["tactic_tokens", "strategic_tokens", "fleet_tokens"],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&pools, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "strategic_tokens"
+        );
+        assert!(
+            bot.decisions[0].breakdown["strategic_tokens"]
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "pool_need")
         );
     }
 
