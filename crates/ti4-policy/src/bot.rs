@@ -152,6 +152,8 @@ impl ScoredBot {
                 )
             }
             "move" => self.score_move_seen(choice, option, seen),
+            "load" => self.score_load_seen(choice, option, seen),
+            "land" => self.score_land_seen(choice, option, seen),
             _ => self.raw_score(choice, option),
         }
     }
@@ -223,6 +225,98 @@ impl ScoredBot {
             score = score.and("lift", 2.0 * f64::from(carried));
         }
         score
+    }
+
+    /// Cargo is useful when it fills a real transport role, especially before an activation with
+    /// a public prize.  The option label carries the unit type because cargo ids are deliberately
+    /// only stable indices into the window's private candidate list.
+    #[must_use]
+    fn score_load_seen(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        let unit_id = option
+            .label
+            .strip_prefix("load ")
+            .and_then(|label| label.split_once(" from ").map(|(unit, _)| unit));
+        let Some(unit_id) = unit_id else {
+            return self.raw_score(choice, option);
+        };
+        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+        let Some(unit) = types.get(unit_id) else {
+            return self.raw_score(choice, option);
+        };
+        let mut score = if unit.is_ground_force() {
+            Components::of("transport", 6.0)
+        } else if unit.is_fighter() {
+            Components::of("screen", 2.0)
+        } else {
+            return self.raw_score(choice, option);
+        };
+        if let Some(target) = seen.active_system() {
+            score = score.and(
+                "destination_value",
+                0.5 * crate::valuation::system_value(seen, &choice.player, target),
+            );
+        }
+        score
+    }
+
+    /// The public part of the oracle's `_score_commit`: a ground force lands to take a planet,
+    /// not to make an already superior friendly garrison larger.
+    #[must_use]
+    fn score_land_seen(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        let Some((index, planet)) = land_index_and_planet(&option.id) else {
+            return self.raw_score(choice, option);
+        };
+        let Some(target) = seen.active_system() else {
+            return self.raw_score(choice, option);
+        };
+        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+        let system = seen.system(target);
+        let offered_troop = system
+            .units
+            .iter()
+            .filter(|unit| {
+                unit.owner == choice.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ground_force)
+            })
+            .nth(index);
+        if offered_troop.is_none() {
+            return self.raw_score(choice, option);
+        }
+        let planet = ti4_model::id::PlanetId::new(planet);
+        let (mine, defenders) = system.planet_units.get(&planet).map_or((0, 0), |units| {
+            units.iter().fold((0, 0), |(mine, defenders), unit| {
+                if !types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                {
+                    return (mine, defenders);
+                }
+                if unit.owner == choice.player {
+                    (mine + 1, defenders)
+                } else {
+                    (mine, defenders + 1)
+                }
+            })
+        });
+        if mine > defenders {
+            return Components::of("already_held", 0.2);
+        }
+        Components::of("invade", 12.0).and(
+            "planet_value",
+            crate::valuation::planet_value(seen, &choice.player, &planet),
+        )
     }
 
     /// Acting beats passing, and a strategic action beats an ordinary one because a strategy card
@@ -517,6 +611,14 @@ fn move_origin_and_index(id: &str) -> Option<(&str, usize)> {
     parts.next().is_none().then_some((origin, index))
 }
 
+fn land_index_and_planet(id: &str) -> Option<(usize, &str)> {
+    let mut parts = id.split('|');
+    (parts.next()? == "land").then_some(())?;
+    let index = parts.next()?.parse().ok()?;
+    let planet = parts.next()?;
+    parts.next().is_none().then_some((index, planet))
+}
+
 fn ground_riders(
     system: &ti4_model::state::SystemState,
     player: &ti4_model::id::PlayerId,
@@ -658,6 +760,14 @@ mod tests {
         }
     }
 
+    fn first_planet(system: &ti4_model::id::SystemId) -> ti4_model::id::PlanetId {
+        ti4_content::galaxy::planets_in(ContentStore::embedded(), system.as_str(), POK)
+            .into_iter()
+            .next()
+            .map(|planet| ti4_model::id::PlanetId::new(planet.id()))
+            .expect("the target fixture contains a planet")
+    }
+
     #[test]
     fn seeing_the_board_removes_unreachable_activations_from_the_shortlist() {
         // This is the oracle's `_worth_considering` rule, not legality: both systems remain
@@ -751,6 +861,68 @@ mod tests {
                 .id,
             "decline",
             "an idle carrier joining an already-secured system loses to finishing movement"
+        );
+    }
+
+    #[test]
+    fn seeing_the_board_loads_troops_for_a_prize_and_avoids_surplus_landings() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let target = ti4_model::id::SystemId::new(hub.centre.clone());
+        let planet = first_planet(&target);
+        state.active_system = Some(target.clone());
+        ti4_engine::fixtures::put(&mut state, &target, "infantry", &player, 1);
+
+        let cargo = Choice::new(
+            player.clone(),
+            "load which unit",
+            vec![
+                ChoiceOption::labelled("load|0", "load", "load infantry from space"),
+                ChoiceOption::decline(),
+            ],
+        );
+        let mut loader = ScoredBot::new(4).at_temperature(0.01).remembering();
+        assert_eq!(
+            loader
+                .choose_seeing(&cargo, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "load|0"
+        );
+        assert!(
+            loader.decisions[0]
+                .breakdown
+                .get("load|0")
+                .is_some_and(|score| score.parts().iter().any(|(name, _)| *name == "transport")),
+            "the decision explains that the troop is cargo, not a flat action"
+        );
+
+        let landing = Choice::new(
+            player.clone(),
+            "commit ground forces",
+            vec![
+                ChoiceOption::new(format!("land|0|{planet}"), "land"),
+                ChoiceOption::decline(),
+            ],
+        );
+        let mut invader = ScoredBot::new(4).at_temperature(0.01);
+        assert_eq!(
+            invader
+                .choose_seeing(&landing, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .kind,
+            "land",
+            "an uncontrolled planet is worth committing the first ground force"
+        );
+
+        ti4_engine::fixtures::put_on_planet(&mut state, &target, &planet, "infantry", &player, 2);
+        let mut held = ScoredBot::new(4).at_temperature(0.01);
+        assert_eq!(
+            held.choose_seeing(&landing, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "decline",
+            "a superior friendly garrison does not need another troop"
         );
     }
 
