@@ -156,6 +156,43 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   last compaction checkpoint; write a fresh handover before the next package. Next safe scope:
   token reserve facts or another public goal family, not secret/mixed-cost/schedule planning.
 
+### M10-020 atomic checkpoints checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007f-public-trade-good-reserves`; commit `bdb16b4`.
+- Implemented `Checkpoint` struct (schema 1) matching the oracle's JSON checkpoint format.
+- `Archive` with crash-safe atomic writes (temp file + rename), SHA-256 checksums, schema
+  validation, and interrupted-temp detection.
+- `Horizon` and `Run` now derive `Serialize`/`Deserialize`.
+- 10 new tests: schema, round-trip, resume, mark_complete, not_found, interrupted_temp,
+  deterministic checksum, changing checksum.
+- Verification: 52 training tests + 986 workspace tests pass; clippy clean; format clean.
+- Evidence: `plans/evidence/M10-020.md`.
+
+### M10-008 parallel batch runner checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007f-public-trade-good-reserves`; commit `e743bff`.
+- `play_batch()` divides seeds into chunks by `available_parallelism()`, spawns one thread per
+  chunk, collects results sorted by seed.
+- `train()` updated to use `play_batch` instead of sequential `play`.
+- 4 new tests: batch count, seed ordering, determinism, empty input.
+- Performance: 0.056 s/game single-threaded → estimated < 1 hour for 1M games across 32 cores.
+- Verification: 56 training tests + 986 workspace tests pass; clippy clean; format clean.
+- Evidence: `plans/evidence/M10-008.md`.
+
+### M10-017 champion/learner promotion checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007f-public-trade-good-reserves`; commit `ed07139`.
+- Replaced `promotion.rs` stub with full champion/learner separation implementation.
+- `PanelMetrics`/`FactionMetrics` mirror oracle's `metrics()` output.
+- `PromotionConfig` with configurable thresholds (shortfall_margin, regression allowances).
+- `Promotion` struct with `acceptable_assembled()`, `is_better()`, `promote()`, `apply_promotion()`.
+- `PromotionResult` with `promoted` factions, `accepted_kind` (Assembled/Isolated/None).
+- Assembled path: all factions pass clearance + shortfall vetoes + aggregate gain.
+- Isolated path: individual factions promoted when better AND veto still passes.
+- 14 new tests covering all promotion paths, config defaults, serialization.
+- Verification: 71 training tests + 987 workspace tests pass; clippy clean; format clean.
+- Evidence: `plans/evidence/M10-017.md`.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
