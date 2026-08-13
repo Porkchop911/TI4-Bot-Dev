@@ -113,11 +113,31 @@ pub fn planet_multipliers(
     {
         factors.insert("enemy_homeworld", 1.3);
     }
+    if has_unscored_public_goal(
+        seen,
+        player,
+        &[
+            "expand_borders",
+            "subdue",
+            "push_boundaries",
+            "ancient_monuments",
+            "lost_outposts",
+        ],
+    ) {
+        factors.insert("public_planet_goal", 1.25);
+    }
     factors.insert(
         "objective_pressure",
         clamp(1.0 + 0.15 * objective_pressure(seen, player)),
     );
     factors
+}
+
+fn has_unscored_public_goal(seen: &Observed<'_>, player: &PlayerId, aliases: &[&str]) -> bool {
+    let scored = seen.scored_by(player);
+    seen.revealed_objectives()
+        .iter()
+        .any(|goal| aliases.contains(&goal.as_str()) && !scored.contains(goal))
 }
 
 /// How close the player is to a revealed objective they could still score.
@@ -354,6 +374,35 @@ mod tests {
         assert!(
             objective_pressure(&watching(&state), &player).abs() < f64::EPSILON,
             "an unscorable objective applies no pressure"
+        );
+    }
+
+    #[test]
+    fn public_planet_goal_raises_the_value_of_planets() {
+        let player = PlayerId::new("a");
+        let mut focused = table();
+        focused.revealed_objectives.clear();
+        focused
+            .revealed_objectives
+            .push(ti4_model::id::ObjectiveId::new("expand_borders"));
+        let mut unrelated = table();
+        unrelated.revealed_objectives.clear();
+        unrelated
+            .revealed_objectives
+            .push(ti4_model::id::ObjectiveId::new("develop"));
+
+        let planet = PlanetId::new("mr");
+        let focused_factors = planet_multipliers(
+            &watching(&focused),
+            &player,
+            &ti4_content::galaxy::all_planets(store(), POK)["mr"],
+        );
+        assert!(focused_factors.contains_key("public_planet_goal"));
+        let focused_value = planet_value(&watching(&focused), &player, &planet);
+        let unrelated_value = planet_value(&watching(&unrelated), &player, &planet);
+        assert!(
+            focused_value > unrelated_value,
+            "focused {focused_value}, unrelated {unrelated_value}, factors {focused_factors:?}"
         );
     }
 

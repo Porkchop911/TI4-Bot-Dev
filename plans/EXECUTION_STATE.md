@@ -103,6 +103,15 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Evidence: `plans/evidence/M08-007b.md`. Next: another M08-007 child for a distinct public goal
   family or a documented reservation observation API, after package scoping.
 
+### M08-007c public planet-progress checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007c-planet-progress`; focused package commit follows this state update.
+- Unscored revealed planet-control objectives add a named public valuation factor without reading
+  secret/private state. Full affected-package checks pass; the 1.0-factor mutation fails the
+  decision-boundary test and was restored.
+- Evidence: `plans/evidence/M08-007c.md`. Next M08-007 package must scope a distinct public goal
+  family or a safe reservation observation; do not expose private exhaustion as a shortcut.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
