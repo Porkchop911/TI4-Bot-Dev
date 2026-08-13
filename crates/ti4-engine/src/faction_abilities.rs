@@ -147,21 +147,128 @@ pub fn status_tokens(
 }
 
 /// Prerequisites this player may skip when researching `technology`.
+///
+/// Analytical's window is explicit that it does not open for unit upgrades. 90.7b: an upgrade
+/// has no colour and satisfies no prerequisite of its own, but it still *carries* them — Carrier
+/// II needs two blue — so a lookup that waived a slot for any technology would let Jol-Nar
+/// research upgrades this ability was never meant to touch.
 #[must_use]
 pub fn waived_prerequisites(
     state: &GameState,
     content: &ContentStore,
+    #[expect(
+        unused_variables,
+        reason = "kept in the contract: an ability scoped to a source set is a question this                   will have to answer, and adding it later would touch every call site"
+    )]
+    sources: SourceSet,
     player: &PlayerId,
-    _technology: &str,
+    technology: &str,
 ) -> usize {
+    let is_upgrade = content
+        .get(ContentType::Technologies, technology)
+        // The corpus names it `baseUpgrade`: the unit whose card this replaces. A guess at
+        // `unitUpgrade` matched nothing, which made the ability waive for upgrades too and the
+        // test that was meant to catch it vacuous.
+        .is_some_and(|record| {
+            record
+                .text("baseUpgrade")
+                .is_some_and(|base| !base.is_empty())
+        });
     of_player(state, content, player)
         .iter()
         .map(|ability| match ability.as_str() {
-            // Jol-Nar's Brilliant: one prerequisite waived on any technology.
-            "brilliant" => 1,
+            // Analytical waives; Brilliant does not. Brilliant swaps the Technology *secondary*
+            // for its primary — see `substitutes_primary`. Registering it here as well gave
+            // Jol-Nar two waivers, which is a technology a turn they were never owed.
+            "analytical" if !is_upgrade => 1,
             _ => 0,
         })
         .sum()
+}
+
+/// Strategy-card secondaries this player resolves as the *primary* instead.
+///
+/// Jol-Nar's Brilliant swaps Technology's secondary for its primary — a different ability with
+/// its own costs, not a modifier on the one already running. The card is named rather than the
+/// ability written to apply everywhere: a faction that could swap any secondary for its primary
+/// would be playing a different game.
+#[must_use]
+pub fn substitutes_primary(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    card: &str,
+) -> bool {
+    of_player(state, content, player).iter().any(|ability| {
+        matches!(ability.as_str(), "brilliant") && card.eq_ignore_ascii_case("technology")
+    })
+}
+
+/// Convert structures on a planet this player has just taken (L1Z1X's Assimilate).
+///
+/// 31.4 applies to a structure changing hands as much as to one built: the plastic becomes
+/// L1Z1X's, so it comes out of L1Z1X's box, and taking a seventh PDS against the six they own is
+/// as impossible as building one. Counted as it goes, because two structures on one planet would
+/// otherwise both pass a check made once.
+pub fn control_gained(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &ti4_model::id::SystemId,
+    planet: &ti4_model::id::PlanetId,
+) {
+    if !has(state, content, player, "assimilate") {
+        return;
+    }
+    let faction = state
+        .player(player)
+        .map(|seat| seat.faction.to_string())
+        .unwrap_or_default();
+    let types = ti4_content::units::catalogue(content, sources);
+    let standing = state
+        .system_state(system)
+        .planet_units
+        .get(planet)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut taken: BTreeMap<String, usize> = BTreeMap::new();
+    let mut converted = Vec::with_capacity(standing.len());
+    for unit in standing {
+        let base = types
+            .get(unit.type_id.as_str())
+            .map(|kind| kind.base_type().to_owned());
+        let convertible = base
+            .as_deref()
+            .is_some_and(|base| matches!(base, "pds" | "spacedock"));
+        if &unit.owner != player && convertible {
+            let base = base.unwrap_or_default();
+            let already = taken.get(&base).copied().unwrap_or(0);
+            let room = crate::supply::remaining(
+                state,
+                content,
+                sources,
+                player,
+                &ti4_model::id::UnitTypeId::new(&base),
+            ) - i64::try_from(already).unwrap_or(i64::MAX);
+            if room > 0 {
+                let own = ti4_content::units::faction_unit(content, &faction, &base, sources)
+                    .map_or(base.clone(), |unit| unit.id().to_owned());
+                *taken.entry(base).or_default() += 1;
+                converted.push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new(own),
+                    player.clone(),
+                ));
+                continue;
+            }
+        }
+        converted.push(unit);
+    }
+    state
+        .system_mut(system)
+        .planet_units
+        .insert(planet.clone(), converted);
 }
 
 /// Whether this player may include an action card in a transaction (94.3's exception).
@@ -211,8 +318,10 @@ pub fn catalogue(content: &ContentStore, sources: SourceSet) -> Vec<String> {
 #[must_use]
 pub fn registered() -> Vec<&'static str> {
     vec![
+        "analytical",
         "arbiters",
         "armada",
+        "assimilate",
         "brilliant",
         "fragile",
         "guild_ships",
@@ -263,7 +372,10 @@ mod tests {
         let content = ContentStore::embedded();
 
         assert_eq!(fleet_supply(&state, content, &player, 4), 4);
-        assert_eq!(waived_prerequisites(&state, content, &player, "any"), 0);
+        assert_eq!(
+            waived_prerequisites(&state, content, POK, &player, "any"),
+            0
+        );
         assert!(!trades_action_cards(&state, content, &player));
         assert!(!ignores_neighbours(&state, content, &player));
     }
@@ -374,6 +486,131 @@ mod tests {
             crate::transactions::partners(&state, content, &hub.galaxy, &player).is_empty(),
             "and nobody else gets it"
         );
+    }
+
+    #[test]
+    fn analytical_waives_a_prerequisite_but_not_for_a_unit_upgrade() {
+        // 90.7b is the whole point of the ability's window: an upgrade carries prerequisites but
+        // the card does not open for it, so waiving there would research upgrades it never meant
+        // to touch.
+        let Some(jolnar) = faction_with("analytical") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (state, player) = seated(&jolnar);
+
+        let upgrade = content
+            .from_sources(ContentType::Technologies, POK)
+            .find(|record| {
+                record
+                    .text("baseUpgrade")
+                    .is_some_and(|base| !base.is_empty())
+            })
+            .and_then(|record| record.text("alias").map(ToOwned::to_owned));
+        let ordinary = content
+            .from_sources(ContentType::Technologies, POK)
+            .find(|record| {
+                record.text("baseUpgrade").is_none_or(str::is_empty)
+                    && record.text("faction").is_none()
+            })
+            .and_then(|record| record.text("alias").map(ToOwned::to_owned));
+        let (Some(upgrade), Some(ordinary)) = (upgrade, ordinary) else {
+            panic!("the corpus has both a unit upgrade and an ordinary technology");
+        };
+
+        assert_eq!(
+            waived_prerequisites(&state, content, POK, &player, &ordinary),
+            1,
+            "an ordinary technology gets the waiver"
+        );
+        assert_eq!(
+            waived_prerequisites(&state, content, POK, &player, &upgrade),
+            0,
+            "a unit upgrade does not"
+        );
+    }
+
+    #[test]
+    fn a_waived_prerequisite_reaches_what_can_actually_be_researched() {
+        // The hook existing is not the subsystem asking it.
+        let Some(jolnar) = faction_with("analytical") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (state, player) = seated(&jolnar);
+        let (plain, other) = seated("sol");
+
+        let theirs = crate::technology::researchable(&state, content, POK, &player).len();
+        let ordinary = crate::technology::researchable(&plain, content, POK, &other).len();
+
+        assert!(
+            theirs > ordinary,
+            "a waived prerequisite opens more technologies: {theirs} against {ordinary}"
+        );
+    }
+
+    #[test]
+    fn assimilate_takes_the_structures_and_pays_for_them_out_of_its_own_box() {
+        // 31.4 applies to a structure changing hands as much as to one built: a seventh PDS is
+        // as impossible taken as it is built.
+        let Some(l1z1x) = faction_with("assimilate") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&l1z1x);
+        let rival = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &rival, 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &rival, 1);
+
+        control_gained(&mut state, content, POK, &player, &system, &planet);
+
+        let units = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        let mine: Vec<&ti4_model::units::Unit> =
+            units.iter().filter(|unit| unit.owner == player).collect();
+        assert_eq!(mine.len(), 1, "the structure changed hands");
+        assert!(
+            units.iter().any(|unit| unit.owner == rival),
+            "and the ground forces did not"
+        );
+    }
+
+    #[test]
+    fn assimilate_stops_at_the_box() {
+        let Some(l1z1x) = faction_with("assimilate") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&l1z1x);
+        let rival = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        // Every PDS this player owns is already on the board somewhere.
+        let elsewhere = crate::fixtures::plain_systems(2);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &ti4_model::id::SystemId::new(elsewhere[0].clone()),
+            &planet,
+            "pds",
+            &player,
+            6,
+        );
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &rival, 1);
+
+        control_gained(&mut state, content, POK, &player, &system, &planet);
+
+        let taken = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .map_or(0, |units| {
+                units.iter().filter(|unit| unit.owner == player).count()
+            });
+        assert_eq!(taken, 0, "there is no seventh PDS to take it with");
     }
 
     #[test]

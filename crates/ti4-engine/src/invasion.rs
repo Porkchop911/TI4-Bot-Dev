@@ -579,6 +579,19 @@ impl InvasionWindow {
             &self.invader,
             &self.report.committed,
         );
+        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
+        // anything else looks at what is standing on it.
+        for (planet, _) in self.report.captured.clone().iter().skip(taken_before) {
+            crate::faction_abilities::control_gained(
+                state,
+                content,
+                sources,
+                &self.invader,
+                &self.system,
+                planet,
+            );
+        }
+
         // Two printed windows read "when you gain control of a planet", so a capture is
         // announced before the exploration that follows it.
         for (planet, _) in self.report.captured.iter().skip(taken_before) {

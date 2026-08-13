@@ -167,11 +167,30 @@ pub fn can_research(
 
     let held = owned_colours(state, content, player);
     let specialties = specialties(state, content, sources, player);
+    // A faction may waive whole prerequisite slots — Jol-Nar's Brilliant on anything, Analytical
+    // on anything that is not a unit upgrade. Applied as a budget across the requirement rather
+    // than per colour, because the card says "ignore 1 prerequisite", not "one of each".
+    let mut waivable = crate::faction_abilities::waived_prerequisites(
+        state,
+        content,
+        sources,
+        player,
+        alias.as_str(),
+    );
     prerequisites(content, alias)
         .into_iter()
         .all(|(colour, need)| {
-            held.get(colour).copied().unwrap_or(0) + specialties.get(colour).copied().unwrap_or(0)
-                >= need
+            let have = held.get(colour).copied().unwrap_or(0)
+                + specialties.get(colour).copied().unwrap_or(0);
+            if have >= need {
+                return true;
+            }
+            let short = need - have;
+            if waivable >= short {
+                waivable -= short;
+                return true;
+            }
+            false
         })
 }
 
