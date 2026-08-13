@@ -21,13 +21,19 @@
 //! What is available is *the same workload shape*: the same seats, seeds, horizon and generation
 //! count, from blank profiles, completing without error. That is what [`SemanticGate`] checks.
 //!
-//! The sample also records **how many decisions were actually taken**, and that number is not a
-//! detail. Measured on one seed, the two engines play the same rounds — 1 to 4 on both sides — and
-//! raise 51/85/52 decisions against 118/122/157. The games are not shorter; whole categories of
-//! decision never arise, because unimplemented reaction windows, faction abilities and card effects
-//! ask nothing. So time per generation compares equal games doing unequal work, and time per
-//! decision compares unequal mixes of work. Report both, claim neither as *the* speedup, and expect
-//! a clean figure only at parity.
+//! The sample also records **how many decisions were actually taken**, and that number needs
+//! reading carefully. Measured on one seed over four rounds, this engine raises 188 decisions
+//! where the oracle raises about 358 — but the games are the same length, and the policy records
+//! every one of the 188, so neither "shorter games" nor "answered blind" explains it.
+//!
+//! Two things do. Swapping only the policy, blank learned for the authored bot on the same engine
+//! and seed, moves 188 to 245 and makes loading and committing appear at all: a uniformly-random
+//! policy declines its way past them. The remainder is engine surface — production, payment,
+//! scoring, ability, development and agenda raise nothing here, and trade raises 18 against 66.
+//!
+//! So time per generation compares equal games doing unequal work, and time per decision compares
+//! unequal mixes of work by policies that do not behave alike. Report both, claim neither as *the*
+//! speedup, and expect a clean figure only at parity.
 
 use std::time::Duration;
 

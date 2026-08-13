@@ -19,17 +19,27 @@ Two honesty constraints are built in rather than left to the reader.
 factions turn four seeds into twelve games. Asking both sides for "four" would have compared four
 Rust games against twelve Python ones. The orchestrator matches the total game count instead.
 
-**Per decision, not only per generation.** The two engines are not at parity, and the Rust side
-raises far fewer decision *points* in the same game: measured on one seed, 51/85/52 decisions
-against 118/122/157, with both sides playing rounds 1 to 4. The games are not shorter — the round
-counts are identical — but whole categories of decision never arise, because eleven reaction
-windows, six faction abilities and half the agenda effects are unimplemented, and a card that
-cannot resolve raises none of the follow-up choices it would.
+**Per decision, not only per generation.** The two sides raise different numbers of decisions in
+the same game, and the reason is worth stating precisely because two plausible explanations are
+both wrong.
 
-So neither figure alone is "the speedup". Per game compares the same amount of *game* while the
-two sides do different amounts of *work*; per decision compares per unit of work while the units
-are not the same mix. Both are printed, and a clean like-for-like number is only available at
-parity.
+Measured on one seed, four rounds, three seats: Rust raises 188 decisions, the oracle about 358.
+Both play rounds 1 to 4, so the games are not shorter. The learned policy records 188 of 188, so
+nothing is being answered without the policy seeing it. And it is not action-card availability: a
+player with fewer playable cards still faces the same "play a card?" question, only with fewer
+options on it.
+
+What it actually is, in two parts. Swapping only the policy — blank learned for the authored
+scored bot, same engine and seed — takes Rust from 188 decisions to 245, and makes `load which
+unit` (22) and `commit ground forces` (12) appear where there had been none. A uniformly-random
+policy declines to load and declines to move, so it never reaches committing, production or
+payment. The rest is engine surface: against the oracle's per-game figures this side raises no
+production, payment, scoring, ability, development or agenda decisions at all, and 18 trade
+decisions against 66.
+
+So per game compares equal games in which the two sides do unequal amounts of work, and per
+decision compares unequal mixes of work by two policies that do not behave alike. Both are
+printed. Neither is "the speedup", and a clean like-for-like figure needs parity.
 
 Usage:
     python tools/benchmark_training.py --games 12 --seats 3 --pairs 30
