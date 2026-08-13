@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Observed, SeededRandom, Table};
 use ti4_engine::game::Game;
@@ -31,7 +32,7 @@ use ti4_policy::progress::{Baseline, Progress};
 use crate::reward::Episode;
 
 /// How far a rollout is allowed to run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Horizon {
     /// Rounds to play.
     pub rounds: u32,

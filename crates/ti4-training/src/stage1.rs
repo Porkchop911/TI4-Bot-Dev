@@ -114,7 +114,7 @@ impl Generation {
 }
 
 /// A finished run.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Run {
     /// The fitted profile per seat.
     pub profiles: BTreeMap<PlayerId, Profile>,
