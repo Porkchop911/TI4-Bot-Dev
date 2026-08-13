@@ -479,6 +479,51 @@ pub fn ground_combat_round_ended(
     hits
 }
 
+/// The cost of Munitions Reserves, paid at each combat round's opening window.
+const MUNITIONS_COST: i32 = 2;
+
+/// Offer anything a faction does at the start of a space-combat round.
+///
+/// Letnev's Munitions Reserves is paid *per round*: the marker is scoped to
+/// `combat_round_seq`, so paying once does not buy rerolls for the rest of the fight.
+pub fn space_combat_round_started(
+    state: &mut GameState,
+    content: &ContentStore,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+) {
+    if !has(state, content, player, "munitions") {
+        return;
+    }
+    let held = state.player(player).map_or(0, |seat| seat.trade_goods);
+    if held < MUNITIONS_COST {
+        return; // it cannot resolve, so it is not offered
+    }
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "spend 2 trade goods for Munitions Reserves",
+        vec![
+            crate::choice::ChoiceOption::labelled(
+                "munitions",
+                "ability",
+                "reroll this round's misses",
+            ),
+            crate::choice::ChoiceOption::decline(),
+        ],
+    );
+    let Ok(answer) = table.ask(&choice) else {
+        return;
+    };
+    if answer.is_decline() {
+        return;
+    }
+    let round = state.combat_round_seq;
+    if let Some(seat) = state.player_mut(player) {
+        seat.trade_goods -= MUNITIONS_COST;
+        seat.munitions_round = Some(round);
+    }
+}
+
 // -- coverage ------------------------------------------------------------------------------------
 
 /// Every ability the corpus prints, by id.
@@ -504,6 +549,7 @@ pub fn registered() -> Vec<&'static str> {
         "guild_ships",
         "harrow",
         "master_of_trade",
+        "munitions",
         "orbital_drop",
         "peace_accords",
         "unrelenting",
@@ -944,6 +990,55 @@ mod tests {
             0,
             "and nobody else gets it"
         );
+    }
+
+    #[test]
+    fn munitions_reserves_is_paid_per_round_not_per_fight() {
+        // The marker is scoped to the combat round, so paying once does not buy rerolls for the
+        // rest of the fight — which is what an unscoped flag would do.
+        let Some(letnev) = faction_with("munitions") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&letnev);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        state.combat_round_seq = 3;
+        let mut table = crate::choice::Table::new();
+
+        space_combat_round_started(&mut state, content, &mut table, &player);
+
+        let seat = state.player(&player).unwrap();
+        assert_eq!(seat.trade_goods, 3, "two paid");
+        assert_eq!(seat.munitions_round, Some(3), "for this round only");
+    }
+
+    #[test]
+    fn munitions_reserves_is_not_offered_to_a_player_who_cannot_pay() {
+        let Some(letnev) = faction_with("munitions") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&letnev);
+        state.player_mut(&player).unwrap().trade_goods = 1;
+        let mut table = crate::choice::Table::new();
+
+        space_combat_round_started(&mut state, content, &mut table, &player);
+
+        let seat = state.player(&player).unwrap();
+        assert_eq!(seat.trade_goods, 1, "nothing was taken");
+        assert_eq!(seat.munitions_round, None);
+    }
+
+    #[test]
+    fn another_faction_is_never_charged_for_munitions() {
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated("sol");
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        let mut table = crate::choice::Table::new();
+
+        space_combat_round_started(&mut state, content, &mut table, &player);
+
+        assert_eq!(state.player(&player).unwrap().trade_goods, 5);
     }
 
     #[test]

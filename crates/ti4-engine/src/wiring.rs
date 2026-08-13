@@ -681,6 +681,11 @@ fn the_subsystems_still_ask_the_faction_layer() {
             "crate::faction_abilities::waived_prerequisites",
         ),
         (
+            "combat (round window)",
+            include_str!("combat.rs"),
+            "crate::faction_abilities::space_combat_round_started",
+        ),
+        (
             "invasion (control)",
             include_str!("invasion.rs"),
             "crate::faction_abilities::control_gained",

@@ -856,6 +856,12 @@ impl CombatWindow {
         }
         let _ = ctx.emit(state, "COMBAT_ROUND_STARTED", payload);
 
+        // Faction offers made at the round's opening window, before any dice: Letnev pays for
+        // Munitions Reserves here, and `reroll_munitions_misses` reads the marker below.
+        for side in [self.attacker.clone(), self.defender.clone()] {
+            crate::faction_abilities::space_combat_round_started(state, content, ctx.table, &side);
+        }
+
         if round == 1 {
             anti_fighter_barrage(
                 state,
