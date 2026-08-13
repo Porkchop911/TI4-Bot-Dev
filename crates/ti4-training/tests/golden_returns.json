@@ -1,0 +1,266 @@
+[
+ {
+  "stage": 1,
+  "steps": [
+   {
+    "planets_gained": 0,
+    "systems": 1,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 1,
+    "systems": 2,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   }
+  ],
+  "final": {
+   "planets_gained": 2,
+   "systems": 3,
+   "units_gained": 0,
+   "victory_points": 0,
+   "scoreable_public": 0,
+   "scoreable_secret": 0,
+   "round_number": 1
+  },
+  "cleared": false,
+  "shortfall": 3.0,
+  "traded_goods": 0.0,
+  "returns": [
+   8.0,
+   4.0
+  ]
+ },
+ {
+  "stage": 1,
+  "steps": [
+   {
+    "planets_gained": 0,
+    "systems": 1,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 2,
+    "systems": 2,
+    "units_gained": 1,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   }
+  ],
+  "final": {
+   "planets_gained": 3,
+   "systems": 3,
+   "units_gained": 1,
+   "victory_points": 0,
+   "scoreable_public": 0,
+   "scoreable_secret": 0,
+   "round_number": 1
+  },
+  "cleared": true,
+  "shortfall": 0.0,
+  "traded_goods": 0.0,
+  "returns": [
+   33.0,
+   26.0
+  ]
+ },
+ {
+  "stage": 1,
+  "steps": [
+   {
+    "planets_gained": 30,
+    "systems": 30,
+    "units_gained": 30,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 3,
+    "systems": 3,
+    "units_gained": 1,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   }
+  ],
+  "final": {
+   "planets_gained": 3,
+   "systems": 3,
+   "units_gained": 1,
+   "victory_points": 0,
+   "scoreable_public": 0,
+   "scoreable_secret": 0,
+   "round_number": 1
+  },
+  "cleared": true,
+  "shortfall": 0.0,
+  "traded_goods": 0.0,
+  "returns": [
+   22.0,
+   22.0
+  ]
+ },
+ {
+  "stage": 2,
+  "steps": [
+   {
+    "planets_gained": 0,
+    "systems": 1,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 3,
+    "systems": 3,
+    "units_gained": 1,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 0,
+    "systems": 0,
+    "units_gained": 0,
+    "victory_points": 1,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 2
+   },
+   {
+    "planets_gained": 0,
+    "systems": 0,
+    "units_gained": 0,
+    "victory_points": 2,
+    "scoreable_public": 1,
+    "scoreable_secret": 0,
+    "round_number": 3
+   }
+  ],
+  "final": {
+   "planets_gained": 0,
+   "systems": 0,
+   "units_gained": 0,
+   "victory_points": 2,
+   "scoreable_public": 1,
+   "scoreable_secret": 0,
+   "round_number": 3
+  },
+  "cleared": true,
+  "shortfall": 0.0,
+  "traded_goods": 0.0,
+  "returns": [
+   6.45,
+   5.35,
+   1.35,
+   0.0
+  ]
+ },
+ {
+  "stage": 2,
+  "steps": [
+   {
+    "planets_gained": 0,
+    "systems": 0,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 1,
+    "scoreable_secret": 0,
+    "round_number": 2
+   },
+   {
+    "planets_gained": 0,
+    "systems": 0,
+    "units_gained": 0,
+    "victory_points": 1,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 2
+   }
+  ],
+  "final": {
+   "planets_gained": 0,
+   "systems": 0,
+   "units_gained": 0,
+   "victory_points": 1,
+   "scoreable_public": 0,
+   "scoreable_secret": 0,
+   "round_number": 2
+  },
+  "cleared": false,
+  "shortfall": 2.0,
+  "traded_goods": 0.0,
+  "returns": [
+   0.65,
+   0.0
+  ]
+ },
+ {
+  "stage": 2,
+  "steps": [
+   {
+    "planets_gained": 0,
+    "systems": 1,
+    "units_gained": 0,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 2,
+    "systems": 2,
+    "units_gained": 1,
+    "victory_points": 0,
+    "scoreable_public": 0,
+    "scoreable_secret": 0,
+    "round_number": 1
+   },
+   {
+    "planets_gained": 2,
+    "systems": 2,
+    "units_gained": 1,
+    "victory_points": 1,
+    "scoreable_public": 0,
+    "scoreable_secret": 1,
+    "round_number": 2
+   }
+  ],
+  "final": {
+   "planets_gained": 2,
+   "systems": 2,
+   "units_gained": 1,
+   "victory_points": 1,
+   "scoreable_public": 0,
+   "scoreable_secret": 1,
+   "round_number": 4
+  },
+  "cleared": false,
+  "shortfall": 1.0,
+  "traded_goods": 0.0,
+  "returns": [
+   1.65,
+   0.95,
+   0.0
+  ]
+ }
+]

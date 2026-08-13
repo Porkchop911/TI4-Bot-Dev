@@ -47,6 +47,7 @@ pub mod laws;
 pub mod leaders;
 pub mod movement;
 pub mod objectives;
+pub mod opening;
 pub mod payment;
 pub mod phase;
 pub mod production;
