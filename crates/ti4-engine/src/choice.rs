@@ -31,6 +31,8 @@ use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SystemId, UnitTypeId};
 use ti4_model::state::{GameState, SystemState};
 use ti4_model::units::Unit;
 
+use crate::movement::{Board, MovementRules};
+
 /// The kind used by a declining option.
 pub const DECLINE_KIND: &str = "decline";
 /// The id used by a declining option.
@@ -438,6 +440,44 @@ impl<'a> Observed<'a> {
     #[must_use]
     pub fn system(&self, system: &SystemId) -> SystemState {
         self.state.system_state(system)
+    }
+
+    /// The system currently activated for a tactical action, when there is one.
+    ///
+    /// An activation token is public; exposing the active system lets a policy value the legal
+    /// movement options it was offered without handing it the game state that owns the choice.
+    #[must_use]
+    pub fn active_system(&self) -> Option<&'a SystemId> {
+        self.state.active_system.as_ref()
+    }
+
+    /// Whether a ship with this printed movement can reach a public destination.
+    ///
+    /// This is an observation query, not a second legality entry point. It reads only the public
+    /// map, board occupancy, command tokens, and laws, then reuses the engine's movement search
+    /// so a policy does not approximate a route with geometric distance. Effects from a card that
+    /// has not been played are deliberately absent: a bot with no hand must not infer them.
+    #[must_use]
+    pub fn can_reach(
+        &self,
+        player: &PlayerId,
+        origin: &SystemId,
+        destination: &SystemId,
+        move_value: i32,
+    ) -> bool {
+        let Some(galaxy) = self.galaxy else {
+            return false;
+        };
+        let board = Board::for_player(self.state, self.content, self.sources, player);
+        MovementRules::with_laws(
+            galaxy,
+            self.content,
+            self.sources,
+            destination.as_str(),
+            board,
+            Some(self.state),
+        )
+        .can_reach(origin.as_str(), move_value)
     }
 
     /// `(system, planet)` for every planet a player controls.

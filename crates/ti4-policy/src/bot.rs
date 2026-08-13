@@ -1,31 +1,27 @@
-//! A scored bot: routes every choice kind to a scorer, then samples (M08-004, M08-011).
+//! A scored bot: routes every choice kind to a scorer, then samples (M08-004, M08-005b, M08-011).
 //!
 //! Ported from the oracle's `bots.py` `ScoredBot._raw_score`, `_worth_considering` and `_sample`.
 //!
 //! # What this bot can and cannot see
 //!
-//! [`ti4_engine::choice::Decider`] is handed a [`Choice`] and nothing else. The oracle's bot holds
-//! a redacted *game* and reads the board while it scores, which is how it values activating one
-//! system over another. This engine keeps the decision table inside the game, so a decider cannot
-//! also hold the state, and most choices are raised from windows that own a slice of the position
-//! rather than the whole of it.
+//! Plain [`ti4_engine::choice::Decider::choose`] is intentionally blind: it scores from the
+//! choice's kind, label, payload, and the content corpus. The game driver calls
+//! [`ti4_engine::choice::Decider::choose_seeing`] with a public [`Observed`] view. That path adds
+//! board-aware activation and movement components without lending the decider a state reference or
+//! a hand.
 //!
-//! So this bot scores from what the choice carries: the option's kind, its label, its payload, and
-//! the content corpus — which is enough for the judgements that decide most games, and not enough
-//! for the ones that decide the best games. Concretely:
+//! Concretely:
 //!
 //! - It always takes a scoring opportunity, because scoring is the only thing that wins.
 //! - It prefers acting to passing, moving to standing still, and committing troops to declining —
 //!   which is where a uniform-random table loses its games, not in choosing between good moves.
 //! - It loses the cheapest unit to a hit, pays a bill in one exhaustion rather than two, and
 //!   builds by value per resource.
-//! - It cannot tell a rich system from a poor one, or a defended one from an empty one. Those need
-//!   [`crate::valuation::system_value`], which needs the board.
-//!
-//! That gap is a seam this engine does not have yet, not a judgement that scoring the board is
-//! unimportant. Closing it means giving `Decider::choose` an observation argument, which touches
-//! every window that raises a choice; it is M08-005's problem and is named here rather than
-//! papered over with a constant that pretends to be a valuation.
+//! - With an observation it values activation prizes, removes unreachable non-production
+//!   activations from its own shortlist, and moves useful hulls rather than parading extras into
+//!   an already-secured system.
+//! - Cargo, landings, combat, and production remain M08-005c work; they deliberately retain their
+//!   blind fallback until their public facts and decision-boundary tests are added.
 
 use std::collections::BTreeMap;
 
@@ -33,8 +29,9 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
 use ti4_model::content_types::{POK, SourceSet};
+use ti4_model::id::SystemId;
 
 use crate::scoring::{Components, Decision};
 
@@ -133,6 +130,99 @@ impl ScoredBot {
 
             _ => Components::new(),
         }
+    }
+
+    /// Score an option from the same dispatcher as [`Self::raw_score`], adding public-board
+    /// facts only for the tactical choices that need them.  Keeping the blind dispatcher as the
+    /// base means a window that calls `choose` instead of `choose_seeing` has exactly the same
+    /// kind coverage; it merely lacks position-sensitive components.
+    #[must_use]
+    fn seen_score(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        match option.kind.as_str() {
+            "activate" => {
+                let target = SystemId::new(&option.id);
+                Components::of("act", 6.0).and(
+                    "system_value",
+                    crate::valuation::system_value(seen, &choice.player, &target),
+                )
+            }
+            "move" => self.score_move_seen(choice, option, seen),
+            _ => self.raw_score(choice, option),
+        }
+    }
+
+    /// The public part of the oracle's `_score_move`: a hull is valuable when it has a job at
+    /// the active system, and an idle reinforcement should lose to finishing movement.
+    #[must_use]
+    fn score_move_seen(
+        &self,
+        choice: &Choice,
+        option: &ChoiceOption,
+        seen: &Observed<'_>,
+    ) -> Components {
+        let Some((origin, index)) = move_origin_and_index(&option.id) else {
+            return self.raw_score(choice, option);
+        };
+        let Some(target) = seen.active_system() else {
+            return self.raw_score(choice, option);
+        };
+        let origin = SystemId::new(origin);
+        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+        let source = seen.system(&origin);
+        let Some(unit) = source
+            .units
+            .iter()
+            .filter(|unit| {
+                unit.owner == choice.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ship)
+            })
+            .nth(index)
+        else {
+            return self.raw_score(choice, option);
+        };
+        let Some(stats) = types.get(unit.type_id.as_str()) else {
+            return self.raw_score(choice, option);
+        };
+
+        let destination = seen.system(target);
+        let enemy_waiting = destination.units.iter().any(|other| {
+            other.owner != choice.player
+                && types
+                    .get(other.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+        });
+        let ours_waiting = destination.units.iter().any(|other| {
+            other.owner == choice.player
+                && types
+                    .get(other.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+        });
+        let riders = ground_riders(&source, &choice.player, &types);
+        let carries_riders = stats.capacity() > 0 && riders > 0;
+        let useful = enemy_waiting || !ours_waiting || carries_riders;
+
+        let mut score = Components::of(
+            "hull",
+            crate::valuation::unit_value(seen.content(), seen.sources(), unit.type_id.as_str())
+                * if useful { 1.0 } else { 0.2 },
+        )
+        .and(
+            "destination_value",
+            0.25 * crate::valuation::system_value(seen, &choice.player, target),
+        );
+        if carries_riders {
+            let capacity = usize::try_from(stats.capacity()).unwrap_or(usize::MAX);
+            let carried = i32::try_from(capacity.min(riders)).unwrap_or(i32::MAX);
+            score = score.and("lift", 2.0 * f64::from(carried));
+        }
+        score
     }
 
     /// Acting beats passing, and a strategic action beats an ordinary one because a strategy card
@@ -276,6 +366,82 @@ impl ScoredBot {
         all
     }
 
+    /// Apply the oracle's activation filter after the ordinary score shortlist.  A system that no
+    /// ship can reach and where this player cannot produce remains legal; it is just not a policy
+    /// candidate while another activation can actually do something.
+    fn worth_considering_seen<'a>(
+        &self,
+        choice: &'a Choice,
+        scores: &BTreeMap<String, Components>,
+        seen: &Observed<'_>,
+    ) -> Vec<&'a ChoiceOption> {
+        let candidates = self.worth_considering(choice, scores);
+        let useful: Vec<&ChoiceOption> = candidates
+            .iter()
+            .copied()
+            .filter(|option| option.kind == "activate")
+            .filter(|option| Self::activation_can_do_something(seen, &choice.player, &option.id))
+            .collect();
+        if useful.is_empty() {
+            return candidates;
+        }
+        candidates
+            .into_iter()
+            .filter(|option| {
+                option.kind != "activate"
+                    || useful
+                        .iter()
+                        .any(|useful_option| useful_option.id == option.id)
+            })
+            .collect()
+    }
+
+    fn activation_can_do_something(
+        seen: &Observed<'_>,
+        player: &ti4_model::id::PlayerId,
+        target: &str,
+    ) -> bool {
+        let Some(galaxy) = seen.galaxy() else {
+            return false;
+        };
+        let target = SystemId::new(target);
+        if galaxy.coord_of(target.as_str()).is_none() {
+            return false;
+        }
+        let types = ti4_content::units::catalogue(seen.content(), seen.sources());
+        let target_state = seen.system(&target);
+        if target_state
+            .units
+            .iter()
+            .chain(target_state.planet_units.values().flatten())
+            .any(|unit| {
+                &unit.owner == player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::has_production)
+            })
+        {
+            return true;
+        }
+
+        seen.systems_with_units_of(player)
+            .into_iter()
+            .any(|origin| {
+                let system = seen.system(origin);
+                system.units.iter().any(|unit| {
+                    let Some(kind) = types.get(unit.type_id.as_str()) else {
+                        return false;
+                    };
+                    let Ok(move_value) = i32::try_from(kind.move_value()) else {
+                        return false;
+                    };
+                    &unit.owner == player
+                        && kind.is_ship()
+                        && seen.can_reach(player, origin, &target, move_value)
+                })
+            })
+    }
+
     /// Softmax over the shortlist.
     fn sample<'a>(
         &mut self,
@@ -311,28 +477,19 @@ impl ScoredBot {
             }
         }
     }
-}
 
-impl Decider for ScoredBot {
-    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
-        if choice.options.is_empty() {
-            return Err(IllegalChoice::NoOptions {
-                player: choice.player.clone(),
-                prompt: choice.prompt.clone(),
-            });
-        }
-        let scores: BTreeMap<String, Components> = choice
-            .options
-            .iter()
-            .map(|option| (option.id.clone(), self.raw_score(choice, option)))
-            .collect();
-        let candidates = self.worth_considering(choice, &scores);
+    fn choose_from_scores(
+        &mut self,
+        choice: &Choice,
+        scores: BTreeMap<String, Components>,
+        candidates: &[&ChoiceOption],
+    ) -> Result<ChoiceOption, IllegalChoice> {
         let considered: Vec<String> = candidates
             .iter()
             .map(|option| option.id.clone())
             .collect::<Vec<String>>();
         let chosen =
-            self.sample(&candidates, &scores)
+            self.sample(candidates, &scores)
                 .cloned()
                 .ok_or_else(|| IllegalChoice::NoOptions {
                     player: choice.player.clone(),
@@ -349,6 +506,70 @@ impl Decider for ScoredBot {
             });
         }
         Ok(chosen)
+    }
+}
+
+fn move_origin_and_index(id: &str) -> Option<(&str, usize)> {
+    let mut parts = id.split('|');
+    (parts.next()? == "move").then_some(())?;
+    let origin = parts.next()?;
+    let index = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some((origin, index))
+}
+
+fn ground_riders(
+    system: &ti4_model::state::SystemState,
+    player: &ti4_model::id::PlayerId,
+    types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType<'_>>,
+) -> usize {
+    system
+        .planet_units
+        .values()
+        .flatten()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ground_force)
+        })
+        .count()
+}
+
+impl Decider for ScoredBot {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.is_empty() {
+            return Err(IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            });
+        }
+        let scores: BTreeMap<String, Components> = choice
+            .options
+            .iter()
+            .map(|option| (option.id.clone(), self.raw_score(choice, option)))
+            .collect();
+        let candidates = self.worth_considering(choice, &scores);
+        self.choose_from_scores(choice, scores, &candidates)
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &Observed<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.is_empty() {
+            return Err(IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            });
+        }
+        let scores: BTreeMap<String, Components> = choice
+            .options
+            .iter()
+            .map(|option| (option.id.clone(), self.seen_score(choice, option, seen)))
+            .collect();
+        let candidates = self.worth_considering_seen(choice, &scores, seen);
+        self.choose_from_scores(choice, scores, &candidates)
     }
 }
 
@@ -383,6 +604,9 @@ pub fn unscored_kinds() -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ti4_content::ContentStore;
+    use ti4_engine::choice::Observed;
+    use ti4_model::content_types::POK;
     use ti4_model::id::PlayerId;
 
     fn choice(kind: &str, ids: &[&str]) -> Choice {
@@ -397,6 +621,137 @@ mod tests {
 
     fn score_of(bot: &ScoredBot, choice: &Choice, index: usize) -> f64 {
         bot.raw_score(choice, &choice.options[index]).total()
+    }
+
+    fn public_target() -> String {
+        ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| !system.is_anomaly() && !system.planets().is_empty())
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus contains an ordinary system with a planet")
+    }
+
+    fn watched_hub() -> (ti4_model::state::GameState, ti4_engine::fixtures::Hub) {
+        let target = public_target();
+        let hub = ti4_engine::fixtures::hub_with_centre(&target);
+        (ti4_engine::fixtures::game(&["a", "b"]), hub)
+    }
+
+    fn watched<'a>(
+        state: &'a ti4_model::state::GameState,
+        galaxy: &'a ti4_content::galaxy::Galaxy,
+    ) -> Observed<'a> {
+        Observed::new(state, ContentStore::embedded(), POK, Some(galaxy))
+    }
+
+    fn secure_system(
+        state: &mut ti4_model::state::GameState,
+        system: &ti4_model::id::SystemId,
+        player: &PlayerId,
+    ) {
+        for planet in
+            ti4_content::galaxy::planets_in(ContentStore::embedded(), system.as_str(), POK)
+        {
+            state
+                .system_mut(system)
+                .set_control(ti4_model::id::PlanetId::new(planet.id()), player.clone());
+        }
+    }
+
+    #[test]
+    fn seeing_the_board_removes_unreachable_activations_from_the_shortlist() {
+        // This is the oracle's `_worth_considering` rule, not legality: both systems remain
+        // offered, but only the nearby one has a ship that can accomplish anything there.
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let origin = ti4_model::id::SystemId::new(hub.outer[0].clone());
+        let target = ti4_model::id::SystemId::new(hub.centre.clone());
+        let unreachable = ti4_model::id::SystemId::new(hub.across(&hub.outer[0]));
+        ti4_engine::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        let offered = Choice::new(
+            player.clone(),
+            "activate a system",
+            vec![
+                ChoiceOption::new(target.to_string(), "activate"),
+                ChoiceOption::new(unreachable.to_string(), "activate"),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&offered, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            target.to_string()
+        );
+        assert_eq!(
+            bot.decisions[0].considered,
+            vec![target.to_string()],
+            "the useless activation is a human option but not a bot candidate"
+        );
+    }
+
+    #[test]
+    fn seeing_no_useful_activation_keeps_every_offered_system() {
+        // A player with no movable ships and no dock must still answer the choice; filtering all
+        // activations would turn a policy preference into an invented no-option state.
+        let (state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let first = ti4_model::id::SystemId::new(hub.centre.clone());
+        let second = ti4_model::id::SystemId::new(hub.outer[0].clone());
+        let offered = Choice::new(
+            player.clone(),
+            "activate a system",
+            vec![
+                ChoiceOption::new(first.to_string(), "activate"),
+                ChoiceOption::new(second.to_string(), "activate"),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).remembering();
+        bot.choose_seeing(&offered, &watched(&state, &hub.galaxy))
+            .unwrap();
+
+        assert_eq!(
+            bot.decisions[0].considered,
+            vec![first.to_string(), second.to_string()]
+        );
+    }
+
+    #[test]
+    fn seeing_the_board_moves_to_a_prize_but_finishes_an_idle_reinforcement() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        let target = ti4_model::id::SystemId::new(hub.centre.clone());
+        let origin = ti4_model::id::SystemId::new(hub.outer[0].clone());
+        state.active_system = Some(target.clone());
+        ti4_engine::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        let advancing = Choice::new(
+            player.clone(),
+            "movement",
+            vec![
+                ChoiceOption::new(format!("move|{origin}|0"), "move"),
+                ChoiceOption::decline(),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01);
+        assert_eq!(
+            bot.choose_seeing(&advancing, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .kind,
+            "move",
+            "a carrier establishes a position at an unclaimed prize"
+        );
+
+        ti4_engine::fixtures::put(&mut state, &target, "cruiser", &player, 1);
+        secure_system(&mut state, &target, &player);
+        let mut idle = ScoredBot::new(4).at_temperature(0.01);
+        assert_eq!(
+            idle.choose_seeing(&advancing, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "decline",
+            "an idle carrier joining an already-secured system loses to finishing movement"
+        );
     }
 
     #[test]
