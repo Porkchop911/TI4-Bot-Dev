@@ -681,6 +681,11 @@ fn the_subsystems_still_ask_the_faction_layer() {
             "crate::faction_abilities::waived_prerequisites",
         ),
         (
+            "combat (sustain commander)",
+            include_str!("combat.rs"),
+            "pay_sustain_commander(state, content, player)",
+        ),
+        (
             "invasion (shield)",
             include_str!("invasion.rs"),
             "crate::leaders::ignores_planetary_shield",

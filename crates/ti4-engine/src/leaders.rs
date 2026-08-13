@@ -395,13 +395,28 @@ pub fn ignores_planetary_shield(state: &GameState, player: &PlayerId) -> bool {
     })
 }
 
+/// Rear Admiral Farran: whether this player gains a trade good when one of their units sustains.
+#[must_use]
+pub fn pays_on_sustain(state: &GameState, content: &ContentStore, player: &PlayerId) -> bool {
+    let _ = content;
+    state.player(player).is_some_and(|seat| {
+        seat.leaders.iter().any(|(leader, status)| {
+            leader.as_str() == "letnevcommander" && *status == LeaderStatus::Unlocked
+        })
+    })
+}
+
 /// Leaders this engine can use, by id.
 #[must_use]
 pub fn registered_abilities() -> Vec<&'static str> {
     vec![
         "hacanagent",
         "hacanhero",
+        "jolnarhero",
+        "l1z1xagent",
+        "l1z1xhero",
         "letnevagent",
+        "letnevcommander",
         "letnevhero",
         "solagent",
         "solcommander",
@@ -536,6 +551,155 @@ pub fn use_leader(
             }
             true
         }
+
+        // The Helmsman: gather the flagship and any dreadnoughts into one system holding no
+        // rival ships. The card names no move value and is not a tactical action, so this
+        // *places* rather than moves — range and anomalies do not apply by its own wording.
+        "l1z1xhero" => {
+            let Some(galaxy) = context.galaxy else {
+                return false; // no map, no system to name
+            };
+            let types = ti4_content::units::catalogue(context.content, context.sources);
+            let destination = galaxy.system_ids().into_iter().find(|id| {
+                !context
+                    .state
+                    .system_state(&ti4_model::id::SystemId::new(*id))
+                    .units
+                    .iter()
+                    .any(|unit| {
+                        &unit.owner != player
+                            && types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(ti4_content::units::UnitType::is_ship)
+                    })
+            });
+            let Some(destination) = destination.map(ti4_model::id::SystemId::new) else {
+                return false;
+            };
+            let mut gathered = Vec::new();
+            for (system, board) in &mut context.state.board {
+                if *system == destination {
+                    continue;
+                }
+                board.units.retain(|unit| {
+                    let named = &unit.owner == player
+                        && types.get(unit.type_id.as_str()).is_some_and(|kind| {
+                            matches!(kind.base_type(), "flagship" | "dreadnought")
+                        });
+                    if named {
+                        gathered.push(unit.clone());
+                    }
+                    !named
+                });
+            }
+            if gathered.is_empty() {
+                return false;
+            }
+            context
+                .state
+                .system_mut(&destination)
+                .units
+                .extend(gathered);
+            true
+        }
+        // I48S: one infantry in the active system becomes a mech. The card lets the *activating*
+        // player benefit, which is usually somebody else — agents are traded favours.
+        "l1z1xagent" => {
+            let (Some(system), Some(target)) = (
+                context.state.active_system.clone(),
+                context.state.active.clone(),
+            ) else {
+                return false;
+            };
+            let faction = context
+                .state
+                .player(&target)
+                .map(|seat| seat.faction.to_string())
+                .unwrap_or_default();
+            let Some(mech) = ti4_content::units::faction_unit(
+                context.content,
+                &faction,
+                "mech",
+                context.sources,
+            )
+            .map(|kind| ti4_model::id::UnitTypeId::new(kind.id())) else {
+                return false; // a seat with no mech has nothing to upgrade into
+            };
+            if crate::supply::allowed(
+                context.state,
+                context.content,
+                context.sources,
+                &target,
+                &mech,
+                1,
+            ) == 0
+            {
+                return false;
+            }
+            let types = ti4_content::units::catalogue(context.content, context.sources);
+            let board = context.state.system_mut(&system);
+            let mut swapped = false;
+            for units in board.planet_units.values_mut() {
+                if let Some(index) = units.iter().position(|unit| {
+                    unit.owner == target
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(|kind| kind.base_type() == "infantry")
+                }) {
+                    units[index] = ti4_model::units::Unit::new(mech.clone(), target.clone());
+                    swapped = true;
+                    break;
+                }
+            }
+            swapped
+        }
+        // Rin, the Masters' Legacy: swap a non-upgrade technology for another of the same
+        // colour. Offered one at a time, because each swap is its own "you may".
+        "jolnarhero" => {
+            let held: Vec<ti4_model::id::TechnologyId> = context
+                .state
+                .player(player)
+                .map(|seat| seat.technologies.iter().cloned().collect())
+                .unwrap_or_default();
+            let mut swapped = false;
+            for alias in held {
+                let record = context
+                    .content
+                    .get(ContentType::Technologies, alias.as_str());
+                let is_upgrade = record
+                    .as_ref()
+                    .is_some_and(|r| r.text("baseUpgrade").is_some_and(|b| !b.is_empty()));
+                let colour = record.and_then(|r| r.strings("types").first().map(ToOwned::to_owned));
+                let (false, Some(colour)) = (is_upgrade, colour) else {
+                    continue;
+                };
+                let replacement = context
+                    .content
+                    .from_sources(ContentType::Technologies, context.sources)
+                    .filter(|r| {
+                        r.strings("types")
+                            .first()
+                            .is_some_and(|kind| *kind == colour)
+                    })
+                    .filter(|r| r.text("baseUpgrade").is_none_or(str::is_empty))
+                    .filter_map(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
+                    .find(|candidate| {
+                        context
+                            .state
+                            .player(player)
+                            .is_some_and(|seat| !seat.technologies.contains(candidate))
+                    });
+                if let Some(replacement) = replacement
+                    && let Some(seat) = context.state.player_mut(player)
+                {
+                    seat.technologies.remove(&alias);
+                    seat.technologies.insert(replacement);
+                    swapped = true;
+                }
+            }
+            swapped
+        }
+
         // Darktalon Treilla: fleet supply is limited by neither laws nor the pool this round.
         "letnevhero" => {
             let round = context.state.round;
@@ -587,6 +751,135 @@ mod tests {
             galaxy: None,
         };
         use_leader(&mut context, &player(), leader)
+    }
+
+    #[test]
+    fn the_helmsman_gathers_the_named_hulls_and_leaves_the_rest() {
+        // The card names a flagship and dreadnoughts. It places rather than moves — it gives no
+        // move value and is not a tactical action — so range and anomalies do not apply.
+        let hub = crate::fixtures::plain_hub();
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "l1z1xhero", LeaderStatus::Unlocked);
+        let far = ti4_model::id::SystemId::new(hub.across(&hub.outer[0]));
+        crate::fixtures::put(&mut state, &far, "dreadnought", &player(), 2);
+        crate::fixtures::put(&mut state, &far, "cruiser", &player(), 1);
+
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let done = {
+            let mut context = crate::timing::TimingContext {
+                state: &mut state,
+                content: ContentStore::embedded(),
+                sources: POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: Some(&hub.galaxy),
+            };
+            use_leader(&mut context, &player(), &hero)
+        };
+
+        assert!(done);
+        let left: Vec<String> = state
+            .system_state(&far)
+            .units
+            .iter()
+            .map(|unit| unit.type_id.to_string())
+            .collect();
+        assert_eq!(
+            left,
+            vec!["cruiser".to_owned()],
+            "the cruiser stayed behind"
+        );
+    }
+
+    #[test]
+    fn i48s_upgrades_the_active_players_infantry_not_your_own() {
+        // Agents are traded favours: the card benefits whoever activated, which is usually
+        // somebody else.
+        let mut state = game(&["a", "b"]);
+        let agent = holding(&mut state, "l1z1xagent", LeaderStatus::Readied);
+        let active = PlayerId::new("b");
+        state.player_mut(&active).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &active, 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player(), 1);
+        state.active_system = Some(system.clone());
+        state.active = Some(active.clone());
+
+        assert!(use_it(&mut state, &agent));
+
+        let units = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            units
+                .iter()
+                .any(|unit| unit.owner == active && unit.type_id.as_str().contains("mech")),
+            "b got the mech: {units:?}"
+        );
+        assert!(
+            units
+                .iter()
+                .any(|unit| unit.owner == player() && unit.type_id.as_str().contains("infantry")),
+            "and a's infantry was untouched"
+        );
+    }
+
+    #[test]
+    fn rin_swaps_a_technology_for_another_of_the_same_colour() {
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "jolnarhero", LeaderStatus::Unlocked);
+        let ordinary = content
+            .from_sources(ContentType::Technologies, POK)
+            .find(|r| {
+                r.text("baseUpgrade").is_none_or(str::is_empty)
+                    && r.text("faction").is_none()
+                    && !r.strings("types").is_empty()
+            })
+            .and_then(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
+            .expect("an ordinary technology");
+        state
+            .player_mut(&player())
+            .unwrap()
+            .technologies
+            .insert(ordinary.clone());
+        let before = state.player(&player()).unwrap().technologies.len();
+
+        assert!(use_it(&mut state, &hero));
+
+        let after = state.player(&player()).unwrap();
+        assert_eq!(after.technologies.len(), before, "a swap, not a gain");
+        assert!(
+            !after.technologies.contains(&ordinary),
+            "the old one went back to the deck"
+        );
+    }
+
+    #[test]
+    fn rear_admiral_farran_pays_only_once_unlocked() {
+        let mut state = game(&["a"]);
+        assert!(!pays_on_sustain(
+            &state,
+            ContentStore::embedded(),
+            &player()
+        ));
+
+        holding(&mut state, "letnevcommander", LeaderStatus::Locked);
+        assert!(
+            !pays_on_sustain(&state, ContentStore::embedded(), &player()),
+            "locked is not unlocked"
+        );
+
+        holding(&mut state, "letnevcommander", LeaderStatus::Unlocked);
+        assert!(pays_on_sustain(&state, ContentStore::embedded(), &player()));
     }
 
     #[test]

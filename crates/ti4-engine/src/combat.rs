@@ -373,6 +373,18 @@ pub fn space_cannon_offense(
 /// 87.1: each undamaged sustaining unit may cancel one hit. Always optional.
 ///
 /// Returns the hits still to be absorbed.
+/// Rear Admiral Farran: a trade good each time one of this player's units sustains.
+///
+/// Paid where the sustain happens rather than at the card, so it cannot be honoured in one
+/// hit-assignment path and forgotten in another.
+fn pay_sustain_commander(state: &mut GameState, content: &ContentStore, player: &PlayerId) {
+    if crate::leaders::pays_on_sustain(state, content, player)
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.trade_goods += 1;
+    }
+}
+
 fn offer_sustain(
     state: &mut GameState,
     content: &ContentStore,
@@ -439,6 +451,7 @@ fn offer_sustain(
         if let Some(unit) = state.system_mut(system).units.get_mut(index) {
             *unit = unit.sustained();
         }
+        pay_sustain_commander(state, content, player);
         hits = hits.saturating_sub(1);
     }
     Ok(hits)
