@@ -112,6 +112,20 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Evidence: `plans/evidence/M08-007c.md`. Next M08-007 package must scope a distinct public goal
   family or a safe reservation observation; do not expose private exhaustion as a shortcut.
 
+### M08-007d public spend-capacity observation checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007d-public-reserves`; focused package commit follows this state update.
+- `Observed::available_spend` now reports a player's public ready resources or influence through
+  the authoritative production accounting, including face-up trade goods and excluding exhausted
+  planets. The typed API returns only an aggregate: it exposes neither state nor exhaustion/card
+  identities.
+- Verification passed: oracle guard; focused boundary test; format; 704 engine unit + 5 doc tests;
+  51 policy tests; clippy `-D warnings`; and diff check. A constant-zero mutation failed the
+  ready-planet assertion and was restored.
+- Evidence: `plans/evidence/M08-007d.md`. Next safe M08-007 child: use this aggregate only for
+  revealed unscored public purchase-objective reservation; keep secret objectives and payment
+  execution out of scope.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.

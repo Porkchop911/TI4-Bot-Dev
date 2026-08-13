@@ -486,6 +486,16 @@ impl<'a> Observed<'a> {
         self.state.controlled_planets(player)
     }
 
+    /// Public resources or influence a player can currently spend.
+    ///
+    /// This deliberately returns an aggregate rather than the exhausted-card set. Ready planet
+    /// cards and trade goods are visible at the table; the engine remains the single owner of
+    /// the exact payment accounting used by policy and later factual feature capture.
+    #[must_use]
+    pub fn available_spend(&self, player: &PlayerId, kind: crate::production::Spend) -> i64 {
+        crate::production::available(self.state, self.content, self.sources, player, kind)
+    }
+
     /// Systems holding any of a player's units.
     #[must_use]
     pub fn systems_with_units_of(&self, player: &PlayerId) -> BTreeSet<&'a SystemId> {
@@ -1384,6 +1394,49 @@ mod tests {
             ContentStore::embedded()
                 .get(ti4_model::content_types::ContentType::ActionCards, HIDDEN)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn public_spend_capacity_counts_only_ready_planets_and_faceup_goods() {
+        let mut state = watched();
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), pid("a"));
+        state.player_mut(&pid("a")).unwrap().trade_goods = 2;
+        let resources = crate::production::planet_value(
+            ContentStore::embedded(),
+            POK,
+            &planet,
+            crate::production::Spend::Resources,
+        );
+        let influence = crate::production::planet_value(
+            ContentStore::embedded(),
+            POK,
+            &planet,
+            crate::production::Spend::Influence,
+        );
+
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        assert_eq!(
+            seen.available_spend(&pid("a"), crate::production::Spend::Resources),
+            resources + 2
+        );
+        assert_eq!(
+            seen.available_spend(&pid("a"), crate::production::Spend::Influence),
+            influence + 2
+        );
+
+        state.exhaust_planet(planet);
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        assert_eq!(
+            seen.available_spend(&pid("a"), crate::production::Spend::Resources),
+            2
+        );
+        assert_eq!(
+            seen.available_spend(&pid("a"), crate::production::Spend::Influence),
+            2
         );
     }
 
