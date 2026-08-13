@@ -232,13 +232,55 @@ pub struct Profile {
     pub learned: Learned,
 }
 
-/// The weights and the sampling temperature.
+/// The weights, one independently learned set per decision head.
+///
+/// **A divergence from the oracle's schema 2, and a deliberate one.** That schema carries a single
+/// flat weight vector; its *trainer* keys statistics and updates by `(faction, head)` against a
+/// per-head layout. Carrying one flat vector here would mean every head's update landing on every
+/// other head's weights, which is the thing the heads exist to prevent — learning to move ships
+/// would drift the weights that decide votes, and neither would converge.
+///
+/// Importing an oracle schema-2 checkpoint therefore needs a migration that copies its flat vector
+/// into each head. That is M09-015's job and is named here rather than discovered when the first
+/// checkpoint scores as noise.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Learned {
+    /// One weight set per head in [`DECISION_HEADS`].
+    pub heads: BTreeMap<String, Head>,
+}
+
+/// One head's fitted weights and how sharply it commits to them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Head {
     /// Bucket name to weight. Buckets absent from the map score zero.
     pub weights: BTreeMap<String, f64>,
     /// How sharply to prefer the best option. One is the fitted default.
     pub temperature: f64,
+}
+
+impl Head {
+    /// An untrained head: every bucket zero.
+    #[must_use]
+    pub fn blank(dimensions: usize) -> Self {
+        Self {
+            weights: (0..dimensions.max(1))
+                .map(|index| (format!("h{index:04}"), 0.0))
+                .collect(),
+            temperature: 1.0,
+        }
+    }
+
+    /// Score an already-hashed sparse vector: the dot product with these weights.
+    ///
+    /// The signs are baked into the vector when it is built, so this is a plain dot product and
+    /// not a second hashing.
+    #[must_use]
+    pub fn score_vector(&self, features: &BTreeMap<String, f64>) -> f64 {
+        features
+            .iter()
+            .map(|(slot, value)| self.weights.get(slot).copied().unwrap_or(0.0) * value)
+            .sum()
+    }
 }
 
 /// Why a profile was refused.
@@ -246,41 +288,63 @@ pub struct Learned {
 pub enum ProfileError {
     /// Written against a schema this module does not read.
     #[error("profile schema {found} is not the {SCHEMA} this module reads")]
-    Schema { found: u32 },
+    Schema {
+        /// The schema found on the profile.
+        found: u32,
+    },
     /// Not a fully learned profile.
     #[error("profile mode {found:?} is not \"fully_learned\"")]
-    Mode { found: String },
+    Mode {
+        /// The mode found on the profile.
+        found: String,
+    },
     /// Built for a different faction than the seat asking for it.
     #[error("profile is for faction {found:?}, not {wanted:?}")]
-    Faction { found: String, wanted: String },
+    Faction {
+        /// The faction the profile names.
+        found: String,
+        /// The faction the seat plays.
+        wanted: String,
+    },
+    /// A head that no choice can route to, or a head every choice needs and nothing carries.
+    #[error("profile is missing a weight set for the {head:?} head")]
+    MissingHead {
+        /// The head with no weights.
+        head: String,
+    },
     /// No weights at all.
     #[error("profile carries no weights")]
     Empty,
     /// A weight or the temperature is not a finite number.
     #[error("profile carries a non-finite {what}")]
-    NotFinite { what: String },
+    NotFinite {
+        /// Which value was not finite.
+        what: String,
+    },
     /// A temperature at or below zero, which makes the softmax undefined.
     #[error("profile temperature {found} must be above zero")]
-    Temperature { found: f64 },
+    Temperature {
+        /// The temperature found.
+        found: f64,
+    },
 }
 
-/// An untrained profile: every bucket zero.
+/// An untrained profile: every head, every bucket zero.
 ///
 /// Scores every legal option identically, so it plays uniformly at random. That is deliberate — an
 /// untrained policy should be visibly untrained, rather than inheriting a shape from somewhere.
 #[must_use]
 pub fn blank_profile(faction: &str, dimensions: usize) -> Profile {
-    let dimensions = dimensions.max(1);
     Profile {
         schema: SCHEMA,
         mode: "fully_learned".to_owned(),
         name: format!("blank-learned-{faction}"),
         faction: faction.to_owned(),
         learned: Learned {
-            weights: (0..dimensions)
-                .map(|index| (format!("h{index:04}"), 0.0))
+            heads: DECISION_HEADS
+                .iter()
+                .map(|head| ((*head).to_owned(), Head::blank(dimensions)))
                 .collect(),
-            temperature: 1.0,
         },
     }
 }
@@ -311,59 +375,84 @@ impl Profile {
                 wanted: wanted.to_owned(),
             });
         }
-        if self.learned.weights.is_empty() {
+        if self.learned.heads.is_empty() {
             return Err(ProfileError::Empty);
         }
-        if let Some((name, _)) = self
-            .learned
-            .weights
-            .iter()
-            .find(|(_, weight)| !weight.is_finite())
-        {
-            return Err(ProfileError::NotFinite {
-                what: format!("weight {name}"),
-            });
+        // Every head a choice can route to must exist, or the decisions that route there score
+        // zero for ever and the policy silently plays them at random.
+        for head in DECISION_HEADS {
+            if !self.learned.heads.contains_key(head) {
+                return Err(ProfileError::MissingHead {
+                    head: head.to_owned(),
+                });
+            }
         }
-        if !self.learned.temperature.is_finite() {
-            return Err(ProfileError::NotFinite {
-                what: "temperature".to_owned(),
-            });
-        }
-        if self.learned.temperature <= 0.0 {
-            return Err(ProfileError::Temperature {
-                found: self.learned.temperature,
-            });
+        for (name, head) in &self.learned.heads {
+            if head.weights.is_empty() {
+                return Err(ProfileError::Empty);
+            }
+            if let Some((slot, _)) = head.weights.iter().find(|(_, weight)| !weight.is_finite()) {
+                return Err(ProfileError::NotFinite {
+                    what: format!("weight {slot} of head {name}"),
+                });
+            }
+            if !head.temperature.is_finite() {
+                return Err(ProfileError::NotFinite {
+                    what: format!("temperature of head {name}"),
+                });
+            }
+            if head.temperature <= 0.0 {
+                return Err(ProfileError::Temperature {
+                    found: head.temperature,
+                });
+            }
         }
         Ok(())
     }
 
-    /// How many buckets this profile carries.
+    /// How many buckets each head carries.
     #[must_use]
     pub fn dimensions(&self) -> usize {
-        self.learned.weights.len()
+        self.learned
+            .heads
+            .values()
+            .next()
+            .map_or(0, |head| head.weights.len())
     }
 
-    /// Score an already-hashed sparse vector: the dot product with the weights.
-    ///
-    /// The inference path. The signs are baked into the vector when it is built, so this is a
-    /// plain dot product and not a second hashing.
+    /// One head's weights, or the catch-all when it is not carried.
     #[must_use]
-    pub fn score_vector(&self, features: &std::collections::BTreeMap<String, f64>) -> f64 {
-        features
-            .iter()
-            .map(|(slot, value)| self.learned.weights.get(slot).copied().unwrap_or(0.0) * value)
-            .sum()
+    pub fn head(&self, head: &str) -> Option<&Head> {
+        self.learned
+            .heads
+            .get(head)
+            .or_else(|| self.learned.heads.get("other"))
     }
 
-    /// Score one feature vector: the dot product of its hashed buckets with the weights.
+    /// One head's weights, for the trainer to update.
+    pub fn head_mut(&mut self, head: &str) -> Option<&mut Head> {
+        self.learned.heads.get_mut(head)
+    }
+
+    /// Score an already-hashed sparse vector against one head.
     #[must_use]
-    pub fn score(&self, features: &[(String, f64)]) -> f64 {
+    pub fn score_vector(&self, head: &str, features: &BTreeMap<String, f64>) -> f64 {
+        self.head(head)
+            .map_or(0.0, |head| head.score_vector(features))
+    }
+
+    /// Score one feature vector by name: hashes each name, then takes the dot product.
+    #[must_use]
+    pub fn score(&self, head: &str, features: &[(String, f64)]) -> f64 {
         let dimensions = self.dimensions();
+        let Some(head) = self.head(head) else {
+            return 0.0;
+        };
         features
             .iter()
             .map(|(name, value)| {
                 let (slot, sign) = bucket(name, dimensions);
-                self.learned.weights.get(&slot).copied().unwrap_or(0.0) * sign * value
+                head.weights.get(&slot).copied().unwrap_or(0.0) * sign * value
             })
             .sum()
     }
@@ -415,7 +504,7 @@ mod tests {
             for name in ["never_seen_before", "", "another", "x"] {
                 let (slot, _) = bucket(name, dimensions);
                 assert!(
-                    blank.learned.weights.contains_key(&slot),
+                    blank.head("turn").unwrap().weights.contains_key(&slot),
                     "{slot} is outside a {dimensions}-bucket profile"
                 );
             }
@@ -426,8 +515,11 @@ mod tests {
     fn an_untrained_policy_scores_every_option_the_same() {
         // It should be visibly untrained rather than inheriting a shape from somewhere.
         let blank = blank_profile("sol", DEFAULT_DIMENSIONS);
-        let one = blank.score(&[("kind=move".to_owned(), 1.0), ("distance".to_owned(), 3.0)]);
-        let other = blank.score(&[("kind=land".to_owned(), 1.0)]);
+        let one = blank.score(
+            "movement",
+            &[("kind=move".to_owned(), 1.0), ("distance".to_owned(), 3.0)],
+        );
+        let other = blank.score("movement", &[("kind=land".to_owned(), 1.0)]);
         assert!((one - other).abs() < f64::EPSILON);
         assert!(one.abs() < f64::EPSILON);
     }
@@ -437,9 +529,13 @@ mod tests {
         let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
         let feature = "kind=score".to_owned();
         let (slot, sign) = bucket(&feature, DEFAULT_DIMENSIONS);
-        profile.learned.weights.insert(slot, 2.0);
+        profile
+            .head_mut("scoring")
+            .unwrap()
+            .weights
+            .insert(slot, 2.0);
 
-        let scored = profile.score(&[(feature, 1.0)]);
+        let scored = profile.score("scoring", &[(feature, 1.0)]);
         assert!((scored - 2.0 * sign).abs() < 1e-12, "{scored}");
     }
 
@@ -448,10 +544,14 @@ mod tests {
         let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
         let feature = "planets".to_owned();
         let (slot, _) = bucket(&feature, DEFAULT_DIMENSIONS);
-        profile.learned.weights.insert(slot, 1.0);
+        profile
+            .head_mut("activation")
+            .unwrap()
+            .weights
+            .insert(slot, 1.0);
 
-        let one = profile.score(&[(feature.clone(), 1.0)]);
-        let three = profile.score(&[(feature, 3.0)]);
+        let one = profile.score("activation", &[(feature.clone(), 1.0)]);
+        let three = profile.score("activation", &[(feature, 3.0)]);
         assert!((three - 3.0 * one).abs() < 1e-12);
     }
 
@@ -480,8 +580,18 @@ mod tests {
         ));
 
         let mut empty = blank_profile("sol", 16);
-        empty.learned.weights.clear();
+        empty.learned.heads.clear();
         assert!(matches!(empty.validate(None), Err(ProfileError::Empty)));
+
+        let mut headless = blank_profile("sol", 16);
+        headless.learned.heads.remove("movement");
+        assert!(
+            matches!(
+                headless.validate(None),
+                Err(ProfileError::MissingHead { .. })
+            ),
+            "a head no weights carry decides its choices at random for ever"
+        );
     }
 
     #[test]
@@ -490,7 +600,8 @@ mod tests {
         // undefined. Caught at load, because at inference it looks like a policy playing badly.
         let mut infinite = blank_profile("sol", 16);
         infinite
-            .learned
+            .head_mut("turn")
+            .unwrap()
             .weights
             .insert("h0000".to_owned(), f64::NAN);
         assert!(matches!(
@@ -499,7 +610,7 @@ mod tests {
         ));
 
         let mut frozen = blank_profile("sol", 16);
-        frozen.learned.temperature = 0.0;
+        frozen.head_mut("turn").unwrap().temperature = 0.0;
         assert!(matches!(
             frozen.validate(None),
             Err(ProfileError::Temperature { .. })

@@ -1,22 +1,9 @@
-//! Stage 2 training stub.
+//! Stage 2 shares the loop in [`crate::stage1`].
+//!
+//! Kept as a module because the plan names two packages, and as one line because the only thing
+//! that differs between the stages is what a decision is worth — [`crate::reward::Stage`] decides
+//! that, and the loop reads it. Two copies of a training loop is two places for a coefficient to
+//! be applied to one stage and forgotten in the other, which is exactly the failure the oracle
+//! recorded when a reward argument was added to one call site and not another.
 
-pub struct Stage2Training;
-
-impl Default for Stage2Training {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Stage2Training {
-    #[must_use]
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// # Errors
-    /// Not yet implemented; this is a stub.
-    pub fn run(&self) -> Result<(), anyhow::Error> {
-        todo!("M10: implement Stage 2 training")
-    }
-}
+pub use crate::stage1::{Generation, Plan, Run, train};

@@ -171,6 +171,10 @@ impl LearnedBot {
         choice: &Choice,
     ) -> (BTreeMap<String, FeatureVector>, BTreeMap<String, f64>) {
         let dimensions = self.profile.dimensions();
+        // The head decides which weights read the features, so the same fact means different
+        // things to different decisions. One shared vector would have every head's update land on
+        // every other head's weights.
+        let head = decision_head(choice);
         let legal: BTreeMap<String, FeatureVector> = choice
             .options
             .iter()
@@ -183,9 +187,10 @@ impl LearnedBot {
             .collect();
         let scores: BTreeMap<String, f64> = legal
             .iter()
-            .map(|(id, vector)| (id.clone(), self.profile.score_vector(vector)))
+            .map(|(id, vector)| (id.clone(), self.profile.score_vector(head, vector)))
             .collect();
-        let chances = probabilities(&scores, self.profile.learned.temperature);
+        let temperature = self.profile.head(head).map_or(1.0, |head| head.temperature);
+        let chances = probabilities(&scores, temperature);
         (legal, chances)
     }
 }
@@ -293,7 +298,11 @@ mod tests {
         let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
         // Teach it that options mentioning "18" are worth something.
         let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
-        profile.learned.weights.insert(slot, 5.0 * sign);
+        profile
+            .head_mut("activation")
+            .unwrap()
+            .weights
+            .insert(slot, 5.0 * sign);
 
         let bot = LearnedBot::new(profile, 1);
         let (_, chances) = bot.consider(&seen, &choice);
@@ -311,7 +320,11 @@ mod tests {
 
         let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
         let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
-        profile.learned.weights.insert(slot, 20.0 * sign);
+        profile
+            .head_mut("activation")
+            .unwrap()
+            .weights
+            .insert(slot, 20.0 * sign);
 
         let bot = LearnedBot::new(profile, 1);
         let (legal, chances) = bot.consider(&seen, &choice);
@@ -375,7 +388,11 @@ mod tests {
         let (slot, sign) = bucket("option:18", DEFAULT_DIMENSIONS);
         let odds_at = |weight: f64| {
             let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
-            profile.learned.weights.insert(slot.clone(), weight * sign);
+            profile
+                .head_mut("activation")
+                .unwrap()
+                .weights
+                .insert(slot.clone(), weight * sign);
             LearnedBot::new(profile, 7).consider(&seen, &choice).1["18"]
         };
         let weight = [0.05, 0.1, 0.2, 0.4, 0.8]
@@ -384,7 +401,11 @@ mod tests {
             .expect("some weight states a preference short of certainty");
 
         let mut profile = blank_profile("sol", DEFAULT_DIMENSIONS);
-        profile.learned.weights.insert(slot, weight * sign);
+        profile
+            .head_mut("activation")
+            .unwrap()
+            .weights
+            .insert(slot, weight * sign);
         let mut bot = LearnedBot::new(profile, 7);
         let expected = bot.consider(&seen, &choice).1["18"];
 
