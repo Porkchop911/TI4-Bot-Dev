@@ -19,7 +19,8 @@ use ti4_content::ContentStore;
 use ti4_engine::choice::{Scripted, Table};
 use ti4_engine::game::Game;
 use ti4_legacy::source_trace::parse_source_trace_states;
-use ti4_legacy::state_import::import_initial_public_state;
+use ti4_legacy::state_import::{import_initial_public_state, import_map};
+use ti4_model::content_types::{Source, SourceSet};
 
 fn main() {
     let dir =
@@ -36,6 +37,7 @@ fn main() {
     let mut reached: Vec<usize> = Vec::new();
     let mut offered: Vec<usize> = Vec::new();
     let (mut unparsed, mut unimportable, mut completed) = (0usize, 0usize, 0usize);
+    let mut mapless = 0usize;
 
     for path in &traces {
         let text = fs::read_to_string(path).expect("trace readable");
@@ -51,11 +53,26 @@ fn main() {
             continue;
         };
 
+        // The board the oracle played on. Without it no tactical action is ever offered, and a
+        // tactical action is most of what a game of this is.
+        let records: Vec<serde_json::Value> = text
+            .lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
         let mut game = Game::with_table(
             state,
             ContentStore::embedded(),
             Table::with_default(Box::new(Scripted::new(decisions.clone()))),
         );
+        match import_map(&records, ContentStore::embedded(), every_source()) {
+            Ok(galaxy) => game = game.with_galaxy(galaxy),
+            Err(error) => {
+                mapless += 1;
+                if mapless <= 3 {
+                    println!("  map failed for {}: {error}", path.display());
+                }
+            }
+        }
         let mut stopped = None;
         for _ in 0..decisions.len().max(1) * 4 {
             if let Some(error) = game.step().error {
@@ -88,6 +105,7 @@ fn main() {
     println!("corpus: {total} bounded Python games at oracle 37061c51");
     println!("  unparsable:                  {unparsed}");
     println!("  parsed but not importable:   {unimportable}");
+    println!("  replayed without a board:    {mapless}");
     println!("  replayed to the end:         {completed}");
     println!();
     println!(
@@ -107,6 +125,17 @@ fn main() {
     for (what, count) in rows.iter().take(12) {
         println!("  {count:>3} traces  {what}");
     }
+}
+
+/// Every source, for reconstructing a board rather than scoping a game.
+fn every_source() -> SourceSet {
+    Source::Base
+        | Source::Codex1
+        | Source::Codex2
+        | Source::Codex3
+        | Source::Codex4
+        | Source::Pok
+        | Source::ThundersEdge
 }
 
 fn median(values: &mut [usize]) -> usize {

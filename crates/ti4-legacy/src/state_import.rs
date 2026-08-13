@@ -321,3 +321,233 @@ mod tests {
         );
     }
 }
+
+// -- the board a replayed game was played on ---------------------------------------------------
+
+/// A tile placement read from a bounded trace's map record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedTile {
+    /// The system's id.
+    pub system: String,
+    /// Where it sat.
+    pub position: ti4_model::Hex,
+}
+
+/// Why a map record could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MapImportError {
+    /// The trace carries no map record at all.
+    ///
+    /// Distinct from a map that says it is absent: an older corpus predates the record entirely,
+    /// and reporting that as "the game had no board" would hide a stale fixture.
+    #[error("bounded trace carries no map record; it predates the map schema")]
+    Missing,
+    /// The record is present and says the game had no board.
+    #[error("the exported game was played without a board")]
+    NoBoard,
+    /// A tile entry is not in the map schema's shape.
+    #[error("map tile {index} is malformed: {reason}")]
+    MalformedTile {
+        /// Which entry.
+        index: usize,
+        /// What was wrong with it.
+        reason: String,
+    },
+    /// The placements do not form a legal galaxy.
+    #[error("the placements are not a legal board: {0}")]
+    Illegal(String),
+}
+
+/// Read the tile placements out of a bounded trace's records.
+///
+/// # Errors
+/// [`MapImportError`] naming what was wrong.
+pub fn read_map(records: &[Value]) -> Result<Vec<PlacedTile>, MapImportError> {
+    let record = records
+        .iter()
+        .find(|record| record.get("type").and_then(Value::as_str) == Some("map"))
+        .ok_or(MapImportError::Missing)?;
+    if record.get("present").and_then(Value::as_bool) != Some(true) {
+        return Err(MapImportError::NoBoard);
+    }
+    let tiles =
+        record
+            .get("tiles")
+            .and_then(Value::as_array)
+            .ok_or(MapImportError::MalformedTile {
+                index: 0,
+                reason: "the record carries no tile list".to_owned(),
+            })?;
+
+    tiles
+        .iter()
+        .enumerate()
+        .map(|(index, tile)| {
+            let read = |name: &str| -> Result<i32, MapImportError> {
+                tile.get(name)
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .ok_or_else(|| MapImportError::MalformedTile {
+                        index,
+                        reason: format!("{name} is missing or not a coordinate"),
+                    })
+            };
+            let system = tile.get("system").and_then(Value::as_str).ok_or_else(|| {
+                MapImportError::MalformedTile {
+                    index,
+                    reason: "system is missing".to_owned(),
+                }
+            })?;
+            Ok(PlacedTile {
+                system: system.to_owned(),
+                position: ti4_model::Hex {
+                    q: read("q")?,
+                    r: read("r")?,
+                },
+            })
+        })
+        .collect()
+}
+
+/// Rebuild the galaxy a replayed game was played on.
+///
+/// This is what lets a replay reach a tactical action at all. Without it the native engine is
+/// offered no board, declines every activation as impossible, and diverges from the oracle's
+/// script the first time it took one — which in a game of this is almost immediately.
+///
+/// `sources` is deliberately not the game's declared scope. A tile that the oracle placed is a
+/// fact about the board it played on, and filtering the reconstruction by the scenario's declared
+/// sources rejects it: half this corpus declares `base` and places a Thunder's Edge tile. Scoping
+/// belongs to what a game may *offer*, not to what a replay may *observe*.
+///
+/// # Errors
+/// [`MapImportError`] when the record is absent, malformed, or does not form a legal board.
+pub fn import_map(
+    records: &[Value],
+    content: &ti4_content::ContentStore,
+    sources: ti4_model::content_types::SourceSet,
+) -> Result<ti4_content::galaxy::Galaxy, MapImportError> {
+    let tiles = read_map(records)?;
+    let placements: Vec<(&str, ti4_model::Hex)> = tiles
+        .iter()
+        .map(|tile| (tile.system.as_str(), tile.position))
+        .collect();
+    ti4_content::galaxy::Galaxy::placed(content, &placements, sources)
+        .map_err(|error| MapImportError::Illegal(error.to_string()))
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn every_source() -> ti4_model::content_types::SourceSet {
+        use ti4_model::content_types::Source;
+        Source::Base
+            | Source::Codex1
+            | Source::Codex2
+            | Source::Codex3
+            | Source::Codex4
+            | Source::Pok
+            | Source::ThundersEdge
+    }
+
+    fn records(name: &str) -> Vec<Value> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/legacy_entropy/bounded-v1")
+            .join(name);
+        fs::read_to_string(path)
+            .expect("trace readable")
+            .lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect()
+    }
+
+    #[test]
+    fn the_corpus_carries_the_board_each_game_was_played_on() {
+        // Until it did, differential replay could never reach a tactical action: the native engine
+        // offers none without a galaxy, so every trace diverged from the oracle's script the first
+        // time it took one. `tactical` was the third commonest stop across the corpus and vanished
+        // from the tally entirely once the board was carried.
+        let tiles = read_map(&records("trace-001.ndjson")).expect("the trace carries a map");
+        assert!(tiles.len() > 20, "a board, not a handful of tiles");
+        assert!(
+            tiles
+                .iter()
+                .any(|tile| tile.position == ti4_model::Hex::ORIGIN),
+            "something sits at the centre"
+        );
+    }
+
+    #[test]
+    fn a_reconstructed_board_places_every_tile_where_the_oracle_had_it() {
+        let content = ti4_content::ContentStore::embedded();
+        let read = records("trace-001.ndjson");
+        let tiles = read_map(&read).expect("map");
+        let galaxy = import_map(&read, content, every_source()).expect("a legal board");
+
+        for tile in &tiles {
+            assert_eq!(
+                galaxy.coord_of(&tile.system),
+                Some(tile.position),
+                "{} was rebuilt somewhere else",
+                tile.system
+            );
+        }
+    }
+
+    #[test]
+    fn every_trace_in_the_corpus_rebuilds_a_board() {
+        // Half of them failed at first: the reconstruction was filtered by the scenario's declared
+        // sources, and half this corpus declares `base` while placing a Thunder's Edge tile. A
+        // tile the oracle placed is a fact about the board, not a scoping decision.
+        let content = ti4_content::ContentStore::embedded();
+        let dir =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/legacy_entropy/bounded-v1");
+        let mut checked = 0;
+        for entry in fs::read_dir(&dir).expect("corpus") {
+            let path = entry.expect("entry").path();
+            if path.extension().is_none_or(|ext| ext != "ndjson") {
+                continue;
+            }
+            let read: Vec<Value> = fs::read_to_string(&path)
+                .expect("readable")
+                .lines()
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+            import_map(&read, content, every_source()).unwrap_or_else(|error| {
+                panic!("{} has no rebuildable board: {error}", path.display())
+            });
+            checked += 1;
+        }
+        assert_eq!(checked, 100, "the whole corpus was checked");
+    }
+
+    #[test]
+    fn a_trace_without_a_map_record_says_so_rather_than_reporting_an_empty_board() {
+        // An older corpus predates the record. Reporting that as "this game had no board" would
+        // hide a stale fixture behind a plausible-looking answer.
+        let nothing: Vec<Value> = vec![serde_json::json!({"type": "state"})];
+        assert_eq!(read_map(&nothing), Err(MapImportError::Missing));
+
+        let boardless: Vec<Value> =
+            vec![serde_json::json!({"type": "map", "present": false, "tiles": []})];
+        assert_eq!(read_map(&boardless), Err(MapImportError::NoBoard));
+    }
+
+    #[test]
+    fn a_malformed_tile_is_refused_rather_than_placed_at_the_origin() {
+        // A missing coordinate defaulting to zero would stack tiles on the centre and rebuild a
+        // board that is legal, connected, and not the one the game was played on.
+        let broken: Vec<Value> = vec![serde_json::json!({
+            "type": "map",
+            "present": true,
+            "tiles": [{"system": "18", "q": 0}],
+        })];
+        assert!(matches!(
+            read_map(&broken),
+            Err(MapImportError::MalformedTile { index: 0, .. })
+        ));
+    }
+}

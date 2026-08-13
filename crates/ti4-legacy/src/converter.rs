@@ -168,7 +168,11 @@ pub fn parse_bounded_trace(input: &str) -> Result<BoundedTrace, BoundedTraceErro
                     rolls: parsed.rolls,
                 });
             }
-            "state" | "event" | "outcome" => {}
+            // The board is carried alongside the states and read by `state_import::import_map`
+            // rather than here: this validator's job is the decision sequence and the dice, and a
+            // map record is neither. Accepted rather than rejected, because a trace that carries
+            // one is a *newer* corpus, not a malformed one.
+            "state" | "event" | "outcome" | "map" => {}
             other => {
                 return Err(BoundedTraceError::InvalidRecord {
                     line: line_number,

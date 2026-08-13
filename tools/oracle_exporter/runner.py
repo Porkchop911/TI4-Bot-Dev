@@ -10,6 +10,7 @@ from .cli import EXPORT_SCOPE, ORACLE_COMMIT, SCHEMA_VERSION, _load_oracle
 from .projections.choice import choice_projection
 from .projections.event import event_projection
 from .projections.outcome import outcome_projection
+from .projections.map import map_projection
 from .projections.state import state_projection
 
 
@@ -130,6 +131,10 @@ def bounded_game_records(
                 "export_scope": "bounded_game",
             },
             state_projection(game.state),
+            # The board the game was played on. Emitted once, before any decision: it does not
+            # change during a bounded run, and without it a consumer cannot rebuild the galaxy and
+            # so can never replay a tactical action.
+            map_projection(getattr(game, "galaxy", None)),
         ]
     )
     original_emit = game._emit

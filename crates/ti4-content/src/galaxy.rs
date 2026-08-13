@@ -273,6 +273,56 @@ pub struct Galaxy {
 }
 
 impl Galaxy {
+    /// A galaxy from explicit tile placements, rather than a spiral filled in order.
+    ///
+    /// [`Galaxy::build`] lays tiles along a spiral, which is how this engine sets a game up. A
+    /// board that came from somewhere else — a replayed game, a saved map, a draft — has positions
+    /// of its own, and reconstructing it by feeding ids to the spiral in some order would place
+    /// them somewhere else entirely and read as a different board with the same tiles.
+    ///
+    /// # Errors
+    /// [`GalaxyError::UnknownSystem`] for a tile the corpus does not carry, and
+    /// [`GalaxyError::DuplicateSystem`] when one is placed twice — silently keeping the last would
+    /// leave `placement` and `coords` disagreeing, putting a tile in two places at once.
+    pub fn placed(
+        store: &ContentStore,
+        tiles: &[(&str, Hex)],
+        sources: SourceSet,
+    ) -> Result<Self, GalaxyError> {
+        let catalogue = all_systems(store, sources);
+        let mut placement = BTreeMap::new();
+        let mut coords = BTreeMap::new();
+        let mut wormholes = BTreeMap::new();
+        let mut hyperlanes = BTreeSet::new();
+
+        for (id, hex) in tiles {
+            let system = catalogue
+                .get(id)
+                .ok_or_else(|| GalaxyError::UnknownSystem((*id).to_owned()))?;
+            if coords.contains_key(*id) {
+                return Err(GalaxyError::DuplicateSystem((*id).to_owned()));
+            }
+            placement.insert(*hex, (*id).to_owned());
+            coords.insert((*id).to_owned(), *hex);
+            wormholes.insert(
+                (*id).to_owned(),
+                system.wormholes().into_iter().map(str::to_owned).collect(),
+            );
+            if system.is_hyperlane() {
+                hyperlanes.insert((*id).to_owned());
+            }
+        }
+
+        Ok(Self {
+            placement,
+            coords,
+            wormholes,
+            hyperlanes,
+            wormholes_off: false,
+            wormholes_all_linked: false,
+        })
+    }
+
     /// Place systems onto a spiral from the centre outwards.
     ///
     /// A placeholder for real map setup (drafting, map templates); enough to exercise
