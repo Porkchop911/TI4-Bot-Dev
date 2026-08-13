@@ -238,6 +238,18 @@ pub const POK: SourceSet = enum_set!(
     Source::Base | Source::Pok | Source::Codex1 | Source::Codex2 | Source::Codex3 | Source::Codex4
 );
 
+/// The scope this project plays at: everything, newest components, Omega where it exists.
+///
+/// An alias for [`FULL`] rather than a fourth set, so there is one place to read the decision and
+/// no way for the two to drift apart. Named separately because "what this project plays" and
+/// "every source that exists" are different statements that happen to coincide today — the day a
+/// new expansion lands, [`FULL`] grows and this is where somebody decides whether it should.
+///
+/// Runtime paths — the simulator, the training rollout, evaluation — use this. A test may still
+/// scope to [`BASE`] or [`POK`] deliberately when it is *about* scoping; anything else should read
+/// this constant rather than picking a set of its own.
+pub const DEFAULT: SourceSet = FULL;
+
 /// Everything, including Thunder's Edge.
 pub const FULL: SourceSet = enum_set!(
     Source::Base

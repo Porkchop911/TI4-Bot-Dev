@@ -39,6 +39,12 @@ pub enum SeatingError {
 /// explicitly out of scope, and the rest of the corpus's thirty-four factions have no leaders,
 /// abilities or units ported.
 ///
+/// **Faction scope and content scope are separate decisions.** Games are played with the whole
+/// corpus enabled — Thunder's Edge, Prophecy of Kings, every codex, and the newest printing of
+/// anything reprinted (`ti4_model::content_types::DEFAULT`) — while the seats stay these six. A
+/// wider corpus means these factions meet more cards, systems and relics; it does not mean anybody
+/// else sits down.
+///
 /// Named here rather than left to "whatever the catalogue lists first", which is how six seats
 /// came to be playing Arborec, Argent and the Vuil'raith Cabal — factions with no implemented
 /// abilities at all — in every rollout a trainer would have learned from. Alphabetical order is
@@ -735,6 +741,31 @@ mod tests {
                 "map {seed} gave someone a shorter run at Mecatol"
             );
         }
+    }
+
+    #[test]
+    fn a_wider_corpus_does_not_widen_the_table() {
+        // Content scope and faction scope are separate decisions, and enabling Thunder's Edge
+        // widened the corpus from 195 systems to 231 and from 83 leaders to 103. None of that is
+        // an invitation for a thirty-fourth faction to sit down.
+        let players: Vec<PlayerId> = (0..6).map(|i| PlayerId::new(format!("p{i}"))).collect();
+        let seated = seat_in_scope(&players);
+
+        for faction in seated.values() {
+            assert!(
+                IN_SCOPE_FACTIONS.contains(&faction.as_str()),
+                "{faction} was seated under the wider corpus and is not in scope"
+            );
+        }
+        // The wider corpus really is wider, or the check above proves nothing.
+        let narrow = ti4_content::factions::catalogue(content(), POK).len();
+        let wide =
+            ti4_content::factions::catalogue(content(), ti4_model::content_types::DEFAULT).len();
+        assert!(
+            wide >= narrow,
+            "full scope offers at least as many factions: {wide} against {narrow}"
+        );
+        assert!(wide > IN_SCOPE_FACTIONS.len(), "and far more than we seat");
     }
 
     #[test]

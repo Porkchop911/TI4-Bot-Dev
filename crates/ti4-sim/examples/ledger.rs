@@ -1,7 +1,7 @@
 //! Every coverage ledger this engine keeps, printed together.
 fn main() {
     let content = ti4_content::ContentStore::embedded();
-    let pok = ti4_model::content_types::POK;
+    let pok = ti4_model::content_types::DEFAULT;
     let scope = ti4_engine::seating::IN_SCOPE_FACTIONS;
     println!("{}", ti4_engine::registry::report(content, pok));
     println!(

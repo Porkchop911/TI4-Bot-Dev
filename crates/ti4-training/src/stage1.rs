@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
-use ti4_model::content_types::POK;
+use ti4_model::content_types::DEFAULT;
 use ti4_model::id::PlayerId;
 use ti4_policy::learned::{DEFAULT_DIMENSIONS, Profile, blank_profile};
 
@@ -186,7 +186,7 @@ pub fn train(content: &'static ContentStore, plan: &Plan) -> Run {
             content,
             &plan.players,
             &profiles,
-            POK,
+            DEFAULT,
             &seeds,
             horizon,
             ti4_engine::opening::DEFAULT_REQUIREMENT,

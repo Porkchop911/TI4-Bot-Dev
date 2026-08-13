@@ -32,6 +32,15 @@ use crate::record::{Record, type_name};
 /// a leader or a mech when TE content is out of scope.
 const SOURCE_SUFFIXES: [&str; 2] = ["-te", "_te"];
 
+/// Suffixes marking a newer printing of a component, newest first.
+///
+/// A component reprinted by a later release keeps its original id and gains a suffixed sibling:
+/// `xxchahero` and `xxchahero-te`, `naalu_mech` and `naalu_mech_omega`. When both are in scope the
+/// newer one is the card actually in the box, so that is the one a lookup should find.
+///
+/// Ordered newest-first, and Thunder's Edge is newer than the Codex Omega printings.
+const NEWER_PRINTINGS: [&str; 4] = ["-te", "_te", "_omega", "-omega"];
+
 /// The corpus, compiled in. Order matches [`ALL_CONTENT_TYPES`].
 const EMBEDDED: [(ContentType, &str); 28] = [
     (
@@ -378,7 +387,7 @@ impl ContentStore {
     /// Returns the id that actually exists in scope, or `None`.
     #[must_use]
     pub fn resolve_id<'a>(
-        &self,
+        &'a self,
         category: ContentType,
         id: &'a str,
         sources: SourceSet,
@@ -387,9 +396,23 @@ impl ContentStore {
             self.get(category, candidate)
                 .is_some_and(|r| r.in_sources(sources))
         };
+        // A newer printing in scope is the card in the box, so it wins over the original. Checked
+        // before the plain id: asking for `xxchahero` in a Thunder's Edge game should find the
+        // Thunder's Edge hero, not the one it replaced.
+        if !NEWER_PRINTINGS.iter().any(|suffix| id.ends_with(suffix))
+            && let Some(newer) = NEWER_PRINTINGS.iter().find_map(|suffix| {
+                let candidate = format!("{id}{suffix}");
+                self.get(category, &candidate)
+                    .filter(|record| record.in_sources(sources))
+                    .and_then(Record::id)
+            })
+        {
+            return Some(newer);
+        }
         if in_scope(id) {
             return Some(id);
         }
+        // A newer printing asked for but out of scope falls back to what it replaced.
         SOURCE_SUFFIXES.iter().find_map(|suffix| {
             let base = id.strip_suffix(suffix)?;
             in_scope(base).then_some(base)
@@ -435,6 +458,84 @@ impl ContentStore {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_lookup_finds_the_newest_printing_in_scope() {
+        // The standing rule for this project: latest components, Thunder's Edge and PoK enabled,
+        // Omega where it exists. A component reprinted by a later release keeps its original id and
+        // gains a suffixed sibling, and when both are in the box the newer one is the card being
+        // played — so asking for the original must find the reprint rather than what it replaced.
+        let store = ContentStore::embedded();
+
+        assert_eq!(
+            store.resolve_id(ContentType::Leaders, "xxchahero", FULL),
+            Some("xxchahero-te"),
+            "Xxcha's hero has a Thunder's Edge printing and Xxcha is a faction we play"
+        );
+        assert_eq!(
+            store.resolve_id(ContentType::Units, "naalu_mech", POK),
+            Some("naalu_mech_omega"),
+            "the Codex Omega printing applies even without Thunder's Edge"
+        );
+        assert_eq!(
+            store.resolve_id(ContentType::Units, "naalu_mech", FULL),
+            Some("naalu_mech_te"),
+            "and Thunder's Edge is newer than Omega"
+        );
+    }
+
+    #[test]
+    fn a_component_with_no_reprint_resolves_to_itself() {
+        // Nearly everything. A rule that quietly rewrote ids it should not touch would be far
+        // worse than one that missed a reprint.
+        let store = ContentStore::embedded();
+        for id in ["solhero", "solagent", "hacanhero", "letnevhero"] {
+            assert_eq!(
+                store.resolve_id(ContentType::Leaders, id, FULL),
+                Some(id),
+                "{id} was rewritten and has no newer printing"
+            );
+        }
+    }
+
+    #[test]
+    fn asking_for_a_reprint_out_of_scope_still_falls_back_to_what_it_replaced() {
+        // The original behaviour, which has to survive: a game scoped without Thunder's Edge that
+        // names a Thunder's Edge id should get the card it reprinted, not nothing.
+        let store = ContentStore::embedded();
+        assert_eq!(
+            store.resolve_id(ContentType::Leaders, "xxchahero-te", POK),
+            Some("xxchahero")
+        );
+    }
+
+    #[test]
+    fn asking_for_a_reprint_directly_returns_it_rather_than_looping() {
+        // An id that already carries a newer-printing suffix must not have another appended.
+        let store = ContentStore::embedded();
+        assert_eq!(
+            store.resolve_id(ContentType::Leaders, "xxchahero-te", FULL),
+            Some("xxchahero-te")
+        );
+    }
+
+    #[test]
+    fn the_project_default_scope_is_everything() {
+        // Stated as an assertion so that narrowing it is a deliberate edit rather than a drift.
+        use ti4_model::content_types::DEFAULT;
+        assert_eq!(DEFAULT, FULL);
+        for source in [
+            Source::Base,
+            Source::Pok,
+            Source::ThundersEdge,
+            Source::Codex4,
+        ] {
+            assert!(
+                DEFAULT.contains(source),
+                "{source:?} is not in the default scope"
+            );
+        }
+    }
     use super::*;
     use ti4_model::content_types::{BASE, FULL, IdentityKey, POK, Source};
 

@@ -23,7 +23,7 @@ use ti4_engine::choice::{Observed, SeededRandom, Table};
 use ti4_engine::game::Game;
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
 use ti4_engine::setup::start_game_seeded;
-use ti4_model::content_types::{POK, SourceSet};
+use ti4_model::content_types::{DEFAULT, SourceSet};
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::{LearnedBot, TrajectoryStep};
 use ti4_policy::learned::Profile;
@@ -349,12 +349,13 @@ pub const fn default_requirement() -> Requirement {
 /// The content scope rollouts are played under.
 #[must_use]
 pub const fn default_sources() -> SourceSet {
-    POK
+    DEFAULT
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ti4_model::content_types::POK;
 
     fn seats(names: &[&str]) -> Vec<PlayerId> {
         names.iter().map(|name| PlayerId::new(*name)).collect()

@@ -14,7 +14,7 @@ use ti4_content::galaxy::Galaxy;
 use ti4_engine::game::Game;
 use ti4_engine::objectives::VICTORY_TARGET;
 use ti4_engine::setup::start_game_seeded;
-use ti4_model::content_types::{POK, SourceSet};
+use ti4_model::content_types::{DEFAULT, SourceSet};
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_model::state::GameState;
 
@@ -312,7 +312,7 @@ pub fn run_with(
                 scope.spawn(move || {
                     batch
                         .iter()
-                        .map(|seed| play_with(content, &players, POK, *seed, horizon, seats))
+                        .map(|seed| play_with(content, &players, DEFAULT, *seed, horizon, seats))
                         .collect::<Vec<GameResult>>()
                 })
             })
@@ -330,6 +330,7 @@ pub fn run_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ti4_model::content_types::POK;
 
     fn seats(names: &[&str]) -> Vec<PlayerId> {
         names.iter().map(|name| PlayerId::new(*name)).collect()
