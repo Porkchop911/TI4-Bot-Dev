@@ -33,6 +33,36 @@ pub enum SeatingError {
     Galaxy(#[from] GalaxyError),
 }
 
+/// The factions this project plays.
+///
+/// Six, by owner decision: Sol, Hacan, Letnev, Xxcha, Jol-Nar and L1Z1X. The Firmament is
+/// explicitly out of scope, and the rest of the corpus's thirty-four factions have no leaders,
+/// abilities or units ported.
+///
+/// Named here rather than left to "whatever the catalogue lists first", which is how six seats
+/// came to be playing Arborec, Argent and the Vuil'raith Cabal — factions with no implemented
+/// abilities at all — in every rollout a trainer would have learned from. Alphabetical order is
+/// not a scope decision, and a scope decision should not be alphabetical order.
+pub const IN_SCOPE_FACTIONS: [&str; 6] = ["sol", "hacan", "letnev", "xxcha", "jolnar", "l1z1x"];
+
+/// Faction assignments for a table, taking the in-scope factions in order.
+///
+/// Seats beyond the sixth reuse the list from the start, so a larger table is still playing
+/// factions this engine implements rather than falling off the end into unported ones.
+#[must_use]
+pub fn seat_in_scope(players: &[PlayerId]) -> BTreeMap<PlayerId, FactionId> {
+    players
+        .iter()
+        .enumerate()
+        .map(|(index, player)| {
+            (
+                player.clone(),
+                FactionId::new(IN_SCOPE_FACTIONS[index % IN_SCOPE_FACTIONS.len()]),
+            )
+        })
+        .collect()
+}
+
 /// Home system tile ids for a player-to-faction assignment, in assignment order.
 ///
 /// # Errors

@@ -8,6 +8,7 @@ pub mod archive;
 pub mod capture;
 pub mod promotion;
 pub mod reward;
+pub mod rollout;
 pub mod stage1;
 pub mod stage2;
 
@@ -15,5 +16,6 @@ pub use archive::*;
 pub use capture::*;
 pub use promotion::*;
 pub use reward::*;
+pub use rollout::*;
 pub use stage1::*;
 pub use stage2::*;

@@ -19,20 +19,30 @@
 //! trajectory where it needs a distribution — the probabilities recorded here are what the update
 //! divides by.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_model::id::PlayerId;
 
 use crate::features::{FeatureVector, option_features};
 use crate::learned::{Profile, decision_head};
+use crate::progress::{Baseline, Progress};
 
 /// One learned decision, in the form a policy-gradient trainer consumes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrajectoryStep {
+    /// Which seat took this decision.
+    ///
+    /// Carried on the step rather than left to the caller's bookkeeping, so a trainer pooling
+    /// trajectories from six seats cannot credit one seat's play to another. Crossed wiring there
+    /// trains every policy on everybody's decisions and looks, from every metric, like training.
+    pub player: PlayerId,
     /// Which head decided this.
     pub head: String,
     /// The option taken.
@@ -47,8 +57,13 @@ pub struct TrajectoryStep {
     pub legal: BTreeMap<String, FeatureVector>,
     /// What the policy thought each legal option's chance was.
     pub probabilities: BTreeMap<String, f64>,
-    /// Which round the decision was taken in, so the two stages can weigh it.
-    pub round: u32,
+    /// What the game had produced for this seat when the decision was taken.
+    ///
+    /// Stamped here rather than by the caller because it has to be the position *at the decision*,
+    /// and by the time a rollout sees the game again several more decisions have happened. The
+    /// reward is a difference between consecutive snapshots, so one taken late is not merely
+    /// imprecise — it moves the credit onto the wrong decision.
+    pub progress: Progress,
 }
 
 /// Softmax over the legal set.
@@ -89,8 +104,15 @@ pub struct LearnedBot {
     profile: Profile,
     rng: ChaCha8Rng,
     /// The decisions taken, when recording.
-    pub trajectory: Vec<TrajectoryStep>,
+    ///
+    /// Behind a shared handle because the bot is moved into the engine's decision table and cannot
+    /// be borrowed back out of it: the table holds `Box<dyn Decider>`, and a caller wanting the
+    /// trajectory afterwards would otherwise have to downcast. [`LearnedBot::trajectory`] hands out
+    /// the same handle, so a rollout takes it before seating and reads it after the game.
+    trajectory: Rc<RefCell<Vec<TrajectoryStep>>>,
     recording: bool,
+    /// What this seat held at setup, so progress is a gain rather than a total.
+    baseline: Baseline,
 }
 
 impl LearnedBot {
@@ -100,9 +122,20 @@ impl LearnedBot {
         Self {
             profile,
             rng: ChaCha8Rng::seed_from_u64(seed),
-            trajectory: Vec::new(),
+            trajectory: Rc::new(RefCell::new(Vec::new())),
             recording: false,
+            baseline: Baseline::default(),
         }
+    }
+
+    /// What this seat held at setup.
+    ///
+    /// Without it every holding reads as a gain, which is wrong in the direction that flatters the
+    /// policy: a faction that starts on three planets would be credited with taking them.
+    #[must_use]
+    pub const fn from_setup(mut self, baseline: Baseline) -> Self {
+        self.baseline = baseline;
+        self
     }
 
     /// Record every decision, for training. Off by default: a batch run does not want one.
@@ -116,6 +149,15 @@ impl LearnedBot {
     #[must_use]
     pub const fn profile(&self) -> &Profile {
         &self.profile
+    }
+
+    /// A handle on the decisions this bot takes.
+    ///
+    /// Taken before the bot is seated, read after the game. The handle is shared rather than
+    /// copied, so what a rollout reads is what the bot actually recorded.
+    #[must_use]
+    pub fn trajectory(&self) -> Rc<RefCell<Vec<TrajectoryStep>>> {
+        Rc::clone(&self.trajectory)
     }
 
     /// Score every legal option, and say what each one's chance is.
@@ -189,13 +231,14 @@ impl Decider for LearnedBot {
         }
 
         if self.recording {
-            self.trajectory.push(TrajectoryStep {
+            self.trajectory.borrow_mut().push(TrajectoryStep {
+                player: choice.player.clone(),
                 head: decision_head(choice).to_owned(),
                 chosen: chosen.id.clone(),
                 features: legal.get(&chosen.id).cloned().unwrap_or_default(),
                 legal,
                 probabilities: chances,
-                round: seen.round(),
+                progress: crate::progress::measure(seen, &choice.player, self.baseline),
             });
         }
         Ok(chosen.clone())
@@ -384,8 +427,15 @@ mod tests {
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2).recording();
         let taken = bot.choose_seeing(&choice, &seen).unwrap();
 
-        let step = bot.trajectory.first().expect("it was recorded");
+        let recorded = bot.trajectory();
+        let steps = recorded.borrow();
+        let step = steps.first().expect("it was recorded");
         assert_eq!(step.chosen, taken.id);
+        assert_eq!(
+            step.player,
+            PlayerId::new("a"),
+            "the step names who took it"
+        );
         assert_eq!(step.head, "activation");
         assert_eq!(
             step.legal.len(),
@@ -397,7 +447,7 @@ mod tests {
             "and the chosen one's are the ones it took"
         );
         assert!((step.probabilities.values().sum::<f64>() - 1.0).abs() < 1e-12);
-        assert_eq!(step.round, seen.round());
+        assert_eq!(step.progress.round_number, seen.round());
     }
 
     #[test]
@@ -407,7 +457,7 @@ mod tests {
         let choice = asked(&[("18", "activate")]);
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2);
         bot.choose_seeing(&choice, &seen).unwrap();
-        assert!(bot.trajectory.is_empty());
+        assert!(bot.trajectory().borrow().is_empty());
     }
 
     #[test]

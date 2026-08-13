@@ -35,29 +35,7 @@
 
 use serde::{Deserialize, Serialize};
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
-
-/// One captured decision's view of what the game had produced so far.
-///
-/// Rules facts only — no authored opinion about which objective is worth chasing. `scoreable_*`
-/// are counts from the engine's own scoreable predicates: the objectives this seat could score at
-/// this instant.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Progress {
-    /// Planets taken since setup.
-    pub planets_gained: i64,
-    /// Distinct systems holding a controlled planet.
-    pub systems: i64,
-    /// Units gained since setup.
-    pub units_gained: i64,
-    /// Points scored.
-    pub victory_points: i64,
-    /// Revealed public objectives this seat could score right now.
-    pub scoreable_public: i64,
-    /// Secret objectives this seat could score right now.
-    pub scoreable_secret: i64,
-    /// Which round this snapshot was taken in.
-    pub round_number: u32,
-}
+pub use ti4_policy::progress::Progress;
 
 /// Potential over exactly the three Stage-1 gate components.
 ///

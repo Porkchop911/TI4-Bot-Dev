@@ -104,22 +104,15 @@ pub struct Table {
 }
 
 impl Table {
-    /// Seat `players` on the first factions the corpus offers, in a stable order.
+    /// Seat `players` on the factions this project implements, in a stable order.
     ///
-    /// A placeholder for the map pool and faction panels of M10-002 through M10-006, which decide
-    /// this properly. Named as one so nobody mistakes "the first six factions" for a balanced
-    /// draw — a batch run on it measures the engine, not the matchup.
+    /// Still a placeholder for the map pool and faction panels of M10-002 to M10-006, which decide
+    /// a matchup properly — nobody should mistake a fixed order for a balanced draw. What it is no
+    /// longer is *alphabetical*: it used to take the first six aliases the catalogue offered, which
+    /// seated Arborec, Argent and the Vuil'raith Cabal, none of which have a single ability ported.
     #[must_use]
-    pub fn seated(content: &ContentStore, players: &[PlayerId], sources: SourceSet) -> Self {
-        let available: Vec<String> = ti4_content::factions::catalogue(content, sources)
-            .keys()
-            .map(|alias| (*alias).to_owned())
-            .collect();
-        let factions = players
-            .iter()
-            .zip(available)
-            .map(|(player, alias)| (player.clone(), FactionId::new(alias)))
-            .collect();
+    pub fn seated(_content: &ContentStore, players: &[PlayerId], sources: SourceSet) -> Self {
+        let factions = ti4_engine::seating::seat_in_scope(players);
         Self {
             players: players.to_vec(),
             factions,

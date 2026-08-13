@@ -544,6 +544,48 @@ impl<'a> Observed<'a> {
         self.state.scored_by(player)
     }
 
+    /// Every unit this player owns, in space **and** on planets.
+    ///
+    /// Ground forces and structures live on planets rather than in the space area, and counting
+    /// only the space area makes "the seat built something" mean "the seat built a ship".
+    #[must_use]
+    pub fn units_held(&self, player: &PlayerId) -> usize {
+        self.state
+            .board
+            .values()
+            .map(|system| {
+                system.units_of(player).len()
+                    + system
+                        .planet_units
+                        .values()
+                        .flatten()
+                        .filter(|unit| &unit.owner == player)
+                        .count()
+            })
+            .sum()
+    }
+
+    /// How many revealed public objectives this seat could score right now.
+    ///
+    /// A rules predicate, not an opinion about which objective is worth chasing. It exists so a
+    /// policy has something to climb before it ever scores: a four-round game yields about 1.49
+    /// victory points per faction, which is far too sparse to learn from on its own.
+    #[must_use]
+    pub fn scoreable_public(&self, player: &PlayerId) -> usize {
+        crate::objectives::scoreable_on(self.state, self.content, self.sources, player, self.galaxy)
+            .len()
+    }
+
+    /// The same for the secrets this seat holds.
+    ///
+    /// Private to its holder, and answered only for the seat asking — which is the one case where
+    /// reading a hand is not reading somebody else's.
+    #[must_use]
+    pub fn scoreable_secret(&self, player: &PlayerId) -> usize {
+        crate::secrets::scoreable_on(self.state, self.content, self.sources, player, self.galaxy)
+            .len()
+    }
+
     /// A full state with every other player's private holdings replaced by markers.
     ///
     /// Copies. That is the point: reading private information should cost something visible, so
