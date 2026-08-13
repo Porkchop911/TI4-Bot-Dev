@@ -20,6 +20,57 @@ use ti4_model::state::GameState;
 
 use crate::result::{Batch, Ending, GameResult};
 
+/// Who answers the choices in a run.
+///
+/// A batch's numbers mean nothing without this: uniform-random play and scored play produce
+/// completely different games from the same engine, so a report that does not say which one it
+/// measured is not a measurement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Seats {
+    /// Every seat picks uniformly at random. The engine's stress test, not a game.
+    #[default]
+    Random,
+    /// Every seat plays the authored scored bot.
+    Scored,
+}
+
+impl Seats {
+    /// The stable name used in reports.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Random => "random",
+            Self::Scored => "scored",
+        }
+    }
+
+    /// A decision table for these seats, seeded from the game's seed.
+    fn table(self, players: &[PlayerId], seed: u64) -> ti4_engine::choice::Table {
+        match self {
+            Self::Random => ti4_engine::choice::Table::with_default(Box::new(
+                ti4_engine::choice::SeededRandom::new(seed),
+            )),
+            Self::Scored => {
+                let mut table = ti4_engine::choice::Table::with_default(Box::new(
+                    ti4_engine::choice::SeededRandom::new(seed),
+                ));
+                // A separate stream per seat, derived from the game seed: six bots sharing one
+                // stream would have their choices correlated by seating order alone.
+                for (index, player) in players.iter().enumerate() {
+                    let offset = u64::try_from(index).unwrap_or(0);
+                    table.seat(
+                        player.clone(),
+                        Box::new(ti4_policy::bot::ScoredBot::new(
+                            seed.wrapping_mul(1_000_003).wrapping_add(offset),
+                        )),
+                    );
+                }
+                table
+            }
+        }
+    }
+}
+
 /// What a run is allowed to do before it is called off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Horizon {
@@ -123,6 +174,19 @@ pub fn play(
     seed: u64,
     horizon: Horizon,
 ) -> GameResult {
+    play_with(content, players, sources, seed, horizon, Seats::default())
+}
+
+/// Play one game with a named set of seats.
+#[must_use]
+pub fn play_with(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    seats: Seats,
+) -> GameResult {
     let started = Instant::now();
     let table = Table::seated(content, players, sources);
     let (state, galaxy) = match seat(content, &table) {
@@ -130,7 +194,7 @@ pub fn play(
         Err(error) => return failed(seed, players, started, error),
     };
 
-    let mut game = Game::with_seeded_random(state, content, seed).with_galaxy(galaxy);
+    let mut game = Game::with_table(state, content, seats.table(players, seed)).with_galaxy(galaxy);
     let outcome = game
         .run(horizon.rounds, horizon.steps)
         .err()
@@ -225,6 +289,18 @@ pub fn run(
     seeds: impl IntoIterator<Item = u64>,
     horizon: Horizon,
 ) -> Batch {
+    run_with(content, players, seeds, horizon, Seats::default())
+}
+
+/// Play `count` games with a named set of seats.
+#[must_use]
+pub fn run_with(
+    content: &'static ContentStore,
+    players: &[PlayerId],
+    seeds: impl IntoIterator<Item = u64>,
+    horizon: Horizon,
+    seats: Seats,
+) -> Batch {
     let seeds: Vec<u64> = seeds.into_iter().collect();
     let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let chunk = seeds.len().div_ceil(workers.max(1)).max(1);
@@ -237,7 +313,7 @@ pub fn run(
                 scope.spawn(move || {
                     batch
                         .iter()
-                        .map(|seed| play(content, &players, POK, *seed, horizon))
+                        .map(|seed| play_with(content, &players, POK, *seed, horizon, seats))
                         .collect::<Vec<GameResult>>()
                 })
             })
