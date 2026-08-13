@@ -124,7 +124,10 @@ pub fn partners(
     galaxy: &Galaxy,
     player: &PlayerId,
 ) -> Vec<PlayerId> {
-    if crate::faction_abilities::ignores_neighbours(state, content, player) {
+    // Trade Convoys does for a note what Guild Ships does for a faction.
+    if crate::faction_abilities::ignores_neighbours(state, content, player)
+        || crate::promissory::reaches_anyone(state, player)
+    {
         return state
             .seating_order
             .iter()

@@ -999,6 +999,22 @@ impl<'a> Game<'a> {
                 hold.resolve(answer)?;
                 if hold.is_complete() {
                     let cargo = hold.cargo();
+                    // Ceasefire: the holder stops this player moving in, and the note is spent
+                    // doing it. Checked here rather than at activation because this is the
+                    // moment the denial bites.
+                    if let Some(active) = self.state.active_system.clone()
+                        && crate::promissory::denies_movement_into(
+                            &self.state,
+                            &window.player,
+                            &active,
+                        )
+                    {
+                        crate::promissory::use_ceasefire(&mut self.state, &window.player);
+                        self.emit("CEASEFIRE_USED");
+                        window.stage = TacticalStage::Moving;
+                        self.tactical = Some(window);
+                        return Ok(self.result(true, None));
+                    }
                     let outcome = self.sail(&origin, &ship, &path, cargo);
                     if matches!(outcome, MoveOutcome::Arrived { .. }) {
                         // Three printed windows read "after a player moves ships into" a system.

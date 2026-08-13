@@ -681,6 +681,16 @@ fn the_subsystems_still_ask_the_faction_layer() {
             "crate::faction_abilities::waived_prerequisites",
         ),
         (
+            "game (ceasefire)",
+            include_str!("game.rs"),
+            "crate::promissory::denies_movement_into",
+        ),
+        (
+            "transactions (convoys)",
+            include_str!("transactions.rs"),
+            "crate::promissory::reaches_anyone",
+        ),
+        (
             "combat (round window)",
             include_str!("combat.rs"),
             "crate::faction_abilities::space_combat_round_started",
