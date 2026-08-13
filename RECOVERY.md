@@ -68,12 +68,43 @@ git clone .backup/known-good-2026-08-13.bundle recovered
 losing `.git`, not against losing the directory. Copy it somewhere else before doing anything
 drastic.
 
-## Two gaps worth knowing about
+## The remote
 
-**There is no remote.** `git remote -v` is empty, so every copy of this work is on one machine.
-Nothing in this file survives the disk. Adding a remote and pushing — including the tag — is the
-single largest improvement available to this repository's safety, and it is a decision for the
-owner rather than something to do quietly.
+`origin` is <https://github.com/Porkchop911/TI4-Bot-Dev> — **private**. Every branch and the
+known-good tag are pushed there, so this work exists off this machine.
+
+Verified rather than assumed: a fresh clone of the working branch was made from the remote, and
+`cargo test --workspace` in it passed 18 test binaries with 0 failures. That check matters more
+than it looks — a fresh checkout is where line-ending and gitignore mistakes surface, and this
+project has already lost time to a corpus that passed for its author and failed for everybody else.
+
+**Recovering from the remote, if the local repository is gone:**
+
+```
+git clone --branch wp/m08-007f-public-trade-good-reserves https://github.com/Porkchop911/TI4-Bot-Dev
+```
+
+Or to land straight on the known-good point:
+
+```
+git clone https://github.com/Porkchop911/TI4-Bot-Dev
+cd TI4-Bot-Dev
+git switch -c recovery known-good/2026-08-13-learning-loop
+```
+
+**Push after every green point.** A commit that only exists locally is one machine away from being
+lost, and the remote is not a backup of anything that has not been pushed to it:
+
+```
+git push origin HEAD
+```
+
+Two things to keep in mind about the remote. It is private, and it should stay that way: the
+content corpus under `crates/ti4-content/content/` carries TI4 card and faction text, which is
+Fantasy Flight's material and not ours to publish. Making the repository public would also expose
+the commit author's email address, which appears in all 414 commits.
+
+## One gap worth knowing about
 
 **`main` is 181 commits behind.** It sits at `56c0435`, from before most of the engine existed, so
 it is not a useful fallback. The working branch is
