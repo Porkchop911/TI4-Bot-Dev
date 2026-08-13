@@ -193,6 +193,21 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Verification: 71 training tests + 987 workspace tests pass; clippy clean; format clean.
 - Evidence: `plans/evidence/M10-017.md`.
 
+### M10-018 learner/champion resume checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007f-public-trade-good-reserves`; commit `e359e7e`.
+- Added `Archive::resume()` to restore training state from checkpoints.
+- `ResumeState` struct holds champion, learner, history, telemetry, seeds, eval interval.
+- Champion extracted from `checkpoint.accepted` (hard error if empty).
+- Learner extracted from `checkpoint.profiles`, falls back to `accepted`.
+- Validates champion/learner factions match.
+- Computes `start_update` from max update in history.
+- Seed ranges: validation at `seed + 9_000_000`, confirmation at `seed + 14_000_000` (oracle defaults).
+- New `CheckpointError::ProfileValidation` variant for profile validation errors.
+- 8 new tests covering resume, fallback, failed promotion, equivalence, validation.
+- Verification: 77 training tests + 991 workspace tests pass; clippy clean; format clean.
+- Evidence: `plans/evidence/M10-018.md`.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
