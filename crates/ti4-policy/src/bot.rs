@@ -203,9 +203,16 @@ impl ScoredBot {
                 )
                 .expect("technology corpus count fits in i32"),
             );
-            return Components::of("technology", 6.0)
+            let score = Components::of("technology", 6.0)
                 .and("unit_upgrade", 2.0)
                 .and("upgrade_gap", 3.0 / (1.0 + held));
+            return if Self::has_public_goal(seen, choice, &["develop", "revolutionize"])
+                && held < 3.0
+            {
+                score.and("objective_upgrade", 6.0)
+            } else {
+                score
+            };
         }
         let Some(colour) = types
             .into_iter()
@@ -227,9 +234,28 @@ impl ScoredBot {
             )
             .expect("technology corpus count fits in i32"),
         );
-        Components::of("technology", 6.0)
+        let score = Components::of("technology", 6.0)
             .and("colour_path", 2.0)
-            .and("colour_gap", 3.0 / (1.0 + held))
+            .and("colour_gap", 3.0 / (1.0 + held));
+        if Self::has_public_goal(seen, choice, &["diversify", "master_science"]) {
+            score.and(
+                "objective_colour",
+                if (held - 1.0).abs() < f64::EPSILON {
+                    6.0
+                } else {
+                    2.0
+                },
+            )
+        } else {
+            score
+        }
+    }
+
+    fn has_public_goal(seen: &Observed<'_>, choice: &Choice, aliases: &[&str]) -> bool {
+        let scored = seen.scored_by(&choice.player);
+        seen.revealed_objectives()
+            .iter()
+            .any(|goal| aliases.contains(&goal.as_str()) && !scored.contains(goal))
     }
 
     /// The public part of the oracle's `_score_move`: a hull is valuable when it has a job at
@@ -1350,6 +1376,36 @@ mod tests {
                 .parts()
                 .iter()
                 .any(|(name, _)| *name == "colour_gap")
+        );
+    }
+
+    #[test]
+    fn public_colour_objective_finishes_an_existing_research_pair() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        state
+            .player_mut(&player)
+            .expect("fixture has player a")
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("amd"));
+        state
+            .revealed_objectives
+            .push(ti4_model::id::ObjectiveId::new("diversify"));
+        let research = choice("research", &["gd", "nm"]);
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&research, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "gd",
+            "the public pair objective makes the second propulsion technology the next step"
+        );
+        assert!(
+            bot.decisions[0].breakdown["gd"]
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "objective_colour")
         );
     }
 

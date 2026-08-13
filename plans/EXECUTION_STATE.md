@@ -92,6 +92,17 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   demands and objective reserve facts, after identifying a compact public API that does not
   expose secret objectives or private exhaustions.
 
+### M08-007b public technology-progress checkpoint (2026-08-13)
+
+- Active branch: `wp/m08-007b-objective-progress`; focused package commit follows this state
+  update.
+- Revealed unscored public technology objectives now steer only legal research toward a visible
+  colour pair or unit-upgrade threshold. No secret/objective-deck/private-resource state is read.
+- Verification passed: oracle guard; format; 50 policy tests; 703 engine unit + 5 doc tests;
+  clippy `-D warnings`; diff check. A zeroed pair component failed the focused decision boundary.
+- Evidence: `plans/evidence/M08-007b.md`. Next: another M08-007 child for a distinct public goal
+  family or a documented reservation observation API, after package scoping.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.
