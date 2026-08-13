@@ -77,8 +77,8 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ### M08-007a objective award checkpoint (2026-08-13)
 
-- Active branch: `wp/m08-007-objective-planning`; focused local package commit follows this
-  state update.
+- Active branch: `wp/m08-007-objective-planning`; package commit `0f1101e Prioritize printed
+  objective awards`; handover checkpoint `1168f95`.
 - Completed scope: legal scoring choices now use the exact source-scoped printed point value, so
   an offered two-point objective beats an offered one-point objective. The scorer reads no
   unoffered secret, objective deck, or hidden state; the score window remains the visibility and
