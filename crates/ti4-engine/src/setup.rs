@@ -123,6 +123,9 @@ pub fn start_game_seeded(
     state.agenda_deck = decks.agendas;
     state.action_card_deck = decks.action_cards;
     state.secret_deck = decks.secrets;
+    // 69.1: every player starts holding their own notes. Without this nobody owns one, and a
+    // transaction naming a note moves a card that does not exist.
+    crate::promissory::deal(&mut state, content, sources);
 
     for _ in 0..2 {
         let _ = state.reveal_objective();

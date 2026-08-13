@@ -16,12 +16,20 @@ pub struct Terms {
     pub commodities: i32,
     /// Relic fragments by trait, one entry per fragment.
     pub fragments: Vec<String>,
+    /// A promissory note, by id.
+    ///
+    /// A note is a loan rather than a sale — every one of them says "then, return this card" —
+    /// which is why what it costs to part with is not what it is worth to receive.
+    pub promissory: Option<String>,
 }
 
 impl Terms {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.trade_goods == 0 && self.commodities == 0 && self.fragments.is_empty()
+        self.trade_goods == 0
+            && self.commodities == 0
+            && self.fragments.is_empty()
+            && self.promissory.is_none()
     }
 }
 
@@ -112,6 +120,18 @@ pub fn can_pay(state: &GameState, player: &PlayerId, terms: &Terms) -> bool {
     if terms.trade_goods > seat.trade_goods || terms.commodities > seat.commodities {
         return false;
     }
+    if let Some(note) = &terms.promissory {
+        // Support is tracked by position rather than in the note map, so it is asked about
+        // separately — and a note already lent out is not yours to lend again.
+        let holds = if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
+            crate::promissory::available_support(state, player).as_deref() == Some(note.as_str())
+        } else {
+            crate::promissory::available_notes(state, player).contains(note)
+        };
+        if !holds {
+            return false;
+        }
+    }
     let mut held = seat.relic_fragments.clone();
     for trait_name in &terms.fragments {
         let entry = held.entry(trait_name.clone()).or_insert(0);
@@ -182,6 +202,15 @@ fn give(state: &mut GameState, player: &PlayerId, terms: &Terms) {
     for trait_name in &terms.fragments {
         *seat.relic_fragments.entry(trait_name.clone()).or_insert(0) += 1;
     }
+    if let Some(note) = terms.promissory.clone() {
+        // Support is worth a victory point the moment it arrives, which is the whole reason the
+        // note is worth trading for; every other note simply changes hands.
+        if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
+            crate::promissory::receive(state, player, &note);
+        } else {
+            crate::promissory::take(state, player, &note);
+        }
+    }
 }
 
 /// Execute a transaction. Changes nothing and reports why if it is not legal.
@@ -216,6 +245,13 @@ pub const ANSWER_KIND: &str = "transaction";
 
 /// The prefix of an option that opens a transaction.
 const OPEN_PREFIX: &str = "trade|";
+
+/// What a note sells for.
+///
+/// One price for every note, which is a simplification the oracle prices per card. Recorded as
+/// one rather than presented as the rule: a flat price makes a Research Agreement cost what a
+/// Ceasefire does.
+const NOTE_PRICE: i32 = 2;
 
 /// Everyone this player may still open a transaction with this turn.
 ///
@@ -270,6 +306,32 @@ pub fn offer_options(
     let mut offer = |id: String, label: String| {
         options.push(crate::choice::ChoiceOption::labelled(id, OFFER_KIND, label));
     };
+
+    // Support for the Throne, swapped. Both sides gain a victory point, which is why it is the
+    // one note worth trading rather than lending — and why the oracle records it as the deal
+    // the whole subsystem exists for.
+    if let (Some(mine), Some(theirs)) = (
+        crate::promissory::available_support(state, proposer),
+        crate::promissory::available_support(state, partner),
+    ) {
+        let _ = (&mine, &theirs);
+        offer(
+            "ss".to_owned(),
+            "exchange Support for the Throne notes".to_owned(),
+        );
+    }
+
+    // Any other note the proposer holds, sold for trade goods. Until these were offered the
+    // only note that could change hands was Support, so every other note in the corpus was
+    // unreachable at any price.
+    for note in crate::promissory::available_notes(state, proposer) {
+        if their_goods >= NOTE_PRICE {
+            offer(
+                format!("pn{note}"),
+                format!("sell {note} for {NOTE_PRICE} trade goods"),
+            );
+        }
+    }
 
     // 21.5: a commodity becomes a trade good the moment it changes hands, so a straight swap
     // pays both sides. This is the standard Twilight Imperium deal and the reason the subsystem
@@ -350,6 +412,27 @@ pub fn offer_from(id: &str, proposer: &PlayerId, partner: &PlayerId) -> Option<O
         })
     };
 
+    if id == "ss" {
+        return deal(
+            Terms {
+                promissory: Some(crate::promissory::support(proposer)),
+                ..Terms::default()
+            },
+            Terms {
+                promissory: Some(crate::promissory::support(partner)),
+                ..Terms::default()
+            },
+        );
+    }
+    if let Some(note) = id.strip_prefix("pn") {
+        return deal(
+            Terms {
+                promissory: Some(note.to_owned()),
+                ..Terms::default()
+            },
+            goods(NOTE_PRICE),
+        );
+    }
     if let Some(rest) = id.strip_prefix("cc") {
         let many = rest.parse().ok()?;
         return deal(commodities(many), commodities(many));
@@ -895,6 +978,119 @@ mod tests {
 
         assert_eq!(outcome, Traded::NothingOffered);
         assert!(window.is_complete(), "the second counter ends it");
+    }
+
+    #[test]
+    fn swapping_support_scores_both_sides() {
+        // The deal the subsystem exists for: each player receives the other's Support, and each
+        // is worth a victory point.
+        let (hub, mut state) = trading_partners();
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let choice = window.pending_choice(&state).expect("deals on offer");
+        assert!(choice.ids().contains(&"ss"), "the swap is offered");
+
+        window.resolve(
+            &mut state,
+            &hub.galaxy,
+            &ChoiceOption::labelled("ss", OFFER_KIND, ""),
+        );
+        let outcome = window.resolve(
+            &mut state,
+            &hub.galaxy,
+            &ChoiceOption::labelled("accept", ANSWER_KIND, ""),
+        );
+
+        assert_eq!(outcome, Traded::Resolved);
+        assert_eq!(state.player(&a()).unwrap().victory_points, 1);
+        assert_eq!(state.player(&b()).unwrap().victory_points, 1);
+        assert_eq!(state.support_holders.get(&a()), Some(&b()));
+        assert_eq!(state.support_holders.get(&b()), Some(&a()));
+    }
+
+    #[test]
+    fn a_note_actually_changes_hands_when_it_is_sold() {
+        let (hub, mut state) = trading_partners();
+        crate::promissory::deal(
+            &mut state,
+            ti4_content::ContentStore::embedded(),
+            ti4_model::content_types::POK,
+        );
+        state.player_mut(&b()).unwrap().trade_goods = 5;
+
+        let offers = offer_options(&state, &a(), &b());
+        let sale = offers
+            .iter()
+            .find(|option| option.id.starts_with("pn"))
+            .cloned()
+            .expect("a note is on the table");
+        let note = sale.id.trim_start_matches("pn").to_owned();
+
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        window.resolve(&mut state, &hub.galaxy, &sale);
+        let outcome = window.resolve(
+            &mut state,
+            &hub.galaxy,
+            &ChoiceOption::labelled("accept", ANSWER_KIND, ""),
+        );
+
+        assert_eq!(outcome, Traded::Resolved);
+        assert_eq!(
+            state.promissory_notes.get(&note),
+            Some(&b()),
+            "the card moved"
+        );
+        assert!(
+            !crate::promissory::available_notes(&state, &a()).contains(&note),
+            "and is no longer a's to sell again"
+        );
+    }
+
+    #[test]
+    fn a_note_you_have_already_lent_out_cannot_be_sold_again() {
+        // Otherwise one card is traded twice, which is the failure the ownership check exists
+        // to prevent.
+        let (hub, mut state) = trading_partners();
+        crate::promissory::deal(
+            &mut state,
+            ti4_content::ContentStore::embedded(),
+            ti4_model::content_types::POK,
+        );
+        let note = crate::promissory::note_id("cf", &a());
+        crate::promissory::take(&mut state, &b(), &note);
+
+        let offer = Offer {
+            proposer: a(),
+            partner: b(),
+            given: Terms {
+                promissory: Some(note),
+                ..Terms::default()
+            },
+            received: goods(1),
+        };
+
+        assert_eq!(
+            why_illegal(&state, &hub.galaxy, &offer),
+            Some(OfferError::CannotPay(a()))
+        );
+    }
+
+    #[test]
+    fn support_is_not_offered_once_it_is_lent() {
+        let (_, mut state) = trading_partners();
+        assert!(
+            offer_options(&state, &a(), &b())
+                .iter()
+                .any(|o| o.id == "ss")
+        );
+
+        crate::promissory::receive(&mut state, &b(), &crate::promissory::support(&a()));
+
+        assert!(
+            !offer_options(&state, &a(), &b())
+                .iter()
+                .any(|o| o.id == "ss"),
+            "a has nothing left to swap"
+        );
     }
 
     #[test]
