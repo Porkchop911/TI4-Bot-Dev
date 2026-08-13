@@ -770,6 +770,288 @@ fn unexpected_action(context: &mut crate::timing::TimingContext<'_>, player: &Pl
         .remove(player);
 }
 
+/// Destroy up to `limit` units of a base type from a planet, and report how many died.
+fn destroy_on_planet(
+    context: &mut crate::timing::TimingContext<'_>,
+    system: &ti4_model::id::SystemId,
+    planet: &ti4_model::id::PlanetId,
+    base_type: &str,
+    limit: Option<usize>,
+) -> usize {
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let Some(units) = context
+        .state
+        .system_mut(system)
+        .planet_units
+        .get_mut(planet)
+    else {
+        return 0;
+    };
+    let mut destroyed = 0;
+    units.retain(|unit| {
+        if limit.is_some_and(|cap| destroyed >= cap) {
+            return true;
+        }
+        let hit = types
+            .get(unit.type_id.as_str())
+            .is_some_and(|kind| kind.base_type() == base_type);
+        if hit {
+            destroyed += 1;
+        }
+        !hit
+    });
+    destroyed
+}
+
+/// Every `system|planet` a *rival* controls.
+fn rival_planets(state: &GameState, player: &PlayerId) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (system, board) in &state.board {
+        for (planet, owner) in &board.planet_control {
+            if owner != player {
+                found.push((format!("{system}|{planet}"), planet.to_string()));
+            }
+        }
+    }
+    found
+}
+
+/// Reactor Meltdown: destroy one space dock in a non-home system (79).
+fn reactor_meltdown(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let docks: Vec<(String, String)> =
+        planets_holding(context.state, context.content, context.sources, "spacedock")
+            .into_iter()
+            .filter(|(id, _)| {
+                spot(id).is_some_and(|(system, _)| {
+                    !ti4_content::galaxy::is_home_system(
+                        context.content,
+                        system.as_str(),
+                        context.sources,
+                    )
+                })
+            })
+            .collect();
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Reactor Meltdown: which space dock",
+        "planet",
+        &docks,
+    ) else {
+        return;
+    };
+    if let Some((system, planet)) = spot(&chosen) {
+        // One dock, not every dock on the planet: the card says "1 space dock".
+        destroy_on_planet(context, &system, &planet, "spacedock", Some(1));
+    }
+}
+
+/// Unstable Planet: exhaust one hazardous planet and destroy up to three infantry on it.
+fn unstable_planet(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let catalogue = ti4_content::galaxy::all_planets(context.content, context.sources);
+    let hazardous: Vec<(String, String)> = context
+        .state
+        .board
+        .iter()
+        .flat_map(|(system, board)| {
+            board
+                .planet_units
+                .keys()
+                .map(move |planet| (system, planet))
+        })
+        .filter(|(_, planet)| {
+            catalogue
+                .get(planet.as_str())
+                .and_then(ti4_content::galaxy::Planet::planet_type)
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("hazardous"))
+        })
+        .map(|(system, planet)| (format!("{system}|{planet}"), planet.to_string()))
+        .collect();
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Unstable Planet: which hazardous planet",
+        "planet",
+        &hazardous,
+    ) else {
+        return;
+    };
+    let Some((system, planet)) = spot(&chosen) else {
+        return;
+    };
+    context.state.exhausted_planets.insert(planet.clone());
+    destroy_on_planet(context, &system, &planet, "infantry", Some(3));
+}
+
+/// Uprising: exhaust a rival's non-home planet and take its resource value in trade goods.
+fn uprising(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let targets: Vec<(String, String)> = rival_planets(context.state, player)
+        .into_iter()
+        .filter(|(id, _)| {
+            spot(id).is_some_and(|(system, _)| {
+                !ti4_content::galaxy::is_home_system(
+                    context.content,
+                    system.as_str(),
+                    context.sources,
+                )
+            })
+        })
+        .collect();
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Uprising: which planet",
+        "planet",
+        &targets,
+    ) else {
+        return;
+    };
+    let Some((_, planet)) = spot(&chosen) else {
+        return;
+    };
+    let worth = crate::production::planet_value(
+        context.content,
+        context.sources,
+        &planet,
+        crate::production::Spend::Resources,
+    );
+    context.state.exhausted_planets.insert(planet);
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.trade_goods += i32::try_from(worth).unwrap_or(0);
+    }
+}
+
+/// Plague: one die per infantry on a rival planet; each 6 or better destroys one of them.
+fn plague(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let targets = rival_planets(context.state, player);
+    let Some(chosen) = pick(context, player, "Plague: which planet", "planet", &targets) else {
+        return;
+    };
+    let Some((system, planet)) = spot(&chosen) else {
+        return;
+    };
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let infantry = context
+        .state
+        .system_state(&system)
+        .planet_units
+        .get(&planet)
+        .map_or(0, |units| {
+            units
+                .iter()
+                .filter(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == "infantry")
+                })
+                .count()
+        });
+    if infantry == 0 {
+        return;
+    }
+    // One die each, through the seeded roller: an ambient generator here would break replay.
+    let roll = context
+        .dice
+        .roll(context.rng, infantry, "plague", Some(PLAGUE_KILLS_ON));
+    let kills = roll
+        .faces
+        .iter()
+        .filter(|face| **face >= PLAGUE_KILLS_ON)
+        .count();
+    destroy_on_planet(context, &system, &planet, "infantry", Some(kills));
+}
+
+/// Plague destroys an infantry on a six or better.
+const PLAGUE_KILLS_ON: u32 = 6;
+
+/// Spy: a chosen player hands you one random action card from their hand (2.5).
+fn spy(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let targets: Vec<(String, String)> = context
+        .state
+        .players
+        .iter()
+        .filter(|seat| &seat.id != player)
+        .filter(|seat| !seat.action_cards.is_empty())
+        .map(|seat| (seat.id.to_string(), format!("take a card from {}", seat.id)))
+        .collect();
+    let Some(chosen) = pick(context, player, "Spy: rob which player", "player", &targets) else {
+        return;
+    };
+    let victim = PlayerId::new(chosen);
+    let held = context
+        .state
+        .player(&victim)
+        .map_or(0, |seat| seat.action_cards.len());
+    if held == 0 {
+        return;
+    }
+    // "Random" comes from the seeded roller too, or replay diverges.
+    let face = context
+        .dice
+        .roll(context.rng, 1, "spy", None)
+        .faces
+        .first()
+        .copied()
+        .unwrap_or(1) as usize;
+    let index = (face - 1) % held;
+    let Some(taken) = discard(context.state, &victim, index) else {
+        return;
+    };
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.action_cards.push(taken);
+    }
+}
+
+/// Ghost Ship: one destroyer into a non-home wormhole system free of anyone else's ships.
+fn ghost_ship(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(galaxy) = context.galaxy else {
+        return; // without a map there are no wormhole systems to name
+    };
+    let systems = ti4_content::galaxy::all_systems(context.content, context.sources);
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let open: Vec<(String, String)> = galaxy
+        .system_ids()
+        .into_iter()
+        .filter(|id| {
+            systems
+                .get(id)
+                .is_some_and(|system| !system.wormholes().is_empty())
+        })
+        .filter(|id| !ti4_content::galaxy::is_home_system(context.content, id, context.sources))
+        .filter(|id| {
+            !context
+                .state
+                .system_state(&ti4_model::id::SystemId::new(*id))
+                .units
+                .iter()
+                .any(|unit| {
+                    &unit.owner != player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ship)
+                })
+        })
+        .map(|id| (id.to_owned(), format!("destroyer into {id}")))
+        .collect();
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Ghost Ship: into which wormhole system",
+        "system",
+        &open,
+    ) else {
+        return;
+    };
+    place(
+        context,
+        player,
+        &ti4_model::id::SystemId::new(chosen),
+        None,
+        "destroyer",
+        1,
+    );
+}
+
 /// The effect registered for a card, if this engine has one.
 #[must_use]
 pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
@@ -781,12 +1063,18 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
+        "ghost_ship" => Some(ghost_ship),
         "imp_rider" => Some(imperial_rider),
         "insub" => Some(insubordination),
+        "meltdown" => Some(reactor_meltdown),
         "messiah" => Some(rise_of_a_messiah),
         "mining_initiative" => Some(mining_initiative),
+        "plague" => Some(plague),
         "repeal" => Some(repeal_law),
+        "spy" => Some(spy),
         "unexpected" => Some(unexpected_action),
+        "unstable" => Some(unstable_planet),
+        "uprising" => Some(uprising),
         "war_effort" => Some(war_effort),
         "nav_suite" => Some(nav_suite),
         "s_retreat1" | "s_retreat2" | "s_retreat3" | "s_retreat4" => Some(skilled_retreat),
@@ -821,6 +1109,12 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "repeal",
         "silence_space",
         "unexpected",
+        "ghost_ship",
+        "meltdown",
+        "plague",
+        "spy",
+        "unstable",
+        "uprising",
         "war_effort",
     ]
 }
@@ -1344,6 +1638,218 @@ mod tests {
             .filter(|unit| unit.type_id.as_str() == "cruiser")
             .count();
         assert_eq!(cruisers, 8, "eight cruisers are every cruiser in the box");
+    }
+
+    /// Resolve a card with a forced die sequence, for the two that roll.
+    fn resolve_with_dice(
+        state: &mut GameState,
+        alias: &str,
+        player: &PlayerId,
+        faces: &[u32],
+        answers: &[&str],
+    ) {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new(
+            answers.iter().map(|a| (*a).to_owned()),
+        )));
+        let mut dice = crate::dice::Dice::from_faces(faces.to_vec());
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        effect(&mut context, player);
+    }
+
+    /// A planet in a system that is not anybody's home.
+    fn a_neutral_spot() -> (ti4_model::id::SystemId, ti4_model::id::PlanetId) {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .find_map(|(id, planet)| {
+                let system = planet.system_id()?;
+                (!ti4_content::galaxy::is_home_system(content, system, sources)
+                    && !planet.is_placed_during_play())
+                .then(|| {
+                    (
+                        ti4_model::id::SystemId::new(system),
+                        ti4_model::id::PlanetId::new(*id),
+                    )
+                })
+            })
+            .expect("the corpus has a neutral planet")
+    }
+
+    #[test]
+    fn reactor_meltdown_takes_one_dock_not_every_dock() {
+        let player = PlayerId::new("a");
+        let (system, planet) = a_neutral_spot();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "spacedock",
+            &PlayerId::new("b"),
+            2,
+        );
+
+        resolve_card(&mut state, "meltdown", &player, &[]);
+
+        assert_eq!(on_planet(&state, &planet), 1, "the card says 1 space dock");
+    }
+
+    #[test]
+    fn uprising_exhausts_the_planet_and_pays_its_resources() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        let player = PlayerId::new("a");
+        let (system, planet) = a_neutral_spot();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), PlayerId::new("b"));
+        state.player_mut(&player).unwrap().trade_goods = 0;
+
+        resolve_card(&mut state, "uprising", &player, &[]);
+
+        let worth = crate::production::planet_value(
+            content,
+            sources,
+            &planet,
+            crate::production::Spend::Resources,
+        );
+        assert!(state.exhausted_planets.contains(&planet), "exhausted");
+        assert_eq!(
+            i64::from(state.player(&player).unwrap().trade_goods),
+            worth,
+            "and paid its resource value"
+        );
+    }
+
+    #[test]
+    fn uprising_does_not_target_your_own_planet() {
+        let player = PlayerId::new("a");
+        let (system, planet) = a_neutral_spot();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state.player_mut(&player).unwrap().trade_goods = 0;
+
+        resolve_card(&mut state, "uprising", &player, &[]);
+
+        assert!(!state.exhausted_planets.contains(&planet));
+        assert_eq!(state.player(&player).unwrap().trade_goods, 0);
+    }
+
+    #[test]
+    fn plague_kills_one_infantry_per_six() {
+        // One die each, and only a six or better kills. Forced, because a test that took
+        // whatever the stream gave would assert on a number it did not choose.
+        let player = PlayerId::new("a");
+        let (system, planet) = a_neutral_spot();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), PlayerId::new("b"));
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "infantry",
+            &PlayerId::new("b"),
+            4,
+        );
+
+        resolve_with_dice(&mut state, "plague", &player, &[10, 1, 6, 2], &[]);
+
+        assert_eq!(
+            on_planet(&state, &planet),
+            2,
+            "a ten and a six killed one each; a one and a two did not"
+        );
+    }
+
+    #[test]
+    fn plague_on_an_empty_planet_rolls_nothing() {
+        let player = PlayerId::new("a");
+        let (system, planet) = a_neutral_spot();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), PlayerId::new("b"));
+
+        resolve_card(&mut state, "plague", &player, &[]);
+
+        assert_eq!(on_planet(&state, &planet), 0);
+    }
+
+    #[test]
+    fn spy_moves_a_card_from_their_hand_to_yours() {
+        let player = PlayerId::new("a");
+        let victim = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&victim).unwrap().action_cards = (0..3)
+            .map(|n| ActionCardId::new(format!("card{n}")))
+            .collect();
+        state.player_mut(&player).unwrap().action_cards.clear();
+
+        // A two picks the second card, so the theft is not merely "the first one".
+        resolve_with_dice(&mut state, "spy", &player, &[2], &[]);
+
+        assert_eq!(state.player(&victim).unwrap().action_cards.len(), 2);
+        assert_eq!(
+            state.player(&player).unwrap().action_cards,
+            vec![ActionCardId::new("card1")],
+            "the die chose which"
+        );
+    }
+
+    #[test]
+    fn unstable_planet_destabilises_at_most_three() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        let player = PlayerId::new("a");
+        let hazardous = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .find_map(|(id, planet)| {
+                let system = planet.system_id()?;
+                planet
+                    .planet_type()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("hazardous"))
+                    .then(|| {
+                        (
+                            ti4_model::id::SystemId::new(system),
+                            ti4_model::id::PlanetId::new(*id),
+                        )
+                    })
+            });
+        let Some((system, planet)) = hazardous else {
+            return; // no hazardous planet in this corpus
+        };
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "infantry",
+            &PlayerId::new("b"),
+            5,
+        );
+
+        resolve_card(&mut state, "unstable", &player, &[]);
+
+        assert!(state.exhausted_planets.contains(&planet), "exhausted");
+        assert_eq!(on_planet(&state, &planet), 2, "three of the five died");
     }
 
     #[test]
