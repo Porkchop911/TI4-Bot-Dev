@@ -1,5 +1,13 @@
 # Handover — what is needed before real training can begin
 
+> **Status, 2026-08-13 (later).** Five of the six blockers below are now closed:
+> checkpoints and resume (M10-018, M10-020), parallel rollouts (M10-008),
+> champion/learner promotion (M10-017), the evaluation harness with error bars
+> (M10-015/016), and map variety (M10-002). **Item 6 — what Stage 1 is for — is the
+> remaining one, and it is a judgement call rather than a defect.** The sections below
+> are kept as written, because the acceptance criteria in them are what the work was
+> checked against.
+
 2026-08-13. Branch `wp/m08-007f-public-trade-good-reserves`, head `78fbb71`. Working tree clean.
 Workspace green: 18 test binaries, 0 failures, `RUSTFLAGS="-D warnings" cargo clippy --workspace
 --all-targets` clean, oracle tree untouched.
