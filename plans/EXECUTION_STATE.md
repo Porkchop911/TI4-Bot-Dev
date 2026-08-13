@@ -142,6 +142,20 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   reserve facts, or another non-overlapping revealed public goal family; do not add secret or
   mixed-cost planning without a dedicated public fact model.
 
+### M08-007f public trade-good objective reservation checkpoint (2026-08-13)
+
+- Branch: `wp/m08-007f-public-trade-good-reserves`; focused package commit follows this state
+  update.
+- An offered trade-good payment now preserves the final public trade good for a revealed,
+  unscored, at-least-half-funded Trade Routes or Centralize Trade objective. The reservation
+  component has no effect on legality, IDs, execution, secrets, or negotiation.
+- Verification passed: oracle guard; focused policy boundary; format; 54 policy tests; 705 engine
+  unit + 5 doc tests (before the policy-only lint correction); final workspace-target clippy; and
+  diff check. Zeroing the reserve penalty selected the trade good and was restored.
+- Evidence: `plans/evidence/M08-007f.md`. Three atomic M08-007 children have completed since the
+  last compaction checkpoint; write a fresh handover before the next package. Next safe scope:
+  token reserve facts or another public goal family, not secret/mixed-cost/schedule planning.
+
 ### Superseded timing-branch checkpoint
 - Branch: `wp/m02-004-system-state`
 - Active package: M02-004 system state; no implementation edits have started on this branch.

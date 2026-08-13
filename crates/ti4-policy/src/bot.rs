@@ -286,6 +286,24 @@ impl ScoredBot {
             .min()
     }
 
+    /// The nearest public trade-good objective that is already plausible this round.
+    fn public_trade_good_reserve(seen: &Observed<'_>, choice: &Choice) -> Option<i64> {
+        let available = i64::from(seen.seat(&choice.player)?.trade_goods);
+        let scored = seen.scored_by(&choice.player);
+        [("trade_routes", 5), ("centralize_trade", 10)]
+            .into_iter()
+            .filter(|(alias, need)| {
+                available >= (need + 1) / 2
+                    && seen
+                        .revealed_objectives()
+                        .iter()
+                        .any(|goal| goal.as_str() == *alias)
+                    && !scored.contains(&ti4_model::id::ObjectiveId::new(*alias))
+            })
+            .map(|(_, need)| need)
+            .min()
+    }
+
     /// The public part of the oracle's `_score_move`: a hull is valuable when it has a job at
     /// the active system, and an idle reinforcement should lose to finishing movement.
     #[must_use]
@@ -541,7 +559,17 @@ impl ScoredBot {
     /// Preserve the next plausible public purchase-objective balance when payment metadata tells
     /// us whether this legal option spends resources or influence.
     fn score_pay_seen(choice: &Choice, option: &ChoiceOption, seen: &Observed<'_>) -> Components {
-        let score = Self::score_pay(option);
+        let mut score = Self::score_pay(option);
+        if option.id == "trade_good"
+            && let Some(reserve) = Self::public_trade_good_reserve(seen, choice)
+        {
+            let held = seen.seat(&choice.player).map_or(0, |seat| seat.trade_goods);
+            let shortfall = (reserve - (i64::from(held) - 1)).max(0);
+            if shortfall > 0 {
+                let capped_shortfall = i32::try_from(shortfall).unwrap_or(i32::MAX);
+                score = score.and("trade_good_reserve", -2.0 * f64::from(capped_shortfall));
+            }
+        }
         let kind = match option
             .payload
             .get("payment_kind")
@@ -1469,6 +1497,45 @@ mod tests {
                 .parts()
                 .iter()
                 .all(|(name, _)| *name != "objective_reserve")
+        );
+    }
+
+    #[test]
+    fn public_trade_good_objective_preserves_the_final_trade_good() {
+        let (mut state, hub) = watched_hub();
+        let player = PlayerId::new("a");
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        state
+            .revealed_objectives
+            .push(ti4_model::id::ObjectiveId::new("trade_routes"));
+        let bills = Choice::new(
+            player,
+            "pay 1",
+            vec![
+                ChoiceOption::new("trade_good", "pay")
+                    .with("worth", 1)
+                    .with("owed", 1)
+                    .with("payment_kind", "resources"),
+                ChoiceOption::new("overpay", "pay")
+                    .with("worth", 20)
+                    .with("owed", 1)
+                    .with("payment_kind", "resources"),
+            ],
+        );
+        let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
+
+        assert_eq!(
+            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+                .unwrap()
+                .id,
+            "overpay",
+            "a revealed Trade Routes threshold protects the final public trade good"
+        );
+        assert!(
+            bot.decisions[0].breakdown["trade_good"]
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "trade_good_reserve")
         );
     }
 
