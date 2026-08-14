@@ -192,20 +192,85 @@ gate bug or mis-tuned threshold:
    create drift (T2). Keep n≥32 boundary panels and σ-based promotion — those are now validated as
    well calibrated; the missing ingredient is reward signal, not gate strictness.
 
+## T3: Python oracle Stage-2 parity audit (read-only, 2026-08-14)
+
+Inspected `D:/Projects/ti4-engine/out/stage2_pg_six_c_20260810.json` (latest lineage segment,
+`final_update` 3500, resumed from `stage2_pg_six_b`, which resumed from `stage2_pg_six`) and its
+tools source. The oracle's Stage-2 **did** make promotions: u3100 was a schema-migration
+re-acceptance (all six factions), then real isolated per-faction promotions at **sol@u3350** and
+**xxcha@u3450** — each requiring an aggregate table gain > 0.30 on two independent n=32 panels.
+So under the oracle configuration, promotion-grade improvement does emerge around u≈3350–3450,
+while the Rust lineage shows zero net drift through ~5700 updates of nominally identical setup.
+
+Parity audit result (Rust vs Python `tools/train_stage1_policy_gradient.py`):
+
+| Dimension | Python oracle | Rust | Verdict |
+|---|---|---|---|
+| Horizon | 4 rounds | 4 rounds | equal |
+| lr / entropy / clip | 0.03 / 0.01 / 1.0 | same defaults | equal |
+| Training batch per update | 16 seeds × 6 rotations = 96 seat-games | `train_seeds=16` × 6 = 96 | equal |
+| Map pool | `save52_e400_n8192.json.gz`, varied maps | same file (T1/T2) | equal |
+| Boundary panels | n=32 validation + n=32 confirmation, fixed seeds per run | same defaults | equal |
+| Gate tolerances | margin 0.05/faction, VP veto 0.15, clearance veto 0.03 | identical | equal |
+| Reward/returns | potential-difference reward + round-1 bonus/shaping, undiscounted suffix sums | `reward.rs` is a verified port (golden tests against oracle `_returns`) | equal |
+| Update law | centered returns, scale = sqrt(var) or 1, mean-gradient clip via shrink, entropy term | line-level equivalent in `gradient.rs::apply()` | equal |
+| Weight movement | telemetry u3401..3500: ≈4.6–6.8 Σ\|Δ\| per head /100 updates | s2p2: ≈3.0–4.7 /100 updates | same order; earlier suspected ~7× step-size gap resolved |
+| Trajectory capture | every decision (`progress_interval=8` only throttles progress-snapshot recomputation) | every decision | equal |
+
+Remaining Rust deviations — all make Rust **stricter** than the oracle, none explain zero drift
+(no T1/T2 boundary came near these thresholds):
+
+1. Extra paired-σ clause in `acceptable_stage_two_table` (default 2σ; `--accept-sigmas 0`
+   restores the exact oracle gate).
+2. Isolated-path `faction_improved` is VP-only; Python's `better()` uses a clearance tiebreak.
+3. Evaluation cadence: Rust default every 100 updates vs oracle eval_every 50 (half the
+   promotion chances per update).
+4. No per-game wall-clock cap (Python converts >30 s games into counted stalls, ≈0 in those
+   runs) — immaterial for this data.
+
+Also confirmed: Python's isolated fallback path applies the **same** aggregate margin clause as
+the assembled path, so that is not a Rust-specific gap; and fixed validation seeds per run mean
+the oracle has the same correlated-panel property as Rust (see below).
+
+## Panel decorrelation (`--panel-step`, opt-in)
+
+Motivation: every boundary re-measuring the same fixed panel makes all boundary gain estimates
+correlated — cross-boundary trend tests are statistically invalid, and one noisy panel's vetoes
+repeat forever (exactly what T1 showed for n=8; a property Python shares). New flag on
+`stage2_training.rs`: `--panel-step N` starts each boundary k's validation/confirmation seed
+block at `base + k·N`, so adjacent panels are disjoint when N ≥ panel size. Default 0 keeps the
+historical fixed-panel behavior bit-for-bit (regression-tested).
+
+Wiring: `first_seed_for_boundary(base, step, index)` helper (unit-tested for both cases); bootstrap
+comparison is boundary 0 on the base seed; per-boundary first seeds are recorded in each history
+entry (`validation_first_seed`, `Option` with serde default so old checkpoints load unchanged) and
+`panel_step` is stored in checkpoint arguments. Smoke run `out/smoke_panel_step.json`
+(`--updates 50 --every 25 --train-seeds 1 --validation-seeds 2 --panel-step 3`) shows history
+seeds 96000000 / 96000003 / 96000006 for boundaries 0/1/2 as expected.
+
 ## Open questions for follow-up packages
 
 - If T2 had shown drift at lr=0.01, the fix would have been a step-size schedule/decay plus
   keeping n≥32 boundary panels. It did not, so the priority moves to reward signal (below).
-- The isolated-faction fallback is gated by the same aggregate margin clause (0.30 across six
-  factions), so a single improved faction needs an implausibly large one-faction gain to be
-  promoted on that path; sequential per-faction training or a per-faction archive remains a
-  structural option if joint training cannot clear the bar.
+- The isolated-faction fallback is gated by the same aggregate margin clause in **both**
+  implementations (T3 confirmed this on the Python side), so a single improved faction needs an
+  implausibly large one-faction gain there; sequential per-faction training or a per-faction
+  archive remains a structural option if joint training cannot clear the bar.
 
-## Next experiments (proposed, in priority order)
+## Next experiments (revised after T3)
 
-1. **Longer horizon**: `--rounds 8` (knob exists since the safepoint) doubles game length and the
-   VP spread between good and bad play; ~2× rollout cost. Directly attacks root cause #2.
+1. **T4: oracle-parity run** — resume @4600 from `out/stage2_from_stage1.json`, ~3500 updates,
+   exact oracle configuration: `--every 50` (oracle eval cadence), `--accept-sigmas 0` (drop the
+   extra σ clause to match the Python gate exactly), n=32 validation+confirmation panels, and
+   `--panel-step ≥ 32` so each boundary's gain is an independent sample. Success criterion:
+   at least one promotion by u≈3500, mirroring the oracle's sol@u3350 / xxcha@u3450. Failure
+   under identical settings means the gap is implementation-level (game features or rollout
+   behavior), not hyperparameters — escalate to a frontier-model differential diagnosis instead of
+   tuning further. Cost ≈ 3500 × ~3.3 s/update ÷ parallelism ≈ 3–4 h.
 2. More train seeds per update (e.g. 64 vs 16) to cut gradient variance — 4× cost, combine with
    less frequent boundary evaluation.
 3. If both still show zero drift, the reward itself needs re-examination (e.g., outcome-only
    credits over the full horizon instead of per-decision centered returns).
+
+Deprioritized by operator: `--rounds 8` ("plays too many rounds"); kept on file as a fallback if
+T4 fails and game-length compression is implicated.

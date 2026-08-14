@@ -101,12 +101,30 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   information; entropy-regularized steps random-walk around bootstrap. Gate rejections are all
   correct; n=8 panels had been adding noise-driven vetoes and over-reading gains by +0.2–0.5 (fixed
   seed set reused at every boundary). Learning rate is not a lever; reward signal is.
-- Checks: `cargo test -p ti4-training` 98/98 lib + 11/11 example; clippy clean; rustfmt applied;
+- T3 Python-oracle parity audit (read-only, `D:/Projects/ti4-engine/out/stage2_pg_six_c_*.json`
+  + trainer source): the oracle's Stage-2 **did** promote under its configuration
+  (sol@u3350, xxcha@u3450, isolated path) — promotion-grade improvement emerges around u≈3350–
+  3450 there. Full parity table: horizon, lr/entropy/clip, 96 seat-games/update batch, map pool,
+  gate tolerances, reward math (golden-verified port), update law (line-level equivalent), weight
+  movement magnitude, and full-decision trajectory capture are all equal. Rust is strictly
+  *stricter* in three places: extra paired-σ clause (`--accept-sigmas 0` restores oracle gate),
+  VP-only isolated-path improvement test (no clearance tiebreak), and eval cadence every 100 vs
+  the oracle's 50. None of these explain zero drift; they must be matched for a fair parity run.
+- Panel decorrelation implemented in `stage2_training.rs`: opt-in `--panel-step N` gives each
+  boundary k a fresh disjoint seed block (`base + k·N`); default 0 keeps the historical fixed
+  panel bit-for-bit. Per-boundary first seeds recorded in history entries (`validation_first_seed`,
+  serde-defaulted) and checkpoint arguments; smoke run `out/smoke_panel_step.json` confirms
+  boundary seeds 96000000/96000003/96000006. Two new unit tests (default unchanged; disjoint
+  blocks).
+- Checks: `cargo test -p ti4-training` 98/98 lib + 13/13 example; clippy clean; rustfmt applied;
   T2 binary built pre-fmt (cosmetic-only later edits).
 - Evidence: `plans/evidence/STAGE2-STALL-INVESTIGATION.md`.
-- Next safe action: propose the `--rounds 8` horizon experiment (~2× rollout cost) as the follow-up
-  package; alternatively train-seeds=64 to cut gradient variance. Do not touch the promotion gate —
-  it is validated.
+- Next safe action: **T4 oracle-parity run** — resume @4600 from
+  `out/stage2_from_stage1.json`, ~3500 updates, `--every 50 --accept-sigmas 0 --validation-seeds
+  32 --confirmation-seeds 32 --panel-step 32`. Success = ≥1 promotion by u≈3500 (oracle parity);
+  failure ⇒ implementation-level game/feature bug → frontier differential diagnosis. `--rounds 8`
+  deprioritized by operator; train-seeds=64 and reward re-examination remain fallbacks. Do not
+  touch the promotion-gate code — only its σ clause is bypassed via the existing flag.
 
 ### M08-005 tactical scoring checkpoint (2026-08-13)
 

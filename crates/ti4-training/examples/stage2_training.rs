@@ -39,6 +39,15 @@ fn flag(name: &str) -> bool {
     std::env::args().any(|argument| argument == name)
 }
 
+/// The first seed of boundary `index`'s panel under per-boundary stepping.
+///
+/// With a step of zero every boundary re-measures the same fixed panel, which keeps old runs
+/// comparable; with a positive step each boundary's block starts further along so adjacent
+/// panels are disjoint and their gain estimates are statistically independent.
+fn first_seed_for_boundary(base: u64, step: u64, index: usize) -> u64 {
+    base.wrapping_add(step.wrapping_mul(u64::try_from(index).unwrap_or(0)))
+}
+
 fn decimal(name: &str, fallback: f64) -> f64 {
     let args: Vec<String> = std::env::args().collect();
     args.iter()
@@ -202,6 +211,10 @@ struct Metrics {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Evaluation {
     update: usize,
+    /// First seed of this boundary's validation panel. `None` in checkpoints written before
+    /// per-boundary stepping existed (all those boundaries used the run's fixed base seed).
+    #[serde(default)]
+    validation_first_seed: Option<u64>,
     elapsed_seconds: f64,
     candidate_metrics: BTreeMap<FactionId, Metrics>,
     accepted_metrics: BTreeMap<FactionId, Metrics>,
@@ -698,6 +711,11 @@ fn main() -> Result<(), String> {
         u64::try_from(number("--validation-first-seed", 96_000_000)).unwrap_or(96_000_000);
     let confirmation_first_seed =
         u64::try_from(number("--confirmation-first-seed", 97_000_000)).unwrap_or(97_000_000);
+    // Per-boundary panel stepping: with a positive step each evaluation boundary starts its seed
+    // block `step` further along, so consecutive panels are disjoint and cross-boundary trends use
+    // independent samples. At zero (the default) every boundary re-measures the same fixed panel,
+    // keeping historical runs comparable.
+    let panel_step = u64::try_from(number("--panel-step", 0)).unwrap_or(0);
     let accept_vp_margin = decimal("--accept-vp-margin", 0.05);
     // Two standard errors is the usual bar: roughly "this would happen by chance about one panel
     // in twenty". Zero disables the check and restores the fixed-margin-only gate.
@@ -774,6 +792,7 @@ fn main() -> Result<(), String> {
             "confirmation_seeds".to_owned(),
             confirmation_seeds.to_string(),
         ),
+        ("panel_step".to_owned(), panel_step.to_string()),
         ("accept_vp_margin".to_owned(), accept_vp_margin.to_string()),
         ("accept_sigmas".to_owned(), accept_sigmas.to_string()),
         ("learning_rate".to_owned(), learning_rate.to_string()),
@@ -824,6 +843,13 @@ fn main() -> Result<(), String> {
     println!(
         "  promotion: {validation_seeds} validation + {confirmation_seeds} confirmation seeds; aggregate VP margin {accept_vp_margin:.2}; paired evidence {accept_sigmas:.1}σ; per-faction veto VP {max_faction_vp_regression:.2}, clearance {max_faction_clearance_regression:.2}"
     );
+    if panel_step == 0 {
+        println!("  panels: one fixed validation/confirmation panel at every boundary");
+    } else {
+        println!(
+            "  panels: fresh per boundary (seed step {panel_step}); adjacent boundaries measure disjoint games"
+        );
+    }
     println!("  execution: persistent Rayon pool + worker-side gradient statistics");
     println!(
         "  start: {}",
@@ -901,6 +927,7 @@ fn main() -> Result<(), String> {
     history.push(
         serde_json::to_value(Evaluation {
             update: starting_update,
+            validation_first_seed: Some(validation_first_seed),
             elapsed_seconds: 0.0,
             candidate_metrics: initial_candidate.metrics,
             accepted_metrics: accepted_panel.metrics.clone(),
@@ -912,6 +939,8 @@ fn main() -> Result<(), String> {
         })
         .map_err(|error| format!("serialize initial evaluation: {error}"))?,
     );
+    // The bootstrap comparison above is boundary 0, measured on the base seed.
+    let mut boundary_index = 1usize;
     let started = std::time::Instant::now();
     let mut done = 0usize;
     while done < updates {
@@ -944,7 +973,19 @@ fn main() -> Result<(), String> {
         profiles = run.profiles;
         done += count;
         let update = starting_update + done;
-        let candidate_panel = evaluate(&plan, &profiles, validation_first_seed, validation_seeds)?;
+        // Boundary panels: the fixed historical panel when stepping is off, otherwise a fresh
+        // disjoint block per boundary so cross-boundary trends use independent samples.
+        let panel_validation_seed =
+            first_seed_for_boundary(validation_first_seed, panel_step, boundary_index);
+        let panel_confirmation_seed =
+            first_seed_for_boundary(confirmation_first_seed, panel_step, boundary_index);
+        boundary_index += 1;
+        if panel_step > 0 {
+            println!(
+                "boundary {update}: fresh panels (validation first seed {panel_validation_seed}, confirmation first seed {panel_confirmation_seed})"
+            );
+        }
+        let candidate_panel = evaluate(&plan, &profiles, panel_validation_seed, validation_seeds)?;
         let validation_gain = GainEvidence::paired(&candidate_panel, &accepted_panel);
         report(update, &candidate_panel.metrics);
         report_gain("validation", validation_gain, accept_sigmas);
@@ -968,7 +1009,7 @@ fn main() -> Result<(), String> {
             let confirmation = evaluate(
                 &plan,
                 &profiles,
-                confirmation_first_seed,
+                panel_confirmation_seed,
                 confirmation_seeds,
             )?;
             let confirmation_gain =
@@ -1001,7 +1042,7 @@ fn main() -> Result<(), String> {
             for faction in &plan.factions {
                 let mut isolated = accepted.clone();
                 isolated.insert(faction.clone(), profiles[faction].clone());
-                let primary = evaluate(&plan, &isolated, validation_first_seed, validation_seeds)?;
+                let primary = evaluate(&plan, &isolated, panel_validation_seed, validation_seeds)?;
                 let primary_gain = GainEvidence::paired(&primary, &accepted_panel);
                 let faction_improved = primary.metrics[faction].victory_points
                     > accepted_panel.metrics[faction].victory_points + 1e-12;
@@ -1022,7 +1063,7 @@ fn main() -> Result<(), String> {
                 let confirmation = evaluate(
                     &plan,
                     &isolated,
-                    confirmation_first_seed,
+                    panel_confirmation_seed,
                     confirmation_seeds,
                 )?;
                 let confirmation_gain =
@@ -1069,6 +1110,7 @@ fn main() -> Result<(), String> {
         history.push(
             serde_json::to_value(Evaluation {
                 update,
+                validation_first_seed: Some(panel_validation_seed),
                 elapsed_seconds: started.elapsed().as_secs_f64(),
                 candidate_metrics: candidate_panel.metrics,
                 accepted_metrics: accepted_panel.metrics.clone(),
@@ -1585,5 +1627,32 @@ mod tests {
         assert_eq!(loaded.profiles[&faction].name, "learner");
         assert_eq!(loaded.accepted[&faction].name, "champion");
         assert_eq!(loaded.history.len(), 1);
+    }
+
+    #[test]
+    fn a_zero_panel_step_keeps_every_boundary_on_the_same_fixed_panel() {
+        // Historical behavior: old checkpoints compared every candidate against the same panel,
+        // so stepping must stay opt-in or resumed runs would silently change meaning.
+        for index in 0..16usize {
+            assert_eq!(first_seed_for_boundary(96_000_000, 0, index), 96_000_000);
+        }
+    }
+
+    #[test]
+    fn a_positive_panel_step_gives_adjacent_boundaries_disjoint_seed_blocks() {
+        // The point of stepping: each boundary's gain estimate is drawn from fresh games, so a
+        // trend across boundaries is not one noisy panel re-read at different weights.
+        let firsts: Vec<u64> = (0..8)
+            .map(|index| first_seed_for_boundary(96_000_000, 32, index))
+            .collect();
+        assert_eq!(firsts[0], 96_000_000);
+        for pair in firsts.windows(2) {
+            assert!(
+                pair[1] - pair[0] >= 32,
+                "blocks overlap: {} and {}",
+                pair[0],
+                pair[1]
+            );
+        }
     }
 }
