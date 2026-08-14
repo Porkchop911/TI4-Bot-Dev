@@ -170,6 +170,12 @@ pub struct FactionPlan {
     pub map_pool: Option<Arc<ti4_sim::MapPool>>,
     /// Python Stage 1 uses `tile_seed = game_seed + 20_000_000`.
     pub tile_seed_offset: u64,
+    /// How many rounds each rollout plays.
+    ///
+    /// Stage 2's default is four. It is short enough that most games end tied, which compresses
+    /// exactly the victory-point spread the reward is trying to read; a longer horizon costs
+    /// proportionally more compute and gives outcomes room to separate.
+    pub rounds: u32,
     /// Optional continuation state.
     pub start: Option<FactionStart>,
 }
@@ -205,6 +211,7 @@ impl FactionPlan {
     pub fn python_reference() -> Self {
         Self {
             stage: Stage::One,
+            rounds: 1,
             factions: ["letnev", "jolnar", "hacan"]
                 .into_iter()
                 .map(FactionId::new)
@@ -233,6 +240,7 @@ impl FactionPlan {
     pub fn stage_two_reference() -> Self {
         Self {
             stage: Stage::Two,
+            rounds: 4,
             factions: ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
                 .into_iter()
                 .map(FactionId::new)
@@ -263,7 +271,7 @@ impl FactionPlan {
     pub const fn horizon(&self) -> Horizon {
         match self.stage {
             Stage::One => Horizon::opening(),
-            Stage::Two => Horizon::short(),
+            Stage::Two => Horizon::rounds(self.rounds),
         }
     }
 }
@@ -558,6 +566,10 @@ mod tests {
         assert_eq!(plan.stage, Stage::Two);
         assert_eq!(plan.horizon(), Horizon::short());
         assert_eq!(plan.factions.len(), 6);
+        plan.rounds = 8;
+        assert_eq!(plan.horizon(), Horizon::rounds(8));
+        assert_eq!(plan.horizon().steps, 1_000_000);
+        plan.rounds = 4;
 
         plan.factions.truncate(3);
         plan.generations = 1;

@@ -60,9 +60,24 @@ impl Horizon {
     /// A short horizon for Stage 2.
     #[must_use]
     pub const fn short() -> Self {
+        Self::rounds(4)
+    }
+
+    /// A horizon of `rounds` rounds.
+    ///
+    /// Four rounds is the Stage-2 default and it compresses the thing the reward is trying to
+    /// read: most games end tied, so the victory-point spread between policies is small and the
+    /// gradient has little to separate. A longer horizon costs proportionally more compute and
+    /// gives the outcomes room to differ.
+    ///
+    /// The step bound scales with the rounds rather than staying fixed. It exists to stop a game
+    /// that has stopped advancing from spinning forever, and a bound tuned for four rounds would
+    /// cut a legitimate eight-round game off partway and report it as a completed one.
+    #[must_use]
+    pub const fn rounds(rounds: u32) -> Self {
         Self {
-            rounds: 4,
-            steps: 500_000,
+            rounds,
+            steps: 125_000_usize.saturating_mul(rounds as usize),
         }
     }
 }

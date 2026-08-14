@@ -147,6 +147,7 @@ fn main() -> Result<(), String> {
 
     let mut plan = FactionPlan {
         stage: Stage::One,
+        rounds: 1,
         factions,
         generations: 0, // set per-batch below
         train_seeds: 16,

@@ -1,8 +1,8 @@
 //! Production Stage-2 policy-gradient runner.
 //!
-//! Starts from blank profiles unless `--checkpoint` supplies a Stage-1 bootstrap. Stage 2 always
-//! uses four-round rollouts and the Stage-2 VP/objective reward. Factions rotate through every
-//! physical seat on a shared varied map for each seed.
+//! Starts from blank profiles unless `--checkpoint` supplies a Stage-1 bootstrap. Stage 2 uses a
+//! four-round horizon by default, configurable with `--rounds`, and the Stage-2 VP/objective reward.
+//! Factions rotate through every physical seat on a shared varied map for each seed.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -25,6 +25,14 @@ fn number(name: &str, fallback: usize) -> usize {
         .and_then(|index| args.get(index + 1))
         .and_then(|value| value.parse().ok())
         .unwrap_or(fallback)
+}
+
+fn optional_number(name: &str) -> Option<usize> {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .position(|argument| argument == name)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse().ok())
 }
 
 fn decimal(name: &str, fallback: f64) -> f64 {
@@ -64,6 +72,7 @@ struct StartState {
     history: Vec<serde_json::Value>,
     telemetry: Vec<serde_json::Value>,
     provenance: Option<String>,
+    rounds: Option<u32>,
 }
 
 fn load_start(path: &Path, factions: &[FactionId]) -> Result<StartState, String> {
@@ -138,6 +147,21 @@ fn load_start(path: &Path, factions: &[FactionId]) -> Result<StartState, String>
     } else {
         Vec::new()
     };
+    let rounds = is_stage_two.then(|| {
+        document
+            .get("horizon")
+            .and_then(|horizon| horizon.get("rounds"))
+            .and_then(serde_json::Value::as_u64)
+            .or_else(|| {
+                document
+                    .get("arguments")
+                    .and_then(|arguments| arguments.get("rounds"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|rounds| rounds.parse().ok())
+            })
+            .and_then(|rounds| u32::try_from(rounds).ok())
+            .unwrap_or(4)
+    });
     Ok(StartState {
         profiles,
         accepted,
@@ -145,6 +169,7 @@ fn load_start(path: &Path, factions: &[FactionId]) -> Result<StartState, String>
         history,
         telemetry,
         provenance: Some(format!("{}#sha256={checksum}", path.display())),
+        rounds,
     })
 }
 
@@ -153,6 +178,14 @@ struct Metrics {
     games: usize,
     clearance: f64,
     victory_points: f64,
+    /// Standard deviation of victory points across the panel's games.
+    ///
+    /// Carried because a mean without its spread cannot say whether a difference is real. The
+    /// promotion gate divides by this; without it the gate compares a gain against a fixed
+    /// threshold that may sit either side of the panel's own measurement error, and nobody can
+    /// tell which.
+    #[serde(default)]
+    victory_points_stdev: f64,
     vp_margin: f64,
     won_or_tied: f64,
     scoreable: f64,
@@ -171,6 +204,64 @@ struct Evaluation {
     confirmation_metrics: Option<BTreeMap<FactionId, Metrics>>,
     accepted: Vec<FactionId>,
     accepted_kind: Option<String>,
+    validation_gain: GainEvidence,
+    confirmation_gain: Option<GainEvidence>,
+}
+
+#[derive(Debug, Clone)]
+struct PanelEvaluation {
+    metrics: BTreeMap<FactionId, Metrics>,
+    /// Sum of faction VP, averaged over all physical-seat rotations for each source seed.
+    /// Keeping the source seed as the sample preserves the correlation shared by its rotations.
+    table_vp_by_seed: BTreeMap<u64, f64>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+struct GainEvidence {
+    gain: f64,
+    standard_error: f64,
+    samples: usize,
+}
+
+impl GainEvidence {
+    fn paired(candidate: &PanelEvaluation, champion: &PanelEvaluation) -> Self {
+        let differences: Vec<f64> = candidate
+            .table_vp_by_seed
+            .iter()
+            .filter_map(|(seed, candidate)| {
+                champion
+                    .table_vp_by_seed
+                    .get(seed)
+                    .map(|champion| candidate - champion)
+            })
+            .collect();
+        if differences.is_empty() {
+            return Self::default();
+        }
+        let count = f64::from(u32::try_from(differences.len()).unwrap_or(u32::MAX));
+        let gain = differences.iter().sum::<f64>() / count;
+        let variance = if differences.len() < 2 {
+            0.0
+        } else {
+            differences
+                .iter()
+                .map(|difference| (difference - gain).powi(2))
+                .sum::<f64>()
+                / (count - 1.0)
+        };
+        Self {
+            gain,
+            standard_error: variance.sqrt() / count.sqrt(),
+            samples: differences.len(),
+        }
+    }
+
+    fn beyond_noise(self, sigmas: f64) -> bool {
+        if sigmas <= 0.0 {
+            return true;
+        }
+        self.samples >= 2 && self.gain > sigmas * self.standard_error
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -246,17 +337,22 @@ fn learning_block(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one accumulator per reported metric, read as the panel's definition"
+)]
 fn evaluate(
     plan: &FactionPlan,
     profiles: &BTreeMap<FactionId, Profile>,
     first_seed: u64,
     seeds: u64,
-) -> Result<BTreeMap<FactionId, Metrics>, String> {
+) -> Result<PanelEvaluation, String> {
     #[derive(Default)]
     struct Totals {
         games: usize,
         cleared: usize,
         victory_points: i64,
+        victory_points_squares: i64,
         vp_margin: i64,
         won_or_tied: usize,
         scoreable: i64,
@@ -274,7 +370,7 @@ fn evaluate(
                 profiles,
                 plan.sources,
                 &seed_block,
-                Horizon::short(),
+                Horizon::rounds(plan.rounds),
                 ti4_engine::opening::DEFAULT_REQUIREMENT,
             )
         },
@@ -285,7 +381,7 @@ fn evaluate(
                 profiles,
                 plan.sources,
                 &seed_block,
-                Horizon::short(),
+                Horizon::rounds(plan.rounds),
                 ti4_engine::opening::DEFAULT_REQUIREMENT,
                 Arc::clone(pool),
                 plan.tile_seed_offset,
@@ -298,7 +394,16 @@ fn evaluate(
         ));
     }
     let mut totals: BTreeMap<FactionId, Totals> = BTreeMap::new();
+    let mut seed_totals: BTreeMap<u64, (i64, usize)> = BTreeMap::new();
     for rollout in rollouts.iter().filter(|rollout| rollout.error.is_none()) {
+        let table_points = rollout
+            .seats
+            .iter()
+            .map(|seat| seat.episode.final_progress.victory_points)
+            .sum::<i64>();
+        let seed = seed_totals.entry(rollout.seed).or_default();
+        seed.0 += table_points;
+        seed.1 += 1;
         for seat in &rollout.seats {
             let progress = seat.episode.final_progress;
             let best_opponent = rollout
@@ -312,6 +417,7 @@ fn evaluate(
             row.games += 1;
             row.cleared += usize::from(seat.episode.cleared);
             row.victory_points += progress.victory_points;
+            row.victory_points_squares += progress.victory_points * progress.victory_points;
             row.vp_margin += progress.victory_points - best_opponent;
             row.won_or_tied += usize::from(progress.victory_points >= best_opponent);
             row.scoreable += progress.scoreable_public + progress.scoreable_secret;
@@ -321,7 +427,7 @@ fn evaluate(
             row.shortfall += seat.episode.shortfall;
         }
     }
-    Ok(totals
+    let metrics = totals
         .into_iter()
         .map(|(faction, row)| {
             let n = f64::from(u32::try_from(row.games.max(1)).unwrap_or(u32::MAX));
@@ -333,6 +439,14 @@ fn evaluate(
                     victory_points: f64::from(
                         i32::try_from(row.victory_points).unwrap_or(i32::MAX),
                     ) / n,
+                    victory_points_stdev: {
+                        let mean =
+                            f64::from(i32::try_from(row.victory_points).unwrap_or(i32::MAX)) / n;
+                        let squares = f64::from(
+                            i32::try_from(row.victory_points_squares).unwrap_or(i32::MAX),
+                        ) / n;
+                        (squares - mean * mean).max(0.0).sqrt()
+                    },
                     vp_margin: f64::from(i32::try_from(row.vp_margin).unwrap_or(i32::MAX)) / n,
                     won_or_tied: f64::from(u32::try_from(row.won_or_tied).unwrap_or(u32::MAX)) / n,
                     scoreable: f64::from(i32::try_from(row.scoreable).unwrap_or(i32::MAX)) / n,
@@ -343,7 +457,21 @@ fn evaluate(
                 },
             )
         })
-        .collect())
+        .collect();
+    let table_vp_by_seed = seed_totals
+        .into_iter()
+        .map(|(seed, (points, games))| {
+            let games = f64::from(u32::try_from(games.max(1)).unwrap_or(u32::MAX));
+            (
+                seed,
+                f64::from(i32::try_from(points).unwrap_or(i32::MAX)) / games,
+            )
+        })
+        .collect();
+    Ok(PanelEvaluation {
+        metrics,
+        table_vp_by_seed,
+    })
 }
 
 fn report(update: usize, metrics: &BTreeMap<FactionId, Metrics>) {
@@ -371,13 +499,34 @@ fn report(update: usize, metrics: &BTreeMap<FactionId, Metrics>) {
     }
 }
 
+fn report_gain(label: &str, evidence: GainEvidence, sigmas: f64) {
+    println!(
+        "{label}: aggregate gain={:+.3}, paired se={:.3}, detectable@{sigmas:.1}σ={:.3}, source seeds={}",
+        evidence.gain,
+        evidence.standard_error,
+        sigmas * evidence.standard_error,
+        evidence.samples
+    );
+}
+
+/// Whether the candidate table should replace the champion.
+///
+/// Two bars, and the candidate must clear both. The first is the authored margin, which says how
+/// much improvement is worth promoting for. The second is the panel's own measurement error, which
+/// says how much improvement this panel could even see.
+///
+/// Noise is measured from candidate-minus-champion differences on identical source seeds. All
+/// physical-seat rotations belonging to one source seed remain one statistical sample. This keeps
+/// shared map, deal, and rotation effects paired instead of pretending they are independent.
 fn acceptable_stage_two_table(
     candidate: &BTreeMap<FactionId, Metrics>,
     champion: &BTreeMap<FactionId, Metrics>,
+    evidence: GainEvidence,
     factions: &[FactionId],
     vp_margin: f64,
     max_faction_vp_regression: f64,
     max_faction_clearance_regression: f64,
+    accept_sigmas: f64,
 ) -> bool {
     if factions.iter().any(|faction| {
         candidate[faction].clearance
@@ -393,7 +542,10 @@ fn acceptable_stage_two_table(
         .map(|faction| candidate[faction].victory_points - champion[faction].victory_points)
         .sum();
     let faction_count = f64::from(u32::try_from(factions.len()).unwrap_or(u32::MAX));
-    gain > vp_margin * faction_count
+    if gain <= vp_margin * faction_count {
+        return false;
+    }
+    evidence.beyond_noise(accept_sigmas)
 }
 
 fn report_learning(block: &LearningBlock) {
@@ -429,11 +581,12 @@ fn checkpoint_document(
     provenance: Option<&str>,
     history: &[serde_json::Value],
     telemetry: &[serde_json::Value],
+    rounds: u32,
 ) -> Checkpoint {
     let mut checkpoint = Checkpoint::new(
         "rust_stage2_policy_gradient".to_owned(),
         Stage::Two,
-        Horizon::short(),
+        Horizon::rounds(rounds),
         arguments.clone(),
     );
     checkpoint.resumed_from = provenance.map(str::to_owned);
@@ -462,9 +615,10 @@ fn save(
     provenance: Option<&str>,
     history: &[serde_json::Value],
     telemetry: &[serde_json::Value],
+    rounds: u32,
 ) -> Result<(), String> {
     let checkpoint = checkpoint_document(
-        update, complete, profiles, accepted, arguments, provenance, history, telemetry,
+        update, complete, profiles, accepted, arguments, provenance, history, telemetry, rounds,
     );
     Archive::at(
         path.parent()
@@ -491,6 +645,9 @@ fn main() -> Result<(), String> {
     let confirmation_first_seed =
         u64::try_from(number("--confirmation-first-seed", 97_000_000)).unwrap_or(97_000_000);
     let accept_vp_margin = decimal("--accept-vp-margin", 0.05);
+    // Two standard errors is the usual bar: roughly "this would happen by chance about one panel
+    // in twenty". Zero disables the check and restores the fixed-margin-only gate.
+    let accept_sigmas = decimal("--accept-sigmas", 2.0);
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
@@ -505,6 +662,8 @@ fn main() -> Result<(), String> {
         ));
     }
 
+    let requested_rounds =
+        optional_number("--rounds").and_then(|rounds| u32::try_from(rounds).ok());
     let mut plan = FactionPlan::stage_two_reference();
     plan.train_seeds = train_seeds;
     if let Some(path) = &map_pool_path {
@@ -529,6 +688,7 @@ fn main() -> Result<(), String> {
         mut history,
         telemetry: mut training_telemetry,
         provenance,
+        rounds: resumed_rounds,
     } = checkpoint_path.as_deref().map_or_else(
         || {
             Ok(StartState {
@@ -538,10 +698,15 @@ fn main() -> Result<(), String> {
                 history: Vec::new(),
                 telemetry: Vec::new(),
                 provenance: None,
+                rounds: None,
             })
         },
         |path| load_start(path, &plan.factions),
     )?;
+    plan.rounds = requested_rounds.or(resumed_rounds).unwrap_or(4);
+    if plan.rounds < 2 {
+        return Err("--rounds must be at least 2 for the Stage-2 VP reward".to_owned());
+    }
     let mut arguments = BTreeMap::from([
         ("updates".to_owned(), updates.to_string()),
         ("every".to_owned(), every.to_string()),
@@ -552,6 +717,8 @@ fn main() -> Result<(), String> {
             confirmation_seeds.to_string(),
         ),
         ("accept_vp_margin".to_owned(), accept_vp_margin.to_string()),
+        ("accept_sigmas".to_owned(), accept_sigmas.to_string()),
+        ("rounds".to_owned(), plan.rounds.to_string()),
         (
             "max_faction_vp_regression".to_owned(),
             max_faction_vp_regression.to_string(),
@@ -577,7 +744,10 @@ fn main() -> Result<(), String> {
 
     println!("Stage-2 policy-gradient configuration");
     println!("  factions: sol,letnev,xxcha,hacan,jolnar,l1z1x");
-    println!("  stage: VP/objective reward, four-round horizon");
+    println!(
+        "  stage: VP/objective reward, {}-round horizon",
+        plan.rounds
+    );
     println!("  batch: {train_seeds} seeds x 6 rotations");
     println!(
         "  maps: {} and shared across rotations",
@@ -589,7 +759,7 @@ fn main() -> Result<(), String> {
     println!("  profiles: immutable shared schema-4 heads");
     println!("  meta teacher: none (no specified or validated artifact)");
     println!(
-        "  promotion: {validation_seeds} validation + {confirmation_seeds} confirmation seeds; aggregate VP margin {accept_vp_margin:.2}; per-faction veto VP {max_faction_vp_regression:.2}, clearance {max_faction_clearance_regression:.2}"
+        "  promotion: {validation_seeds} validation + {confirmation_seeds} confirmation seeds; aggregate VP margin {accept_vp_margin:.2}; paired evidence {accept_sigmas:.1}σ; per-faction veto VP {max_faction_vp_regression:.2}, clearance {max_faction_clearance_regression:.2}"
     );
     println!("  execution: persistent Rayon pool + worker-side gradient statistics");
     println!(
@@ -600,23 +770,27 @@ fn main() -> Result<(), String> {
     );
 
     let initial_candidate = evaluate(&plan, &profiles, validation_first_seed, validation_seeds)?;
-    let mut accepted_metrics = evaluate(&plan, &accepted, validation_first_seed, validation_seeds)?;
-    let mut accepted_confirmation = evaluate(
+    let mut accepted_panel = evaluate(&plan, &accepted, validation_first_seed, validation_seeds)?;
+    let mut accepted_confirmation_panel = evaluate(
         &plan,
         &accepted,
         confirmation_first_seed,
         confirmation_seeds,
     )?;
-    report(starting_update, &initial_candidate);
+    let initial_gain = GainEvidence::paired(&initial_candidate, &accepted_panel);
+    report(starting_update, &initial_candidate.metrics);
+    report_gain("bootstrap comparison", initial_gain, accept_sigmas);
     history.push(
         serde_json::to_value(Evaluation {
             update: starting_update,
             elapsed_seconds: 0.0,
-            candidate_metrics: initial_candidate,
-            accepted_metrics: accepted_metrics.clone(),
-            confirmation_metrics: Some(accepted_confirmation.clone()),
+            candidate_metrics: initial_candidate.metrics,
+            accepted_metrics: accepted_panel.metrics.clone(),
+            confirmation_metrics: Some(accepted_confirmation_panel.metrics.clone()),
             accepted: Vec::new(),
             accepted_kind: Some("bootstrap".to_owned()),
+            validation_gain: initial_gain,
+            confirmation_gain: None,
         })
         .map_err(|error| format!("serialize initial evaluation: {error}"))?,
     );
@@ -652,19 +826,23 @@ fn main() -> Result<(), String> {
         profiles = run.profiles;
         done += count;
         let update = starting_update + done;
-        let candidate_metrics =
-            evaluate(&plan, &profiles, validation_first_seed, validation_seeds)?;
-        report(update, &candidate_metrics);
+        let candidate_panel = evaluate(&plan, &profiles, validation_first_seed, validation_seeds)?;
+        let validation_gain = GainEvidence::paired(&candidate_panel, &accepted_panel);
+        report(update, &candidate_panel.metrics);
+        report_gain("validation", validation_gain, accept_sigmas);
         let mut promoted = Vec::new();
         let mut accepted_kind = None;
         let mut assembled_confirmation = None;
+        let mut assembled_confirmation_gain = None;
         if acceptable_stage_two_table(
-            &candidate_metrics,
-            &accepted_metrics,
+            &candidate_panel.metrics,
+            &accepted_panel.metrics,
+            validation_gain,
             &plan.factions,
             accept_vp_margin,
             max_faction_vp_regression,
             max_faction_clearance_regression,
+            accept_sigmas,
         ) {
             let confirmation = evaluate(
                 &plan,
@@ -672,19 +850,25 @@ fn main() -> Result<(), String> {
                 confirmation_first_seed,
                 confirmation_seeds,
             )?;
+            let confirmation_gain =
+                GainEvidence::paired(&confirmation, &accepted_confirmation_panel);
+            report_gain("confirmation", confirmation_gain, accept_sigmas);
             let confirmed = acceptable_stage_two_table(
-                &confirmation,
-                &accepted_confirmation,
+                &confirmation.metrics,
+                &accepted_confirmation_panel.metrics,
+                confirmation_gain,
                 &plan.factions,
                 accept_vp_margin,
                 max_faction_vp_regression,
                 max_faction_clearance_regression,
+                accept_sigmas,
             );
-            assembled_confirmation = Some(confirmation.clone());
+            assembled_confirmation = Some(confirmation.metrics.clone());
+            assembled_confirmation_gain = Some(confirmation_gain);
             if confirmed {
                 accepted.clone_from(&profiles);
-                accepted_metrics.clone_from(&candidate_metrics);
-                accepted_confirmation = confirmation;
+                accepted_panel.clone_from(&candidate_panel);
+                accepted_confirmation_panel = confirmation;
                 promoted.clone_from(&plan.factions);
                 accepted_kind = Some("assembled".to_owned());
             }
@@ -694,16 +878,19 @@ fn main() -> Result<(), String> {
                 let mut isolated = accepted.clone();
                 isolated.insert(faction.clone(), profiles[faction].clone());
                 let primary = evaluate(&plan, &isolated, validation_first_seed, validation_seeds)?;
-                let faction_improved = primary[faction].victory_points
-                    > accepted_metrics[faction].victory_points + 1e-12;
+                let primary_gain = GainEvidence::paired(&primary, &accepted_panel);
+                let faction_improved = primary.metrics[faction].victory_points
+                    > accepted_panel.metrics[faction].victory_points + 1e-12;
                 if !faction_improved
                     || !acceptable_stage_two_table(
-                        &primary,
-                        &accepted_metrics,
+                        &primary.metrics,
+                        &accepted_panel.metrics,
+                        primary_gain,
                         &plan.factions,
                         accept_vp_margin,
                         max_faction_vp_regression,
                         max_faction_clearance_regression,
+                        accept_sigmas,
                     )
                 {
                     continue;
@@ -714,17 +901,21 @@ fn main() -> Result<(), String> {
                     confirmation_first_seed,
                     confirmation_seeds,
                 )?;
+                let confirmation_gain =
+                    GainEvidence::paired(&confirmation, &accepted_confirmation_panel);
                 if acceptable_stage_two_table(
-                    &confirmation,
-                    &accepted_confirmation,
+                    &confirmation.metrics,
+                    &accepted_confirmation_panel.metrics,
+                    confirmation_gain,
                     &plan.factions,
                     accept_vp_margin,
                     max_faction_vp_regression,
                     max_faction_clearance_regression,
+                    accept_sigmas,
                 ) {
                     accepted = isolated;
-                    accepted_metrics = primary;
-                    accepted_confirmation = confirmation;
+                    accepted_panel = primary;
+                    accepted_confirmation_panel = confirmation;
                     promoted.push(faction.clone());
                 }
             }
@@ -750,11 +941,13 @@ fn main() -> Result<(), String> {
             serde_json::to_value(Evaluation {
                 update,
                 elapsed_seconds: started.elapsed().as_secs_f64(),
-                candidate_metrics,
-                accepted_metrics: accepted_metrics.clone(),
+                candidate_metrics: candidate_panel.metrics,
+                accepted_metrics: accepted_panel.metrics.clone(),
                 confirmation_metrics: assembled_confirmation,
                 accepted: promoted,
                 accepted_kind,
+                validation_gain,
+                confirmation_gain: assembled_confirmation_gain,
             })
             .map_err(|error| format!("serialize evaluation: {error}"))?,
         );
@@ -769,6 +962,7 @@ fn main() -> Result<(), String> {
                 provenance.as_deref(),
                 &history,
                 &training_telemetry,
+                plan.rounds,
             )?;
             println!("checkpointed {} at update {update}", path.display());
         }
@@ -784,6 +978,264 @@ fn main() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Metrics for a faction at a given mean VP and spread over `games` games.
+    fn metrics_at(victory_points: f64, stdev: f64, games: usize) -> Metrics {
+        Metrics {
+            games,
+            clearance: 0.8,
+            victory_points,
+            victory_points_stdev: stdev,
+            vp_margin: -1.0,
+            won_or_tied: 0.3,
+            scoreable: 0.3,
+            planets: 4.0,
+            systems: 4.0,
+            units: 6.0,
+            shortfall: 0.3,
+        }
+    }
+
+    fn table(values: &[(&str, f64)], stdev: f64, games: usize) -> BTreeMap<FactionId, Metrics> {
+        values
+            .iter()
+            .map(|(faction, vp)| (FactionId::new(*faction), metrics_at(*vp, stdev, games)))
+            .collect()
+    }
+
+    fn six() -> Vec<FactionId> {
+        ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect()
+    }
+
+    #[test]
+    fn noise_is_measured_from_paired_source_seed_differences() {
+        let panel = |values: &[(u64, f64)]| PanelEvaluation {
+            metrics: BTreeMap::new(),
+            table_vp_by_seed: values.iter().copied().collect(),
+        };
+        // Absolute scores vary by 100 points across seeds, but candidate-minus-champion is exactly
+        // one on each seed. Pairing correctly removes that shared seed difficulty.
+        let candidate = panel(&[(1, 101.0), (2, 201.0), (3, 51.0)]);
+        let champion = panel(&[(1, 100.0), (2, 200.0), (3, 50.0)]);
+        let evidence = GainEvidence::paired(&candidate, &champion);
+        assert!((evidence.gain - 1.0).abs() < 1e-12);
+        assert!(evidence.standard_error.abs() < 1e-12);
+        assert_eq!(evidence.samples, 3);
+        assert!(evidence.beyond_noise(2.0));
+
+        let varied = GainEvidence::paired(&panel(&[(1, 100.0), (2, 202.0), (3, 51.0)]), &champion);
+        assert!((varied.gain - 1.0).abs() < 1e-12);
+        assert!((varied.standard_error - 1.0 / 3.0_f64.sqrt()).abs() < 1e-12);
+
+        let one_seed = GainEvidence::paired(&panel(&[(1, 11.0)]), &panel(&[(1, 10.0)]));
+        assert!(
+            !one_seed.beyond_noise(2.0),
+            "one source seed is not evidence"
+        );
+    }
+
+    #[test]
+    fn a_gain_smaller_than_the_panels_own_error_is_refused() {
+        // A point estimate can clear the authored margin while remaining smaller than two standard
+        // errors of the paired source-seed differences. That is not promotion evidence yet.
+        let factions = six();
+        let names: Vec<(&str, f64)> = factions
+            .iter()
+            .map(|faction| (faction.as_str(), 2.00))
+            .collect();
+        let champion = table(&names, 1.6, 192);
+
+        // Every faction up by 0.06: an aggregate gain of 0.36, which clears the fixed 0.30 bar.
+        let improved: Vec<(&str, f64)> = factions
+            .iter()
+            .map(|faction| (faction.as_str(), 2.06))
+            .collect();
+        let candidate = table(&improved, 1.6, 192);
+
+        assert!(
+            acceptable_stage_two_table(
+                &candidate,
+                &champion,
+                GainEvidence {
+                    gain: 0.36,
+                    standard_error: 0.20,
+                    samples: 32
+                },
+                &factions,
+                0.05,
+                0.05,
+                0.02,
+                0.0
+            ),
+            "the fixed margin alone accepts it"
+        );
+        assert!(
+            !acceptable_stage_two_table(
+                &candidate,
+                &champion,
+                GainEvidence {
+                    gain: 0.36,
+                    standard_error: 0.20,
+                    samples: 32
+                },
+                &factions,
+                0.05,
+                0.05,
+                0.02,
+                2.0
+            ),
+            "and the noise check refuses it, because this panel cannot see 0.06"
+        );
+    }
+
+    #[test]
+    fn a_gain_the_panel_can_actually_see_is_accepted() {
+        // The other half: the check must not simply refuse everything, or it is a stopped clock.
+        let factions = six();
+        let champion: BTreeMap<FactionId, Metrics> = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 2.00))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        let candidate: BTreeMap<FactionId, Metrics> = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 2.60))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        assert!(acceptable_stage_two_table(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: 3.60,
+                standard_error: 0.20,
+                samples: 32
+            },
+            &factions,
+            0.05,
+            0.05,
+            0.02,
+            2.0
+        ));
+    }
+
+    #[test]
+    fn a_larger_panel_can_see_a_smaller_gain() {
+        // More independent source seeds lower the paired standard error. The same point estimate
+        // can therefore become detectable without weakening the authored gain requirement.
+        let factions = six();
+        let names: Vec<(&str, f64)> = factions.iter().map(|f| (f.as_str(), 2.00)).collect();
+        let better: Vec<(&str, f64)> = factions.iter().map(|f| (f.as_str(), 2.06)).collect();
+
+        assert!(!acceptable_stage_two_table(
+            &table(&better, 1.6, 192),
+            &table(&names, 1.6, 192),
+            GainEvidence {
+                gain: 0.36,
+                standard_error: 0.20,
+                samples: 32
+            },
+            &factions,
+            0.05,
+            0.05,
+            0.02,
+            2.0
+        ));
+        assert!(acceptable_stage_two_table(
+            &table(&better, 1.6, 40_000),
+            &table(&names, 1.6, 40_000),
+            GainEvidence {
+                gain: 0.36,
+                standard_error: 0.10,
+                samples: 128
+            },
+            &factions,
+            0.05,
+            0.05,
+            0.02,
+            2.0
+        ));
+    }
+
+    #[test]
+    fn a_per_faction_regression_still_vetoes_however_large_the_aggregate_gain() {
+        // The noise check is an extra bar, not a replacement. One seat going backwards must still
+        // block a promotion that looks good in aggregate.
+        let factions = six();
+        let champion = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 2.00))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        let mut candidate = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 3.00))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        candidate.insert(FactionId::new("sol"), metrics_at(1.0, 1.6, 192));
+
+        assert!(!acceptable_stage_two_table(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: 5.0,
+                standard_error: 0.10,
+                samples: 32
+            },
+            &factions,
+            0.05,
+            0.05,
+            0.02,
+            2.0
+        ));
+    }
+
+    #[test]
+    fn zero_sigmas_restores_the_previous_gate_exactly() {
+        // Opt-out rather than imposed: a run that wants the old behaviour can have it, and the
+        // difference between the two is then a deliberate setting rather than a code change.
+        let factions = six();
+        let champion = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 2.00))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        let candidate = table(
+            &factions
+                .iter()
+                .map(|f| (f.as_str(), 2.06))
+                .collect::<Vec<_>>(),
+            1.6,
+            192,
+        );
+        assert!(acceptable_stage_two_table(
+            &candidate,
+            &champion,
+            GainEvidence::default(),
+            &factions,
+            0.05,
+            0.05,
+            0.02,
+            0.0
+        ));
+    }
     use super::*;
     use ti4_training::gradient::Telemetry;
     use ti4_training::stage1::Generation;
@@ -808,7 +1260,14 @@ mod tests {
             (factions[1].clone(), metric(2.1, 0.9)),
         ]);
         assert!(acceptable_stage_two_table(
-            &good, &champion, &factions, 0.05, 0.15, 0.03
+            &good,
+            &champion,
+            GainEvidence::default(),
+            &factions,
+            0.05,
+            0.15,
+            0.03,
+            0.0
         ));
 
         let sacrificed = BTreeMap::from([
@@ -818,10 +1277,12 @@ mod tests {
         assert!(!acceptable_stage_two_table(
             &sacrificed,
             &champion,
+            GainEvidence::default(),
             &factions,
             0.05,
             0.15,
-            0.03
+            0.03,
+            0.0
         ));
     }
 
@@ -872,6 +1333,7 @@ mod tests {
             Some("bootstrap.json#sha256=abc"),
             &history,
             &telemetry,
+            4,
         );
         assert_eq!(checkpoint.history.len(), 2);
         assert_eq!(checkpoint.training_telemetry.len(), 1);
@@ -900,6 +1362,7 @@ mod tests {
         ));
         let document = serde_json::json!({
             "stage": 2,
+            "horizon": {"rounds": 8, "steps": 1_000_000},
             "final_update": 17,
             "profiles": {"sol": champion},
             "learner_profiles": {"sol": learner},
@@ -913,6 +1376,7 @@ mod tests {
         let loaded = load_start(&path, std::slice::from_ref(&faction)).expect("load fixture");
         std::fs::remove_file(&path).expect("remove fixture");
         assert_eq!(loaded.update, 17);
+        assert_eq!(loaded.rounds, Some(8));
         assert_eq!(loaded.profiles[&faction].name, "learner");
         assert_eq!(loaded.accepted[&faction].name, "champion");
         assert_eq!(loaded.history.len(), 1);
