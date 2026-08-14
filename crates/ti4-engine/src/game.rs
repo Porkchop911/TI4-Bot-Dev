@@ -140,8 +140,16 @@ impl AftermathWindow {
     ) -> Result<Self, GameError> {
         // Movement may take the only carrier out of a system and strand what it was holding, so
         // capacity is settled before anything shoots.
-        crate::fleet::enforce(state, ctx.content, ctx.sources, ctx.table, player, system)
-            .map_err(GameError::IllegalChoice)?;
+        crate::fleet::enforce_seeing(
+            state,
+            ctx.content,
+            ctx.sources,
+            galaxy,
+            ctx.table,
+            player,
+            system,
+        )
+        .map_err(GameError::IllegalChoice)?;
 
         // Fired by everyone except the active player, before combat.
         let cannon = crate::combat::space_cannon_offense(
@@ -154,10 +162,11 @@ impl AftermathWindow {
             player,
         );
         for (_, hits) in cannon {
-            crate::combat::absorb_hits(
+            crate::combat::absorb_hits_seeing(
                 state,
                 ctx.content,
                 ctx.sources,
+                galaxy,
                 ctx.table,
                 player,
                 system,
@@ -376,6 +385,8 @@ pub struct Game<'a> {
     sources: SourceSet,
     strategy_cards: Vec<StrategyCardId>,
     secondary: Option<StrategySecondaryWindow>,
+    /// TE Warfare resolves its follower window after the free tactical action, not before it.
+    secondary_after_tactical: Option<StrategySecondaryWindow>,
     /// The open 81.1 scoring window.
     scoring: Option<ScoringWindow>,
     /// The open 81.5 token gain, and the report its remaining steps will extend.
@@ -395,6 +406,8 @@ pub struct Game<'a> {
     dice: Dice,
     status_resolved: bool,
     agenda_resolved: bool,
+    /// Turn sequence whose free start-of-turn technology choices have been resolved.
+    prepared_turn_seq: Option<u32>,
     blocked: Option<GameError>,
 }
 
@@ -441,6 +454,7 @@ impl<'a> Game<'a> {
             content,
             sources: POK,
             secondary: None,
+            secondary_after_tactical: None,
             scoring: None,
             tokens: None,
             voting: None,
@@ -452,6 +466,7 @@ impl<'a> Game<'a> {
             dice: Dice::new(),
             status_resolved: false,
             agenda_resolved: false,
+            prepared_turn_seq: None,
             blocked: None,
         }
     }
@@ -546,6 +561,22 @@ impl<'a> Game<'a> {
         if self.tactical.is_some() {
             return self.step_tactical();
         }
+        if self.state.phase == Phase::Action
+            && self.prepared_turn_seq != Some(self.state.turn_seq)
+            && let Some(active) = self.state.active.clone()
+        {
+            if let Err(error) = crate::technology::start_turn(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+                &active,
+            ) {
+                return self.result(false, Some(error.into()));
+            }
+            self.prepared_turn_seq = Some(self.state.turn_seq);
+        }
         if self.state.phase == Phase::Status && !self.status_resolved {
             return self.step_status();
         }
@@ -602,7 +633,7 @@ impl<'a> Game<'a> {
 
     fn action_options(&self) -> Option<Choice> {
         if let Some(window) = &self.secondary {
-            return window.pending_choice(&self.state);
+            return window.pending_choice(&self.state, self.content);
         }
         let active = self.state.active.as_ref()?;
         let mut choice = strategic_action_options(&self.state, self.content, active)
@@ -639,6 +670,20 @@ impl<'a> Game<'a> {
             self.sources,
             active,
         ));
+        choice.options.extend(crate::technology::component_actions(
+            &self.state,
+            self.content,
+            self.sources,
+            active,
+        ));
+        choice
+            .options
+            .extend(crate::thunders_edge::available_actions(
+                &self.state,
+                self.content,
+                self.sources,
+                active,
+            ));
         // A faction's own component actions — Sol's Orbital Drop is the first.
         choice
             .options
@@ -715,6 +760,42 @@ impl<'a> Game<'a> {
                     self.advance_turn();
                     return Ok(());
                 }
+                if answer.id.starts_with("component|tech|") {
+                    let done = crate::technology::perform_component(
+                        &mut self.state,
+                        self.content,
+                        self.sources,
+                        self.galaxy.as_ref(),
+                        &mut self.table,
+                        &active,
+                        &answer,
+                    )?;
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    self.advance_turn();
+                    return Ok(());
+                }
+                if answer.id.starts_with("component|expedition|") {
+                    let done = crate::thunders_edge::perform(
+                        &mut self.state,
+                        self.content,
+                        self.sources,
+                        self.galaxy.as_ref(),
+                        &mut self.table,
+                        &active,
+                        &answer,
+                    )?;
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    self.advance_turn();
+                    return Ok(());
+                }
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
                     let _ = index;
                     let played = self.play_component_action(&active, &answer);
@@ -768,12 +849,39 @@ impl<'a> Game<'a> {
                     self.emit("TACTICAL_ACTION_BEGAN");
                     return Ok(());
                 }
-                self.secondary = Some(begin_strategic_action(
+                let window =
+                    begin_strategic_action(&mut self.state, self.content, &active, answer)?;
+                let card = window.card().to_string();
+                let outcome = crate::strategy_cards::primary(
                     &mut self.state,
                     self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                    &mut self.table,
                     &active,
-                    answer,
-                )?);
+                    &card,
+                )?;
+                self.resolve_faction_strategy(&active, &card);
+                match outcome {
+                    crate::strategy_cards::Ability::FreeTactical(system) => {
+                        // TE Warfare explicitly waives the token and permits an already-tokened
+                        // system, but the rest is the ordinary movement/aftermath pipeline.
+                        self.state.active_system = Some(system);
+                        self.state.pending = Some("move".to_owned());
+                        self.state.activation_seq = self.state.activation_seq.saturating_add(1);
+                        self.tactical = Some(TacticalWindow {
+                            player: active,
+                            stage: TacticalStage::Moving,
+                        });
+                        self.secondary_after_tactical = Some(window);
+                        self.emit("SYSTEM_ACTIVATED");
+                        self.emit("FREE_TACTICAL_ACTION");
+                    }
+                    crate::strategy_cards::Ability::Resolved
+                    | crate::strategy_cards::Ability::Unresolved => {
+                        self.secondary = Some(window);
+                    }
+                }
                 self.emit("STRATEGIC_ACTION_BEGAN");
                 Ok(())
             }
@@ -993,6 +1101,7 @@ impl<'a> Game<'a> {
             TacticalStage::Activating => {
                 let system = SystemId::new(answer.id);
                 activate(&mut self.state, &window.player, &system)?;
+                self.state.gravleash_move_values.clear();
                 self.emit(&format!("SYSTEM_ACTIVATED:{system}"));
                 // Typed as well as logged, so the eight cards that read "After you activate a
                 // system" have a window to be played into.
@@ -1015,9 +1124,11 @@ impl<'a> Game<'a> {
                     self.tactical = Some(window);
                     Ok(self.finish_tactical())
                 }
-                MoveSelection::Ship { origin, index } => {
-                    self.begin_one_move(window, &origin, index)
-                }
+                MoveSelection::Ship {
+                    origin,
+                    index,
+                    gravity_drive,
+                } => self.begin_one_move(window, &origin, index, gravity_drive),
             },
             TacticalStage::Loading {
                 origin,
@@ -1083,6 +1194,7 @@ impl<'a> Game<'a> {
         mut window: TacticalWindow,
         origin: &SystemId,
         index: usize,
+        gravity_drive: bool,
     ) -> Result<StepResult, GameError> {
         let galaxy = self.galaxy.clone().ok_or(TacticalError::NoActiveSystem)?;
         let active = self
@@ -1110,16 +1222,46 @@ impl<'a> Game<'a> {
             .and_then(|kind| {
                 rules.path_from(
                     origin.as_str(),
-                    i32::try_from(kind.move_value()).unwrap_or(0)
-                        + crate::action_cards::move_bonus(
-                            &self.state,
-                            &window.player,
-                            self.state.activation_seq,
-                        ),
+                    crate::tactical::effective_move_value_with_gravity(
+                        &self.state,
+                        kind,
+                        &window.player,
+                        origin,
+                        gravity_drive,
+                    ),
                 )
             })
             .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
 
+        if gravity_drive && !crate::technology::use_gravity_drive(&mut self.state, &window.player) {
+            return Err(TacticalError::IllegalChoice(IllegalChoice::NotOffered {
+                player: window.player.clone(),
+                chosen: format!("move_gd|{origin}|{index}"),
+                offered: Vec::new(),
+            })
+            .into());
+        }
+
+        if self
+            .state
+            .player(&window.player)
+            .and_then(|seat| seat.breakthrough.as_ref())
+            .is_some_and(|alias| alias.as_str() == "letnevbt")
+        {
+            let own_move =
+                ti4_content::units::unit_type(self.content, ship.type_id.as_str(), self.sources)
+                    .map_or(0, |kind| i32::try_from(kind.move_value()).unwrap_or(0))
+                    + crate::action_cards::move_bonus(
+                        &self.state,
+                        &window.player,
+                        self.state.activation_seq,
+                    );
+            self.state
+                .gravleash_move_values
+                .entry(origin.clone())
+                .and_modify(|value| *value = (*value).max(own_move))
+                .or_insert(own_move);
+        }
         let hold = CargoWindow::for_ship(
             &self.state,
             self.content,
@@ -1311,6 +1453,10 @@ impl<'a> Game<'a> {
         self.state.active_system = None;
         self.state.pending = None;
         self.emit("TACTICAL_ACTION_COMPLETE");
+        if let Some(window) = self.secondary_after_tactical.take() {
+            self.secondary = Some(window);
+            return self.result(false, None);
+        }
         self.advance_turn();
         self.result(false, None)
     }
@@ -1374,13 +1520,20 @@ impl<'a> Game<'a> {
             .secondary
             .as_mut()
             .expect("checked above")
-            .next_choice(&mut self.state);
+            .next_choice(&mut self.state, self.content);
         let Some(choice) = choice else {
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
             self.advance_turn();
             return self.result(false, None);
         };
+        let follower = choice.player.clone();
+        let card = self
+            .secondary
+            .as_ref()
+            .expect("window remains open")
+            .card()
+            .to_string();
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
@@ -1398,7 +1551,7 @@ impl<'a> Game<'a> {
             .secondary
             .as_mut()
             .expect("window remains open")
-            .take_choice(&mut self.state, answer)
+            .take_choice(&mut self.state, self.content, answer)
         {
             Ok(resolution) => (
                 resolution,
@@ -1414,13 +1567,41 @@ impl<'a> Game<'a> {
             SecondaryResolution::Followed => "STRATEGY_SECONDARY_FOLLOWED",
             SecondaryResolution::Ineligible => unreachable!("ineligible followers are automatic"),
         });
-        if complete {
-            // Xxcha's Peace Accords annex a planet once Diplomacy has finished resolving.
-            if let Some(window) = self.secondary.as_ref() {
-                let card = window.card().to_string();
-                let player = window.primary_player().clone();
-                self.resolve_faction_strategy(&player, &card);
+        if resolution == SecondaryResolution::Followed {
+            let name = crate::strategy_cards::card_name(self.content, &card)
+                .unwrap_or_else(|| card.clone());
+            let outcome = if crate::faction_abilities::substitutes_primary(
+                &self.state,
+                self.content,
+                &follower,
+                &name,
+            ) {
+                crate::strategy_cards::primary(
+                    &mut self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                    &mut self.table,
+                    &follower,
+                    &card,
+                )
+            } else {
+                crate::strategy_cards::secondary(
+                    &mut self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                    &mut self.table,
+                    &follower,
+                    &card,
+                )
+            };
+            if let Err(error) = outcome {
+                return self.result(false, Some(error.into()));
             }
+            self.resolve_faction_strategy(&follower, &card);
+        }
+        if complete {
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
             self.advance_turn();
@@ -1787,6 +1968,18 @@ impl<'a> Game<'a> {
     }
 
     fn advance_turn(&mut self) {
+        if self.state.phase == Phase::Action
+            && let Some(active) = self.state.active.clone()
+        {
+            let _ = crate::technology::end_turn(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+                &active,
+            );
+        }
         if advance_turn(&mut self.state).is_some() {
             self.emit("TURN_PASSED");
         }
@@ -2157,11 +2350,21 @@ mod tests {
             assert!(game.step().error.is_none());
         }
         let primary = game.state.active.clone().unwrap();
+        let tokens_before_primary = game.state.player(&primary).unwrap().total_tokens();
 
         let primary_step = game.step();
         assert!(primary_step.resolved_choice);
         assert_eq!(game.state.active, Some(primary.clone()));
-        assert_eq!(game.table.log.len(), 7, "six draft picks and one primary");
+        assert_eq!(
+            game.state.player(&primary).unwrap().total_tokens(),
+            tokens_before_primary + 3,
+            "the driven strategic action invokes Leadership's primary"
+        );
+        assert_eq!(
+            game.table.log.len(),
+            10,
+            "six draft picks, the strategic action, and Leadership's three pool choices"
+        );
         let before_inspection = game.state.clone();
         assert_eq!(game.legal_options().unwrap().player, PlayerId::new("b"));
         assert!(game.state.identical(&before_inspection));
@@ -2173,7 +2376,7 @@ mod tests {
         let final_secondary = game.step();
         assert!(final_secondary.resolved_choice);
         assert_ne!(game.state.active, Some(primary));
-        assert_eq!(game.table.log.len(), 9);
+        assert_eq!(game.table.log.len(), 12);
         assert!(game.events.contains(&"STRATEGIC_ACTION_BEGAN".to_owned()));
         assert_eq!(
             game.events
@@ -2436,7 +2639,7 @@ mod tests {
         }
 
         let hold = game.legal_options().expect("the hold is open");
-        assert_eq!(hold.prompt, "load which unit");
+        assert_eq!(hold.prompt, "load carrier (4 free)");
         assert!(
             hold.options.iter().any(|o| o.id.starts_with("load|")),
             "the infantry is offered as cargo"

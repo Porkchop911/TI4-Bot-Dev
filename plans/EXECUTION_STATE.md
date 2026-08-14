@@ -22,6 +22,48 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Codex Stage-1 parity repair checkpoint (2026-08-13)
+
+- Active branch: `codex/stage1-parity-fixes`; the pre-existing local edit to
+  `crates/ti4-training/examples/stage1_curve.rs` remains uncommitted and was not incorporated into
+  this package.
+- Implemented scope: collision-free schema-3/4/5 profiles; Python-style explicit option and board
+  features; factual engine choice payloads; faction-keyed gradients; full seat rotations over
+  shared maps; an exact high-level Python reference plan; and a comparison executable with
+  representation, rotation, rollout, and solved-checkpoint gates.
+- Semantic result: the repaired Rust run now learns useful opening motion immediately, but the
+  Python solved checkpoint still fails transfer (96 seat-games/faction: Hacan 0.000, Jol-Nar
+  0.000, Letnev 0.010 clearance). This is reported as a failed gate, not parity.
+- Evidence: `docs/STAGE1_PARITY_COMPARISON.md` and
+  `plans/evidence/CODEX-STAGE1-PARITY.md`. Final workspace verification is recorded there.
+- Follow-up (2026-08-14): the driven strategy-card blocker is implemented for all eight cards and
+  both active Thunder's Edge replacements. Primaries, accepted secondaries, shared/faction cost
+  rules, Brilliant substitution, and TE Warfare's deferred free tactical action are wired. See
+  `docs/STRATEGY_CARD_PARITY.md`.
+- Map follow-up (2026-08-14): the Save-54 map-shape blocker is closed for parity/training runs.
+  `ti4-sim::MapPool` reads and validates the exact Python JSON.GZ artifact; Stage-1 rotation,
+  evaluation and training accept it with the Python `seed + 20,000,000` rule. On identical 32 pool
+  selections, Python clearance is Hacan/Jol-Nar/Letnev `0.969/0.979/0.865`, while Rust is
+  `0.312/0.292/0.010`. The remaining transfer failure is now isolated to game/choice execution,
+  not map distribution. Evidence: `plans/evidence/CODEX-STAGE1-MAP-PARITY.md`.
+- Solved-transfer follow-up (2026-08-14): the same-pool gate now passes at Hacan/Jol-Nar/Letnev
+  `0.865/0.865/0.823` after propagating FULL sources, aligning technology identities, Gravity
+  Drive, Transit Diodes, TE expeditions, Gravleash, faction production units, and the Python
+  distance-zero `target:reachable` feature, then closing the implemented learned-window routing
+  class. Stateful nested choices now receive `Observed`; Integrated Economy, learned Orbital Drop
+  and Peace Accords targets, Psychoarchaeology, Chaos Mapping, Predictive Intelligence, and
+  Bio-Stims are wired. This validates the imported policy representation and basic execution path,
+  not complete engine parity. Unsupported content/event ordering remains documented in
+  `docs/STAGE1_PARITY_COMPARISON.md`.
+- Training optimization follow-up (2026-08-14): schema-4 profiles are shared through `Arc`, Rayon
+  provides persistent work-stealing rollout execution, workers return deterministic sufficient
+  statistics, and faction/head merges are parallel. The Stage-1 reference path measures about
+  `0.091 s/update` versus `0.41` before this package and the historical optimized Python `0.556`.
+  Stage 2 is wired to the same core with four-round rewards, six factions/rotations, the real
+  Save-52 pool, blank or checkpoint bootstrap, faction evaluation, and atomic checksummed resume
+  artifacts. See `docs/TRAINING_PIPELINE.md` and
+  `plans/evidence/CODEX-TRAINING-PIPELINE-OPTIMIZATION.md`.
+
 ### M08-005 tactical scoring checkpoint (2026-08-13)
 
 - Active branch: `wp/m08-005b-tactical-scoring`, based on `8a72a4f`; the focused local package

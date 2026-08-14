@@ -125,6 +125,10 @@ pub enum CargoError {
 pub struct CargoWindow {
     player: PlayerId,
     candidates: Vec<Cargo>,
+    origin: Option<SystemId>,
+    ship_type: Option<String>,
+    ground: Vec<bool>,
+    fighters: Vec<bool>,
     loaded: Vec<usize>,
     capacity: i64,
     closed: bool,
@@ -137,6 +141,10 @@ impl CargoWindow {
         Self {
             player,
             candidates,
+            origin: None,
+            ship_type: None,
+            ground: Vec::new(),
+            fighters: Vec::new(),
             loaded: Vec::new(),
             capacity,
             closed: capacity <= 0,
@@ -155,12 +163,41 @@ impl CargoWindow {
     ) -> Self {
         let capacity = capacity_of(content, sources, ship);
         let candidates = loadable(state, content, sources, player, origin);
-        Self::new(player.clone(), candidates, capacity)
+        let types = catalogue(content, sources);
+        let ground = candidates
+            .iter()
+            .map(|cargo| {
+                types
+                    .get(cargo.unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ground_force)
+            })
+            .collect();
+        let fighters = candidates
+            .iter()
+            .map(|cargo| {
+                types
+                    .get(cargo.unit.type_id.as_str())
+                    .is_some_and(UnitType::is_fighter)
+            })
+            .collect();
+        Self {
+            player: player.clone(),
+            candidates,
+            origin: Some(origin.clone()),
+            ship_type: Some(ship.type_id.to_string()),
+            ground,
+            fighters,
+            loaded: Vec::new(),
+            capacity,
+            closed: capacity <= 0,
+        }
     }
 
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        self.closed || i64::try_from(self.loaded.len()).unwrap_or(i64::MAX) >= self.capacity
+        self.closed
+            || self.loaded.len() >= self.candidates.len()
+            || i64::try_from(self.loaded.len()).unwrap_or(i64::MAX) >= self.capacity
     }
 
     /// What has been loaded, in the order it was taken aboard.
@@ -196,8 +233,8 @@ impl CargoWindow {
 
         let mut seen = std::collections::BTreeSet::new();
         let mut options: Vec<ChoiceOption> = Vec::new();
-        for index in free {
-            let cargo = &self.candidates[index];
+        for index in &free {
+            let cargo = &self.candidates[*index];
             let key = (
                 cargo.unit.type_id.to_string(),
                 cargo.unit.sustained_damage,
@@ -211,14 +248,81 @@ impl CargoWindow {
                 CargoSource::Space => "space".to_owned(),
                 CargoSource::Planet(planet) => planet.to_string(),
             };
-            options.push(ChoiceOption::labelled(
+            let source = match &cargo.source {
+                CargoSource::Space => serde_json::Value::Null,
+                CargoSource::Planet(planet) => planet.to_string().into(),
+            };
+            let mut option = ChoiceOption::labelled(
                 format!("load|{index}"),
                 LOAD_KIND,
                 format!("load {} from {where_from}", cargo.unit.type_id),
-            ));
+            )
+            .with("unit", cargo.unit.type_id.to_string())
+            .with("source", source)
+            .with("damaged", cargo.unit.sustained_damage)
+            .with("galvanized", cargo.unit.galvanized)
+            .with(
+                "capacity_remaining",
+                self.capacity - i64::try_from(self.loaded.len()).unwrap_or(i64::MAX),
+            )
+            .with(
+                "loaded_ground",
+                self.loaded
+                    .iter()
+                    .filter(|index| self.ground.get(**index) == Some(&true))
+                    .count(),
+            )
+            .with(
+                "loaded_fighters",
+                self.loaded
+                    .iter()
+                    .filter(|index| self.fighters.get(**index) == Some(&true))
+                    .count(),
+            );
+            if let Some(origin) = &self.origin {
+                option = option.with("system", origin.to_string());
+            }
+            options.push(option);
         }
-        options.push(ChoiceOption::decline());
-        Some(Choice::new(self.player.clone(), "load which unit", options))
+        let mut decline = ChoiceOption::labelled(
+            "done_loading",
+            crate::choice::DECLINE_KIND,
+            "carry nothing further",
+        )
+        .with(
+            "loaded_ground",
+            self.loaded
+                .iter()
+                .filter(|index| self.ground.get(**index) == Some(&true))
+                .count(),
+        )
+        .with(
+            "loaded_fighters",
+            self.loaded
+                .iter()
+                .filter(|index| self.fighters.get(**index) == Some(&true))
+                .count(),
+        )
+        .with(
+            "ground_available",
+            free.iter()
+                .filter(|index| self.ground.get(**index) == Some(&true))
+                .count(),
+        );
+        if let Some(origin) = &self.origin {
+            decline = decline.with("system", origin.to_string());
+        }
+        options.push(decline);
+        let prompt = self.ship_type.as_ref().map_or_else(
+            || "load which unit".to_owned(),
+            |ship| {
+                format!(
+                    "load {ship} ({} free)",
+                    self.capacity - i64::try_from(self.loaded.len()).unwrap_or(i64::MAX)
+                )
+            },
+        );
+        Some(Choice::new(self.player.clone(), prompt, options))
     }
 
     /// Take one unit aboard, or close the hold.
@@ -501,6 +605,40 @@ mod tests {
     }
 
     #[test]
+    fn a_hold_is_complete_when_every_available_unit_is_loaded() {
+        // Jol-Nar starts with three loadable units beside a capacity-four carrier. The Python
+        // reference breaks its loading loop when no candidates remain; if this window waits for
+        // the fourth capacity slot instead, the tactical driver sees no choice and finishes the
+        // action without ever sailing the carrier.
+        let (mut state, origin, _) = state_with_two_systems();
+        for _ in 0..3 {
+            state.system_mut(&origin).units.push(unit("infantry"));
+        }
+        let candidates = loadable(&state, ContentStore::embedded(), POK, &player(), &origin);
+        let mut window = CargoWindow::new(player(), candidates, 4);
+
+        for _ in 0..3 {
+            let choice = window
+                .pending_choice()
+                .expect("an available unit is offered");
+            let pick = choice
+                .options
+                .iter()
+                .find(|option| !option.is_decline())
+                .expect("a pickup is offered")
+                .clone();
+            window.resolve(pick).unwrap();
+        }
+
+        assert!(
+            window.is_complete(),
+            "nothing remains to fill the spare slot"
+        );
+        assert!(window.pending_choice().is_none());
+        assert_eq!(window.cargo().len(), 3);
+    }
+
+    #[test]
     fn declining_closes_the_hold_early() {
         let (mut state, origin, _) = state_with_two_systems();
         state.system_mut(&origin).units.push(unit("infantry"));
@@ -508,7 +646,12 @@ mod tests {
         let mut window = CargoWindow::new(player(), candidates, 4);
 
         let choice = window.pending_choice().unwrap();
-        let decline = choice.option("decline").unwrap().clone();
+        let decline = choice
+            .options
+            .iter()
+            .find(|option| option.is_decline())
+            .unwrap()
+            .clone();
         window.resolve(decline).unwrap();
 
         assert!(window.is_complete());

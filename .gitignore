@@ -21,6 +21,7 @@ __pycache__/
 
 # Local state
 .pi-control/
+/out/
 *.log
 /.tmp-m00-*/
 /.tmp-m00-011/

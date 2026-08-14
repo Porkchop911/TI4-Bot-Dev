@@ -8,7 +8,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlayerId, SecretObjectiveId};
 use ti4_model::state::GameState;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
 /// 45.4: three in hand, counting scored ones.
 pub const HAND_LIMIT: usize = 3;
@@ -127,7 +127,14 @@ pub fn enforce_hand_limit(
                 "return a secret objective to the deck",
                 options,
             );
-            SecretObjectiveId::new(table.ask(&choice)?.id)
+            SecretObjectiveId::new(
+                table
+                    .ask_seeing(
+                        &choice,
+                        &Observed::new(state, content, ti4_model::content_types::POK, None),
+                    )?
+                    .id,
+            )
         };
 
         if let Some(seat) = state.player_mut(player) {

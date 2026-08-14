@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 use ti4_engine::choice::{Choice, ChoiceOption, Observed};
-use ti4_model::id::PlayerId;
+use ti4_model::id::{PlanetId, PlayerId, SystemId};
 
 use crate::learned::bucket;
 
@@ -237,6 +237,499 @@ pub fn option_feature_names(
     features.0
 }
 
+/// Collision-free schema-3/4/5 features used by the successful policy-gradient runs.
+///
+/// This is deliberately not `option_feature_names` with the hash removed.  The oracle's explicit
+/// extractor also removes faction crosses, bare numeric identities and exact option ids, because
+/// those let a policy memorise one seat or map instead of reading the board.  Keeping the two
+/// extractors separate preserves schema-2 compatibility while making the representation used for
+/// new training unambiguous.
+#[must_use]
+// Keeping the extractor in one linear block makes its ordering and parity with the Python
+// reference auditable; splitting it would obscure which crosses belong to the base feature set.
+#[allow(clippy::too_many_lines)]
+pub fn explicit_option_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+) -> FeatureVector {
+    let mut features = FeatureVector::new();
+    let kind = canonical_feature_kind(&option.kind);
+    add_named(&mut features, &format!("kind:{kind}"), 1.0);
+
+    let mut option_tokens: BTreeSet<String> = tokens(&option.id)
+        .into_iter()
+        .chain(tokens(&option.label))
+        .filter(|token| !token.chars().all(|character| character.is_ascii_digit()))
+        .collect();
+    // Stable iteration is part of the feature contract even though addition is commutative.
+    for token in &option_tokens {
+        add_named(&mut features, &format!("option:{token}"), 1.0);
+    }
+
+    for prompt_token in tokens(&choice.prompt) {
+        add_named(
+            &mut features,
+            &format!("prompt-kind:{prompt_token}:{kind}"),
+            1.0,
+        );
+        for option_token in &option_tokens {
+            add_named(
+                &mut features,
+                &format!("prompt-option:{prompt_token}:{option_token}"),
+                1.0,
+            );
+        }
+    }
+
+    for (key, value) in &option.payload {
+        match value {
+            Value::Bool(flag) => add_named(
+                &mut features,
+                &format!(
+                    "payload-bool:{key}:{}",
+                    if *flag { "True" } else { "False" }
+                ),
+                1.0,
+            ),
+            Value::Number(number) => {
+                if let Some(number) = number.as_f64() {
+                    add_named(&mut features, &format!("payload-number:{key}"), number);
+                    add_named(
+                        &mut features,
+                        &format!("payload-number-kind:{key}:{kind}"),
+                        number,
+                    );
+                }
+            }
+            Value::String(text) => {
+                for token in tokens(text)
+                    .into_iter()
+                    .filter(|token| !token.chars().all(|character| character.is_ascii_digit()))
+                {
+                    add_named(&mut features, &format!("payload:{key}:{token}"), 1.0);
+                }
+            }
+            Value::Array(items) => {
+                #[expect(clippy::cast_precision_loss, reason = "option payloads are small")]
+                add_named(
+                    &mut features,
+                    &format!("payload-count:{key}"),
+                    items.len() as f64,
+                );
+                for item in items {
+                    if let Value::String(text) = item
+                        && !text.chars().all(|character| character.is_ascii_digit())
+                    {
+                        add_named(
+                            &mut features,
+                            &format!("payload:{key}:{}", text.to_lowercase()),
+                            1.0,
+                        );
+                    }
+                }
+            }
+            Value::Null | Value::Object(_) => {}
+        }
+    }
+
+    let seat = seen.seat(player);
+    #[expect(clippy::cast_precision_loss, reason = "public counts are small")]
+    let state_facts: [(&str, f64); 8] = [
+        ("round", f64::from(seen.round())),
+        (
+            "tactic_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.tactic_tokens)),
+        ),
+        (
+            "strategic_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.strategic_tokens)),
+        ),
+        (
+            "fleet_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.fleet_tokens)),
+        ),
+        (
+            "trade_goods",
+            f64::from(seat.as_ref().map_or(0, |s| s.trade_goods)),
+        ),
+        (
+            "commodities",
+            f64::from(seat.as_ref().map_or(0, |s| s.commodities)),
+        ),
+        (
+            "controlled_planets",
+            seen.controlled_planets(player).len() as f64,
+        ),
+        (
+            "technologies",
+            seat.as_ref().map_or(0, |s| s.technologies.len()) as f64,
+        ),
+    ];
+    for (name, value) in state_facts {
+        add_named(&mut features, &format!("state-kind:{kind}:{name}"), value);
+    }
+
+    structured_features(seen, option, player, &mut features);
+    option_tokens.clear();
+    features
+}
+
+fn add_named(features: &mut FeatureVector, name: &str, value: f64) {
+    if value == 0.0 || !value.is_finite() {
+        return;
+    }
+    *features.entry(name.to_owned()).or_insert(0.0) += value;
+}
+
+/// Local choice kinds translated to the oracle identity used by imported explicit weights.
+fn canonical_feature_kind(kind: &str) -> &str {
+    match kind {
+        "land" => "commit",
+        "place" => "produce",
+        "spend" => "pay",
+        "ready_technology" => "technology",
+        "open_transaction" | "answer" => "transaction",
+        "ground_casualty" | "sustain" => "casualty",
+        "retreat_to" => "retreat",
+        other => other,
+    }
+}
+
+fn payload_string<'a>(option: &'a ChoiceOption, key: &str) -> Option<&'a str> {
+    option.payload.get(key).and_then(Value::as_str)
+}
+
+fn structured_features(
+    seen: &Observed<'_>,
+    option: &ChoiceOption,
+    player: &PlayerId,
+    features: &mut FeatureVector,
+) {
+    let kind = canonical_feature_kind(&option.kind);
+    let active = seen.active_system();
+    if matches!(kind, "activate" | "system") {
+        add_system_features(seen, &option.id, player, "target", features);
+    }
+
+    if let Some(system) = payload_string(option, "system") {
+        let prefix = match kind {
+            "produce" | "build" => "production",
+            "placement" => "placement",
+            "load" => "origin",
+            _ => "option-system",
+        };
+        add_system_features(seen, system, player, prefix, features);
+    }
+
+    match kind {
+        "move" => {
+            if let Some(origin) = payload_string(option, "origin") {
+                add_system_features(seen, origin, player, "origin", features);
+                if let Some(destination) = active {
+                    add_route_features(seen, origin, destination.as_str(), features);
+                }
+            }
+            if let Some(destination) = active {
+                add_system_features(seen, destination.as_str(), player, "destination", features);
+            }
+        }
+        "load" => {
+            if let Some(destination) = active {
+                add_system_features(seen, destination.as_str(), player, "destination", features);
+            }
+        }
+        "commit" => {
+            if let Some(destination) = active {
+                add_system_features(seen, destination.as_str(), player, "invasion", features);
+            }
+            if let Some(planet) = payload_string(option, "planet") {
+                add_planet_features(
+                    seen,
+                    planet,
+                    active.map(SystemId::as_str),
+                    player,
+                    "landing",
+                    features,
+                );
+            }
+        }
+        _ => {}
+    }
+
+    if let Some(unit) = payload_string(option, "unit") {
+        add_unit_features(seen, unit, &format!("{kind}-unit"), features);
+    }
+}
+
+fn add_route_features(
+    seen: &Observed<'_>,
+    origin: &str,
+    destination: &str,
+    features: &mut FeatureVector,
+) {
+    let Some(galaxy) = seen.galaxy() else {
+        return;
+    };
+    if let Some(distance) = galaxy.distance(origin, destination) {
+        add_named(features, "route:hex-distance", f64::from(distance));
+    }
+    add_named(
+        features,
+        "route:adjacent",
+        f64::from(u8::from(galaxy.are_adjacent(origin, destination))),
+    );
+}
+
+fn add_unit_features(
+    seen: &Observed<'_>,
+    unit_id: &str,
+    prefix: &str,
+    features: &mut FeatureVector,
+) {
+    let Some(unit) = ti4_content::units::unit_type(seen.content(), unit_id, seen.sources()) else {
+        return;
+    };
+    for (name, value) in [
+        ("move", small_integer_value(unit.move_value())),
+        ("capacity", small_integer_value(unit.capacity())),
+        ("cost", unit.cost()),
+        ("is-ship", f64::from(u8::from(unit.is_ship()))),
+        ("is-ground", f64::from(u8::from(unit.is_ground_force()))),
+        ("is-fighter", f64::from(u8::from(unit.is_fighter()))),
+        ("is-structure", f64::from(u8::from(unit.is_structure()))),
+        ("has-production", f64::from(u8::from(unit.has_production()))),
+        ("sustain", f64::from(u8::from(unit.sustain_damage()))),
+    ] {
+        add_named(features, &format!("{prefix}:{name}"), value);
+    }
+}
+
+fn add_planet_features(
+    seen: &Observed<'_>,
+    planet_id: &str,
+    system_id: Option<&str>,
+    player: &PlayerId,
+    prefix: &str,
+    features: &mut FeatureVector,
+) {
+    let Some(planet) = ti4_content::galaxy::planet(seen.content(), planet_id, seen.sources())
+    else {
+        return;
+    };
+    for (name, value) in [
+        ("resources", small_integer_value(planet.resources())),
+        ("influence", small_integer_value(planet.influence())),
+        ("legendary", f64::from(u8::from(planet.is_legendary()))),
+        (
+            "homeworld",
+            f64::from(u8::from(planet.homeworld_of().is_some())),
+        ),
+        (
+            "tech-specialties",
+            count_value(planet.tech_specialties().len()),
+        ),
+    ] {
+        add_named(features, &format!("{prefix}:{name}"), value);
+    }
+    if let Some(trait_name) = planet.planet_type() {
+        add_named(
+            features,
+            &format!("{prefix}:trait:{}", trait_name.to_lowercase()),
+            1.0,
+        );
+    }
+    let Some(system_id) = system_id.or_else(|| planet.system_id()) else {
+        return;
+    };
+    let state = seen.system(&SystemId::new(system_id));
+    let planet_id = PlanetId::new(planet_id);
+    let controller = state.planet_control.get(&planet_id);
+    add_named(
+        features,
+        &format!("{prefix}:controlled-by-us"),
+        f64::from(u8::from(controller == Some(player))),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:uncontrolled"),
+        f64::from(u8::from(controller.is_none())),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:controlled-by-enemy"),
+        f64::from(u8::from(controller.is_some_and(|owner| owner != player))),
+    );
+    let occupants = state.on_planet(&planet_id);
+    let own_ground = occupants
+        .iter()
+        .filter(|unit| {
+            unit.owner == *player
+                && unit_stats(seen, unit).is_some_and(|stats| stats.is_ground_force())
+        })
+        .count();
+    let enemy_ground = occupants
+        .iter()
+        .filter(|unit| {
+            unit.owner != *player
+                && unit_stats(seen, unit).is_some_and(|stats| stats.is_ground_force())
+        })
+        .count();
+    add_named(
+        features,
+        &format!("{prefix}:own-ground"),
+        count_value(own_ground),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:enemy-ground"),
+        count_value(enemy_ground),
+    );
+}
+
+fn unit_stats<'a>(
+    seen: &'a Observed<'a>,
+    unit: &ti4_model::units::Unit,
+) -> Option<ti4_content::units::UnitType<'a>> {
+    ti4_content::units::unit_type(seen.content(), unit.type_id.as_str(), seen.sources())
+}
+
+fn add_system_features(
+    seen: &Observed<'_>,
+    system_id: &str,
+    player: &PlayerId,
+    prefix: &str,
+    features: &mut FeatureVector,
+) {
+    let Some(galaxy) = seen.galaxy() else {
+        return;
+    };
+    if galaxy.coord_of(system_id).is_none() {
+        return;
+    }
+    let system = seen.system(&SystemId::new(system_id));
+    let planets = ti4_content::galaxy::planets_in(seen.content(), system_id, seen.sources());
+    let controls = &system.planet_control;
+    let planet_ids: Vec<PlanetId> = planets
+        .iter()
+        .map(|planet| PlanetId::new(planet.id()))
+        .collect();
+    add_named(
+        features,
+        &format!("{prefix}:planet-count"),
+        count_value(planets.len()),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:not-controlled-count"),
+        count_value(
+            planet_ids
+                .iter()
+                .filter(|planet| controls.get(*planet) != Some(player))
+                .count(),
+        ),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:uncontrolled-count"),
+        count_value(
+            planet_ids
+                .iter()
+                .filter(|planet| !controls.contains_key(*planet))
+                .count(),
+        ),
+    );
+    add_named(
+        features,
+        &format!("{prefix}:enemy-controlled-count"),
+        count_value(
+            planet_ids
+                .iter()
+                .filter(|planet| controls.get(*planet).is_some_and(|owner| owner != player))
+                .count(),
+        ),
+    );
+
+    let own_ships = system
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.owner == *player && unit_stats(seen, unit).is_some_and(|stats| stats.is_ship())
+        })
+        .count();
+    let enemy_ships = system
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.owner != *player && unit_stats(seen, unit).is_some_and(|stats| stats.is_ship())
+        })
+        .count();
+    let own_ground_space = system
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.owner == *player
+                && unit_stats(seen, unit).is_some_and(|stats| stats.is_ground_force())
+        })
+        .count();
+    let all_units = system
+        .units
+        .iter()
+        .chain(system.planet_units.values().flatten());
+    let mut enemy_ground_total = 0usize;
+    let mut own_production_units = 0usize;
+    for unit in all_units {
+        if let Some(stats) = unit_stats(seen, unit) {
+            enemy_ground_total += usize::from(unit.owner != *player && stats.is_ground_force());
+            own_production_units += usize::from(unit.owner == *player && stats.has_production());
+        }
+    }
+    for (name, value) in [
+        ("own-ships", count_value(own_ships)),
+        ("enemy-ships", count_value(enemy_ships)),
+        ("own-ground-space", count_value(own_ground_space)),
+        ("enemy-ground-total", count_value(enemy_ground_total)),
+        ("own-production-units", count_value(own_production_units)),
+        (
+            "reachable",
+            f64::from(u8::from(system_reachable(seen, player, system_id))),
+        ),
+    ] {
+        add_named(features, &format!("{prefix}:{name}"), value);
+    }
+}
+
+fn small_integer_value(value: i64) -> f64 {
+    f64::from(i32::try_from(value).expect("TI4 printed integer values fit in i32"))
+}
+
+fn count_value(value: usize) -> f64 {
+    f64::from(u32::try_from(value).expect("TI4 component counts fit in u32"))
+}
+
+fn system_reachable(seen: &Observed<'_>, player: &PlayerId, target: &str) -> bool {
+    let target = SystemId::new(target);
+    let Some(galaxy) = seen.galaxy() else {
+        return false;
+    };
+    let pinned = seen.systems_with_token(player);
+    seen.board().iter().any(|(origin, state)| {
+        !pinned.contains(origin)
+            && state.units.iter().any(|unit| {
+                unit.owner == *player
+                    && unit_stats(seen, unit).is_some_and(|stats| {
+                        stats.is_ship()
+                            && galaxy
+                                .distance(origin.as_str(), target.as_str())
+                                .is_some_and(|distance| {
+                                    distance <= i32::try_from(stats.move_value()).unwrap_or(0)
+                                })
+                    })
+            })
+    })
+}
+
 /// Collects `(name, value)` pairs before they are hashed.
 #[derive(Default)]
 struct Named(Vec<(String, f64)>);
@@ -272,23 +765,14 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
     "state-option:",
 ];
 
-/// Structured tactical facts this port does not extract yet (M09-010).
+/// Structured tactical feature parity status (M09-010 repair).
 ///
-/// The oracle also describes the *system* an option names — how many planets it holds, who
-/// controls them, whose ships are there, whether it is reachable — under role-specific prefixes
-/// like `origin:` and `destination:`. Option ids are useful identity features but cannot teach
-/// that an unseen origin is rich in troops, so this is where a policy learns to generalise across
-/// systems it has never seen.
-///
-/// **Measured cost of the gap.** With a map the oracle emits 30 buckets for an activate option
-/// against this port's 24, 25 against 20 for a move, and 28 against 25 for a commit. Trained from
-/// blank on Stage 1 for 600 updates, this port learns the one thing reachable without board
-/// knowledge — building units, twelvefold — while planets gained peaks at 0.17 and falls back, and
-/// the opening bar is cleared in 0 of 240 held-out seat-games. The same curriculum is reported
-/// working in the oracle, so this is the gap to close before Stage 1 is judged.
+/// [`explicit_option_features`] now emits the oracle's role-specific system, planet, unit and route
+/// facts. The legacy hashed extractor remains unchanged on purpose: changing its inputs would make
+/// existing schema-2 weights mean something different without changing their stored bucket names.
 #[must_use]
-pub const fn structured_features_missing() -> &'static str {
-    "M09-010: origin/destination/route/cargo/production system features"
+pub const fn structured_features_status() -> &'static str {
+    "complete for explicit schemas; schema 2 remains compatibility-frozen"
 }
 
 #[cfg(test)]
@@ -340,6 +824,141 @@ mod tests {
         state
     }
 
+    fn observed_three_player_board() -> (GameState, ti4_content::galaxy::Galaxy) {
+        let content = ti4_content::ContentStore::embedded();
+        let players = ["a", "b", "c"].map(PlayerId::new);
+        let factions: BTreeMap<PlayerId, FactionId> = players
+            .iter()
+            .cloned()
+            .zip(["letnev", "jolnar", "hacan"].map(FactionId::new))
+            .collect();
+        let mut state =
+            ti4_engine::setup::start_game_seeded(content, &players, POK, None, 17).expect("setup");
+        for (player, faction) in &factions {
+            state.player_mut(player).unwrap().faction = faction.clone();
+        }
+        let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, POK, 17)
+            .into_iter()
+            .map(|system| system.to_string())
+            .collect();
+        let refs: Vec<&str> = filler.iter().map(String::as_str).collect();
+        let galaxy = ti4_engine::seating::build_board(content, &factions, &refs, POK).unwrap();
+        for (player, faction) in &factions {
+            ti4_engine::seating::deploy(&mut state, content, player, faction, POK).unwrap();
+        }
+        (state, galaxy)
+    }
+
+    #[test]
+    fn explicit_activation_reads_the_real_board_without_memorising_a_tile_id() {
+        let (state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let home = state.player(&player).unwrap().home_system.as_ref().unwrap();
+        let target = galaxy
+            .adjacent(home.as_str())
+            .into_iter()
+            .find(|system| !ti4_content::galaxy::planets_in(content, system, POK).is_empty())
+            .expect("a neighbouring system with a planet");
+        let option = ChoiceOption::labelled(target, "activate", format!("activate {target}"));
+        let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let features = explicit_option_features(&seen, &choice, &option, &player);
+
+        assert_eq!(features.get("target:reachable"), Some(&1.0));
+        assert!(
+            features
+                .get("target:planet-count")
+                .is_some_and(|count| *count > 0.0)
+        );
+        assert!(!features.contains_key(&format!("option:{target}")));
+        assert!(
+            features
+                .keys()
+                .all(|name| !name.starts_with("kind-faction:"))
+        );
+        assert!(
+            features
+                .keys()
+                .all(|name| !name.starts_with("state-option:"))
+        );
+    }
+
+    #[test]
+    fn a_fleets_own_unpinned_system_is_reachable_for_activation_scoring() {
+        let (state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let home = state.player(&player).unwrap().home_system.as_ref().unwrap();
+        let option =
+            ChoiceOption::labelled(home.to_string(), "activate", format!("activate {home}"));
+        let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+
+        let features = explicit_option_features(&seen, &choice, &option, &player);
+
+        assert_eq!(features.get("target:reachable"), Some(&1.0));
+    }
+
+    #[test]
+    fn explicit_movement_and_landing_expose_route_unit_and_planet_facts() {
+        let (mut state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let origin = state
+            .player(&player)
+            .unwrap()
+            .home_system
+            .as_ref()
+            .unwrap()
+            .clone();
+        let destination = galaxy
+            .adjacent(origin.as_str())
+            .into_iter()
+            .find(|system| !ti4_content::galaxy::planets_in(content, system, POK).is_empty())
+            .unwrap()
+            .to_owned();
+        state.active_system = Some(SystemId::new(&destination));
+        let move_choice = ti4_engine::tactical::movement_options(
+            &player,
+            &[ti4_engine::tactical::Movable {
+                origin: origin.clone(),
+                index: 0,
+                unit: ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("carrier"),
+                    player.clone(),
+                ),
+                capacity: 4,
+                gravity_drive: false,
+            }],
+        );
+        let move_option = move_choice
+            .options
+            .iter()
+            .find(|option| option.kind == "move")
+            .unwrap();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let movement = explicit_option_features(&seen, &move_choice, move_option, &player);
+        assert_eq!(movement.get("route:adjacent"), Some(&1.0));
+        assert_eq!(movement.get("move-unit:capacity"), Some(&4.0));
+        assert!(movement.contains_key("origin:own-ships"));
+
+        let planet = ti4_content::galaxy::planets_in(content, &destination, POK)
+            .first()
+            .expect("planet")
+            .id()
+            .to_owned();
+        let land = ChoiceOption::new("land", "land").with("planet", planet);
+        let landing_choice =
+            Choice::new(player.clone(), "commit ground forces", vec![land.clone()]);
+        let landing = explicit_option_features(&seen, &landing_choice, &land, &player);
+        assert!(
+            landing.contains_key("landing:resources") || landing.contains_key("landing:influence")
+        );
+        assert!(landing.contains_key("invasion:planet-count"));
+        assert!(landing.contains_key("state-kind:commit:round"));
+    }
+
     #[test]
     fn the_base_features_match_the_oracle_extractor_bucket_for_bucket() {
         // Generated by calling the real `HashedLinearPolicy.features`, not by reading it. Every
@@ -351,8 +970,8 @@ mod tests {
         // against a map-less oracle hid exactly the block this port has not written. With a map it
         // emits three to six more buckets per option — planet counts, who controls them, enemy
         // ships present, whether the system is reachable — and those are what a policy needs to
-        // learn *which* system to activate rather than memorising ids. See
-        // `structured_features_missing`.
+        // learn *which* system to activate rather than memorising ids. The real-board tests in
+        // `structured_features_status` cover that explicit block.
         let corpus: Vec<GoldenFeatures> =
             serde_json::from_str(include_str!("../tests/golden_features.json"))
                 .expect("the golden corpus parses");

@@ -15,7 +15,7 @@ use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Table, Window};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
 use crate::dice::Dice;
 use crate::rng::GameRng;
 
@@ -389,6 +389,7 @@ fn offer_sustain(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     table: &mut Table,
     player: &PlayerId,
     system: &SystemId,
@@ -437,7 +438,7 @@ fn offer_sustain(
         ));
 
         let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options);
-        let answer = table.ask(&choice)?;
+        let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
         if answer.is_decline() {
             return Ok(hits);
         }
@@ -472,14 +473,36 @@ pub fn absorb_hits(
     system: &SystemId,
     hits: usize,
 ) -> Result<(), CombatError> {
-    let mut remaining = offer_sustain(state, content, sources, table, player, system, hits)?;
+    absorb_hits_seeing(state, content, sources, None, table, player, system, hits)
+}
+
+/// Absorb hits with the public map attached to every learned casualty decision.
+///
+/// # Errors
+/// [`CombatError::IllegalChoice`] when a decider answers with something not offered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "hit assignment needs the combat position and optional map observation"
+)]
+pub fn absorb_hits_seeing(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+    hits: usize,
+) -> Result<(), CombatError> {
+    let mut remaining =
+        offer_sustain(state, content, sources, galaxy, table, player, system, hits)?;
 
     while remaining > 0 {
         let alive = ships_of(state, content, sources, player, system);
         if alive.is_empty() {
             return Ok(()); // 15.2a
         }
-        let casualty = choose_casualty(table, player, &alive)?;
+        let casualty = choose_casualty(state, content, sources, galaxy, table, player, &alive)?;
         state
             .system_mut(system)
             .remove(std::slice::from_ref(&casualty));
@@ -490,6 +513,10 @@ pub fn absorb_hits(
 
 /// 78.6: the owning player chooses which of their own units dies.
 fn choose_casualty(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     table: &mut Table,
     player: &PlayerId,
     units: &[Unit],
@@ -522,7 +549,7 @@ fn choose_casualty(
         ));
     }
     let choice = Choice::new(player.clone(), "assign a hit", options);
-    let answer = table.ask(&choice)?;
+    let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
         .strip_prefix("destroy|")
@@ -872,7 +899,9 @@ impl CombatWindow {
         // Faction offers made at the round's opening window, before any dice: Letnev pays for
         // Munitions Reserves here, and `reroll_munitions_misses` reads the marker below.
         for side in [self.attacker.clone(), self.defender.clone()] {
-            crate::faction_abilities::space_combat_round_started(state, content, ctx.table, &side);
+            crate::faction_abilities::space_combat_round_started(
+                state, content, sources, ctx.table, &side,
+            );
         }
 
         if round == 1 {
@@ -2114,7 +2143,16 @@ mod tests {
         let units = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
         let mut table = Table::new();
 
-        let taken = choose_casualty(&mut table, &defender(), &units).unwrap();
+        let taken = choose_casualty(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &defender(),
+            &units,
+        )
+        .unwrap();
         let offered = table.log.records.last().expect("a choice was recorded");
 
         assert_eq!(offered.offered.len(), 2, "one fighter, one cruiser");
@@ -2132,7 +2170,16 @@ mod tests {
         let units = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
         let mut table = Table::new();
 
-        choose_casualty(&mut table, &defender(), &units).unwrap();
+        choose_casualty(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &defender(),
+            &units,
+        )
+        .unwrap();
         let offered = table.log.records.last().unwrap();
 
         assert_eq!(offered.offered.len(), 2, "fresh and damaged are distinct");

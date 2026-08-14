@@ -15,21 +15,25 @@
 //! which is the point: the training signal is what a policy produced early, not who eventually won
 //! a game nobody has yet learned to win.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Observed, SeededRandom, Table};
 use ti4_engine::game::Game;
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
 use ti4_engine::setup::start_game_seeded;
+use ti4_model::Hex;
 use ti4_model::content_types::{DEFAULT, SourceSet};
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::{LearnedBot, TrajectoryStep};
 use ti4_policy::learned::Profile;
 use ti4_policy::progress::{Baseline, Progress};
 
-use crate::reward::Episode;
+use crate::gradient::{Statistics, statistics as collect_statistics};
+use crate::reward::{Episode, Reward};
 
 /// How far a rollout is allowed to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +68,7 @@ impl Horizon {
 }
 
 /// One seat's play, with the trajectory attached.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SeatRollout {
     /// Which seat.
     pub player: PlayerId,
@@ -77,7 +81,7 @@ pub struct SeatRollout {
 }
 
 /// What one played game produced.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Rollout {
     /// The seed this game was played from.
     pub seed: u64,
@@ -89,6 +93,144 @@ pub struct Rollout {
     pub error: Option<String>,
 }
 
+/// A training batch after trajectories have been reduced on rollout workers.
+///
+/// Only sufficient statistics cross the worker boundary. Evaluation continues to use
+/// [`Rollout`], while training avoids retaining and then serially revisiting every legal option
+/// and feature vector.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReducedBatch<K: Ord> {
+    /// Games that failed before producing usable statistics.
+    pub errors: usize,
+    /// Statistics keyed by the policy identity being updated, then decision head.
+    pub statistics: BTreeMap<K, BTreeMap<String, Statistics>>,
+}
+
+impl<K: Ord> Default for ReducedBatch<K> {
+    fn default() -> Self {
+        Self {
+            errors: 0,
+            statistics: BTreeMap::new(),
+        }
+    }
+}
+
+impl<K: Ord> ReducedBatch<K> {
+    /// Decisions represented by this batch's sufficient statistics.
+    #[must_use]
+    pub fn decisions(&self) -> usize {
+        self.statistics
+            .values()
+            .flat_map(BTreeMap::values)
+            .map(|row| row.actions)
+            .sum()
+    }
+}
+
+fn merge_partials<K>(partials: &[ReducedBatch<K>]) -> ReducedBatch<K>
+where
+    K: Ord + Clone + Send + Sync,
+{
+    let errors = partials.iter().map(|partial| partial.errors).sum();
+    let pairs: BTreeSet<(K, String)> = partials
+        .iter()
+        .flat_map(|partial| {
+            partial
+                .statistics
+                .iter()
+                .flat_map(|(key, rows)| rows.keys().map(|head| (key.clone(), head.clone())))
+        })
+        .collect();
+    let merged: Vec<(K, String, Statistics)> = pairs
+        .par_iter()
+        .map(|(key, head)| {
+            let mut row = Statistics::default();
+            for partial in partials {
+                if let Some(found) = partial.statistics.get(key).and_then(|rows| rows.get(head)) {
+                    row.merge(found);
+                }
+            }
+            (key.clone(), head.clone(), row)
+        })
+        .collect();
+    let mut statistics: BTreeMap<K, BTreeMap<String, Statistics>> = BTreeMap::new();
+    for (key, head, row) in merged {
+        statistics.entry(key).or_default().insert(head, row);
+    }
+    ReducedBatch { errors, statistics }
+}
+
+/// Board family used by a parity rollout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpeningMap {
+    /// The Rust seeded partial-spiral board used by the ordinary trainer.
+    RustVaried,
+    /// The captured Python Save-54 tile geometry, with faction homes rotated by physical seat.
+    Save54Captured,
+    /// A Python-compatible constrained arrangement selected from a validated map pool.
+    PythonPool {
+        pool: Arc<ti4_sim::MapPool>,
+        tile_seed_offset: u64,
+    },
+}
+
+const SAVE54_NEUTRAL: [(&str, i32, i32); 25] = [
+    ("18", 0, 0),
+    ("72", -1, 0),
+    ("49", -1, 1),
+    ("48", 0, -1),
+    ("31", 0, 1),
+    ("74", 1, -1),
+    ("46", 1, 0),
+    ("71", -2, 0),
+    ("62", -2, 1),
+    ("70", -2, 2),
+    ("44", -1, -1),
+    ("77", -1, 2),
+    ("36", 0, -2),
+    ("69", 0, 2),
+    ("63", 1, -2),
+    ("24", 1, 1),
+    ("35", 2, -2),
+    ("41", 2, -1),
+    ("28", 2, 0),
+    ("25", -3, 2),
+    ("79", -2, 3),
+    ("40", -1, -2),
+    ("26", 1, -3),
+    ("64", 2, 1),
+    ("39", 3, -1),
+];
+
+const SAVE54_HOMES: [Hex; 3] = [Hex::new(0, -3), Hex::new(-3, 3), Hex::new(3, 0)];
+
+fn save54_board(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+) -> Result<ti4_content::galaxy::Galaxy, String> {
+    if players.len() != SAVE54_HOMES.len() {
+        return Err(format!("Save 54 needs 3 seats, got {}", players.len()));
+    }
+    let mut owned: Vec<(String, Hex)> = SAVE54_NEUTRAL
+        .iter()
+        .map(|(id, q, r)| ((*id).to_owned(), Hex::new(*q, *r)))
+        .collect();
+    for ((player, hex), _) in players.iter().zip(SAVE54_HOMES).zip(0..) {
+        let faction = factions
+            .get(player)
+            .ok_or_else(|| format!("no faction assigned to {player}"))?;
+        let home = ti4_content::factions::get(content, faction.as_str())
+            .and_then(|record| record.home_system())
+            .ok_or_else(|| format!("faction {faction} has no home system"))?;
+        owned.push((home.to_owned(), hex));
+    }
+    let borrowed: Vec<(&str, Hex)> = owned.iter().map(|(id, hex)| (id.as_str(), *hex)).collect();
+    ti4_content::galaxy::Galaxy::placed(content, &borrowed, sources)
+        .map_err(|error| format!("Save 54 board: {error}"))
+}
+
 /// Set a game up: seats, factions, a board, and starting fleets on it.
 ///
 /// Split from [`play`] because it is a different job, and because a setup failure has to be
@@ -96,8 +238,10 @@ pub struct Rollout {
 fn seated(
     content: &ContentStore,
     players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
     sources: SourceSet,
     seed: u64,
+    map: &OpeningMap,
 ) -> Result<
     (
         ti4_model::state::GameState,
@@ -111,8 +255,7 @@ fn seated(
         Err(error) => return Err(format!("setup: {error}")),
     };
 
-    let factions = ti4_engine::seating::seat_in_scope(players);
-    for (player, faction) in &factions {
+    for (player, faction) in factions {
         if let Some(seat) = state.player_mut(player) {
             seat.faction = faction.clone();
         }
@@ -120,16 +263,45 @@ fn seated(
 
     // Drawn by seed, so a batch plays many boards rather than one. A policy trained on a single
     // map learns that map, and no batch report would say so.
-    let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, sources, seed)
-        .into_iter()
-        .map(|system| system.to_string())
-        .collect();
-    let borrowed: Vec<&str> = filler.iter().map(String::as_str).collect();
-    let galaxy = match ti4_engine::seating::build_board(content, &factions, &borrowed, sources) {
-        Ok(galaxy) => galaxy,
-        Err(error) => return Err(format!("board: {error}")),
+    let galaxy = match map {
+        OpeningMap::RustVaried => {
+            let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, sources, seed)
+                .into_iter()
+                .map(|system| system.to_string())
+                .collect();
+            let borrowed: Vec<&str> = filler.iter().map(String::as_str).collect();
+            ti4_engine::seating::build_board(content, factions, &borrowed, sources)
+                .map_err(|error| format!("board: {error}"))?
+        }
+        OpeningMap::Save54Captured => save54_board(content, players, factions, sources)?,
+        OpeningMap::PythonPool {
+            pool,
+            tile_seed_offset,
+        } => {
+            let homes: Result<Vec<String>, String> = players
+                .iter()
+                .map(|player| {
+                    let faction = factions
+                        .get(player)
+                        .ok_or_else(|| format!("no faction assigned to {player}"))?;
+                    ti4_content::factions::get(content, faction.as_str())
+                        .and_then(|record| record.home_system())
+                        .map(str::to_owned)
+                        .ok_or_else(|| format!("faction {faction} has no home system"))
+                })
+                .collect();
+            let homes = homes?;
+            let borrowed: Vec<&str> = homes.iter().map(String::as_str).collect();
+            pool.galaxy(
+                content,
+                sources,
+                seed.wrapping_add(*tile_seed_offset),
+                &borrowed,
+            )
+            .map_err(|error| format!("Python map pool: {error}"))?
+        }
     };
-    for (player, faction) in &factions {
+    for (player, faction) in factions {
         if let Err(error) =
             ti4_engine::seating::deploy(&mut state, content, player, faction, sources)
         {
@@ -137,7 +309,7 @@ fn seated(
         }
     }
 
-    Ok((state, galaxy, factions))
+    Ok((state, galaxy, factions.clone()))
 }
 
 /// Seat one learned profile per player and play a bounded game.
@@ -155,7 +327,125 @@ pub fn play(
     horizon: Horizon,
     requirement: Requirement,
 ) -> Rollout {
-    let (state, galaxy, factions) = match seated(content, players, sources, seed) {
+    let factions = ti4_engine::seating::seat_in_scope(players);
+    play_assigned(
+        content,
+        players,
+        &factions,
+        profiles,
+        sources,
+        seed,
+        horizon,
+        requirement,
+    )
+}
+
+fn play_shared(
+    content: &ContentStore,
+    players: &[PlayerId],
+    profiles: &BTreeMap<PlayerId, Arc<Profile>>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Rollout {
+    let factions = ti4_engine::seating::seat_in_scope(players);
+    play_assigned_on_map_shared(
+        content,
+        players,
+        &factions,
+        profiles,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+    )
+}
+
+/// Play with an explicit physical-seat to faction assignment.
+///
+/// This is the primitive rotations require: policy identity follows the faction while the
+/// assignment moves around fixed physical seats. The legacy [`play`] wrapper retains the stable
+/// in-scope assignment for existing callers.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+pub fn play_assigned(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    profiles: &BTreeMap<PlayerId, Profile>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Rollout {
+    play_assigned_on_map(
+        content,
+        players,
+        factions,
+        profiles,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+    )
+}
+
+/// Play an explicitly assigned rollout on a selected parity board family.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+pub fn play_assigned_on_map(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    profiles: &BTreeMap<PlayerId, Profile>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+) -> Rollout {
+    let shared = profiles
+        .iter()
+        .map(|(player, profile)| (player.clone(), Arc::new(profile.clone())))
+        .collect();
+    play_assigned_on_map_shared(
+        content,
+        players,
+        factions,
+        &shared,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        map,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+fn play_assigned_on_map_shared(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    profiles: &BTreeMap<PlayerId, Arc<Profile>>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+) -> Rollout {
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
         Ok(seated) => seated,
         Err(error) => return failed(seed, error),
     };
@@ -176,24 +466,25 @@ pub fn play(
         BTreeMap::new();
     for (index, player) in players.iter().enumerate() {
         let profile = profiles.get(player).cloned().unwrap_or_else(|| {
-            ti4_policy::learned::blank_profile(
+            Arc::new(ti4_policy::learned::blank_explicit_profile(
                 &factions
                     .get(player)
                     .map_or_else(String::new, ToString::to_string),
-                ti4_policy::learned::DEFAULT_DIMENSIONS,
-            )
+            ))
         });
         let stream = seed
             .wrapping_mul(1_000_003)
             .wrapping_add(u64::try_from(index).unwrap_or(0));
-        let bot = LearnedBot::new(profile, stream)
+        let bot = LearnedBot::from_shared(profile, stream)
             .recording()
             .from_setup(baselines.get(player).copied().unwrap_or_default());
         handles.insert(player.clone(), bot.trajectory());
         table.seat(player.clone(), Box::new(bot));
     }
 
-    let mut game = Game::with_table(state, content, table).with_galaxy(galaxy);
+    let mut game = Game::with_table(state, content, table)
+        .with_sources(sources)
+        .with_galaxy(galaxy);
     let error = game
         .run(horizon.rounds, horizon.steps)
         .err()
@@ -259,12 +550,399 @@ pub fn play(
     Rollout { seed, seats, error }
 }
 
+/// Play every faction in every physical seat on every seed.
+///
+/// Profiles are keyed by faction, not by seat. Each seed therefore yields `factions.len()` games
+/// sharing one varied map draw, exactly the counterbalance used by the Python trainer.
+fn play_rotated_on_map_batch(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+) -> Vec<Rollout> {
+    if seeds.is_empty() || factions.is_empty() {
+        return Vec::new();
+    }
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let shared_profiles: BTreeMap<FactionId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(faction, profile)| (faction.clone(), Arc::new(profile.clone())))
+        .collect();
+    let jobs: Vec<(u64, usize)> = seeds
+        .iter()
+        .flat_map(|seed| (0..factions.len()).map(move |rotation| (*seed, rotation)))
+        .collect();
+
+    jobs.par_iter()
+        .map(|(seed, rotation)| {
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| {
+                    (
+                        player.clone(),
+                        factions[(seat + rotation) % factions.len()].clone(),
+                    )
+                })
+                .collect();
+            let seated_profiles = assignments
+                .iter()
+                .filter_map(|(player, faction)| {
+                    shared_profiles
+                        .get(faction)
+                        .cloned()
+                        .map(|profile| (player.clone(), profile))
+                })
+                .collect();
+            play_assigned_on_map_shared(
+                content,
+                &players,
+                &assignments,
+                &seated_profiles,
+                sources,
+                *seed,
+                horizon,
+                requirement,
+                map,
+            )
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn play_rotated_batch(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Vec<Rollout> {
+    play_rotated_on_map_batch(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+    )
+}
+
+/// Play every faction in every Save-54 physical seat for each seed.
+#[must_use]
+pub fn play_rotated_save54_batch(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Vec<Rollout> {
+    play_rotated_on_map_batch(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        &OpeningMap::Save54Captured,
+    )
+}
+
+/// Play every faction in every physical Save-54 seat on Python-compatible pooled maps.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a differential panel's complete deterministic input"
+)]
+pub fn play_rotated_save54_pool_batch(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+) -> Vec<Rollout> {
+    play_rotated_save54_pool_batch_with_workers(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        pool,
+        tile_seed_offset,
+        0,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the worker-count seam makes deterministic parallelism directly testable"
+)]
+fn play_rotated_save54_pool_batch_with_workers(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+    workers: usize,
+) -> Vec<Rollout> {
+    if seeds.is_empty() || factions.is_empty() {
+        return Vec::new();
+    }
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let map = OpeningMap::PythonPool {
+        pool,
+        tile_seed_offset,
+    };
+    let shared_profiles: BTreeMap<FactionId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(faction, profile)| (faction.clone(), Arc::new(profile.clone())))
+        .collect();
+    let jobs: Vec<(usize, u64, usize)> = seeds
+        .iter()
+        .flat_map(|seed| (0..factions.len()).map(move |rotation| (*seed, rotation)))
+        .enumerate()
+        .map(|(index, (seed, rotation))| (index, seed, rotation))
+        .collect();
+    let execute = || {
+        jobs.par_iter()
+            .map(|(index, seed, rotation)| {
+                let assignments: BTreeMap<PlayerId, FactionId> = players
+                    .iter()
+                    .enumerate()
+                    .map(|(seat, player)| {
+                        (
+                            player.clone(),
+                            factions[(seat + rotation) % factions.len()].clone(),
+                        )
+                    })
+                    .collect();
+                let seated_profiles = assignments
+                    .iter()
+                    .filter_map(|(player, faction)| {
+                        shared_profiles
+                            .get(faction)
+                            .cloned()
+                            .map(|profile| (player.clone(), profile))
+                    })
+                    .collect();
+                (
+                    *index,
+                    play_assigned_on_map_shared(
+                        content,
+                        &players,
+                        &assignments,
+                        &seated_profiles,
+                        sources,
+                        *seed,
+                        horizon,
+                        requirement,
+                        &map,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut indexed = if workers == 0 {
+        execute()
+    } else {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .expect("test worker pool is valid")
+            .install(execute)
+    };
+    indexed.sort_by_key(|(index, _)| *index);
+    indexed.into_iter().map(|(_, rollout)| rollout).collect()
+}
+
 fn failed(seed: u64, error: String) -> Rollout {
     Rollout {
         seed,
         seats: Vec::new(),
         error: Some(error),
     }
+}
+
+fn reduce_rollout<K: Ord + Clone>(
+    rollout: &Rollout,
+    profiles: &BTreeMap<K, Arc<Profile>>,
+    reward: &Reward,
+    key_of: impl Fn(&SeatRollout) -> K,
+) -> ReducedBatch<K> {
+    if rollout.error.is_some() {
+        return ReducedBatch {
+            errors: 1,
+            statistics: BTreeMap::new(),
+        };
+    }
+    let mut reduced = ReducedBatch::default();
+    for seat in &rollout.seats {
+        let key = key_of(seat);
+        let Some(profile) = profiles.get(&key) else {
+            continue;
+        };
+        let rows = collect_statistics(&seat.trajectory, &seat.episode, profile, reward);
+        let target = reduced.statistics.entry(key).or_default();
+        for (head, row) in rows {
+            target.entry(head).or_default().merge(&row);
+        }
+    }
+    reduced
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reduced rotated batch needs the same deterministic inputs as its rollout panel"
+)]
+fn play_rotated_map_batch_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    reward: &Reward,
+) -> ReducedBatch<FactionId> {
+    if seeds.is_empty() || factions.is_empty() {
+        return ReducedBatch::default();
+    }
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let shared_profiles: BTreeMap<FactionId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(faction, profile)| (faction.clone(), Arc::new(profile.clone())))
+        .collect();
+    let jobs: Vec<(u64, usize)> = seeds
+        .iter()
+        .flat_map(|seed| (0..factions.len()).map(move |rotation| (*seed, rotation)))
+        .collect();
+
+    let partials: Vec<ReducedBatch<FactionId>> = jobs
+        .par_iter()
+        .map(|(seed, rotation)| {
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| {
+                    (
+                        player.clone(),
+                        factions[(seat + rotation) % factions.len()].clone(),
+                    )
+                })
+                .collect();
+            let seated_profiles = assignments
+                .iter()
+                .filter_map(|(player, faction)| {
+                    shared_profiles
+                        .get(faction)
+                        .cloned()
+                        .map(|profile| (player.clone(), profile))
+                })
+                .collect();
+            let rollout = play_assigned_on_map_shared(
+                content,
+                &players,
+                &assignments,
+                &seated_profiles,
+                sources,
+                *seed,
+                horizon,
+                requirement,
+                map,
+            );
+            reduce_rollout(&rollout, &shared_profiles, reward, |seat| {
+                seat.faction.clone()
+            })
+        })
+        .collect();
+
+    merge_partials(&partials)
+}
+
+/// Play and reduce a faction-rotated varied-map training batch on rollout workers.
+#[must_use]
+pub fn play_rotated_batch_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    reward: &Reward,
+) -> ReducedBatch<FactionId> {
+    play_rotated_map_batch_statistics(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+        reward,
+    )
+}
+
+/// Play and reduce a faction-rotated Python map-pool training batch on rollout workers.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a parity batch's complete deterministic input"
+)]
+pub fn play_rotated_save54_pool_batch_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+    reward: &Reward,
+) -> ReducedBatch<FactionId> {
+    play_rotated_map_batch_statistics(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        &OpeningMap::PythonPool {
+            pool,
+            tile_seed_offset,
+        },
+        reward,
+    )
 }
 
 /// Play a batch of rollouts in parallel, returning results in seed order.
@@ -285,7 +963,7 @@ fn failed(seed: u64, error: String) -> Rollout {
 /// The same seeds produce the same rollouts regardless of worker count,
 /// because each seed's game is independent and results are sorted by seed.
 pub fn play_batch(
-    content: &'static ContentStore,
+    content: &ContentStore,
     players: &[PlayerId],
     profiles: &BTreeMap<PlayerId, Profile>,
     sources: SourceSet,
@@ -297,47 +975,68 @@ pub fn play_batch(
         return Vec::new();
     }
 
-    let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let chunk = seeds.len().div_ceil(workers.max(1)).max(1);
-
-    // Clone profiles for each thread — cheap (Arc under the hood).
-    let profiles_clone = profiles.clone();
-    let players_owned = players.to_vec();
-
-    let mut results: Vec<Rollout> = std::thread::scope(|scope| {
-        let handles: Vec<_> = seeds
-            .chunks(chunk)
-            .map(|batch| {
-                let players = players_owned.clone();
-                let profiles = profiles_clone.clone();
-                scope.spawn(move || {
-                    batch
-                        .iter()
-                        .map(|seed| {
-                            play(
-                                content,
-                                &players,
-                                &profiles,
-                                sources,
-                                *seed,
-                                horizon,
-                                requirement,
-                            )
-                        })
-                        .collect::<Vec<Rollout>>()
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .filter_map(|handle| handle.join().ok())
-            .flatten()
-            .collect()
-    });
+    let shared: BTreeMap<PlayerId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(player, profile)| (player.clone(), Arc::new(profile.clone())))
+        .collect();
+    let mut results: Vec<Rollout> = seeds
+        .par_iter()
+        .map(|seed| {
+            play_shared(
+                content,
+                players,
+                &shared,
+                sources,
+                *seed,
+                horizon,
+                requirement,
+            )
+        })
+        .collect();
 
     // Sort by seed so the order is deterministic regardless of thread scheduling.
     results.sort_by_key(|r| r.seed);
     results
+}
+
+/// Play ordinary fixed-seat games and reduce their trajectories on the rollout workers.
+///
+/// Used by both Stage 1 and Stage 2. The returned merge order follows `seeds`, so worker
+/// scheduling cannot change floating-point accumulation or the resulting policy update.
+#[must_use]
+pub fn play_batch_statistics(
+    content: &ContentStore,
+    players: &[PlayerId],
+    profiles: &BTreeMap<PlayerId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    reward: &Reward,
+) -> ReducedBatch<PlayerId> {
+    if seeds.is_empty() {
+        return ReducedBatch::default();
+    }
+    let shared: BTreeMap<PlayerId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(player, profile)| (player.clone(), Arc::new(profile.clone())))
+        .collect();
+    let partials: Vec<ReducedBatch<PlayerId>> = seeds
+        .par_iter()
+        .map(|seed| {
+            let rollout = play_shared(
+                content,
+                players,
+                &shared,
+                sources,
+                *seed,
+                horizon,
+                requirement,
+            );
+            reduce_rollout(&rollout, &shared, reward, |seat| seat.player.clone())
+        })
+        .collect();
+    merge_partials(&partials)
 }
 
 /// The default opening bar.
@@ -350,6 +1049,173 @@ pub const fn default_requirement() -> Requirement {
 #[must_use]
 pub const fn default_sources() -> SourceSet {
     DEFAULT
+}
+
+// --- authored-bot reference panel -------------------------------------------------------------
+
+/// Play the Stage-2 evaluation panel with the **authored** bot in every seat.
+///
+/// A reference point rather than a competitor. A learned policy that has plateaued tells you
+/// nothing on its own about whether it has converged to the best available play or merely to the
+/// best its gradient could find: the number to compare against is what a hand-written bot scores
+/// on the identical panel. Same seeds, same rotations, same map pool, same horizon — only the
+/// decider differs.
+///
+/// Deliberately additive rather than a flag on the learned path, so nothing about the running
+/// trainer's behaviour can change as a side effect of measuring a baseline.
+#[must_use]
+pub fn play_rotated_pool_batch_authored(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+) -> Vec<Rollout> {
+    if seeds.is_empty() || factions.is_empty() {
+        return Vec::new();
+    }
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let map = OpeningMap::PythonPool {
+        pool,
+        tile_seed_offset,
+    };
+    let jobs: Vec<(usize, u64, usize)> = seeds
+        .iter()
+        .flat_map(|seed| (0..factions.len()).map(move |rotation| (*seed, rotation)))
+        .enumerate()
+        .map(|(index, (seed, rotation))| (index, seed, rotation))
+        .collect();
+
+    let mut results: Vec<(usize, Rollout)> = jobs
+        .par_iter()
+        .map(|(index, seed, rotation)| {
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| {
+                    (
+                        player.clone(),
+                        factions[(seat + rotation) % factions.len()].clone(),
+                    )
+                })
+                .collect();
+            (
+                *index,
+                play_assigned_on_map_authored(
+                    content,
+                    &players,
+                    &assignments,
+                    sources,
+                    *seed,
+                    horizon,
+                    requirement,
+                    &map,
+                ),
+            )
+        })
+        .collect();
+    results.sort_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, rollout)| rollout).collect()
+}
+
+/// One game of the reference panel, seated with the authored bot.
+fn play_assigned_on_map_authored(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+) -> Rollout {
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+        Ok(seated) => seated,
+        Err(error) => return failed(seed, error),
+    };
+    let baselines: BTreeMap<PlayerId, Baseline> = {
+        let seen = Observed::new(&state, content, sources, Some(&galaxy));
+        players
+            .iter()
+            .map(|player| (player.clone(), Baseline::taken(&seen, player)))
+            .collect()
+    };
+
+    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    for (index, player) in players.iter().enumerate() {
+        let stream = seed
+            .wrapping_mul(1_000_003)
+            .wrapping_add(u64::try_from(index).unwrap_or(0));
+        table.seat(
+            player.clone(),
+            Box::new(ti4_policy::bot::ScoredBot::new(stream)),
+        );
+    }
+
+    let mut game = Game::with_table(state, content, table)
+        .with_sources(sources)
+        .with_galaxy(galaxy);
+    let error = game
+        .run(horizon.rounds, horizon.steps)
+        .err()
+        .map(|error| error.to_string());
+
+    let finals: BTreeMap<PlayerId, Progress> = {
+        let seen = Observed::new(&game.state, content, sources, game.galaxy());
+        players
+            .iter()
+            .map(|player| {
+                (
+                    player.clone(),
+                    ti4_policy::progress::measure(
+                        &seen,
+                        player,
+                        baselines.get(player).copied().unwrap_or_default(),
+                    ),
+                )
+            })
+            .collect()
+    };
+    let openings = ti4_engine::opening::measure(
+        &game.state,
+        &baselines
+            .iter()
+            .map(|(player, baseline)| (player.clone(), (baseline.planets, baseline.units)))
+            .collect(),
+        &factions
+            .values()
+            .map(|faction| (faction.to_string(), requirement))
+            .collect(),
+    );
+
+    let seats = players
+        .iter()
+        .map(|player| {
+            let opening = openings.get(player);
+            SeatRollout {
+                player: player.clone(),
+                faction: factions
+                    .get(player)
+                    .cloned()
+                    .unwrap_or_else(|| FactionId::new("")),
+                trajectory: Vec::new(),
+                episode: Episode {
+                    steps: Vec::new(),
+                    final_progress: finals.get(player).copied().unwrap_or_default(),
+                    cleared: opening.is_some_and(ti4_engine::opening::Opening::cleared),
+                    shortfall: opening.map_or(0.0, |opening| opening.weighted_shortfall(1.0, 1.0)),
+                    traded_goods: 0.0,
+                },
+            }
+        })
+        .collect();
+
+    Rollout { seed, seats, error }
 }
 
 #[cfg(test)]
@@ -371,6 +1237,179 @@ mod tests {
             horizon,
             DEFAULT_REQUIREMENT,
         )
+    }
+
+    fn save54_pool() -> Arc<ti4_sim::MapPool> {
+        let mut coords: Vec<[i32; 2]> = SAVE54_NEUTRAL.iter().map(|(_, q, r)| [*q, *r]).collect();
+        coords.extend(SAVE54_HOMES.map(|hex| [hex.q, hex.r]));
+        let mut arrangement: Vec<String> = SAVE54_NEUTRAL
+            .iter()
+            .map(|(system, _, _)| (*system).to_owned())
+            .collect();
+        arrangement.extend(["10", "12", "16"].map(str::to_owned));
+        let payload = serde_json::json!({
+            "schema": "ti4-map-pool-v1",
+            "effort": 2000,
+            "coords": coords,
+            "slots": SAVE54_HOMES.map(|hex| [hex.q, hex.r]),
+            "arrangements": [arrangement],
+        });
+        Arc::new(
+            ti4_sim::MapPool::from_reader(payload.to_string().as_bytes())
+                .expect("test Save-54 pool is valid"),
+        )
+    }
+
+    #[test]
+    fn pooled_save54_batch_plays_every_rotation_without_changing_the_pool() {
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "hacan"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let pool = save54_pool();
+        let played = play_rotated_save54_pool_batch(
+            ContentStore::embedded(),
+            &factions,
+            &profiles,
+            POK,
+            &[7],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+            Arc::clone(&pool),
+            20_000_000,
+        );
+        assert_eq!(played.len(), 3);
+        assert!(played.iter().all(|rollout| rollout.error.is_none()));
+        assert_eq!(pool.len(), 1, "playing rotations does not mutate the pool");
+    }
+
+    #[test]
+    fn pooled_save54_parallelism_preserves_exact_rollout_order_and_values() {
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "hacan"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let run = |workers| {
+            play_rotated_save54_pool_batch_with_workers(
+                ContentStore::embedded(),
+                &factions,
+                &profiles,
+                POK,
+                &[7, 8],
+                Horizon::opening(),
+                DEFAULT_REQUIREMENT,
+                save54_pool(),
+                20_000_000,
+                workers,
+            )
+        };
+
+        assert_eq!(run(1), run(32));
+    }
+
+    #[test]
+    fn worker_reduction_matches_parent_reduction_for_rotated_stage_one() {
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "hacan"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let reward = Reward::for_stage(crate::reward::Stage::One);
+        let rollouts = play_rotated_save54_pool_batch(
+            ContentStore::embedded(),
+            &factions,
+            &profiles,
+            POK,
+            &[7, 8],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+            save54_pool(),
+            20_000_000,
+        );
+        let expected = crate::gradient::faction_batch_statistics(&rollouts, &profiles, &reward);
+        let reduced = play_rotated_save54_pool_batch_statistics(
+            ContentStore::embedded(),
+            &factions,
+            &profiles,
+            POK,
+            &[7, 8],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+            save54_pool(),
+            20_000_000,
+            &reward,
+        );
+
+        assert_eq!(reduced.errors, 0);
+        assert_eq!(reduced.statistics, expected);
+    }
+
+    #[test]
+    fn worker_reduction_matches_parent_reduction_for_stage_two() {
+        let players = seats(&["a", "b", "c"]);
+        let factions = ti4_engine::seating::seat_in_scope(&players);
+        let profiles: BTreeMap<PlayerId, Profile> = players
+            .iter()
+            .map(|player| {
+                let faction = factions
+                    .get(player)
+                    .map_or_else(String::new, ToString::to_string);
+                (
+                    player.clone(),
+                    ti4_policy::learned::blank_explicit_profile(&faction),
+                )
+            })
+            .collect();
+        let reward = Reward::for_stage(crate::reward::Stage::Two);
+        let rollouts = play_batch(
+            ContentStore::embedded(),
+            &players,
+            &profiles,
+            POK,
+            &[13],
+            Horizon::short(),
+            DEFAULT_REQUIREMENT,
+        );
+        let expected = crate::gradient::batch_statistics(&rollouts, &profiles, &reward);
+        let reduced = play_batch_statistics(
+            ContentStore::embedded(),
+            &players,
+            &profiles,
+            POK,
+            &[13],
+            Horizon::short(),
+            DEFAULT_REQUIREMENT,
+            &reward,
+        );
+
+        assert_eq!(reduced.errors, 0);
+        assert_eq!(reduced.statistics, expected);
     }
 
     #[test]
@@ -593,5 +1632,42 @@ mod tests {
             DEFAULT_REQUIREMENT,
         );
         assert!(rollouts.is_empty());
+    }
+
+    #[test]
+    fn a_rotated_batch_places_every_faction_in_every_physical_seat() {
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "hacan"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let rollouts = play_rotated_batch(
+            ContentStore::embedded(),
+            &factions,
+            &profiles,
+            POK,
+            &[41],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        assert_eq!(rollouts.len(), 3);
+        assert!(rollouts.iter().all(|rollout| rollout.error.is_none()));
+        for faction in &factions {
+            let seats: std::collections::BTreeSet<_> = rollouts
+                .iter()
+                .flat_map(|rollout| &rollout.seats)
+                .filter(|seat| &seat.faction == faction)
+                .map(|seat| seat.player.clone())
+                .collect();
+            assert_eq!(seats.len(), 3, "{faction} was not fully rotated");
+        }
     }
 }

@@ -6,11 +6,11 @@
 use std::collections::BTreeMap;
 
 use ti4_content::ContentStore;
-use ti4_model::content_types::ContentType;
+use ti4_model::content_types::{ContentType, POK};
 use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::state::GameState;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
 /// 2.4: seven cards in hand at the end of a turn.
 pub const HAND_LIMIT: usize = 7;
@@ -111,7 +111,7 @@ pub fn enforce_hand_limit(
             format!("over the hand limit — discard one of {}", hand.len()),
             options,
         );
-        let answer = table.ask(&choice)?;
+        let answer = table.ask_seeing(&choice, &Observed::new(state, content, POK, None))?;
         let index = answer.id.parse::<usize>().unwrap_or(0);
         discard(state, player, index);
     }
@@ -293,7 +293,7 @@ fn in_the_silence_of_space(context: &mut crate::timing::TimingContext<'_>, playe
                 })
                 .collect(),
         );
-        match context.table.ask(&choice) {
+        match context.ask_seeing(&choice) {
             Ok(answer) => ti4_model::id::SystemId::new(answer.id),
             Err(_) => return,
         }
@@ -347,7 +347,7 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
                 })
                 .collect(),
         );
-        match context.table.ask(&choice) {
+        match context.ask_seeing(&choice) {
             Ok(answer) => ti4_model::id::SystemId::new(answer.id),
             Err(_) => return,
         }
@@ -391,7 +391,7 @@ fn imperial_rider(context: &mut crate::timing::TimingContext<'_>, player: &Playe
                 })
                 .collect(),
         );
-        match context.table.ask(&choice) {
+        match context.ask_seeing(&choice) {
             Ok(answer) => answer.id,
             Err(_) => return,
         }
@@ -470,7 +470,7 @@ fn pick(
                     })
                     .collect(),
             );
-            context.table.ask(&choice).ok().map(|answer| answer.id)
+            context.ask_seeing(&choice).ok().map(|answer| answer.id)
         }
     }
 }

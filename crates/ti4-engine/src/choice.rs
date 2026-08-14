@@ -211,6 +211,27 @@ pub struct Resolving<'a> {
     pub timing: Option<TimingHandle<'a>>,
 }
 
+impl Resolving<'_> {
+    /// Ask a nested choice with the public position available to the decider.
+    ///
+    /// Resumable windows are sometimes driven outside [`crate::game::Game`], where there is no
+    /// map handle to attach.  The board state and content are still available and must not be
+    /// discarded: a learned decider's position-free `choose` path deliberately cannot score.
+    ///
+    /// # Errors
+    /// Returns [`IllegalChoice`] if the decider selects an option that was not offered.
+    pub fn ask_seeing(
+        &mut self,
+        state: &ti4_model::state::GameState,
+        choice: &Choice,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        self.table.ask_seeing(
+            choice,
+            &Observed::new(state, self.content, self.sources, None),
+        )
+    }
+}
+
 /// The pieces needed to put a typed event through the resolver.
 pub struct TimingHandle<'a> {
     /// The resolver whose windows the event opens.
@@ -356,7 +377,7 @@ pub trait Window {
         Self: Sized,
     {
         while let Some(choice) = self.pending_choice(state, ctx.content, ctx.sources) {
-            let answer = ctx.table.ask(&choice)?;
+            let answer = ctx.ask_seeing(state, &choice)?;
             self.resolve(state, ctx, answer)?;
         }
         Ok(())

@@ -12,7 +12,7 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Table, Window};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
 use crate::combat::MAX_ROUNDS;
 use crate::dice::Dice;
 use crate::rng::GameRng;
@@ -204,17 +204,21 @@ pub fn commit_ground_forces(
                 if !seen.insert((unit.type_id.to_string(), planet.to_string())) {
                     continue;
                 }
-                options.push(ChoiceOption::labelled(
-                    format!("land|{index}|{planet}"),
-                    LAND_KIND,
-                    format!("land {} on {planet}", unit.type_id),
-                ));
+                options.push(
+                    ChoiceOption::labelled(
+                        format!("land|{index}|{planet}"),
+                        LAND_KIND,
+                        format!("land {} on {planet}", unit.type_id),
+                    )
+                    .with("planet", planet.to_string())
+                    .with("unit", unit.type_id.to_string()),
+                );
             }
         }
         options.push(ChoiceOption::decline());
 
         let choice = Choice::new(invader.clone(), "commit ground forces", options);
-        let answer = table.ask(&choice)?;
+        let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, None))?;
         if answer.is_decline() {
             break;
         }
@@ -287,6 +291,8 @@ fn roll_ground(
 /// Remove `hits` of one player's ground forces from a planet, the owner choosing.
 fn absorb_ground(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     table: &mut Table,
     player: &PlayerId,
     system: &SystemId,
@@ -319,7 +325,8 @@ fn absorb_ground(
                 ));
             }
             let choice = Choice::new(player.clone(), format!("assign a hit on {planet}"), options);
-            let answer = table.ask(&choice)?;
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, None))?;
             let index = answer
                 .id
                 .strip_prefix("destroy|")
@@ -383,8 +390,26 @@ pub fn ground_combat(
             state, content, sources, dice, rng, &defender, system, planet,
         );
         // 42.2: simultaneous, as in space.
-        absorb_ground(state, table, &defender, system, planet, attacker_hits)?;
-        absorb_ground(state, table, invader, system, planet, defender_hits)?;
+        absorb_ground(
+            state,
+            content,
+            sources,
+            table,
+            &defender,
+            system,
+            planet,
+            attacker_hits,
+        )?;
+        absorb_ground(
+            state,
+            content,
+            sources,
+            table,
+            invader,
+            system,
+            planet,
+            defender_hits,
+        )?;
 
         // L1Z1X's Harrow bombards again at the end of each round. The hits are assigned here
         // rather than by the faction layer, because who loses a unit is the invasion's decision.
@@ -392,7 +417,9 @@ pub fn ground_combat(
             state, content, sources, dice, rng, invader, system,
         );
         if harrow > 0 {
-            absorb_ground(state, table, &defender, system, planet, harrow)?;
+            absorb_ground(
+                state, content, sources, table, &defender, system, planet, harrow,
+            )?;
         }
     }
 
@@ -536,11 +563,15 @@ impl InvasionWindow {
                 if !seen.insert((unit.type_id.to_string(), planet.to_string())) {
                     continue;
                 }
-                options.push(ChoiceOption::labelled(
-                    format!("land|{index}|{planet}"),
-                    LAND_KIND,
-                    format!("land {} on {planet}", unit.type_id),
-                ));
+                options.push(
+                    ChoiceOption::labelled(
+                        format!("land|{index}|{planet}"),
+                        LAND_KIND,
+                        format!("land {} on {planet}", unit.type_id),
+                    )
+                    .with("planet", planet.to_string())
+                    .with("unit", unit.type_id.to_string()),
+                );
             }
         }
         options
@@ -611,7 +642,21 @@ impl InvasionWindow {
             let mut payload = std::collections::BTreeMap::new();
             payload.insert("player".to_owned(), self.invader.to_string().into());
             payload.insert("planet".to_owned(), planet.to_string().into());
+            payload.insert("system".to_owned(), self.system.to_string().into());
             let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
+
+            // Technology AFTER windows resolve before exploration, matching the oracle's typed
+            // event ordering.  Integrated Economy is the first such effect.
+            let _ = crate::technology::control_gained(
+                state,
+                ctx.content,
+                ctx.sources,
+                None,
+                ctx.table,
+                &self.invader,
+                &self.system,
+                planet,
+            );
         }
 
         // 35.1: a planet nobody controlled is explored; one taken off another player is not.

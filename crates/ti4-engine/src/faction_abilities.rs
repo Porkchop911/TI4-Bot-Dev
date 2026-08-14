@@ -329,6 +329,10 @@ pub fn component_actions(
 }
 
 /// Perform a faction component action. Returns `false` for an option that is not one.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Orbital Drop and its optional deploy are one atomic faction action"
+)]
 pub fn perform_component(
     context: &mut crate::timing::TimingContext<'_>,
     player: &PlayerId,
@@ -346,9 +350,39 @@ pub fn perform_component(
         .into_iter()
         .map(|(system, planet)| (system.clone(), planet.clone()))
         .collect();
-    let Some((system, planet)) = spots.first().cloned() else {
+    let Some((mut system, mut planet)) = spots.first().cloned() else {
         return false;
     };
+    if spots.len() > 1 {
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "Orbital Drop: onto which planet",
+            spots
+                .iter()
+                .map(|(system, planet)| {
+                    crate::choice::ChoiceOption::labelled(
+                        planet.to_string(),
+                        "planet",
+                        planet.to_string(),
+                    )
+                    .with("system", system.to_string())
+                    .with("planet", planet.to_string())
+                })
+                .collect(),
+        );
+        let Ok(answer) = context.ask_seeing(&choice) else {
+            return false;
+        };
+        let Some((chosen_system, chosen_planet)) = spots
+            .iter()
+            .find(|(_, candidate)| candidate.as_str() == answer.id)
+            .cloned()
+        else {
+            return false;
+        };
+        system = chosen_system;
+        planet = chosen_planet;
+    }
     let tokens = context.state.player(player).map_or(0, |seat| {
         seat.tokens(ti4_model::state::TokenPool::Strategic)
     });
@@ -359,6 +393,66 @@ pub fn perform_component(
         seat.gain_token(ti4_model::state::TokenPool::Strategic, -1);
     }
     crate::action_cards::place_units(context, player, &system, Some(&planet), "infantry", 2);
+
+    let mech = ti4_content::units::faction_unit(context.content, "sol", "mech", context.sources)
+        .map_or_else(|| "sol_mech".to_owned(), |kind| kind.id().to_owned());
+    if crate::supply::remaining(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        &ti4_model::id::UnitTypeId::new(&mech),
+    ) > 0
+        && crate::production::available(
+            context.state,
+            context.content,
+            context.sources,
+            player,
+            crate::production::Spend::Resources,
+        ) >= 3
+    {
+        let deploy = crate::choice::ChoiceOption::labelled(
+            format!("deploy|{mech}|1"),
+            crate::production::PRODUCE_KIND,
+            format!("deploy 1 {mech} for 3 resources"),
+        )
+        .with("unit", mech.clone())
+        .with("count", 1)
+        .with("cost", 3)
+        .with("system", system.to_string())
+        .with("planet", planet.to_string())
+        .with("orbital_drop_deploy", true);
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            format!("Orbital Drop: deploy a mech on {planet}"),
+            vec![deploy, crate::choice::ChoiceOption::decline()],
+        );
+        if let Ok(answer) = context.ask_seeing(&choice)
+            && !answer.is_decline()
+            && crate::production::pay_seeing(
+                context.state,
+                context.content,
+                context.sources,
+                context.galaxy,
+                context.table,
+                player,
+                3,
+                crate::production::Spend::Resources,
+            )
+            .unwrap_or(false)
+        {
+            context
+                .state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet)
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new(mech),
+                    player.clone(),
+                ));
+        }
+    }
     true
 }
 
@@ -397,7 +491,7 @@ pub fn annexable(
             ti4_model::content_types::POK,
         ) {
             let planet = ti4_model::id::PlanetId::new(planet.id());
-            if board.planet_control.contains_key(&planet) {
+            if planet.as_str() == "mr" || board.planet_control.contains_key(&planet) {
                 continue; // somebody holds it
             }
             if board
@@ -430,13 +524,72 @@ pub fn strategy_resolved(
         return; // "in or next to" needs the map
     };
     let candidates = annexable(context.state, galaxy, player);
-    let Some((system, planet)) = candidates.first().cloned() else {
+    if candidates.is_empty() {
+        return;
+    }
+    let mut options: Vec<crate::choice::ChoiceOption> = candidates
+        .iter()
+        .map(|(system, planet)| {
+            crate::choice::ChoiceOption::labelled(
+                planet.to_string(),
+                "annex",
+                format!("gain control of {planet}"),
+            )
+            .with("system", system.to_string())
+            .with("planet", planet.to_string())
+        })
+        .collect();
+    options.push(crate::choice::ChoiceOption::decline());
+    let choice =
+        crate::choice::Choice::new(player.clone(), "Peace Accords: annex a planet", options);
+    let Ok(answer) = context.ask_seeing(&choice) else {
         return;
     };
+    if answer.is_decline() {
+        return;
+    }
+    let Some((chosen_system, chosen_planet)) = candidates
+        .iter()
+        .find(|(_, candidate)| candidate.as_str() == answer.id)
+        .cloned()
+    else {
+        return;
+    };
+    let system = chosen_system;
+    let planet = chosen_planet;
     context
         .state
         .system_mut(&system)
-        .set_control(planet, player.clone());
+        .set_control(planet.clone(), player.clone());
+
+    let _ = crate::technology::control_gained(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        context.table,
+        player,
+        &system,
+        &planet,
+    );
+
+    if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, &planet) {
+        let mut resolving = crate::choice::Resolving {
+            content: context.content,
+            sources: context.sources,
+            dice: context.dice,
+            rng: context.rng,
+            table: context.table,
+            timing: None,
+        };
+        let _ = crate::exploration::explore_with(
+            context.state,
+            &mut resolving,
+            player,
+            &deck,
+            Some(&planet),
+        );
+    }
 }
 
 /// Bombard a planet again at the end of a ground-combat round (L1Z1X's Harrow).
@@ -489,6 +642,7 @@ const MUNITIONS_COST: i32 = 2;
 pub fn space_combat_round_started(
     state: &mut GameState,
     content: &ContentStore,
+    sources: SourceSet,
     table: &mut crate::choice::Table,
     player: &PlayerId,
 ) {
@@ -511,7 +665,10 @@ pub fn space_combat_round_started(
             crate::choice::ChoiceOption::decline(),
         ],
     );
-    let Ok(answer) = table.ask(&choice) else {
+    let Ok(answer) = table.ask_seeing(
+        &choice,
+        &crate::choice::Observed::new(state, content, sources, None),
+    ) else {
         return;
     };
     if answer.is_decline() {
@@ -840,12 +997,12 @@ mod tests {
     }
 
     /// Run a faction hook with a real context.
-    fn with_context<T>(
+    fn with_table_context<T>(
         state: &mut GameState,
         galaxy: Option<&ti4_content::galaxy::Galaxy>,
+        table: &mut crate::choice::Table,
         run: impl FnOnce(&mut crate::timing::TimingContext<'_>) -> T,
     ) -> T {
-        let mut table = crate::choice::Table::new();
         let mut dice = crate::dice::Dice::new();
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
@@ -853,7 +1010,7 @@ mod tests {
             state,
             content: ContentStore::embedded(),
             sources: POK,
-            table: &mut table,
+            table,
             dice: &mut dice,
             rng: &mut rng,
             event_sequence: &mut sequence,
@@ -885,7 +1042,11 @@ mod tests {
         let offered = component_actions(&state, content, &player);
         assert_eq!(offered.len(), 1, "it is offered on your turn");
 
-        let done = with_context(&mut state, None, |context| {
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                planet.to_string()
+            ])));
+        let done = with_table_context(&mut state, None, &mut table, |context| {
             perform_component(context, &player, &offered[0])
         });
 
@@ -903,7 +1064,17 @@ mod tests {
                 .system_state(&system)
                 .planet_units
                 .get(&planet)
-                .map_or(0, Vec::len),
+                .map_or(0, |units| {
+                    let types = ti4_content::units::catalogue(ContentStore::embedded(), POK);
+                    units
+                        .iter()
+                        .filter(|unit| {
+                            types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(|kind| kind.base_type() == "infantry")
+                        })
+                        .count()
+                }),
             2,
             "two infantry landed"
         );
@@ -930,6 +1101,60 @@ mod tests {
             .gain_token(ti4_model::state::TokenPool::Strategic, -held);
 
         assert!(component_actions(&state, content, &player).is_empty());
+    }
+
+    #[test]
+    fn orbital_drop_asks_which_controlled_planet_receives_the_units() {
+        let Some(sol) = faction_with("orbital_drop") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&sol);
+        let first_system = ti4_model::id::SystemId::new("01");
+        let second_system = ti4_model::id::SystemId::new("02");
+        let first_planet = ti4_model::id::PlanetId::new("first");
+        let second_planet = ti4_model::id::PlanetId::new("second");
+        state
+            .system_mut(&first_system)
+            .set_control(first_planet.clone(), player.clone());
+        state
+            .system_mut(&second_system)
+            .set_control(second_planet.clone(), player.clone());
+        state
+            .player_mut(&player)
+            .unwrap()
+            .gain_token(ti4_model::state::TokenPool::Strategic, 1);
+        let offered = component_actions(&state, content, &player);
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                second_planet.to_string(),
+            ])));
+
+        assert!(with_table_context(
+            &mut state,
+            None,
+            &mut table,
+            |context| { perform_component(context, &player, &offered[0]) }
+        ));
+
+        assert_eq!(
+            state
+                .system_state(&first_system)
+                .on_planet(&first_planet)
+                .len(),
+            0
+        );
+        assert_eq!(
+            state
+                .system_state(&second_system)
+                .on_planet(&second_planet)
+                .len(),
+            2
+        );
+        assert_eq!(
+            table.log.records[0].prompt,
+            "Orbital Drop: onto which planet"
+        );
     }
 
     #[test]
@@ -962,6 +1187,35 @@ mod tests {
             !after.contains(&(system, planet)),
             "your own troops make it not empty either"
         );
+    }
+
+    #[test]
+    fn peace_accords_can_decline_instead_of_hardcoding_the_first_planet() {
+        let Some(xxcha) = faction_with("peace_accords") else {
+            return;
+        };
+        let hub = crate::fixtures::plain_hub();
+        let (mut state, player) = seated(&xxcha);
+        let mine = ti4_model::id::SystemId::new(hub.centre.clone());
+        let Some(held) =
+            ti4_content::galaxy::planets_in(ContentStore::embedded(), hub.centre.as_str(), POK)
+                .first()
+                .map(|planet| ti4_model::id::PlanetId::new(planet.id()))
+        else {
+            return;
+        };
+        state.system_mut(&mine).set_control(held, player.clone());
+        let before = state.controlled_planets(&player).len();
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::AlwaysDecline));
+
+        with_table_context(&mut state, Some(&hub.galaxy), &mut table, |context| {
+            strategy_resolved(context, &player, "Diplomacy");
+        });
+
+        assert_eq!(state.controlled_planets(&player).len(), before);
+        let record = table.log.records.last().expect("Peace Accords was offered");
+        assert_eq!(record.prompt, "Peace Accords: annex a planet");
+        assert!(record.offered.iter().any(|id| id == "decline"));
     }
 
     #[test]
@@ -1005,11 +1259,47 @@ mod tests {
         state.combat_round_seq = 3;
         let mut table = crate::choice::Table::new();
 
-        space_combat_round_started(&mut state, content, &mut table, &player);
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
 
         let seat = state.player(&player).unwrap();
         assert_eq!(seat.trade_goods, 3, "two paid");
         assert_eq!(seat.munitions_round, Some(3), "for this round only");
+    }
+
+    #[test]
+    fn munitions_reserves_never_falls_back_to_a_blind_decision() {
+        struct SeeingDecline;
+
+        impl crate::choice::Decider for SeeingDecline {
+            fn choose(
+                &mut self,
+                _choice: &crate::choice::Choice,
+            ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+                panic!("learned decisions must not use the blind path")
+            }
+
+            fn choose_seeing(
+                &mut self,
+                _choice: &crate::choice::Choice,
+                _seen: &crate::choice::Observed<'_>,
+            ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+                Ok(crate::choice::ChoiceOption::decline())
+            }
+        }
+
+        let Some(letnev) = faction_with("munitions") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&letnev);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        let mut table = crate::choice::Table::new();
+        table.seat(player.clone(), Box::new(SeeingDecline));
+
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
+
+        assert_eq!(state.player(&player).unwrap().trade_goods, 5);
+        assert_eq!(table.log.records.last().unwrap().chosen, "decline");
     }
 
     #[test]
@@ -1022,7 +1312,7 @@ mod tests {
         state.player_mut(&player).unwrap().trade_goods = 1;
         let mut table = crate::choice::Table::new();
 
-        space_combat_round_started(&mut state, content, &mut table, &player);
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
 
         let seat = state.player(&player).unwrap();
         assert_eq!(seat.trade_goods, 1, "nothing was taken");
@@ -1036,7 +1326,7 @@ mod tests {
         state.player_mut(&player).unwrap().trade_goods = 5;
         let mut table = crate::choice::Table::new();
 
-        space_combat_round_started(&mut state, content, &mut table, &player);
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
 
         assert_eq!(state.player(&player).unwrap().trade_goods, 5);
     }

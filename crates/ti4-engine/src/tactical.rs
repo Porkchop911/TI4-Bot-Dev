@@ -118,6 +118,51 @@ pub struct Movable {
     /// Index into `state.ships_of(player, origin)`, so identical ships stay distinguishable.
     pub index: usize,
     pub unit: Unit,
+    /// Printed capacity, carried because it is part of the oracle's learned option payload.
+    pub capacity: i64,
+    /// This otherwise-unreachable move spends Gravity Drive's +1 for the activation.
+    pub gravity_drive: bool,
+}
+
+/// Effective move value after per-activation bonuses and Gravleash's established origin anchor.
+#[must_use]
+pub fn effective_move_value(
+    state: &GameState,
+    kind: &ti4_content::units::UnitType<'_>,
+    player: &PlayerId,
+    origin: &SystemId,
+) -> i32 {
+    effective_move_value_with_gravity(state, kind, player, origin, false)
+}
+
+/// Effective move with the optional one-ship Gravity Drive bonus applied before Gravleash.
+#[must_use]
+pub fn effective_move_value_with_gravity(
+    state: &GameState,
+    kind: &ti4_content::units::UnitType<'_>,
+    player: &PlayerId,
+    origin: &SystemId,
+    gravity_drive: bool,
+) -> i32 {
+    let own_move = i32::try_from(kind.move_value()).unwrap_or(0)
+        + crate::action_cards::move_bonus(state, player, state.activation_seq)
+        + i32::from(gravity_drive);
+    if state
+        .player(player)
+        .and_then(|seat| seat.breakthrough.as_ref())
+        .is_some_and(|alias| alias.as_str() == "letnevbt")
+        && !kind.is_fighter()
+    {
+        own_move.max(
+            state
+                .gravleash_move_values
+                .get(origin)
+                .copied()
+                .unwrap_or(0),
+        )
+    } else {
+        own_move
+    }
 }
 
 /// Every ship that could reach the active system, with where it stands.
@@ -152,13 +197,27 @@ pub fn movable(
             if !kind.is_ship() {
                 continue;
             }
-            let move_value = i32::try_from(kind.move_value()).unwrap_or(0)
-                + crate::action_cards::move_bonus(state, player, state.activation_seq);
+            let move_value = effective_move_value(state, kind, player, origin);
             if rules.can_reach(origin.as_str(), move_value) {
                 found.push(Movable {
                     origin: origin.clone(),
                     index,
                     unit: hull.clone(),
+                    capacity: kind.capacity(),
+                    gravity_drive: false,
+                });
+            } else if crate::technology::gravity_drive_available(state, player)
+                && rules.can_reach(
+                    origin.as_str(),
+                    effective_move_value_with_gravity(state, kind, player, origin, true),
+                )
+            {
+                found.push(Movable {
+                    origin: origin.clone(),
+                    index,
+                    unit: hull.clone(),
+                    capacity: kind.capacity(),
+                    gravity_drive: true,
                 });
             }
         }
@@ -185,6 +244,7 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
             candidate.unit.type_id.to_string(),
             candidate.unit.sustained_damage,
             candidate.origin.to_string(),
+            candidate.gravity_drive,
         );
         if !seen.insert(key) {
             continue;
@@ -194,14 +254,36 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
         } else {
             ""
         };
-        options.push(ChoiceOption::labelled(
-            format!("move|{}|{}", candidate.origin, candidate.index),
-            MOVE_KIND,
-            format!(
-                "move {}{damaged} from {}",
-                candidate.unit.type_id, candidate.origin
-            ),
-        ));
+        options.push(
+            ChoiceOption::labelled(
+                format!(
+                    "{}|{}|{}",
+                    if candidate.gravity_drive {
+                        "move_gd"
+                    } else {
+                        "move"
+                    },
+                    candidate.origin,
+                    candidate.index
+                ),
+                MOVE_KIND,
+                format!(
+                    "move {}{damaged} from {}{}",
+                    candidate.unit.type_id,
+                    candidate.origin,
+                    if candidate.gravity_drive {
+                        " using Gravity Drive"
+                    } else {
+                        ""
+                    }
+                ),
+            )
+            .with("origin", candidate.origin.to_string())
+            .with("unit", candidate.unit.type_id.to_string())
+            .with("damaged", candidate.unit.sustained_damage)
+            .with("capacity", candidate.capacity)
+            .with("gravity_drive", candidate.gravity_drive),
+        );
     }
     // 89.2b: the player may choose to move nothing.
     options.push(ChoiceOption::labelled(
@@ -216,7 +298,11 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveSelection {
     /// Move this ship, identified by where it stands.
-    Ship { origin: SystemId, index: usize },
+    Ship {
+        origin: SystemId,
+        index: usize,
+        gravity_drive: bool,
+    },
     /// 89.2b: move nothing further.
     Done,
 }
@@ -231,8 +317,7 @@ pub fn read_move(choice: &Choice, answer: ChoiceOption) -> Result<MoveSelection,
         return Ok(MoveSelection::Done);
     }
     let mut parts = option.id.splitn(3, '|');
-    let (Some(_verb), Some(origin), Some(index)) = (parts.next(), parts.next(), parts.next())
-    else {
+    let (Some(verb), Some(origin), Some(index)) = (parts.next(), parts.next(), parts.next()) else {
         return Err(IllegalChoice::NotOffered {
             player: choice.player.clone(),
             chosen: option.id.clone(),
@@ -253,6 +338,7 @@ pub fn read_move(choice: &Choice, answer: ChoiceOption) -> Result<MoveSelection,
             Ok(MoveSelection::Ship {
                 origin: SystemId::new(origin),
                 index,
+                gravity_drive: verb == "move_gd",
             })
         },
     )
@@ -383,6 +469,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn gravity_drive_offers_only_the_one_ship_that_needs_its_bonus() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let far = SystemId::new(hub.across(&hub.outer[0]));
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        state
+            .player_mut(&player)
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("gd"));
+        activate(&mut state, &player, &far).unwrap();
+
+        let found = movable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].gravity_drive);
+        assert_eq!(
+            movement_options(&player, &found).options[0].id,
+            format!("move_gd|{origin}|0")
+        );
+    }
+
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;
 
@@ -505,6 +615,27 @@ mod tests {
     }
 
     #[test]
+    fn gravleash_anchor_gives_the_remaining_nonfighters_the_fastest_moved_value() {
+        let (mut state, galaxy, ids) = fixture();
+        let origin = ids[1].clone();
+        let destination = galaxy
+            .system_ids()
+            .into_iter()
+            .find(|id| galaxy.distance(origin.as_str(), id) == Some(2))
+            .map(SystemId::new)
+            .unwrap();
+        state.system_mut(&origin).units.push(ship("carrier"));
+        state.player_mut(&player()).unwrap().breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("letnevbt"));
+        state.gravleash_move_values.insert(origin.clone(), 2);
+        activate(&mut state, &player(), &destination).unwrap();
+
+        let found = movable(&state, ContentStore::embedded(), POK, &galaxy, &player());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].unit.type_id.as_str(), "carrier");
+    }
+
+    #[test]
     fn ground_forces_are_not_movable_by_themselves() {
         // Only ships move; infantry travels as cargo.
         let (mut state, galaxy, ids) = fixture();
@@ -585,7 +716,8 @@ mod tests {
             read_move(&choice, picked).unwrap(),
             MoveSelection::Ship {
                 origin: ids[1].clone(),
-                index: 0
+                index: 0,
+                gravity_drive: false,
             }
         );
     }

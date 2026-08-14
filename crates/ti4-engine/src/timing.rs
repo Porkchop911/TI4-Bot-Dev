@@ -99,6 +99,22 @@ pub struct TimingContext<'a> {
     pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
 }
 
+impl TimingContext<'_> {
+    /// Put a nested timing-window choice to a decider with the public game position attached.
+    ///
+    /// # Errors
+    /// Returns [`crate::choice::IllegalChoice`] if the answer was not offered.
+    pub fn ask_seeing(
+        &mut self,
+        choice: &crate::choice::Choice,
+    ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+        self.table.ask_seeing(
+            choice,
+            &crate::choice::Observed::new(self.state, self.content, self.sources, self.galaxy),
+        )
+    }
+}
+
 /// An ability registered against one deterministic timing window.
 #[derive(Clone)]
 pub struct Ability {
@@ -744,8 +760,7 @@ impl Resolver {
             options,
         );
         let chosen = context
-            .table
-            .ask(&choice)
+            .ask_seeing(&choice)
             .map_err(TimingError::IllegalChoice)?;
         if chosen.is_decline() {
             self.log.push(format!(

@@ -65,6 +65,7 @@ pub mod strategy_cards;
 pub mod supply;
 pub mod tactical;
 pub mod technology;
+pub mod thunders_edge;
 pub mod timing;
 pub mod tokens;
 pub mod transactions;

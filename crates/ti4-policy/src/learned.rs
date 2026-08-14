@@ -36,8 +36,14 @@ use blake2::{Blake2b, Digest};
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::Choice;
 
-/// The hashed-policy schema this module reads and writes.
+/// The legacy hashed-policy schema.
 pub const SCHEMA: u32 = 2;
+
+/// The collision-free explicit schema used by the converged Stage-1 checkpoint.
+pub const STAGE1_EXPLICIT_SCHEMA: u32 = 4;
+
+/// Explicit schemas accepted for inference and migration.
+pub const EXPLICIT_SCHEMAS: [u32; 3] = [3, 4, 5];
 
 /// How many signed buckets a hashed profile carries by default.
 pub const DEFAULT_DIMENSIONS: usize = 512;
@@ -66,6 +72,38 @@ pub const DECISION_HEADS: [&str; 19] = [
     "exploration",
     "ability",
     "transit",
+    "other",
+];
+
+/// Schema 4's heads: the exact representation of the converged three-faction Stage-1 run.
+pub const STAGE1_DECISION_HEADS: [&str; 14] = [
+    "strategy",
+    "secondary",
+    "turn",
+    "activation",
+    "movement",
+    "cargo",
+    "landing",
+    "trade",
+    "tokens",
+    "production",
+    "payment",
+    "development",
+    "combat",
+    "other",
+];
+
+const SCHEMA3_HEADS: [&str; 11] = [
+    "strategy",
+    "secondary",
+    "turn",
+    "activation",
+    "movement",
+    "cargo",
+    "landing",
+    "economy",
+    "development",
+    "combat",
     "other",
 ];
 
@@ -287,7 +325,7 @@ impl Head {
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProfileError {
     /// Written against a schema this module does not read.
-    #[error("profile schema {found} is not the {SCHEMA} this module reads")]
+    #[error("profile schema {found} is not supported (expected 2, 3, 4, or 5)")]
     Schema {
         /// The schema found on the profile.
         found: u32,
@@ -349,6 +387,44 @@ pub fn blank_profile(faction: &str, dimensions: usize) -> Profile {
     }
 }
 
+/// A genuinely blank collision-free schema-4 profile.
+///
+/// Explicit weights are sparse and grow on first observation.  An empty map therefore means
+/// uniform random play, not an invalid or partially loaded artifact.
+#[must_use]
+pub fn blank_explicit_profile(faction: &str) -> Profile {
+    Profile {
+        schema: STAGE1_EXPLICIT_SCHEMA,
+        mode: "fully_learned".to_owned(),
+        name: format!("blank-explicit-{faction}"),
+        faction: faction.to_owned(),
+        learned: Learned {
+            heads: STAGE1_DECISION_HEADS
+                .iter()
+                .map(|head| {
+                    (
+                        (*head).to_owned(),
+                        Head {
+                            weights: BTreeMap::new(),
+                            temperature: 1.0,
+                        },
+                    )
+                })
+                .collect(),
+        },
+    }
+}
+
+fn required_heads(schema: u32) -> Option<&'static [&'static str]> {
+    match schema {
+        SCHEMA => Some(&DECISION_HEADS),
+        3 => Some(&SCHEMA3_HEADS),
+        STAGE1_EXPLICIT_SCHEMA => Some(&STAGE1_DECISION_HEADS),
+        5 => Some(&DECISION_HEADS),
+        _ => None,
+    }
+}
+
 impl Profile {
     /// Check a profile before it is trusted to decide anything.
     ///
@@ -359,9 +435,9 @@ impl Profile {
     /// # Errors
     /// [`ProfileError`] naming what was wrong.
     pub fn validate(&self, faction: Option<&str>) -> Result<(), ProfileError> {
-        if self.schema != SCHEMA {
+        let Some(required) = required_heads(self.schema) else {
             return Err(ProfileError::Schema { found: self.schema });
-        }
+        };
         if self.mode != "fully_learned" {
             return Err(ProfileError::Mode {
                 found: self.mode.clone(),
@@ -380,15 +456,15 @@ impl Profile {
         }
         // Every head a choice can route to must exist, or the decisions that route there score
         // zero for ever and the policy silently plays them at random.
-        for head in DECISION_HEADS {
-            if !self.learned.heads.contains_key(head) {
+        for head in required {
+            if !self.learned.heads.contains_key(*head) {
                 return Err(ProfileError::MissingHead {
-                    head: head.to_owned(),
+                    head: (*head).to_owned(),
                 });
             }
         }
         for (name, head) in &self.learned.heads {
-            if head.weights.is_empty() {
+            if self.schema == SCHEMA && head.weights.is_empty() {
                 return Err(ProfileError::Empty);
             }
             if let Some((slot, _)) = head.weights.iter().find(|(_, weight)| !weight.is_finite()) {
@@ -413,11 +489,30 @@ impl Profile {
     /// How many buckets each head carries.
     #[must_use]
     pub fn dimensions(&self) -> usize {
+        if self.is_explicit() {
+            return 0;
+        }
         self.learned
             .heads
             .values()
             .next()
             .map_or(0, |head| head.weights.len())
+    }
+
+    /// Whether this profile reads collision-free named features.
+    #[must_use]
+    pub const fn is_explicit(&self) -> bool {
+        matches!(self.schema, 3..=5)
+    }
+
+    /// The head actually carried by this schema. Schema 3/4 route later splits to `other`.
+    #[must_use]
+    pub fn resolved_head<'a>(&'a self, requested: &'a str) -> &'a str {
+        if self.learned.heads.contains_key(requested) {
+            requested
+        } else {
+            "other"
+        }
     }
 
     /// One head's weights, or the catch-all when it is not carried.
@@ -431,7 +526,12 @@ impl Profile {
 
     /// One head's weights, for the trainer to update.
     pub fn head_mut(&mut self, head: &str) -> Option<&mut Head> {
-        self.learned.heads.get_mut(head)
+        let resolved = if self.learned.heads.contains_key(head) {
+            head
+        } else {
+            "other"
+        };
+        self.learned.heads.get_mut(resolved)
     }
 
     /// Score an already-hashed sparse vector against one head.
@@ -444,10 +544,16 @@ impl Profile {
     /// Score one feature vector by name: hashes each name, then takes the dot product.
     #[must_use]
     pub fn score(&self, head: &str, features: &[(String, f64)]) -> f64 {
-        let dimensions = self.dimensions();
         let Some(head) = self.head(head) else {
             return 0.0;
         };
+        if self.is_explicit() {
+            return features
+                .iter()
+                .map(|(name, value)| head.weights.get(name).copied().unwrap_or(0.0) * value)
+                .sum();
+        }
+        let dimensions = self.dimensions();
         features
             .iter()
             .map(|(name, value)| {
@@ -522,6 +628,49 @@ mod tests {
         let other = blank.score("movement", &[("kind=land".to_owned(), 1.0)]);
         assert!((one - other).abs() < f64::EPSILON);
         assert!(one.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_blank_explicit_profile_is_sparse_valid_and_uniform() {
+        let blank = blank_explicit_profile("jolnar");
+        assert_eq!(blank.schema, STAGE1_EXPLICIT_SCHEMA);
+        assert!(blank.is_explicit());
+        assert_eq!(blank.validate(Some("jolnar")), Ok(()));
+        assert!(
+            blank
+                .learned
+                .heads
+                .values()
+                .all(|head| head.weights.is_empty())
+        );
+        assert!(
+            blank
+                .score("activation", &[("target:reachable".to_owned(), 1.0)])
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn an_explicit_weight_is_read_by_name_without_hashing() {
+        let mut profile = blank_explicit_profile("hacan");
+        profile
+            .head_mut("activation")
+            .unwrap()
+            .weights
+            .insert("target:reachable".to_owned(), 6.5);
+        assert!(
+            (profile.score("activation", &[("target:reachable".to_owned(), 1.0)]) - 6.5).abs()
+                < f64::EPSILON
+        );
+        assert!(
+            !profile
+                .head("activation")
+                .unwrap()
+                .weights
+                .keys()
+                .any(|name| name.starts_with('h'))
+        );
     }
 
     #[test]

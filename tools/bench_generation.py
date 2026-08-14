@@ -15,7 +15,7 @@ and takes no argument that would cause it to save a profile or a checkpoint.
 from __future__ import annotations
 
 import argparse
-import importlib.util
+import importlib
 import json
 import os
 import sys
@@ -31,24 +31,21 @@ IN_SCOPE_FACTIONS = ("sol", "hacan", "letnev", "xxcha", "jolnar", "l1z1x")
 
 
 def _load_trainer():
-    """Import the oracle's trainer without writing anything into the oracle."""
+    """Import the oracle's trainer without writing anything into the oracle.
+
+    Imported under its real package path rather than a synthetic module name. A process pool
+    unpickles work in child processes, and a module those children cannot import by name makes
+    every worker die on arrival — which reports as a broken pool rather than as a naming mistake.
+    """
 
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     sys.dont_write_bytecode = True
     if str(ORACLE_ROOT) not in sys.path:
         sys.path.insert(0, str(ORACLE_ROOT))
-    spec = importlib.util.spec_from_file_location("bench_trainer", TRAINER)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load the oracle trainer at {TRAINER}")
-    module = importlib.util.module_from_spec(spec)
-    # Registered before execution: the trainer's dataclasses resolve their own module on creation,
-    # and fail with an unhelpful AttributeError if it is not in sys.modules yet.
-    sys.modules["bench_trainer"] = module
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module("tools.train_stage1_policy_gradient")
 
 
-def generation(trainer, seed: int, games: int, seats: int) -> tuple[int, int] | None:
+def generation(trainer, seed: int, games: int, seats: int, workers: int = 1) -> tuple[int, int] | None:
     """Play, credit, update. Returns (games, decisions), or None if the sample is invalid."""
 
     from engine import learned_policy
@@ -66,7 +63,7 @@ def generation(trainer, seed: int, games: int, seats: int) -> tuple[int, int] | 
         profiles,
         factions,
         seeds=seeds,
-        workers=1,
+        workers=workers,
         vary_maps=False,
         capture=True,
         horizon=4,
@@ -100,6 +97,8 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=4)
     parser.add_argument("--seats", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=0)
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
 
     trainer = _load_trainer()
@@ -114,13 +113,31 @@ def main() -> int:
         print(json.dumps({"warmup": 10}))
         return 0
 
-    started = time.perf_counter_ns()
-    try:
-        outcome = generation(trainer, args.seed, args.games, args.seats)
-    except Exception as error:  # noqa: BLE001 - a failure is a failed sample, not a crashed run
-        outcome = None
-        print(f"sample failed: {type(error).__name__}: {error}", file=sys.stderr)
-    nanos = time.perf_counter_ns() - started
+    # Repeats run inside one process so the worker pool is created once. A fresh pool per sample
+    # would charge Python for startup that a real training run pays only at the beginning, which
+    # is the difference between measuring the trainer and measuring process creation.
+    timings: list[int] = []
+    outcome = None
+    for index in range(max(1, args.repeat)):
+        started = time.perf_counter_ns()
+        try:
+            outcome = generation(
+                trainer, args.seed + index, args.games, args.seats, args.workers
+            )
+        except Exception as error:  # noqa: BLE001 - a failure is a failed sample
+            outcome = None
+            print(f"sample failed: {type(error).__name__}: {error}", file=sys.stderr)
+            break
+        timings.append(time.perf_counter_ns() - started)
+    # Drop the first: it carries pool creation and import-time warmup.
+    measured = timings[1:] if len(timings) > 1 else timings
+    nanos = sum(measured) // max(1, len(measured))
+    if args.repeat > 1:
+        print(
+            f"per-generation over {len(measured)} timed reps (first dropped): "
+            f"{nanos / 1e9:.2f}s",
+            file=sys.stderr,
+        )
 
     if outcome is None:
         sample = {

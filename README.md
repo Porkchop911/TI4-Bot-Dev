@@ -18,3 +18,11 @@ Start here:
 
 Implementation must not begin beyond M0 until M0 has frozen the compatibility corpus and
 remeasured the Python baseline.
+
+Stage-1 learning comparisons are documented in
+[`docs/STAGE1_PARITY_COMPARISON.md`](docs/STAGE1_PARITY_COMPARISON.md). Use the gated parity runner,
+not the legacy six-player curve, before making learning or performance claims.
+
+The optimized Stage-1 and Stage-2 policy-gradient pipeline, production commands, checkpoint rules,
+determinism guarantees, and measured throughput are documented in
+[`docs/TRAINING_PIPELINE.md`](docs/TRAINING_PIPELINE.md).

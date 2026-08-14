@@ -25,6 +25,46 @@ fn number(name: &str, fallback: usize) -> usize {
         .unwrap_or(fallback)
 }
 
+/// Clearance and its three components, per faction, on held-out openings.
+fn per_faction(
+    profiles: &BTreeMap<PlayerId, Profile>,
+    players: &[PlayerId],
+    games: u64,
+) -> BTreeMap<String, (f64, f64, f64, f64)> {
+    let seeds: Vec<u64> = (20_000..20_000 + games).collect();
+    let rollouts = play_batch(
+        ContentStore::embedded(),
+        players,
+        profiles,
+        DEFAULT,
+        &seeds,
+        Horizon::opening(),
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+    );
+    let mut rows: BTreeMap<String, (i64, i64, i64, i64, i64)> = BTreeMap::new();
+    for seat in rollouts.iter().flat_map(|r| r.seats.iter()) {
+        let entry = rows
+            .entry(seat.faction.to_string())
+            .or_insert((0, 0, 0, 0, 0));
+        let progress = seat.episode.final_progress;
+        entry.0 += i64::from(seat.episode.cleared);
+        entry.1 += progress.planets_gained;
+        entry.2 += progress.systems;
+        entry.3 += progress.units_gained;
+        entry.4 += 1;
+    }
+    rows.into_iter()
+        .map(|(faction, (cleared, planets, systems, units, seats))| {
+            let n = f64::from(i32::try_from(seats.max(1)).unwrap_or(1));
+            let f = |v: i64| f64::from(i32::try_from(v).unwrap_or(0));
+            (
+                faction,
+                (f(cleared) / n, f(planets) / n, f(systems) / n, f(units) / n),
+            )
+        })
+        .collect()
+}
+
 /// Clearance and its three components, on held-out openings.
 fn evaluate(
     profiles: &BTreeMap<PlayerId, Profile>,
@@ -61,6 +101,7 @@ fn main() {
     let every = number("--every", 25);
     let games = number("--games", 8) as u64;
     let evaluation_games = number("--eval", 40) as u64;
+    let report_factions = number("--factions-every", 1000);
 
     let players: Vec<PlayerId> = ["a", "b", "c", "d", "e", "f"]
         .iter()
@@ -110,6 +151,16 @@ fn main() {
         println!(
             "  {done:>6} |    {c:>5.3}  |  {p:>5.3}  |  {s:>5.3}  | {u:>5.3}  |  {movement:>6.2}"
         );
+        if report_factions > 0 && done.is_multiple_of(report_factions) {
+            println!("         +-- by faction ---- clearance   planets   systems    units");
+            for (faction, (fc, fp, fs, fu)) in
+                per_faction(&run.profiles, &players, evaluation_games)
+            {
+                println!(
+                    "         |   {faction:<9}         {fc:>6.3}    {fp:>6.3}    {fs:>6.3}   {fu:>6.3}"
+                );
+            }
+        }
         profiles = Some(run.profiles);
     }
     println!(

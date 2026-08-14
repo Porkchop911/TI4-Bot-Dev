@@ -125,6 +125,7 @@ fn structures_of(
 /// decision log that no player ever chose.
 fn choose_structure(
     ctx: &mut crate::choice::Resolving<'_>,
+    state: &GameState,
     player: &PlayerId,
     held: &[(ti4_model::id::SystemId, ti4_model::id::PlanetId, usize)],
 ) -> Option<(ti4_model::id::SystemId, ti4_model::id::PlanetId, usize)> {
@@ -146,7 +147,7 @@ fn choose_structure(
                     })
                     .collect(),
             );
-            let answer = ctx.table.ask(&choice).ok()?;
+            let answer = ctx.ask_seeing(state, &choice).ok()?;
             let index: usize = answer.id.parse().ok()?;
             many.get(index).cloned()
         }
@@ -330,8 +331,7 @@ fn ask_the_speaker(
             })
             .collect(),
     );
-    ctx.table
-        .ask(&choice)
+    ctx.ask_seeing(state, &choice)
         .ok()
         .map(|answer| PlayerId::new(answer.id))
 }
@@ -476,8 +476,7 @@ pub fn resolve_with(
                             })
                             .collect(),
                     );
-                    ctx.table
-                        .ask(&choice)
+                    ctx.ask_seeing(state, &choice)
                         .ok()
                         .map(|answer| PlayerId::new(answer.id))
                 }
@@ -649,7 +648,8 @@ pub fn resolve_with(
             }
             for player in everyone(state) {
                 let held = structures_of(state, content, sources, &player, "pds");
-                let Some((system, planet, index)) = choose_structure(ctx, &player, &held) else {
+                let Some((system, planet, index)) = choose_structure(ctx, state, &player, &held)
+                else {
                     continue;
                 };
                 if let Some(units) = state.system_mut(&system).planet_units.get_mut(&planet)

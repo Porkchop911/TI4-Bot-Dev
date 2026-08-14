@@ -122,7 +122,7 @@ def summarise(samples: list[dict]) -> dict:
         "nanos_per_decision": (sum(times) / decisions) if decisions else 0.0,
         "nanos_per_game": (sum(times) / games) if games else 0.0,
         "stable": stable,
-        "semantic_gate": "pass" if samples and all(s.get("gate") == "pass" for s in samples) else "fail",
+        "execution_gate": "pass" if samples and all(s.get("gate") == "pass" for s in samples) else "fail",
     }
 
 
@@ -189,22 +189,33 @@ def main() -> int:
         print(
             f"{name:7} mean {row['mean_nanos'] / 1e6:9.1f} ms   median {row['median_nanos'] / 1e6:9.1f} ms   "
             f"stdev/mean {row['stdev_nanos'] / max(row['mean_nanos'], 1):.3f}   "
-            f"{'stable' if row['stable'] else 'UNSTABLE'}  gate={row['semantic_gate']}"
+            f"{'stable' if row['stable'] else 'UNSTABLE'}  execution={row['execution_gate']}"
         )
         print(
             f"        {row['games']} games, {row['decisions']} decisions   "
             f"{row['nanos_per_game'] / 1e6:.2f} ms/game   {row['nanos_per_decision'] / 1e3:.1f} us/decision"
         )
 
-    comparable = all(row["stable"] and row["semantic_gate"] == "pass" for row in reports.values())
+    execution_valid = all(row["stable"] and row["execution_gate"] == "pass" for row in reports.values())
+    # A clean process and a non-empty trajectory are execution gates, not semantic parity.  The
+    # engines currently raise different legal decision windows and this benchmark carries no
+    # decision-boundary trace proving equivalent work.  It may report timings, but it must not turn
+    # them into a migration speedup claim.
+    semantic_parity = False
     print("=" * 78)
-    if comparable:
+    if execution_valid and semantic_parity:
         by_decision = reports["python"]["nanos_per_decision"] / max(reports["rust"]["nanos_per_decision"], 1)
         by_game = reports["python"]["nanos_per_game"] / max(reports["rust"]["nanos_per_game"], 1)
         print(f"speedup, per decision: {by_decision:.1f}x   per game: {by_game:.1f}x")
         print(
             "read the per-decision figure first: the engines are not at parity, so the Rust side\n"
             "plays shorter games and part of any per-game gap is missing content rather than speed."
+        )
+    elif execution_valid:
+        print(
+            "TIMING DIAGNOSTIC ONLY: both runners were stable and executed successfully, but\n"
+            "semantic parity was not established. No Rust/Python speedup is claimed. Run the\n"
+            "Stage-1 solved-profile and decision-boundary gates first."
         )
     else:
         print(
@@ -221,6 +232,8 @@ def main() -> int:
                 "benchmark_id": "training_generation",
                 "workload": {"games": args.games, "seats": args.seats, "pairs": args.pairs, "seed": args.seed},
                 "reports": reports,
+                "execution_valid": execution_valid,
+                "semantic_parity": semantic_parity,
                 "raw": {"rust": rust, "python": python},
             },
             indent=2,
@@ -228,7 +241,7 @@ def main() -> int:
         encoding="utf-8",
     )
     print(f"\nraw samples: {out}")
-    return 0 if comparable else 1
+    return 0 if execution_valid else 1
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use rand::Rng;
 use rand::SeedableRng;
@@ -30,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
 use ti4_model::id::PlayerId;
 
-use crate::features::{FeatureVector, option_features};
+use crate::features::{FeatureVector, explicit_option_features, option_features};
 use crate::learned::{Profile, decision_head};
 use crate::progress::{Baseline, Progress};
 
@@ -101,7 +102,7 @@ pub fn probabilities(scores: &BTreeMap<String, f64>, temperature: f64) -> BTreeM
 
 /// A bot that plays from a fitted profile and nothing else.
 pub struct LearnedBot {
-    profile: Profile,
+    profile: Arc<Profile>,
     rng: ChaCha8Rng,
     /// The decisions taken, when recording.
     ///
@@ -119,6 +120,16 @@ impl LearnedBot {
     /// Play from `profile`, with its own deterministic stream.
     #[must_use]
     pub fn new(profile: Profile, seed: u64) -> Self {
+        Self::from_shared(Arc::new(profile), seed)
+    }
+
+    /// Play from an immutable profile shared by every rollout in a training batch.
+    ///
+    /// A schema-4 profile contains tens of thousands of named weights. Sharing it avoids cloning
+    /// that complete table once per seat and game while preserving an immutable policy snapshot
+    /// for the whole update.
+    #[must_use]
+    pub fn from_shared(profile: Arc<Profile>, seed: u64) -> Self {
         Self {
             profile,
             rng: ChaCha8Rng::seed_from_u64(seed),
@@ -147,7 +158,7 @@ impl LearnedBot {
 
     /// The profile being played.
     #[must_use]
-    pub const fn profile(&self) -> &Profile {
+    pub fn profile(&self) -> &Profile {
         &self.profile
     }
 
@@ -170,18 +181,28 @@ impl LearnedBot {
         seen: &Observed<'_>,
         choice: &Choice,
     ) -> (BTreeMap<String, FeatureVector>, BTreeMap<String, f64>) {
-        let dimensions = self.profile.dimensions();
         // The head decides which weights read the features, so the same fact means different
         // things to different decisions. One shared vector would have every head's update land on
         // every other head's weights.
-        let head = decision_head(choice);
+        let requested_head = decision_head(choice);
+        let head = self.profile.resolved_head(requested_head);
         let legal: BTreeMap<String, FeatureVector> = choice
             .options
             .iter()
             .map(|option| {
                 (
                     option.id.clone(),
-                    option_features(seen, choice, option, &choice.player, dimensions),
+                    if self.profile.is_explicit() {
+                        explicit_option_features(seen, choice, option, &choice.player)
+                    } else {
+                        option_features(
+                            seen,
+                            choice,
+                            option,
+                            &choice.player,
+                            self.profile.dimensions(),
+                        )
+                    },
                 )
             })
             .collect();
@@ -238,7 +259,7 @@ impl Decider for LearnedBot {
         if self.recording {
             self.trajectory.borrow_mut().push(TrajectoryStep {
                 player: choice.player.clone(),
-                head: decision_head(choice).to_owned(),
+                head: self.profile.resolved_head(decision_head(choice)).to_owned(),
                 chosen: chosen.id.clone(),
                 features: legal.get(&chosen.id).cloned().unwrap_or_default(),
                 legal,

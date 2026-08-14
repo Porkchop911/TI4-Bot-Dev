@@ -3,16 +3,610 @@
 //! Ported from the oracle's `engine/technology.py`: `owned_colours`, `can_research`,
 //! `researchable`, `research` and `grant`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{PlayerId, TechnologyId};
+use ti4_model::id::{PlanetId, PlayerId, SystemId, TechnologyId, UnitTypeId};
 use ti4_model::state::GameState;
+
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
 /// The four research tracks. Unit upgrades have no colour (90.7b), which is why
 /// `UNITUPGRADE` is deliberately absent.
 pub const COLOURS: [&str; 4] = ["BIOTIC", "CYBERNETIC", "PROPULSION", "WARFARE"];
+
+/// Technologies in the authoritative current PoK/Codex deck.
+///
+/// The raw corpus deliberately contains original and replacement printings together.  The oracle
+/// uses `techs_pok_c4` to select the active printing; treating every corpus record as researchable
+/// offers obsolete Magen and X-89 variants as separate technologies.
+#[must_use]
+pub fn active_aliases(content: &ContentStore) -> BTreeSet<TechnologyId> {
+    content
+        .get(ContentType::Decks, "techs_pok_c4")
+        .map(|deck| {
+            deck.strings("cardIDs")
+                .into_iter()
+                .map(TechnologyId::new)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Printed technology name used by learned choice labels.
+#[must_use]
+pub fn name(content: &ContentStore, alias: &TechnologyId) -> String {
+    content
+        .get(ContentType::Technologies, alias.as_str())
+        .and_then(|record| record.text("name"))
+        .unwrap_or_else(|| alias.as_str())
+        .to_owned()
+}
+
+/// Whether Gravity Drive may still raise one ship's move in this tactical action.
+#[must_use]
+pub fn gravity_drive_available(state: &GameState, player: &PlayerId) -> bool {
+    let Some(seat) = state.player(player) else {
+        return false;
+    };
+    seat.technologies.contains(&TechnologyId::new("gd"))
+        && seat.gravity_drive_used_activation != Some(state.activation_seq)
+}
+
+/// Spend Gravity Drive's once-per-tactical-action movement bonus.
+#[must_use]
+pub fn use_gravity_drive(state: &mut GameState, player: &PlayerId) -> bool {
+    if !gravity_drive_available(state, player) {
+        return false;
+    }
+    let activation = state.activation_seq;
+    if let Some(seat) = state.player_mut(player) {
+        seat.gravity_drive_used_activation = Some(activation);
+        true
+    } else {
+        false
+    }
+}
+
+/// Ready technology component actions currently implemented by the Rust engine.
+#[must_use]
+pub fn component_actions(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<ChoiceOption> {
+    let Some(seat) = state.player(player) else {
+        return Vec::new();
+    };
+    let sling = TechnologyId::new("sr");
+    if seat.technologies.contains(&sling)
+        && !seat.exhausted_technologies.contains(&sling)
+        && crate::production::can_sling_relay(state, content, sources, player)
+    {
+        vec![ChoiceOption::labelled(
+            "component|tech|sr",
+            "component",
+            "use Sling Relay",
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Resolve one implemented technology component action.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] when a nested production or payment choice is invalid.
+pub fn perform_component(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    option: &ChoiceOption,
+) -> Result<bool, IllegalChoice> {
+    if option.id != "component|tech|sr"
+        || !state
+            .player(player)
+            .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("sr")))
+    {
+        return Ok(false);
+    }
+    let produced = crate::production::sling_relay(state, content, sources, galaxy, table, player)?;
+    if produced && let Some(seat) = state.player_mut(player) {
+        seat.exhausted_technologies.insert(TechnologyId::new("sr"));
+    }
+    Ok(produced)
+}
+
+/// Resolve technology effects offered for free at the start of an action-phase turn.
+///
+/// Transit Diodes is deliberately here rather than in [`component_actions`]: its printed timing
+/// is not an action, and charging a turn for it changes both the opening and the learned prompt.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] if the decider does not select an offered redeployment.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the start window sequences several independent optional technologies"
+)]
+pub fn start_turn(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    // Psychoarchaeology is a free action-phase window, not a component action.  Each ready
+    // specialty planet may be converted once; declining preserves it for a later use.
+    if state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("pa")))
+    {
+        let planets = ti4_content::galaxy::all_planets(content, sources);
+        loop {
+            let candidates: Vec<PlanetId> = state
+                .controlled_planets(player)
+                .into_iter()
+                .map(|(_, planet)| planet.clone())
+                .filter(|planet| !state.exhausted_planets.contains(planet))
+                .filter(|planet| {
+                    planets
+                        .get(planet.as_str())
+                        .is_some_and(|record| !record.tech_specialties().is_empty())
+                })
+                .collect();
+            if candidates.is_empty() {
+                break;
+            }
+            let mut options: Vec<ChoiceOption> = candidates
+                .iter()
+                .map(|planet| {
+                    ChoiceOption::labelled(
+                        planet.to_string(),
+                        "ability",
+                        format!("exhaust {planet}"),
+                    )
+                    .with("planet", planet.to_string())
+                    .with("technology", "pa")
+                })
+                .collect();
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(
+                player.clone(),
+                "Psychoarchaeology: exhaust a specialty for 1 trade good",
+                options,
+            );
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if answer.is_decline() {
+                break;
+            }
+            state.exhaust_planet(PlanetId::new(answer.id));
+            if let Some(seat) = state.player_mut(player) {
+                seat.trade_goods += 1;
+            }
+        }
+    }
+
+    let transit = TechnologyId::new("td");
+    let has_transit = state.player(player).is_some_and(|seat| {
+        seat.technologies.contains(&transit) && !seat.exhausted_technologies.contains(&transit)
+    });
+    if has_transit {
+        let mut moved = 0;
+        let mut arrivals = BTreeSet::new();
+        while moved < 4 {
+            let options = transit_options(state, content, sources, player, &arrivals);
+            if options.is_empty() {
+                break;
+            }
+            let mut offered = options;
+            offered.push(ChoiceOption::labelled(
+                "decline",
+                crate::choice::DECLINE_KIND,
+                "finish redeployment",
+            ));
+            let choice = Choice::new(
+                player.clone(),
+                format!(
+                    "Transit Diodes: redeploy ground forces ({} left)",
+                    4 - moved
+                ),
+                offered,
+            );
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if answer.is_decline() {
+                break;
+            }
+            let Some((source_system, source, unit, destination_system, planet)) =
+                parse_transit(&answer.id)
+            else {
+                break;
+            };
+            let Some(unit) = take_transit_unit(
+                state,
+                content,
+                sources,
+                player,
+                &source_system,
+                &source,
+                &unit,
+            ) else {
+                break;
+            };
+            state
+                .system_mut(&destination_system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(unit);
+            arrivals.insert((destination_system, planet));
+            moved += 1;
+        }
+        if moved > 0
+            && let Some(seat) = state.player_mut(player)
+        {
+            seat.exhausted_technologies.insert(transit);
+        }
+    }
+
+    if state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("cm")))
+    {
+        let systems: Vec<SystemId> = state
+            .board
+            .keys()
+            .filter(|system| {
+                crate::production::capacity(state, content, sources, player, system) > 0
+            })
+            .cloned()
+            .collect();
+        if !systems.is_empty() {
+            let mut options: Vec<ChoiceOption> = systems
+                .iter()
+                .map(|system| {
+                    ChoiceOption::labelled(
+                        system.to_string(),
+                        "production",
+                        format!("produce one unit in {system}"),
+                    )
+                    .with("system", system.to_string())
+                    .with("technology", "cm")
+                })
+                .collect();
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(player.clone(), "Chaos Mapping", options);
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if !answer.is_decline() {
+                let system = SystemId::new(answer.id);
+                let _ = crate::production::produce_one(
+                    state, content, sources, galaxy, table, player, &system,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve free technology windows at the end of an action-phase turn.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] when a redistribution or readying answer was not offered.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the end window sequences several independent optional technologies"
+)]
+pub fn end_turn(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    let predictive = TechnologyId::new("pi");
+    if state.player(player).is_some_and(|seat| {
+        seat.technologies.contains(&predictive)
+            && !seat.exhausted_technologies.contains(&predictive)
+    }) {
+        let mut changed = false;
+        let maximum = state.player(player).map_or(0, |seat| {
+            seat.tactic_tokens + seat.fleet_tokens + seat.strategic_tokens
+        });
+        let mut moved = 0;
+        while moved < maximum {
+            let Some(seat) = state.player(player) else {
+                break;
+            };
+            let pools = [
+                ("tactic", seat.tactic_tokens),
+                ("fleet", seat.fleet_tokens),
+                ("strategy", seat.strategic_tokens),
+            ];
+            let mut options = Vec::new();
+            for (source, held) in pools {
+                if held <= 0 {
+                    continue;
+                }
+                for destination in ["tactic", "fleet", "strategy"] {
+                    if source != destination {
+                        options.push(ChoiceOption::labelled(
+                            format!("{source}|{destination}"),
+                            "redistribute",
+                            format!("move 1 token from {source} to {destination}"),
+                        ));
+                    }
+                }
+            }
+            if options.is_empty() {
+                break;
+            }
+            options.push(ChoiceOption::labelled(
+                "done",
+                crate::choice::DECLINE_KIND,
+                "finish redistribution",
+            ));
+            let choice = Choice::new(
+                player.clone(),
+                "Predictive Intelligence: redistribute command tokens",
+                options,
+            );
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if answer.is_decline() {
+                break;
+            }
+            let mut parts = answer.id.split('|');
+            let (Some(source), Some(destination)) = (parts.next(), parts.next()) else {
+                break;
+            };
+            if let Some(seat) = state.player_mut(player) {
+                let take = match source {
+                    "tactic" => &mut seat.tactic_tokens,
+                    "fleet" => &mut seat.fleet_tokens,
+                    "strategy" => &mut seat.strategic_tokens,
+                    _ => break,
+                };
+                *take -= 1;
+                let give = match destination {
+                    "tactic" => &mut seat.tactic_tokens,
+                    "fleet" => &mut seat.fleet_tokens,
+                    "strategy" => &mut seat.strategic_tokens,
+                    _ => break,
+                };
+                *give += 1;
+                changed = true;
+                moved += 1;
+            }
+        }
+        if changed && let Some(seat) = state.player_mut(player) {
+            seat.exhausted_technologies.insert(predictive);
+        }
+    }
+
+    let bio_stims = TechnologyId::new("bs");
+    if state.player(player).is_some_and(|seat| {
+        seat.technologies.contains(&bio_stims) && !seat.exhausted_technologies.contains(&bio_stims)
+    }) {
+        let planets = ti4_content::galaxy::all_planets(content, sources);
+        let mut options: Vec<ChoiceOption> = state
+            .controlled_planets(player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .filter(|planet| state.exhausted_planets.contains(planet))
+            .filter(|planet| {
+                planets
+                    .get(planet.as_str())
+                    .is_some_and(|record| !record.tech_specialties().is_empty())
+            })
+            .map(|planet| {
+                ChoiceOption::labelled(
+                    format!("ready|planet|{planet}"),
+                    "ready",
+                    format!("Bio-Stims: ready {planet}"),
+                )
+                .with("planet", planet.to_string())
+                .with("technology", "bs")
+            })
+            .collect();
+        if let Some(seat) = state.player(player) {
+            options.extend(
+                seat.exhausted_technologies
+                    .iter()
+                    .filter(|technology| *technology != &bio_stims)
+                    .map(|technology| {
+                        ChoiceOption::labelled(
+                            format!("ready|technology|{technology}"),
+                            "ready_technology",
+                            format!("Bio-Stims: ready {}", name(content, technology)),
+                        )
+                        .with("technology", technology.to_string())
+                        .with("bio_stims", true)
+                    }),
+            );
+        }
+        if !options.is_empty() {
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(player.clone(), "Bio-Stims", options);
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if !answer.is_decline() {
+                if let Some(planet) = answer.id.strip_prefix("ready|planet|") {
+                    state.ready_planet(&PlanetId::new(planet));
+                } else if let Some(technology) = answer.id.strip_prefix("ready|technology|")
+                    && let Some(seat) = state.player_mut(player)
+                {
+                    seat.exhausted_technologies
+                        .remove(&TechnologyId::new(technology));
+                }
+                if let Some(seat) = state.player_mut(player) {
+                    seat.exhausted_technologies.insert(bio_stims);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve technology effects caused by this player gaining control of a planet.
+///
+/// Integrated Economy is an `AFTER PLANET_CONTROL_GAINED` effect in the oracle.  Keeping the
+/// ownership check here gives every control-gain path one technology boundary instead of making
+/// invasion, diplomacy, and future annexation rules know the card text themselves.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] if the triggered production or one of its payments is invalid.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a control-gain trigger needs the complete observed rules position"
+)]
+pub fn control_gained(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+) -> Result<bool, IllegalChoice> {
+    if !state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("ie")))
+    {
+        return Ok(false);
+    }
+    crate::production::integrated_economy(
+        state, content, sources, galaxy, table, player, system, planet,
+    )
+}
+
+fn transit_options(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    barred_sources: &BTreeSet<(SystemId, PlanetId)>,
+) -> Vec<ChoiceOption> {
+    let types = ti4_content::units::catalogue(content, sources);
+    let destinations: Vec<(SystemId, PlanetId)> = state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(system, planet)| (system.clone(), planet.clone()))
+        .collect();
+    let mut seen = BTreeSet::new();
+    let mut options = Vec::new();
+    for (source_system, board) in &state.board {
+        let sources_here = board
+            .units
+            .iter()
+            .filter(|unit| &unit.owner == player)
+            .map(|unit| ("space".to_owned(), unit))
+            .chain(board.planet_units.iter().flat_map(|(planet, units)| {
+                units
+                    .iter()
+                    .filter(|unit| &unit.owner == player)
+                    .map(move |unit| (planet.to_string(), unit))
+            }));
+        for (source, unit) in sources_here {
+            if !types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                || (source != "space"
+                    && barred_sources.contains(&(source_system.clone(), PlanetId::new(&source))))
+            {
+                continue;
+            }
+            for (destination_system, planet) in &destinations {
+                if source_system == destination_system && source == planet.as_str() {
+                    continue;
+                }
+                if !seen.insert((
+                    source_system.clone(),
+                    source.clone(),
+                    unit.type_id.clone(),
+                    planet.clone(),
+                )) {
+                    continue;
+                }
+                options.push(
+                    ChoiceOption::labelled(
+                        format!(
+                            "transit|{source_system}|{source}|{}|{destination_system}|{planet}",
+                            unit.type_id
+                        ),
+                        "transit",
+                        format!("move {} from {source} to {planet}", unit.type_id),
+                    )
+                    .with("source_system", source_system.to_string())
+                    .with("source", source.clone())
+                    .with("unit", unit.type_id.to_string())
+                    .with("destination_system", destination_system.to_string())
+                    .with("planet", planet.to_string()),
+                );
+            }
+        }
+    }
+    options
+}
+
+fn parse_transit(id: &str) -> Option<(SystemId, String, UnitTypeId, SystemId, PlanetId)> {
+    let mut parts = id.splitn(6, '|');
+    match (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) {
+        (Some("transit"), Some(ss), Some(source), Some(unit), Some(ds), Some(planet)) => Some((
+            SystemId::new(ss),
+            source.to_owned(),
+            UnitTypeId::new(unit),
+            SystemId::new(ds),
+            PlanetId::new(planet),
+        )),
+        _ => None,
+    }
+}
+
+fn take_transit_unit(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    source_system: &SystemId,
+    source: &str,
+    unit_type: &UnitTypeId,
+) -> Option<ti4_model::units::Unit> {
+    let types = ti4_content::units::catalogue(content, sources);
+    let is_match = |unit: &ti4_model::units::Unit| {
+        &unit.owner == player
+            && &unit.type_id == unit_type
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ground_force)
+    };
+    let board = state.system_mut(source_system);
+    let units = if source == "space" {
+        &mut board.units
+    } else {
+        board.planet_units.get_mut(&PlanetId::new(source))?
+    };
+    units
+        .iter()
+        .position(is_match)
+        .map(|index| units.remove(index))
+}
 
 /// The letter each colour is written as in a technology's `requirements` string.
 ///
@@ -202,11 +796,13 @@ pub fn researchable(
     sources: SourceSet,
     player: &PlayerId,
 ) -> Vec<TechnologyId> {
+    let active = active_aliases(content);
     content
         .records(ContentType::Technologies)
         .iter()
         .filter_map(|record| record.text("alias"))
         .map(TechnologyId::new)
+        .filter(|alias| active.contains(alias))
         .filter(|alias| can_research(state, content, sources, player, alias))
         .collect()
 }
@@ -255,6 +851,231 @@ mod tests {
                 .technologies
                 .insert(TechnologyId::new(*alias));
         }
+    }
+
+    #[test]
+    fn transit_diodes_redeploys_ground_at_the_start_of_a_turn_and_exhausts() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["td"]);
+        let source_system = SystemId::new("01");
+        let destination_system = SystemId::new("02");
+        let source = PlanetId::new("source");
+        let destination = PlanetId::new("destination");
+        state
+            .system_mut(&source_system)
+            .set_control(source.clone(), player());
+        state
+            .system_mut(&destination_system)
+            .set_control(destination.clone(), player());
+        state
+            .system_mut(&source_system)
+            .planet_units
+            .entry(source.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
+                UnitTypeId::new("infantry"),
+                player(),
+            ));
+        let move_id =
+            format!("transit|{source_system}|{source}|infantry|{destination_system}|{destination}");
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([move_id])));
+
+        start_turn(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert!(
+            state
+                .system_state(&source_system)
+                .on_planet(&source)
+                .is_empty()
+        );
+        assert_eq!(
+            state
+                .system_state(&destination_system)
+                .on_planet(&destination)
+                .len(),
+            1
+        );
+        assert!(
+            state
+                .player(&player())
+                .unwrap()
+                .exhausted_technologies
+                .contains(&TechnologyId::new("td"))
+        );
+    }
+
+    #[test]
+    fn integrated_economy_is_offered_after_control_is_gained_and_builds_on_that_planet() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["ie"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        state.player_mut(&player()).unwrap().trade_goods = 1;
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "build|destroyer|1".to_owned(),
+            "trade_good".to_owned(),
+            "done_producing".to_owned(),
+        ])));
+
+        let built = control_gained(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+            &system,
+            &planet,
+        )
+        .unwrap();
+
+        assert!(built);
+        assert!(
+            state
+                .system_state(&system)
+                .units_of(&player())
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "destroyer"),
+            "choices: {:?}; units: {:?}",
+            table.log.records,
+            state.system_state(&system).units
+        );
+        assert!(table.log.records.iter().any(|record| {
+            record.prompt.starts_with("Integrated Economy on ")
+                && record.offered.iter().any(|id| id == "done_producing")
+        }));
+    }
+
+    #[test]
+    fn control_gain_opens_no_integrated_economy_window_without_the_technology() {
+        let mut state = game(&["a"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let mut table = Table::new();
+
+        assert!(
+            !control_gained(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut table,
+                &player(),
+                &system,
+                &planet,
+            )
+            .unwrap()
+        );
+        assert!(table.log.is_empty());
+    }
+
+    #[test]
+    fn psychoarchaeology_is_a_learned_start_of_turn_conversion() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["pa"]);
+        let specialty = ti4_content::galaxy::all_planets(ContentStore::embedded(), POK)
+            .values()
+            .find(|planet| !planet.tech_specialties().is_empty())
+            .map(|planet| PlanetId::new(planet.id()))
+            .expect("the map corpus has a technology specialty");
+        let system = SystemId::new("01");
+        state
+            .system_mut(&system)
+            .set_control(specialty.clone(), player());
+        let before = state.player(&player()).unwrap().trade_goods;
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            specialty.to_string()
+        ])));
+
+        start_turn(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert!(state.exhausted_planets.contains(&specialty));
+        assert_eq!(state.player(&player()).unwrap().trade_goods, before + 1);
+        assert!(table.log.records[0].prompt.starts_with("Psychoarchaeology"));
+    }
+
+    #[test]
+    fn bio_stims_is_a_learned_end_of_turn_readying_choice() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["bs", "td"]);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .exhausted_technologies
+            .insert(TechnologyId::new("td"));
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "ready|technology|td".to_owned(),
+        ])));
+
+        end_turn(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        let exhausted = &state.player(&player()).unwrap().exhausted_technologies;
+        assert!(!exhausted.contains(&TechnologyId::new("td")));
+        assert!(exhausted.contains(&TechnologyId::new("bs")));
+    }
+
+    #[test]
+    fn chaos_mapping_chooses_a_system_and_one_unit_at_the_start_of_turn() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["cm"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.player_mut(&player()).unwrap().trade_goods = 1;
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            system.to_string(),
+            "build|destroyer|1".to_owned(),
+            "trade_good".to_owned(),
+        ])));
+
+        start_turn(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert!(
+            state
+                .system_state(&system)
+                .units_of(&player())
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "destroyer"),
+            "choices: {:?}; units: {:?}",
+            table.log.records,
+            state.system_state(&system).units
+        );
+        assert_eq!(table.log.records[0].prompt, "Chaos Mapping");
     }
 
     #[test]
@@ -362,6 +1183,28 @@ mod tests {
             &player(),
             &TechnologyId::new("gd")
         ));
+    }
+
+    #[test]
+    fn researchable_uses_the_authoritative_current_printings() {
+        let content = ContentStore::embedded();
+        let active = active_aliases(content);
+        assert!(active.contains(&TechnologyId::new("md")));
+        assert!(!active.contains(&TechnologyId::new("md_base")));
+        assert!(!active.contains(&TechnologyId::new("md_c1")));
+
+        let offered = researchable(&game(&["a"]), content, POK, &player());
+        assert!(!offered.is_empty());
+        assert!(!offered.contains(&TechnologyId::new("md_base")));
+        assert!(!offered.contains(&TechnologyId::new("md_c1")));
+    }
+
+    #[test]
+    fn learned_research_labels_use_the_printed_name() {
+        assert_eq!(
+            name(ContentStore::embedded(), &TechnologyId::new("sr")),
+            "Sling Relay"
+        );
     }
 
     #[test]

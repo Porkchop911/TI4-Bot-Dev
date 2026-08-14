@@ -10,7 +10,7 @@ use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Table};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
 /// The choice kind for removing a unit to get back within a limit.
 pub const REMOVE_KIND: &str = "remove";
@@ -116,6 +116,26 @@ pub fn enforce(
     player: &PlayerId,
     system: &SystemId,
 ) -> Result<usize, IllegalChoice> {
+    enforce_seeing(state, content, sources, None, table, player, system)
+}
+
+/// Enforce fleet and capacity limits while exposing the public position to learned deciders.
+///
+/// # Errors
+/// [`IllegalChoice`] when a decider answers with something not offered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "limit enforcement needs the position, optional map and owning decision table"
+)]
+pub fn enforce_seeing(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Result<usize, IllegalChoice> {
     let types = catalogue(content, sources);
     let mut removed = 0;
 
@@ -135,7 +155,17 @@ pub fn enforce(
         if candidates.is_empty() {
             break;
         }
-        remove_one(state, table, player, system, &candidates, "fleet supply")?;
+        remove_one(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            player,
+            system,
+            &candidates,
+            "fleet supply",
+        )?;
         removed += 1;
     }
 
@@ -154,7 +184,17 @@ pub fn enforce(
         if candidates.is_empty() {
             break;
         }
-        remove_one(state, table, player, system, &candidates, "capacity")?;
+        remove_one(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            player,
+            system,
+            &candidates,
+            "capacity",
+        )?;
         removed += 1;
     }
     Ok(removed)
@@ -163,6 +203,9 @@ pub fn enforce(
 /// Ask the owner which of `candidates` to remove, offering each distinguishable unit once.
 fn remove_one(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     table: &mut Table,
     player: &PlayerId,
     system: &SystemId,
@@ -186,7 +229,7 @@ fn remove_one(
         format!("remove a unit: over {reason} in {system}"),
         options,
     );
-    let answer = table.ask(&choice)?;
+    let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
         .strip_prefix("remove|")

@@ -92,6 +92,7 @@ fn convert_commodities(state: &mut GameState, player: &PlayerId, most: Option<i3
 /// Ask this player one question with the given options.
 fn ask(
     ctx: &mut crate::choice::Resolving<'_>,
+    state: &GameState,
     player: &PlayerId,
     prompt: &str,
     options: &[(&str, &str)],
@@ -104,7 +105,7 @@ fn ask(
             .map(|(id, label)| crate::choice::ChoiceOption::labelled(*id, "explore", *label))
             .collect(),
     );
-    ctx.table.ask(&choice).ok().map(|answer| answer.id)
+    ctx.ask_seeing(state, &choice).ok().map(|answer| answer.id)
 }
 
 /// The system a planet sits in, according to the board.
@@ -265,6 +266,7 @@ fn resolve_instant(
         "aw1" | "aw2" | "aw3" | "aw4" => {
             let chosen = ask(
                 ctx,
+                state,
                 player,
                 "Abandoned Warehouses",
                 &[
@@ -282,6 +284,7 @@ fn resolve_instant(
         "ms1" | "ms2" => {
             let chosen = ask(
                 ctx,
+                state,
                 player,
                 "Merchant Station",
                 &[
@@ -308,7 +311,7 @@ fn resolve_instant(
             if commodities_held >= 1 {
                 options.push(("spend_com", "spend 1 commodity to draw an action card"));
             }
-            let chosen = ask(ctx, player, "Functioning Base", &options);
+            let chosen = ask(ctx, state, player, "Functioning Base", &options);
             match chosen.as_deref() {
                 Some("spend_tg" | "spend_com") => {
                     if let Some(seat) = state.player_mut(player) {
@@ -338,7 +341,7 @@ fn resolve_instant(
             if commodities_held >= 1 {
                 options.push(("spend_com", "spend 1 commodity to place a mech"));
             }
-            let chosen = ask(ctx, player, "Local Fabricators", &options);
+            let chosen = ask(ctx, state, player, "Local Fabricators", &options);
             match chosen.as_deref() {
                 Some("spend_tg" | "spend_com") => {
                     if !place_on_planet(state, content, sources, player, planet, "mech") {
@@ -362,6 +365,7 @@ fn resolve_instant(
             };
             let chosen = ask(
                 ctx,
+                state,
                 player,
                 "Mercenary Outfit",
                 &[("place", "place 1 infantry"), ("decline", "place nothing")],

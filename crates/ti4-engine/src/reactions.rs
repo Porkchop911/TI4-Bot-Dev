@@ -445,7 +445,7 @@ fn slot(player: &PlayerId, event_type: &str, relation: Relation) -> Ability {
                         })
                         .collect(),
                 );
-                match context.table.ask(&choice) {
+                match context.ask_seeing(&choice) {
                     Ok(answer) => ActionCardId::new(answer.id),
                     Err(_) => return Ok(()),
                 }

@@ -28,7 +28,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
-use ti4_model::id::PlayerId;
+use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::features::FeatureVector;
 use ti4_policy::inference::TrajectoryStep;
 use ti4_policy::learned::Profile;
@@ -49,7 +49,7 @@ pub struct Step {
 impl Default for Step {
     fn default() -> Self {
         Self {
-            learning_rate: 0.05,
+            learning_rate: 0.03,
             entropy: 0.01,
             gradient_clip: 1.0,
         }
@@ -295,6 +295,36 @@ pub fn batch_statistics(
             };
             let rows = statistics(&seat.trajectory, &seat.episode, profile, reward);
             let target = collected.entry(seat.player.clone()).or_default();
+            for (head, row) in rows {
+                target.entry(head).or_default().merge(&row);
+            }
+        }
+    }
+    collected
+}
+
+/// Statistics from a rotated panel, keyed by faction rather than physical seat.
+///
+/// A fixed-seat accumulator silently teaches the Letnev profile from whichever faction happened
+/// to occupy its original chair after rotation. Keeping the key in the rollout makes that wiring
+/// error observable and lets each policy follow its faction around the table.
+#[must_use]
+pub fn faction_batch_statistics(
+    rollouts: &[crate::rollout::Rollout],
+    profiles: &BTreeMap<FactionId, Profile>,
+    reward: &Reward,
+) -> BTreeMap<FactionId, BTreeMap<String, Statistics>> {
+    let mut collected: BTreeMap<FactionId, BTreeMap<String, Statistics>> = BTreeMap::new();
+    for rollout in rollouts {
+        if rollout.error.is_some() {
+            continue;
+        }
+        for seat in &rollout.seats {
+            let Some(profile) = profiles.get(&seat.faction) else {
+                continue;
+            };
+            let rows = statistics(&seat.trajectory, &seat.episode, profile, reward);
+            let target = collected.entry(seat.faction.clone()).or_default();
             for (head, row) in rows {
                 target.entry(head).or_default().merge(&row);
             }

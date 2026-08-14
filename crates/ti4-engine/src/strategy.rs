@@ -32,7 +32,8 @@ pub enum StrategyActionError {
 pub enum SecondaryResolution {
     /// The follower chose not to use the secondary.
     Declined,
-    /// The follower spent one strategy token; content-specific effects come later.
+    /// The follower accepted the secondary. Its shared token cost, when applicable, was paid;
+    /// the game driver immediately invokes the content-specific effect.
     Followed,
     /// The follower had no strategy token and was not offered the secondary.
     Ineligible,
@@ -49,6 +50,87 @@ pub enum StrategySecondaryError {
     NoStrategyToken(PlayerId),
     #[error(transparent)]
     IllegalChoice(#[from] IllegalChoice),
+}
+
+fn secondary_choice(
+    content: &ContentStore,
+    card: &StrategyCardId,
+    player: &PlayerId,
+    costs_token: bool,
+) -> Choice {
+    let name = crate::strategy_cards::card_name(content, card.as_str())
+        .unwrap_or_else(|| card.to_string());
+    let contract = match card.as_str() {
+        "te4construction" => Some((
+            "spend a strategy token to place a structure",
+            "decline",
+            "place",
+        )),
+        _ => match name.as_str() {
+            "Trade" => Some((
+                "spend a strategy token to replenish commodities",
+                "decline",
+                "replenish",
+            )),
+            "Construction" => Some((
+                "spend a strategy token to build a structure",
+                "decline",
+                "build",
+            )),
+            "Warfare" => Some((
+                "spend a strategy token to produce at home",
+                "decline",
+                "produce",
+            )),
+            "Technology" => Some((
+                "spend a strategy token and 4 resources to research",
+                "decline",
+                "spend",
+            )),
+            "Imperial" => Some((
+                "spend a strategy token to draw a secret objective",
+                "decline",
+                "draw",
+            )),
+            "Diplomacy" => Some((
+                "spend a strategy token to ready two planets",
+                "decline",
+                "ready",
+            )),
+            "Politics" => Some((
+                "spend a strategy token to draw two action cards",
+                "decline",
+                "draw",
+            )),
+            _ => None,
+        },
+    };
+    if let Some((prompt, no_label, yes_label)) = contract {
+        return Choice::new(
+            player.clone(),
+            prompt,
+            vec![
+                ChoiceOption::labelled("no", STRATEGY_KIND, no_label),
+                ChoiceOption::labelled("yes", STRATEGY_KIND, yes_label),
+            ],
+        );
+    }
+    Choice::new(
+        player.clone(),
+        format!("{card} secondary"),
+        vec![
+            ChoiceOption::decline(),
+            ChoiceOption::labelled(
+                FOLLOW_SECONDARY_ID,
+                STRATEGY_KIND,
+                if costs_token {
+                    "spend a strategy token to resolve the secondary"
+                } else {
+                    "resolve the secondary"
+                },
+            ),
+        ],
+    )
 }
 
 /// The ordered follower window opened by a strategic action.
@@ -96,27 +178,14 @@ impl StrategySecondaryWindow {
     /// merely because a client looked at a choice. [`Self::next_choice`] remains the mutating
     /// resolver used when a step actually advances the window.
     #[must_use]
-    pub fn pending_choice(&self, state: &GameState) -> Option<Choice> {
+    pub fn pending_choice(&self, state: &GameState, content: &ContentStore) -> Option<Choice> {
         self.followers[self.next_follower..]
             .iter()
-            .find(|player_id| {
-                state
-                    .player(player_id)
-                    .is_some_and(|player| player.strategic_tokens > 0)
-            })
+            .find(|player_id| secondary_eligible(state, content, player_id, &self.card))
             .map(|player_id| {
-                Choice::new(
-                    player_id.clone(),
-                    format!("{} secondary", self.card),
-                    vec![
-                        ChoiceOption::decline(),
-                        ChoiceOption::labelled(
-                            FOLLOW_SECONDARY_ID,
-                            STRATEGY_KIND,
-                            "spend a strategy token to resolve the secondary",
-                        ),
-                    ],
-                )
+                let costs_token = secondary_costs_token(content, &self.card)
+                    && !secondary_is_free(state, content, player_id, &self.card);
+                secondary_choice(content, &self.card, player_id, costs_token)
             })
     }
 
@@ -124,23 +193,16 @@ impl StrategySecondaryWindow {
     ///
     /// A content-specific secondary may later impose further eligibility checks. This generic
     /// structural window has only the shared strategy-token gate.
-    pub fn next_choice(&mut self, state: &mut GameState) -> Option<Choice> {
+    pub fn next_choice(&mut self, state: &mut GameState, content: &ContentStore) -> Option<Choice> {
         while let Some(player_id) = self.followers.get(self.next_follower).cloned() {
-            if state
-                .player(&player_id)
-                .is_some_and(|player| player.strategic_tokens > 0)
-            {
-                return Some(Choice::new(
-                    player_id,
-                    format!("{} secondary", self.card),
-                    vec![
-                        ChoiceOption::decline(),
-                        ChoiceOption::labelled(
-                            FOLLOW_SECONDARY_ID,
-                            STRATEGY_KIND,
-                            "spend a strategy token to resolve the secondary",
-                        ),
-                    ],
+            if secondary_eligible(state, content, &player_id, &self.card) {
+                let costs_token = secondary_costs_token(content, &self.card)
+                    && !secondary_is_free(state, content, &player_id, &self.card);
+                return Some(secondary_choice(
+                    content,
+                    &self.card,
+                    &player_id,
+                    costs_token,
                 ));
             }
             self.resolutions
@@ -159,20 +221,25 @@ impl StrategySecondaryWindow {
     pub fn take_choice(
         &mut self,
         state: &mut GameState,
+        content: &ContentStore,
         answer: ChoiceOption,
     ) -> Result<SecondaryResolution, StrategySecondaryError> {
         let choice = self
-            .next_choice(state)
+            .next_choice(state, content)
             .ok_or(StrategySecondaryError::Complete)?;
         let answer = validate(&choice, answer)?;
-        let resolution = if answer.is_decline() {
+        let resolution = if answer.is_decline() || answer.id == "no" {
             SecondaryResolution::Declined
         } else {
-            let player = state
-                .player_mut(&choice.player)
-                .ok_or_else(|| StrategySecondaryError::FollowerMissing(choice.player.clone()))?;
-            if !player.spend_token(TokenPool::Strategic) {
-                return Err(StrategySecondaryError::NoStrategyToken(choice.player));
+            let costs_token = secondary_costs_token(content, &self.card)
+                && !secondary_is_free(state, content, &choice.player, &self.card);
+            if costs_token {
+                let player = state.player_mut(&choice.player).ok_or_else(|| {
+                    StrategySecondaryError::FollowerMissing(choice.player.clone())
+                })?;
+                if !player.spend_token(TokenPool::Strategic) {
+                    return Err(StrategySecondaryError::NoStrategyToken(choice.player));
+                }
             }
             SecondaryResolution::Followed
         };
@@ -193,6 +260,34 @@ impl StrategySecondaryWindow {
             );
         }
     }
+}
+
+fn secondary_costs_token(content: &ContentStore, card: &StrategyCardId) -> bool {
+    crate::strategy_cards::card_name(content, card.as_str()).as_deref() != Some("Leadership")
+}
+
+fn secondary_is_free(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    card: &StrategyCardId,
+) -> bool {
+    crate::strategy_cards::card_name(content, card.as_str()).is_some_and(|name| {
+        crate::faction_abilities::secondary_is_free(state, content, player, &name)
+    })
+}
+
+fn secondary_eligible(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    card: &StrategyCardId,
+) -> bool {
+    state.player(player).is_some_and(|seat| {
+        !secondary_costs_token(content, card)
+            || secondary_is_free(state, content, player, card)
+            || seat.strategic_tokens > 0
+    })
 }
 
 /// Legal structural strategic actions for one player.
@@ -237,9 +332,9 @@ pub fn strategic_action_options(
 
 /// Resolve the structural part of a selected strategic action.
 ///
-/// Card-specific primary and secondary effects are deliberately outside this package. The
-/// selected card is exhausted only after this structural primary has finished; M04-009
-/// extends this same boundary with secondaries before retaining that exhaustion state.
+/// Card-specific effects live in [`crate::strategy_cards`]. This operation retains the older
+/// structural convenience API; the driven [`crate::game::Game`] uses
+/// [`begin_strategic_action`] and invokes those effects.
 ///
 /// # Errors
 /// [`StrategyActionError::IllegalChoice`] if `answer` was not offered, or
@@ -262,8 +357,8 @@ pub fn take_strategic_action(
 
 /// Begin a strategic action and open its ordered generic-secondary window.
 ///
-/// No card-specific primary effect is applied here. The selected card is exhausted only when
-/// the returned window has recorded every follower, including tokenless skipped followers.
+/// The caller applies the primary before driving the returned follower window. The selected card
+/// is exhausted only when every follower, including tokenless skipped followers, is recorded.
 ///
 /// # Errors
 /// [`StrategyActionError::IllegalChoice`] if `answer` was not offered, or
@@ -417,7 +512,17 @@ mod tests {
         let primary = PlayerId::new("a");
         let first_follower = PlayerId::new("b");
         let second_follower = PlayerId::new("c");
-        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        let card = state
+            .player(&primary)
+            .unwrap()
+            .strategy_cards
+            .iter()
+            .find(|card| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    != Some("Leadership")
+            })
+            .expect("a three-player hand includes a token-costing card")
+            .clone();
         let first_tokens = state.player(&first_follower).unwrap().strategic_tokens;
 
         let mut window = begin_strategic_action(
@@ -436,12 +541,18 @@ mod tests {
                 .contains(&card),
             "the card remains ready while followers decide"
         );
-        let choice = window.next_choice(&mut state).unwrap();
+        let choice = window
+            .next_choice(&mut state, ContentStore::embedded())
+            .unwrap();
         assert_eq!(choice.player, first_follower);
-        assert_eq!(choice.ids(), vec!["decline", "follow"]);
+        assert_eq!(choice.ids(), vec!["no", "yes"]);
         assert_eq!(
             window
-                .take_choice(&mut state, ChoiceOption::new("follow", "strategy"))
+                .take_choice(
+                    &mut state,
+                    ContentStore::embedded(),
+                    ChoiceOption::new("yes", "strategy"),
+                )
                 .unwrap(),
             SecondaryResolution::Followed
         );
@@ -450,11 +561,17 @@ mod tests {
             first_tokens - 1
         );
 
-        let choice = window.next_choice(&mut state).unwrap();
+        let choice = window
+            .next_choice(&mut state, ContentStore::embedded())
+            .unwrap();
         assert_eq!(choice.player, second_follower);
         assert_eq!(
             window
-                .take_choice(&mut state, ChoiceOption::decline())
+                .take_choice(
+                    &mut state,
+                    ContentStore::embedded(),
+                    ChoiceOption::new("no", "strategy"),
+                )
                 .unwrap(),
             SecondaryResolution::Declined
         );
@@ -474,7 +591,17 @@ mod tests {
     fn tokenless_followers_are_recorded_ineligible_and_close_the_window() {
         let mut state = drafted_three_player_game();
         let primary = PlayerId::new("a");
-        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        let card = state
+            .player(&primary)
+            .unwrap()
+            .strategy_cards
+            .iter()
+            .find(|card| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    != Some("Leadership")
+            })
+            .expect("a three-player hand includes a token-costing card")
+            .clone();
         state
             .player_mut(&PlayerId::new("b"))
             .unwrap()
@@ -491,7 +618,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(window.next_choice(&mut state).is_none());
+        assert!(
+            window
+                .next_choice(&mut state, ContentStore::embedded())
+                .is_none()
+        );
         assert_eq!(
             window.resolutions(),
             &[
@@ -524,7 +655,11 @@ mod tests {
         let before = state.clone();
 
         let error = window
-            .take_choice(&mut state, ChoiceOption::new("invented", STRATEGY_KIND))
+            .take_choice(
+                &mut state,
+                ContentStore::embedded(),
+                ChoiceOption::new("invented", STRATEGY_KIND),
+            )
             .unwrap_err();
 
         assert!(matches!(error, StrategySecondaryError::IllegalChoice(_)));
