@@ -35,6 +35,10 @@ fn optional_number(name: &str) -> Option<usize> {
         .and_then(|value| value.parse().ok())
 }
 
+fn flag(name: &str) -> bool {
+    std::env::args().any(|argument| argument == name)
+}
+
 fn decimal(name: &str, fallback: f64) -> f64 {
     let args: Vec<String> = std::env::args().collect();
     args.iter()
@@ -518,6 +522,63 @@ fn report_gain(label: &str, evidence: GainEvidence, sigmas: f64) {
 /// Noise is measured from candidate-minus-champion differences on identical source seeds. All
 /// physical-seat rotations belonging to one source seed remain one statistical sample. This keeps
 /// shared map, deal, and rotation effects paired instead of pretending they are independent.
+/// Names every Stage-2 gate clause the candidate table violates, in check order.
+///
+/// The boolean gate below is unchanged; this exists so a run can say *which* clause refused a
+/// boundary instead of only that it was refused. A stall that cannot name its own rejection reason
+/// has to be reconstructed from aggregate metrics after the fact.
+fn failed_stage_two_clauses(
+    candidate: &BTreeMap<FactionId, Metrics>,
+    champion: &BTreeMap<FactionId, Metrics>,
+    evidence: GainEvidence,
+    factions: &[FactionId],
+    vp_margin: f64,
+    max_faction_vp_regression: f64,
+    max_faction_clearance_regression: f64,
+    accept_sigmas: f64,
+) -> Vec<String> {
+    let mut failed = Vec::new();
+    for faction in factions {
+        if candidate[faction].clearance
+            < champion[faction].clearance - max_faction_clearance_regression - 1e-12
+        {
+            failed.push(format!(
+                "clearance veto {}: {} is more than {max_faction_clearance_regression:.4} below the champion's {:.4}",
+                faction, candidate[faction].clearance, champion[faction].clearance
+            ));
+        }
+    }
+    for faction in factions {
+        if candidate[faction].victory_points
+            < champion[faction].victory_points - max_faction_vp_regression - 1e-12
+        {
+            failed.push(format!(
+                "VP veto {}: {} is more than {max_faction_vp_regression:.4} below the champion's {:.4}",
+                faction, candidate[faction].victory_points, champion[faction].victory_points
+            ));
+        }
+    }
+    let gain: f64 = factions
+        .iter()
+        .map(|faction| candidate[faction].victory_points - champion[faction].victory_points)
+        .sum();
+    let faction_count = f64::from(u32::try_from(factions.len()).unwrap_or(u32::MAX));
+    if gain <= vp_margin * faction_count {
+        failed.push(format!(
+            "aggregate margin: total VP gain {gain:.4} is not above {} x {:.4}",
+            factions.len(),
+            vp_margin
+        ));
+    }
+    if !evidence.beyond_noise(accept_sigmas) {
+        failed.push(format!(
+            "sigma evidence: paired gain {:.4} does not exceed {accept_sigmas:.1} x SE {:.4} over {} seeds",
+            evidence.gain, evidence.standard_error, evidence.samples
+        ));
+    }
+    failed
+}
+
 fn acceptable_stage_two_table(
     candidate: &BTreeMap<FactionId, Metrics>,
     champion: &BTreeMap<FactionId, Metrics>,
@@ -528,24 +589,17 @@ fn acceptable_stage_two_table(
     max_faction_clearance_regression: f64,
     accept_sigmas: f64,
 ) -> bool {
-    if factions.iter().any(|faction| {
-        candidate[faction].clearance
-            < champion[faction].clearance - max_faction_clearance_regression - 1e-12
-    }) || factions.iter().any(|faction| {
-        candidate[faction].victory_points
-            < champion[faction].victory_points - max_faction_vp_regression - 1e-12
-    }) {
-        return false;
-    }
-    let gain: f64 = factions
-        .iter()
-        .map(|faction| candidate[faction].victory_points - champion[faction].victory_points)
-        .sum();
-    let faction_count = f64::from(u32::try_from(factions.len()).unwrap_or(u32::MAX));
-    if gain <= vp_margin * faction_count {
-        return false;
-    }
-    evidence.beyond_noise(accept_sigmas)
+    failed_stage_two_clauses(
+        candidate,
+        champion,
+        evidence,
+        factions,
+        vp_margin,
+        max_faction_vp_regression,
+        max_faction_clearance_regression,
+        accept_sigmas,
+    )
+    .is_empty()
 }
 
 fn report_learning(block: &LearningBlock) {
@@ -648,6 +702,9 @@ fn main() -> Result<(), String> {
     // Two standard errors is the usual bar: roughly "this would happen by chance about one panel
     // in twenty". Zero disables the check and restores the fixed-margin-only gate.
     let accept_sigmas = decimal("--accept-sigmas", 2.0);
+    // The reference plan ships the Stage-1 step size; an experiment overrides it here and the value
+    // is recorded in the checkpoint arguments so a run is reproducible from its own document.
+    let learning_rate = decimal("--learning-rate", 0.03);
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
@@ -665,6 +722,7 @@ fn main() -> Result<(), String> {
     let requested_rounds =
         optional_number("--rounds").and_then(|rounds| u32::try_from(rounds).ok());
     let mut plan = FactionPlan::stage_two_reference();
+    plan.step.learning_rate = learning_rate;
     plan.train_seeds = train_seeds;
     if let Some(path) = &map_pool_path {
         let pool = ti4_sim::MapPool::load(path)
@@ -718,6 +776,7 @@ fn main() -> Result<(), String> {
         ),
         ("accept_vp_margin".to_owned(), accept_vp_margin.to_string()),
         ("accept_sigmas".to_owned(), accept_sigmas.to_string()),
+        ("learning_rate".to_owned(), learning_rate.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
         (
             "max_faction_vp_regression".to_owned(),
@@ -757,6 +816,10 @@ fn main() -> Result<(), String> {
         )
     );
     println!("  profiles: immutable shared schema-4 heads");
+    println!(
+        "  step: learning rate {learning_rate:.4} (entropy {}, clip {})",
+        plan.step.entropy, plan.step.gradient_clip
+    );
     println!("  meta teacher: none (no specified or validated artifact)");
     println!(
         "  promotion: {validation_seeds} validation + {confirmation_seeds} confirmation seeds; aggregate VP margin {accept_vp_margin:.2}; paired evidence {accept_sigmas:.1}σ; per-faction veto VP {max_faction_vp_regression:.2}, clearance {max_faction_clearance_regression:.2}"
@@ -780,6 +843,61 @@ fn main() -> Result<(), String> {
     let initial_gain = GainEvidence::paired(&initial_candidate, &accepted_panel);
     report(starting_update, &initial_candidate.metrics);
     report_gain("bootstrap comparison", initial_gain, accept_sigmas);
+    if flag("--eval-only") {
+        println!(
+            "\nevaluation only: {validation_seeds} validation seeds x 6 rotations (first seed {validation_first_seed}), no training"
+        );
+        println!("faction       games   cand_vp  acc_vp     d_vp   cand_clr acc_clr    d_clr");
+        for faction in &plan.factions {
+            let candidate = initial_candidate.metrics[faction];
+            let accepted = accepted_panel.metrics[faction];
+            println!(
+                "{:12} {:>5}  {:>7.3}  {:>6.3}  {:+8.3}  {:>9.4} {:>7.4}  {:+8.4}",
+                faction,
+                candidate.games,
+                candidate.victory_points,
+                accepted.victory_points,
+                candidate.victory_points - accepted.victory_points,
+                candidate.clearance,
+                accepted.clearance,
+                candidate.clearance - accepted.clearance,
+            );
+        }
+        report_gain("paired evidence", initial_gain, accept_sigmas);
+        let failed = failed_stage_two_clauses(
+            &initial_candidate.metrics,
+            &accepted_panel.metrics,
+            initial_gain,
+            &plan.factions,
+            accept_vp_margin,
+            max_faction_vp_regression,
+            max_faction_clearance_regression,
+            accept_sigmas,
+        );
+        println!(
+            "gate: {}",
+            if failed.is_empty() {
+                "PASS".to_owned()
+            } else {
+                format!("FAIL — {}", failed.join("; "))
+            }
+        );
+        if let Some(path) = path_argument("--eval-out") {
+            let report = serde_json::json!({
+                "update": starting_update,
+                "validation_seeds": validation_seeds,
+                "validation_first_seed": validation_first_seed,
+                "candidate_metrics": initial_candidate.metrics,
+                "accepted_metrics": accepted_panel.metrics,
+                "validation_gain": initial_gain,
+                "failed_clauses": failed,
+            });
+            std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
+                .map_err(|error| format!("write {}: {error}", path.display()))?;
+            println!("wrote {}", path.display());
+        }
+        return Ok(());
+    }
     history.push(
         serde_json::to_value(Evaluation {
             update: starting_update,
@@ -834,7 +952,9 @@ fn main() -> Result<(), String> {
         let mut accepted_kind = None;
         let mut assembled_confirmation = None;
         let mut assembled_confirmation_gain = None;
-        if acceptable_stage_two_table(
+        // The clauses that refuse this boundary are named here so the checkpoint's history and the
+        // console show *why* a candidate was rejected, not only that it was.
+        let mut rejected_by: Vec<String> = failed_stage_two_clauses(
             &candidate_panel.metrics,
             &accepted_panel.metrics,
             validation_gain,
@@ -843,7 +963,8 @@ fn main() -> Result<(), String> {
             max_faction_vp_regression,
             max_faction_clearance_regression,
             accept_sigmas,
-        ) {
+        );
+        if rejected_by.is_empty() {
             let confirmation = evaluate(
                 &plan,
                 &profiles,
@@ -853,7 +974,7 @@ fn main() -> Result<(), String> {
             let confirmation_gain =
                 GainEvidence::paired(&confirmation, &accepted_confirmation_panel);
             report_gain("confirmation", confirmation_gain, accept_sigmas);
-            let confirmed = acceptable_stage_two_table(
+            let confirmation_failure = failed_stage_two_clauses(
                 &confirmation.metrics,
                 &accepted_confirmation_panel.metrics,
                 confirmation_gain,
@@ -863,6 +984,7 @@ fn main() -> Result<(), String> {
                 max_faction_clearance_regression,
                 accept_sigmas,
             );
+            let confirmed = confirmation_failure.is_empty();
             assembled_confirmation = Some(confirmation.metrics.clone());
             assembled_confirmation_gain = Some(confirmation_gain);
             if confirmed {
@@ -871,6 +993,8 @@ fn main() -> Result<(), String> {
                 accepted_confirmation_panel = confirmation;
                 promoted.clone_from(&plan.factions);
                 accepted_kind = Some("assembled".to_owned());
+            } else {
+                rejected_by = confirmation_failure;
             }
         }
         if promoted.is_empty() {
@@ -937,6 +1061,11 @@ fn main() -> Result<(), String> {
             },
             accepted_kind.as_deref().unwrap_or("rejected")
         );
+        if promoted.is_empty() {
+            for reason in &rejected_by {
+                println!("  rejected by gate clause: {reason}");
+            }
+        }
         history.push(
             serde_json::to_value(Evaluation {
                 update,
@@ -1284,6 +1413,82 @@ mod tests {
             0.03,
             0.0
         ));
+    }
+
+    #[test]
+    fn the_gate_explains_which_clause_vetoes_a_candidate() {
+        let factions = six();
+        let names: Vec<(&str, f64)> = factions.iter().map(|f| (f.as_str(), 2.0)).collect();
+        let champion = table(&names, 1.6, 192);
+
+        // A candidate that fails every clause at once must name all of them: one clearance veto,
+        // one VP veto, the aggregate margin, and the sigma evidence.
+        let mut candidate = champion.clone();
+        candidate.insert(
+            FactionId::new("sol"),
+            Metrics {
+                victory_points: 1.70, // below the 0.15 VP tolerance
+                clearance: 0.8,
+                ..Metrics::default()
+            },
+        );
+        candidate.insert(
+            FactionId::new("letnev"),
+            Metrics {
+                victory_points: 2.0,
+                clearance: 0.70, // below the 0.03 clearance tolerance
+                ..Metrics::default()
+            },
+        );
+        let failed = failed_stage_two_clauses(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: 0.1,
+                standard_error: 0.4,
+                samples: 8,
+            },
+            &factions,
+            0.05,
+            0.15,
+            0.03,
+            2.0,
+        );
+        assert_eq!(
+            failed.len(),
+            4,
+            "expected four distinct clause failures: {failed:?}"
+        );
+        assert!(
+            failed
+                .iter()
+                .any(|line| line.starts_with("clearance veto letnev"))
+        );
+        assert!(failed.iter().any(|line| line.starts_with("VP veto sol")));
+        assert!(
+            failed
+                .iter()
+                .any(|line| line.starts_with("aggregate margin"))
+        );
+        assert!(failed.iter().any(|line| line.starts_with("sigma evidence")));
+
+        // The same table with a clean pair of panels and no sigma requirement explains nothing,
+        // which is how the wrapper keeps its boolean behavior.
+        let clean: Vec<(&str, f64)> = factions.iter().map(|f| (f.as_str(), 2.06)).collect();
+        let improved = table(&clean, 1.6, 192);
+        assert!(
+            failed_stage_two_clauses(
+                &improved,
+                &champion,
+                GainEvidence::default(),
+                &factions,
+                0.05,
+                0.15,
+                0.03,
+                0.0
+            )
+            .is_empty()
+        );
     }
 
     #[test]

@@ -64,6 +64,50 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   artifacts. See `docs/TRAINING_PIPELINE.md` and
   `plans/evidence/CODEX-TRAINING-PIPELINE-OPTIMIZATION.md`.
 
+### Codex Stage-2 stall investigation (2026-08-14)
+
+- Objective: explain why Stage-2 training has been flat since bootstrap (mode A — alive process,
+  no promotions across ~1,100 updates) and test the candidate remedies against real artifacts.
+  Failure modes B/C were ruled out by the operator before this package.
+- Safepoint: commit `66fd234`, tag `safepoint/stage2-stall-baseline`; created before any new edit;
+  rollback point for this investigation.
+- T0 forensics on `out/stage2_*.json`: the champion is frozen at its bootstrap state across every
+  recorded boundary; candidate aggregate gains over n=8 boundaries average ≈+0.4 with no trend;
+  learner weights differ from the champion in ~80% of cells but |Δ| is small (mean ≈0.0014) — a
+  random walk around bootstrap rather than drift.
+- Telemetry correction: per-update weight movement scales exactly linearly with `learning_rate`
+  (≈0.034/update at lr=0.03 vs ≈0.011–0.015/update at lr=0.01 in T2). The earlier "lr test
+  inconclusive" reading was a block-length artifact — that run used `every=50` blocks, so raw
+  totals looked half-sized.
+- T1 eval-only at the frozen 5700 state, n=32 seeds × 6 rotations (`out/eval_t1_5700_n32.json`):
+  paired gain **+0.188, SE 0.180** (2σ bar 0.361) and **no veto violations**. The repeated n=8
+  "clearance regressions" were panel noise at 48 games/faction; the state genuinely is not
+  promotable yet. Revised diagnosis: the stall is ≈zero optimizer drift, not gate miscalibration —
+  the gate's refusal was correct at adequate resolution.
+- Instrumentation in `crates/ti4-training/examples/stage2_training.rs` (gate boolean behavior
+  preserved; 11/11 example tests pass): clause-level rejection reasons via
+  `failed_stage_two_clauses`, console logging of every un-promoted boundary's rejecting clauses,
+  an `--eval-only` mode with JSON sidecar, and a `--learning-rate` knob recorded in checkpoint
+  arguments.
+- T2 differential run complete (finished 2026-08-14 20:34 WEDT, 3309 s for 1000 updates): resume
+  @4600 from `out/stage2_from_stage1.json`, lr 0.01 versus the baseline lineage's 0.03 at identical
+  absolute update positions, n=32 boundaries every 100 → `out/stage2_test_lr001_n32.json` (log
+  `out/logs/t2_lr001.log`). Every boundary gain is within ≈1.4σ of zero (mean −0.15); no promotions
+  in either run; per-faction weight displacement from the shared champion scales with lr×updates
+  (~0.36 ratio vs 0.30 step-budget ratio) — directionless exploration, no drift at either learning
+  rate.
+- **Final diagnosis (evidence-backed): the stall is a zero-signal optimization problem.** Four-
+  round games compress outcomes into near-ties, so centered REINFORCE credit has ≈no directional
+  information; entropy-regularized steps random-walk around bootstrap. Gate rejections are all
+  correct; n=8 panels had been adding noise-driven vetoes and over-reading gains by +0.2–0.5 (fixed
+  seed set reused at every boundary). Learning rate is not a lever; reward signal is.
+- Checks: `cargo test -p ti4-training` 98/98 lib + 11/11 example; clippy clean; rustfmt applied;
+  T2 binary built pre-fmt (cosmetic-only later edits).
+- Evidence: `plans/evidence/STAGE2-STALL-INVESTIGATION.md`.
+- Next safe action: propose the `--rounds 8` horizon experiment (~2× rollout cost) as the follow-up
+  package; alternatively train-seeds=64 to cut gradient variance. Do not touch the promotion gate —
+  it is validated.
+
 ### M08-005 tactical scoring checkpoint (2026-08-13)
 
 - Active branch: `wp/m08-005b-tactical-scoring`, based on `8a72a4f`; the focused local package
@@ -1231,44 +1275,38 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ```
 Objective:
-Five quality packages landed this session; next is M00-013 performance baseline.
+Stage-2 stall diagnosis + remedy testing. T0 forensics and T1 n=32 eval-only complete; the T2
+learning-rate differential run is in flight.
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
 Active milestone/package:
-M06 partial (M00-013 performance baseline next; M03 timing chain held in .worktrees/).
-Status:
-731 tests passing (544 engine + 121 content + 68 model + 1 content doc-test + 5 engine
-doc-tests), 0 failed.
-Workspace clippy-clean under -D warnings; cargo fmt clean. Doc-tests: 6 runnable, none
-ignored (Table, Decider, Window, TradeWindow, scoreable, ContentStore::embedded).
-Registry coverage: public objectives 40/40, exploration 71/80, secrets 27/40,
-agenda effects 34/63, relics 5/17. Content parity reached against oracle at pinned
-commit; remaining gaps are blocked behind the reaction system (M06-016).
+Stage-2 stall investigation (post-M10 training follow-up, no package ID); safepoint 66fd234.
+Status and completed acceptance criteria:
+T0 + T1 complete with artifacts; clause-level gate instrumentation in the working tree with all
+example tests passing (11/11). Diagnosis revised to ≈zero optimizer drift (gate was correct).
+T2 pending (~45–60 min at launch).
+Current branch and HEAD:
+codex/stage1-parity-fixes @ 66fd234 (safepoint) + uncommitted instrumentation in
+crates/ti4-training/examples/stage2_training.rs; new plans/evidence/STAGE2-STALL-INVESTIGATION.md.
 Working-tree state:
-Clean (only untracked .worktrees/ from co-agent). Five new commits on wp/m06-003.
+stage2_training.rs modified, evidence file untracked; T2 process running (log
+out/logs/t2_lr001.log, output out/stage2_test_lr001_n32.json).
 Tests last run and exact results:
-cargo test --workspace -> 542 engine + 121 content + 68 model passed; 0 failed.
-cargo test --doc --workspace -> 6 passed, 0 ignored; 0 failed.
-cargo clippy --workspace --all-targets -> clean. cargo fmt --all --check -> clean.
+cargo test -p ti4-training --example stage2_training → 11 passed, 0 failed.
 Compatibility evidence:
-plans/oracle_integrity_manifest.json (238 files) verifies oracle clean.
-plans/evidence/INDEX.md separates 86 written evidence files from 345 placeholder stubs.
+out/eval_t1_5700_n32.json (T1 sidecar); out/stage2_test_lr001_n32.json (T2, pending).
 Decisions made and rationale:
-- Dice::from_faces replaces duplicated seed_rolling in relics.rs and agenda_effects.rs
-- unimplemented() functions in secrets.rs and agenda_effects.rs report gaps non-empty
-- wiring.rs: the first guards for these were text matches on *import* lines, which -D
-  warnings already enforces, and passed while scoring was wired to an empty initiative
-  order. Replaced with behavioural guards (a satisfied objective must actually be scored;
-  a round must deal strategy cards), each proven by breaking the driver.
-- Doc-examples: all six run. An ignored example is unchecked code in the documentation.
-- INDEX.md classification rule: stubs have "## Package details", "## Package specification",
-  or "status: COMPLETE"; all others are written evidence
+- n=8 boundary panels judged under-resolved for a 0.03 clearance tolerance → all experiments use
+  n=32; the veto clause itself is retained unchanged for now.
+- The lr differential keeps every other variable identical to the recorded baseline lineage (same
+  resume state, seed schedule, map pool) so per-update comparisons are valid.
 Open review findings or blockers:
-Independent review owner-waived. M03 timing chain held in .worktrees/ by co-agent.
-M06-016 blocked on M03-008 through M03-012. M05-010b blocked on M06-016.
+None blocking. If T2 shows no drift at lr 0.01, next step is a bounded std-amplification change in
+ti4_training::gradient::apply — new scope with its own review tier.
 Next exact action:
-Execute M00-013 performance baseline per plans/M00_ORACLE_AND_BASELINE.md.
-Files to read first:
-plans/EXECUTION_STATE.md, plans/M00_ORACLE_AND_BASELINE.md,
-plans/evidence/M00-012.md (benchmark protocol), plans/evidence/INDEX.md
+Poll out/logs/t2_lr001.log to completion; append the per-boundary gain/SE table and verdicts to
+plans/evidence/STAGE2-STALL-INVESTIGATION.md; compare against stage2_s2p2 blocks 4700–5600.
+Files to read first after compaction:
+plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md,
+out/logs/t2_lr001.log, crates/ti4-training/examples/stage2_training.rs (gate + eval-only sections)
 ```
