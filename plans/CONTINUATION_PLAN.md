@@ -65,7 +65,8 @@ wins are visible.
 | **P1-e** — done | Speaker choice + seat-id prompts → faction names: `"who becomes speaker"` with id/label = faction (`"{faction} becomes speaker"`) vs Rust seat ids under `"choose the new speaker"`; signal-jamming victim prompt `"…whose token goes into {system}"` + labels `"{faction}'s command token"` | `strategy_cards.rs`, `action_cards.rs` | implemented as spec'd; answers map back to seats via first-match-in-order lookup scoped to the presented candidates. T6 all six factions max_score_gap=0, zero new classes; 4/4 speaker decisions now oracle-format (count matches Python); only remaining seat-id surface is P1-c's `grant free Trade replenishment`. Rust-vs-rust p1d→p1e: first fork for l1z1x is the rename itself (speaker genuinely flipped hacan→jolnar) — expected feature-space movement per P1-b precedent. New findings **F10** (Rust never emits SPEAKER_CHANGED; Python does in 3 places), **F11** (agenda tie-break surface diverges: prompt/kind/ids + missing silence path), **F12** (jamming system option set: no adjacency/home-exclusion/galaxy dependency) |
 | **P1-c** | Ground-commit + ready/retreat surface: `"commit ground forces in {sys}"` with ids `commit\|n\|planet` + `done_committing`; `"ready a planet"` wording; free-trade replenishment prompt/options (`"let another player replenish commodities"`, done/factions) vs Rust `land\|…`/decline and seat options | `invasion.rs`, `strategy_cards.rs`, replenishment sites | medium: option-id *format* changes → checkpoint feature buckets unaffected (weights are per-head, not per-id), but needs rust-vs-rust diff to prove intended delta only; touches combat/invasion paths |
 | **P1-f** | Misc wording + loop structure: em-dash → `"--"` hyphen normalization across prompts; leadership purchase loop vs Rust `follow` gate (blind `decline/follow` secondary windows, incl. the no/yes replenishment secondaries seen at jolnar/l1z1x/letnev idx=1) | locate at spec time | largest Phase-1 item: changes *window shape* (inline choice in Python vs separate blind secondary in Rust), not just labels; do last so smaller packages' T6 deltas stay clean. Note: an earlier operator-facing message mislabeled this content as "P1-b"; the recorded class table governs and puts it here + in P1-c |
-| **P1-g** | Payment mechanics (findings F4/F5/F6/F7 from P1-b scoping/tests): MC trade-good worth 2 vs Rust flat 1 (+`available()` ×1 undercount → legality-level); single-option auto-pick in Python vs always-ask in Rust; xxcha cross-source `exhaust\|{planet}\|{source}` options + affordability guard + PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions; F7 zero-worth planets offered as payment options (Python filters `worth > 0`) | `production.rs` both sites | behavioral (option set, values, window shape) — needs its own failing tests and rust-vs-rust trace diff; do after P1-f so text-only deltas stay clean first |
+| **P1-g** | Payment mechanics (findings F4/F5/F6/F7 from P1-b scoping/tests): MC trade-good worth 2 vs Rust flat 1 (+`available()` ×1 undercount → legality-level); single-option auto-pick in Python vs always-ask in Rust; xxcha cross-source `exhaust\|{planet}\|{source}` options + affordability guard + PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions; F7 zero-worth planets offered as payment options (Python filters `worth > 0`); **F12** jamming system option set — add Python's adjacency expansion, home-system exclusion, and galaxy dependency (`_jamming_systems`, action_cards.py:1023–1037) | `production.rs` both sites; `action_cards.rs` (jamming) | behavioral (option set, values, window shape) — needs its own failing tests and rust-vs-rust trace diff; do after P1-f so text-only deltas stay clean first |
+| **P1-h** *(conditional)* | Agenda tie-break surface + silence path (**F11**): Python prompts `"speaker breaks the tie"` with kind `tiebreak`, faction-name ids, and `candidates = tied if tied else choices` at every effect site (agenda.py:426); Rust diverges in prompt/kind/ids per site and lacks the silence branch | `agenda_effects.rs` + effect sites located at spec time | **Execute only if T6 shows tie-break hits after P1-g lands** (zero hits so far); otherwise record as a documented known difference. Mixes surface text with option-set behavior → audit each Rust site against the shared oracle function first, same review posture as P1-f |
 
 **Phase-1 exit criterion:** full-workspace gates green; T6 re-run (seed 83000001, rot 0, rounds 4,
 greedy 0.0001, `--full-features`, correct Python table) shows comparable prefixes extended past
@@ -76,9 +77,12 @@ package lands. Then a single consolidated evidence section + handover, compact.
 **Findings backlog added by completed packages:** F8 and F9 (both from P1-d — reaction outer `"cards"`
 payload; single-card ask asymmetry) are deferred to a later package after P1-f so window-shape changes
 stay isolated. F4/F5/F6/F7 remain with P1-g as recorded. From P1-e: **F10** (SPEAKER_CHANGED never
-emitted in Rust — Phase 2 event coverage), **F11** (agenda tie-break surface + silence path — beyond a
-mechanical rename; zero T6 hits), **F12** (jamming system option set lacks Python's adjacency expansion,
-home exclusion, and galaxy dependency — P1-g family).
+emitted in Rust — verified inert: no oracle content ability listens to SPEAKER_CHANGED, the three
+Python emit sites (agenda.py:812, relics.py:387, strategy.py:743) are observational only; anchored to
+Phase-2 item 3 for completeness), **F11** (agenda tie-break surface + silence path — beyond a
+mechanical rename; zero T6 hits so far; owned by the conditional P1-h row in the table above), **F12** (jamming
+system option set lacks Python's adjacency
+expansion, home exclusion, and galaxy dependency — folded into the P1-g row above).
 
 ## Phase 2 — game-flow alignment 
 
@@ -95,7 +99,9 @@ frontier-model review of the spec *before* implementation, then normal failing-t
    after/when, GROUND_FORCE_COMMITTED after, SUSTAIN_DAMAGE_USED after+when, GROUND_DICE_ROLLED
    after, RETREAT_ANNOUNCED after, defender COMBAT_ROUND_STARTED variant, HITS_ASSIGNING before ×2);
    remove or gate the 1 Rust-extra (PRODUCTION_USED "your units use PRODUCTION"); align 3–4 event
-   names (SPACE_COMBAT_ENDED↔WON; INVASION_STARTED↔BEGAN ×2) with emit-site parity verification.
+   names (SPACE_COMBAT_ENDED↔WON; INVASION_STARTED↔BEGAN ×2) with emit-site parity verification;
+   also emit SPEAKER_CHANGED, which Python emits in three places and Rust never does (F10 — verified
+   inert: zero oracle content listeners, so behavioral equivalence is unaffected either way).
 4. **WHEN/AFTER semantic fix** (strategy-card window: Python `Relation.WHEN` fires before completion,
    Rust `After` after resolution — different observable/mutable state at the reaction point).
    Highest-risk single line of Phase 2; gets its own review and its own differential evidence.
