@@ -1364,88 +1364,90 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 
 
-## Handover (P1-a4 complete)
+
+## Handover (P1-b complete)
 
 Objective:
 Align the Rust training surface to the Python oracle decision-by-decision so shared checkpoints
 stay transferable and residual differences are auditable per label class. Phase 1 sub-packages;
-this handover closes P1-a4 (ac{} action-card trade shape — Hacan's Arbiters, finding F3).
+this handover closes P1-b (production-payment prompt/label alignment — both payment sites in
+`crates/ti4-engine/src/production.rs`).
 
-Oracle commit: 37061c511a4780d4c0719e0342533a498cd4b457 (branch codex/fully-learned-policy;
-repo D:/Projects/ti4-engine read-only throughout this session, verified byte-untouched).
+Oracle commit:
+37061c5 (`codex/fully-learned-policy`, read-only; not needed for this package).
 
-Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a4 complete
-(this commit). Remaining ready packages: **P1-b** (`no`/`yes` answer vocabulary + blind
-decline/follow secondary windows — the residual class now visible at every faction's idx=1 break)
-and P1-c…P1-f per the label inventory; F2 (status-phase draw) and F1 (leaders) stay Phase-2 /
-separately reviewed. Awaiting operator ordering call, default P1-b.
+Active milestone/package:
+M09 parity work, Phase 1 of the continuation plan. P1-b complete and committed (see branch below);
+next ready package is **P1-d** (expedition/expansion prompt wording) per the default order b→d→e→c→f→g.
 
 Status and completed acceptance criteria:
-- Terms.action_card added with oracle semantics: flat 1.0 in both worth_to_receiver and
-  cost_to_giver; describe appends "the action card {card}"; is_empty includes it.
-- Legality in oracle order after can-pay: no-Arbiters-at-table rejection (94.3) before per-side
-  holding checks ("{side} does not hold that action card"); ability resolved through the faction
-  record's abilities list at the default source set (hacan carries "arbiters" — F3 retraction).
-- Proposal: exactly one option ac{card}:1, card = min(hand) (alias order = Python's sorted head),
-  label "sell the action card {card} for 1 trade good", payload {"action_card": card}; gated on
-  either chair having Arbiters + non-empty hand + partner ≥ 1 trade good; positioned after ss and
-  notes, before commodity shapes (oracle option order); counter path mirrors roles automatically.
-- Parse: ac{card}:{price} branch before pn; unpriced form → no deal. Settlement moves the card
-  (first-match removal) with the buyer paying via the received leg (oracle resolve verified
-  line-by-line).
-- All in crates/ti4-engine/src/transactions.rs only; spec recorded pre-implementation per AGENTS.md.
+- Spec recorded pre-implementation in evidence §"## P1-b — payment prompt/label alignment", with
+  oracle citations (`engine/production.py` `_pay_prompt` loop ~267, planet labels ~308) and findings
+  F4 (MC trade-good worth 2 vs flat 1 + `available()` undercount), F5 (single-option auto-pick),
+  F6 (xxcha cross-source options + emissions). All deferred to new package **P1-g** (after P1-f).
+- Two failing tests written first, confirmed red on the prompt assertions, then green:
+  `the_payment_prompt_names_the_remaining_debt_and_its_kind` and
+  `the_production_window_payment_prompt_names_the_remaining_debt_and_its_kind`.
+- Site A (free-function payment loop) now prompts per iteration `"pay {cost-paid} more {kind}"`;
+  site B (`ProductionWindow::Stage::Paying`) prompts `"pay {owed} more resources"`; planet labels at
+  both sites gain the kind suffix. Option ids and payloads unchanged.
+- New finding **F7** (found while writing tests): Rust offers zero-worth planets as payment options;
+  Python's `_planet_payment_values` filters `worth > 0`. Recorded for P1-g; test documents current
+  behavior in that branch with a comment pointing at F7.
 
-Current branch and HEAD: codex/stage1-parity-fixes; this commit follows ca5333a (F3 correction)
-and cd863f9 (P1-a3).
+Current branch and HEAD:
+Branch `codex/stage1-parity-fixes`; HEAD is the P1-b commit (message starts "P1-b: payment prompt/label
+alignment — oracle wording at both production-payment sites"); parent `a1a786e`.
 
-Working-tree state: clean apart from crates/ti4-engine/src/transactions.rs, the evidence file and
-this file. out/ is gitignored.
+Working-tree state:
+Clean after the P1-b commit (verify with `git status --short --branch`). Only in-scope paths changed:
+`crates/ti4-engine/src/production.rs`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md`,
+`plans/CONTINUATION_PLAN.md`.
 
 Tests last run and exact results:
-- cargo fmt -p ti4-engine --check: clean.
-- cargo test -p ti4-engine: 768 lib + 5 doctests pass (was 762+5; +6 new tests, one existing test
-  extended for the describe text).
-- cargo test -p ti4-training: 98 pass.
-- cargo clippy -p ti4-engine -p ti4-training --all-targets: zero warnings (includes a documented
-  #[expect(clippy::large_enum_variant)] on enum Stage — Answering(Offer) crossed the size threshold
-  when Terms grew; boxing rejected as allocation churn).
-- cargo check --workspace --all-targets: clean.
+- `cargo test -p ti4-engine`: 770 lib passed + 5 doctests (was 768+5; +2 new).
+- `cargo test -p ti4-training`: 98 passed.
+- `cargo fmt -p ti4-engine --check`: clean. Clippy `-p ti4-engine --all-targets`: zero warnings
+  (one `type_complexity` in the new test struct fixed by a `RecordedPayment` type alias).
+  `cargo check --workspace`: clean.
 
-Compatibility evidence (seed 83000001 rot 0, rounds 4, greedy temp 0.0001, full features):
-- py-vs-rust vs out/py_ff_learn_83000001_p1a2.json: max_score_gap 0.000000 and 0 choice mismatches
-  within the common prefix for all six factions; residuals exactly the recorded classes (F1 leader
-  components at hacan/xxcha@1; blind decline/follow secondaries — P1-b/Phase-2). The diff walk
-  breaks at each faction's first structural mismatch (idx=1 here), so comparable prefixes end
-  before trade windows open: this run proves no regression, not ac-parity within a shared state.
-  Rust trace: out/rust_ff_83000001_p1a4.json (1136 decisions).
-- ac vocabulary (strict ^ac[a-z0-9_]+:\d+$ extraction): Python 55 appearances / 0 chosen;
-  Rust p1a4 40 / 0. Every alias on both sides is a member of the oracle's action_cards.json
-  (142 aliases) — no fabrication. Different sets = hand composition after each faction forked at
-  idx=1 plus F2 (no status-phase draw in Rust). Neither engine ever chose an ac option here.
-- rust-vs-rust p1a3→p1a4: l1z1x/letnev/sol/xxcha identical through their whole common runs; the
-  only structural deltas are hacan@143 (+acupgrade:1) and jolnar@81 (+acwar_rider:1) — exactly one
-  added option each, no removals, shared scores bit-equal, no downstream choice fork. Pure surface
-  expansion, zero behavioural change.
+Compatibility evidence:
+- **Key mechanism finding:** prompt and option-label text are scoring features for the learned decider
+  (`crates/ti4-policy/src/features.rs` ~135/143-149/271-280 tokenize both). Label alignment is therefore
+  feature-space alignment toward the Python-trained vocabulary, not cosmetics. Confirmed experimentally:
+  rust-vs-rust p1a4→p1b shows the first differing decision in all six factions is exactly a payment
+  prompt-text change (ids/choice still equal), and the first real choice fork per faction lands on a
+  later payment decision at identical board state with the same checkpoint weights.
+- T6 differential `out/py_ff_learn_83000001_p1a2.json` vs `out/rust_ff_83000001_p1b.json` (1119 decisions):
+  all six factions max_score_gap=0.000000, choice_mismatches_within_common=0; first structural mismatch
+  per faction is exactly the recorded classes (F1 leader components for hacan/xxcha idx=1; blind
+  decline/follow secondaries vs Python inline action phase / no-yes replenishment for the other four).
 
 Decisions made and rationale:
-- min(hand) instead of collect+sort: ActionCardId orders by alias (Ord derive), so the sorted head
-  is a single iterator pass; behaviour identical to Python's sorted(...)[0].
-- ac payload carries the card alias as with notes, keeping aliases out of feature buckets.
-- #[expect] on Stage rather than boxing Offer: windows are rare/short-lived; allocation churn not
-  justified by a size lint (documented at the site).
+- P1-b kept to wording + kind suffixes only; all option-set/value/timing mechanics (F4-F7) deferred to
+  P1-g so behavioral changes stay isolated in one reviewed package.
+- F7 branch of the new test asserts *current* Rust behavior (zero-worth planet offered, two asks) with a
+  comment marking it non-oracle; will be rewritten when P1-g lands.
+- Plan updated: P1-b row marked done with the feature-space finding; decision point 1 resolved (b done,
+  next d); P1-g row created in the Phase 1 table.
 
-Open review findings or blockers: none blocking. F1 (leaders) and F2 (status-phase draw) remain
-Phase-2 items needing separate reviewed packages; full action-card parity in real games requires
-F2 on top of this package's surface mechanics. P1-b is the next Phase-1 surface gap.
+Open review findings or blockers:
+None blocking. Open items: F4/F5/F6/F7 (P1-g), Phase-2 items pending frontier review per plan,
+T6 protocol reminders below still apply.
 
-Protocol warning (standing): single_game_trace silently ignores unknown flags — always verify
-head.temperature in trace metadata before any differential. Strict ac-id extraction: startswith("ac")
-false-matches "accept"/"action_card|..." rows; use the regex above for vocabulary counts.
+Protocol warnings (carry over):
+- Python traces require `--table learner_profiles` to match Rust's table selection.
+- Rust greedy flag is `--greedy-temperature 0.0001`; the example's arg parser ignores unknown flags.
+- Strip the six preamble lines from `single_game_trace` stdout before JSON parsing (`tail -n +7`).
+- The diff script counts the first structurally divergent decision in prompt mismatches (artifact).
+- Prompt/label text moves learned scores: expect rust-vs-rust choice cascades after any label change;
+  score-gap zero on common prefixes is the no-regression gate.
 
-Next exact action/command: operator ordering call (default P1-b). If approved, write the
-pre-implementation spec for P1-b in plans/evidence/STAGE2-STALL-INVESTIGATION.md covering the
-no/yes answer vocabulary and blind decline/follow secondary windows before any code edit; then
-failing tests → implementation → gates → T6 re-run → evidence/state → commit.
+Next exact action/command:
+Start P1-d per `plans/CONTINUATION_PLAN.md` Phase 1 (expedition/expansion prompt wording): read-only
+oracle inspection of the relevant Python prompts, record spec pre-implementation in evidence §P1-d with
+failing tests first, implement, run the gate set + T6 re-run vs the existing Python artifact.
 
-Files to read first after compaction: AGENTS.md; plans/SCOPED_PERMISSIONS.md; this file's handover;
-plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a4 section); crates/ti4-engine/src/transactions.rs.
+Files to read first after compaction:
+`plans/CONTINUATION_PLAN.md`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (P1-b section), this file,
+then the P1-d row of the plan's Phase 1 table.

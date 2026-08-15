@@ -190,7 +190,9 @@ fn pay_with_observation(
                 ChoiceOption::labelled(
                     format!("exhaust|{planet}"),
                     PAY_KIND,
-                    format!("exhaust {planet} for {worth}"),
+                    // Oracle wording: the label names what is being spent
+                    // (engine/production.py payment loop).
+                    format!("exhaust {planet} for {worth} {}", spend_name(kind)),
                 )
                 .with("worth", worth)
                 .with("owed", cost - paid)
@@ -209,7 +211,13 @@ fn pay_with_observation(
             return Ok(false);
         }
 
-        let choice = Choice::new(player.clone(), format!("pay {cost}"), options);
+        // Oracle wording: each iteration names the remaining debt and its kind
+        // (`pay {cost - paid} more {kind}` in engine/production.py).
+        let choice = Choice::new(
+            player.clone(),
+            format!("pay {} more {}", cost - paid, spend_name(kind)),
+            options,
+        );
         let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
         if answer.id == "trade_good" {
             if let Some(seat) = state.player_mut(player) {
@@ -1072,7 +1080,8 @@ impl Window for ProductionWindow {
                         ChoiceOption::labelled(
                             format!("exhaust|{planet}"),
                             PAY_KIND,
-                            format!("exhaust {planet} for {worth}"),
+                            // Same oracle wording as the free `pay` function.
+                            format!("exhaust {planet} for {worth} resources"),
                         )
                         .with("worth", worth)
                         .with("owed", *owed)
@@ -1093,9 +1102,11 @@ impl Window for ProductionWindow {
                 if options.is_empty() {
                     return None;
                 }
+                // Oracle wording: the remaining debt and its kind
+                // (`pay {cost - paid} more {kind}` in engine/production.py).
                 Some(Choice::new(
                     self.player.clone(),
-                    format!("pay {owed}"),
+                    format!("pay {owed} more resources"),
                     options,
                 ))
             }
@@ -1276,6 +1287,8 @@ pub fn resolve(
 mod tests {
     use ti4_model::content_types::POK;
 
+    use std::{cell::RefCell, rc::Rc};
+
     use super::*;
     use crate::fixtures::{a_placed_planet, game, put, put_on_planet};
 
@@ -1361,6 +1374,125 @@ mod tests {
                 )
                 .unwrap()
             );
+        }
+    }
+
+    type RecordedPayment = (String, Vec<String>);
+
+    struct PaymentPromptRecording(Rc<RefCell<Vec<RecordedPayment>>>);
+
+    impl crate::choice::Decider for PaymentPromptRecording {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            let labels = choice
+                .options
+                .iter()
+                .map(|option| option.label.clone())
+                .collect();
+            self.0.borrow_mut().push((choice.prompt.clone(), labels));
+            Ok(choice.options[0].clone())
+        }
+    }
+
+    #[test]
+    fn the_payment_prompt_names_the_remaining_debt_and_its_kind() {
+        // Oracle payment loop (engine/production.py): each iteration asks `pay {cost - paid}
+        // more {kind}` and a planet's option label names the kind being spent.
+        for (kind, name) in [
+            (Spend::Resources, "resources"),
+            (Spend::Influence, "influence"),
+        ] {
+            let (mut state, system, planet) = seated();
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), player());
+            let worth = planet_value(ContentStore::embedded(), POK, &planet, kind);
+            state.player_mut(&player()).unwrap().trade_goods = 1;
+
+            let cost = if worth > 0 { worth + 1 } else { 1 };
+            let recorded = Rc::new(RefCell::new(Vec::new()));
+            let mut table = Table::new();
+            table.seat(player(), Box::new(PaymentPromptRecording(recorded.clone())));
+
+            assert!(
+                pay(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut table,
+                    &player(),
+                    cost,
+                    kind,
+                )
+                .unwrap()
+            );
+
+            let seen = recorded.borrow();
+            if worth > 0 {
+                // Two iterations: the planet first (the decider takes option[0]), then the good.
+                assert_eq!(
+                    seen.len(),
+                    2,
+                    "planet then trade good, each asked separately"
+                );
+                assert_eq!(seen[0].0, format!("pay {cost} more {name}"));
+                assert_eq!(
+                    seen[0].1,
+                    vec![
+                        format!("exhaust {planet} for {worth} {name}"),
+                        "spend a trade good".to_owned(),
+                    ]
+                );
+                assert_eq!(seen[1].0, format!("pay 1 more {name}"));
+            } else {
+                // F7 (deferred to P1-g): Rust still offers the zero-worth planet; the oracle
+                // would not. Wording is asserted for both iterations as currently offered.
+                assert_eq!(seen.len(), 2);
+                assert_eq!(seen[0].0, format!("pay 1 more {name}"));
+                assert_eq!(
+                    seen[0].1,
+                    vec![
+                        format!("exhaust {planet} for 0 {name}"),
+                        "spend a trade good".to_owned(),
+                    ]
+                );
+                assert_eq!(seen[1].0, format!("pay 1 more {name}"));
+            }
+        }
+    }
+
+    #[test]
+    fn the_production_window_payment_prompt_names_the_remaining_debt_and_its_kind() {
+        // Same oracle wording for the window's paying stage (resources only).
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        state.player_mut(&player()).unwrap().trade_goods = 1;
+        let mut window =
+            ProductionWindow::new(&state, ContentStore::embedded(), POK, &player(), &system);
+        window.stage = Stage::Paying {
+            id: "cruiser".to_owned(),
+            owed: 3,
+            made: 1,
+        };
+
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a payment question is pending");
+        assert_eq!(choice.prompt, "pay 3 more resources");
+        for option in &choice.options {
+            if option.id.starts_with("exhaust|") {
+                let worth = planet_value(ContentStore::embedded(), POK, &planet, Spend::Resources);
+                assert_eq!(
+                    option.label,
+                    format!("exhaust {planet} for {worth} resources")
+                );
+            } else {
+                assert_eq!(
+                    (option.id.as_str(), option.label.as_str()),
+                    ("trade_good", "spend a trade good")
+                );
+            }
         }
     }
 

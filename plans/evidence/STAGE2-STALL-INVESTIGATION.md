@@ -947,3 +947,116 @@ F2 (game flow — separately reviewed). F1 leaders unchanged. P1-b answer vocabu
 **Permission class / bounds.** Local writes: `crates/ti4-engine/src/transactions.rs` (+ tests),
 evidence, execution state. No network/process; oracle repo read-only. Artifact bound: one T6 re-run
 trace in out/.
+
+## P1-b — payment prompt/label alignment (implemented)
+
+**Context.** The Phase 1 class table attributed `"pay N more influence"` /
+`"pay N more resources"` vs Rust's `"pay N"` to a bidding loop. Scoping corrected that: the prompts
+are **production-payment prompts**, not auction bids. Oracle source (read-only): `engine/production.py`
+iterative payment loop — when a cost is not yet covered it builds one-option-per-source options and asks
+`f"pay {cost - paid} more {kind}"`; planet option id is `exhaust|{planet}` (or the xxcha cross-source form
+`exhaust|{planet}|{source}`, see F6), label `"exhaust {planet} for {worth} {kind}"` (`+ " using its
+{source}"` when cross-source); trade-good option id/label `trade_good` / `"spend a trade good"`. Rust has
+two corresponding iterative sites:
+
+- **Site A** — free function `pay_with_observation`, `crates/ti4-engine/src/production.rs` ~212: prompt is
+  `format!("pay {cost}")` with the *full* cost on every iteration; planet labels `"exhaust {planet} for
+  {worth}"` (no kind). Callers in real games: `faction_abilities.rs:432`, `production.rs:365/491/613`.
+- **Site B** — `ProductionWindow::pending_choice`, `Stage::Paying` (~1098): prompt `format!("pay {owed}")`
+  (remaining, but no "more"/kind); same label style; window pays `Spend::Resources` only.
+
+**In scope.** Originally scoped "text only"; see the key finding below — because prompt and label
+tokens are scoring features for the learned decider, aligning the text *is* a feature-space alignment.
+The in-scope list is unchanged; one atomic commit.
+1. Site A: per-iteration prompt → `format!("pay {} more {}", cost - paid, spend_name(kind))`; planet option
+   labels gain the kind suffix → `"exhaust {planet} for {worth} {kind}"`. `trade_good` label unchanged
+   (already oracle-equal). Payloads (`worth`/`owed`/`payment_kind`) and ids unchanged.
+2. Site B: prompt → `format!("pay {owed} more resources")`; planet option labels gain `"resources"`.
+3. Failing tests first at both sites asserting the exact per-iteration prompt sequence (multi-iteration
+   cost so the decreasing owed is exercised) and kind-suffixed labels, for both Spend kinds at Site A.
+
+**Behavioral gaps found while scoping — OUT of scope here; recorded as findings, scheduled as P1-g:**
+- **F4**: Python trade-good payment worth is `2 if "mc" in technologies else 1`; Rust uses flat 1 at both
+  sites and counts goods ×1 in `available()` → an MC holder can be told a cost is unpayable that the oracle
+  deems payable (legality-level divergence, not cosmetic).
+- **F5**: Python auto-picks when exactly one option exists (`options[0] if len(options) == 1`, no ask);
+  Rust always asks → extra degenerate decision points in Rust traces and rollout credit.
+- **F6**: xxcha breakthrough `xxchabt` ("Archon's Gift") cross-source payment options
+  `exhaust|{planet}|{source}` (with the oracle's affordability guard on alternates) are absent from Rust;
+  Python also emits `PLANET_EXHAUSTED` and, for cross-source spends, `BREAKTHROUGH_TRIGGERED` during
+  payment — Rust emits nothing. (No reaction windows bind to those events in either engine per T6b audit,
+  so the emission gap is observability-level; the option-set gap is surface-level.)
+- **F7** (found while writing P1-b tests): Python's `_planet_payment_values` excludes planets whose
+  value of that kind is 0 (`out = [(kind, ordinary)] if ordinary > 0 else []`); Rust offers *every*
+  spendable planet at both payment sites, so a zero-worth "exhaust X for 0 influence" option appears —
+  and the blind `choose` fallback takes `options[0]`, which can waste a ready planet on a worthless
+  exhaust. Option-set divergence; same family as F4–F6.
+
+**P1-g scope (later package):** F4+F5+F6+F7 with failing tests first, oracle citations, and a rust-vs-rust
+trace diff proving intended deltas only. Recorded in CONTINUATION_PLAN.md Phase 1 table after P1-f.
+
+**Out of scope here.** Option id sets/ordering, payment values, window shape (auto-pick), event emission —
+all deferred to P1-g/Phase 2 as recorded above; no reaction-window work.
+
+**Verification plan.** `cargo fmt -p ti4-engine`; crate tests + doctests; 98 training tests; clippy zero
+warnings all targets; workspace check. New Rust T6 trace (seed 83000001, rot 0, rounds 4, greedy
+`--greedy-temperature 0.0001`, `--full-features`): py-vs-rust diff shows no regression on common prefixes
+(max_score_gap 0, choice mismatches 0); grep confirms payment prompts appear in corrected form
+(`pay N more influence|resources`; kind-suffixed exhaust labels) in post-break regions.
+
+**Key finding — prompt and label text are scoring features.** `crates/ti4-policy/src/features.rs`
+tokenizes both the choice prompt and every option label: line ~135 extends option identity tokens with
+`tokens(&option.label)`; lines ~143-149 cross prompt tokens with option ids (`prompt-option:{t}:{id}`,
+`prompt-bigram:...`); lines ~271-280 add `prompt-kind` / `prompt-option:{ptoken}:{otoken}` features.
+Consequences:
+
+1. A trained profile scores a payment decision *differently* when the wording differs, even at an
+   identical board state — so "label alignment" for any learned-decider surface is feature-space
+   alignment, not cosmetics. This applies to every Phase 1 package (P1-a/a2/a3 prompt/label changes
+   already moved features; their rust-vs-rust cascades were partly this mechanism on top of the
+   intended identity deltas).
+2. The checkpoint under test (`stage1_pg_six_to5000_20260810.json`) is PYTHON-trained, i.e. its weights
+   saw Python's exact wording `"pay {n} more {kind}"` / `"exhaust {planet} for {worth} {kind}"`. Before
+   P1-b, Rust fed off-distribution prompt/label tokens at every payment decision; after P1-b the token
+   streams match (same strings through the tokenizers T6 already proved equivalent on shared text).
+
+**Experimental confirmation.** Rust-vs-Rust diff `out/rust_ff_83000001_p1a4.json` →
+`out/rust_ff_83000001_p1b.json`: in all six factions the *first* differing decision is exactly a payment
+prompt-text change (option ids and chosen id still equal there — e.g. l1z1x idx=3 `"pay 5"` →
+`"pay 5 more resources"`). The first genuine choice fork per faction lands on a later payment decision at
+an identical board state (same checkpoint weights, same features except the new tokens): jolnar@48
+(`trade_good` → `exhaust|arinam`), letnev@29 (`exhaust|wrenterra` → `trade_good`); subsequent records are
+post-fork cascade. The p1b trace's per-decision raw feature dump shows the new tokens present, e.g.
+jolnar payment: `prompt-option:more:{planet}`, `option:resources`, `payload-number-kind:worth:pay`.
+
+**Implementation summary.** Site A (`pay_with_observation`): per-iteration prompt
+`format!("pay {} more {}", cost - paid, spend_name(kind))`; planet option labels gain the kind suffix.
+Site B (`ProductionWindow::pending_choice`, `Stage::Paying`): prompt `"pay {owed} more resources"`,
+labels gain `"resources"`. Payloads and ids untouched; zero-worth planets remain offered (F7). New tests:
+`the_payment_prompt_names_the_remaining_debt_and_its_kind` (both Spend kinds, multi-iteration owed
+sequence, kind-suffixed labels; documents F7 behavior in the worth==0 branch) and
+`the_production_window_payment_prompt_names_the_remaining_debt_and_its_kind`. Both written first and
+confirmed red (`"pay 3"` vs `"pay 3 more resources"`), then green.
+
+**Verification.** `cargo fmt -p ti4-engine --check` clean; ti4-engine lib tests 770 passed + 5 doctests
+(+2 new); ti4-training 98 passed; clippy zero warnings on all targets (fixed one `type_complexity` by
+factoring a `RecordedPayment` alias in the test module); workspace check clean. T6 re-run
+(`out/rust_ff_83000001_p1b.json`, 1119 decisions; same args/checkpoint as prior runs) vs
+`out/py_ff_learn_83000001_p1a2.json`: all six factions `max_score_gap=0.000000`,
+`choice_mismatches_within_common=0`; first structural mismatch per faction remains exactly the recorded
+classes (hacan/xxcha idx=1 missing leader components — F1; jolnar/l1z1x/letnev/sol idx=1 blind
+decline/follow secondary vs inline Python action phase / no-yes replenishment — P1-c/P1-f). The one
+`prompt_text_mismatches=1` per affected faction is the known diff-script artifact (the structurally
+divergent decision itself counts in prompt comparison before the break).
+
+**Residuals.** F4/F5/F6/F7 recorded above remain open for P1-g. Because of the feature-text coupling,
+every future Phase 1 package that changes prompt/label text at a given decision type should expect its
+rust-vs-rust diff to show choice cascades *from* those decisions onward — that is the expected signal of
+feature-space movement toward the Python-trained vocabulary, not a regression; score-gap checks on the
+common prefix remain the no-regression gate.
+
+**Artifacts.** `out/rust_ff_83000001_p1b.txt`, `out/rust_ff_83000001_p1b.json`, `out/rust_ff_p1b.err`.
+Oracle repo untouched (not needed for this package).
+
+**Permission class / bounds.** Local writes: `crates/ti4-engine/src/production.rs` (+ its test module),
+plans evidence/state, out/ trace artifacts. No network/process; oracle repo not needed (no Python).

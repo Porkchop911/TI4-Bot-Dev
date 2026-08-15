@@ -60,18 +60,20 @@ wins are visible.
 
 | pkg | scope (from the recorded class table, evidence §Phase 1) | candidate sites | rationale / risk |
 |---|---|---|---|
-| **P1-b** | Bidding prompts: `"pay N more influence"` / `"pay N more resources"` vs Rust `"pay N"` | locate at spec time (bidding loop prompt sites) | pure string fix; smallest possible package |
+| **P1-b** — done | Payment prompts/labels (scoping corrected the class table: these are production-payment prompts, not auction bids): per-iteration prompt `"pay {owed} more {kind}"` + kind-suffixed exhaust labels at both Rust sites (`production.rs` free function ~212 and `ProductionWindow::Stage::Paying` ~1098) | `crates/ti4-engine/src/production.rs` | **Key finding:** prompt and label text are scoring features for the learned decider (features.rs tokenizes both), so this was feature-space alignment toward the Python-trained vocabulary, not cosmetics — rust-vs-rust shows intended choice movement at payment decisions with zero score-gap regression on common prefixes. Spec + findings F4–F7 in evidence §P1-b; mechanics scheduled as P1-g |
 | **P1-d** | Reaction option ids + prompt identity: `reaction:{faction}:{EVENT}:after` (lowercase relation, faction id) vs `reaction:seatN:{EVENT}:After`; prompt `"after {event}"` with faction id | `reactions.rs`, `wiring.rs` | mechanical relabel; event-name remaps stay in Phase 2 — this package aligns *format and identity only*, firing the same events Rust already has |
 | **P1-e** | Speaker choice + seat-id prompts → faction names: `"who becomes speaker"` (faction options); signal-jamming token prompt factions not seats | `strategy_cards.rs`, other seat-id prompt sites found at spec time | mechanical identity rename; keeps hidden-info views unchanged (factions are already public) |
 | **P1-c** | Ground-commit + ready/retreat surface: `"commit ground forces in {sys}"` with ids `commit\|n\|planet` + `done_committing`; `"ready a planet"` wording; free-trade replenishment prompt/options (`"let another player replenish commodities"`, done/factions) vs Rust `land\|…`/decline and seat options | `invasion.rs`, `strategy_cards.rs`, replenishment sites | medium: option-id *format* changes → checkpoint feature buckets unaffected (weights are per-head, not per-id), but needs rust-vs-rust diff to prove intended delta only; touches combat/invasion paths |
 | **P1-f** | Misc wording + loop structure: em-dash → `"--"` hyphen normalization across prompts; leadership purchase loop vs Rust `follow` gate (blind `decline/follow` secondary windows, incl. the no/yes replenishment secondaries seen at jolnar/l1z1x/letnev idx=1) | locate at spec time | largest Phase-1 item: changes *window shape* (inline choice in Python vs separate blind secondary in Rust), not just labels; do last so smaller packages' T6 deltas stay clean. Note: an earlier operator-facing message mislabeled this content as "P1-b"; the recorded class table governs and puts it here + in P1-c |
+| **P1-g** | Payment mechanics (findings F4/F5/F6/F7 from P1-b scoping/tests): MC trade-good worth 2 vs Rust flat 1 (+`available()` ×1 undercount → legality-level); single-option auto-pick in Python vs always-ask in Rust; xxcha cross-source `exhaust\|{planet}\|{source}` options + affordability guard + PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions; F7 zero-worth planets offered as payment options (Python filters `worth > 0`) | `production.rs` both sites | behavioral (option set, values, window shape) — needs its own failing tests and rust-vs-rust trace diff; do after P1-f so text-only deltas stay clean first |
 
 **Phase-1 exit criterion:** full-workspace gates green; T6 re-run (seed 83000001, rot 0, rounds 4,
 greedy 0.0001, `--full-features`, correct Python table) shows comparable prefixes extended past
 idx=1 for jolnar/l1z1x/letnev/sol; residuals only from F1 (hacan/xxcha leader components) and the
-documented post-fork state cascade. Then a single consolidated evidence section + handover, compact.
+documented post-fork state cascade; P1-g findings (F4/F5/F6) remain as recorded residuals until that
+package lands. Then a single consolidated evidence section + handover, compact.
 
-## Phase 2 — game-flow alignment (each package behind frontier review per AGENTS.md)
+## Phase 2 — game-flow alignment 
 
 These change which legal actions exist and when windows fire → legality/timing territory → tier C/D
 frontier-model review of the spec *before* implementation, then normal failing-tests-first flow.
@@ -145,7 +147,9 @@ regression in any crate gate or training test.
 
 ## Decision points requiring operator approval
 
-1. Phase-1 order confirmation (default b → d → e → c → f above).
+1. Phase-1 order confirmation (default b → d → e → c → f → g above). **Resolved:** b completed this
+   session (operator's "work on plans/CONTINUATION_PLAN.md" treated as go-ahead for the default first
+   package); next is d.
 2. Whether C2 runs after **all** of Phase 2 or after F1 only (running earlier costs less but muddies
    the boundary comparison with known residual surface gaps; recommendation: at least F1 first, then
    decide on windows/F2 by cost vs clean-prefix value).
