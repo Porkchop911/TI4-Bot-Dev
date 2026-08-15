@@ -358,13 +358,6 @@ pub const ANSWER_KIND: &str = "transaction";
 /// id tokenize differently at every action-phase decision.
 const OPEN_PREFIX: &str = "component|trade|";
 
-/// What a note sells for.
-///
-/// One price for every note, which is a simplification the oracle prices per card. Recorded as
-/// one rather than presented as the rule: a flat price makes a Research Agreement cost what a
-/// Ceasefire does.
-const NOTE_PRICE: i32 = 2;
-
 /// What each kind of note is worth to its receiver, in trade goods.
 ///
 /// Ported from the oracle's `promissory.WORTH` table; an unknown alias prices at the oracle's
@@ -406,6 +399,47 @@ fn note_worth(state: &GameState, content: &ContentStore, note: &str) -> f64 {
         .iter()
         .find(|(name, _)| *name == alias)
         .map_or(1.5, |(_, worth)| *worth)
+}
+
+/// What a note sale asks for, in whole trade goods — the oracle's
+/// `int(round(_note_worth(note)))`, called *without* a game. That omission matters: a Trade
+/// Agreement prices from its flat table row (2.5) rather than its live value on the table.
+/// Live worth still flows through the `net`/`their_net` payloads; only the id and label use
+/// this
+/// price, so both engines name the same deal when they list it.
+fn note_option_price(note: &str) -> i32 {
+    let worth = if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
+        4.0
+    } else {
+        let alias = crate::promissory::alias_of(note);
+        NOTE_WORTH
+            .iter()
+            .find(|(name, _)| *name == alias)
+            .map_or(1.5, |(_, worth)| *worth)
+    };
+    py_round_half_even(worth)
+}
+
+/// Python's `round`: halves go to the *even* integer (`round(2.5) = 2`), not away from zero as
+/// Rust's `f64::round` does. The worth table only ever produces whole numbers and exact `.5`
+/// values (both binary-exact), so this is exact for it; a half-away-from-zero port would price
+/// a Trade Agreement at 3 where the oracle asks 2, changing both ids and what deals demand.
+#[allow(
+    clippy::cast_sign_loss, // asserted non-negative above
+    clippy::cast_possible_truncation // asserted below 1e9, far inside `i32` range
+)]
+fn py_round_half_even(value: f64) -> i32 {
+    debug_assert!((0.0..1e9).contains(&value));
+    let floor = value.floor();
+    if (floor + 0.5 - value).abs() <= 1e-9 {
+        // An exact half: the even neighbour, computed in `f64` where integers stay exact (< 2^53)
+        return (if (floor % 2.0).abs() == 0.0 {
+            floor
+        } else {
+            floor + 1.0
+        }) as i32;
+    }
+    value.round() as i32
 }
 
 /// What giving a note costs (oracle `_note_cost`): support gives up a victory point for 3 trade
@@ -506,7 +540,10 @@ pub fn offer_options(
     // only note that could change hands was Support, so every other note in the corpus was
     // unreachable at any price.
     for note in crate::promissory::available_notes(state, content, proposer) {
-        if their_goods >= NOTE_PRICE {
+        // Each note prices itself (oracle `propose`): a Research Agreement is not on the table
+        // until its partner can pay what a technology costs.
+        let price = note_option_price(&note);
+        if price > 0 && their_goods >= price {
             // The alias goes in the payload rather than the id: token matching splits an option
             // id on "|", never ":", so a `pn{alias}` suffix would silently leak the note's kind
             // into every feature bucket (oracle `_priced` keeps ids clean for exactly this).
@@ -516,8 +553,8 @@ pub fn offer_options(
                 "alias".to_owned(),
                 Value::String(crate::promissory::alias_of(&note).to_owned()),
             );
-            let id = format!("pn{note}");
-            let label = format!("sell {note} for {NOTE_PRICE} trade goods");
+            let id = format!("pn{note}:{price}");
+            let label = format!("sell {note} for {price} trade goods");
             shapes.push((id, label, payload));
         }
     }
@@ -675,13 +712,17 @@ pub fn offer_from(
             },
         );
     }
-    if let Some(note) = id.strip_prefix("pn") {
+    if let Some(rest) = id.strip_prefix("pn") {
+        // `pn{note}:{price}` — the note id itself carries a colon (alias:faction), so the price
+        // is whatever follows its *last* one. An unpriced legacy form parses to no deal rather
+        // than inventing a price; the oracle would raise on it.
+        let (note, price) = rest.rsplit_once(':')?;
         return deal(
             Terms {
                 promissory: Some(note.to_owned()),
                 ..Terms::default()
             },
-            goods(NOTE_PRICE),
+            goods(price.parse().ok()?),
         );
     }
     if let Some(rest) = id.strip_prefix("cc") {
@@ -1328,7 +1369,10 @@ mod tests {
             .find(|option| option.id.starts_with("pn"))
             .cloned()
             .expect("a note is on the table");
-        let note = sale.id.trim_start_matches("pn").to_owned();
+        // The id carries the sale price: `pn{note}:{price}`.
+        let suffix = sale.id.trim_start_matches("pn");
+        let (note, _price) = suffix.rsplit_once(':').expect("priced note id");
+        let note = note.to_owned();
 
         let mut window = TradeWindow::open(&mut state, &a(), &b());
         window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &sale);
@@ -1350,6 +1394,92 @@ mod tests {
                 .contains(&note),
             "and is no longer a's to sell again"
         );
+    }
+
+    #[test]
+    fn note_option_prices_follow_the_oracle_table() {
+        // The oracle prices each sale at `int(round(_note_worth(note)))` with no game, so a
+        // Trade Agreement takes the flat 2.5 row rather than its live value; both `.5` rows are
+        // exact banker's-rounding cases (Python rounds half to even: round(1.5) = round(2.5) = 2).
+        assert_eq!(note_option_price("cf:hacan"), 2); // 1.5 -> 2, not away-from-zero 2 by luck
+        assert_eq!(note_option_price("ps:letnev"), 2);
+        assert_eq!(
+            note_option_price("ta:sol"),
+            2,
+            "flat row, not the live table"
+        );
+        assert_eq!(note_option_price("ra:jolnar"), 4);
+        assert_eq!(note_option_price("an:xxcha"), 3);
+        assert_eq!(note_option_price("convoys:hacan"), 3);
+        assert_eq!(note_option_price("ce:l1z1x"), 2);
+        assert_eq!(note_option_price("ms:sol"), 2);
+        assert_eq!(note_option_price("favor:xxcha"), 2);
+        assert_eq!(note_option_price("war_funding:letnev"), 2);
+        // Support is never sold for goods in either engine; the row exists so a support id
+        // priced anywhere else reads as the oracle would.
+        assert_eq!(note_option_price("support:hacan"), 4);
+    }
+
+    #[test]
+    fn note_sales_carry_their_own_price_in_id_and_label() {
+        let (_hub, mut state) = trading_partners();
+        // b can afford every price the table offers here.
+        state.player_mut(&b()).unwrap().trade_goods = 6;
+
+        // a (hacan) holds cf + ps + ta + convoys after the re-deal; `an` is withheld until its
+        // commander unlocks, which this scaffolding never does. BTreeMap key order: cf, convoys,
+        // ps, ta.
+        let offers = offer_options(&state, ContentStore::embedded(), &a(), &b());
+        let ids: Vec<&str> = offers
+            .iter()
+            .filter(|option| option.id.starts_with("pn"))
+            .map(|option| option.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "pncf:hacan:2",
+                "pnconvoys:hacan:3",
+                "pnps:hacan:2",
+                "pnta:hacan:2"
+            ]
+        );
+        let cf = offers
+            .iter()
+            .find(|option| option.id == "pncf:hacan:2")
+            .expect("the ceasefire is on the table");
+        assert_eq!(cf.label, "sell cf:hacan for 2 trade goods");
+    }
+
+    #[test]
+    fn note_sales_require_the_partner_to_afford_the_live_price() {
+        let (_hub, mut state) = trading_partners();
+        // b (jolnar) holds the Research Agreement. Its true price is 4; a flat 2 would have
+        // listed it for a partner holding only three trade goods.
+        state.player_mut(&a()).unwrap().trade_goods = 3;
+        let offers = offer_options(&state, ContentStore::embedded(), &b(), &a());
+        assert!(
+            !offers.iter().any(|option| option.id.starts_with("pnra")),
+            "the Research Agreement costs 4, the partner holds 3"
+        );
+
+        state.player_mut(&a()).unwrap().trade_goods = 4;
+        let offers = offer_options(&state, ContentStore::embedded(), &b(), &a());
+        assert!(offers.iter().any(|option| option.id == "pnra:jolnar:4"));
+    }
+
+    #[test]
+    fn a_priced_note_id_parses_back_into_the_same_deal() {
+        let (_hub, state) = trading_partners();
+        for id in ["pncf:hacan:2", "pnra:jolnar:4", "pnconvoys:hacan:3"] {
+            let deal = offer_from(&state, id, &a(), &b()).expect("recognised shape");
+            let (note, price) = id[2..].rsplit_once(':').expect("priced note id");
+            assert_eq!(deal.given.promissory.as_deref(), Some(note));
+            assert_eq!(deal.received.trade_goods, price.parse::<i32>().unwrap());
+        }
+        // No price suffix is not a recognised shape. The oracle would raise on the parse; this
+        // engine declines to guess rather than invent a deal.
+        assert!(offer_from(&state, "pncf:hacan", &a(), &b()).is_none());
     }
 
     #[test]

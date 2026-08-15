@@ -1363,71 +1363,73 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - Scoped permissions per `SCOPED_PERMISSIONS.md`: packages default to P0/P1.
 
 
-## Handover
 
-```
+## Handover (P1-a3 complete)
+
 Objective:
-Stage-2 stall diagnosis + cross-engine parity (Phase 1 surface alignment). P1-a and P1-a2
-complete; P1-a2 commit follows this handover. Next ready: P1-a3 (per-note pricing, :price id
-suffix, action-card trade shape).
-Oracle commit:
-37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — read-only throughout;
-re-verified clean after the P1-a2 differential run.
-Active milestone/package:
-Phase 1 surface alignment (post-M10, no package ID); safepoint 66fd234; chain on branch
-codex/stage1-parity-fixes: ... a84e18d → 8c628b6 (P1-a) → P1-a2 commit follows.
+Align the Rust training surface to the Python oracle decision-by-decision so shared checkpoints
+stay transferable and residual differences are auditable per label class. Phase 1 sub-packages;
+this handover closes P1-a3 (per-note trade pricing).
+
+Oracle commit: 37061c511a4780d4c0719e0342533a498cd4b457 (branch codex/fully-learned-policy;
+repo D:/Projects/ti4-engine verified byte-untouched again this session).
+
+Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a3 complete;
+next ready package is **P1-b** (secondary/off-answer vocabulary `no`/`yes` vs Rust
+`decline`/`follow`, plus the blind-vs-inline reaction windows it exposes).
+
 Status and completed acceptance criteria:
-P1-a done and committed (8c628b6): trade surface labels/ids/payloads match the oracle.
-P1-a2 implemented + verified (this handover's package): note/support ids embed faction names;
-G1 re-deal in rollout seated() so real games deal the five-note hands; FACEUP += convoys;
-available_notes = faceup exclusion + Alliance commander-unlock gate, ownership filter retired
-(oracle parity); ContentStore threaded through can_pay/why_illegal/resolve/offer_from.
-Differential (seed 83000001 rot 0 greedy full-features, learner table both sides):
-max_score_gap = 0.000000 on every faction's common prefix, zero choice mismatches; all residual
-structural divergences in previously-logged classes (F1 leader components; blind decline/follow
-secondaries). Rust-vs-rust P1-a→P1-a2: first divergences are exactly the intended note-surface
-changes.
-Current branch and HEAD:
-codex/stage1-parity-fixes @ 8c628b6 (P1-a) + uncommitted P1-a2: promissory.rs, transactions.rs,
-game.rs, rollout.rs, single_game_trace.rs (clippy hygiene only), evidence file, this handover.
-Working-tree state:
-Those six paths only; out/* gitignored. No unrelated changes.
+- Per-note sale pricing implemented in transactions.rs only: option id `pn{note}:{price}` with
+  price = oracle's no-game worth rounded half-to-even (ta flat row 2.5→**2**, ps/cf 1.5→2, ra 4,
+  an/convoys 3); label "sell {note} for {price} trade goods"; affordability guard at the live
+  price; offer_from parses the last-colon price (unpriced legacy form → no deal). NOTE_PRICE deleted.
+- `ac{}` action-card trades reclassified **oracle-inert** (TRADES_ACTION_CARDS is an empty set in
+  the oracle: never proposed, always rejected) — implementing it would be speculative divergence;
+  recorded to close the P1-a2 residual that had scheduled it for P1-a3.
+- New finding F2: the oracle's 81.3 status-phase action-card draw (one per player in initiative
+  order, +1 with Neural Motivator) is never called from Rust's finish_status_phase — same
+  wired-but-never-called class as F1 (leaders). Separate reviewed package; Phase 2 gap.
+
+Current branch and HEAD: codex/stage1-parity-fixes at 54f16f2 (P1-a2); P1-a3 commit follows this
+handover (7 files expected: transactions.rs, evidence, state; no other code touched).
+
+Working-tree state: clean apart from the in-scope P1-a3 paths listed above. out/ is gitignored.
+
 Tests last run and exact results:
-cargo fmt -p ti4-engine -p ti4-training clean; cargo test -p ti4-engine → 758 lib + 5 doctests
-pass (was 756+5); cargo test -p ti4-training → 98 pass; cargo clippy -p ti4-engine -p
-ti4-training --all-targets → zero warnings; cargo check --workspace --all-targets clean.
-Compatibility evidence:
-out/rust_ff_83000001_p1a2.json vs out/py_ff_learn_83000001_p1a2.json (both learner table):
-gap 0.000000 / choice mismatches 0 on all common prefixes; hacan/xxcha py action-phase options
-carry component|leader|{faction}agent, rust does not (F1); note offers now faction-keyed
-(pncf:hacan etc.), an gated out of rust offer surface until commanders deploy.
+- cargo fmt -p ti4-engine --check: clean.
+- cargo test -p ti4-engine: 762 lib + 5 doctests pass (was 758+5; +4 new pricing tests, 1 updated).
+- cargo test -p ti4-training: 98 pass.
+- cargo clippy -p ti4-engine -p ti4-training --all-targets: zero warnings.
+- cargo check --workspace --all-targets: clean.
+
+Compatibility evidence (seed 83000001 rot 0, rounds 4, temp 0.0001, full features):
+- py-vs-rust: max_score_gap 0.000000 and 0 choice mismatches within the common prefix for all six
+  factions; residuals only in previously recorded classes (F1 leader components at hacan/xxcha@1;
+  Rust blind decline/follow secondaries — P1-b/Phase-2). Artifacts: out/py_ff_learn_83000001_p1a2.json
+  (reused, oracle unchanged) vs out/rust_ff_83000001_p1a3.json.
+- rust-vs-rust p1a2→p1a3: identical through every common prefix; first forks are exactly the
+  priced note ids (hacan@48 `pncf:hacan` → `pncf:hacan:2`); l1z1x fully identical.
+- Note-id vocabulary: all 16 Rust-minted priced ids ⊆ oracle's 26; every price matches the oracle
+  table exactly, including both banker's-rounding cases and ta-at-flat-row (never live value).
+
 Decisions made and rationale:
-- P1-a2 scope = identity + G1 re-deal + FACEUP convoys + available_notes filters in ONE atomic
-  commit; faceup exclusion inseparable from the FACEUP change (else Rust would newly offer notes
-  Python refuses). Split recorded pre-implementation per AGENTS.md.
-- Removed Rust's ownership filter: oracle offers by holder, not owner — a lent-out note stays
-  re-offerable; test retired and replaced with the parity-form test.
-- trade_agreement_worth keys off the embedded name ("generic" → flat default); duplicate-faction
-  tables are oracle-unreachable scaffolding (earlier seat shadows later), documented not
-  error-handled.
-- Fixed pre-existing clippy warnings in ti4-training (rollout.rs dup expect; single_game_trace
-  example lints) so both crates stay all-targets clean for future package gates.
-Open review findings or blockers:
-- F1: Rust rollouts never call leaders::deploy → no commanders → an notes permanently gated out
-  of the rust offer surface + component|leader|{faction}agent options absent (Phase 2 gap; adds a
-  whole option class — needs its own package, frontier review per AGENTS.md).
-- secrets.rs holds_a_rivals_note pre-existing bug: deferred, recorded in evidence.
-- Phase 2 legality/timing changes still require frontier review before implementation.
-- PROTOCOL (all future diffs): python trace runs MUST pass --table learner_profiles to match
-  rust's table selection; forgetting it masqueraded as a P1-a2 regression this session and was
-  fully investigated/closed (oracle determinism verified in-process, cross-process, and under
-  PYTHONHASHSEED 0/1/42 — see evidence).
-Next exact action:
-Commit P1-a2 on codex/stage1-parity-fixes; then P1-a3 branch + spec (per-note pn pricing with
-int(round(worth)) and :price id suffix, price parsing in offer_from, ac{} action-card trade
-shape) — re-run the T6 differential after.
-Files to read first after compaction:
-plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a + P1-a2 sections),
-crates/ti4-engine/src/promissory.rs, crates/ti4-engine/src/transactions.rs,
-out/diff_decisions.py
-```
+- Price uses the flat row for ta because the oracle calls `_note_worth` without a game for option
+  pricing; live worth still flows through net/their_net (formulas verified identical pre/post).
+- Half-to-even rounding reproduced explicitly (`py_round_half_even`) instead of f64::round:
+  round(2.5)=2 in Python, 3 in Rust's half-away-from-zero — a real surface divergence at ta.
+- Unpriced `pn{note}` parses to no deal (oracle would raise; refusing is the safe equivalent).
+
+Open review findings or blockers: none new. F1 and F2 remain Phase-2 items awaiting reviewed packages.
+
+Protocol warning (new): single_game_trace silently ignores unknown flags — this session's first
+P1-a3 run passed `--greedy` instead of `--greedy-temperature`, producing a native-temperature
+(trace metadata shows turn head 1.0) non-comparable trace; caught via the per-decision
+head.temperature field before any conclusion was drawn. Verify temperature in trace metadata
+before every differential.
+
+Next exact action/command: commit P1-a3 (transactions.rs + evidence + this state file), then start
+P1-b with a pre-implementation spec in plans/evidence/STAGE2-STALL-INVESTIGATION.md covering the
+`no`/`yes` answer vocabulary and the blind decline/follow secondary windows.
+
+Files to read first after compaction: AGENTS.md; plans/SCOPED_PERMISSIONS.md; this file's handover;
+plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a3 section); crates/ti4-engine/src/transactions.rs.

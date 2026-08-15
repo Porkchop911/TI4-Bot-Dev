@@ -711,3 +711,92 @@ whole option class (Commander Agent actions) to the surface — Phase 2 scope, n
 `out/rust_ff_83000001_p1a2.json`, `out/py_ff_learn_83000001_p1a2.json` (learner table),
 `out/trace_p1a2_rust.log`, `out/trace_p1a2_py.log`. Determinism probes kept for the record:
 `out/hashprobe.py`, `out/double_run.py`.
+
+## P1-a3 — per-note trade pricing (implemented)
+
+**Objective.** Every note Rust mints into an offer id is flat-priced at `NOTE_PRICE = 2`
+(`pncf:hacan`, "sell cf:hacan for 2 trade goods") where the oracle prices each note by its own
+worth: option id `pn{note}:{price}` with `price = int(round(_note_worth(note)))` — and that call
+passes **no game**, so a Trade Agreement takes the flat `WORTH["ta"] = 2.5`, not its live value,
+for pricing purposes (live worth still flows through `_priced`'s net/their_net in both engines;
+verified formulas identical). Labels: "sell {note} for {price} trade goods".
+
+**Prices the oracle actually produces** (WORTH verified line-by-line against Rust's NOTE_WORTH —
+identical table): ra→4, an/convoys→3, ta→2.5→**2**, ce/ms/favor/war_funding→2, ps/cf→1.5→2. The
+two `.5` values are exact banker's-rounding cases: Python `round(1.5) = round(2.5) = 2` (half to
+even), while Rust `f64::round` is half-away-from-zero (`3`). A naive port would price `ta` at 3
+and every ps/cf sale identically — the ta divergence changes both option ids and what the deal
+asks for, so it must be reproduced exactly: helper `py_round_half_even`.
+
+**Scope (one atomic commit).**
+1. `note_option_price(note)` in transactions.rs: no-game worth (support→4.0 for completeness,
+   ta→flat 2.5 row, else NOTE_WORTH row or 1.5 default) → half-to-even integer price.
+2. offer_options pn branch: guard becomes `price > 0 && their_goods >= price`; id
+   `pn{note}:{price}`; label with the live price. (Payload {note, alias} unchanged.)
+3. offer_from pn branch: parse `rpartition(':')` → note + price; unrecognised forms return None
+   (oracle would raise on a bare `pnfoo`; Rust's Option form is the safe equivalent).
+4. Delete `NOTE_PRICE` (all three use sites replaced); keep NOTE_WORTH/note_worth/note_cost as-is.
+5. Tests: per-note prices incl. the banker's cases (ta→2, cf/ps→2 via 1.5, ra→4, an/convoys→3),
+   partner-affordability guard at the live price, id parse round-trip, malformed → None; update
+   existing note-offer tests whose expected ids gain `:2`.
+
+**Out of scope / reclassified (verified against oracle source this session).**
+- **`ac{}` action-card trades are oracle-inert.** `faction_abilities.TRADES_ACTION_CARDS` is an
+  *empty set*, so `trades_action_cards()` is always false: the oracle never proposes an ac option
+  and its legality gate rejects every card-bearing offer. Implementing it in Rust would add a
+  surface the oracle does not exhibit — speculative divergence, refused per AGENTS.md. Recorded
+  here to close the P1-a2 residual that listed it for P1-a3; no code change.
+- **F2 (Phase 2 gap):** the oracle's 81.3 status-phase draw (one action card per player in
+  initiative order, +1 with Neural Motivator) is never called from Rust's `finish_status_phase`;
+  Rust draws only via exploration/strategy-card effects. Consequence: seat hands diverge over a
+  game and "play an action card" actions appear in Python action phases but not Rust ones — the
+  same wired-but-never-called class as F1 (leaders). Out of P1-a3; needs its own reviewed package.
+
+**Permission class / bounds.** Local writes: `crates/ti4-engine/src/transactions.rs` (+ tests),
+evidence, execution state. No network; oracle repo read-only (re-verified clean this session).
+
+**Implementation.** `crates/ti4-engine/src/transactions.rs` only:
+- `note_option_price(note)`: no-game worth (support→4.0, else NOTE_WORTH row by alias or 1.5
+  default — the ta row is flat 2.5 because there is no game argument), rounded with
+  `py_round_half_even`, which reproduces Python's banker's rounding on exact halves
+  (`round(2.5) = 2`; Rust's half-away-from-zero would price a Trade Agreement at 3).
+- offer_options pn branch: per-note guard `price > 0 && their_goods >= price`, id
+  `pn{note}:{price}`, label "sell {note} for {price} trade goods". Payload unchanged.
+- offer_from pn branch: price parsed from the *last* colon (the note itself is alias:faction);
+  an unpriced legacy form parses to no deal instead of inventing a price (oracle would raise).
+- `NOTE_PRICE` deleted; all three use sites replaced. `_priced` net/their_net formulas were
+  verified identical to the oracle before and after — live worth (incl. per-owner TA) still flows
+  through them, only ids/labels use the flat-row price.
+
+**Tests.** Four new tests + one updated: `note_option_prices_follow_the_oracle_table` (all ten
+aliases incl. both banker's cases and the support row), `note_sales_carry_their_own_price_in_id_and_label`
+(exact id set in BTreeMap order + label text), `note_sales_require_the_partner_to_afford_the_live_price`
+(ra at 4 with a 3-TG partner: absent; at 4: present — the case a flat price got wrong),
+`a_priced_note_id_parses_back_into_the_same_deal` (round-trip + unpriced form → None).
+
+**Verification.** fmt clean; ti4-engine 762 lib + 5 doctests pass (+4 new); ti4-training 98 pass;
+clippy all-targets zero warnings on both crates; workspace check clean.
+
+**T6 differential (seed 83000001 rot 0, rounds 4, temp 0.0001, full features, checkpoint
+stage1_pg_six_to5000_20260810). Protocol incident found and closed first:** the initial Rust run
+passed `--greedy` where the example's flag is `--greedy-temperature`; unknown flags are silently
+ignored, so that trace ran at native profile temperatures (turn head 1.0) and was not comparable —
+detected from the per-decision `head.temperature` metadata recorded by the trace. Protocol note:
+always verify a new trace's temperature before diffing. The corrected run is on record:
+
+- py-vs-rust (`out/py_ff_learn_83000001_p1a2.json`, table learner_profiles, vs
+  `out/rust_ff_83000001_p1a3.json`): **max_score_gap = 0.000000 and 0 choice mismatches within the
+  common prefix for all six factions** (hacan/xxcha break at idx=1 on F1 leader components;
+  jolnar/l1z1x/letnev on Rust blind decline/follow secondary windows — P1-b/Phase-2; sol's one
+  prompt mismatch is the known first-divergence counting artifact).
+- rust-vs-rust p1a2→p1a3: identical scores and choices through every common prefix; first intended
+  forks are exactly the priced note ids (hacan@48 `pncf:hacan` → `pncf:hacan:2`; jolnar@81, letnev@79
+  cascade from trade states); l1z1x identical through its whole common run.
+- Note-id vocabulary: all 16 distinct priced ids Rust mints in this game are a subset of the
+  oracle's 26; every price matches the oracle table exactly (cf/ps/ta/ms/ce/favor/war_funding→2,
+  ra→4, convoys/an→3 — ta at 2 from the flat row, never its live value). py-only ids are all
+  explained: l1z1x/xxcha offer states unreached due to the idx=1 cascade forks (F1/windows), and
+  `pnan:*` notes which Python can offer only after commander unlocks that Rust rollouts lack (F1).
+
+**Residuals.** F2 recorded above (status-phase action-card draw never called in Rust) — separate
+reviewed package. `ac{}` reclassified oracle-inert; no code change. Next Phase-1 sub-package is P1-b.
