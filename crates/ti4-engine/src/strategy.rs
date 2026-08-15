@@ -1,6 +1,7 @@
 //! Structural strategy-card actions.
 
 use ti4_content::ContentStore;
+use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, StrategyCardId};
 use ti4_model::state::{GameState, TokenPool};
 
@@ -60,6 +61,20 @@ fn secondary_choice(
 ) -> Choice {
     let name = crate::strategy_cards::card_name(content, card.as_str())
         .unwrap_or_else(|| card.to_string());
+    // Leadership has no strategy-token gate and no decline/follow prompt (LRR 52.3):
+    // affordability is the only gate, so the window's question *is* the oracle
+    // influence-purchase question itself.
+    if name == "Leadership" {
+        let n = crate::strategy_cards::INFLUENCE_PER_TOKEN;
+        return Choice::new(
+            player.clone(),
+            format!("spend {n} influence for a command token"),
+            vec![
+                ChoiceOption::labelled("no", STRATEGY_KIND, "spend nothing further"),
+                ChoiceOption::labelled("yes", STRATEGY_KIND, format!("spend {n} influence")),
+            ],
+        );
+    }
     let contract = match card.as_str() {
         "te4construction" => Some((
             "spend a strategy token to place a structure",
@@ -178,10 +193,15 @@ impl StrategySecondaryWindow {
     /// merely because a client looked at a choice. [`Self::next_choice`] remains the mutating
     /// resolver used when a step actually advances the window.
     #[must_use]
-    pub fn pending_choice(&self, state: &GameState, content: &ContentStore) -> Option<Choice> {
+    pub fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
         self.followers[self.next_follower..]
             .iter()
-            .find(|player_id| secondary_eligible(state, content, player_id, &self.card))
+            .find(|player_id| secondary_eligible(state, content, sources, player_id, &self.card))
             .map(|player_id| {
                 let costs_token = secondary_costs_token(content, &self.card)
                     && !secondary_is_free(state, content, player_id, &self.card);
@@ -193,9 +213,14 @@ impl StrategySecondaryWindow {
     ///
     /// A content-specific secondary may later impose further eligibility checks. This generic
     /// structural window has only the shared strategy-token gate.
-    pub fn next_choice(&mut self, state: &mut GameState, content: &ContentStore) -> Option<Choice> {
+    pub fn next_choice(
+        &mut self,
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
         while let Some(player_id) = self.followers.get(self.next_follower).cloned() {
-            if secondary_eligible(state, content, &player_id, &self.card) {
+            if secondary_eligible(state, content, sources, &player_id, &self.card) {
                 let costs_token = secondary_costs_token(content, &self.card)
                     && !secondary_is_free(state, content, &player_id, &self.card);
                 return Some(secondary_choice(
@@ -222,10 +247,11 @@ impl StrategySecondaryWindow {
         &mut self,
         state: &mut GameState,
         content: &ContentStore,
+        sources: SourceSet,
         answer: ChoiceOption,
     ) -> Result<SecondaryResolution, StrategySecondaryError> {
         let choice = self
-            .next_choice(state, content)
+            .next_choice(state, content, sources)
             .ok_or(StrategySecondaryError::Complete)?;
         let answer = validate(&choice, answer)?;
         let resolution = if answer.is_decline() || answer.id == "no" {
@@ -280,9 +306,17 @@ fn secondary_is_free(
 fn secondary_eligible(
     state: &GameState,
     content: &ContentStore,
+    sources: SourceSet,
     player: &PlayerId,
     card: &StrategyCardId,
 ) -> bool {
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Leadership") {
+        // 52.3 costs influence rather than a strategy token: unaffordable seats make no
+        // decision at all (oracle `_leadership_secondary`).
+        return crate::strategy_cards::leadership_influence_eligible(
+            state, content, sources, player,
+        );
+    }
     state.player(player).is_some_and(|seat| {
         !secondary_costs_token(content, card)
             || secondary_is_free(state, content, player, card)
@@ -542,7 +576,7 @@ mod tests {
             "the card remains ready while followers decide"
         );
         let choice = window
-            .next_choice(&mut state, ContentStore::embedded())
+            .next_choice(&mut state, ContentStore::embedded(), POK)
             .unwrap();
         assert_eq!(choice.player, first_follower);
         assert_eq!(choice.ids(), vec!["no", "yes"]);
@@ -551,6 +585,7 @@ mod tests {
                 .take_choice(
                     &mut state,
                     ContentStore::embedded(),
+                    POK,
                     ChoiceOption::new("yes", "strategy"),
                 )
                 .unwrap(),
@@ -562,7 +597,7 @@ mod tests {
         );
 
         let choice = window
-            .next_choice(&mut state, ContentStore::embedded())
+            .next_choice(&mut state, ContentStore::embedded(), POK)
             .unwrap();
         assert_eq!(choice.player, second_follower);
         assert_eq!(
@@ -570,6 +605,7 @@ mod tests {
                 .take_choice(
                     &mut state,
                     ContentStore::embedded(),
+                    POK,
                     ChoiceOption::new("no", "strategy"),
                 )
                 .unwrap(),
@@ -620,7 +656,7 @@ mod tests {
 
         assert!(
             window
-                .next_choice(&mut state, ContentStore::embedded())
+                .next_choice(&mut state, ContentStore::embedded(), POK)
                 .is_none()
         );
         assert_eq!(
@@ -644,7 +680,16 @@ mod tests {
     fn an_invented_secondary_response_is_atomic() {
         let mut state = drafted_three_player_game();
         let primary = PlayerId::new("a");
-        let card = state.player(&primary).unwrap().strategy_cards[0].clone();
+        // A token-costing card: the invented answer must be rejected against a real prompt.
+        let cards = &state.player(&primary).unwrap().strategy_cards;
+        let card = cards
+            .iter()
+            .find(|card| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    != Some("Leadership")
+            })
+            .cloned()
+            .unwrap_or_else(|| cards[0].clone());
         let mut window = begin_strategic_action(
             &mut state,
             ContentStore::embedded(),
@@ -658,6 +703,7 @@ mod tests {
             .take_choice(
                 &mut state,
                 ContentStore::embedded(),
+                POK,
                 ChoiceOption::new("invented", STRATEGY_KIND),
             )
             .unwrap_err();
@@ -666,6 +712,66 @@ mod tests {
         assert!(state.identical(&before));
         assert!(window.resolutions().is_empty());
         assert!(!window.is_complete());
+    }
+
+    #[test]
+    fn leadership_secondaries_are_gated_on_influence_affordability() {
+        // LRR 52.3 / oracle `_leadership_secondary`: affordability is the only gate — an
+        // unaffordable follower makes zero decisions, and an affordable one receives the
+        // influence-purchase question itself, not a decline/follow prompt.
+        let mut state = drafted_three_player_game();
+        let primary = PlayerId::new("a");
+        let cards = &state.player(&primary).unwrap().strategy_cards;
+        let card = cards
+            .iter()
+            .find(|card| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    == Some("Leadership")
+            })
+            .cloned()
+            .expect("the deterministic draft gives the primary Leadership");
+        let affordable = PlayerId::new("b");
+        state.player_mut(&affordable).unwrap().trade_goods = 3;
+
+        let mut window = begin_strategic_action(
+            &mut state,
+            ContentStore::embedded(),
+            &primary,
+            ChoiceOption::new(format!("strategic|{card}"), ACTION_KIND),
+        )
+        .unwrap();
+
+        let choice = window
+            .next_choice(&mut state, ContentStore::embedded(), POK)
+            .unwrap();
+        assert_eq!(choice.player, affordable);
+        assert_eq!(choice.prompt, "spend 3 influence for a command token");
+        assert_eq!(choice.ids(), vec!["no", "yes"]);
+
+        let resolution = window
+            .take_choice(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                ChoiceOption::new("yes", STRATEGY_KIND),
+            )
+            .unwrap();
+        assert_eq!(resolution, SecondaryResolution::Followed);
+
+        // "c" has no influence: automatically Ineligible with no decision recorded.
+        assert!(
+            window
+                .next_choice(&mut state, ContentStore::embedded(), POK)
+                .is_none()
+        );
+        assert!(window.is_complete());
+        assert_eq!(
+            window.resolutions(),
+            &[
+                (affordable.clone(), SecondaryResolution::Followed),
+                (PlayerId::new("c"), SecondaryResolution::Ineligible)
+            ]
+        );
     }
 
     #[test]

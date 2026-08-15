@@ -480,8 +480,12 @@ mod tests {
         // strategy cards, passed, and ended — forty of them, no errors, completion rate 1.00,
         // and not one tactical action. A harness that measures nothing can look perfectly
         // healthy, so the check is that the subsystems were reached, not that the batch ran.
+        // Thirty-two seeds: the Leadership window now asks only affordable followers (P1-f
+        // oracle parity), so each seat's random stream shifted versus the eight-seed sample
+        // that first calibrated this guard. Wider coverage is asserted at a size where every
+        // subsystem below still shows up with margin.
         let players = seats(&["a", "b", "c", "d", "e", "f"]);
-        let batch = run(ContentStore::embedded(), &players, 0..8, Horizon::default());
+        let batch = run(ContentStore::embedded(), &players, 0..32, Horizon::default());
 
         assert_eq!(batch.errors().len(), 0, "no game failed");
         let silent = batch.never_happened(&[
@@ -506,7 +510,7 @@ mod tests {
         ]);
         assert!(
             silent.is_empty(),
-            "these subsystems were never reached in eight games: {silent:?}"
+            "these subsystems were never reached in thirty-two games: {silent:?}"
         );
     }
 

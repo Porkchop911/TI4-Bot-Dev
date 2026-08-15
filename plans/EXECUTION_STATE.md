@@ -1418,3 +1418,59 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   implement, gates, T6 re-run vs the same Python artifact.
 - **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
   Phase 1 table; evidence §P1-c (`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, from line ~1244).
+
+## Handover (P1-f complete)
+
+- **Objective:** Phase 1 decision-surface alignment, sub-package P1-f — Leadership
+  influence-purchase window shape/identity + buy-loop oracle identity + ask-based payment + MC
+  trade-good worth, per `engine/strategy.py:80–182`, `engine/production.py` (spec
+  `out/p1f_spec.md`, split f1–f4 recorded pre-implementation).
+- **Active milestone/package:** Phase 1 / P1-f — COMPLETE. Next ready package: **P1-g** (payment
+  mechanics F5/F6/F7 + xxcha alternate payment faces F2 + jamming F12), then conditional P1-h
+  (tie-break, only if T6 shows hits after P1-g). After Phase 1 closes: Phase 2 legality/timing
+  work **requires a frontier review first** per AGENTS.md.
+- **Status:** Window question for Leadership followers is now the oracle influence-purchase
+  question (`spend 3 influence for a command token`, `[no/yes]` kind `strategy`), gated on
+  affordability (unaffordable followers auto-skip as Ineligible, zero decisions); non-`yes` ends
+  the buyer's loop; each accepted token paid through the aligned ask-based `pay_seeing` surface
+  (`exhaust|{planet}` / `trade_good`, kind `pay`), payment failure terminal; actor-during-primary
+  loop pre-existing and now oracle-shaped; MC doubles trade-good worth in `available()`/payment.
+  Em-dash normalization verified absent on both engines (VNA). Phantom `"{card} secondary"`
+  decline/follow for Leadership retired.
+- **Branch/HEAD:** `codex/stage1-parity-fixes` at P1-c commit `4e69348`; this package's changes
+  committed as the focused P1-f commit (this handover included).
+- **Working-tree state:** modified-for-commit: `crates/ti4-engine/src/{strategy,strategy_cards,production,game}.rs`,
+  `crates/ti4-sim/src/run.rs` (batch guard 8→32 seeds), `plans/evidence/STAGE2-STALL-INVESTIGATION.md`
+  (§P1-f appended), `plans/CONTINUATION_PLAN.md` (P1-f done; F4 moved out of P1-g row). Untracked
+  out/: p1f spec + trace artifacts. Oracle repo untouched.
+- **Tests last run and exact results:** fmt clean; clippy `-p ti4-engine --all-targets` zero
+  warnings; workspace green — ti4-content 126, ti4-engine **787 lib + 5 doctests** (+5 new),
+  ti4-legacy 25, ti4-model 72, ti4-policy 102, ti4-sim 27 (incl. widened batch test — base commit
+  verified passing the old 8-seed form in a temp worktree; widening causation + mechanism recorded
+  in evidence), ti4-training 98.
+- **Compatibility evidence:** T6 seed 83000001 rot 0 vs unchanged Python artifact (1868): rust
+  `out/rust_ff_83000001_p1f.json` = 1087 decisions (phantom window decisions removed); all six
+  factions max_score_gap=0.000000 and zero choice mismatches within common prefixes; first
+  structural mismatch per faction only the recorded F1 class; zero phantom prompts, 40/48 purchase
+  asks oracle-shaped (count gap = post-break cascade), all payment asks oracle-shaped, zero
+  decline/follow in any strategy-card secondary. Window shape verified against `strategy.py
+  resolve()` (immediate clockwise follower window, actor excluded).
+- **Decisions made:** (1) relabel-in-place: the per-follower window question becomes the oracle
+  influence question instead of special-casing Leadership outside the window architecture — keeps
+  bookkeeping/resolutions/Ineligible semantics. (2) non-`yes` ends the buyer's whole loop,
+  mirroring Python `return`. (3) secondary arm uses an assumed-first-yes variant because the
+  window already asked question one. (4) payment reuses the existing aligned ask surface rather
+  than extending deterministic `payment::plans`. (5) MC worth pulled from P1-g into P1-f (f4) so
+  all of Leadership's payment path is verified in one package; P1-g row updated. (6) ti4-sim batch
+  guard widened to 32 seeds with causation evidence — recorded, not silent.
+- **Open review findings or blockers:** none for P1-f. No frontier review required: surface text +
+  eligibility gate only, no legality/timing/hidden-information change; red-first-style tests + T6 +
+  spot checks in evidence §P1-f. Carried: F1 (leader-component gap) gates full-game alignment —
+  Phase 2; F2 xxcha faces stay P1-g; single-card/single-candidate ask asymmetries stay P1-g/P1-h.
+- **Next exact action/command:** P1-g spec from the recorded row (single-option auto-pick vs
+  always-ask; xxcha `exhaust|{planet}|{source}` alternate faces + affordability guard + emissions;
+  F7 zero-worth planet filtering; F12 jamming option set per `_jamming_systems`) — investigate
+  oracle + Rust sites read-only, write `out/p1g_spec.md`, red-first tests, implement, gates, T6
+  re-run vs the same Python artifact.
+- **Files to read first after compaction:** this file (handover section);
+  `plans/CONTINUATION_PLAN.md` Phase 1 table; evidence §P1-f (`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, last section).

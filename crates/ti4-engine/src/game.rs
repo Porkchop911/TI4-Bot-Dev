@@ -633,7 +633,7 @@ impl<'a> Game<'a> {
 
     fn action_options(&self) -> Option<Choice> {
         if let Some(window) = &self.secondary {
-            return window.pending_choice(&self.state, self.content);
+            return window.pending_choice(&self.state, self.content, self.sources);
         }
         let active = self.state.active.as_ref()?;
         let mut choice = strategic_action_options(&self.state, self.content, active)
@@ -1517,11 +1517,11 @@ impl<'a> Game<'a> {
     }
 
     fn step_secondary(&mut self) -> StepResult {
-        let choice = self
-            .secondary
-            .as_mut()
-            .expect("checked above")
-            .next_choice(&mut self.state, self.content);
+        let choice = self.secondary.as_mut().expect("checked above").next_choice(
+            &mut self.state,
+            self.content,
+            self.sources,
+        );
         let Some(choice) = choice else {
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
@@ -1552,7 +1552,7 @@ impl<'a> Game<'a> {
             .secondary
             .as_mut()
             .expect("window remains open")
-            .take_choice(&mut self.state, self.content, answer)
+            .take_choice(&mut self.state, self.content, self.sources, answer)
         {
             Ok(resolution) => (
                 resolution,
@@ -2353,6 +2353,12 @@ mod tests {
         let primary = game.state.active.clone().unwrap();
         let tokens_before_primary = game.state.player(&primary).unwrap().total_tokens();
 
+        // Only follower "b" can afford the 52.3 influence purchase; "c" must be skipped with no prompt.
+        game.state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .trade_goods = 3;
+
         let primary_step = game.step();
         assert!(primary_step.resolved_choice);
         assert_eq!(game.state.active, Some(primary.clone()));
@@ -2367,25 +2373,95 @@ mod tests {
             "six draft picks, the strategic action, and Leadership's three pool choices"
         );
         let before_inspection = game.state.clone();
-        assert_eq!(game.legal_options().unwrap().player, PlayerId::new("b"));
+        // Oracle identity: the window's question is the influence-purchase question itself.
+        let pending = game.legal_options().unwrap();
+        assert_eq!(pending.player, PlayerId::new("b"));
+        assert_eq!(pending.prompt, "spend 3 influence for a command token");
+        assert_eq!(pending.ids(), vec!["no", "yes"]);
         assert!(game.state.identical(&before_inspection));
 
         let first_secondary = game.step();
         assert!(first_secondary.resolved_choice);
         assert_eq!(game.state.active, Some(primary.clone()));
 
+        // "c" cannot pay three influence: it is skipped automatically and the window completes.
         let final_secondary = game.step();
-        assert!(final_secondary.resolved_choice);
+        assert!(!final_secondary.resolved_choice);
         assert_ne!(game.state.active, Some(primary));
-        assert_eq!(game.table.log.len(), 12);
+        assert_eq!(game.table.log.len(), 11);
         assert!(game.events.contains(&"STRATEGIC_ACTION_BEGAN".to_owned()));
         assert_eq!(
             game.events
                 .iter()
                 .filter(|event| event.as_str() == "STRATEGY_SECONDARY_DECLINED")
                 .count(),
-            2
+            1,
+            "only the affordable follower was asked; the other was ineligible"
         );
+    }
+
+    #[test]
+    fn leadership_follower_yes_pays_through_the_payment_loop() {
+        // Oracle `_leadership_secondary`: the window's `yes` is followed by the payment ask
+        // and one pool choice, all recorded for the follower; an unaffordable follower makes
+        // no decision at all.
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::with_table(
+            state,
+            ContentStore::embedded(),
+            Table::with_default(Box::new(AlwaysDecline)),
+        );
+        while game.state.phase == Phase::Strategy {
+            assert!(game.step().error.is_none());
+        }
+
+        // Only b can afford the influence purchase (setup grants tokens, not influence).
+        let b_before = game.state.player(&PlayerId::new("b")).unwrap().clone();
+        game.state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .trade_goods = 3;
+        // A trade good covers one influence at a time, so the token costs three payment asks.
+        game.table.seat(
+            PlayerId::new("b"),
+            Box::new(Scripted::new([
+                "yes",
+                "trade_good",
+                "trade_good",
+                "trade_good",
+                "fleet_tokens",
+            ])),
+        );
+
+        assert!(game.step().resolved_choice); // a's Leadership primary (no purchase: unaffordable)
+        let follow = game.step(); // b answers the window question
+        assert!(follow.resolved_choice);
+
+        let tail = &game.table.log.records[10..];
+        // window yes, three payment asks (one good covers one influence), then the pool.
+        assert_eq!(tail.len(), 5);
+        for record in tail {
+            assert_eq!(record.player, PlayerId::new("b"));
+        }
+        assert_eq!(tail[0].prompt, "spend 3 influence for a command token");
+        assert_eq!(tail[0].offered, vec!["no", "yes"]);
+        assert_eq!(tail[0].chosen, "yes");
+        assert_eq!(tail[1].prompt, "pay 3 more influence");
+        assert_eq!(tail[2].prompt, "pay 2 more influence");
+        assert_eq!(tail[3].prompt, "pay 1 more influence");
+        assert_eq!(tail[4].prompt, "gain a command token into which pool");
+
+        let b = game.state.player(&PlayerId::new("b")).unwrap();
+        assert_eq!(b.fleet_tokens, b_before.fleet_tokens + 1);
+        assert_eq!(b.tactic_tokens, b_before.tactic_tokens);
+        assert_eq!(b.strategic_tokens, b_before.strategic_tokens);
+        assert_eq!(b.trade_goods, 0);
+
+        // c was unaffordable: no decision for it, and the window completes by itself.
+        let finish = game.step();
+        assert!(!finish.resolved_choice);
+        assert_eq!(game.state.active, Some(PlayerId::new("b")));
     }
 
     #[test]

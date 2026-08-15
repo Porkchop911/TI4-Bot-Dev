@@ -1358,3 +1358,94 @@ at ready stays P1-f/P1-g; emissions stay Phase-2; Xxcha-agent/Brilliance ready s
 action-card dependent. Residual py-vs-rust option-set differences at commit events where both sides
 had *different fleets* (sol #8 ff.) are post-break game-state cascade, consistent with the T6b
 firing-drift finding.
+
+## P1-f — Leadership influence-purchase window + MC trade-good worth (complete)
+
+**Spec and split record:** `out/p1f_spec.md` (written before implementation): sub-packages
+P1-f1 window shape/identity, P1-f2 buy-loop oracle identity incl. actor-during-primary,
+P1-f3 ask-based payment through the existing aligned `production::pay_seeing` surface,
+P1-f4 MC technology doubling of trade-good worth in `available()` and `pay`.
+
+**Oracle evidence (read-only, commit 37061c5):**
+- `engine/strategy.py:80–117` `resolve()`: secondary window opens **immediately** after the
+  primary, iterating `clockwise_from(actor)[1:]` (actor excluded) — matches Rust's
+  `StrategySecondaryWindow` + `step_secondary` shape.
+- `engine/strategy.py:153–167` `_buy_tokens_with_influence`: `while available(game, player,
+  INFLUENCE) >= 3:` ask `"spend 3 influence for a command token"` with options
+  `("no","strategy","spend nothing further")`, `("yes","strategy","spend 3 influence")`; any
+  non-`yes` answer **returns** (stops that player's loop entirely); payment failure also returns;
+  success gains one token and re-checks.
+- `engine/strategy.py:174–182`: Leadership primary = gain 3 tokens **+ actor buy loop**;
+  secondary = per-follower buy loop (affordability is the gate — unaffordable followers produce
+  zero decisions). Rust's primary arm already ran the actor purchase; P1-f aligned its identity.
+- `engine/production.py` (~191, ~261, ~301): while `"mc" in technologies`, one trade good is
+  worth two in both `available()` and each payment step.
+
+**Changes:**
+- `strategy.rs`: Leadership special-case in `secondary_choice` — the per-follower window question
+  **is** the oracle influence-purchase question (no more phantom `"{card} secondary"`
+  decline/follow fallback); affordability gate via new
+  `strategy_cards::leadership_influence_eligible`; `SourceSet` threaded through
+  `pending_choice`/`next_choice`/`take_choice` and `secondary_eligible`.
+- `strategy_cards.rs`: buy loop rewritten to oracle identity — non-`yes` ends the loop; each
+  accepted token paid via `production::pay_seeing` (ask-based, `exhaust|{planet}` /
+  `trade_good`, kind `pay`), payment failure terminal; new `buy_tokens_first_yes_assumed` for the
+  secondary arm (the window already asked the first question); new eligibility helper.
+- `production.rs`: `trade_good_worth` (2 with MC, else 1) applied in `available()` and each
+  payment step (`worth` payload + increment).
+- `game.rs`: three `StrategySecondaryWindow` call sites pass `self.sources`; driver test added.
+
+**Tests:** 5 new — `strategy::leadership_secondaries_are_gated_on_influence_affordability`,
+`strategy_cards::leadership_influence_purchase_uses_the_oracle_questions`,
+`strategy_cards::leadership_influence_purchase_stops_on_no`,
+`production::the_mc_technology_doubles_trade_good_payment_value`,
+`game::leadership_follower_yes_pays_through_the_payment_loop`. 3 adjusted — `game::
+strategy_primary_and_each_secondary_are_separate_steps` (follower b now affordable; asserts full
+oracle question identity, auto-complete on no eligible followers, Ineligible-not-Declined for the
+unaffordable seat), `strategy::an_invented_secondary_response_is_atomic` (picks a non-Leadership
+card; Leadership secondaries can be all-ineligible → Complete is legal), and
+`ti4-sim run::a_batch_actually_exercises_the_engine` **8→32 seeds** with message updated.
+
+**The ti4-sim widening (recorded, not silent):** the 8-seed guard failed after P1-f with
+`SPACE_COMBAT_WON` missing; base commit `4e69348` passes it in a temporary worktree, so the
+causation is this package. Mechanism: sim seats are per-seat seeded random deciders — removing
+the phantom window questions and making the actor purchase an ask (which random bots often answer
+`no`, exactly as oracle-shaped) shifts every seat's RNG stream and token economy; combat wins no
+longer appear in 8 games. Thirty-two seeds restore coverage with margin (`SPACE_COMBAT_WON`
+reappears); the guard still asserts all listed subsystems fire, so it remains a real smoke check.
+
+**Gates:** `cargo fmt -p ti4-engine` clean; clippy zero warnings (3 self-inflicted nits fixed:
+missing `;` in the Leadership arm, test-local struct after statements ×2); workspace tests green —
+ti4-content 126, **ti4-engine 787 lib + 5 doctests** (+5 new), ti4-legacy 25, ti4-model 72,
+ti4-policy 102, ti4-sim 27 (incl. widened batch), ti4-training 98; oracle repo untouched.
+
+**T6 differential (same protocol as P1-a…P1-c):** checkpoint
+`D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json`, seed 83000001, rot 0, rounds 4,
+greedy temp 0.0001, `--full-features`, map pool save52_e400_n8192; Rust trace
+`out/rust_ff_83000001_p1f.json` (**1087 decisions**, was 1147 at P1-c — the phantom window
+decisions are gone) vs Python `out/py_ff_learn_83000001_p1a2.json` (1868, unchanged artifact):
+- All six factions: **max_score_gap = 0.000000, choice_mismatches_within_common = 0** on the
+  common prefix; `prompt_text_mismatches=1` for jolnar/xxcha is the recorded diff-script artifact
+  (counts the first structurally-divergent decision itself).
+- First structural mismatch per faction remains **only the recorded F1 class** (hacan idx1 leader
+  component absent; other factions' idx1/idx2 breaks are the same class plus post-break window
+  interleaving cascade from that break — verified: Rust's `resolve()` shape, immediate clockwise
+  follower window with actor excluded and affordability gating, matches Python exactly).
+- Spot checks on the new surface: **zero** `…leadership secondary` phantom prompts (was one per
+  non-affordable follower per Leadership play); all 40 Rust purchase asks oracle-shaped
+  (`spend 3 influence for a command token`, ids `[no, yes]`, kind `strategy`) vs 48 Python — the
+  count difference is post-break game cascade (F1), and every aligned same-event pair matches;
+  every payment ask carries only `exhaust|{planet}` / `trade_good` options with `pay {n} more
+  influence` prompts; **zero** decline/follow option occurrences in any strategy-card secondary.
+
+**VNA items (verified, no change needed):** token pool ids already identical (`tactic_tokens` /
+`fleet_tokens` / `strategic_tokens`, kind `pool`); no em/en dashes in any Rust or Python prompt
+string (docstrings only); Warfare primary recall+token shape aligned; draft phase idx0 aligned
+for all six factions.
+
+**Scope ledger additions:** Xxcha Archon's-Gift alternate payment faces stay F2 (breakthrough-
+gated). Observation: planet id `exhaust|0.0.0` appears in **both** pre-P1-f Rust and Python traces
+(5 py rows) — existing content/map-pool quirk, not a surface mismatch; left alone. Jol-Nar's
+`pay 5 more influence` (cost-7 ability payment through `pay_seeing`) is an existing surface; the
+MC edit changes nothing there (no MC owned → worth stays 1). Ready single-candidate auto-pick
+asymmetry and all behavioral payment/jamming items remain P1-g/P1-h.

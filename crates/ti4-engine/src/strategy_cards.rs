@@ -94,6 +94,28 @@ fn gain_tokens(
     Ok(())
 }
 
+/// Whether a follower may buy command tokens with influence in the Leadership window.
+///
+/// Oracle parity (`_buy_tokens_with_influence`): affordability *is* the gate. A seat that
+/// cannot pay three influence makes zero decisions; there is no separate decline/follow
+/// prompt for unaffordable followers.
+#[must_use]
+pub fn leadership_influence_eligible(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> bool {
+    crate::production::available(state, content, sources, player, Spend::Influence)
+        >= INFLUENCE_PER_TOKEN
+}
+
+/// The 52.3 purchase loop: one token per three influence, for as long as the seat wants and
+/// can pay.
+///
+/// Oracle identity (`_buy_tokens_with_influence`): the question offers `no` ("spend nothing
+/// further") and `yes` ("spend 3 influence"), both kind `strategy`; any non-`yes` answer stops
+/// this seat entirely; each accepted token is paid through the ordinary ask-based payment loop.
 fn buy_tokens_with_influence(
     state: &mut GameState,
     content: &ContentStore,
@@ -102,43 +124,105 @@ fn buy_tokens_with_influence(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
-    while crate::payment::affordable(
-        state,
-        content,
-        sources,
-        player,
-        INFLUENCE_PER_TOKEN,
-        Spend::Influence,
-    ) {
-        let choice = Choice::new(
-            player.clone(),
-            format!("spend {INFLUENCE_PER_TOKEN} influence for a command token"),
-            vec![
-                ChoiceOption::labelled("buy", "spend", "buy token"),
-                ChoiceOption::decline(),
-            ],
-        );
-        if ask(state, content, sources, galaxy, table, &choice)?.is_decline() {
-            break;
-        }
-        let Some(plan) = crate::payment::plans(
+    while leadership_influence_eligible(state, content, sources, player) {
+        let answer = ask(
             state,
             content,
             sources,
-            player,
-            INFLUENCE_PER_TOKEN,
-            Spend::Influence,
-        )
-        .into_iter()
-        .next() else {
-            break;
-        };
-        if !crate::payment::apply(state, player, &plan) {
-            break;
+            galaxy,
+            table,
+            &influence_purchase_choice(player),
+        )?;
+        if answer.id != "yes" {
+            return Ok(());
         }
-        gain_tokens(state, content, sources, galaxy, table, player, 1)?;
+        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+            return Ok(());
+        }
     }
     Ok(())
+}
+
+/// Same purchase loop after the strategic-secondary window already recorded a `yes`.
+///
+/// The window's question carries the oracle identity, so this variant pays for the accepted
+/// first token and then re-asks while the seat is still affordable — never asking twice in a row.
+fn buy_tokens_first_yes_assumed(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+        return Ok(());
+    }
+    while leadership_influence_eligible(state, content, sources, player) {
+        let answer = ask(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            &influence_purchase_choice(player),
+        )?;
+        if answer.id != "yes" {
+            return Ok(());
+        }
+        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+fn influence_purchase_choice(player: &PlayerId) -> Choice {
+    // Oracle wording and ids (`_buy_tokens_with_influence`): both options kind `strategy`.
+    Choice::new(
+        player.clone(),
+        format!("spend {INFLUENCE_PER_TOKEN} influence for a command token"),
+        vec![
+            ChoiceOption::labelled(
+                "no",
+                crate::strategy::STRATEGY_KIND,
+                "spend nothing further",
+            ),
+            ChoiceOption::labelled(
+                "yes",
+                crate::strategy::STRATEGY_KIND,
+                format!("spend {INFLUENCE_PER_TOKEN} influence"),
+            ),
+        ],
+    )
+}
+
+/// Pay three influence through the ask-based payment loop and gain one command token.
+///
+/// Returns `false` when the payment could not be completed; per the oracle a failed payment
+/// stops the whole purchase loop, so callers must treat it as terminal.
+fn pay_influence_and_gain_one(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<bool, IllegalChoice> {
+    if !crate::production::pay_seeing(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        INFLUENCE_PER_TOKEN,
+        Spend::Influence,
+    )? {
+        return Ok(false);
+    }
+    gain_tokens(state, content, sources, galaxy, table, player, 1)?;
+    Ok(true)
 }
 
 fn offer_research(
@@ -802,7 +886,10 @@ pub fn secondary(
         return Ok(Ability::Unresolved);
     };
     match name.as_str() {
-        "Leadership" => buy_tokens_with_influence(state, content, sources, galaxy, table, player)?,
+        // The window's `yes` already asked the oracle question; pay for it and continue.
+        "Leadership" => {
+            buy_tokens_first_yes_assumed(state, content, sources, galaxy, table, player)?;
+        }
         "Diplomacy" => ready_planets(state, content, sources, galaxy, table, player, 2)?,
         "Politics" => {
             crate::action_cards::draw(state, content, table, player, 2)?;
@@ -1453,5 +1540,117 @@ mod tests {
             ]
         );
         assert_eq!(state.player(&other).unwrap().commodities, limit);
+    }
+
+    #[test]
+    fn leadership_influence_purchase_uses_the_oracle_questions() {
+        // engine/strategy.py:_leadership_primary = gain three tokens, then the
+        // _buy_tokens_with_influence loop: "spend 3 influence for a command token" with
+        // ("no","strategy","spend nothing further") and ("yes","strategy","spend 3
+        // influence"); each accepted token is paid through the ordinary payment ask, then one
+        // pool choice follows.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        let actor = PlayerId::new("a");
+        state.player_mut(&actor).unwrap().trade_goods = 6; // exactly two purchasable tokens
+        let before = state.player(&actor).unwrap().clone();
+
+        // A trade good is worth one influence at a time: each token costs three payment asks.
+        let (recorder, seen) = SpeakerRecording::new(&[
+            "fleet_tokens",
+            "strategic_tokens",
+            "tactic_tokens",
+            "yes",
+            "trade_good",
+            "trade_good",
+            "trade_good",
+            "fleet_tokens",
+            "no",
+        ]);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        primary(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &actor,
+            &card("Leadership"),
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(
+            asks.len(),
+            9,
+            "three pool gains, one purchase, then the loop stops on no"
+        );
+        for index in [0usize, 1, 2] {
+            assert_eq!(asks[index].0, "gain a command token into which pool");
+        }
+        for index in [3usize, 8] {
+            assert_eq!(
+                asks[index].0, "spend 3 influence for a command token",
+                "re-asked while still affordable"
+            );
+            assert_eq!(
+                asks[index].1,
+                vec![
+                    (
+                        "no".to_owned(),
+                        "strategy".to_owned(),
+                        "spend nothing further".to_owned()
+                    ),
+                    (
+                        "yes".to_owned(),
+                        "strategy".to_owned(),
+                        "spend 3 influence".to_owned()
+                    )
+                ]
+            );
+        }
+        for (index, owed) in [(4usize, 3i64), (5, 2), (6, 1)] {
+            assert_eq!(asks[index].0, format!("pay {owed} more influence"));
+            assert!(asks[index].1.iter().any(|(id, kind, label)| {
+                id == "trade_good" && kind == "pay" && label == "spend a trade good"
+            }));
+        }
+        assert_eq!(asks[7].0, "gain a command token into which pool");
+        let seat = state.player(&actor).unwrap();
+        assert_eq!(seat.fleet_tokens, before.fleet_tokens + 2);
+        assert_eq!(seat.strategic_tokens, before.strategic_tokens + 1);
+        assert_eq!(seat.tactic_tokens, before.tactic_tokens + 1);
+        assert_eq!(seat.trade_goods, 3, "one token was paid in influence");
+    }
+
+    #[test]
+    fn leadership_influence_purchase_stops_on_no() {
+        // The oracle `return`s on any non-yes answer: no payment ask, no purchased token.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        let actor = PlayerId::new("a");
+        state.player_mut(&actor).unwrap().trade_goods = 9; // could buy three
+        let before = state.clone();
+
+        let (recorder, seen) =
+            SpeakerRecording::new(&["fleet_tokens", "strategic_tokens", "tactic_tokens", "no"]);
+        let mut table = Table::with_default(Box::new(recorder));
+        primary(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &actor,
+            &card("Leadership"),
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 4, "the first no ends the loop for this seat");
+        assert_eq!(asks[3].0, "spend 3 influence for a command token");
+        let seat = state.player(&actor).unwrap();
+        assert_eq!(seat.trade_goods, before.player(&actor).unwrap().trade_goods);
     }
 }

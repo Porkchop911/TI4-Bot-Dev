@@ -11,7 +11,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
-use ti4_model::id::{PlanetId, PlayerId, SystemId, UnitTypeId};
+use ti4_model::id::{PlanetId, PlayerId, SystemId, TechnologyId, UnitTypeId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
@@ -96,6 +96,22 @@ pub fn spendable_planets(state: &GameState, player: &PlayerId) -> Vec<PlanetId> 
         .collect()
 }
 
+/// What one trade good is worth as payment: two with the `mc` technology, else one.
+///
+/// Oracle parity (`engine/production.py`): the multiplier applies in `available()` and in
+/// every step of the payment loop.
+#[must_use]
+pub fn trade_good_worth(state: &GameState, player: &PlayerId) -> i64 {
+    if state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("mc")))
+    {
+        2
+    } else {
+        1
+    }
+}
+
 /// Spendable resources or influence, counting trade goods (LRR 75.3, 47.3).
 #[must_use]
 pub fn available(
@@ -109,9 +125,9 @@ pub fn available(
         .iter()
         .map(|planet| planet_value(content, sources, planet, kind))
         .sum();
-    let goods = state
-        .player(player)
-        .map_or(0, |seat| i64::from(seat.trade_goods));
+    let goods = state.player(player).map_or(0, |seat| {
+        i64::from(seat.trade_goods) * trade_good_worth(state, player)
+    });
     from_planets + goods
 }
 
@@ -200,9 +216,10 @@ fn pay_with_observation(
             })
             .collect();
         if goods > 0 {
+            let worth = trade_good_worth(state, player);
             options.push(
                 ChoiceOption::labelled("trade_good", PAY_KIND, "spend a trade good")
-                    .with("worth", 1)
+                    .with("worth", worth)
                     .with("owed", cost - paid)
                     .with("payment_kind", spend_name(kind)),
             );
@@ -223,7 +240,8 @@ fn pay_with_observation(
             if let Some(seat) = state.player_mut(player) {
                 seat.trade_goods -= 1;
             }
-            paid += 1;
+            // One good stands for two when the `mc` technology is owned.
+            paid += trade_good_worth(state, player);
         } else if let Some(planet) = answer.id.strip_prefix("exhaust|") {
             let planet = PlanetId::new(planet);
             paid += planet_value(content, sources, &planet, kind);
@@ -1318,6 +1336,64 @@ mod tests {
         let state = game(&["a", "b"]);
         let (system, planet) = a_placed_planet();
         (state, system, planet)
+    }
+
+    #[test]
+    fn the_mc_technology_doubles_trade_good_payment_value() {
+        // Oracle `engine/production.py`: while "mc" is owned, one trade good stands for two in
+        // both `available()` and each payment step.
+        struct WorthChecking;
+        impl crate::choice::Decider for WorthChecking {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                assert_eq!(choice.prompt, "pay 2 more influence");
+                let good = choice
+                    .options
+                    .iter()
+                    .find(|option| option.id == "trade_good")
+                    .unwrap();
+                assert_eq!(
+                    good.payload
+                        .get("worth")
+                        .and_then(serde_json::Value::as_i64),
+                    Some(2)
+                );
+                Ok(choice.option("trade_good").cloned().unwrap())
+            }
+        }
+
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        {
+            let seat = state.player_mut(&player).unwrap();
+            seat.trade_goods = 1;
+            seat.technologies.insert(TechnologyId::new("mc"));
+        }
+        assert_eq!(
+            available(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &player,
+                Spend::Influence
+            ),
+            2
+        );
+
+        let mut table = Table::with_default(Box::new(WorthChecking));
+        assert!(
+            pay_seeing(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut table,
+                &player,
+                2,
+                Spend::Influence
+            )
+            .unwrap()
+        );
+        assert_eq!(state.player(&player).unwrap().trade_goods, 0);
     }
 
     #[test]
