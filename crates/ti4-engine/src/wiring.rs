@@ -457,7 +457,7 @@ fn a_held_reaction_card_is_played_into_a_real_window() {
         game.timing
             .log()
             .iter()
-            .any(|line| line.contains("reaction:a:SYSTEM_ACTIVATED")),
+            .any(|line| line.contains("reaction:generic:SYSTEM_ACTIVATED")),
         "the reaction slot never resolved; timing {:?}",
         game.timing.log()
     );

@@ -1365,89 +1365,98 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 
 
-## Handover (P1-b complete)
+## Handover (P1-d complete)
 
 Objective:
 Align the Rust training surface to the Python oracle decision-by-decision so shared checkpoints
 stay transferable and residual differences are auditable per label class. Phase 1 sub-packages;
-this handover closes P1-b (production-payment prompt/label alignment — both payment sites in
-`crates/ti4-engine/src/production.rs`).
+this handover closes P1-d (reaction option identity alignment — ability id format, inner card-choice
+prompt/kind/labels, and per-printed-card dedupe in `crates/ti4-engine/src/reactions.rs`).
+Note: the previous handover's "next exact action" misdescribed P1-d as expedition/expansion prompt
+wording; the recorded class table (evidence §Phase 1) governs — P1-d is reaction identity.
 
 Oracle commit:
-37061c5 (`codex/fully-learned-policy`, read-only; not needed for this package).
+37061c5 (`codex/fully-learned-policy`, read-only; cited line-by-line in evidence §P1-d, no Python run).
 
 Active milestone/package:
-M09 parity work, Phase 1 of the continuation plan. P1-b complete and committed (see branch below);
-next ready package is **P1-d** (expedition/expansion prompt wording) per the default order b→d→e→c→f→g.
+M09 parity work, Phase 1 of the continuation plan. P1-d complete and committed (see branch below);
+next ready package is **P1-e** (speaker choice + seat-id prompts → faction names) per the default
+order b→d→e→c→f→g.
 
 Status and completed acceptance criteria:
-- Spec recorded pre-implementation in evidence §"## P1-b — payment prompt/label alignment", with
-  oracle citations (`engine/production.py` `_pay_prompt` loop ~267, planet labels ~308) and findings
-  F4 (MC trade-good worth 2 vs flat 1 + `available()` undercount), F5 (single-option auto-pick),
-  F6 (xxcha cross-source options + emissions). All deferred to new package **P1-g** (after P1-f).
-- Two failing tests written first, confirmed red on the prompt assertions, then green:
-  `the_payment_prompt_names_the_remaining_debt_and_its_kind` and
-  `the_production_window_payment_prompt_names_the_remaining_debt_and_its_kind`.
-- Site A (free-function payment loop) now prompts per iteration `"pay {cost-paid} more {kind}"`;
-  site B (`ProductionWindow::Stage::Paying`) prompts `"pay {owed} more resources"`; planet labels at
-  both sites gain the kind suffix. Option ids and payloads unchanged.
-- New finding **F7** (found while writing tests): Rust offers zero-worth planets as payment options;
-  Python's `_planet_payment_values` filters `worth > 0`. Recorded for P1-g; test documents current
-  behavior in that branch with a comment pointing at F7.
+- Spec recorded pre-implementation in evidence §"## P1-d — reaction option identity alignment"
+  (oracle citations `engine/reactions.py:307–345`, `engine/timing.py:55–63, 305–330`; CPython
+  verified for the dedupe dict semantics).
+- D1 id → `reaction:{owner_name}:{event_type}:{lowercase}` via new `slot()` owner-name parameter
+  filled in `arm()` with `promissory::faction_name`; timing.rs `relation_name` now `pub(crate)`.
+  Wiring test assertion updated (scaffold factions stay default: `"reaction:generic:"`).
+- D2 inner prompt → `"play an action card ({lowercase} {EVENT})"`. D3 options kind
+  `ACTION_CARD_KIND = "action_card"` (unused `REACTION_KIND` removed — no external users verified),
+  labels `"play {name_of(content, alias)}"`, dedupe via new helper `reaction_card_options`
+  mirroring Python's `{known[a].name: a for a in reversed(available)}.values()` exactly.
+- Four failing tests written first (red: E0061 ×4 + E0425), now green, incl. an end-to-end Resolver
+  drive asserting outer/inner prompts byte-for-byte and the repeatable-slot re-offer (1.19).
+- New findings **F8** (outer payload missing Python's `"cards"` list — needs a timing.rs
+  `OptionPayload` API change) and **F9** (single-card windows: Python asks, Rust auto-picks;
+  window-shape family of F5). Both deferred to a later package after P1-f; recorded in evidence + plan.
 
 Current branch and HEAD:
-Branch `codex/stage1-parity-fixes`; HEAD is the P1-b commit (message starts "P1-b: payment prompt/label
-alignment — oracle wording at both production-payment sites"); parent `a1a786e`.
+Branch `codex/stage1-parity-fixes`; HEAD is the P1-d commit (message starts "P1-d: reaction option
+identity alignment — oracle id format, inner card-choice surface"); parent is the P1-b commit `69ffaa9`.
 
 Working-tree state:
-Clean after the P1-b commit (verify with `git status --short --branch`). Only in-scope paths changed:
-`crates/ti4-engine/src/production.rs`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md`,
-`plans/CONTINUATION_PLAN.md`.
+Clean after the P1-d commit (verify with `git status --short --branch`). Only in-scope paths changed:
+`crates/ti4-engine/src/reactions.rs`, `timing.rs`, `wiring.rs`,
+`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, `plans/CONTINUATION_PLAN.md`, this file.
 
 Tests last run and exact results:
-- `cargo test -p ti4-engine`: 770 lib passed + 5 doctests (was 768+5; +2 new).
-- `cargo test -p ti4-training`: 98 passed.
-- `cargo fmt -p ti4-engine --check`: clean. Clippy `-p ti4-engine --all-targets`: zero warnings
-  (one `type_complexity` in the new test struct fixed by a `RecordedPayment` type alias).
-  `cargo check --workspace`: clean.
+- `cargo test -p ti4-engine`: 774 lib passed + 5 doctests (was 770+5; +4 new).
+- `cargo test -p ti4-training --release`: 98 passed. `cargo check --workspace`: clean.
+- `cargo fmt -p ti4-engine`: clean. Clippy `-p ti4-engine -p ti4-training --all-targets`: zero
+  warnings (two rounds of test-module `needless_borrow` fixes for the `&'static ContentStore`
+  pattern; one shorthand-init fix).
 
 Compatibility evidence:
-- **Key mechanism finding:** prompt and option-label text are scoring features for the learned decider
-  (`crates/ti4-policy/src/features.rs` ~135/143-149/271-280 tokenize both). Label alignment is therefore
-  feature-space alignment toward the Python-trained vocabulary, not cosmetics. Confirmed experimentally:
-  rust-vs-rust p1a4→p1b shows the first differing decision in all six factions is exactly a payment
-  prompt-text change (ids/choice still equal), and the first real choice fork per faction lands on a
-  later payment decision at identical board state with the same checkpoint weights.
-- T6 differential `out/py_ff_learn_83000001_p1a2.json` vs `out/rust_ff_83000001_p1b.json` (1119 decisions):
-  all six factions max_score_gap=0.000000, choice_mismatches_within_common=0; first structural mismatch
-  per faction is exactly the recorded classes (F1 leader components for hacan/xxcha idx=1; blind
-  decline/follow secondaries vs Python inline action phase / no-yes replenishment for the other four).
+- T6 differential vs `out/py_ff_learn_83000001_p1a2.json`: all six factions max_score_gap=0.000000,
+  choice_mismatches_within_common=0; first structural mismatch per faction is a recorded class only —
+  hacan idx1 differs by exactly the F1 leader component (trade-partner sets otherwise identical);
+  jolnar/l1z1x/letnev/xxcha/sol idx1 are the P1-c/P1-f blind `decline`/`follow` secondaries.
+- Rust reaction-surface decisions: 60, all oracle-format ids, zero old seat-based/capitalized ids;
+  count identical to p1b → no firing change. py=35 vs rust=60 asymmetry predates P1-d (F2 family).
+- Rust-vs-rust p1b→p1d: same 1119 decisions/keys; the only `chosen` diff is the rename itself
+  (jolnar@82); all 60 renamed reaction options show score shifts (e.g. hacan@109 −1.1113 →
+  −0.9658) — id-string labels are scored features, expected movement toward the Python-trained
+  vocabulary per the P1-b precedent; no choice crossed a boundary in this game.
 
 Decisions made and rationale:
-- P1-b kept to wording + kind suffixes only; all option-set/value/timing mechanics (F4-F7) deferred to
-  P1-g so behavioral changes stay isolated in one reviewed package.
-- F7 branch of the new test asserts *current* Rust behavior (zero-worth planet offered, two asks) with a
-  comment marking it non-oracle; will be rewritten when P1-g lands.
-- Plan updated: P1-b row marked done with the feature-space finding; decision point 1 resolved (b done,
-  next d); P1-g row created in the Phase 1 table.
+- Kept to mechanical format/identity only (D1–D3); event-name remapping stays Phase 2. F8/F9 deferred
+  (window shape / API change) so behavioral changes stay isolated per package discipline.
+- Raw-length auto-pick branch intentionally unchanged: dedupe applies inside the ask branch only,
+  preserving F9 as a documented residual rather than silently changing single-card behavior.
+- Dedupe mirrors Python's dict-comprehension slot semantics (reverse-walk insertion, first
+  hand-order alias kept) because feature extraction may include positional tokens; verified against
+  CPython on three hand shapes before implementing.
+- Plan updated: P1-d row marked done with results; F8/F9 added to the findings backlog after P1-f.
 
 Open review findings or blockers:
-None blocking. Open items: F4/F5/F6/F7 (P1-g), Phase-2 items pending frontier review per plan,
-T6 protocol reminders below still apply.
+None blocking. Open items: F4/F5/F6/F7 (P1-g), F8/F9 (post-P1-f package), Phase-2 items pending
+frontier review per plan, T6 protocol reminders below still apply.
 
 Protocol warnings (carry over):
 - Python traces require `--table learner_profiles` to match Rust's table selection.
 - Rust greedy flag is `--greedy-temperature 0.0001`; the example's arg parser ignores unknown flags.
 - Strip the six preamble lines from `single_game_trace` stdout before JSON parsing (`tail -n +7`).
-- The diff script counts the first structurally divergent decision in prompt mismatches (artifact).
+- The diff script counts the first structurally divergent decision in prompt mismatches (artifact);
+  its `common` column is min of totals, not a verified prefix — read the break point.
 - Prompt/label text moves learned scores: expect rust-vs-rust choice cascades after any label change;
   score-gap zero on common prefixes is the no-regression gate.
 
 Next exact action/command:
-Start P1-d per `plans/CONTINUATION_PLAN.md` Phase 1 (expedition/expansion prompt wording): read-only
-oracle inspection of the relevant Python prompts, record spec pre-implementation in evidence §P1-d with
-failing tests first, implement, run the gate set + T6 re-run vs the existing Python artifact.
+Start P1-e per `plans/CONTINUATION_PLAN.md` Phase 1 (speaker choice + seat-id prompts → faction
+names): read-only oracle inspection of the speaker/signal-jamming prompt sites, record spec
+pre-implementation in evidence §P1-e with failing tests first, implement, run the gate set + T6
+re-run vs `out/py_ff_learn_83000001_p1a2.json`.
 
 Files to read first after compaction:
-`plans/CONTINUATION_PLAN.md`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (P1-b section), this file,
-then the P1-d row of the plan's Phase 1 table.
+`plans/CONTINUATION_PLAN.md`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (P1-d section), this file,
+then the P1-e row of the plan's Phase 1 table.

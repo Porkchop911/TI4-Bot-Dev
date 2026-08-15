@@ -43,10 +43,9 @@ use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::state::GameState;
 
 use crate::event::Event;
-use crate::timing::{Ability, Frequency, Relation, Resolver, TimingContext, TimingError};
-
-/// The choice kind for a reaction offer.
-pub const REACTION_KIND: &str = "reaction";
+use crate::timing::{
+    Ability, Frequency, Relation, Resolver, TimingContext, TimingError, relation_name,
+};
 
 /// Whether a card's window applies to this player, given the event.
 type Guard = fn(&Event, &PlayerId) -> bool;
@@ -414,12 +413,52 @@ pub fn announce(
     Ok(true)
 }
 
+/// The choice kind the oracle offers reaction cards under (engine/reactions.py:320–324).
+pub const ACTION_CARD_KIND: &str = "action_card";
+
+/// The options the inner card choice offers: one per *card*, not per alias.
+///
+/// Mirrors the oracle's `{name: a for a in reversed(available)}.values()` (engine/reactions.py:
+/// 319–324): a card printed four times has four aliases, and holding two copies must not offer
+/// it twice — a bot that samples per option would draw extra weight from the duplicate. The
+/// reverse walk fixes each name's slot; the alias kept is the first one in hand order.
+fn reaction_card_options(
+    content: &ContentStore,
+    options: &[ActionCardId],
+) -> Vec<crate::choice::ChoiceOption> {
+    let mut slots: Vec<(String, ActionCardId)> = Vec::new();
+    for alias in options.iter().rev() {
+        let name = crate::action_cards::name_of(content, alias);
+        match slots.iter_mut().find(|(slot_name, _)| *slot_name == name) {
+            Some(slot) => slot.1 = alias.clone(),
+            None => slots.push((name, alias.clone())),
+        }
+    }
+    slots
+        .into_iter()
+        .map(|(_, alias)| {
+            crate::choice::ChoiceOption::labelled(
+                alias.to_string(),
+                ACTION_CARD_KIND,
+                format!("play {}", crate::action_cards::name_of(content, &alias)),
+            )
+        })
+        .collect()
+}
+
 /// One reaction opportunity, for one player, in one window.
-fn slot(player: &PlayerId, event_type: &str, relation: Relation) -> Ability {
+///
+/// `owner_name` is the faction name that appears in the ability id: the oracle builds
+/// `f"reaction:{player}:{event_type}:{relation.value}"` (engine/reactions.py:332) and a Python
+/// player's identity is its faction, with the relation lowercase (`"when"` / `"after"`).
+fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relation) -> Ability {
     let owner = player.clone();
     let condition_owner = player.clone();
     Ability::stateful(
-        format!("reaction:{player}:{event_type}:{relation:?}"),
+        format!(
+            "reaction:{owner_name}:{event_type}:{}",
+            relation_name(relation)
+        ),
         player.clone(),
         event_type,
         relation,
@@ -433,17 +472,12 @@ fn slot(player: &PlayerId, event_type: &str, relation: Relation) -> Ability {
             } else {
                 let choice = crate::choice::Choice::new(
                     owner.clone(),
-                    format!("play a reaction to {}", event.event_type),
-                    options
-                        .iter()
-                        .map(|alias| {
-                            crate::choice::ChoiceOption::labelled(
-                                alias.to_string(),
-                                REACTION_KIND,
-                                alias.to_string(),
-                            )
-                        })
-                        .collect(),
+                    format!(
+                        "play an action card ({} {})",
+                        relation_name(relation),
+                        event.event_type
+                    ),
+                    reaction_card_options(context.content, &options),
                 );
                 match context.ask_seeing(&choice) {
                     Ok(answer) => ActionCardId::new(answer.id),
@@ -484,8 +518,9 @@ pub fn arm(resolver: &mut Resolver, state: &GameState) {
     windows.dedup();
 
     for seat in &state.players {
+        let owner_name = crate::promissory::faction_name(state, &seat.id);
         for (event_type, relation) in &windows {
-            resolver.register([slot(&seat.id, event_type, *relation)]);
+            resolver.register([slot(&owner_name, &seat.id, event_type, *relation)]);
         }
     }
 }
@@ -687,6 +722,224 @@ mod tests {
         assert!(
             !with_activation.contains(&"SYSTEM_ACTIVATED"),
             "an emitted event is reachable"
+        );
+    }
+
+    // P1-d: reaction option identity aligned to the oracle (engine/reactions.py:316–324, 332;
+    // engine/timing.py:55–63), commit 37061c5.
+
+    /// One recorded option surface: id, kind and label.
+    type OptionSurface = (String, String, String);
+    /// One recorded choice: prompt plus its offered options in order.
+    type RecordedAsk = (String, Vec<OptionSurface>);
+
+    /// A decider that records every choice it is asked to answer, answering from a queue of ids.
+    struct Recording {
+        wanted: std::collections::VecDeque<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>,
+    }
+
+    impl Recording {
+        fn new(wanted: &[&str]) -> (Self, std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>) {
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            (
+                Self {
+                    wanted: wanted.iter().map(|id| (*id).to_owned()).collect(),
+                    seen: seen.clone(),
+                },
+                seen,
+            )
+        }
+
+        fn record(&self, choice: &crate::choice::Choice) {
+            self.seen.borrow_mut().push((
+                choice.prompt.clone(),
+                choice
+                    .options
+                    .iter()
+                    .map(|option| (option.id.clone(), option.kind.clone(), option.label.clone()))
+                    .collect(),
+            ));
+        }
+    }
+
+    impl crate::choice::Decider for Recording {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            self.record(choice);
+            let Some(wanted) = self.wanted.pop_front() else {
+                return Err(crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: "<script exhausted>".to_owned(),
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                });
+            };
+            choice.option(&wanted).cloned().ok_or_else(|| {
+                crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted,
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn the_reaction_slot_id_uses_the_faction_and_lowercase_relation() {
+        // engine/reactions.py:332 builds f"reaction:{player}:{event_type}:{relation.value}",
+        // and a Python player's identity is its faction name (live trace:
+        // reaction:hacan:SYSTEM_ACTIVATED:after). Rust used the seat id plus Debug-formatted
+        // capitalization.
+        let ability = slot("hacan", &player(), "SYSTEM_ACTIVATED", Relation::After);
+        assert_eq!(ability.id, "reaction:hacan:SYSTEM_ACTIVATED:after");
+
+        let when = slot("sol", &player(), "AGENDA_REVEALED", Relation::When);
+        assert_eq!(when.id, "reaction:sol:AGENDA_REVEALED:when");
+    }
+
+    #[test]
+    fn a_reaction_offer_is_one_option_per_printed_card() {
+        // engine/reactions.py:319–324 dedupes by printed name. Flank Speed is printed four times
+        // (fs1..fs4), so holding two copies must offer one option, not two — and the kept alias
+        // is the first in hand order.
+        let content = ContentStore::embedded();
+        let options = reaction_card_options(
+            content,
+            &[ActionCardId::new("fs1"), ActionCardId::new("fs4")],
+        );
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].id, "fs1");
+
+        // The reverse walk fixes each name's slot: hand [silence_space, fs1] offers in the order
+        // [fs1, silence_space], exactly as Python's reversed() dict comprehension does.
+        let options = reaction_card_options(
+            content,
+            &[ActionCardId::new("silence_space"), ActionCardId::new("fs1")],
+        );
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.id.as_str())
+                .collect::<Vec<_>>(),
+            ["fs1", "silence_space"]
+        );
+    }
+
+    #[test]
+    fn the_inner_choice_labels_cards_in_played_form() {
+        // engine/reactions.py:320–324: kind "action_card", label f"play {known[a].name}".
+        let content = ContentStore::embedded();
+        let options = reaction_card_options(
+            content,
+            &[ActionCardId::new("fs1"), ActionCardId::new("silence_space")],
+        );
+        // The reverse walk puts the last held card first: [fs1, silence] offers
+        // [silence_space, fs1].
+        assert_eq!(options[0].label, "play In The Silence Of Space");
+        assert_eq!(options[1].label, "play Flank Speed");
+        for option in &options {
+            assert_eq!(option.kind, "action_card");
+        }
+    }
+
+    #[test]
+    fn the_inner_choice_is_asked_with_the_oracle_prompt_and_surface() {
+        // End to end: the outer window ask ("after SYSTEM_ACTIVATED") and the inner card choice
+        // (engine/reactions.py:316) must both surface through one table, with the oracle wording.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player()).unwrap().action_cards =
+            vec![ActionCardId::new("silence_space"), ActionCardId::new("fs1")];
+        // Nobody else holds a card that could hook the nested ACTION_CARD_PLAYED announcement.
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .action_cards
+            .clear();
+
+        // Third answer: the slot is repeatable in window (1.19), so after playing Flank Speed
+        // the resolver re-offers it while In The Silence Of Space is still playable; decline.
+        let (decider, seen) =
+            Recording::new(&["reaction:hacan:SYSTEM_ACTIVATED:after", "fs1", "decline"]);
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut resolver = Resolver::new(
+            vec![PlayerId::new("a"), PlayerId::new("b")],
+            Some(PlayerId::new("a")),
+            crate::choice::Table::default(),
+        );
+        resolver.register([slot(
+            "hacan",
+            &player(),
+            "SYSTEM_ACTIVATED",
+            Relation::After,
+        )]);
+
+        let content = ContentStore::embedded();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut event_sequence = crate::event::EventSequence::new();
+        let mut context = TimingContext {
+            state: &mut state,
+            content,
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut event_sequence,
+            galaxy: None,
+        };
+
+        let mut payload = BTreeMap::new();
+        payload.insert("player".to_owned(), "a".into());
+        let event = context
+            .event_sequence
+            .next("SYSTEM_ACTIVATED", payload)
+            .unwrap();
+        resolver
+            .emit_with_context(&mut context, event, |_, _| {})
+            .unwrap();
+
+        let asks = seen.borrow().clone();
+        assert_eq!(
+            asks.len(),
+            3,
+            "outer ask, inner card choice, repeatable re-offer; got {asks:?}"
+        );
+
+        // The outer asks keep the shape they already had: prompt, ability option, decline —
+        // including the repeatable re-offer after the first resolution.
+        assert_eq!(asks[0].0, "after SYSTEM_ACTIVATED");
+        assert_eq!(asks[2].0, "after SYSTEM_ACTIVATED");
+        let ids: Vec<_> = asks[0].1.iter().map(|(id, _, _)| id.as_str()).collect();
+        assert!(
+            ids.contains(&"reaction:hacan:SYSTEM_ACTIVATED:after"),
+            "got {ids:?}"
+        );
+
+        // The inner ask is the aligned surface.
+        assert_eq!(asks[1].0, "play an action card (after SYSTEM_ACTIVATED)");
+        let offered: Vec<_> = asks[1]
+            .1
+            .iter()
+            .map(|(id, kind, label)| (id.as_str(), kind.as_str(), label.as_str()))
+            .collect();
+        assert_eq!(
+            offered,
+            [
+                ("fs1", "action_card", "play Flank Speed"),
+                (
+                    "silence_space",
+                    "action_card",
+                    "play In The Silence Of Space"
+                )
+            ]
+        );
+
+        // The chosen card was actually played: the hand lost it and the state carries its effect.
+        assert_eq!(
+            state.player(&player()).unwrap().action_cards,
+            [ActionCardId::new("silence_space")]
         );
     }
 }

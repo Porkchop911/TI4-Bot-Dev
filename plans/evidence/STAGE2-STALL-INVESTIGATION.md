@@ -1060,3 +1060,83 @@ Oracle repo untouched (not needed for this package).
 
 **Permission class / bounds.** Local writes: `crates/ti4-engine/src/production.rs` (+ its test module),
 plans evidence/state, out/ trace artifacts. No network/process; oracle repo not needed (no Python).
+
+## P1-d — reaction option identity alignment (implemented)
+
+**Class.** Reaction ability ID `reaction:{faction}:{EVENT}:after` vs Rust's
+`reaction:seatN:{EVENT}:After`; outer prompt already matched (`"after {event}"`). Mechanical
+relabeling plus the inner card-choice surface. Event-name remapping stays Phase 2.
+
+**Oracle facts (read-only, verified against commit 37061c5).** `engine/reactions.py:332` builds
+the id `f"reaction:{player}:{event_type}:{relation.value}"`; a Python player's identity is its
+faction name (live trace: `reaction:hacan:SYSTEM_ACTIVATED:after`). `engine/timing.py:55–63`:
+relation values are lowercase `"when"` / `"after"`. `engine/reactions.py:316, 320–324`: inner
+choice prompt `f"play an action card ({relation.value} {event.type})"`, options
+`Option(a, "action_card", f"play {known[a].name}")` deduped by printed name via
+`{known[a].name: a for a in reversed(available)}.values()` — one option per *card*, not per alias
+(Flank Speed is printed four times as `fs1..fs4`; holding two copies must offer it once), keeping
+the first hand-order alias with slot order set by reverse-walk insertion. Dict semantics verified
+against CPython: `[fs1, silence_space] → [silence_space, fs1]`, `[silence_space, fs1] →
+[fs1, silence_space]`, `[fs1, fs4] → [fs1]`. `engine/reactions.py:307–315`: the inner choice is
+asked whenever `playable_now` is non-empty, even for a single card. `engine/timing.py:305–330`:
+outer `_pick` auto-resolves only when exactly one *mandatory* ability; kind `"ability"`, label =
+id, DECLINE appended if any eligible optional — Rust already matched this structure.
+
+**In scope (this commit).** D1 id → `reaction:{owner_name}:{event_type}:{lowercase}`: `slot()`
+gains an owner-name parameter filled in `arm()` via the P1-a2 helper
+`promissory::faction_name(state, &seat.id)`; timing.rs `relation_name` became `pub(crate)`. D2
+inner prompt → `"play an action card ({lowercase} {EVENT})"`. D3 inner options kind
+`ACTION_CARD_KIND = "action_card"` (replacing unused `REACTION_KIND`, verified no external users),
+label `"play {name_of(content, alias)}"`, dedupe exactly mirroring Python's dict comprehension:
+helper `reaction_card_options` walks the hand in reverse, fixes each name's slot at first
+encounter, overwrites the value with earlier hand-order aliases (O(n²), hand ≤ 7). The raw-length
+auto-pick branch is unchanged.
+
+**Out of scope — new findings.** F8: outer reaction option payload lacks Python's
+`"cards": [aliases…]` list (`engine/reactions.py:342–345`); Rust `OptionPayload = Arc<dyn Fn(&Event, &Resolver)>`
+cannot reach state/content, so computing `playable_now` at resolution time needs a timing.rs API
+change — later package. F9: single-card windows — Python asks the inner choice even with one
+option (`engine/reactions.py:307–315`); Rust auto-picks silently when raw aliases == 1, so Python
+logs an extra degenerate decision point and credit assignment diverges on reaction-heavy
+trajectories; window-shape family of F5 — later package (P1-g or similar).
+
+**Tests (failing first).** Four new tests in `reactions.rs`: id format for both relations
+(`reaction:hacan:SYSTEM_ACTIVATED:after`, `reaction:sol:AGENDA_REVEALED:when`); one option per
+printed card with reverse-walk ordering (`[fs1, fs4] → [fs1]`; `[silence_space, fs1] →
+[fs1, silence_space]`); kind/labels (`"action_card"`, `"play Flank Speed"`, `"play In The Silence
+Of Space"`); end-to-end drive through Resolver + TimingContext with a recording decider asserting
+outer prompt `"after SYSTEM_ACTIVATED"`, inner prompt/options byte-for-byte, the played card
+leaving the hand, and the repeatable-slot re-offer (1.19) answered by decline. Red first: E0061
+(slot arity ×4 call sites incl. arm/test) + E0425 (`reaction_card_options` undefined). Wiring test
+assertion updated with D1: scaffold factions stay default, so `"reaction:a:SYSTEM_ACTIVATED"` →
+`"reaction:generic:SYSTEM_ACTIVATED"`.
+
+**Verification.** `cargo fmt -p ti4-engine` clean. ti4-engine 774 lib + 5 doctests (was 770; +4).
+ti4-training 98/98 release. Clippy zero warnings on both crates, all targets (two rounds of test-
+module `needless_borrow` fixes for the `&'static ContentStore::embedded()` pattern). Workspace
+check clean.
+
+**T6 differential vs `out/py_ff_learn_83000001_p1a2.json`.** All six factions: max_score_gap =
+0.000000, choice_mismatches_within_common = 0 (note: the script's `common` column is min of totals;
+the verified prefix runs to the first structural break). First structural mismatch per faction is a
+recorded class only — hacan idx1: option set differs by exactly the F1 leader component
+(`component|leader|hacanagent`; trade-partner sets otherwise identical); jolnar/l1z1x/letnev/xxcha/sol
+idx1: Rust blind `pok1leadership secondary` (`decline`/`follow`) vs Python's inline action phase or
+no-yes replenishment — P1-c/P1-f. The per-faction `prompt_text_mismatches=1` is the known diff-script
+artifact (the structurally divergent decision itself). Rust reaction-surface decisions: 60, all with
+oracle-format ids (`reaction:{faction}:…:{when|after}`), zero old seat-based/capitalized ids. The
+py=35 vs rust=60 window-ask asymmetry predates P1-d (p1b had the same 60) — F2-family firing drift,
+not a regression.
+
+**Rust-vs-rust p1b → p1d.** Identical 1119 decisions and keys; zero behavioral fork — the only
+`chosen` difference is the rename itself at jolnar@82 (`reaction:seat4:PLANET_CONTROL_GAINED:After`
+→ `reaction:jolnar:PLANET_CONTROL_GAINED:after`). All 60 renamed reaction options show score shifts
+(e.g. hacan@109 −1.1113 → −0.9658): the id-string label is a scored feature (features.rs), so the
+feature vector moves toward the Python-trained vocabulary — exactly the expected P1-b precedent, no
+choice crossed a boundary in this game.
+
+**Artifacts.** `out/rust_ff_83000001_p1d.txt`, `out/rust_ff_83000001_p1d.json`,
+`out/rust_ff_p1d.err`. Oracle repo untouched (no Python run needed for this package).
+
+**Permission class / bounds.** Local writes: `crates/ti4-engine/src/reactions.rs`, `timing.rs`,
+`wiring.rs` (+ test modules), plans evidence/state, out/ trace artifacts. No network/process.

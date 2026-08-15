@@ -859,7 +859,8 @@ enum FrequencyScope {
     Round(u64),
 }
 
-const fn relation_name(relation: Relation) -> &'static str {
+/// The lowercase relation word the oracle uses in ability ids and prompts (`"when"` / `"after"`).
+pub(crate) const fn relation_name(relation: Relation) -> &'static str {
     match relation {
         Relation::When => "when",
         Relation::After => "after",
