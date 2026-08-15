@@ -1374,26 +1374,32 @@ this handover closes P1-a3 (per-note trade pricing).
 Oracle commit: 37061c511a4780d4c0719e0342533a498cd4b457 (branch codex/fully-learned-policy;
 repo D:/Projects/ti4-engine verified byte-untouched again this session).
 
-Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a3 complete;
-next ready package is **P1-b** (secondary/off-answer vocabulary `no`/`yes` vs Rust
-`decline`/`follow`, plus the blind-vs-inline reaction windows it exposes).
+Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a3 complete
+(commit cd863f9); post-commit audit retracted its "oracle-inert" claim for action-card trades and
+recorded **F3**. Next ready package is **P1-a4** (ac{} action-card trade shape — operator-corrected;
+Hacan's Arbiters ability fires in the oracle) or P1-b (`no`/`yes` answer vocabulary + blind
+decline/follow secondaries); awaiting operator ordering call, default P1-a4.
 
 Status and completed acceptance criteria:
 - Per-note sale pricing implemented in transactions.rs only: option id `pn{note}:{price}` with
   price = oracle's no-game worth rounded half-to-even (ta flat row 2.5→**2**, ps/cf 1.5→2, ra 4,
   an/convoys 3); label "sell {note} for {price} trade goods"; affordability guard at the live
   price; offer_from parses the last-colon price (unpriced legacy form → no deal). NOTE_PRICE deleted.
-- `ac{}` action-card trades reclassified **oracle-inert** (TRADES_ACTION_CARDS is an empty set in
-  the oracle: never proposed, always rejected) — implementing it would be speculative divergence;
-  recorded to close the P1-a2 residual that had scheduled it for P1-a3.
+- ~~`ac{}` reclassified oracle-inert~~ — **RETRACTED by post-commit audit (F3):**
+  `hacan.py:48` adds "arbiters" to TRADES_ACTION_CARDS at import and the hacan faction record
+  carries that ability, so the oracle does propose/accept action-card trades for any table with
+  Hacan. Measured in the T6 game: 19 ac-option appearances, 0 chosen. Rust has no Terms.action_card,
+  gate, parse, or proposal → scheduled as P1-a4. Full audit trail in the evidence file's
+  "Post-commit audit" section.
 - New finding F2: the oracle's 81.3 status-phase action-card draw (one per player in initiative
   order, +1 with Neural Motivator) is never called from Rust's finish_status_phase — same
   wired-but-never-called class as F1 (leaders). Separate reviewed package; Phase 2 gap.
 
-Current branch and HEAD: codex/stage1-parity-fixes at 54f16f2 (P1-a2); P1-a3 commit follows this
-handover (7 files expected: transactions.rs, evidence, state; no other code touched).
+Current branch and HEAD: codex/stage1-parity-fixes at cd863f9 (P1-a3). This handover revision adds
+the F3 correction to evidence + state only.
 
-Working-tree state: clean apart from the in-scope P1-a3 paths listed above. out/ is gitignored.
+Working-tree state: clean apart from plans/evidence/STAGE2-STALL-INVESTIGATION.md and this file
+(F3 correction, docs-only). out/ is gitignored.
 
 Tests last run and exact results:
 - cargo fmt -p ti4-engine --check: clean.
@@ -1419,7 +1425,8 @@ Decisions made and rationale:
   round(2.5)=2 in Python, 3 in Rust's half-away-from-zero — a real surface divergence at ta.
 - Unpriced `pn{note}` parses to no deal (oracle would raise; refusing is the safe equivalent).
 
-Open review findings or blockers: none new. F1 and F2 remain Phase-2 items awaiting reviewed packages.
+Open review findings or blockers: none blocking. F1 (leaders) and F2 (status-phase card draw)
+remain Phase-2 items; **F3 (ac{} trade shape)** is a Phase-1 surface gap awaiting P1-a4.
 
 Protocol warning (new): single_game_trace silently ignores unknown flags — this session's first
 P1-a3 run passed `--greedy` instead of `--greedy-temperature`, producing a native-temperature
@@ -1427,8 +1434,11 @@ P1-a3 run passed `--greedy` instead of `--greedy-temperature`, producing a nativ
 head.temperature field before any conclusion was drawn. Verify temperature in trace metadata
 before every differential.
 
-Next exact action/command: commit P1-a3 (transactions.rs + evidence + this state file), then start
-P1-b with a pre-implementation spec in plans/evidence/STAGE2-STALL-INVESTIGATION.md covering the
+Next exact action/command: commit the F3 correction (evidence + this state file, docs-only). Then,
+per operator ordering call (default P1-a4), write the pre-implementation spec for the chosen
+package in plans/evidence/STAGE2-STALL-INVESTIGATION.md — for P1-a4 that covers Terms.action_card,
+the 94.3 legality gate, the `ac{card}:1` proposal option (sorted hand head, partner ≥1 trade good),
+parse and settlement transfer; for P1-b it covers the
 `no`/`yes` answer vocabulary and the blind decline/follow secondary windows.
 
 Files to read first after compaction: AGENTS.md; plans/SCOPED_PERMISSIONS.md; this file's handover;

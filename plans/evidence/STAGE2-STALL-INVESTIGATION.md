@@ -740,12 +740,15 @@ asks for, so it must be reproduced exactly: helper `py_round_half_even`.
    partner-affordability guard at the live price, id parse round-trip, malformed → None; update
    existing note-offer tests whose expected ids gain `:2`.
 
-**Out of scope / reclassified (verified against oracle source this session).**
-- **`ac{}` action-card trades are oracle-inert.** `faction_abilities.TRADES_ACTION_CARDS` is an
-  *empty set*, so `trades_action_cards()` is always false: the oracle never proposes an ac option
-  and its legality gate rejects every card-bearing offer. Implementing it in Rust would add a
-  surface the oracle does not exhibit — speculative divergence, refused per AGENTS.md. Recorded
-  here to close the P1-a2 residual that listed it for P1-a3; no code change.
+**Out of scope / reclassified.**
+- ~~`ac{}` action-card trades are oracle-inert.~~ — **RETRACTED, corrected below in the
+  post-commit audit.** The original claim read only the declaration line
+  (`TRADES_ACTION_CARDS: set[str] = set()` in `faction_abilities/__init__.py`) and missed
+  `engine/faction_abilities/hacan.py:48`, which runs `fa.TRADES_ACTION_CARDS.add(ARBITERS)` at
+  import time; the content corpus then makes it live, because hacan's record carries
+  `abilities: ["master_of_trade", "guild_ships", "arbiters"]`. Action-card trades are a real,
+  firing oracle surface for any table containing Hacan — see **F3** below. No retraction of code:
+  P1-a3 shipped only pricing, which is unaffected.
 - **F2 (Phase 2 gap):** the oracle's 81.3 status-phase draw (one action card per player in
   initiative order, +1 with Neural Motivator) is never called from Rust's `finish_status_phase`;
   Rust draws only via exploration/strategy-card effects. Consequence: seat hands diverge over a
@@ -798,5 +801,31 @@ always verify a new trace's temperature before diffing. The corrected run is on 
   explained: l1z1x/xxcha offer states unreached due to the idx=1 cascade forks (F1/windows), and
   `pnan:*` notes which Python can offer only after commander unlocks that Rust rollouts lack (F1).
 
-**Residuals.** F2 recorded above (status-phase action-card draw never called in Rust) — separate
-reviewed package. `ac{}` reclassified oracle-inert; no code change. Next Phase-1 sub-package is P1-b.
+**Post-commit audit (operator prompt: "action card trades are a Hacan ability") — F3 recorded.**
+Re-inspected the oracle read-only and found the "oracle-inert" claim above was wrong on two
+independent grounds:
+- `hacan.py:48` adds `"arbiters"` to `TRADES_ACTION_CARDS` at import; `has()` resolves it through
+  the faction record's `abilities`, which for alias `hacan` includes `"arbiters"`. So
+  `trades_action_cards(game, hacan_seat)` is **true**.
+- Mechanics (transactions.py): legality gate 94.3 accepts a card-bearing offer iff *either* party
+  has Arbiters and each side holds the card it offers; proposal adds exactly one option when either
+  party has the ability, the proposer holds cards, and the partner holds ≥1 trade good:
+  id `ac{card}:1` with `card = sorted(hand)[0]`, label "sell the action card {card} for 1 trade
+  good", payload `{"action_card": card}`. Settlement transfers the card on both sides (Terms
+  already carries it in the oracle).
+- **Measured frequency:** in the T6 game itself (`out/py_ff_learn_83000001_p1a2.json`) ac options
+  appeared **19 times** across l1z1x/xxcha/letnev/sol trade windows (all Hacan partners) and were
+  **chosen 0 times** — a structural-surface divergence that reshapes option sets but did not steer
+  this game's outcomes.
+- Rust state: `Terms` has no `action_card` field; no parse, gate, or proposal exists. Oracle source
+  comment (kept verbatim in the audit trail): before this option shape was added, "Hacan …
+  finished last of six with 1.30 points and no wins in thirty games" — the oracle authors added it
+  precisely because Hacan's trade identity never fired.
+- **F3 (Phase-1 surface gap):** implement the ac{} shape — `Terms.action_card`, 94.3 legality,
+  proposal option, parse/settlement — as sub-package **P1-a4**. Interaction with F2: Rust hands
+  stay thin without the status-phase draw, so P1-a4 alone narrows but does not close the gap;
+  full parity needs both (F2 is a game-flow change and gets its own reviewed package).
+
+**Residuals.** F2 (status-phase action-card draw never called in Rust) and F3 (ac{} trade shape)
+as above. Next Phase-1 sub-packages: P1-a4 (action-card trades, per the operator's correction) or
+P1-b (`no`/`yes` answer vocabulary + blind secondaries); ordering to be confirmed.
