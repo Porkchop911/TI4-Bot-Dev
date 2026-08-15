@@ -1377,12 +1377,12 @@ T5 pilot committed e71d0de; T6 diagnostic commit follows this handover.
 Status and completed acceptance criteria:
 T6 complete: with both engines on the same checkpoint table (learner_profiles), scores match to
 full precision at every aligned decision and features are byte-equal for equivalent decisions;
-residual divergence is surface-label driven (player identity in prompts, option-id vocabulary,
-reaction event taxonomy). Root-cause chain documented in evidence T6.
+residual divergence is surface-label driven. T6b audit done (read-only): Python 38 reaction-window
+aliases vs Rust 29 — 10 missing in Rust, 1 extra in Rust, 3 name-only remaps, 1 real WHEN/AFTER
+timing divergence. Operator approved option (a) surface alignment; phase plan recorded in evidence.
 Current branch and HEAD:
-codex/stage1-parity-fixes @ e71d0de + uncommitted: rollout.rs (additive play_with_deciders),
-examples/single_game_trace.rs (new diagnostic example), plans/evidence/STAGE2-STALL-INVESTIGATION.md
-(T6 section). Tree otherwise clean.
+codex/stage1-parity-fixes @ fa5a26d (T6 differential committed) + uncommitted T6b audit: evidence
+tail, this handover. Tree otherwise clean.
 Working-tree state:
 The three paths above only; out/* artifacts are gitignored.
 Tests last run and exact results:
@@ -1400,13 +1400,13 @@ Decisions made and rationale:
   options). This materially changes public training behavior — awaiting operator/frontier call;
   no code change made.
 Open review findings or blockers:
-- Open: reaction-event taxonomy audit (each engine emitted event classes the other never did);
-must be resolved before any full-game-dynamics parity claim.
+- Phase 2 touches legality/timing (10 new windows incl. combat hit-assignment; WHEN/AFTER fix) →
+frontier review tier required before implementation per AGENTS.md.
 - The zero-signal stall diagnosis (T1/T2) stands independently of T6.
 Next exact action:
-Await operator decision on canonical surface. If option (a) chosen: align Rust game-layer labels
-to the Python surface, re-run the T6 differential to confirm full-stream agreement, then resume
-stage-2 parity experiments.
+Phase 1: align Rust game-layer labels to the Python surface (player identity in prompts/options,
+option-id vocabulary no/yes vs buy/decline, prompt phrasing); verify by re-running the T6
+differential for full structural agreement; commit as its own package.
 Files to read first after compaction:
 plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (T5 + T6 sections),
 crates/ti4-training/examples/single_game_trace.rs, out/diff_py_game.py, out/diff_decisions.py

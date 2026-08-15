@@ -477,3 +477,31 @@ behavior and is not decided by existing plans.
 **Artifacts.** `out/rust_ff_83000001.json`, `out/py_ff_learn_83000001.json` (full-feature greedy traces),
 `out/diff_decisions.py --at <faction> <idx>` (bucket-level feature diff), `out/rust_loaded_strategy.json`
 (weight dump). Oracle repo unchanged.
+
+## T6b — reaction-window taxonomy audit (read-only)
+
+Both engines register action-card reaction windows in exactly one table keyed by the corpus's
+printed window text (Python `engine/reactions.py WINDOWS`, Rust `reactions.rs window_table()`);
+leaders/technology use separate standing-modifier mechanisms on both sides, verified by grep.
+Script: `out/audit_reaction_windows.py`; tables dumped to `out/reaction_window_tables.json`.
+
+**Counts:** Python 38 aliases; Rust 29.
+
+| class | count | detail |
+|---|---|---|
+| missing in Rust (cards can never react) | 10 | windows on UNIT_DESTROYED (after ×1, when ×1), GROUND_FORCE_COMMITTED after, SUSTAIN_DAMAGE_USED (after + when), GROUND_DICE_ROLLED after, RETREAT_ANNOUNCED after, defender "Announce Retreats step" variant of COMBAT_ROUND_STARTED, HITS_ASSIGNING before-assignment ×2 |
+| extra in Rust (reaction opportunity Python never offers) | 1 | "When 1 or more of your units use PRODUCTION" → PRODUCTION_USED |
+| name-only remaps (fire at the same game point?) | 3 aliases / 4 rows | SPACE_COMBAT_ENDED↔SPACE_COMBAT_WON; INVASION_STARTED↔INVASION_BEGAN ×2 — emit-site parity still to verify in Phase 2 |
+| **semantic divergence** | 1 | "When another player chooses a strategy card during the strategy phase": Python `Relation.WHEN` (fires before completion), Rust `After` (fires after resolution) — different observable/mutable state at the reaction point |
+
+This audit explains every event-taxonomy difference observed in T6 traces and bounds Phase 2:
+close 10 missing windows, remove or gate the 1 extra, align 3-4 event names, fix 1 WHEN/AFTER
+relation. The WHEN/AFTER fix changes when a reaction fires relative to resolution — legality/API
+boundary territory → frontier review tier per AGENTS.md before implementation.
+
+**Phase plan for surface alignment (operator-approved option (a), 2026-08-15):**
+- Phase 1: label/vocabulary alignment only (player identity in prompts/options, `no/yes` vs
+  `buy/decline`, prompt phrasing). Mechanical; verified by re-running the T6 differential to full
+  structural agreement.
+- Phase 2: reaction-window set alignment per this audit (own package; WHEN/AFTER row gets frontier
+  review first).
