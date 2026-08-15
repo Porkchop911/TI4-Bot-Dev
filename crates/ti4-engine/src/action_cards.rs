@@ -1149,27 +1149,43 @@ fn signal_jamming(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     ) else {
         return;
     };
-    let victims: Vec<(String, String)> = context
+    // engine/action_cards.py:1059–1064 names the rivals by faction (Python player ids are
+    // factions) and the prompt carries the chosen system, so the answer maps back to a seat.
+    let rivals: Vec<(String, PlayerId)> = context
         .state
         .players
         .iter()
         .filter(|seat| &seat.id != player)
-        .map(|seat| (seat.id.to_string(), format!("jam {}", seat.id)))
+        .map(|seat| {
+            (
+                crate::promissory::faction_name(context.state, &seat.id),
+                seat.id.clone(),
+            )
+        })
+        .collect();
+    let victims: Vec<(String, String)> = rivals
+        .iter()
+        .map(|(name, _)| (name.clone(), format!("{name}'s command token")))
         .collect();
     let Some(victim) = pick(
         context,
         player,
-        "Signal Jamming: whose token",
+        &format!("Signal Jamming: whose token goes into {where_to}"),
         "player",
         &victims,
     ) else {
+        return;
+    };
+    // Structurally unreachable otherwise: `pick` only returns ids it offered, and those were
+    // built from `rivals`.
+    let Some((_, seat)) = rivals.iter().find(|(name, _)| *name == victim) else {
         return;
     };
     context
         .state
         .system_mut(&ti4_model::id::SystemId::new(where_to))
         .command_tokens
-        .insert(PlayerId::new(victim));
+        .insert(seat.clone());
 }
 
 /// Lucky Shot: destroy one dreadnought, cruiser or destroyer in a system you hold a planet in.
@@ -2184,6 +2200,124 @@ mod tests {
             state.system_state(&system).command_tokens.contains(&rival),
             "b cannot activate it again (89.1)"
         );
+    }
+
+    // P1-e: signal jamming victim surface aligned to the oracle
+    // (engine/action_cards.py:1059–1064 @ 37061c5).
+
+    /// One recorded option surface: id, kind and label.
+    type OptionSurface = (String, String, String);
+    /// One recorded choice: prompt plus its offered options in order.
+    type RecordedAsk = (String, Vec<OptionSurface>);
+
+    /// A decider that records every choice it is asked to answer, answering from a queue of ids.
+    struct JammingRecording {
+        wanted: std::collections::VecDeque<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>,
+    }
+
+    impl JammingRecording {
+        fn new(wanted: &[&str]) -> (Self, std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>) {
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            (
+                Self {
+                    wanted: wanted.iter().map(|id| (*id).to_owned()).collect(),
+                    seen: seen.clone(),
+                },
+                seen,
+            )
+        }
+    }
+
+    impl crate::choice::Decider for JammingRecording {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            let recorded = (
+                choice.prompt.clone(),
+                choice
+                    .options
+                    .iter()
+                    .map(|option| (option.id.clone(), option.kind.clone(), option.label.clone()))
+                    .collect::<Vec<OptionSurface>>(),
+            );
+            self.seen.borrow_mut().push(recorded);
+            let Some(wanted) = self.wanted.pop_front() else {
+                return Err(crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: "<script exhausted>".to_owned(),
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                });
+            };
+            choice.option(&wanted).cloned().ok_or_else(|| {
+                crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted,
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn signal_jamming_names_rivals_by_faction() {
+        // The victim prompt names the chosen system, and each rival option is their faction name
+        // labelled "{faction}'s command token"; Rust presented seat ids under "whose token".
+        let player = PlayerId::new("a");
+        let rival = PlayerId::new("b");
+        // Three seats so the victim pick offers more than one option: a single offered
+        // candidate is auto-picked without an ask (the recorded F5 family).
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        state.player_mut(&rival).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&PlayerId::new("c")).unwrap().faction =
+            ti4_model::id::FactionId::new("jolnar");
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put(&mut state, &system, "cruiser", &player, 1);
+
+        // The system pick is a single candidate and auto-picks without an ask; the script
+        // therefore starts at the victim pick.
+        let (recorder, seen) = JammingRecording::new(&["hacan"]);
+        let mut table = crate::choice::Table::with_default(Box::new(recorder));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state: &mut state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        signal_jamming(&mut context, &player);
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1, "only the victim pick is asked");
+        assert_eq!(
+            asks[0].0,
+            format!("Signal Jamming: whose token goes into {system}")
+        );
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (
+                    "hacan".to_owned(),
+                    "player".to_owned(),
+                    "hacan's command token".to_owned()
+                ),
+                (
+                    "jolnar".to_owned(),
+                    "player".to_owned(),
+                    "jolnar's command token".to_owned()
+                )
+            ]
+        );
+        // The chosen name maps back to the seat that plays it.
+        assert!(state.system_state(&system).command_tokens.contains(&rival));
     }
 
     #[test]

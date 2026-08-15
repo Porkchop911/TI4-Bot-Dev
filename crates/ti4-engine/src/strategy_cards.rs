@@ -322,17 +322,41 @@ fn politics_primary(
         .cloned()
         .collect();
     if !candidates.is_empty() {
+        // engine/strategy.py:736–748 offers the candidates by faction name — Python player ids
+        // are factions — so the surface names them and the answer maps back to a seat.
+        let named: Vec<(String, PlayerId)> = candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    crate::promissory::faction_name(state, candidate),
+                    candidate.clone(),
+                )
+            })
+            .collect();
         let choice = Choice::new(
             player.clone(),
-            "choose the new speaker",
-            candidates
+            "who becomes speaker",
+            named
                 .iter()
-                .map(|candidate| {
-                    ChoiceOption::labelled(candidate.to_string(), "speaker", candidate.to_string())
+                .map(|(name, _)| {
+                    ChoiceOption::labelled(
+                        name.clone(),
+                        "speaker",
+                        format!("{name} becomes speaker"),
+                    )
                 })
                 .collect(),
         );
-        state.speaker = PlayerId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
+        let chosen = ask(state, content, sources, galaxy, table, &choice)?.id;
+        state.speaker = named
+            .iter()
+            .find(|(name, _)| *name == chosen)
+            .map(|(_, seat)| seat.clone())
+            .ok_or_else(|| IllegalChoice::NotOffered {
+                player: player.clone(),
+                offered: named.iter().map(|(name, _)| name.clone()).collect(),
+                chosen,
+            })?;
     }
     crate::action_cards::draw(state, content, table, player, 2)?;
     let looked: Vec<String> = (0..state.agenda_deck.len().min(2))
@@ -936,6 +960,104 @@ mod tests {
             state.player(&player).unwrap().action_cards.len(),
             before + 2
         );
+    }
+
+    // P1-e: speaker choice surface aligned to the oracle (engine/strategy.py:736–748 @ 37061c5).
+
+    /// One recorded option surface: id, kind and label.
+    type OptionSurface = (String, String, String);
+    /// One recorded choice: prompt plus its offered options in order.
+    type RecordedAsk = (String, Vec<OptionSurface>);
+
+    /// A decider that records every choice it is asked to answer, answering from a queue of ids.
+    struct SpeakerRecording {
+        wanted: std::collections::VecDeque<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>,
+    }
+
+    impl SpeakerRecording {
+        fn new(wanted: &[&str]) -> (Self, std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>) {
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            (
+                Self {
+                    wanted: wanted.iter().map(|id| (*id).to_owned()).collect(),
+                    seen: seen.clone(),
+                },
+                seen,
+            )
+        }
+
+        fn record(&self, choice: &crate::choice::Choice) {
+            self.seen.borrow_mut().push((
+                choice.prompt.clone(),
+                choice
+                    .options
+                    .iter()
+                    .map(|option| (option.id.clone(), option.kind.clone(), option.label.clone()))
+                    .collect(),
+            ));
+        }
+    }
+
+    impl crate::choice::Decider for SpeakerRecording {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            self.record(choice);
+            let Some(wanted) = self.wanted.pop_front() else {
+                return Err(crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: "<script exhausted>".to_owned(),
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                });
+            };
+            choice.option(&wanted).cloned().ok_or_else(|| {
+                crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted,
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn the_speaker_choice_offers_factions_in_the_oracle_wording() {
+        // engine/strategy.py:736–748 asks "who becomes speaker" with one option per candidate,
+        // id = the faction name, label "{faction} becomes speaker". Rust presented seat ids
+        // under "choose the new speaker".
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        let other = PlayerId::new("b");
+        state.player_mut(&other).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+
+        let (recorder, seen) = SpeakerRecording::new(&["hacan", "top", "bottom"]);
+        let mut table = Table::with_default(Box::new(recorder));
+        primary(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Politics"),
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks[0].0, "who becomes speaker");
+        assert_eq!(
+            asks[0].1,
+            vec![(
+                "hacan".to_owned(),
+                "speaker".to_owned(),
+                "hacan becomes speaker".to_owned()
+            )]
+        );
+        // The chosen name maps back to the seat that plays it.
+        assert_eq!(state.speaker, other);
     }
 
     #[test]

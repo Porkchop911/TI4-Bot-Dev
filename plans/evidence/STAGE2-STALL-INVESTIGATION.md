@@ -1140,3 +1140,103 @@ choice crossed a boundary in this game.
 
 **Permission class / bounds.** Local writes: `crates/ti4-engine/src/reactions.rs`, `timing.rs`,
 `wiring.rs` (+ test modules), plans evidence/state, out/ trace artifacts. No network/process.
+
+## P1-e — speaker choice + seat-id prompts → faction names (spec, pre-implementation)
+
+**Scope (plan Phase 1 row).** Two mechanical identity renames on the decision surface; no
+hidden-information view changes (factions are already public state), no timing or legality
+changes. Oracle citations from `37061c5` read-only.
+
+**Sites and oracle facts.**
+- D1 speaker choice — Rust `strategy_cards.rs politics_primary`: prompt `"choose the new
+  speaker"`, option id/label = seat PlayerId string, kind `"speaker"`. Oracle
+  (`engine/strategy.py:736–748`): candidates = seating order excluding current speaker; when
+  len>1 asks `Choice(player, "who becomes speaker", Option(p, "speaker", f"{p} becomes speaker"))`
+  where p is the player id (= faction name in Python); single candidate auto-picks. Traces
+  confirm: py options are faction ids (e.g. `[jolnar, l1z1x, xxcha, hacan]`), rust were
+  `seat0..seat4`.
+- D2 signal jamming victim pick — Rust `action_cards.rs signal_jamming`: prompt `"Signal
+  Jamming: whose token"`, option id = seat id, label `"jam {seat}"`, kind `"player"`. Oracle
+  (`engine/action_cards.py:1059–1064`): prompt `f"Signal Jamming: whose token goes into
+  {where.id}"`, options `Option(o, "player", f"{o}'s command token")`. The first pick (system) is
+  already identical both sides (`tuple(sorted(...))` at action_cards.py:1037 vs Rust BTreeMap
+  iteration); victim order matches because Python's player-dict insertion follows seating and
+  P1-a2 trade-partner sets verified equal.
+- Both sites need a name→seat reverse map after the ask (Rust internal identity is seat
+  PlayerId; surface presents faction names): first-match-in-order lookup scoped to the presented
+  candidates — same semantics as `promissory::seat_of` but restricted to the offered set, so a
+  duplicate generic-faction scaffold can never resolve a name back to a seat that was not offered.
+  (Python cannot express two players with one id at all.)
+
+**Known residuals recorded at spec time.**
+- F5 family: Python auto-picks a single speaker candidate without asking; Rust asks. Same class as
+  the recorded payment finding; no behavior change in P1-e.
+- **F10 (new):** Rust never emits SPEAKER_CHANGED; Python does at strategy.py:743, agenda.py:812,
+  relics.py:387 — Phase 2 event-coverage gap (no Rust reaction window consumes it today).
+- **F11 (new):** agenda tie-break surface diverges (`"which tied player does the agenda name"` vs
+  `"speaker breaks the tie"`; kind `elect` vs `tiebreak`; seat ids vs faction ids; Rust's
+  per-effect logic lacks Python's silence path `candidates = tied if tied else choices`,
+  agenda.py:426). Zero hits in both T6 traces (0 tiebreak/elect decisions); deferred — aligning it
+  means auditing every Rust effect site against the shared oracle function, beyond a mechanical
+  rename.
+- **F12 (new):** jamming *system* option set diverges. Python (`_jamming_systems`,
+  action_cards.py:1023–1037) = own-ship systems ∪ their adjacency, home systems excluded,
+  requiring an effective galaxy; Rust offers only the player's own ship systems (no adjacency,
+  no home exclusion, no galaxy dependency). Option-set family (P1-g); P1-e aligns identity only.
+- F5 instance: `pick` in action_cards.rs auto-picks a single offered option without asking —
+  same class as the recorded payment/reserve findings; the speaker site likewise always asks
+  where Python auto-picks at one candidate.
+
+**Tests.** (a) politics with two distinct-faction seats asserts prompt/id/label and speaker-seat
+mapping; (b) jamming with two distinct-faction seats asserts victim prompt/label and token on the
+right seat; existing scaffold tests driving these surfaces gain distinct factions (P1-a2 precedent:
+all-generic scaffolds cannot express name identity).
+
+**P1-e implementation and results.**
+
+D1 (`strategy_cards.rs politics_primary`): prompt → `"who becomes speaker"`; options built as
+`(faction_name, seat)` pairs from the candidate list — id = faction name, kind `speaker`, label
+`"{name} becomes speaker"`. The answer maps back through a first-match-in-order lookup scoped to
+the presented candidates (a duplicate generic-faction scaffold can never resolve outside the offered
+set); an impossible miss returns `IllegalChoice::NotOffered`.
+
+D2 (`action_cards.rs signal_jamming`): victim prompt → `"Signal Jamming: whose token goes into
+{system}"`; rivals presented as `(faction_name, seat)` pairs — id = faction name, kind `player`,
+label `"{name}'s command token"`; answer maps back the same scoped way (structurally unreachable
+miss aborts like the surrounding pick-failure paths).
+
+**Tests.** Two red-first tests: `the_speaker_choice_offers_factions_in_the_oracle_wording`
+(confirmed red as `ScriptDiverged { wanted: "hacan", offered: ["b"] }`) and
+`signal_jamming_names_rivals_by_faction` (three seats so the victim pick is actually asked — a
+single candidate auto-picks without an ask, recorded F5 instance; confirmed red on the old prompt).
+Both green after implementation. The two pre-existing all-generic scaffold tests
+(`politics_moves_the_speaker_and_draws_two`, `signal_jamming_closes_a_system_to_a_rival`) pass
+unmodified because their offered sets are single-candidate and the scoped lookup resolves within it —
+no distinct-faction scaffolding was needed after all (refinement of the spec's test plan).
+
+**Verification.** `cargo fmt -p ti4-engine --check` clean; ti4-engine 776 lib + 5 doctests (+2 new);
+ti4-training 98/98 release; clippy zero warnings both crates all targets; workspace check clean.
+
+**T6 differential vs `out/py_ff_learn_83000001_p1a2.json` (1868 py / 1147 rust decisions).**
+All six factions: max_score_gap=0.000000, choice_mismatches_within_common=0; first structural
+mismatch per faction is a recorded class only — hacan idx1 = F1 leader component (partner sets
+otherwise identical), other five idx1 = P1-c/P1-f blind `decline`/`follow` secondaries. No new
+divergence classes. Rust speaker decisions: 4, all `"who becomes speaker"` with faction-name option
+ids (count matches Python's 4). Remaining seat-id surfaces in the trace: 12 decisions, all the
+P1-class `grant free Trade replenishment` prompt — scheduled, not P1-e. No signal jamming fired in
+this game (same as p1d; card never played), so D2 is verified by unit tests + surface inventory only.
+
+**Rust-vs-rust p1d→p1e.** Decision counts 1119 → 1147. Longest truly-identical prefix per faction:
+hacan 60, jolnar 39, l1z1x 31, letnev 44, sol 45, xxcha 37. First genuine fork: for l1z1x it is the
+rename itself at idx 31 — p1d chose `seat3` (hacan), p1e chose `jolnar`, i.e. the learned decider
+responds differently to faction-name tokens than seat-id tokens and the speaker genuinely changed;
+for the other five factions the boundary sits on a strategy-card draw with different hand contents
+(upstream cascade from earlier speaker flips — e.g. jolnar@39 gains `te7technology` in p1e), with
+identical scores on all shared options. Same expected feature-space movement as P1-b/P1-d; no score
+discrepancy anywhere.
+
+**Artifacts.** `out/rust_ff_83000001_p1e.txt`, `out/rust_ff_83000001_p1e.json`,
+`out/rust_ff_p1e.err`. Oracle repo untouched (no Python run needed for this package).
+
+**Permission class / bounds.** Local writes: `crates/ti4-engine/src/strategy_cards.rs`,
+`action_cards.rs` (+ test modules), plans evidence/state, out/ trace artifacts. No network/process.

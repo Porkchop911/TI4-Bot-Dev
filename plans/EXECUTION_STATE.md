@@ -1365,98 +1365,51 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 
 
-## Handover (P1-d complete)
+## Handover (P1-e complete)
 
-Objective:
-Align the Rust training surface to the Python oracle decision-by-decision so shared checkpoints
-stay transferable and residual differences are auditable per label class. Phase 1 sub-packages;
-this handover closes P1-d (reaction option identity alignment — ability id format, inner card-choice
-prompt/kind/labels, and per-printed-card dedupe in `crates/ti4-engine/src/reactions.rs`).
-Note: the previous handover's "next exact action" misdescribed P1-d as expedition/expansion prompt
-wording; the recorded class table (evidence §Phase 1) governs — P1-d is reaction identity.
-
-Oracle commit:
-37061c5 (`codex/fully-learned-policy`, read-only; cited line-by-line in evidence §P1-d, no Python run).
-
-Active milestone/package:
-M09 parity work, Phase 1 of the continuation plan. P1-d complete and committed (see branch below);
-next ready package is **P1-e** (speaker choice + seat-id prompts → faction names) per the default
-order b→d→e→c→f→g.
-
-Status and completed acceptance criteria:
-- Spec recorded pre-implementation in evidence §"## P1-d — reaction option identity alignment"
-  (oracle citations `engine/reactions.py:307–345`, `engine/timing.py:55–63, 305–330`; CPython
-  verified for the dedupe dict semantics).
-- D1 id → `reaction:{owner_name}:{event_type}:{lowercase}` via new `slot()` owner-name parameter
-  filled in `arm()` with `promissory::faction_name`; timing.rs `relation_name` now `pub(crate)`.
-  Wiring test assertion updated (scaffold factions stay default: `"reaction:generic:"`).
-- D2 inner prompt → `"play an action card ({lowercase} {EVENT})"`. D3 options kind
-  `ACTION_CARD_KIND = "action_card"` (unused `REACTION_KIND` removed — no external users verified),
-  labels `"play {name_of(content, alias)}"`, dedupe via new helper `reaction_card_options`
-  mirroring Python's `{known[a].name: a for a in reversed(available)}.values()` exactly.
-- Four failing tests written first (red: E0061 ×4 + E0425), now green, incl. an end-to-end Resolver
-  drive asserting outer/inner prompts byte-for-byte and the repeatable-slot re-offer (1.19).
-- New findings **F8** (outer payload missing Python's `"cards"` list — needs a timing.rs
-  `OptionPayload` API change) and **F9** (single-card windows: Python asks, Rust auto-picks;
-  window-shape family of F5). Both deferred to a later package after P1-f; recorded in evidence + plan.
-
-Current branch and HEAD:
-Branch `codex/stage1-parity-fixes`; HEAD is the P1-d commit (message starts "P1-d: reaction option
-identity alignment — oracle id format, inner card-choice surface"); parent is the P1-b commit `69ffaa9`.
-
-Working-tree state:
-Clean after the P1-d commit (verify with `git status --short --branch`). Only in-scope paths changed:
-`crates/ti4-engine/src/reactions.rs`, `timing.rs`, `wiring.rs`,
-`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, `plans/CONTINUATION_PLAN.md`, this file.
-
-Tests last run and exact results:
-- `cargo test -p ti4-engine`: 774 lib passed + 5 doctests (was 770+5; +4 new).
-- `cargo test -p ti4-training --release`: 98 passed. `cargo check --workspace`: clean.
-- `cargo fmt -p ti4-engine`: clean. Clippy `-p ti4-engine -p ti4-training --all-targets`: zero
-  warnings (two rounds of test-module `needless_borrow` fixes for the `&'static ContentStore`
-  pattern; one shorthand-init fix).
-
-Compatibility evidence:
-- T6 differential vs `out/py_ff_learn_83000001_p1a2.json`: all six factions max_score_gap=0.000000,
-  choice_mismatches_within_common=0; first structural mismatch per faction is a recorded class only —
-  hacan idx1 differs by exactly the F1 leader component (trade-partner sets otherwise identical);
-  jolnar/l1z1x/letnev/xxcha/sol idx1 are the P1-c/P1-f blind `decline`/`follow` secondaries.
-- Rust reaction-surface decisions: 60, all oracle-format ids, zero old seat-based/capitalized ids;
-  count identical to p1b → no firing change. py=35 vs rust=60 asymmetry predates P1-d (F2 family).
-- Rust-vs-rust p1b→p1d: same 1119 decisions/keys; the only `chosen` diff is the rename itself
-  (jolnar@82); all 60 renamed reaction options show score shifts (e.g. hacan@109 −1.1113 →
-  −0.9658) — id-string labels are scored features, expected movement toward the Python-trained
-  vocabulary per the P1-b precedent; no choice crossed a boundary in this game.
-
-Decisions made and rationale:
-- Kept to mechanical format/identity only (D1–D3); event-name remapping stays Phase 2. F8/F9 deferred
-  (window shape / API change) so behavioral changes stay isolated per package discipline.
-- Raw-length auto-pick branch intentionally unchanged: dedupe applies inside the ask branch only,
-  preserving F9 as a documented residual rather than silently changing single-card behavior.
-- Dedupe mirrors Python's dict-comprehension slot semantics (reverse-walk insertion, first
-  hand-order alias kept) because feature extraction may include positional tokens; verified against
-  CPython on three hand shapes before implementing.
-- Plan updated: P1-d row marked done with results; F8/F9 added to the findings backlog after P1-f.
-
-Open review findings or blockers:
-None blocking. Open items: F4/F5/F6/F7 (P1-g), F8/F9 (post-P1-f package), Phase-2 items pending
-frontier review per plan, T6 protocol reminders below still apply.
-
-Protocol warnings (carry over):
-- Python traces require `--table learner_profiles` to match Rust's table selection.
-- Rust greedy flag is `--greedy-temperature 0.0001`; the example's arg parser ignores unknown flags.
-- Strip the six preamble lines from `single_game_trace` stdout before JSON parsing (`tail -n +7`).
-- The diff script counts the first structurally divergent decision in prompt mismatches (artifact);
-  its `common` column is min of totals, not a verified prefix — read the break point.
-- Prompt/label text moves learned scores: expect rust-vs-rust choice cascades after any label change;
-  score-gap zero on common prefixes is the no-regression gate.
-
-Next exact action/command:
-Start P1-e per `plans/CONTINUATION_PLAN.md` Phase 1 (speaker choice + seat-id prompts → faction
-names): read-only oracle inspection of the speaker/signal-jamming prompt sites, record spec
-pre-implementation in evidence §P1-e with failing tests first, implement, run the gate set + T6
-re-run vs `out/py_ff_learn_83000001_p1a2.json`.
-
-Files to read first after compaction:
-`plans/CONTINUATION_PLAN.md`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (P1-d section), this file,
-then the P1-e row of the plan's Phase 1 table.
+- **Objective:** Phase 1 decision-surface alignment, sub-package P1-e — speaker choice and
+  signal-jamming victim prompts named by faction instead of seat id, per oracle
+  `engine/strategy.py:736–748` and `engine/action_cards.py:1059–1064`.
+- **Active milestone/package:** Phase 1 / P1-e — COMPLETE. Next ready package: **P1-c** (ground-commit
+  + ready/retreat surface, free-trade replenishment prompt/options) per the recorded class table order
+  b→d→e done; c next, then f, g.
+- **Status:** D1 `politics_primary` now prompts `"who becomes speaker"`, offers faction names (kind
+  `speaker`, label `"{name} becomes speaker"`); answer maps back via first-match-in-order lookup scoped
+  to presented candidates (impossible miss → `IllegalChoice::NotOffered`). D2 `signal_jamming` victim
+  prompt `"Signal Jamming: whose token goes into {system}"`, labels `"{name}'s command token"`, same
+  scoped mapping. Two red-first tests green; pre-existing all-generic scaffold tests pass unmodified.
+- **Branch/HEAD:** `codex/stage2-stall-investigation` at P1-d commit `f019ca4`; this package's changes
+  (strategy_cards.rs, action_cards.rs + test modules, plans) staged for the focused commit.
+- **Working-tree state:** modified: `crates/ti4-engine/src/strategy_cards.rs`,
+  `crates/ti4-engine/src/action_cards.rs`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (spec + F10–F12
+  + results), `plans/CONTINUATION_PLAN.md` (P1-e row done, backlog updated). Untracked out/: p1e trace
+  artifacts (`rust_ff_83000001_p1e.txt/.json`, `rust_ff_p1e.err`). Oracle repo untouched.
+- **Tests last run and exact results:** fmt clean; ti4-engine 776 lib + 5 doctests (+2 new);
+  ti4-training 98/98 release; clippy zero warnings both crates all targets; workspace check clean.
+- **Compatibility evidence (T6 vs `out/py_ff_learn_83000001_p1a2.json`, 1868 py / 1147 rust):**
+  all six factions max_score_gap=0.000000, choice_mismatches_within_common=0; first structural mismatch
+  per faction = recorded classes only (hacan idx1 F1 leader component; other five idx1 P1-c/P1-f blind
+  secondaries) — no new divergence classes. Rust speaker decisions: 4/4 oracle-format with faction-name
+  ids (count matches Python's 4). Only remaining seat-id surface in trace: 12× `grant free Trade
+  replenishment` (P1-c, scheduled). No signal jamming fired this game — D2 verified by unit tests +
+  inventory. Rust-vs-rust p1d→p1e: first genuine fork for l1z1x is the rename itself at idx 31
+  (`seat3`=hacan → `jolnar`, speaker genuinely changed); other factions' boundaries are downstream hand
+  differences from earlier speaker flips with identical scores on shared options — expected feature-space
+  movement per P1-b precedent, no score discrepancies.
+- **Decisions made:** (1) candidate-scoped first-match mapping instead of raw `promissory::seat_of` so a
+  chosen name can never resolve outside the offered set; scaffold tests needed no distinct-faction change.
+  (2) F5 instance noted: action_cards `pick` auto-picks singletons without asking — jamming test uses
+  three seats to force an ask. (3) New findings recorded, all deferred: **F10** Rust never emits
+  SPEAKER_CHANGED (Python in 3 places; Phase 2 event coverage); **F11** agenda tie-break surface diverges
+  (prompt/kind/ids + missing silence path — not a mechanical rename, zero T6 hits); **F12** jamming system
+  option set lacks Python adjacency expansion / home exclusion / galaxy dependency (P1-g family).
+- **Open review findings or blockers:** none. Tier-A self-review recorded in evidence §P1-e results; the
+  identity-mapping logic is four lines per site and covered by red-first tests + T6 gates. No frontier
+  review required (no legality/timing/behavior change — prompt/label/id text only).
+- **Next exact action/command:** operator "go" for P1-c: write `out/p1c_spec.md` from the recorded class
+  row (invasion.rs commit ids `commit|n|planet` + `done_committing`, `"ready a planet"` wording, trade
+  replenishment `"let another player replenish commodities"` + done/faction options), red-first tests,
+  implement, gates, T6 re-run vs the same Python artifact.
+- **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
+  Phase 1 table; evidence §P1-e spec + results (`plans/evidence/STAGE2-STALL-INVESTIGATION.md` lines
+  ~1096–1242).
