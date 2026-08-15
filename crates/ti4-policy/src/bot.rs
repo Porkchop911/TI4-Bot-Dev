@@ -116,7 +116,7 @@ impl ScoredBot {
             "activate" => Components::of("act", 6.0),
             "move" => Components::of("advance", 5.0),
             "load" => Components::of("carry", 3.0),
-            "land" => Components::of("take_ground", 8.0),
+            "commit" => Components::of("take_ground", 8.0),
             "place" => Components::of("deploy", 2.0),
             "retreat" | "retreat_to" => Components::of("withdraw", 2.0),
 
@@ -158,7 +158,7 @@ impl ScoredBot {
             }
             "move" => self.score_move_seen(choice, option, seen),
             "load" => self.score_load_seen(choice, option, seen),
-            "land" => self.score_land_seen(choice, option, seen),
+            "commit" => self.score_commit_seen(choice, option, seen),
             "produce" => self.score_produce_seen(choice, option, seen),
             "pay" => Self::score_pay_seen(choice, option, seen),
             "research" => self.score_research_seen(choice, option, seen),
@@ -415,13 +415,13 @@ impl ScoredBot {
     /// The public part of the oracle's `_score_commit`: a ground force lands to take a planet,
     /// not to make an already superior friendly garrison larger.
     #[must_use]
-    fn score_land_seen(
+    fn score_commit_seen(
         &self,
         choice: &Choice,
         option: &ChoiceOption,
         seen: &Observed<'_>,
     ) -> Components {
-        let Some((index, planet)) = land_index_and_planet(&option.id) else {
+        let Some((index, planet)) = commit_index_and_planet(&option.id) else {
             return self.raw_score(choice, option);
         };
         let Some(target) = seen.active_system() else {
@@ -915,9 +915,9 @@ fn move_origin_and_index(id: &str) -> Option<(&str, usize)> {
     parts.next().is_none().then_some((origin, index))
 }
 
-fn land_index_and_planet(id: &str) -> Option<(usize, &str)> {
+fn commit_index_and_planet(id: &str) -> Option<(usize, &str)> {
     let mut parts = id.split('|');
-    (parts.next()? == "land").then_some(())?;
+    (parts.next()? == "commit").then_some(())?;
     let index = parts.next()?.parse().ok()?;
     let planet = parts.next()?;
     parts.next().is_none().then_some((index, planet))
@@ -1210,9 +1210,9 @@ mod tests {
 
         let landing = Choice::new(
             player.clone(),
-            "commit ground forces",
+            format!("commit ground forces in {target}"),
             vec![
-                ChoiceOption::new(format!("land|0|{planet}"), "land"),
+                ChoiceOption::new(format!("commit|0|{planet}"), "commit"),
                 ChoiceOption::decline(),
             ],
         );
@@ -1222,7 +1222,7 @@ mod tests {
                 .choose_seeing(&landing, &watched(&state, &hub.galaxy))
                 .unwrap()
                 .kind,
-            "land",
+            "commit",
             "an uncontrolled planet is worth committing the first ground force"
         );
 

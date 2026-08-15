@@ -1240,3 +1240,121 @@ discrepancy anywhere.
 
 **Permission class / bounds.** Local writes: `crates/ti4-engine/src/strategy_cards.rs`,
 `action_cards.rs` (+ test modules), plans evidence/state, out/ trace artifacts. No network/process.
+
+## P1-c — ground-commit / ready-planet / free-trade-replenishment surface alignment (complete)
+
+**Spec.** `out/p1c_spec.md` (written before implementation, per package loop). Oracle refs:
+`engine/invasion.py:253–324`, `engine/strategy.py:633–654`, `engine/strategy.py:206–246`.
+
+**Investigation findings (read-only).**
+
+- Commit surface has two separate Rust implementations, both divergent from the oracle in the same
+  five ways: prompt lacks the system name; option id prefix `land|` vs `commit|`; kind `"land"` vs
+  `"commit"`; label missing the `(damaged)` suffix (`engine/choice.py:96` `unit_label`); dedup key
+  omits `sustained_damage`. Both also lack the 27.1 Mecatol Rex exclusion while the custodians token
+  is present, and both use the generic decline terminator instead of
+  `("done_committing", "decline", "commit no more ground forces")`. Sites: free function
+  `invasion::commit_ground_forces` (no production callers; test coverage) and the staged
+  `InvasionWindow` (`landing_options`, `pending_choice`, `resolve` parse at line ~753 — real-game
+  path armed from `game.rs:243`). `ti4_model::Unit.sustained_damage: bool` already exists per unit,
+  so label/dedup parity is exact (no F13 needed). Oracle asks unconditionally each commit iteration
+  (no single-option shortcut) — Rust's always-ask already matches; no F5 instance at this site.
+- Ready surface (`strategy_cards::ready_planets`, Diplomacy primary line ~307 and secondary line
+  ~780): prompt `"ready an exhausted planet"` vs oracle `"ready which planet"`; labels are raw planet
+  names vs oracle `"ready {p}"`; Rust offers a generic decline option the oracle does not offer
+  (oracle loop is a forced choice per iteration). Oracle auto-picks with exactly one exhausted
+  candidate without asking — F5/P1-f window-shape instance, recorded and deferred. Distinct oracle
+  ready surfaces Rust cannot model yet: Xxcha agent `"ready a planet"` (`leaders.py:498`, F1-
+  dependent) and Brilliance `ready|{p}`/`breakthrough|{p}` (`action_cards.py:~1350`).
+- Trade replenish surface (`strategy_cards::trade_primary`): prompt, option ids (seat vs faction
+  name), labels, terminator wording all divergent; eligibility lacks the oracle's generic-faction
+  exclusion. Loop shape (one seat at a time, granted seats removed) already matches.
+- Kind rename ripples: `ti4-policy/src/bot.rs` ScoredBot dispatches on raw kind `"land"` (lines
+  ~119/~161), parses id prefix `"land|"` (~920), and one test constructs such a choice — mechanical
+  update, identical score components. Verified no feature-space movement: `features.rs:389` already
+  canonicalizes `"land" → "commit"` for learned features, and `learned.rs oracle_head("commit") =>
+  "landing"` pre-exists, so head routing is unchanged by the rename.
+- Emissions not implemented in P1-c (recorded): Rust does not emit `GROUND_FORCE_COMMITTED`,
+  `TRADE_REPLENISH_GRANTED`, or `PLANET_READIED`. Verified zero content listeners for the latter two
+  in oracle `data/` (inert, F10 family); `GROUND_FORCE_COMMITTED` is consumed by the oracle reaction
+  system (`engine/reactions.py`) — its emission belongs to Phase-2 window alignment.
+
+**Deltas.** D1 commit identity + 27.1 Mecatol filter at both sites; D2 ready prompt/labels/no-decline;
+D3 replenish prompt/faction-name ids/labels/done terminator/generic exclusion (name→seat via
+candidate-scoped first-match lookup, P1-e pattern); D4 mechanical policy-crate kind/id rename.
+
+**Tests planned (red first).** Six new tests per spec §Tests: commit identity, sustained-damage
+dedup/labels, Mecatol filter, window-site surface, ready wording + no decline, replenish identity.
+Existing auto-commit/first-option tests expected unchanged (terminators move to the option tail and
+`Table::default()` takes the first option).
+
+**Implementation.**
+
+- D1: `invasion.rs` — new shared helpers `landable_planets` (27.1 Mecatol Rex filter, re-read per
+  commit iteration) and `commit_options` (dedup key `(type_id, sustained_damage, planet)`, id
+  `commit|{index}|{planet}`, kind `COMMIT_KIND = "commit"`, label `land {type}[ (damaged)] on
+  {planet}`, explicit terminator `("done_committing", "decline", "commit no more ground forces")`).
+  Both the free function and `InvasionWindow::landing_options` now build options through it; the
+  window's `pending_choice` drops its separate generic-decline push. Prompt is
+  `"commit ground forces in {system}"` at both sites. Resolve parse renamed to `strip_prefix("commit|")`
+  (the existing three-way split works unchanged after a prefix rename).
+- D2: `strategy_cards::ready_planets` — prompt `"ready which planet"`, label `ready {planet}`,
+  generic decline option and post-ask break removed (forced choice per iteration, oracle
+  `engine/strategy.py:633–654`).
+- D3: `trade_primary` loop — eligibility retains the explicit `faction != "generic"` clause; options
+  are `(faction_name, seat)` pairs with id = faction name, kind `replenish`, label
+  `{name} replenishes commodities`; terminator `("done", "decline", "nobody else replenishes")`;
+  answer maps back to a seat by candidate-scoped first-match-in-order (P1-e pattern), impossible
+  miss → `IllegalChoice::NotOffered`. Prompt `"let another player replenish commodities"`.
+- D4: policy crate — `bot.rs` dispatch arms and id-prefix parser renamed `land`→`commit`, helpers
+  `score_land_seen`/`land_index_and_planet` → `score_commit_seen`/`commit_index_and_planet`
+  (identical score components, no head-routing change); `learned.rs` removed the now-dead
+  `"land" => "landing"` local arm and dropped `("land","landing")` from `LOCAL_DIVERGENCES`
+  (`golden_heads.json` routes kind `land` to `other`, which `decision_head`'s fallback reproduces);
+  two test fixtures switched to kind `commit`. No production prompt-text dispatch existed anywhere.
+
+**Tests (red first).** All six confirmed RED before implementation with exactly the predicted
+surface mismatches (`ScriptDiverged { wanted: "done_committing", offered: [land|…, decline] }`,
+damage not in dedup, Mecatol token ignored + old prefix/window prompt, ready wording + stray
+decline, seat-id replenishment options). After D1–D4 all six green on the first pass; each asserts
+the full option list (id/kind/label) against exact expected values.
+
+**Verification gates.** `cargo fmt` clean. `ti4-engine --lib`: **782 passed / 0 failed**
+(previously 776, +6 new); doctests 5/5; `ti4-policy --lib`: 102/102 (incl. golden-heads routing
+with the shrunk local-divergence ledger and the renamed dispatch test); `ti4-content` 126+1;
+`ti4-training --release`: **98/98**. Clippy zero warnings on `ti4-engine` and `ti4-policy`
+(all targets; three new-test-only lints — two needless borrows, one bool-assert-comparison — fixed
+in the tests). Workspace check clean.
+
+**T6 differential (seed 83000001, rotation 0, rounds 4, full features, greedy 0.0001).**
+`out/rust_ff_83000001_p1c.json` (EXIT=0, **1147 decisions** — same total as p1e) vs
+`out/py_ff_learn_83000001_p1a2.json` (1868): all six factions `max_score_gap = 0.000000`,
+`choice_mismatches_within_common = 0`, first structural mismatch per faction still only the
+recorded classes (hacan idx1 F1 leader component; others idx1 P1-c/P1-f blind secondary no/yes
+vocabulary + window-shape). Note the metrics cover the prefix before that break, as in every prior
+package.
+
+**Surface-level differential (beyond idx alignment).** A prompt-occurrence comparison of the three
+aligned surfaces across both traces: commit — hacan 18/18, jolnar 2/2, l1z1x 5/5, letnev 3/3,
+xxcha 4/4 same-event option-set **and label** matches (sol's first five included in the 5 common
+matches); ready — both sides oracle-shaped (`ready {planet}` labels, no decline; xxcha's two
+differing rows are a divergent exhausted-planet set after the idx1 break, internally consistent on
+both sides: rust `{accoen, jeolir}` → `[jeolir]` after its first pick); replenish — every row on
+both sides carries faction-name ids, kind `replenish`, and the `done` terminator; differing rows
+differ only in *which seats are below their commodity limit*, i.e. game-state cascade from earlier
+divergence, not surface identity. A legacy-form scan of the whole Rust trace found **zero** old
+prompts (`commit ground forces`, `ready an exhausted planet`, `grant free Trade replenishment`)
+and zero kind-`land` options; new-surface rows: 125 commit + 10 ready + 33 replenish.
+
+**Rust-vs-rust p1e→p1c (expected feature-space movement).** Decision totals identical per faction
+(277/310/87/128/249/96 — no window-shape change). First chosen fork in every faction lands on the
+renamed surface itself: five factions `land|0|{planet}` → `commit|0|{planet}` at a commit decision,
+jolnar `decline` → `done` at replenishment; downstream forks 3–27 per faction, all cascades. No
+forks occur before each faction's first renamed-surface decision — untouched surfaces (trade,
+notes, payments, reactions, speaker, jamming) show zero movement.
+
+**Scope ledger additions.** None beyond the recorded classes: single-candidate auto-pick asymmetry
+at ready stays P1-f/P1-g; emissions stay Phase-2; Xxcha-agent/Brilliance ready surfaces stay F1/
+action-card dependent. Residual py-vs-rust option-set differences at commit events where both sides
+had *different fleets* (sol #8 ff.) are post-break game-state cascade, consistent with the T6b
+firing-drift finding.

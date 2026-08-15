@@ -1365,51 +1365,56 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 
 
-## Handover (P1-e complete)
+## Handover (P1-c complete)
 
-- **Objective:** Phase 1 decision-surface alignment, sub-package P1-e — speaker choice and
-  signal-jamming victim prompts named by faction instead of seat id, per oracle
-  `engine/strategy.py:736–748` and `engine/action_cards.py:1059–1064`.
-- **Active milestone/package:** Phase 1 / P1-e — COMPLETE. Next ready package: **P1-c** (ground-commit
-  + ready/retreat surface, free-trade replenishment prompt/options) per the recorded class table order
-  b→d→e done; c next, then f, g.
-- **Status:** D1 `politics_primary` now prompts `"who becomes speaker"`, offers faction names (kind
-  `speaker`, label `"{name} becomes speaker"`); answer maps back via first-match-in-order lookup scoped
-  to presented candidates (impossible miss → `IllegalChoice::NotOffered`). D2 `signal_jamming` victim
-  prompt `"Signal Jamming: whose token goes into {system}"`, labels `"{name}'s command token"`, same
-  scoped mapping. Two red-first tests green; pre-existing all-generic scaffold tests pass unmodified.
-- **Branch/HEAD:** `codex/stage2-stall-investigation` at P1-d commit `f019ca4`; this package's changes
-  (strategy_cards.rs, action_cards.rs + test modules, plans) staged for the focused commit.
-- **Working-tree state:** modified: `crates/ti4-engine/src/strategy_cards.rs`,
-  `crates/ti4-engine/src/action_cards.rs`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (spec + F10–F12
-  + results), `plans/CONTINUATION_PLAN.md` (P1-e row done, backlog updated). Untracked out/: p1e trace
-  artifacts (`rust_ff_83000001_p1e.txt/.json`, `rust_ff_p1e.err`). Oracle repo untouched.
-- **Tests last run and exact results:** fmt clean; ti4-engine 776 lib + 5 doctests (+2 new);
-  ti4-training 98/98 release; clippy zero warnings both crates all targets; workspace check clean.
+- **Objective:** Phase 1 decision-surface alignment, sub-package P1-c — ground-commit, ready-planet
+  and free-trade-replenishment surfaces aligned to oracle identity per `engine/invasion.py:253–324`,
+  `engine/strategy.py:633–654`, `engine/strategy.py:206–246` (spec `out/p1c_spec.md`).
+- **Active milestone/package:** Phase 1 / P1-c — COMPLETE. Next ready package: **P1-f** (misc wording +
+  blind-secondary window shape, largest remaining Phase-1 item), then P1-g (behavioral payment/jamming),
+  conditional P1-h gated on T6 tie-break hits post-P1-g.
+- **Status:** D1 commit surface at both sites: prompt `"commit ground forces in {sys}"`, ids
+  `commit|{n}|{planet}`, kind `commit` (`COMMIT_KIND`), label `land {type}[ (damaged)] on {planet}`,
+  dedup key `(type, sustained_damage, planet)`, terminator `("done_committing","decline",...)`, plus the
+  27.1 Mecatol Rex filter re-read each commit iteration (`mr` in system `"18"`). D2 ready: prompt
+  `"ready which planet"`, labels `ready {planet}`, decline removed (forced choice per iteration).
+  D3 replenishment: prompt `"let another player replenish commodities"`, faction-name options kind
+  `replenish` label `{name} replenishes commodities`, terminator `("done","decline","nobody else
+  replenishes")`, explicit generic exclusion, candidate-scoped first-match name→seat. D4 mechanical
+  policy rename: bot.rs dispatch/parser/helpers land→commit (identical scores), learned.rs dead local
+  arm + LOCAL_DIVERGENCES 13→12, two test fixtures. Six red-first tests (confirmed RED pre-implementation)
+  all green; no other test changed.
+- **Branch/HEAD:** `codex/stage1-parity-fixes` at P1-e commit `00d7415`; this package's changes
+  staged for the focused commit: invasion.rs, strategy_cards.rs, bot.rs, learned.rs + plans updates.
+- **Working-tree state:** modified (staged-for-commit): `crates/ti4-engine/src/invasion.rs`,
+  `crates/ti4-engine/src/strategy_cards.rs`, `crates/ti4-policy/src/bot.rs`,
+  `crates/ti4-policy/src/learned.rs`, `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (§P1-c spec→complete),
+  `plans/CONTINUATION_PLAN.md` (P1-c row done). Untracked out/: p1c trace artifacts. Oracle repo untouched.
+- **Tests last run and exact results:** fmt clean; ti4-engine **782** lib + 5 doctests (+6 new);
+  ti4-policy 102/102 (golden-heads routing with shrunk local-divergence ledger green); ti4-content
+  126+1; ti4-training 98/98 release; clippy zero warnings both crates all targets; workspace check clean.
 - **Compatibility evidence (T6 vs `out/py_ff_learn_83000001_p1a2.json`, 1868 py / 1147 rust):**
   all six factions max_score_gap=0.000000, choice_mismatches_within_common=0; first structural mismatch
-  per faction = recorded classes only (hacan idx1 F1 leader component; other five idx1 P1-c/P1-f blind
-  secondaries) — no new divergence classes. Rust speaker decisions: 4/4 oracle-format with faction-name
-  ids (count matches Python's 4). Only remaining seat-id surface in trace: 12× `grant free Trade
-  replenishment` (P1-c, scheduled). No signal jamming fired this game — D2 verified by unit tests +
-  inventory. Rust-vs-rust p1d→p1e: first genuine fork for l1z1x is the rename itself at idx 31
-  (`seat3`=hacan → `jolnar`, speaker genuinely changed); other factions' boundaries are downstream hand
-  differences from earlier speaker flips with identical scores on shared options — expected feature-space
-  movement per P1-b precedent, no score discrepancies.
-- **Decisions made:** (1) candidate-scoped first-match mapping instead of raw `promissory::seat_of` so a
-  chosen name can never resolve outside the offered set; scaffold tests needed no distinct-faction change.
-  (2) F5 instance noted: action_cards `pick` auto-picks singletons without asking — jamming test uses
-  three seats to force an ask. (3) New findings recorded, all deferred: **F10** Rust never emits
-  SPEAKER_CHANGED (Python in 3 places; Phase 2 event coverage); **F11** agenda tie-break surface diverges
-  (prompt/kind/ids + missing silence path — not a mechanical rename, zero T6 hits); **F12** jamming system
-  option set lacks Python adjacency expansion / home exclusion / galaxy dependency (P1-g family).
-- **Open review findings or blockers:** none. Tier-A self-review recorded in evidence §P1-e results; the
-  identity-mapping logic is four lines per site and covered by red-first tests + T6 gates. No frontier
-  review required (no legality/timing/behavior change — prompt/label/id text only).
-- **Next exact action/command:** operator "go" for P1-c: write `out/p1c_spec.md` from the recorded class
-  row (invasion.rs commit ids `commit|n|planet` + `done_committing`, `"ready a planet"` wording, trade
-  replenishment `"let another player replenish commodities"` + done/faction options), red-first tests,
+  per faction = recorded classes only (hacan idx1 F1 leader component; other five idx1 blind secondary
+  no/yes vocabulary + window shape). Surface-level diff beyond idx alignment: every same-event commit
+  pair matches option sets AND labels (hacan 18/18, jolnar 2/2, l1z1x 5/5, letnev 3/3, xxcha 4/4); ready
+  and replenish rows oracle-shaped on both sides with differences only from post-break game-state cascade.
+  Legacy-form scan of the whole Rust trace: zero old prompts, zero kind-`land`; new surfaces 125 commit +
+  10 ready + 33 replenish rows. Rust-vs-rust p1e→p1c: per-faction decision totals identical (no window-shape
+  change); first fork in every faction is the rename itself (`land|…`→`commit|…`, or `decline`→`done` for
+  jolnar's replenishment), downstream forks 3–27 all cascades — intended feature-space movement, zero forks
+  before any renamed-surface decision.
+- **Decisions made:** (1) shared helpers `landable_planets`/`commit_options` de-duplicate the two commit
+  sites instead of copying oracle text twice. (2) 27.1 Mecatol exclusion treated as option-set identity
+  (P1-c scope), re-read per iteration to match the oracle's mid-sequence token removal. (3) explicit
+  `faction != "generic"` retain clause kept despite natural equivalence with commodity_limit=0 — spec parity
+  + guard against future content. (4) no emissions implemented (verified inert or Phase-2-owned).
+- **Open review findings or blockers:** none. No frontier review required: identity/option-set text only,
+  no legality/timing/window-shape change; red-first tests + T6 + surface diff + rust-vs-rust fork analysis
+  in evidence §P1-c.
+- **Next exact action/command:** P1-f spec from the recorded class row (em-dash → `--` prompt normalization
+  across prompts; leadership purchase loop vs Rust blind `decline/follow` secondaries incl. no/yes
+  vocabulary) — investigate oracle + Rust sites read-only, write `out/p1f_spec.md`, red-first tests,
   implement, gates, T6 re-run vs the same Python artifact.
 - **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
-  Phase 1 table; evidence §P1-e spec + results (`plans/evidence/STAGE2-STALL-INVESTIGATION.md` lines
-  ~1096–1242).
+  Phase 1 table; evidence §P1-c (`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, from line ~1244).

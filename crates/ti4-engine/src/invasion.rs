@@ -12,13 +12,15 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
-use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
+use crate::choice::{
+    Choice, ChoiceOption, DECLINE_KIND, IllegalChoice, Observed, Resolving, Table, Window,
+};
 use crate::combat::MAX_ROUNDS;
 use crate::dice::Dice;
 use crate::rng::GameRng;
 
-/// The choice kind for landing a ground force on a planet.
-pub const LAND_KIND: &str = "land";
+/// The choice kind for committing a ground force to a planet (the oracle's `commit`).
+pub const COMMIT_KIND: &str = "commit";
 /// The choice kind for choosing which of your own ground forces dies.
 pub const GROUND_CASUALTY_KIND: &str = "ground_casualty";
 
@@ -163,6 +165,61 @@ pub fn landable(
         .collect()
 }
 
+/// The planets of `system` that a ground force may land on right now.
+///
+/// 27.1 keeps Mecatol Rex off the table while the custodians token sits there; everything else
+/// in the system is landable.
+fn landable_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+) -> Vec<PlanetId> {
+    ti4_content::galaxy::planets_in(content, system.as_str(), sources)
+        .into_iter()
+        .map(|planet| PlanetId::new(planet.id()))
+        .filter(|planet| planet.as_str() != "mr" || state.custodians_removed)
+        .collect()
+}
+
+/// One option per *distinguishable* landing — unit type, sustained damage and planet — plus the
+/// terminator. Two identical undamaged infantry are one move written twice, not a choice; a
+/// damaged copy of the same type is its own options.
+fn commit_options(troops: &[Unit], planets: &[PlanetId]) -> Vec<ChoiceOption> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut options = Vec::new();
+    for (index, unit) in troops.iter().enumerate() {
+        for planet in planets {
+            if !seen.insert((
+                unit.type_id.to_string(),
+                unit.sustained_damage,
+                planet.to_string(),
+            )) {
+                continue;
+            }
+            let mut label = format!("land {}", unit.type_id);
+            if unit.sustained_damage {
+                label.push_str(" (damaged)");
+            }
+            options.push(
+                ChoiceOption::labelled(
+                    format!("commit|{index}|{planet}"),
+                    COMMIT_KIND,
+                    format!("{label} on {planet}"),
+                )
+                .with("planet", planet.to_string())
+                .with("unit", unit.type_id.to_string()),
+            );
+        }
+    }
+    options.push(ChoiceOption::labelled(
+        "done_committing",
+        DECLINE_KIND,
+        "commit no more ground forces",
+    ));
+    options
+}
+
 /// 49.2: commit ground forces from space onto planets, one at a time.
 ///
 /// # Errors
@@ -179,11 +236,7 @@ pub fn commit_ground_forces(
     invader: &PlayerId,
     system: &SystemId,
 ) -> Result<Vec<PlanetId>, IllegalChoice> {
-    let planets: Vec<PlanetId> = ti4_content::galaxy::planets_in(content, system.as_str(), sources)
-        .into_iter()
-        .map(|planet| PlanetId::new(planet.id()))
-        .collect();
-    if planets.is_empty() {
+    if ti4_content::galaxy::planets_in(content, system.as_str(), sources).is_empty() {
         return Ok(Vec::new());
     }
 
@@ -194,30 +247,16 @@ pub fn commit_ground_forces(
             break;
         }
 
-        // One option per (unit type, planet). Two identical infantry landing on the same
-        // planet are one decision written twice, and a sampling decider would land whichever
-        // type it happened to hold more of.
-        let mut seen = std::collections::BTreeSet::new();
-        let mut options = Vec::new();
-        for (index, unit) in troops.iter().enumerate() {
-            for planet in &planets {
-                if !seen.insert((unit.type_id.to_string(), planet.to_string())) {
-                    continue;
-                }
-                options.push(
-                    ChoiceOption::labelled(
-                        format!("land|{index}|{planet}"),
-                        LAND_KIND,
-                        format!("land {} on {planet}", unit.type_id),
-                    )
-                    .with("planet", planet.to_string())
-                    .with("unit", unit.type_id.to_string()),
-                );
-            }
-        }
-        options.push(ChoiceOption::decline());
+        // Re-read each iteration: the custodians token can come down mid-sequence and open
+        // Mecatol Rex, exactly as in the oracle.
+        let planets = landable_planets(state, content, sources, system);
+        let options = commit_options(&troops, &planets);
 
-        let choice = Choice::new(invader.clone(), "commit ground forces", options);
+        let choice = Choice::new(
+            invader.clone(),
+            format!("commit ground forces in {system}"),
+            options,
+        );
         let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, None))?;
         if answer.is_decline() {
             break;
@@ -547,34 +586,8 @@ impl InvasionWindow {
         if troops.is_empty() {
             return Vec::new();
         }
-        let planets: Vec<PlanetId> =
-            ti4_content::galaxy::planets_in(content, self.system.as_str(), sources)
-                .into_iter()
-                .map(|planet| PlanetId::new(planet.id()))
-                .collect();
-
-        // One option per (unit type, planet). Two identical infantry landing on the same planet
-        // are one decision written twice, and a sampling decider would land whichever type it
-        // happened to hold more of.
-        let mut seen = std::collections::BTreeSet::new();
-        let mut options = Vec::new();
-        for (index, unit) in troops.iter().enumerate() {
-            for planet in &planets {
-                if !seen.insert((unit.type_id.to_string(), planet.to_string())) {
-                    continue;
-                }
-                options.push(
-                    ChoiceOption::labelled(
-                        format!("land|{index}|{planet}"),
-                        LAND_KIND,
-                        format!("land {} on {planet}", unit.type_id),
-                    )
-                    .with("planet", planet.to_string())
-                    .with("unit", unit.type_id.to_string()),
-                );
-            }
-        }
-        options
+        let planets = landable_planets(state, content, sources, &self.system);
+        commit_options(&troops, &planets)
     }
 
     /// Who is defending `planet`, if anyone.
@@ -692,14 +705,13 @@ impl Window for InvasionWindow {
         match &self.stage {
             Stage::Done => None,
             Stage::Committing => {
-                let mut options = self.landing_options(state, content, sources);
+                let options = self.landing_options(state, content, sources);
                 if options.is_empty() {
                     return None;
                 }
-                options.push(ChoiceOption::decline());
                 Some(Choice::new(
                     self.invader.clone(),
-                    "commit ground forces",
+                    format!("commit ground forces in {}", self.system),
                     options,
                 ))
             }
@@ -750,7 +762,7 @@ impl Window for InvasionWindow {
                     } else {
                         self.advance_fighting(state, ctx, &planets, 0);
                     }
-                } else if let Some(rest) = option.id.strip_prefix("land|") {
+                } else if let Some(rest) = option.id.strip_prefix("commit|") {
                     let mut parts = rest.splitn(2, '|');
                     let (Some(index), Some(planet)) = (
                         parts.next().and_then(|i| i.parse::<usize>().ok()),
@@ -1290,5 +1302,301 @@ mod tests {
         for (planet, _) in &report.captured {
             assert!(state.exhausted_planets.contains(planet));
         }
+    }
+
+    type RecordedAsk = (String, Vec<(String, String, String)>);
+
+    /// A decider that records every choice it is asked to answer, answering from a queue of ids.
+    struct CommitRecording {
+        wanted: std::collections::VecDeque<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>,
+    }
+
+    impl CommitRecording {
+        fn new(wanted: &[String]) -> (Self, std::rc::Rc<std::cell::RefCell<Vec<RecordedAsk>>>) {
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            (
+                Self {
+                    wanted: wanted.iter().cloned().collect(),
+                    seen: seen.clone(),
+                },
+                seen,
+            )
+        }
+
+        fn record(&self, choice: &crate::choice::Choice) {
+            self.seen.borrow_mut().push((
+                choice.prompt.clone(),
+                choice
+                    .options
+                    .iter()
+                    .map(|option| (option.id.clone(), option.kind.clone(), option.label.clone()))
+                    .collect(),
+            ));
+        }
+    }
+
+    impl crate::choice::Decider for CommitRecording {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            self.record(choice);
+            let Some(wanted) = self.wanted.pop_front() else {
+                return Err(crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: "<script exhausted>".to_owned(),
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                });
+            };
+            choice.option(&wanted).cloned().ok_or_else(|| {
+                crate::choice::IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted,
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                }
+            })
+        }
+    }
+
+    /// A system the corpus places at least two planets in, so a landing is a real choice.
+    fn two_planet_arena() -> (GameState, SystemId, PlanetId, PlanetId) {
+        let state =
+            start_game(ContentStore::embedded(), &[invader(), holder()], POK, None).unwrap();
+        let content = ContentStore::embedded();
+        let systems: std::collections::BTreeSet<&str> =
+            ti4_content::galaxy::all_planets(content, POK)
+                .iter()
+                .filter_map(|(_, planet)| planet.system_id())
+                .collect();
+        for system in &systems {
+            let planets: Vec<PlanetId> = ti4_content::galaxy::planets_in(content, system, POK)
+                .iter()
+                .map(|planet| PlanetId::new(planet.id()))
+                .collect();
+            if planets.len() >= 2 {
+                return (
+                    state,
+                    SystemId::new(*system),
+                    planets[0].clone(),
+                    planets[1].clone(),
+                );
+            }
+        }
+        panic!("the corpus has no two-planet system")
+    }
+
+    #[test]
+    fn commit_ground_forces_offers_the_oracle_identity() {
+        // engine/invasion.py:253–324 asks "commit ground forces in {system}" with ids
+        // commit|{i}|{planet}, kind "commit", labels "land infantry on {p}", and the terminator
+        // ("done_committing", "decline", "commit no more ground forces"). Two identical undamaged
+        // infantry over two planets are one move each, so unit 1 contributes no options.
+        let (mut state, system, pa, pb) = two_planet_arena();
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+        let script = vec![format!("commit|0|{pa}"), "done_committing".to_owned()];
+        let (recorder, seen) = CommitRecording::new(&script);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        let committed = commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        assert_eq!(committed, vec![pa.clone()]);
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 2, "one landing, then the decline ask");
+        assert_eq!(asks[0].0, format!("commit ground forces in {system}"));
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (
+                    format!("commit|0|{pa}"),
+                    "commit".to_owned(),
+                    format!("land infantry on {pa}")
+                ),
+                (
+                    format!("commit|0|{pb}"),
+                    "commit".to_owned(),
+                    format!("land infantry on {pb}")
+                ),
+                (
+                    "done_committing".to_owned(),
+                    "decline".to_owned(),
+                    "commit no more ground forces".to_owned()
+                )
+            ]
+        );
+        assert_eq!(asks[1].0, format!("commit ground forces in {system}"));
+    }
+
+    #[test]
+    fn commit_options_distinguish_sustained_damage() {
+        // engine/choice.py:96 unit_label shows damage rather than folding it away; the dedup key
+        // is (type, sustained damage, planet), so a damaged infantry is its own options.
+        let (mut state, system, pa, pb) = two_planet_arena();
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+        state
+            .system_mut(&system)
+            .units
+            .last_mut()
+            .expect("two troops are in space")
+            .sustained_damage = true;
+        let (recorder, seen) = CommitRecording::new(&["done_committing".to_owned()]);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (
+                    format!("commit|0|{pa}"),
+                    "commit".to_owned(),
+                    format!("land infantry on {pa}")
+                ),
+                (
+                    format!("commit|0|{pb}"),
+                    "commit".to_owned(),
+                    format!("land infantry on {pb}")
+                ),
+                (
+                    format!("commit|1|{pa}"),
+                    "commit".to_owned(),
+                    format!("land infantry (damaged) on {pa}")
+                ),
+                (
+                    format!("commit|1|{pb}"),
+                    "commit".to_owned(),
+                    format!("land infantry (damaged) on {pb}")
+                ),
+                (
+                    "done_committing".to_owned(),
+                    "decline".to_owned(),
+                    "commit no more ground forces".to_owned()
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn mecatol_is_not_offered_while_the_custodians_token_is_present() {
+        // 27.1: nobody lands on Mecatol Rex while the custodians token sits there.
+        // System 18 holds exactly one planet ("mr"), so with the token up the commit ask
+        // offers nothing but the terminator; without it, the landing is offered.
+        let content = ContentStore::embedded();
+        let mut state = start_game(content, &[invader(), holder()], POK, None).unwrap();
+        assert!(!state.custodians_removed);
+        let mecatol_system = SystemId::new("18");
+        in_space(&mut state, &mecatol_system, "infantry", &invader(), 1);
+
+        let (recorder, seen) = CommitRecording::new(&["done_committing".to_owned()]);
+        let mut table = Table::with_default(Box::new(recorder));
+        commit_ground_forces(
+            &mut state,
+            content,
+            POK,
+            &mut table,
+            &invader(),
+            &mecatol_system,
+        )
+        .unwrap();
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(
+            asks[0].1, // the token keeps Mecatol Rex off the table
+            vec![(
+                "done_committing".to_owned(),
+                "decline".to_owned(),
+                "commit no more ground forces".to_owned()
+            )]
+        );
+
+        state.custodians_removed = true;
+        let (recorder, seen) = CommitRecording::new(&["done_committing".to_owned()]);
+        let mut table = Table::with_default(Box::new(recorder));
+        commit_ground_forces(
+            &mut state,
+            content,
+            POK,
+            &mut table,
+            &invader(),
+            &mecatol_system,
+        )
+        .unwrap();
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(
+            asks[0].1, // without the token, Mecatol Rex lands like any planet
+            vec![
+                (
+                    "commit|0|mr".to_owned(),
+                    "commit".to_owned(),
+                    "land infantry on mr".to_owned()
+                ),
+                (
+                    "done_committing".to_owned(),
+                    "decline".to_owned(),
+                    "commit no more ground forces".to_owned()
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn the_invasion_window_commit_ask_uses_the_oracle_identity() {
+        // The staged window is the real-game path (armed from game.rs); it builds its own copy of
+        // the option list, so the surface is asserted here rather than assumed shared.
+        let (mut state, system, pa, pb) = two_planet_arena();
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+        let (_table, mut dice, mut rng) = kit();
+
+        let window = InvasionWindow::new(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &invader(),
+            &system,
+        );
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("troops in space mean a commit ask");
+
+        assert_eq!(choice.prompt, format!("commit ground forces in {system}"));
+        assert_eq!(
+            choice
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                format!("commit|0|{pa}"),
+                format!("commit|0|{pb}"),
+                "done_committing".to_owned()
+            ]
+        );
+        assert!(
+            choice
+                .options
+                .iter()
+                .all(|o| o.kind == "commit" || o.id == "done_committing")
+        );
     }
 }

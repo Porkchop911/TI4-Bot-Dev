@@ -161,11 +161,10 @@ fn oracle_other_head(kind: &str) -> Option<&'static str> {
 /// Kinds this engine raises that the oracle's tables do not name.
 ///
 /// Kept apart from the ported tables rather than merged into them, so the ported ones stay
-/// checkable against their source. Each lands on the head its oracle counterpart uses: this engine
-/// says `land` where the oracle says `commit`, and splits some of the oracle's kinds finer.
+/// checkable against their source. Each lands on the head its oracle counterpart uses; some of
+/// these split one of the oracle's kinds finer.
 fn local_head(kind: &str) -> Option<&'static str> {
     let head = match kind {
-        "land" => "landing", // the oracle's `commit`
         "ground_casualty" | "reaction" | "retreat_to" | "sustain" => "combat",
         "place" => "production",
         "spend" => "payment",
@@ -815,7 +814,7 @@ mod tests {
         // "Decline" is offered in nearly every window. Routing on it would put half the game in
         // one head and teach that head nothing about any of it.
         assert_eq!(
-            decision_head(&choice_of("commit ground forces", &["decline", "land"])),
+            decision_head(&choice_of("commit ground forces", &["decline", "commit"])),
             "landing"
         );
         assert_eq!(
@@ -862,7 +861,6 @@ mod tests {
             "activate",
             "move",
             "load",
-            "land",
             "commit",
             "transaction",
             "pool",
@@ -895,8 +893,7 @@ mod tests {
     /// because it has never seen them; sending them somewhere better is a deliberate divergence,
     /// and listing them here is what makes it deliberate. A kind that drifts out of agreement
     /// without being added shows up as a failure in the golden test below.
-    const LOCAL_DIVERGENCES: [(&str, &str); 13] = [
-        ("land", "landing"), // the oracle's `commit`
+    const LOCAL_DIVERGENCES: [(&str, &str); 12] = [
         ("ground_casualty", "combat"),
         ("sustain", "combat"),
         ("reaction", "combat"),

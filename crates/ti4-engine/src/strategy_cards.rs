@@ -250,21 +250,20 @@ fn ready_planets(
         if controlled.is_empty() {
             break;
         }
+        // engine/strategy.py:633–654 offers every exhausted controlled planet and nothing else:
+        // no decline, no done — each of the `maximum` iterations is a forced choice until the
+        // player has none left.
         let choice = Choice::new(
             player.clone(),
-            "ready an exhausted planet",
+            "ready which planet",
             controlled
                 .iter()
                 .map(|planet| {
-                    ChoiceOption::labelled(planet.to_string(), "ready", planet.to_string())
+                    ChoiceOption::labelled(planet.to_string(), "ready", format!("ready {planet}"))
                 })
-                .chain(std::iter::once(ChoiceOption::decline()))
                 .collect(),
         );
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
-        if answer.is_decline() {
-            break;
-        }
         state.ready_planet(&PlanetId::new(answer.id));
     }
     Ok(())
@@ -490,30 +489,57 @@ fn trade_primary(
         .cloned()
         .collect();
     loop {
+        // engine/strategy.py:206–246 _replenishable: seats below their printed commodity value,
+        // generic factions excluded (they have no printed value to replenish to). The limit
+        // lookup already yields zero for them, but the oracle states it outright.
         remaining.retain(|other| {
-            state
-                .player(other)
-                .is_some_and(|seat| seat.commodities < commodity_limit(state, content, other))
+            state.player(other).is_some_and(|seat| {
+                seat.faction.as_str() != "generic"
+                    && seat.commodities < commodity_limit(state, content, other)
+            })
         });
         if remaining.is_empty() {
             break;
         }
+        // The oracle names each option after the faction — its player ids *are* factions — so a
+        // duplicate-faction table is first-match-in-seating-order here, as in the speaker ask.
+        let named: Vec<(String, PlayerId)> = remaining
+            .iter()
+            .map(|other| (crate::promissory::faction_name(state, other), other.clone()))
+            .collect();
         let choice = Choice::new(
             player.clone(),
-            "grant free Trade replenishment",
-            remaining
+            "let another player replenish commodities",
+            named
                 .iter()
-                .map(|other| {
-                    ChoiceOption::labelled(other.to_string(), "replenish", other.to_string())
+                .map(|(name, _)| {
+                    ChoiceOption::labelled(
+                        name.clone(),
+                        "replenish",
+                        format!("{name} replenishes commodities"),
+                    )
                 })
-                .chain(std::iter::once(ChoiceOption::decline()))
+                .chain(std::iter::once(ChoiceOption::labelled(
+                    "done",
+                    crate::choice::DECLINE_KIND,
+                    "nobody else replenishes",
+                )))
                 .collect(),
         );
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if answer.is_decline() {
             break;
         }
-        let other = PlayerId::new(answer.id);
+        let chosen = answer.id.clone();
+        let other = named
+            .iter()
+            .find(|(name, _)| *name == chosen)
+            .map(|(_, seat)| seat.clone())
+            .ok_or_else(|| crate::choice::IllegalChoice::NotOffered {
+                player: player.clone(),
+                offered: named.iter().map(|(name, _)| name.clone()).collect(),
+                chosen,
+            })?;
         replenish(state, content, &other);
         remaining.retain(|candidate| candidate != &other);
     }
@@ -1308,5 +1334,124 @@ mod tests {
 
         assert!(matches!(result, Ability::FreeTactical(_)));
         assert_eq!(state.player(&player).unwrap().tactic_tokens, tokens);
+    }
+
+    /// Two distinct placed planets, in the order `controlled_planets` yields them.
+    fn two_controlled_candidates() -> Vec<(SystemId, PlanetId)> {
+        let content = ContentStore::embedded();
+        ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, planet)| planet.system_id().is_some() && !planet.is_placed_during_play())
+            .map(|(id, planet)| {
+                (
+                    SystemId::new(planet.system_id().unwrap_or("18")),
+                    PlanetId::new(*id),
+                )
+            })
+            .take(2)
+            .collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn ready_planets_uses_the_oracle_wording_and_offers_no_decline() {
+        // engine/strategy.py:633–654 asks "ready which planet" with one option per exhausted
+        // controlled planet — label "ready {p}" and no decline/done option; every iteration is a
+        // forced choice until the count is spent or nothing stays exhausted.
+        let mut state = game(&["a"]);
+        let player = PlayerId::new("a");
+        let candidates: Vec<(SystemId, PlanetId)> = two_controlled_candidates();
+        for (system, planet) in &candidates {
+            state
+                .system_mut(system)
+                .set_control(planet.clone(), player.clone());
+            state.exhaust_planet(planet.clone());
+        }
+
+        let script: Vec<&str> = candidates
+            .iter()
+            .map(|(_, planet)| planet.as_str())
+            .collect();
+        let (recorder, seen) = SpeakerRecording::new(&script);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        ready_planets(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            2,
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 2, "one forced choice per planet");
+        for ask in &*asks {
+            assert_eq!(ask.0, "ready which planet");
+            assert!(
+                !ask.1.iter().any(|(id, _, _)| id == "decline"),
+                "the oracle offers no decline here"
+            );
+        }
+        let p1 = &candidates[0].1;
+        let p2 = &candidates[1].1;
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (p1.to_string(), "ready".to_owned(), format!("ready {p1}")),
+                (p2.to_string(), "ready".to_owned(), format!("ready {p2}"))
+            ]
+        );
+        assert_eq!(
+            asks[1].1,
+            vec![(p2.to_string(), "ready".to_owned(), format!("ready {p2}"))]
+        );
+        for (_, planet) in &candidates {
+            assert!(!state.exhausted_planets.contains(planet));
+        }
+    }
+
+    #[test]
+    fn free_trade_replenishment_uses_the_oracle_identity() {
+        // engine/strategy.py:219–246 asks "let another player replenish commodities" with one
+        // option per eligible seat — id = the faction name, label "{name} replenishes
+        // commodities" — plus ("done", "decline", "nobody else replenishes"). Generic-faction
+        // seats are never offered.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b", "c"]);
+        let player = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        state.player_mut(&other).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        // "c" keeps its default generic faction: never offered, whatever its commodities.
+        let limit = commodity_limit(&state, content, &other);
+        assert!(limit > 0, "the test needs a faction with a printed value");
+        state.player_mut(&other).unwrap().commodities = 0;
+
+        let (recorder, seen) = SpeakerRecording::new(&["hacan"]);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        trade_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1, "one grant, then nothing left to offer");
+        assert_eq!(asks[0].0, "let another player replenish commodities");
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (
+                    "hacan".to_owned(),
+                    "replenish".to_owned(),
+                    "hacan replenishes commodities".to_owned()
+                ),
+                (
+                    "done".to_owned(),
+                    "decline".to_owned(),
+                    "nobody else replenishes".to_owned()
+                )
+            ]
+        );
+        assert_eq!(state.player(&other).unwrap().commodities, limit);
     }
 }
