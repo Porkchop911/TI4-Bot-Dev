@@ -21,7 +21,7 @@ use std::sync::Arc;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Observed, SeededRandom, Table};
+use ti4_engine::choice::{Decider, Observed, SeededRandom, Table};
 use ti4_engine::game::Game;
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
 use ti4_engine::setup::start_game_seeded;
@@ -449,6 +449,47 @@ pub fn play_assigned_on_map(
     clippy::too_many_arguments,
     reason = "a rollout's complete deterministic input"
 )]
+/// Play one game with caller-provided deciders, one per player.
+///
+/// Deliberately additive: the learned path keeps constructing its own recording bots; this entry
+/// point exists so a diagnostic (for example a single-game decision trace) can seat its own
+/// [`Decider`] wrappers without changing how training games are played. The returned rollout's
+/// per-seat trajectories are empty unless the deciders themselves record them.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+pub fn play_with_deciders(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+) -> Rollout {
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+        Ok(seated) => seated,
+        Err(error) => return failed(seed, error),
+    };
+    finish_game(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        None,
+    )
+}
+
 fn play_assigned_on_map_shared(
     content: &ContentStore,
     players: &[PlayerId],
@@ -465,18 +506,10 @@ fn play_assigned_on_map_shared(
         Err(error) => return failed(seed, error),
     };
 
-    // The baseline is taken *after* deployment and before the first decision. Taken any earlier it
-    // is empty and every starting planet reads as a conquest; any later and the seat is credited
-    // with less than it did.
-    let baselines: BTreeMap<PlayerId, Baseline> = {
-        let seen = Observed::new(&state, content, sources, Some(&galaxy));
-        players
-            .iter()
-            .map(|player| (player.clone(), Baseline::taken(&seen, player)))
-            .collect()
-    };
+    // The baseline is taken *after* deployment and before the first decision.
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
 
-    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
     let mut handles: BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>> =
         BTreeMap::new();
     for (index, player) in players.iter().enumerate() {
@@ -494,7 +527,66 @@ fn play_assigned_on_map_shared(
             .recording()
             .from_setup(baselines.get(player).copied().unwrap_or_default());
         handles.insert(player.clone(), bot.trajectory());
-        table.seat(player.clone(), Box::new(bot));
+        deciders.insert(player.clone(), Box::new(bot));
+    }
+
+    finish_game(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        Some(&handles),
+    )
+}
+
+/// What each seat held at setup: taken after deployment and before the first decision. Taken any
+/// earlier it is empty and every starting planet reads as a conquest; any later and the seat is
+/// credited with less than it did.
+fn opening_baselines(
+    state: &ti4_model::state::GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    players: &[PlayerId],
+) -> BTreeMap<PlayerId, Baseline> {
+    let seen = Observed::new(state, content, sources, galaxy);
+    players
+        .iter()
+        .map(|player| (player.clone(), Baseline::taken(&seen, player)))
+        .collect()
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+fn finish_game(
+    content: &ContentStore,
+    state: ti4_model::state::GameState,
+    galaxy: ti4_content::galaxy::Galaxy,
+    factions: &BTreeMap<PlayerId, FactionId>,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
+) -> Rollout {
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+
+    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    for player in players.iter() {
+        match deciders.remove(player) {
+            Some(decider) => table.seat(player.clone(), decider),
+            None => return failed(seed, format!("no decider seated for {player}")),
+        }
     }
 
     let mut game = Game::with_table(state, content, table)
@@ -523,6 +615,7 @@ fn play_assigned_on_map_shared(
             })
             .collect()
     };
+
     let openings = ti4_engine::opening::measure(
         &game.state,
         &baselines
@@ -539,7 +632,7 @@ fn play_assigned_on_map_shared(
         .iter()
         .map(|player| {
             let trajectory = handles
-                .get(player)
+                .and_then(|handles| handles.get(player))
                 .map(|handle| handle.borrow().clone())
                 .unwrap_or_default();
             let opening = openings.get(player);

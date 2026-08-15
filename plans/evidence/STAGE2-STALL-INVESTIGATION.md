@@ -408,3 +408,72 @@ per-decision diff between the engines to localize board-vs-scoring divergence.
 **Code added for T5 (opt-in, default-preserving):** `FactionPlan.train_seed_stride` + example flags
 `--train-seed-base`, `--train-seed-stride`; effective values recorded in checkpoint arguments; banner line.
 98 crate tests pass; clippy clean; release binary rebuilt.
+
+## T6 — single-game per-decision differential (root cause of cross-engine divergence)
+
+**Method.** One game, seed 83000001 rotation 0, 4-round oracle horizon, map pool
+`save52_e400_n8192.json.gz`, both engines in greedy mode (`--greedy-temperature 0.0001`) with full
+per-option raw-feature dumps:
+
+- Rust: new example `crates/ti4-training/examples/single_game_trace.rs` (TraceBot records faction,
+  per-bot idx, prompt, option id/kind sets, scores, head routing, blind/seeing path; optional
+  `--full-features` raw bucket dump and `--dump-head <head> --dump-out <path>` weight dump).
+- Python: `out/diff_py_game.py` monkey-patches each bot's `_sample` at instance level (oracle repo
+  byte-untouched, verified with git status before/after); `--table <key>` selects the checkpoint
+  profile table.
+
+**Finding 1 — the apparent idx0 score divergence was a harness artifact (wrong tables).**
+Checkpoint `stage1_pg_six_to5000_20260810.json` (final_update=3050, run_complete=False) carries two
+profile tables: `profiles` = last **accepted** champion snapshot; `learner_profiles` = **live learner**
+weights at u3050. Oracle resume semantics (`train_stage1_policy_gradient.py:1247-1248`): accepted comes
+from `profiles`, live training state from `learner_profiles`. Rust's production loader
+(`stage2_training.rs load_start`) implements the same mapping (learner = `learner_profiles` → fallback
+`profiles` → `accepted`; champion = `accepted` → fallback `profiles`). The first differential run used
+`profiles` on the Python side but `learner_profiles` on the Rust side — two different u3050 snapshots.
+All 80 strategy-head weights per faction differ between the tables (e.g. xxcha `option:pok2diplomacy`:
+accepted +0.0946 vs learner +0.4819).
+
+**Finding 2 — with identical tables, scoring is exact.** Re-running both sides on `learner_profiles`:
+
+- All six factions' idx0 (strategy card choice): option sets identical (shared-pool draft order),
+  raw feature vectors identical bucket-for-bucket (21 buckets/option), scores equal to full precision.
+- Across every aligned common decision for all six factions: **max |score delta| = 0.000000**, zero
+  choice mismatches, zero blind-path decisions in the Rust trace.
+- Weights loaded by Rust (`--dump-head strategy`) are bit-equal to the file's `learner_profiles` table;
+  head routing agrees (strategy_card → head "strategy" both sides); score formula is a plain dot product
+  on both sides (Python `sum(weighted.values())`, Rust `Head::score_vector`).
+
+**Finding 3 — residual divergence is in decision *surface labels*, not extraction.** Feature extractors
+are faithful mirrors: Rust `explicit_option_features` ↔ Python `_NamedFeatureExtractor`; tokenizer
+identical (`[a-z0-9]+` on lowercased text); for an equivalent decision (same prompt, same option ids,
+same state) the feature vectors are byte-equal (`feature_diffs=0`). But each engine's game layer labels
+equivalent situations differently, and those labels hash into feature names:
+
+| surface | Python | Rust |
+|---|---|---|
+| player identity in prompts/options | faction name ("transaction with hacan", "reaction:l1z1x:...") | seat id ("transaction with seat3", "reaction:seat5:...") |
+| option-id vocabulary, same prompt "spend 3 influence for a command token" | `no` / `yes` (48 occurrences) | `buy` / `decline` (24) |
+| leadership secondary offer | repeated `no/yes` purchase prompts | `decline/follow` then purchase prompts |
+| reaction events observed | GROUND_FORCE_COMMITTED, INVASION_STARTED, ACTION_CARD_PLAYED, SUSTAIN_DAMAGE_USED, ...after | SHIP_MOVED, PLAYER_PASSED, PRODUCTION_USED, SPACE_COMBAT_STARTED, PLANET_CONTROL_GAINED, ...After |
+
+Consequence: shared checkpoints look up different weights for equivalent situations → systematically
+different scores from the first labeled decision onward → cascading game divergence (py 1868 vs rust
+1048 decisions; prompt-class counts differ by 3-5x on action phases and trades). This fully explains the
+T5 pilot's systematic per-faction metric deltas: Rust training optimizes against its own surface while
+the Python checkpoint weights were trained on Python's surface.
+
+**Open item (rules-level, separate from scoring):** the reaction-event taxonomies differ in more than
+naming — each side observed event classes the other never emitted. Needs a dedicated hook-set audit to
+rule out missing/extra reaction windows before any parity claim about full game dynamics.
+
+**Decision required (operator/frontier).** To make Rust stage-2 comparable to or resuming-from the
+Python oracle chain, one canonical decision surface must be adopted: (a) align Rust game-layer labels to
+the Python surface (faction names, `no/yes` ids, event naming) — restores cross-engine parity and direct
+checkpoint reuse; (b) standardize on the Rust surface and retrain from scratch in Rust only — abandons
+cross-comparability with existing Python artifacts; (c) canonicalize player identity at feature time in
+both extractors — a representation change to both pipelines. This materially changes public training
+behavior and is not decided by existing plans.
+
+**Artifacts.** `out/rust_ff_83000001.json`, `out/py_ff_learn_83000001.json` (full-feature greedy traces),
+`out/diff_decisions.py --at <faction> <idx>` (bucket-level feature diff), `out/rust_loaded_strategy.json`
+(weight dump). Oracle repo unchanged.

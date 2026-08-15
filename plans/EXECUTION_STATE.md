@@ -1366,38 +1366,48 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ```
 Objective:
-Stage-2 stall diagnosis + remedy testing. T0 forensics and T1 n=32 eval-only complete; the T2
-learning-rate differential run is in flight.
+Stage-2 stall diagnosis + cross-engine parity. T0–T5 complete; T6 single-game per-decision
+differential localizes the cross-engine divergence to decision surface labels.
 Oracle commit:
-37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean
+37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean before and
+after T6 tracing; oracle repo byte-untouched.
 Active milestone/package:
-Stage-2 stall investigation (post-M10 training follow-up, no package ID); safepoint 66fd234.
+Stage-2 stall investigation + differential diagnostics (post-M10, no package ID); safepoint 66fd234;
+T5 pilot committed e71d0de; T6 diagnostic commit follows this handover.
 Status and completed acceptance criteria:
-T0 + T1 complete with artifacts; clause-level gate instrumentation in the working tree with all
-example tests passing (11/11). Diagnosis revised to ≈zero optimizer drift (gate was correct).
-T2 pending (~45–60 min at launch).
+T6 complete: with both engines on the same checkpoint table (learner_profiles), scores match to
+full precision at every aligned decision and features are byte-equal for equivalent decisions;
+residual divergence is surface-label driven (player identity in prompts, option-id vocabulary,
+reaction event taxonomy). Root-cause chain documented in evidence T6.
 Current branch and HEAD:
-codex/stage1-parity-fixes @ 66fd234 (safepoint) + uncommitted instrumentation in
-crates/ti4-training/examples/stage2_training.rs; new plans/evidence/STAGE2-STALL-INVESTIGATION.md.
+codex/stage1-parity-fixes @ e71d0de + uncommitted: rollout.rs (additive play_with_deciders),
+examples/single_game_trace.rs (new diagnostic example), plans/evidence/STAGE2-STALL-INVESTIGATION.md
+(T6 section). Tree otherwise clean.
 Working-tree state:
-stage2_training.rs modified, evidence file untracked; T2 process running (log
-out/logs/t2_lr001.log, output out/stage2_test_lr001_n32.json).
+The three paths above only; out/* artifacts are gitignored.
 Tests last run and exact results:
-cargo test -p ti4-training --example stage2_training → 11 passed, 0 failed.
+cargo test -p ti4-training → 98 passed, 0 failed (release); clippy -p ti4-training --examples
+clean; cargo fmt applied.
 Compatibility evidence:
-out/eval_t1_5700_n32.json (T1 sidecar); out/stage2_test_lr001_n32.json (T2, pending).
+out/rust_ff_83000001.json + out/py_ff_learn_83000001.json (greedy full-feature traces,
+seed 83000001 rot 0); max |score delta| = 0.000000 across all aligned common decisions;
+out/rust_loaded_strategy.json proves Rust loads learner_profiles weights bit-equal to file.
 Decisions made and rationale:
-- n=8 boundary panels judged under-resolved for a 0.03 clearance tolerance → all experiments use
-  n=32; the veto clause itself is retained unchanged for now.
-- The lr differential keeps every other variable identical to the recorded baseline lineage (same
-  resume state, seed schedule, map pool) so per-update comparisons are valid.
+- The T6 "idx0 divergence" was a harness artifact: the checkpoint carries two tables
+  (profiles=accepted champion, learner_profiles=live learner @u3050); both production loaders
+  follow oracle resume semantics. Diagnostics must select the same table on both sides.
+- Cross-engine parity requires adopting one canonical decision surface (evidence T6 lists three
+  options). This materially changes public training behavior — awaiting operator/frontier call;
+  no code change made.
 Open review findings or blockers:
-None blocking. If T2 shows no drift at lr 0.01, next step is a bounded std-amplification change in
-ti4_training::gradient::apply — new scope with its own review tier.
+- Open: reaction-event taxonomy audit (each engine emitted event classes the other never did);
+must be resolved before any full-game-dynamics parity claim.
+- The zero-signal stall diagnosis (T1/T2) stands independently of T6.
 Next exact action:
-Poll out/logs/t2_lr001.log to completion; append the per-boundary gain/SE table and verdicts to
-plans/evidence/STAGE2-STALL-INVESTIGATION.md; compare against stage2_s2p2 blocks 4700–5600.
+Await operator decision on canonical surface. If option (a) chosen: align Rust game-layer labels
+to the Python surface, re-run the T6 differential to confirm full-stream agreement, then resume
+stage-2 parity experiments.
 Files to read first after compaction:
-plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md,
-out/logs/t2_lr001.log, crates/ti4-training/examples/stage2_training.rs (gate + eval-only sections)
+plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (T5 + T6 sections),
+crates/ti4-training/examples/single_game_trace.rs, out/diff_py_game.py, out/diff_decisions.py
 ```
