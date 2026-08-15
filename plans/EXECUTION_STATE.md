@@ -1362,61 +1362,72 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   (2026-08-11). Evidence files record what was verified and by what test, not a reviewer.
 - Scoped permissions per `SCOPED_PERMISSIONS.md`: packages default to P0/P1.
 
+
 ## Handover
 
 ```
 Objective:
-Stage-2 stall diagnosis + cross-engine parity. T0–T5 complete; T6 localized the cross-engine
-divergence to decision-surface labels; operator approved option (a) — align Rust surface to the
-Python oracle's so checkpoints stay transferable. Phase 1 in progress: P1-a (trade surface)
-complete, commit follows this handover.
+Stage-2 stall diagnosis + cross-engine parity (Phase 1 surface alignment). P1-a and P1-a2
+complete; P1-a2 commit follows this handover. Next ready: P1-a3 (per-note pricing, :price id
+suffix, action-card trade shape).
 Oracle commit:
 37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — read-only throughout;
-checkpoint + map pool only ever read from out/, never written.
+re-verified clean after the P1-a2 differential run.
 Active milestone/package:
-Phase 1 surface alignment (post-M10, no package ID); safepoint 66fd234; P1-a commit follows this
-handover. Next ready: P1-a2 (note ownership identity → faction names in promissory module).
+Phase 1 surface alignment (post-M10, no package ID); safepoint 66fd234; chain on branch
+codex/stage1-parity-fixes: ... a84e18d → 8c628b6 (P1-a) → P1-a2 commit follows.
 Status and completed acceptance criteria:
-P1-a done: Rust trade decision surface matches the oracle — open ids component|trade|{faction},
-kinds open_transaction/transaction/decline, prompts "transaction with {faction}" and
-"{faction} gives X for Y -- accept?", answer ids [accept, refuse, counter], net/their_net priced
-payloads on every offer option + accept. T6 re-run (seed 83000001 rot 0 greedy full-features,
-same learner table): max_score_gap = 0.000000 on all common prefixes; trade open-id sets, kinds,
-propose/answer prompt formats identical across engines.
+P1-a done and committed (8c628b6): trade surface labels/ids/payloads match the oracle.
+P1-a2 implemented + verified (this handover's package): note/support ids embed faction names;
+G1 re-deal in rollout seated() so real games deal the five-note hands; FACEUP += convoys;
+available_notes = faceup exclusion + Alliance commander-unlock gate, ownership filter retired
+(oracle parity); ContentStore threaded through can_pay/why_illegal/resolve/offer_from.
+Differential (seed 83000001 rot 0 greedy full-features, learner table both sides):
+max_score_gap = 0.000000 on every faction's common prefix, zero choice mismatches; all residual
+structural divergences in previously-logged classes (F1 leader components; blind decline/follow
+secondaries). Rust-vs-rust P1-a→P1-a2: first divergences are exactly the intended note-surface
+changes.
 Current branch and HEAD:
-codex/stage1-parity-fixes @ a84e18d (T6b audit) + uncommitted P1-a: transactions.rs, game.rs,
-wiring.rs, evidence file, this handover. Tree otherwise clean; out/* gitignored.
+codex/stage1-parity-fixes @ 8c628b6 (P1-a) + uncommitted P1-a2: promissory.rs, transactions.rs,
+game.rs, rollout.rs, single_game_trace.rs (clippy hygiene only), evidence file, this handover.
 Working-tree state:
-The four paths above only, all in scope for the P1-a commit.
+Those six paths only; out/* gitignored. No unrelated changes.
 Tests last run and exact results:
-cargo fmt -p ti4-engine clean; cargo test -p ti4-engine → 756 + 5 doctests passed (new: terms
-formatting, open-id naming/round-trip, propose prompt, answer ids/kinds/order, net payloads);
-clippy -p ti4-engine --all-targets clean; cargo check --workspace --all-targets clean;
-cargo test -p ti4-training → 98 passed.
+cargo fmt -p ti4-engine -p ti4-training clean; cargo test -p ti4-engine → 758 lib + 5 doctests
+pass (was 756+5); cargo test -p ti4-training → 98 pass; cargo clippy -p ti4-engine -p
+ti4-training --all-targets → zero warnings; cargo check --workspace --all-targets clean.
 Compatibility evidence:
-out/rust_ff_83000001_p1a.json (new rust trace) vs out/py_ff_learn_83000001.json: open ids
-component|trade|{hacan,jolnar,l1z1x,letnev,sol,xxcha} same set both; propose prompts "transaction
-with {faction}" (py 297 / rust 131 decisions); answer prompt format identical; max |score delta|
-0.000000 across all aligned common decisions.
+out/rust_ff_83000001_p1a2.json vs out/py_ff_learn_83000001_p1a2.json (both learner table):
+gap 0.000000 / choice mismatches 0 on all common prefixes; hacan/xxcha py action-phase options
+carry component|leader|{faction}agent, rust does not (F1); note offers now faction-keyed
+(pncf:hacan etc.), an gated out of rust offer surface until commanders deploy.
 Decisions made and rationale:
-- P1-a kept mechanical: labels, ids, payloads only — no legality/timing/state changes (those are
-Phase 2 with frontier review). Note IDs remain seat-keyed (residual R1 → P1-a2); action-card trade
-shape still absent (→ P1-a3).
-- Duplicate-faction tables cannot be expressed by the oracle (its player *is* its faction);
-opens_with resolves a name to the first seated match deterministically and tests use distinct
-factions. Documented in code + evidence rather than adding an ambiguity filter that would change
-legality on Rust-only scaffolding.
-- "refuse" carries DECLINE_KIND so existing decline routing (is_decline) is unchanged; option ids
-and labels changed, kind did not.
+- P1-a2 scope = identity + G1 re-deal + FACEUP convoys + available_notes filters in ONE atomic
+  commit; faceup exclusion inseparable from the FACEUP change (else Rust would newly offer notes
+  Python refuses). Split recorded pre-implementation per AGENTS.md.
+- Removed Rust's ownership filter: oracle offers by holder, not owner — a lent-out note stays
+  re-offerable; test retired and replaced with the parity-form test.
+- trade_agreement_worth keys off the embedded name ("generic" → flat default); duplicate-faction
+  tables are oracle-unreachable scaffolding (earlier seat shadows later), documented not
+  error-handled.
+- Fixed pre-existing clippy warnings in ti4-training (rollout.rs dup expect; single_game_trace
+  example lints) so both crates stay all-targets clean for future package gates.
 Open review findings or blockers:
-- Phase 2 touches legality/timing (10 new windows incl. combat hit-assignment; WHEN/AFTER fix) →
-frontier review tier required before implementation per AGENTS.md. Not started.
-- Residual P1 classes open: P1-a2, P1-a3, P1-b..f (table in evidence).
+- F1: Rust rollouts never call leaders::deploy → no commanders → an notes permanently gated out
+  of the rust offer surface + component|leader|{faction}agent options absent (Phase 2 gap; adds a
+  whole option class — needs its own package, frontier review per AGENTS.md).
+- secrets.rs holds_a_rivals_note pre-existing bug: deferred, recorded in evidence.
+- Phase 2 legality/timing changes still require frontier review before implementation.
+- PROTOCOL (all future diffs): python trace runs MUST pass --table learner_profiles to match
+  rust's table selection; forgetting it masqueraded as a P1-a2 regression this session and was
+  fully investigated/closed (oracle determinism verified in-process, cross-process, and under
+  PYTHONHASHSEED 0/1/42 — see evidence).
 Next exact action:
-P1-a2 branch + commit: promissory note ownership identity → faction names (state-level label;
-duplicate-faction caveat documented), then re-run the T6 differential.
+Commit P1-a2 on codex/stage1-parity-fixes; then P1-a3 branch + spec (per-note pn pricing with
+int(round(worth)) and :price id suffix, price parsing in offer_from, ac{} action-card trade
+shape) — re-run the T6 differential after.
 Files to read first after compaction:
-plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (T5+T6+P1 sections),
-crates/ti4-engine/src/transactions.rs, crates/ti4-training/examples/single_game_trace.rs,
+plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a + P1-a2 sections),
+crates/ti4-engine/src/promissory.rs, crates/ti4-engine/src/transactions.rs,
 out/diff_decisions.py
 ```

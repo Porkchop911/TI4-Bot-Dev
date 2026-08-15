@@ -275,6 +275,9 @@ fn seated(
             seat.faction = faction.clone();
         }
     }
+    // G1 (T6b): the setup deal ran before seating, so every note id read "generic". Re-deal
+    // once the seats know who they are; no note has moved yet, so this is a clean refresh.
+    ti4_engine::promissory::deal(&mut state, content, sources);
 
     // Drawn by seed, so a batch plays many boards rather than one. A policy trained on a single
     // map learns that map, and no batch report would say so.
@@ -445,10 +448,6 @@ pub fn play_assigned_on_map(
     )
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a rollout's complete deterministic input"
-)]
 /// Play one game with caller-provided deciders, one per player.
 ///
 /// Deliberately additive: the learned path keeps constructing its own recording bots; this entry
@@ -582,7 +581,7 @@ fn finish_game(
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
 
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
-    for player in players.iter() {
+    for player in players {
         match deciders.remove(player) {
             Some(decider) => table.seat(player.clone(), decider),
             None => return failed(seed, format!("no decider seated for {player}")),

@@ -26,18 +26,23 @@ pub const SUPPORT_PREFIX: &str = "support:";
 pub const GENERIC: &[&str] = &["cf", "ps", "ta", "an"];
 
 /// Notes that live faceup in a play area rather than in hand (69.3).
-pub const FACEUP: &[&str] = &["an"];
+///
+/// Trade Convoys sits there while it does its work, which is also what makes the card active;
+/// neither card may be offered again from the table while it is out of hand.
+pub const FACEUP: &[&str] = &["an", "convoys"];
 
-/// This owner's Support for the Throne.
+/// This owner's Support for the Throne, by the faction name that owns it.
 #[must_use]
-pub fn support(owner: &PlayerId) -> String {
-    format!("{SUPPORT_PREFIX}{owner}")
+pub fn support(owner_name: &str) -> String {
+    format!("{SUPPORT_PREFIX}{owner_name}")
 }
 
-/// A note id: the printed alias, and whose copy it is.
+/// A note id: the printed alias, and whose copy it is — the owner's **faction name**, exactly as
+/// in the oracle (whose player ids are its factions). Seating a different vocabulary would mint
+/// note ids no shared checkpoint has weights for.
 #[must_use]
-pub fn note_id(alias: &str, owner: &PlayerId) -> String {
-    format!("{alias}:{owner}")
+pub fn note_id(alias: &str, owner_name: &str) -> String {
+    format!("{alias}:{owner_name}")
 }
 
 /// The printed alias a note id carries.
@@ -46,13 +51,40 @@ pub fn alias_of(note: &str) -> &str {
     note.split_once(':').map_or(note, |(alias, _)| alias)
 }
 
-/// Who a note belongs to, or `None` if it is not a note id at all.
+/// The faction name a note belongs to, or `None` if it is not a note id at all.
 #[must_use]
-pub fn owner_of(note: &str) -> Option<PlayerId> {
+pub fn owner_of(note: &str) -> Option<String> {
     if let Some(owner) = note.strip_prefix(SUPPORT_PREFIX) {
-        return Some(PlayerId::new(owner));
+        return Some(owner.to_owned());
     }
-    note.split_once(':').map(|(_, owner)| PlayerId::new(owner))
+    note.split_once(':').map(|(_, owner)| owner.to_owned())
+}
+
+/// The faction a player plays — the identity embedded in every note id that player owns.
+#[must_use]
+pub fn faction_name(state: &GameState, player: &PlayerId) -> String {
+    state
+        .player(player)
+        .map(|seat| seat.faction.as_str().to_owned())
+        .unwrap_or_default()
+}
+
+/// The seat playing a given faction name: the first match in seating order.
+///
+/// Deterministic rather than random. A duplicate-faction table (two seats, one faction) is
+/// outside what the oracle can express at all — its player ids *are* factions — so on such a
+/// Rust-only scaffold the earlier seat simply shadows the later one's notes.
+#[must_use]
+pub fn seat_of(state: &GameState, name: &str) -> Option<PlayerId> {
+    state
+        .seating_order
+        .iter()
+        .find(|id| {
+            state
+                .player(id)
+                .is_some_and(|seat| seat.faction.as_str() == name)
+        })
+        .cloned()
 }
 
 /// Put every player's own notes in their hand at setup (69.1).
@@ -74,7 +106,8 @@ pub fn deal(state: &mut GameState, content: &ContentStore, sources: SourceSet) {
                 .unwrap_or_default(),
         );
         for alias in aliases {
-            hands.insert(note_id(&alias, &seat.id), seat.id.clone());
+            // The id carries the faction's name; the map value stays the seat that holds it.
+            hands.insert(note_id(&alias, seat.faction.as_str()), seat.id.clone());
         }
     }
     let _ = sources;
@@ -96,7 +129,12 @@ pub fn take(state: &mut GameState, holder: &PlayerId, note: &str) {
 /// Every note in the game says "then, return this card". A note is a loan, not a sale, which is
 /// why parting with one is worth less than receiving one.
 pub fn give_back(state: &mut GameState, note: &str) {
-    let Some(owner) = owner_of(note) else {
+    let Some(name) = owner_of(note) else {
+        return;
+    };
+    // The oracle cannot name a note whose faction nobody plays, so this engine has no seat to
+    // return it to either — treat it as already home rather than mint a ghost player.
+    let Some(owner) = seat_of(state, &name) else {
         return;
     };
     if state.promissory_notes.get(note) == Some(&owner) {
@@ -109,7 +147,8 @@ pub fn give_back(state: &mut GameState, note: &str) {
 /// Who holds a particular note, or `None` if its owner still has it.
 #[must_use]
 pub fn holder_of(state: &GameState, alias: &str, owner: &PlayerId) -> Option<PlayerId> {
-    let note = note_id(alias, owner);
+    let name = faction_name(state, owner);
+    let note = note_id(alias, &name);
     match state.promissory_notes.get(&note) {
         Some(holder) if holder != owner => Some(holder.clone()),
         _ => None,
@@ -127,22 +166,48 @@ pub fn held_by(state: &GameState, player: &PlayerId) -> Vec<String> {
         .collect()
 }
 
-/// Notes this player could put on the table: their own, still in their hand.
+/// Notes this player could put on the table.
 ///
-/// A note already lent out is not theirs to offer, and somebody else's note is not theirs to
-/// sell — both would let one card be traded twice.
+/// Holding is what makes a note offerable — the oracle prices and offers notes by who holds
+/// them, not who owns them; a lent-out note sits in your hand and is yours to sell from there.
+/// Two filters narrow that: a note faceup in a play area has already been played and is doing
+/// its work where it sits (69.3), and an Alliance conveys a commander ability *only while it is
+/// unlocked*, so before then it conveys precisely nothing and the oracle withholds it rather
+/// than price a null card.
 #[must_use]
-pub fn available_notes(state: &GameState, player: &PlayerId) -> Vec<String> {
-    held_by(state, player)
-        .into_iter()
-        .filter(|note| owner_of(note).as_ref() == Some(player))
-        .collect()
+pub fn available_notes(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    for note in held_by(state, player) {
+        if state.promissory_faceup.contains(&note) {
+            continue;
+        }
+        let Some(owner_name) = owner_of(&note) else {
+            continue;
+        };
+        if alias_of(&note) == "an" {
+            // Nobody plays the faction an Alliance names on a duplicate-free table, and with no
+            // seat there is no commander to unlock — withhold it in that case as well.
+            let Some(owner) = seat_of(state, &owner_name) else {
+                continue;
+            };
+            if !commander_unlocked(state, content, &owner) {
+                continue;
+            }
+        }
+        notes.push(note);
+    }
+    notes
 }
 
 /// This player's Support for the Throne, if they still hold it.
 #[must_use]
 pub fn available_support(state: &GameState, player: &PlayerId) -> Option<String> {
-    (!state.support_holders.contains_key(player)).then(|| support(player))
+    let name = faction_name(state, player);
+    (!state.support_holders.contains_key(player)).then(|| support(&name))
 }
 
 /// Put another player's Support faceup in a play area and award its point.
@@ -150,7 +215,12 @@ pub fn available_support(state: &GameState, player: &PlayerId) -> Option<String>
 /// Returns `false` when the note cannot move: nobody may hold their own Support, and a Support
 /// already lent out cannot be lent again.
 pub fn receive(state: &mut GameState, holder: &PlayerId, note: &str) -> bool {
-    let Some(owner) = owner_of(note) else {
+    let Some(name) = owner_of(note) else {
+        return false;
+    };
+    // Same ghost-seat guard as [`give_back`]: the oracle cannot name a note whose faction
+    // nobody plays.
+    let Some(owner) = seat_of(state, &name) else {
         return false;
     };
     if &owner == holder || state.support_holders.contains_key(&owner) {
@@ -178,6 +248,9 @@ pub fn return_support(state: &mut GameState, owner: &PlayerId) -> bool {
 }
 
 /// Trade Convoys: its holder may transact with the whole table, not only their neighbours.
+///
+/// Only while the card is faceup in a play area — that is where it lives once lent (69.3), and
+/// a note still in hand has not been played at all.
 #[must_use]
 pub fn reaches_anyone(state: &GameState, player: &PlayerId) -> bool {
     state.promissory_notes.iter().any(|(note, holder)| {
@@ -196,6 +269,7 @@ pub fn denies_movement_into(
     mover: &PlayerId,
     system: &ti4_model::id::SystemId,
 ) -> bool {
+    let name = faction_name(state, mover);
     let board = state.system_state(system);
     let mut present: std::collections::BTreeSet<&PlayerId> =
         board.units.iter().map(|unit| &unit.owner).collect();
@@ -207,7 +281,7 @@ pub fn denies_movement_into(
             .map(|unit| &unit.owner),
     );
 
-    let note = note_id("cf", mover);
+    let note = note_id("cf", &name);
     state
         .promissory_notes
         .get(&note)
@@ -219,7 +293,8 @@ pub fn denies_movement_into(
 /// A note is a loan: it does its work once and goes home. Leaving it in the holder's play area
 /// would deny every future move into that system for the rest of the game.
 pub fn use_ceasefire(state: &mut GameState, mover: &PlayerId) -> bool {
-    let note = note_id("cf", mover);
+    let name = faction_name(state, mover);
+    let note = note_id("cf", &name);
     let held = state
         .promissory_notes
         .get(&note)
@@ -245,7 +320,7 @@ pub fn commander_ability_from(
         .filter(|(note, holder)| {
             *holder == player && alias_of(note) == "an" && state.promissory_faceup.contains(*note)
         })
-        .filter_map(|(note, _)| owner_of(note))
+        .filter_map(|(note, _)| owner_of(note).and_then(|name| seat_of(state, &name)))
         .filter(|owner| owner != player)
         .filter(|owner| commander_unlocked(state, content, owner))
         .collect();
@@ -311,7 +386,8 @@ pub fn turn_started(
             troops.push(unit);
         }
     }
-    give_back(state, &note_id("ms", player));
+    let name = faction_name(state, player);
+    give_back(state, &note_id("ms", &name));
     true
 }
 
@@ -322,14 +398,17 @@ pub fn turn_started(
 /// most valuable card a trading faction owns cost what the least valuable one does.
 #[must_use]
 pub fn trade_agreement_worth(state: &GameState, content: &ContentStore, note: &str) -> f64 {
+    let _ = state; // kept for call-site symmetry with the oracle's game-taking form
     let default = 2.5;
-    let Some(owner) = owner_of(note) else {
+    let Some(name) = owner_of(note) else {
         return default;
     };
-    let Some(seat) = state.player(&owner) else {
+    // "generic" is this engine's scaffolding faction (the oracle's player ids are its factions),
+    // and a name the corpus does not know prices at the flat rate rather than panicking.
+    if name == "generic" {
         return default;
-    };
-    let Some(faction) = ti4_content::factions::get(content, seat.faction.as_str()) else {
+    }
+    let Some(faction) = ti4_content::factions::get(content, &name) else {
         return default;
     };
     // Slightly under face value: the commodities arrive only when the owner next replenishes,
@@ -342,6 +421,8 @@ mod tests {
     use super::*;
     use crate::fixtures::game;
     use ti4_model::content_types::POK;
+    use ti4_model::id::{FactionId, LeaderId};
+    use ti4_model::state::LeaderStatus;
 
     fn a() -> PlayerId {
         PlayerId::new("a")
@@ -350,90 +431,183 @@ mod tests {
         PlayerId::new("b")
     }
 
+    /// Note scaffolding: distinct factions per seat, dealt *after* seating. Two "generic" seats
+    /// would mint colliding ids (`cf:generic` twice) — a table the oracle cannot build at all,
+    /// because its player ids are its factions.
+    fn game_hacan_jolnar() -> GameState {
+        let mut state = game(&["a", "b"]);
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
+        deal(&mut state, ContentStore::embedded(), POK);
+        state
+    }
+
     #[test]
     fn a_note_id_carries_whose_copy_it_is() {
-        // Five players each own a Ceasefire. Without the owner in the id they are one card, and
-        // returning one would return them all.
-        assert_eq!(note_id("cf", &a()), "cf:a");
-        assert_eq!(alias_of("cf:a"), "cf");
-        assert_eq!(owner_of("cf:a"), Some(a()));
-        assert_eq!(owner_of(&support(&b())), Some(b()));
+        // The owner is the FACTION NAME (the oracle's player id), not the seat: two engines must
+        // mint one shared vocabulary from the same table.
+        assert_eq!(note_id("cf", "hacan"), "cf:hacan");
+        assert_eq!(alias_of("cf:hacan"), "cf");
+        assert_eq!(owner_of("cf:hacan"), Some("hacan".to_owned()));
+        assert_eq!(owner_of(&support("jolnar")), Some("jolnar".to_owned()));
         assert_eq!(owner_of("nonsense"), None);
     }
 
     #[test]
     fn setup_deals_every_player_their_own_notes() {
-        let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
-
-        let mine = available_notes(&state, &a());
-        assert!(mine.len() >= GENERIC.len(), "at least the generic ones");
+        let state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
+        let mine = available_notes(&state, content, &a());
         assert!(
-            mine.iter()
-                .all(|note| owner_of(note).as_ref() == Some(&a())),
-            "and only your own: {mine:?}"
+            mine.iter().any(|n| n == "cf:hacan"),
+            "own Ceasefire: {mine:?}"
         );
-        assert!(mine.contains(&"cf:a".to_owned()));
-        assert!(!mine.contains(&"cf:b".to_owned()));
+        assert!(mine.iter().any(|n| n == "convoys:hacan"));
+        assert!(!mine.iter().any(|n| n == "cf:jolnar"), "not b's copy");
+        assert!(
+            !mine.iter().any(|n| n == "an:hacan"),
+            "Alliance waits for the commander"
+        );
     }
 
     #[test]
-    fn a_note_lent_out_is_no_longer_yours_to_offer() {
-        // Otherwise one card is traded twice.
+    fn deal_mints_faction_notes_only_once_the_faction_is_known() {
+        // `start_game` deals before factions are seated: on a generic table both seats collide
+        // into one key, and no faction note exists at all. Seating then redealing is what the
+        // rollout does, and it is idempotent — no note has moved yet at setup.
         let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
-        assert!(available_notes(&state, &a()).contains(&"cf:a".to_owned()));
+        let content = ContentStore::embedded();
+        assert_eq!(
+            state.promissory_notes.len(),
+            4,
+            "two generic seats share four keys"
+        );
+        assert!(
+            state.promissory_notes.values().all(|holder| *holder == b()),
+            "and the later seat shadows the first"
+        );
 
-        take(&mut state, &b(), "cf:a");
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
+        deal(&mut state, content, POK);
 
-        assert!(!available_notes(&state, &a()).contains(&"cf:a".to_owned()));
+        assert!(state.promissory_notes.contains_key("convoys:hacan"));
+        assert!(state.promissory_notes.contains_key("ra:jolnar"));
+        assert_eq!(state.promissory_notes.len(), 10, "five per faction");
+    }
+
+    #[test]
+    fn a_lent_out_note_is_offerable_by_whoever_holds_it() {
+        // The oracle prices and offers notes by who HOLDS them: a loan sits in your hand and is
+        // yours to sell from there. Rust's former ownership filter was an engine-local rule,
+        // retired with the identity alignment.
+        let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
+
+        take(&mut state, &b(), "cf:hacan");
+
         assert_eq!(holder_of(&state, "cf", &a()), Some(b()));
         assert!(
-            !available_notes(&state, &b()).contains(&"cf:a".to_owned()),
-            "and holding somebody else's note is not owning it"
+            !available_notes(&state, content, &a())
+                .iter()
+                .any(|n| n == "cf:hacan"),
+            "a no longer holds it"
+        );
+        assert!(
+            available_notes(&state, content, &b())
+                .iter()
+                .any(|n| n == "cf:hacan"),
+            "but b may sell what it holds"
         );
     }
 
     #[test]
     fn a_note_is_a_loan_and_goes_home() {
-        let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
-        take(&mut state, &b(), "cf:a");
+        let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
+        take(&mut state, &b(), "cf:hacan");
 
-        give_back(&mut state, "cf:a");
+        give_back(&mut state, "cf:hacan");
 
         assert_eq!(holder_of(&state, "cf", &a()), None, "back with its owner");
-        assert!(available_notes(&state, &a()).contains(&"cf:a".to_owned()));
+        assert!(
+            available_notes(&state, content, &a())
+                .iter()
+                .any(|n| n == "cf:hacan")
+        );
     }
 
     #[test]
     fn a_faceup_note_sits_in_the_play_area() {
-        // 69.3: Alliance is played faceup, and a note in a play area is public information.
-        let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
+        // 69.3: Alliance and Trade Convoys are played faceup; a note in a play area is public,
+        // and it stops being offerable while it does its work there. Ceasefire, by contrast, is
+        // held.
+        let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
 
-        take(&mut state, &b(), "an:a");
-        assert!(state.promissory_faceup.contains("an:a"));
-
-        take(&mut state, &b(), "cf:a");
+        take(&mut state, &b(), "an:hacan");
+        assert!(state.promissory_faceup.contains("an:hacan"));
         assert!(
-            !state.promissory_faceup.contains("cf:a"),
+            !available_notes(&state, content, &b())
+                .iter()
+                .any(|n| n == "an:hacan"),
+            "out of hand while it sits faceup"
+        );
+
+        take(&mut state, &a(), "convoys:jolnar"); // as if traded over to a
+        assert!(state.promissory_faceup.contains("convoys:jolnar"));
+        assert!(
+            !available_notes(&state, content, &a())
+                .iter()
+                .any(|n| n == "convoys:jolnar"),
+            "convoys does its work where it sits"
+        );
+
+        take(&mut state, &b(), "cf:hacan");
+        assert!(
+            !state.promissory_faceup.contains("cf:hacan"),
             "Ceasefire is held"
         );
 
-        give_back(&mut state, "an:a");
+        give_back(&mut state, "an:hacan");
         assert!(
-            !state.promissory_faceup.contains("an:a"),
+            !state.promissory_faceup.contains("an:hacan"),
             "and it leaves the play area when it goes home"
         );
     }
 
     #[test]
+    fn alliance_is_withheld_until_the_commander_unlocks() {
+        // Before that, the note conveys precisely nothing — and a note worth nothing is what a
+        // search learns to sell.
+        let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
+
+        assert!(
+            !available_notes(&state, content, &a())
+                .iter()
+                .any(|n| n == "an:hacan"),
+            "commander still locked"
+        );
+
+        state
+            .player_mut(&a())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("hacancommander"), LeaderStatus::Unlocked);
+
+        assert!(
+            available_notes(&state, content, &a())
+                .iter()
+                .any(|n| n == "an:hacan")
+        );
+    }
+
+    #[test]
     fn a_ceasefire_denies_a_move_only_where_its_holder_stands() {
-        let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
+        let mut state = game_hacan_jolnar();
         let (system, _) = crate::fixtures::a_placed_planet();
-        take(&mut state, &b(), &note_id("cf", &a()));
+        take(&mut state, &b(), "cf:hacan");
 
         assert!(
             !denies_movement_into(&state, &a(), &system),
@@ -455,10 +629,9 @@ mod tests {
     fn a_spent_ceasefire_goes_home_and_stops_denying() {
         // A note is a loan. Left in the play area it would deny every future move into that
         // system for the rest of the game.
-        let mut state = game(&["a", "b"]);
-        deal(&mut state, ContentStore::embedded(), POK);
+        let mut state = game_hacan_jolnar();
         let (system, _) = crate::fixtures::a_placed_planet();
-        take(&mut state, &b(), &note_id("cf", &a()));
+        take(&mut state, &b(), "cf:hacan");
         crate::fixtures::put(&mut state, &system, "cruiser", &b(), 1);
 
         assert!(use_ceasefire(&mut state, &a()));
@@ -473,16 +646,14 @@ mod tests {
 
     #[test]
     fn trade_convoys_reach_the_whole_table_only_when_faceup() {
-        let mut state = game(&["a", "b"]);
-        let note = note_id("convoys", &b());
-        state.promissory_notes.insert(note.clone(), a());
+        let mut state = game_hacan_jolnar();
 
         assert!(
-            !reaches_anyone(&state, &a()),
+            !reaches_anyone(&state, &b()),
             "a note in hand is not in play"
         );
 
-        state.promissory_faceup.insert(note);
+        take(&mut state, &a(), "convoys:jolnar"); // lent to a: faceup from then on
         assert!(reaches_anyone(&state, &a()));
         assert!(!reaches_anyone(&state, &b()), "and only for its holder");
     }
@@ -490,29 +661,25 @@ mod tests {
     #[test]
     fn a_trade_agreement_is_worth_what_its_owner_replenishes() {
         // Six commodities for one faction against two for another: pricing them alike makes the
-        // most valuable card a trading faction owns cost what the least valuable does.
+        // most valuable card cost what the least valuable one does. Worth now keys off the name
+        // in the id — no seat lookup at all.
         let content = ContentStore::embedded();
-        let mut state = game(&["a", "b"]);
+        let state = game_hacan_jolnar();
         let rich = ti4_content::factions::catalogue(content, POK)
             .iter()
             .max_by_key(|(_, faction)| faction.commodities())
-            .map(|(alias, faction)| ((*alias).to_owned(), faction.commodities()));
+            .map(|(alias, _)| (*alias).to_owned());
         let poor = ti4_content::factions::catalogue(content, POK)
             .iter()
             .filter(|(_, faction)| faction.commodities() > 0)
             .min_by_key(|(_, faction)| faction.commodities())
-            .map(|(alias, faction)| ((*alias).to_owned(), faction.commodities()));
-        let (Some((rich, high)), Some((poor, low))) = (rich, poor) else {
+            .map(|(alias, _)| (*alias).to_owned());
+        let (Some(rich), Some(poor)) = (rich, poor) else {
             return;
         };
-        if high == low {
-            return; // this corpus prices every faction alike
-        }
-        state.player_mut(&a()).unwrap().faction = ti4_model::id::FactionId::new(rich);
-        state.player_mut(&b()).unwrap().faction = ti4_model::id::FactionId::new(poor);
 
-        let dear = trade_agreement_worth(&state, content, &note_id("ta", &a()));
-        let cheap = trade_agreement_worth(&state, content, &note_id("ta", &b()));
+        let dear = trade_agreement_worth(&state, content, &note_id("ta", &rich));
+        let cheap = trade_agreement_worth(&state, content, &note_id("ta", &poor));
 
         assert!(dear > cheap, "{dear} should beat {cheap}");
     }
@@ -521,10 +688,13 @@ mod tests {
     fn military_support_plants_two_and_the_note_goes_home() {
         let content = ContentStore::embedded();
         let mut state = game(&["a", "b"]);
+        // Military Support belongs to Sol, so seat a as sol and deal with factions known.
+        state.player_mut(&a()).unwrap().faction = FactionId::new("sol");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
         deal(&mut state, content, POK);
         let (system, planet) = crate::fixtures::a_placed_planet();
         state.system_mut(&system).set_control(planet.clone(), b());
-        take(&mut state, &b(), &note_id("ms", &a()));
+        take(&mut state, &b(), "ms:sol");
 
         assert!(turn_started(&mut state, content, POK, &a()));
 
@@ -543,10 +713,10 @@ mod tests {
 
     #[test]
     fn support_for_the_throne_is_worth_a_point_to_whoever_holds_it() {
-        let mut state = game(&["a", "b"]);
+        let mut state = game_hacan_jolnar();
         let before = state.player(&b()).unwrap().victory_points;
 
-        assert!(receive(&mut state, &b(), &support(&a())));
+        assert!(receive(&mut state, &b(), &support("hacan")));
 
         assert_eq!(state.player(&b()).unwrap().victory_points, before + 1);
         assert_eq!(state.support_holders.get(&a()), Some(&b()));
@@ -555,8 +725,8 @@ mod tests {
     #[test]
     fn the_point_goes_home_with_the_card() {
         // Keeping it would score a player for a card they no longer hold.
-        let mut state = game(&["a", "b"]);
-        receive(&mut state, &b(), &support(&a()));
+        let mut state = game_hacan_jolnar();
+        receive(&mut state, &b(), &support("hacan"));
         let with_it = state.player(&b()).unwrap().victory_points;
 
         assert!(return_support(&mut state, &a()));
@@ -567,10 +737,10 @@ mod tests {
 
     #[test]
     fn nobody_scores_off_their_own_support() {
-        let mut state = game(&["a", "b"]);
+        let mut state = game_hacan_jolnar();
         let before = state.player(&a()).unwrap().victory_points;
 
-        assert!(!receive(&mut state, &a(), &support(&a())));
+        assert!(!receive(&mut state, &a(), &support("hacan")));
 
         assert_eq!(state.player(&a()).unwrap().victory_points, before);
     }
@@ -578,10 +748,12 @@ mod tests {
     #[test]
     fn one_support_cannot_be_lent_twice() {
         let mut state = game(&["a", "b", "c"]);
-        assert!(receive(&mut state, &b(), &support(&a())));
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
+        assert!(receive(&mut state, &b(), &support("hacan")));
 
         assert!(
-            !receive(&mut state, &PlayerId::new("c"), &support(&a())),
+            !receive(&mut state, &PlayerId::new("c"), &support("hacan")),
             "it is already in b's play area"
         );
         assert_eq!(state.player(&PlayerId::new("c")).unwrap().victory_points, 0);

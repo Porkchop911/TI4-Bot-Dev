@@ -572,3 +572,142 @@ no new option shapes (action-card trades stay out until P1-a3).
   prompt (P1-b/P1-d + Phase 2 windows); note IDs still seat-keyed (R1 → P1-a2).
 
 **Artifacts.** `out/rust_ff_83000001_p1a.json` (new rust trace), `out/trace_p1a_raw.txt`.
+
+## P1-a2 — promissory-note identity alignment (implemented)
+
+**Objective.** The trade surface now matches the oracle's labels for goods/commodities/fragments
+(P1-a), but every note id Rust mints embeds a *seat* (`cf:seat3`, `support:seat3`) where the
+oracle embeds the owner's *faction name* (`cf:hacan`, `support:hacan` — oracle player.id **is**
+its faction). Note ids flow into option ids, labels, payloads and the state projection, so until
+they match, every note-bearing decision bucket differs between engines.
+
+### Gaps found while scoping (all verified against oracle source, read-only)
+
+- **G1 — deal timing.** `seated()` in `rollout.rs` calls `start_game_seeded` (which deals notes
+  via `setup.rs:128`) *before* assigning real factions to seats. Every Rust training/eval game
+  therefore dealt only the four generic notes (`cf ps ta an`) — no faction notes at all, while
+  the oracle's `promissory.deal` runs on fully-seated players and deals `FACTION_NOTES`
+  (letnev→war_funding, hacan→convoys, jolnar→ra, sol→ms, l1z1x→ce, xxcha→favor; verified the
+  Rust content corpus carries exactly these aliases). Fix: re-deal after faction assignment in
+  `seated()` (idempotent — no note has moved yet at setup). This changes real-game state (5+
+  notes/player) and is a parity restoration, recorded here rather than silently applied.
+- **G2 — FACEUP set.** Oracle `FACEUP = {"an", "convoys"}`; Rust had `["an"]`. In Rust, received
+  Trade Convoys never entered the play area, so `reaches_anyone` could never fire (dead card) and
+  a held convoys note stayed re-offerable. Fix: add `"convoys"` to the const. This *requires* the
+  faceup-exclusion below or Rust would newly offer notes Python refuses to.
+- **G3 — `available_notes` filters.** Oracle excludes faceup notes ("already played, doing its
+  work where it sits") and withholds Alliance until the owner's commander is unlocked (the note
+  conveys nothing before then). Rust had neither filter. Fix: port both; needs `content`, so
+  `ContentStore` is threaded through `available_notes` → `can_pay` → `why_illegal` →
+  `TradeWindow::resolve`/`offer_from`.
+
+### In scope (one atomic commit)
+
+1. **Identity:** note and support ids embed the owner's faction name. Pure formatters take a
+   name; new helpers `promissory::faction_name(state, player)` and `promissory::seat_of(state,
+   name)` (first match in seating order — same deterministic rule as P1-a's `opens_with`).
+   **Duplicate-faction caveat:** two seats sharing one faction mint colliding note ids; the
+   earlier seat shadows the later. The oracle cannot express such a table (its player.id is its
+   faction), so these remain Rust-only scaffolding — documented, not error-handled.
+2. **G1 re-deal** in `rollout.rs::seated` after faction assignment.
+3. **G2 FACEUP += convoys.**
+4. **G3 filters** + content threading (mechanical signature updates only).
+5. Tests: existing note tests moved to distinct-faction scaffolds (same pattern as the P1-a
+   wiring fix); new tests for faction-keyed deal, re-deal in seated games, convoys faceup,
+   faceup-exclusion and alliance gating.
+
+### Out of scope (documented residuals)
+
+- Per-note pn pricing + `:price` id suffix + price parsing → **P1-a3** (oracle prices
+  `int(round(worth))` per note; Rust keeps flat NOTE_PRICE=2 for now). Labels/ids therefore still
+  differ on ra/an/convoys/ta offers at this seed.
+- `ac{}` action-card trade shape → P1-a3.
+- Note events (PROMISSORY_RECEIVED/RETURNED, CEASEFIRE_USED…) and the traded-goods-for-note stat
+  reconciliation → Phase 2 / separate package.
+- **Observed, deferred:** `secrets.rs::holds_a_rivals_note` looks up the *full* note id in the
+  content store (`content.get(PromissoryNotes, "cf:x")`) where records are keyed by alias — the
+  faction comparison can never resolve for any id form. Pre-existing; affects one secret-objective
+  scoring check, not the trade surface. Needs its own reviewed fix.
+
+### Permission class / bounds (SCOPED_PERMISSIONS)
+
+Local-repo writes only: `crates/ti4-engine/src/{promissory,transactions,game}.rs`,
+`crates/ti4-training/src/rollout.rs`, tests within those files; evidence + execution state.
+No network, no external processes beyond cargo; oracle repo read-only (already re-verified).
+
+### Implementation summary (as scoped above)
+
+- `promissory.rs`: `FACEUP = ["an", "convoys"]`; ids minted from faction names via new helpers
+  `faction_name` / `seat_of` (first match in seating order); `deal()` keys by seat faction;
+  `available_notes(state, content, player)` rewritten to oracle form — faceup exclusion, Alliance
+  commander-unlock gate, and the *removal* of Rust's engine-local ownership filter (oracle parity
+  G3b: holding is what makes a note offerable; a lent-out note stays re-offerable by its holder);
+  `trade_agreement_worth` keys off the embedded name ("generic" → flat default).
+- `transactions.rs`: `content: &ContentStore` threaded through `can_pay` / `why_illegal` /
+  `resolve` / `TradeWindow::resolve`; `offer_from` takes `state` so the `ss` branch can mint
+  faction-keyed support ids. Call sites verified contained to the crate (no external callers).
+- `game.rs`: `step_trade` passes `self.content`.
+- `rollout.rs`: re-deal after faction assignment in `seated()` (G1) — real games now deal the
+  five-note hands the oracle deals; scaffolding games unchanged (idempotent at setup).
+- Tests: note/support tests moved to distinct-faction scaffolds (a→hacan, b→jolnar + re-deal,
+  same pattern as P1-a's wiring fix); new coverage for faction-keyed ids, re-deal in seated
+  games, convoys faceup, faceup exclusion, Alliance gating, lent-out note re-offerability.
+- Incidental hygiene (pre-existing warnings fixed so both crates stay clippy-clean at all-targets):
+  duplicate `#[expect]` in `rollout.rs::play_with_deciders`, `.iter()` no-op, and six mechanical
+  lints in the `single_game_trace` example. No behavior changes.
+
+### Verification
+
+- `cargo fmt -p ti4-engine -p ti4-training` clean; `cargo test -p ti4-engine`: **758 lib + 5
+  doctests pass** (was 756+5); `cargo test -p ti4-training`: **98 pass**; `cargo clippy -p
+  ti4-engine -p ti4-training --all-targets`: zero warnings; `cargo check --workspace
+  --all-targets` clean.
+- T6 differential re-run (same harness as P1-a: checkpoint
+  `D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json`, seed 83000001 rot 0, rounds 4,
+  greedy temp 0.0001, --full-features, map pool save52_e400_n8192):
+
+  **Protocol fix (recorded for all future diffs):** the Python trace must be run with
+  `--table learner_profiles`. Rust's `single_game_trace` loads the *learner* table first; the
+  script's default (`profiles` = accepted/champion) scores every decision differently, which
+  initially masqueraded as a P1-a2 regression (hacan idx0 structural mismatch, score gaps up to
+  ~3.9 on "common" decisions). The confusion was fully investigated and closed: the oracle is
+  deterministic in-process and across processes (`PYTHONHASHSEED` has no effect; `six_player_game`
+  uses a fixed board, not the map pool) — only the table flag differed.
+
+- With the correct table (rust 1136 decisions / py 1868):
+  - **max_score_gap = 0.000000 on every faction's common prefix; zero choice mismatches** — the
+    identity change is scoring-neutral exactly as intended.
+  - Residual structural divergences are all in previously-logged classes:
+    - `component|leader|hacanagent` / `xxchaagent` present in Python action-phase options, absent
+      from Rust (**finding F1 below**).
+    - Rust blind `decline`/`follow` secondaries where Python inlines the prompt (P1-b/P1-d +
+      Phase 2 reaction windows). One diff-script artifact noted: its `prompt_text_mismatches`
+      counter also counts the first structurally-divergent decision itself; verified not a real
+      prompt-text divergence within any common prefix.
+- Rust-vs-Rust (P1-a trace vs P1-a2 trace): zero score/choice mismatches on every common prefix;
+  first divergences are exactly the intended surface changes — e.g. hacan idx48 "transaction with
+  jolnar": old build offered `pnan:seat3` (seat-keyed Alliance note), new build offers
+  `pncf:hacan` (faction-keyed; `an` now gated behind commander unlock, which Rust rollouts never
+  reach — see F1). Later per-faction divergences (note ids in offer tails at jolnar@81,
+  letnev@79, sol@103) are the seat→faction id rename; a combat-reaction mismatch at l1z1x@92 /
+  xxcha@65 is cascade from the earlier fork, not an unintended surface change (verified: all
+  preceding decisions identical on both builds).
+- Oracle repo re-verified unchanged after the run (`git -C D:/Projects/ti4-engine status --short`
+  shows only the pre-existing untracked `docs/POLICY_GRADIENT_HANDOVER.md`; commit still 37061c5).
+
+### Finding F1 — Rust rollouts deploy no leaders (Phase 2 gap, confirmed by differential)
+
+`crates/ti4-engine/src/leaders.rs` is complete (`deploy`, `check_unlocks`) and `game.rs:1683`
+calls `check_unlocks` every turn, but `leaders::deploy` is only called from tests — never in real
+games or rollouts (Python calls `_leaders_mod.arm(game)` at creation). Consequence: Rust seats
+start with empty leader maps, commanders never unlock, so the new Alliance gate permanently
+withholds `an` notes from Rust learners while Python champions offer them from round 3+; and
+`component|leader|{faction}agent` options are absent from every Rust action phase (confirmed in
+the differential above: present for hacan/xxcha in Python, missing in Rust). Fixing this adds a
+whole option class (Commander Agent actions) to the surface — Phase 2 scope, not P1-a2.
+
+### Artifacts
+
+`out/rust_ff_83000001_p1a2.json`, `out/py_ff_learn_83000001_p1a2.json` (learner table),
+`out/trace_p1a2_rust.log`, `out/trace_p1a2_py.log`. Determinism probes kept for the record:
+`out/hashprobe.py`, `out/double_run.py`.

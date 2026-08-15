@@ -1494,6 +1494,7 @@ impl<'a> Game<'a> {
         };
         let outcome = self.trade.as_mut().expect("window remains open").resolve(
             &mut self.state,
+            self.content,
             &galaxy,
             &answer,
         );

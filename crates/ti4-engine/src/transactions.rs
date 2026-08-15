@@ -208,7 +208,12 @@ pub fn partners(
 
 /// Whether a player holds what they offered.
 #[must_use]
-pub fn can_pay(state: &GameState, player: &PlayerId, terms: &Terms) -> bool {
+pub fn can_pay(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    terms: &Terms,
+) -> bool {
     let Some(seat) = state.player(player) else {
         return false;
     };
@@ -221,7 +226,7 @@ pub fn can_pay(state: &GameState, player: &PlayerId, terms: &Terms) -> bool {
         let holds = if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
             crate::promissory::available_support(state, player).as_deref() == Some(note.as_str())
         } else {
-            crate::promissory::available_notes(state, player).contains(note)
+            crate::promissory::available_notes(state, content, player).contains(note)
         };
         if !holds {
             return false;
@@ -240,7 +245,12 @@ pub fn can_pay(state: &GameState, player: &PlayerId, terms: &Terms) -> bool {
 
 /// Why an offer cannot be resolved, or `None` if it can.
 #[must_use]
-pub fn why_illegal(state: &GameState, galaxy: &Galaxy, offer: &Offer) -> Option<OfferError> {
+pub fn why_illegal(
+    state: &GameState,
+    content: &ContentStore,
+    galaxy: &Galaxy,
+    offer: &Offer,
+) -> Option<OfferError> {
     if offer.proposer == offer.partner {
         return Some(OfferError::SamePlayer);
     }
@@ -261,10 +271,10 @@ pub fn why_illegal(state: &GameState, galaxy: &Galaxy, offer: &Offer) -> Option<
             offer.partner.clone(),
         ));
     }
-    if !can_pay(state, &offer.proposer, &offer.given) {
+    if !can_pay(state, content, &offer.proposer, &offer.given) {
         return Some(OfferError::CannotPay(offer.proposer.clone()));
     }
-    if !can_pay(state, &offer.partner, &offer.received) {
+    if !can_pay(state, content, &offer.partner, &offer.received) {
         return Some(OfferError::CannotPay(offer.partner.clone()));
     }
     None
@@ -312,8 +322,13 @@ fn give(state: &mut GameState, player: &PlayerId, terms: &Terms) {
 ///
 /// # Errors
 /// [`OfferError`] describing the first reason the deal cannot be made.
-pub fn resolve(state: &mut GameState, galaxy: &Galaxy, offer: &Offer) -> Result<(), OfferError> {
-    if let Some(reason) = why_illegal(state, galaxy, offer) {
+pub fn resolve(
+    state: &mut GameState,
+    content: &ContentStore,
+    galaxy: &Galaxy,
+    offer: &Offer,
+) -> Result<(), OfferError> {
+    if let Some(reason) = why_illegal(state, content, galaxy, offer) {
         return Err(reason);
     }
     // Both sides are taken before either is given, so a deal cannot be paid for with what it
@@ -490,7 +505,7 @@ pub fn offer_options(
     // Any other note the proposer holds, sold for trade goods. Until these were offered the
     // only note that could change hands was Support, so every other note in the corpus was
     // unreachable at any price.
-    for note in crate::promissory::available_notes(state, proposer) {
+    for note in crate::promissory::available_notes(state, content, proposer) {
         if their_goods >= NOTE_PRICE {
             // The alias goes in the payload rather than the id: token matching splits an option
             // id on "|", never ":", so a `pn{alias}` suffix would silently leak the note's kind
@@ -584,7 +599,7 @@ fn priced(
 ) -> Vec<crate::choice::ChoiceOption> {
     let mut options = Vec::new();
     for (id, label, mut payload) in shapes {
-        if let Some(deal) = offer_from(&id, proposer, partner) {
+        if let Some(deal) = offer_from(state, &id, proposer, partner) {
             // Net to the proposer and, from the other chair, net to the partner: a proposal is
             // only worth anything if it gets accepted, so both sides are priced (oracle
             // `_priced`). Unpriced before — which made every deal look exactly as good as any
@@ -617,12 +632,18 @@ fn pair(text: &str) -> Option<(i32, i32)> {
     Some((left.parse().ok()?, right.parse().ok()?))
 }
 
-/// The deal an offer option stands for.
+/// The deal an offer option stands for, or `None` when the id is no recognised shape.
 ///
 /// Prefixes are tested longest-first: `"c3:0"` is a gift and `"cc3"` a swap, so a plain `"c"`
-/// test placed first would read every swap as a gift of three commodities for nothing.
+/// test placed first would read every swap as a gift of three commodities for nothing. The
+/// state is needed only for the Support swap: its note ids carry the players' faction names.
 #[must_use]
-pub fn offer_from(id: &str, proposer: &PlayerId, partner: &PlayerId) -> Option<Offer> {
+pub fn offer_from(
+    state: &GameState,
+    id: &str,
+    proposer: &PlayerId,
+    partner: &PlayerId,
+) -> Option<Offer> {
     let goods = |n: i32| Terms {
         trade_goods: n,
         ..Terms::default()
@@ -641,13 +662,15 @@ pub fn offer_from(id: &str, proposer: &PlayerId, partner: &PlayerId) -> Option<O
     };
 
     if id == "ss" {
+        let from = crate::promissory::faction_name(state, proposer);
+        let to = crate::promissory::faction_name(state, partner);
         return deal(
             Terms {
-                promissory: Some(crate::promissory::support(proposer)),
+                promissory: Some(crate::promissory::support(&from)),
                 ..Terms::default()
             },
             Terms {
-                promissory: Some(crate::promissory::support(partner)),
+                promissory: Some(crate::promissory::support(&to)),
                 ..Terms::default()
             },
         );
@@ -828,6 +851,7 @@ impl TradeWindow {
     pub fn resolve(
         &mut self,
         state: &mut GameState,
+        content: &ContentStore,
         galaxy: &Galaxy,
         answer: &crate::choice::ChoiceOption,
     ) -> Traded {
@@ -837,12 +861,13 @@ impl TradeWindow {
                 if answer.is_decline() {
                     return Traded::NothingOffered;
                 }
-                let Some(offer) = offer_from(&answer.id, &self.proposer, &self.partner) else {
+                let Some(offer) = offer_from(state, &answer.id, &self.proposer, &self.partner)
+                else {
                     return Traded::NothingOffered;
                 };
                 // Legality is checked before the partner is troubled with it, so an offer that
                 // could not be paid never reaches the table as though it could.
-                if let Some(reason) = why_illegal(state, galaxy, &offer) {
+                if let Some(reason) = why_illegal(state, content, galaxy, &offer) {
                     return Traded::Rejected(reason);
                 }
                 self.stage = Stage::Answering(offer);
@@ -853,7 +878,7 @@ impl TradeWindow {
                     return Traded::Refused;
                 }
                 if answer.id == "accept" {
-                    return match resolve(state, galaxy, &offer) {
+                    return match resolve(state, content, galaxy, &offer) {
                         Ok(()) => Traded::Resolved,
                         Err(reason) => Traded::Rejected(reason),
                     };
@@ -878,6 +903,8 @@ mod tests {
     use super::*;
     use crate::choice::ChoiceOption;
     use crate::fixtures::{game, plain_hub, put};
+    use ti4_model::content_types::POK;
+    use ti4_model::id::FactionId;
 
     fn a() -> PlayerId {
         PlayerId::new("a")
@@ -980,7 +1007,7 @@ mod tests {
             given: commodities(3),
             received: Terms::default(),
         };
-        resolve(&mut state, &hub.galaxy, &offer).unwrap();
+        resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer).unwrap();
 
         assert_eq!(state.player(&a()).unwrap().commodities, 0);
         assert_eq!(
@@ -1018,7 +1045,7 @@ mod tests {
             received: Terms::default(),
         };
         assert_eq!(
-            resolve(&mut state, &hub.galaxy, &offer),
+            resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer),
             Err(OfferError::NotNeighbours(a(), b()))
         );
         assert!(state.identical(&before), "nothing changed hands");
@@ -1040,7 +1067,7 @@ mod tests {
             received: Terms::default(),
         };
         assert_eq!(
-            resolve(&mut state, &hub.galaxy, &offer),
+            resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer),
             Err(OfferError::CannotPay(a()))
         );
         assert!(state.identical(&before));
@@ -1064,7 +1091,7 @@ mod tests {
             received: goods(4),
         };
         assert_eq!(
-            resolve(&mut state, &hub.galaxy, &offer),
+            resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer),
             Err(OfferError::CannotPay(a())),
             "a holds nothing, so cannot give two whatever b is sending"
         );
@@ -1088,7 +1115,7 @@ mod tests {
             },
             received: Terms::default(),
         };
-        resolve(&mut state, &hub.galaxy, &offer).unwrap();
+        resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer).unwrap();
 
         assert!(
             state.player(&a()).unwrap().relic_fragments.is_empty(),
@@ -1111,7 +1138,7 @@ mod tests {
             received: Terms::default(),
         };
         assert_eq!(
-            resolve(&mut state, &hub.galaxy, &offer),
+            resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer),
             Err(OfferError::SamePlayer)
         );
     }
@@ -1130,6 +1157,12 @@ mod tests {
             seat.trade_goods = 2;
             seat.commodities = 3;
         }
+        // Distinct factions: note and Support ids carry the faction name, so a table whose
+        // seats all read "generic" is one the oracle cannot express. The setup deal ran before
+        // seating with generic names, so re-deal once the seats know who they are (G1).
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
+        crate::promissory::deal(&mut state, ContentStore::embedded(), POK);
         (hub, state)
     }
 
@@ -1149,7 +1182,12 @@ mod tests {
         let choice = window
             .pending_choice(&state, ti4_content::ContentStore::embedded())
             .expect("a deal to propose");
-        window.resolve(&mut state, &hub.galaxy, &ChoiceOption::decline());
+        window.resolve(
+            &mut state,
+            ContentStore::embedded(),
+            &hub.galaxy,
+            &ChoiceOption::decline(),
+        );
 
         assert!(
             window.is_complete(),
@@ -1171,6 +1209,7 @@ mod tests {
 
         let offered = window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("cc3", OFFER_KIND, ""),
         );
@@ -1182,6 +1221,7 @@ mod tests {
 
         let outcome = window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("accept", ANSWER_KIND, ""),
         );
@@ -1204,12 +1244,14 @@ mod tests {
         let mut window = TradeWindow::open(&mut state, &a(), &b());
         window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("cc3", OFFER_KIND, ""),
         );
 
         let outcome = window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("counter", ANSWER_KIND, ""),
         );
@@ -1230,10 +1272,10 @@ mod tests {
         let offer = ChoiceOption::labelled("cc3", OFFER_KIND, "");
         let counter = ChoiceOption::labelled("counter", ANSWER_KIND, "");
 
-        window.resolve(&mut state, &hub.galaxy, &offer);
-        window.resolve(&mut state, &hub.galaxy, &counter);
-        window.resolve(&mut state, &hub.galaxy, &offer);
-        let outcome = window.resolve(&mut state, &hub.galaxy, &counter);
+        window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer);
+        window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &counter);
+        window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &offer);
+        let outcome = window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &counter);
 
         assert_eq!(outcome, Traded::NothingOffered);
         assert!(window.is_complete(), "the second counter ends it");
@@ -1252,11 +1294,13 @@ mod tests {
 
         window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("ss", OFFER_KIND, ""),
         );
         let outcome = window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("accept", ANSWER_KIND, ""),
         );
@@ -1287,9 +1331,10 @@ mod tests {
         let note = sale.id.trim_start_matches("pn").to_owned();
 
         let mut window = TradeWindow::open(&mut state, &a(), &b());
-        window.resolve(&mut state, &hub.galaxy, &sale);
+        window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &sale);
         let outcome = window.resolve(
             &mut state,
+            ContentStore::embedded(),
             &hub.galaxy,
             &ChoiceOption::labelled("accept", ANSWER_KIND, ""),
         );
@@ -1301,22 +1346,23 @@ mod tests {
             "the card moved"
         );
         assert!(
-            !crate::promissory::available_notes(&state, &a()).contains(&note),
+            !crate::promissory::available_notes(&state, ContentStore::embedded(), &a(),)
+                .contains(&note),
             "and is no longer a's to sell again"
         );
     }
 
     #[test]
     fn a_note_you_have_already_lent_out_cannot_be_sold_again() {
-        // Otherwise one card is traded twice, which is the failure the ownership check exists
-        // to prevent.
+        // Once lent out the note is no longer in a's hands, so a cannot sell it. The oracle
+        // prices and offers by holder, not by original owner (G3b).
         let (hub, mut state) = trading_partners();
         crate::promissory::deal(
             &mut state,
             ti4_content::ContentStore::embedded(),
             ti4_model::content_types::POK,
         );
-        let note = crate::promissory::note_id("cf", &a());
+        let note = "cf:hacan".to_owned();
         crate::promissory::take(&mut state, &b(), &note);
 
         let offer = Offer {
@@ -1330,7 +1376,7 @@ mod tests {
         };
 
         assert_eq!(
-            why_illegal(&state, &hub.galaxy, &offer),
+            why_illegal(&state, ContentStore::embedded(), &hub.galaxy, &offer),
             Some(OfferError::CannotPay(a()))
         );
     }
@@ -1344,7 +1390,7 @@ mod tests {
                 .any(|o| o.id == "ss")
         );
 
-        crate::promissory::receive(&mut state, &b(), &crate::promissory::support(&a()));
+        crate::promissory::receive(&mut state, &b(), &crate::promissory::support("hacan"));
 
         assert!(
             !offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b())
@@ -1358,11 +1404,12 @@ mod tests {
     fn a_gift_is_not_a_swap() {
         // "c3:0" gifts three commodities; "cc3" swaps three each. A plain "c" prefix tested
         // first reads every swap as a gift, and one side silently gets nothing.
-        let gift = offer_from("c3:0", &a(), &b()).unwrap();
+        let (_, state) = trading_partners();
+        let gift = offer_from(&state, "c3:0", &a(), &b()).unwrap();
         assert_eq!(gift.given.commodities, 3);
         assert!(gift.received.is_empty(), "a gift asks for nothing back");
 
-        let swap = offer_from("cc3", &a(), &b()).unwrap();
+        let swap = offer_from(&state, "cc3", &a(), &b()).unwrap();
         assert_eq!(swap.given.commodities, 3);
         assert_eq!(swap.received.commodities, 3);
     }
@@ -1375,10 +1422,10 @@ mod tests {
         state.player_mut(&b()).unwrap().trade_goods = 0;
 
         for option in offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b()) {
-            let offer = offer_from(&option.id, &a(), &b())
+            let offer = offer_from(&state, &option.id, &a(), &b())
                 .unwrap_or_else(|| panic!("{} does not parse back into a deal", option.id));
             assert_eq!(
-                why_illegal(&state, &hub.galaxy, &offer),
+                why_illegal(&state, ContentStore::embedded(), &hub.galaxy, &offer),
                 None,
                 "{} was offered but cannot be paid for",
                 option.id
@@ -1390,7 +1437,7 @@ mod tests {
     fn nothing_for_nothing_is_never_offered() {
         let (hub, state) = trading_partners();
         for option in offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b()) {
-            let offer = offer_from(&option.id, &a(), &b()).unwrap();
+            let offer = offer_from(&state, &option.id, &a(), &b()).unwrap();
             assert!(
                 !(offer.given.is_empty() && offer.received.is_empty()),
                 "{} exchanges nothing",
@@ -1404,7 +1451,7 @@ mod tests {
             received: Terms::default(),
         };
         assert_eq!(
-            why_illegal(&state, &hub.galaxy, &empty),
+            why_illegal(&state, ContentStore::embedded(), &hub.galaxy, &empty),
             Some(OfferError::Empty)
         );
     }
@@ -1418,7 +1465,7 @@ mod tests {
         let mut deals: Vec<(Terms, Terms)> = options
             .iter()
             .map(|option| {
-                let offer = offer_from(&option.id, &a(), &b()).unwrap();
+                let offer = offer_from(&state, &option.id, &a(), &b()).unwrap();
                 (offer.given, offer.received)
             })
             .collect();
@@ -1488,7 +1535,7 @@ mod tests {
             .cloned()
             .expect("a 1-for-0 deal is on the table");
         assert_eq!(
-            window.resolve(&mut state, &hub.galaxy, &answer),
+            window.resolve(&mut state, ContentStore::embedded(), &hub.galaxy, &answer),
             Traded::Offered
         );
 

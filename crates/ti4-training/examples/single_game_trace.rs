@@ -3,10 +3,11 @@
 //! Plays one deterministic six-faction game from an explicit checkpoint profile table and, at
 //! every decision, records: seat/faction, prompt, legal options with per-option raw scores and
 //! probabilities, the path taken (`seeing` or `blind`) and the option chosen. The output is a
-//! JSON array meant to be diffed against the Python oracle's matching trace (out/diff_py_game.py).
+//! JSON array meant to be diffed against the Python oracle's matching trace
+//! (`out/diff_py_game.py`).
 //!
 //! Usage:
-//!   single_game_trace --checkpoint <oracle-profile.json> --seed <u64> [--rotation n]
+//!   `single_game_trace` --checkpoint <oracle-profile.json> --seed <u64> [--rotation n]
 //!                     [--rounds 4] [--greedy-temperature f]
 //!                     [--map-pool <save52 pool path>]
 
@@ -26,6 +27,11 @@ use ti4_training::rollout::{Horizon, OpeningMap, play_with_deciders};
 
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
+
+/// The per-seat decision log, shared with the trace writer.
+struct SeatLog {
+    log: Rc<RefCell<Vec<Value>>>,
+}
 
 struct TraceBot {
     inner: LearnedBot,
@@ -132,7 +138,7 @@ fn push(
         "prompt": choice.prompt.chars().take(120).collect::<String>(),
         "n_options": options.len(),
         "options": options,
-        "head": head_info,
+        "head": Value::from(head_info),
         "chosen": picked.as_ref().ok().map(|option| option.id.clone()),
     });
     if let Some(features) = raw_features {
@@ -152,6 +158,10 @@ fn arg(args: &[String], name: &str) -> Option<String> {
         .cloned()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "a diagnostic CLI; splitting it would obscure the trace flow"
+)]
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let checkpoint = arg(&arguments, "--checkpoint").unwrap_or_else(|| {
@@ -242,9 +252,6 @@ fn main() {
     pool.validate_systems(content, FULL)
         .unwrap_or_else(|error| panic!("pool validate: {error}"));
 
-    struct SeatLog {
-        log: Rc<RefCell<Vec<Value>>>,
-    }
     let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
     let mut seat_logs: BTreeMap<PlayerId, SeatLog> = BTreeMap::new();
     for (index, player) in players.iter().enumerate() {
@@ -253,12 +260,12 @@ fn main() {
             .get(&faction)
             .unwrap_or_else(|| panic!("no profile for {faction}"))
             .clone();
-        if !profile.is_explicit() {
-            panic!(
-                "{faction}: schema {} is hashed; trace requires explicit profiles",
-                profile.schema
-            );
-        }
+        assert!(
+            profile.is_explicit(),
+            "{}: schema {} is hashed; trace requires explicit profiles",
+            faction,
+            profile.schema
+        );
         // In-memory temperature override only (the checkpoint file is never touched).
         let profile = match greedy {
             Some(temperature) => {
@@ -314,7 +321,7 @@ fn main() {
     // Per-faction decision streams; `idx` is that faction's own decision counter. The diff
     // script aligns on (faction, idx) — the two engines are only comparable when both agree.
     let mut merged: Vec<Value> = Vec::new();
-    for (_player, info) in &seat_logs {
+    for info in seat_logs.values() {
         merged.extend(info.log.borrow().iter().cloned());
     }
     for seat in &rollout.seats {
