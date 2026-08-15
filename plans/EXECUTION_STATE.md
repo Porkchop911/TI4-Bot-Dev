@@ -1364,82 +1364,88 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 
 
-## Handover (P1-a3 complete)
+## Handover (P1-a4 complete)
 
 Objective:
 Align the Rust training surface to the Python oracle decision-by-decision so shared checkpoints
 stay transferable and residual differences are auditable per label class. Phase 1 sub-packages;
-this handover closes P1-a3 (per-note trade pricing).
+this handover closes P1-a4 (ac{} action-card trade shape — Hacan's Arbiters, finding F3).
 
 Oracle commit: 37061c511a4780d4c0719e0342533a498cd4b457 (branch codex/fully-learned-policy;
-repo D:/Projects/ti4-engine verified byte-untouched again this session).
+repo D:/Projects/ti4-engine read-only throughout this session, verified byte-untouched).
 
-Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a3 complete
-(commit cd863f9); post-commit audit retracted its "oracle-inert" claim for action-card trades and
-recorded **F3**. Next ready package is **P1-a4** (ac{} action-card trade shape — operator-corrected;
-Hacan's Arbiters ability fires in the oracle) or P1-b (`no`/`yes` answer vocabulary + blind
-decline/follow secondaries); awaiting operator ordering call, default P1-a4.
+Active milestone/package: Stage-2 stall investigation → Phase 1 label alignment. P1-a4 complete
+(this commit). Remaining ready packages: **P1-b** (`no`/`yes` answer vocabulary + blind
+decline/follow secondary windows — the residual class now visible at every faction's idx=1 break)
+and P1-c…P1-f per the label inventory; F2 (status-phase draw) and F1 (leaders) stay Phase-2 /
+separately reviewed. Awaiting operator ordering call, default P1-b.
 
 Status and completed acceptance criteria:
-- Per-note sale pricing implemented in transactions.rs only: option id `pn{note}:{price}` with
-  price = oracle's no-game worth rounded half-to-even (ta flat row 2.5→**2**, ps/cf 1.5→2, ra 4,
-  an/convoys 3); label "sell {note} for {price} trade goods"; affordability guard at the live
-  price; offer_from parses the last-colon price (unpriced legacy form → no deal). NOTE_PRICE deleted.
-- ~~`ac{}` reclassified oracle-inert~~ — **RETRACTED by post-commit audit (F3):**
-  `hacan.py:48` adds "arbiters" to TRADES_ACTION_CARDS at import and the hacan faction record
-  carries that ability, so the oracle does propose/accept action-card trades for any table with
-  Hacan. Measured in the T6 game: 19 ac-option appearances, 0 chosen. Rust has no Terms.action_card,
-  gate, parse, or proposal → scheduled as P1-a4. Full audit trail in the evidence file's
-  "Post-commit audit" section.
-- New finding F2: the oracle's 81.3 status-phase action-card draw (one per player in initiative
-  order, +1 with Neural Motivator) is never called from Rust's finish_status_phase — same
-  wired-but-never-called class as F1 (leaders). Separate reviewed package; Phase 2 gap.
+- Terms.action_card added with oracle semantics: flat 1.0 in both worth_to_receiver and
+  cost_to_giver; describe appends "the action card {card}"; is_empty includes it.
+- Legality in oracle order after can-pay: no-Arbiters-at-table rejection (94.3) before per-side
+  holding checks ("{side} does not hold that action card"); ability resolved through the faction
+  record's abilities list at the default source set (hacan carries "arbiters" — F3 retraction).
+- Proposal: exactly one option ac{card}:1, card = min(hand) (alias order = Python's sorted head),
+  label "sell the action card {card} for 1 trade good", payload {"action_card": card}; gated on
+  either chair having Arbiters + non-empty hand + partner ≥ 1 trade good; positioned after ss and
+  notes, before commodity shapes (oracle option order); counter path mirrors roles automatically.
+- Parse: ac{card}:{price} branch before pn; unpriced form → no deal. Settlement moves the card
+  (first-match removal) with the buyer paying via the received leg (oracle resolve verified
+  line-by-line).
+- All in crates/ti4-engine/src/transactions.rs only; spec recorded pre-implementation per AGENTS.md.
 
-Current branch and HEAD: codex/stage1-parity-fixes at cd863f9 (P1-a3). This handover revision adds
-the F3 correction to evidence + state only.
+Current branch and HEAD: codex/stage1-parity-fixes; this commit follows ca5333a (F3 correction)
+and cd863f9 (P1-a3).
 
-Working-tree state: clean apart from plans/evidence/STAGE2-STALL-INVESTIGATION.md and this file
-(F3 correction, docs-only). out/ is gitignored.
+Working-tree state: clean apart from crates/ti4-engine/src/transactions.rs, the evidence file and
+this file. out/ is gitignored.
 
 Tests last run and exact results:
 - cargo fmt -p ti4-engine --check: clean.
-- cargo test -p ti4-engine: 762 lib + 5 doctests pass (was 758+5; +4 new pricing tests, 1 updated).
+- cargo test -p ti4-engine: 768 lib + 5 doctests pass (was 762+5; +6 new tests, one existing test
+  extended for the describe text).
 - cargo test -p ti4-training: 98 pass.
-- cargo clippy -p ti4-engine -p ti4-training --all-targets: zero warnings.
+- cargo clippy -p ti4-engine -p ti4-training --all-targets: zero warnings (includes a documented
+  #[expect(clippy::large_enum_variant)] on enum Stage — Answering(Offer) crossed the size threshold
+  when Terms grew; boxing rejected as allocation churn).
 - cargo check --workspace --all-targets: clean.
 
-Compatibility evidence (seed 83000001 rot 0, rounds 4, temp 0.0001, full features):
-- py-vs-rust: max_score_gap 0.000000 and 0 choice mismatches within the common prefix for all six
-  factions; residuals only in previously recorded classes (F1 leader components at hacan/xxcha@1;
-  Rust blind decline/follow secondaries — P1-b/Phase-2). Artifacts: out/py_ff_learn_83000001_p1a2.json
-  (reused, oracle unchanged) vs out/rust_ff_83000001_p1a3.json.
-- rust-vs-rust p1a2→p1a3: identical through every common prefix; first forks are exactly the
-  priced note ids (hacan@48 `pncf:hacan` → `pncf:hacan:2`); l1z1x fully identical.
-- Note-id vocabulary: all 16 Rust-minted priced ids ⊆ oracle's 26; every price matches the oracle
-  table exactly, including both banker's-rounding cases and ta-at-flat-row (never live value).
+Compatibility evidence (seed 83000001 rot 0, rounds 4, greedy temp 0.0001, full features):
+- py-vs-rust vs out/py_ff_learn_83000001_p1a2.json: max_score_gap 0.000000 and 0 choice mismatches
+  within the common prefix for all six factions; residuals exactly the recorded classes (F1 leader
+  components at hacan/xxcha@1; blind decline/follow secondaries — P1-b/Phase-2). The diff walk
+  breaks at each faction's first structural mismatch (idx=1 here), so comparable prefixes end
+  before trade windows open: this run proves no regression, not ac-parity within a shared state.
+  Rust trace: out/rust_ff_83000001_p1a4.json (1136 decisions).
+- ac vocabulary (strict ^ac[a-z0-9_]+:\d+$ extraction): Python 55 appearances / 0 chosen;
+  Rust p1a4 40 / 0. Every alias on both sides is a member of the oracle's action_cards.json
+  (142 aliases) — no fabrication. Different sets = hand composition after each faction forked at
+  idx=1 plus F2 (no status-phase draw in Rust). Neither engine ever chose an ac option here.
+- rust-vs-rust p1a3→p1a4: l1z1x/letnev/sol/xxcha identical through their whole common runs; the
+  only structural deltas are hacan@143 (+acupgrade:1) and jolnar@81 (+acwar_rider:1) — exactly one
+  added option each, no removals, shared scores bit-equal, no downstream choice fork. Pure surface
+  expansion, zero behavioural change.
 
 Decisions made and rationale:
-- Price uses the flat row for ta because the oracle calls `_note_worth` without a game for option
-  pricing; live worth still flows through net/their_net (formulas verified identical pre/post).
-- Half-to-even rounding reproduced explicitly (`py_round_half_even`) instead of f64::round:
-  round(2.5)=2 in Python, 3 in Rust's half-away-from-zero — a real surface divergence at ta.
-- Unpriced `pn{note}` parses to no deal (oracle would raise; refusing is the safe equivalent).
+- min(hand) instead of collect+sort: ActionCardId orders by alias (Ord derive), so the sorted head
+  is a single iterator pass; behaviour identical to Python's sorted(...)[0].
+- ac payload carries the card alias as with notes, keeping aliases out of feature buckets.
+- #[expect] on Stage rather than boxing Offer: windows are rare/short-lived; allocation churn not
+  justified by a size lint (documented at the site).
 
-Open review findings or blockers: none blocking. F1 (leaders) and F2 (status-phase card draw)
-remain Phase-2 items; **F3 (ac{} trade shape)** is a Phase-1 surface gap awaiting P1-a4.
+Open review findings or blockers: none blocking. F1 (leaders) and F2 (status-phase draw) remain
+Phase-2 items needing separate reviewed packages; full action-card parity in real games requires
+F2 on top of this package's surface mechanics. P1-b is the next Phase-1 surface gap.
 
-Protocol warning (new): single_game_trace silently ignores unknown flags — this session's first
-P1-a3 run passed `--greedy` instead of `--greedy-temperature`, producing a native-temperature
-(trace metadata shows turn head 1.0) non-comparable trace; caught via the per-decision
-head.temperature field before any conclusion was drawn. Verify temperature in trace metadata
-before every differential.
+Protocol warning (standing): single_game_trace silently ignores unknown flags — always verify
+head.temperature in trace metadata before any differential. Strict ac-id extraction: startswith("ac")
+false-matches "accept"/"action_card|..." rows; use the regex above for vocabulary counts.
 
-Next exact action/command: commit the F3 correction (evidence + this state file, docs-only). Then,
-per operator ordering call (default P1-a4), write the pre-implementation spec for the chosen
-package in plans/evidence/STAGE2-STALL-INVESTIGATION.md — for P1-a4 that covers Terms.action_card,
-the 94.3 legality gate, the `ac{card}:1` proposal option (sorted hand head, partner ≥1 trade good),
-parse and settlement transfer; for P1-b it covers the
-`no`/`yes` answer vocabulary and the blind decline/follow secondary windows.
+Next exact action/command: operator ordering call (default P1-b). If approved, write the
+pre-implementation spec for P1-b in plans/evidence/STAGE2-STALL-INVESTIGATION.md covering the
+no/yes answer vocabulary and blind decline/follow secondary windows before any code edit; then
+failing tests → implementation → gates → T6 re-run → evidence/state → commit.
 
 Files to read first after compaction: AGENTS.md; plans/SCOPED_PERMISSIONS.md; this file's handover;
-plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a3 section); crates/ti4-engine/src/transactions.rs.
+plans/evidence/STAGE2-STALL-INVESTIGATION.md (P1-a4 section); crates/ti4-engine/src/transactions.rs.

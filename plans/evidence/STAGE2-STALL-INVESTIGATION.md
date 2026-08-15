@@ -829,3 +829,121 @@ independent grounds:
 **Residuals.** F2 (status-phase action-card draw never called in Rust) and F3 (ac{} trade shape)
 as above. Next Phase-1 sub-packages: P1-a4 (action-card trades, per the operator's correction) or
 P1-b (`no`/`yes` answer vocabulary + blind secondaries); ordering to be confirmed.
+
+## P1-a4 — action-card trade shape (Arbiters) (implemented)
+
+**Objective.** Mirror the oracle's 94.3 exception: Hacan's Arbiters ability lets a table with
+Hacan exchange action cards (F3). All mechanics verified against `engine/transactions.py` and
+`engine/faction_abilities/hacan.py` this session, read-only:
+
+- Terms carries `action_card: str | None`; `is_empty` includes it; **both** `worth_to_receiver`
+  and `cost_to_giver` add a flat **1.0** when present (no worth table); `describe` appends
+  `"the action card {card}"` after the promissory part.
+- Legality, in order after empty/neighbours/can-pay: if either side's terms name a card and
+  *neither* party has `trades_action_cards` → reject (oracle text "action cards cannot be
+  exchanged (94.3)"); then per-side holding check ("{side} does not hold that action card").
+- Proposal, positioned **after the ss + pn loop and before the commodity swap**: iff the proposer
+  or partner has the ability, the proposer's hand is non-empty, and the partner holds ≥1 trade
+  good → exactly one option: id `ac{card}:1` with `card = sorted(hand)[0]`, label "sell the action
+  card {card} for 1 trade good", payload `{"action_card": card}`. The counter path re-runs the
+  same builder with roles mirrored, so both chairs get it automatically.
+- Parse (checked before `pn`): rpartition on the last colon; an unpriced form parses to no deal
+  (oracle would raise).
+- Settlement: take removes one occurrence from the giver's hand; give appends to the receiver's.
+- Ability check resolves through the faction record's `abilities` list containing `"arbiters"`,
+  read at the project default source set.
+
+**Scope (atomic).** `crates/ti4-engine/src/transactions.rs` only: Terms field + is_empty/describe/
+worth/cost; two OfferError variants; why_illegal gate in oracle order; take/give card movement;
+offer_options block at the oracle position; offer_from branch before pn; private helper
+`trades_action_cards`; tests. No game-flow changes.
+
+**Out of scope.** F2 (status-phase draw) — Rust hands stay thin until that lands, so ac options will
+appear less often in Rust games than oracle ones even after this package; recorded interaction, not
+a defect here. P1-b answer vocabulary unchanged by this package. No new note/support shapes.
+
+**Tests (failing first).** (1) ability check true for a hacan seat, false otherwise; (2) legality:
+card-bearing terms rejected without Arbiters at the table, accepted with one when both sides hold
+the card, per-side holding rejection; (3) proposal shape: exactly one `ac{sorted-head}:1` option
+with exact label/payload under ability + hand + partner ≥1 TG; absent when any of those is missing;
+(4) parse round-trip incl. unpriced → None; (5) settlement moves the card and goods, describe reads
+"the action card {card}".
+
+**Implementation.** All changes in `crates/ti4-engine/src/transactions.rs`:
+
+- `Terms.action_card: Option<ActionCardId>`; included in `is_empty`; flat **1.0** added to both
+  `worth_to_receiver` and `cost_to_giver` (no worth table — the oracle prices cards identically
+  in both directions); `describe` appends `"the action card {card}"` after the promissory part,
+  matching the oracle's text exactly.
+- Legality, in the oracle's order after can-pay: a card named in either leg with *no* Arbiters at
+  the table → `OfferError::ActionCardsNotTradeable` ("action cards cannot be exchanged (94.3)");
+  then each side must hold what its own leg hands over → `MissingActionCard(side, alias)`
+  ("{side} does not hold {alias}"). Ability check is `trades_action_cards`, which resolves the
+  seat's faction record's `abilities` list for `"arbiters"` at the default source set — the same
+  path as Python's content corpus (hacan carries it; this is what F3 retracted).
+- Proposal: new private helper `action_card_shape`, called from `offer_options` after ss + notes
+  and before commodity shapes (the oracle's option order): iff either chair has Arbiters, the
+  proposer's hand is non-empty, and the partner holds ≥1 trade good → exactly one option
+  `ac{card}:1` with `card = min(hand)` (ActionCardId orders by alias — Python's sorted head),
+  label "sell the action card {card} for 1 trade good", payload `{"action_card": card}` so the
+  alias never leaks into feature buckets through the id. The counter path re-enters Proposing
+  with roles swapped (`std::mem::swap` in `TradeWindow::resolve`), so both chairs get it —
+  mirrored oracle behaviour, verified by reading the call site and exercised by tests that run
+  `offer_options` in both directions.
+- Parse: `ac{card}:{price}` branch before `pn` (card aliases never contain colons); an unpriced
+  form parses to no deal rather than inventing a price (oracle would raise; declining is the safe
+  twin).
+- Settlement: `take` removes one occurrence from the giver's hand (first match, as in Python),
+  `give` appends to the receiver.
+
+**Tests.** Six new tests + extension of `terms_read_the_way_the_oracle_reads_them`: ability
+resolution through the faction record; legality order (no-Arbiters rejection before holding
+checks, per-side holding rejections); proposal shape incl. sorted-head determinism and both
+absence gates (empty hand, partner < 1 good); parse round-trip incl. unpriced → None; flat-1.0
+pricing in both directions + describe text; settlement moves card and goods with the seller
+receiving the price (oracle resolve verified line-by-line: `_take(partner, receive)` — the buyer
+pays). All written first, red on missing symbols, then green.
+
+**Verification.** `cargo fmt -p ti4-engine --check` clean; `cargo test -p ti4-engine`: **768 lib +
+5 doctests** (P1-a3 was 762+5 → exactly the six new tests); `cargo test -p ti4-training`: 98 pass;
+`cargo clippy -p ti4-engine -p ti4-training --all-targets`: zero warnings (three fixes were
+needed: helper extraction kept `offer_options` under its line budget and removed a redundant
+closure, `contains(&"arbiters")`, and one documented `#[expect(clippy::large_enum_variant)]` on
+`enum Stage` whose `Answering(Offer)` variant crossed the size threshold once Terms grew 24 bytes
+— boxing rejected as allocation churn for no behavioural gain). `cargo check --workspace
+--all-targets` clean.
+
+**T6 differential (correct flags: `--greedy-temperature 0.0001`, seed 83000001 rot 0, rounds 4,
+`--full-features`; Rust trace → `out/rust_ff_83000001_p1a4.json`, 1136 decisions):**
+
+- py-vs-rust vs `out/py_ff_learn_83000001_p1a2.json`: **max_score_gap = 0.000000 and
+  choice_mismatches_within_common = 0 for all six factions**, residuals exactly the previously
+  recorded classes (hacan/xxcha F1 leader components at idx=1; blind decline/follow secondaries —
+  P1-b/Phase-2). Note the diff script's walk breaks at each faction's *first* structural mismatch
+  (idx=1 for all six here), so every comparable prefix ends before trade windows open; this run
+  proves no regression, not ac-parity within a shared state.
+- ac vocabulary: strict `ac{alias}:{price}` extraction — Python **55** appearances / **0** chosen
+  across the game (abs, crisis, dh1, disable, emergency, hack, intercept, investments, sh2,
+  strategize3, veto3); Rust p1a4 **40** / **0** (coup, upgrade, war_rider). Every alias on both
+  sides is a member of the oracle's `engine/content/action_cards.json` (142 aliases) — no engine-
+  local fabrication. The different sets are hand-composition differences: F2 (Rust has no
+  status-phase draw, so post-divergence hands differ) plus each faction's game having forked at
+  idx=1. Counts are same-order; neither engine ever chose an ac option in this game.
+- rust-vs-rust p1a3→p1a4: l1z1x/letnev/sol/xxcha **IDENTICAL-THROUGH-COMMON**; the only two
+  structural deltas are hacan@143 (`+acupgrade:1`) and jolnar@81 (`+acwar_rider:1`) — each is
+  exactly one added option, no removals, all shared scores bit-equal, and **no choice fork
+  anywhere downstream** in either faction's run. Pure oracle-surface expansion with zero
+  behavioural change.
+
+**Residuals / follow-ups.** F2 (status-phase draw) remains the dominant action-card gap: Rust
+hands are thinner than oracle hands, so ac options appear less often and with different aliases
+in real games; full action-card parity needs P1-a4 (this package, surface mechanics — done) plus
+F2 (game flow — separately reviewed). F1 leaders unchanged. P1-b answer vocabulary
+(`decline`/`follow` vs `no`/`yes`) untouched here by design.
+
+**Artifacts.** `out/rust_ff_83000001_p1a4.txt`, `out/rust_ff_83000001_p1a4.json`,
+`out/rust_ff_p1a4.err`. Oracle repo read-only throughout; no writes.
+
+**Permission class / bounds.** Local writes: `crates/ti4-engine/src/transactions.rs` (+ tests),
+evidence, execution state. No network/process; oracle repo read-only. Artifact bound: one T6 re-run
+trace in out/.

@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
-use ti4_model::id::{PlayerId, SystemId};
+use ti4_model::content_types::DEFAULT;
+use ti4_model::id::{ActionCardId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 
 /// What one side of a deal hands over.
@@ -23,6 +24,9 @@ pub struct Terms {
     /// A note is a loan rather than a sale — every one of them says "then, return this card" —
     /// which is why what it costs to part with is not what it is worth to receive.
     pub promissory: Option<String>,
+    /// An action card, by alias. 94.3 forbids exchanging them; Hacan's Arbiters is the
+    /// exception, so naming one here is legal only for a table where somebody has that ability.
+    pub action_card: Option<ActionCardId>,
 }
 
 impl Terms {
@@ -32,6 +36,7 @@ impl Terms {
             && self.commodities == 0
             && self.fragments.is_empty()
             && self.promissory.is_none()
+            && self.action_card.is_none()
     }
 
     /// How these terms read in a prompt — the oracle's `Terms.describe`, same parts, order and
@@ -51,6 +56,9 @@ impl Terms {
         if let Some(note) = &self.promissory {
             parts.push(note.clone());
         }
+        if let Some(card) = &self.action_card {
+            parts.push(format!("the action card {card}"));
+        }
         if parts.is_empty() {
             "nothing".to_owned()
         } else {
@@ -66,10 +74,13 @@ impl Terms {
             .promissory
             .as_deref()
             .map_or(0.0, |note| note_worth(state, content, note));
+        // An action card prices flat at one trade good in both directions (oracle Terms):
+        // there is no worth table for them because their value is entirely situational.
         f64::from(self.trade_goods)
             + f64::from(self.commodities)
             + self.fragments.len() as f64
             + note
+            + f64::from(self.action_card.is_some())
     }
 
     /// What giving these terms costs (oracle `cost_to_giver`): commodities barely, since a swap
@@ -81,10 +92,13 @@ impl Terms {
             .promissory
             .as_deref()
             .map_or(0.0, |note| note_cost(state, content, note));
+        // Flat one trade good to part with as well — the oracle prices it identically in
+        // both directions.
         f64::from(self.trade_goods)
             + 0.2 * f64::from(self.commodities)
             + self.fragments.len() as f64
             + note
+            + f64::from(self.action_card.is_some())
     }
 }
 
@@ -124,6 +138,10 @@ pub enum OfferError {
     PlayerMissing(PlayerId),
     #[error("an empty transaction exchanges nothing")]
     Empty,
+    #[error("action cards cannot be exchanged (94.3)")]
+    ActionCardsNotTradeable,
+    #[error("{0} does not hold {1}")]
+    MissingActionCard(PlayerId, String),
 }
 
 /// Systems where a player has a unit or controls a planet.
@@ -277,6 +295,32 @@ pub fn why_illegal(
     if !can_pay(state, content, &offer.partner, &offer.received) {
         return Some(OfferError::CannotPay(offer.partner.clone()));
     }
+    // 94.3: action cards are not tradeable unless somebody at the table has Arbiters — and
+    // each side must hold whatever its own leg hands over (can_pay covers goods, notes and
+    // fragments; a card is checked here, in the oracle's order).
+    if offer.given.action_card.is_some() || offer.received.action_card.is_some() {
+        let arbiters = trades_action_cards(state, content, &offer.proposer)
+            || trades_action_cards(state, content, &offer.partner);
+        if !arbiters {
+            return Some(OfferError::ActionCardsNotTradeable);
+        }
+        for (side, terms) in [
+            (&offer.proposer, &offer.given),
+            (&offer.partner, &offer.received),
+        ] {
+            let card = terms.action_card.as_ref();
+            if let Some(card) = card
+                && !state
+                    .player(side)
+                    .is_some_and(|seat| seat.action_cards.iter().any(|held| held == card))
+            {
+                return Some(OfferError::MissingActionCard(
+                    side.clone(),
+                    card.as_str().to_owned(),
+                ));
+            }
+        }
+    }
     None
 }
 
@@ -285,6 +329,17 @@ fn take(state: &mut GameState, player: &PlayerId, terms: &Terms) {
     let Some(seat) = state.player_mut(player) else {
         return;
     };
+    if let Some(card) = &terms.action_card {
+        // The oracle removes the first matching card; a hand can in principle hold two.
+        let mut left = true;
+        seat.action_cards.retain(|held| {
+            if left && held == card {
+                left = false;
+                return false;
+            }
+            true
+        });
+    }
     seat.trade_goods -= terms.trade_goods;
     seat.commodities -= terms.commodities;
     for trait_name in &terms.fragments {
@@ -300,6 +355,9 @@ fn give(state: &mut GameState, player: &PlayerId, terms: &Terms) {
     let Some(seat) = state.player_mut(player) else {
         return;
     };
+    if let Some(card) = terms.action_card.clone() {
+        seat.action_cards.push(card);
+    }
     // 21.5: a commodity becomes a trade good the moment it changes hands. This is the whole
     // economy of the game — commodities are worthless to their owner and valuable to everyone
     // else, which is what makes a deal worth making.
@@ -357,6 +415,53 @@ pub const ANSWER_KIND: &str = "transaction";
 /// `component|` prefix in both engines; trade was the one Rust shape missing it, which made its
 /// id tokenize differently at every action-phase decision.
 const OPEN_PREFIX: &str = "component|trade|";
+
+/// Whether this player's faction carries the Arbiters ability — the one table at which
+/// action cards may change hands (94.3). Resolved through the faction record's abilities,
+/// exactly as the oracle resolves `trades_action_cards`.
+#[must_use]
+pub fn trades_action_cards(state: &GameState, content: &ContentStore, player: &PlayerId) -> bool {
+    let Some(seat) = state.player(player) else {
+        return false;
+    };
+    let alias = seat.faction.as_str();
+    content.factions(DEFAULT).any(|record| {
+        record.id() == Some(alias) && record.strings("abilities").contains(&"arbiters")
+    })
+}
+
+// Hacan's Arbiters (94.3 exception): sell the alphabetically first card of the hand for one
+// trade good — offered when either chair at the table has the ability and can pay it, mirroring
+// the oracle, which gates on proposer *or* partner. The alias goes in the payload, as with
+// notes: token matching splits an option id on "|", never ":", so the card name must not leak
+// into feature buckets through the id.
+fn action_card_shape(
+    state: &GameState,
+    content: &ContentStore,
+    proposer: &PlayerId,
+    partner: &PlayerId,
+    their_goods: i32,
+    shapes: &mut Vec<(String, String, BTreeMap<String, Value>)>,
+) {
+    let arbiters_at_table = trades_action_cards(state, content, proposer)
+        || trades_action_cards(state, content, partner);
+    if arbiters_at_table && their_goods >= 1 {
+        // `min` is the sorted head: ActionCardId orders by alias exactly like Python's sorted().
+        if let Some(card) = state
+            .player(proposer)
+            .and_then(|seat| seat.action_cards.iter().min())
+        {
+            let card = card.as_str();
+            let mut payload = BTreeMap::new();
+            payload.insert("action_card".to_owned(), Value::String(card.to_owned()));
+            shapes.push((
+                format!("ac{card}:1"),
+                format!("sell the action card {card} for 1 trade good"),
+                payload,
+            ));
+        }
+    }
+}
 
 /// What each kind of note is worth to its receiver, in trade goods.
 ///
@@ -559,6 +664,9 @@ pub fn offer_options(
         }
     }
 
+    // After ss and notes, before the commodity shapes — the oracle's option order.
+    action_card_shape(state, content, proposer, partner, their_goods, &mut shapes);
+
     // 21.5: a commodity becomes a trade good the moment it changes hands, so a straight swap
     // pays both sides. This is the standard Twilight Imperium deal and the reason the subsystem
     // exists — an engine that cannot propose it has a trade economy in name only.
@@ -712,6 +820,18 @@ pub fn offer_from(
             },
         );
     }
+    if let Some(rest) = id.strip_prefix("ac") {
+        // `ac{card}:{price}` — card aliases never carry colons, so this splits cleanly. An
+        // unpriced form parses to no deal rather than inventing a price; the oracle would raise.
+        let (card, price) = rest.split_once(':')?;
+        return deal(
+            Terms {
+                action_card: Some(ActionCardId::new(card)),
+                ..Terms::default()
+            },
+            goods(price.parse().ok()?),
+        );
+    }
     if let Some(rest) = id.strip_prefix("pn") {
         // `pn{note}:{price}` — the note id itself carries a colon (alias:faction), so the price
         // is whatever follows its *last* one. An unpriced legacy form parses to no deal rather
@@ -763,6 +883,10 @@ pub enum Traded {
 }
 
 /// Which side of the table a window is waiting on.
+// `Answering` owns an `Offer` because the negotiation must survive across turns; windows are
+// rare and short-lived, so boxing the offer for a size lint would only add allocations without
+// changing behaviour.
+#[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
     /// The proposer is choosing what to put on the table.
@@ -1620,10 +1744,11 @@ mod tests {
             commodities: 3,
             fragments: vec!["engine".to_owned()],
             promissory: Some("cf:b".to_owned()),
+            action_card: Some(ActionCardId::new("emergency")),
         };
         assert_eq!(
             full.describe(),
-            "1 trade goods, 3 commodities, 1 relic fragments, cf:b"
+            "1 trade goods, 3 commodities, 1 relic fragments, cf:b, the action card emergency"
         );
     }
 
@@ -1743,5 +1868,164 @@ mod tests {
             let seat = opens_with(&state, option).expect("the id resolves back to a seat");
             assert_eq!(faction_name(&state, &seat), named);
         }
+    }
+
+    fn card(id: &str) -> Terms {
+        Terms {
+            action_card: Some(ti4_model::id::ActionCardId::new(id)),
+            ..Terms::default()
+        }
+    }
+
+    #[test]
+    fn the_arbiters_ability_resolves_through_the_faction_record() {
+        let (_, state) = trading_partners(); // a = hacan, b = jolnar
+        assert!(trades_action_cards(&state, ContentStore::embedded(), &a()));
+        assert!(!trades_action_cards(&state, ContentStore::embedded(), &b()));
+    }
+
+    #[test]
+    fn card_terms_need_arbiters_at_the_table() {
+        let (hub, mut state) = trading_partners(); // a = hacan, b = jolnar
+        let content = ContentStore::embedded();
+
+        // Neither chair has the ability: a card in either leg is flatly rejected before any
+        // holding question is asked.
+        state.player_mut(&a()).unwrap().faction = FactionId::new("jolnar");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("letnev");
+        for player in [a(), b()] {
+            state
+                .player_mut(&player)
+                .unwrap()
+                .action_cards
+                .push(ti4_model::id::ActionCardId::new("emergency"));
+        }
+        let offer = Offer {
+            proposer: a(),
+            partner: b(),
+            given: card("emergency"),
+            received: goods(1),
+        };
+        assert_eq!(
+            why_illegal(&state, content, &hub.galaxy, &offer),
+            Some(OfferError::ActionCardsNotTradeable)
+        );
+
+        // One chair has it (a = hacan again): legal when the giver actually holds the card…
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        assert_eq!(why_illegal(&state, content, &hub.galaxy, &offer), None);
+
+        // …and each side must hold what its own leg hands over.
+        let mut state2 = trading_partners().1;
+        state2
+            .player_mut(&b())
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("emergency"));
+        // a (hacan) offers b's card: the leg names it, but a does not hold it.
+        let offer = Offer {
+            proposer: a(),
+            partner: b(),
+            given: card("emergency"),
+            received: goods(1),
+        };
+        assert_eq!(
+            why_illegal(&state2, content, &hub.galaxy, &offer),
+            Some(OfferError::MissingActionCard(a(), "emergency".to_owned()))
+        );
+    }
+
+    #[test]
+    fn arbiters_offer_the_first_sorted_card_for_one_trade_good() {
+        let (_, mut state) = trading_partners(); // a = hacan, b = jolnar, both hold 2 goods
+        let content = ContentStore::embedded();
+
+        state.player_mut(&a()).unwrap().action_cards = vec![
+            ti4_model::id::ActionCardId::new("hack"),
+            ti4_model::id::ActionCardId::new("emergency"),
+        ];
+        let options = offer_options(&state, content, &a(), &b());
+        let ac: Vec<_> = options.iter().filter(|o| o.id.starts_with("ac")).collect();
+        assert_eq!(ac.len(), 1, "exactly one card option: {ac:?}");
+        assert_eq!(ac[0].id, "acemergency:1", "the sorted head of the hand");
+        assert_eq!(
+            ac[0].label,
+            "sell the action card emergency for 1 trade good"
+        );
+        assert_eq!(
+            ac[0].payload.get("action_card"),
+            Some(&serde_json::Value::String("emergency".to_owned()))
+        );
+
+        // No hand, nothing to sell.
+        state.player_mut(&a()).unwrap().action_cards.clear();
+        let options = offer_options(&state, content, &a(), &b());
+        assert!(options.iter().all(|o| !o.id.starts_with("ac")));
+
+        // A hand but a partner who cannot pay one trade good.
+        state
+            .player_mut(&a())
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("emergency"));
+        state.player_mut(&b()).unwrap().trade_goods = 0;
+        let options = offer_options(&state, content, &a(), &b());
+        assert!(options.iter().all(|o| !o.id.starts_with("ac")));
+    }
+
+    #[test]
+    fn a_priced_card_id_parses_back_into_the_same_deal() {
+        let (_, state) = trading_partners();
+        for id in ["acemergency:1", "achack:1"] {
+            let deal = offer_from(&state, id, &a(), &b()).expect("the id names a deal");
+            // The card is whatever sits between the `ac` prefix and the price suffix.
+            let expected = &id[2..id.len() - 2];
+            assert_eq!(
+                deal.given.action_card.as_ref().map(ActionCardId::as_str),
+                Some(expected)
+            );
+        }
+        let deal = offer_from(&state, "acemergency:1", &a(), &b()).unwrap();
+        assert_eq!(deal.received.trade_goods, 1);
+        // An unpriced form names no deal (the oracle would raise; declining is the safe twin).
+        assert!(offer_from(&state, "acemergency", &a(), &b()).is_none());
+    }
+
+    #[test]
+    // The flat one-trade-good price is a constant, not arithmetic: exact comparison is intended.
+    #[allow(clippy::float_cmp)]
+    fn action_cards_price_at_one_in_both_directions_and_read_their_name() {
+        let (_, state) = trading_partners();
+        let content = ContentStore::embedded();
+        let terms = card("emergency");
+        assert_eq!(terms.worth_to_receiver(&state, content), 1.0);
+        assert_eq!(terms.cost_to_giver(&state, content), 1.0);
+        assert!(!terms.is_empty());
+        assert_eq!(terms.describe(), "the action card emergency");
+    }
+
+    #[test]
+    fn an_action_card_trade_moves_the_card_and_the_goods() {
+        let (hub, mut state) = trading_partners(); // a = hacan holds 2 goods; b holds 2
+        let content = ContentStore::embedded();
+        state
+            .player_mut(&a())
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("emergency"));
+        let offer = Offer {
+            proposer: a(),
+            partner: b(),
+            given: card("emergency"),
+            received: goods(1),
+        };
+        resolve(&mut state, content, &hub.galaxy, &offer).expect("legal: arbiters at the table");
+
+        assert!(state.player(&a()).unwrap().action_cards.is_empty());
+        let b_hand = state.player(&b()).unwrap().action_cards.clone();
+        assert_eq!(b_hand, vec![ti4_model::id::ActionCardId::new("emergency")]);
+        // The sale prices at one trade good: the seller (a) receives it, the buyer (b) pays it.
+        assert_eq!(state.player(&a()).unwrap().trade_goods, 3);
+        assert_eq!(state.player(&b()).unwrap().trade_goods, 1);
     }
 }
