@@ -245,9 +245,15 @@ fn a_turn_can_open_and_close_a_transaction_without_ending() {
         seat.commodities = 3;
         seat.trade_goods = 0;
     }
+    // Distinct factions: the open option names the partner's faction, which in the oracle is
+    // its player identity. Two "generic" seats cannot be told apart by that name (a table the
+    // oracle could not express), so this scenario seats two real ones.
+    state.player_mut(&PlayerId::new("a")).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+    state.player_mut(&PlayerId::new("b")).unwrap().faction =
+        ti4_model::id::FactionId::new("jolnar");
 
     let table = Table::with_default(Box::new(Scripted::new([
-        "trade|b".to_owned(),
+        "component|trade|jolnar".to_owned(),
         "cc3".to_owned(),
         "accept".to_owned(),
     ])));

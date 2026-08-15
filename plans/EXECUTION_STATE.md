@@ -1366,48 +1366,57 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ```
 Objective:
-Stage-2 stall diagnosis + cross-engine parity. T0–T5 complete; T6 single-game per-decision
-differential localizes the cross-engine divergence to decision surface labels.
+Stage-2 stall diagnosis + cross-engine parity. T0–T5 complete; T6 localized the cross-engine
+divergence to decision-surface labels; operator approved option (a) — align Rust surface to the
+Python oracle's so checkpoints stay transferable. Phase 1 in progress: P1-a (trade surface)
+complete, commit follows this handover.
 Oracle commit:
-37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — verified clean before and
-after T6 tracing; oracle repo byte-untouched.
+37061c511a4780d4c0719e0342533a498cd4b457 (codex/fully-learned-policy) — read-only throughout;
+checkpoint + map pool only ever read from out/, never written.
 Active milestone/package:
-Stage-2 stall investigation + differential diagnostics (post-M10, no package ID); safepoint 66fd234;
-T5 pilot committed e71d0de; T6 diagnostic commit follows this handover.
+Phase 1 surface alignment (post-M10, no package ID); safepoint 66fd234; P1-a commit follows this
+handover. Next ready: P1-a2 (note ownership identity → faction names in promissory module).
 Status and completed acceptance criteria:
-T6 complete: with both engines on the same checkpoint table (learner_profiles), scores match to
-full precision at every aligned decision and features are byte-equal for equivalent decisions;
-residual divergence is surface-label driven. T6b audit done (read-only): Python 38 reaction-window
-aliases vs Rust 29 — 10 missing in Rust, 1 extra in Rust, 3 name-only remaps, 1 real WHEN/AFTER
-timing divergence. Operator approved option (a) surface alignment; phase plan recorded in evidence.
+P1-a done: Rust trade decision surface matches the oracle — open ids component|trade|{faction},
+kinds open_transaction/transaction/decline, prompts "transaction with {faction}" and
+"{faction} gives X for Y -- accept?", answer ids [accept, refuse, counter], net/their_net priced
+payloads on every offer option + accept. T6 re-run (seed 83000001 rot 0 greedy full-features,
+same learner table): max_score_gap = 0.000000 on all common prefixes; trade open-id sets, kinds,
+propose/answer prompt formats identical across engines.
 Current branch and HEAD:
-codex/stage1-parity-fixes @ fa5a26d (T6 differential committed) + uncommitted T6b audit: evidence
-tail, this handover. Tree otherwise clean.
+codex/stage1-parity-fixes @ a84e18d (T6b audit) + uncommitted P1-a: transactions.rs, game.rs,
+wiring.rs, evidence file, this handover. Tree otherwise clean; out/* gitignored.
 Working-tree state:
-The three paths above only; out/* artifacts are gitignored.
+The four paths above only, all in scope for the P1-a commit.
 Tests last run and exact results:
-cargo test -p ti4-training → 98 passed, 0 failed (release); clippy -p ti4-training --examples
-clean; cargo fmt applied.
+cargo fmt -p ti4-engine clean; cargo test -p ti4-engine → 756 + 5 doctests passed (new: terms
+formatting, open-id naming/round-trip, propose prompt, answer ids/kinds/order, net payloads);
+clippy -p ti4-engine --all-targets clean; cargo check --workspace --all-targets clean;
+cargo test -p ti4-training → 98 passed.
 Compatibility evidence:
-out/rust_ff_83000001.json + out/py_ff_learn_83000001.json (greedy full-feature traces,
-seed 83000001 rot 0); max |score delta| = 0.000000 across all aligned common decisions;
-out/rust_loaded_strategy.json proves Rust loads learner_profiles weights bit-equal to file.
+out/rust_ff_83000001_p1a.json (new rust trace) vs out/py_ff_learn_83000001.json: open ids
+component|trade|{hacan,jolnar,l1z1x,letnev,sol,xxcha} same set both; propose prompts "transaction
+with {faction}" (py 297 / rust 131 decisions); answer prompt format identical; max |score delta|
+0.000000 across all aligned common decisions.
 Decisions made and rationale:
-- The T6 "idx0 divergence" was a harness artifact: the checkpoint carries two tables
-  (profiles=accepted champion, learner_profiles=live learner @u3050); both production loaders
-  follow oracle resume semantics. Diagnostics must select the same table on both sides.
-- Cross-engine parity requires adopting one canonical decision surface (evidence T6 lists three
-  options). This materially changes public training behavior — awaiting operator/frontier call;
-  no code change made.
+- P1-a kept mechanical: labels, ids, payloads only — no legality/timing/state changes (those are
+Phase 2 with frontier review). Note IDs remain seat-keyed (residual R1 → P1-a2); action-card trade
+shape still absent (→ P1-a3).
+- Duplicate-faction tables cannot be expressed by the oracle (its player *is* its faction);
+opens_with resolves a name to the first seated match deterministically and tests use distinct
+factions. Documented in code + evidence rather than adding an ambiguity filter that would change
+legality on Rust-only scaffolding.
+- "refuse" carries DECLINE_KIND so existing decline routing (is_decline) is unchanged; option ids
+and labels changed, kind did not.
 Open review findings or blockers:
 - Phase 2 touches legality/timing (10 new windows incl. combat hit-assignment; WHEN/AFTER fix) →
-frontier review tier required before implementation per AGENTS.md.
-- The zero-signal stall diagnosis (T1/T2) stands independently of T6.
+frontier review tier required before implementation per AGENTS.md. Not started.
+- Residual P1 classes open: P1-a2, P1-a3, P1-b..f (table in evidence).
 Next exact action:
-Phase 1: align Rust game-layer labels to the Python surface (player identity in prompts/options,
-option-id vocabulary no/yes vs buy/decline, prompt phrasing); verify by re-running the T6
-differential for full structural agreement; commit as its own package.
+P1-a2 branch + commit: promissory note ownership identity → faction names (state-level label;
+duplicate-faction caveat documented), then re-run the T6 differential.
 Files to read first after compaction:
-plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (T5 + T6 sections),
-crates/ti4-training/examples/single_game_trace.rs, out/diff_py_game.py, out/diff_decisions.py
+plans/EXECUTION_STATE.md, plans/evidence/STAGE2-STALL-INVESTIGATION.md (T5+T6+P1 sections),
+crates/ti4-engine/src/transactions.rs, crates/ti4-training/examples/single_game_trace.rs,
+out/diff_decisions.py
 ```

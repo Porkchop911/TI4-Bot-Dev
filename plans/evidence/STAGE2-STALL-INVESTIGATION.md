@@ -505,3 +505,70 @@ boundary territory → frontier review tier per AGENTS.md before implementation.
   structural agreement.
 - Phase 2: reaction-window set alignment per this audit (own package; WHEN/AFTER row gets frontier
   review first).
+
+## Phase 1 — surface alignment: label inventory and package split
+
+Inventory script `out/inventory_labels.py` (traces: py_ff_learn_83000001 vs rust_ff_83000001)
+canonicalises player identity to `<p>` per side and groups prompts. Result: 77 prompt classes only in
+Python, 37 only in Rust, 32 shared-text rows with differing option sets (mostly state-cascade after
+early divergence — not surface bugs), 13 fully shared. The genuine label divergences, by class:
+
+| id | class | Python surface | Rust surface |
+|---|---|---|---|
+| P1-a | trade offers | `"{faction} gives {offer} for {demand} -- accept?"`, ids (accept, counter, **refuse**) | `"seatN offers — accept?"` (no offer detail), ids (accept, counter, decline) |
+| P1-b | influence/resource bidding | "pay N more influence" / "pay N more resources" | "pay N" |
+| P1-c | ground-commit + ready/retreat surface | "commit ground forces in {sys}", ids `commit\|n\|planet` + done_committing; "ready a planet"; "let another player replenish commodities" (done, factions) | "commit ground forces", ids `land\|n\|planet` + decline; "ready an exhausted planet" (+decline); "grant free trade replenishment" (decline, seats) |
+| P1-d | reaction option ids / prompt identity | `reaction:{faction}:{EVENT}:after` (lowercase relation), prompt "after {EVENT}" with faction id | `reaction:seatN:{EVENT}:After`, seat id |
+| P1-e | speaker choice + seat-id prompts | "who becomes speaker", faction-name options; "signal jamming: whose token goes into N" (factions) | "choose the new speaker", seat ids; seats in other prompts |
+| P1-f | misc wording | "--" hyphens ("over the hand limit -- discard one of 8"); leadership purchase loop structure to verify against Rust 'follow' gate | em-dash "—"; `pok1leadership secondary` (decline/follow) then buy/decline prompts |
+
+Event-name remaps (INVASION_STARTED↔INVASION_BEGAN etc.) and the window-set gaps stay in Phase 2.
+Each P1-x is its own branch + commit, verified by crate tests; final verification re-runs the T6
+differential after all sub-packages land.
+
+**P1-a scope (this package):** trade-offer prompt text + offer-detail formatting + refuse/decline
+vocabulary in Rust `transactions.rs` to match Python's exact strings and id set.
+
+## P1-a — trade-surface label alignment (implemented)
+
+**Scope.** Rust `transactions.rs` (+ one call site in `game.rs`, wiring test): align the
+decision surface of transactions to the Python oracle's strings, ids and payloads. No legality,
+timing or state-semantics changes; no note-ID identity change (residual R1 stays for P1-a2);
+no new option shapes (action-card trades stay out until P1-a3).
+
+**Changes.**
+- `Terms::describe()`: fixed order "N trade goods", "M commodities", "K relic fragments", raw
+  promissory id; empty → "nothing" (oracle `Terms.describe`).
+- `Offer::describe(state)`: "{faction} gives {given} for {received}" — faction name, not seat.
+- Open option ids: `trade|{seat}` → `component|trade|{faction}` (matches the crate-wide
+  `component|{source}|` convention and Python's player-is-faction identity). `opens_with`
+  reverse-maps faction→seat via seating order; tables with duplicate faction names are outside
+  the oracle's expressible games (its player *is* its faction) — deterministic first-seat
+  resolution documented in code.
+- Answer prompt: "{offer.describe()} -- accept?" (em dash → hyphen); options now exactly
+  [accept, refuse, counter] with ids/kinds/labels matching Python (`refuse` carries
+  DECLINE_KIND so decline routing is unchanged).
+- Oracle `_priced` parity: every offer option and the accept option carry `net` / `their_net`
+  (receiver-side worth − giver-side cost) via new `Terms::worth_to_receiver` / `cost_to_giver`,
+  with per-note pricing (`NOTE_WORTH` table, support-prefix 4.0/3.0, trade-agreement alias).
+  Prices use the existing flat note *transfer* rules elsewhere; only feature payloads are added.
+- Prompt "transaction with {faction}" for the propose stage.
+
+**Verification.**
+- `cargo fmt -p ti4-engine` clean; `cargo test -p ti4-engine`: 756 + 5 doctests pass (was 752);
+  new tests: terms formatting, open-id/faction naming + round-trip resolution, propose prompt,
+  answer ids/kinds/order, net/their_net payloads. Clippy `--all-targets` clean.
+- `cargo check --workspace --all-targets` clean; `cargo test -p ti4-training`: 98 pass.
+- T6 differential re-run (seed 83000001 rot 0, greedy temp 0.0001, full features, same learner
+  table both sides): rust now 1152 decisions (was 1048); **max_score_gap = 0.000000 on every
+  faction's common prefix**; trade surface structurally identical:
+  - open ids: `component|trade|{hacan,jolnar,l1z1x,letnev,sol,xxcha}` — same set both engines;
+    kind `open_transaction` both.
+  - propose prompts: "transaction with {faction}" both (py 297 / rust 131 such decisions).
+  - answer prompts: "{faction} gives … for … -- accept?" format identical both.
+  - answer ids: {accept, refuse, counter} both (rust previously had `decline`).
+- Residuals at this seed are out of P1-a scope and expected: state-cascade option-set drift after
+  first choice divergence; Rust's blind decline/follow secondary path where Python inlines the
+  prompt (P1-b/P1-d + Phase 2 windows); note IDs still seat-keyed (R1 → P1-a2).
+
+**Artifacts.** `out/rust_ff_83000001_p1a.json` (new rust trace), `out/trace_p1a_raw.txt`.

@@ -3,8 +3,9 @@
 //! Ported from the oracle's `engine/transactions.py`: `_presence`, `are_neighbours`,
 //! `_holdings`, `_can_pay`, `why_illegal`, `_take`, `_give` and `resolve`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::id::{PlayerId, SystemId};
@@ -32,6 +33,59 @@ impl Terms {
             && self.fragments.is_empty()
             && self.promissory.is_none()
     }
+
+    /// How these terms read in a prompt — the oracle's `Terms.describe`, same parts, order and
+    /// words. An empty side reads as "nothing", which is how a gift stays readable.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if self.trade_goods > 0 {
+            parts.push(format!("{} trade goods", self.trade_goods));
+        }
+        if self.commodities > 0 {
+            parts.push(format!("{} commodities", self.commodities));
+        }
+        if !self.fragments.is_empty() {
+            parts.push(format!("{} relic fragments", self.fragments.len()));
+        }
+        if let Some(note) = &self.promissory {
+            parts.push(note.clone());
+        }
+        if parts.is_empty() {
+            "nothing".to_owned()
+        } else {
+            parts.join(", ")
+        }
+    }
+
+    /// What receiving these terms is worth, in trade goods (oracle `worth_to_receiver`).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)] // fragment counts are single digits
+    pub fn worth_to_receiver(&self, state: &GameState, content: &ContentStore) -> f64 {
+        let note = self
+            .promissory
+            .as_deref()
+            .map_or(0.0, |note| note_worth(state, content, note));
+        f64::from(self.trade_goods)
+            + f64::from(self.commodities)
+            + self.fragments.len() as f64
+            + note
+    }
+
+    /// What giving these terms costs (oracle `cost_to_giver`): commodities barely, since a swap
+    /// turns each into a trade good anyway.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)] // fragment counts are single digits
+    pub fn cost_to_giver(&self, state: &GameState, content: &ContentStore) -> f64 {
+        let note = self
+            .promissory
+            .as_deref()
+            .map_or(0.0, |note| note_cost(state, content, note));
+        f64::from(self.trade_goods)
+            + 0.2 * f64::from(self.commodities)
+            + self.fragments.len() as f64
+            + note
+    }
 }
 
 /// A proposed deal.
@@ -41,6 +95,20 @@ pub struct Offer {
     pub partner: PlayerId,
     pub given: Terms,
     pub received: Terms,
+}
+
+impl Offer {
+    /// "{faction} gives X for Y" — the oracle's `Offer.describe`, where the speaker is named by
+    /// faction, which in the oracle is its player identity.
+    #[must_use]
+    pub fn describe(&self, state: &GameState) -> String {
+        format!(
+            "{} gives {} for {}",
+            faction_name(state, &self.proposer),
+            self.given.describe(),
+            self.received.describe()
+        )
+    }
 }
 
 /// Why an offer cannot be resolved.
@@ -270,8 +338,10 @@ pub const OFFER_KIND: &str = "offer";
 /// The kind of an answer to a proposal.
 pub const ANSWER_KIND: &str = "transaction";
 
-/// The prefix of an option that opens a transaction.
-const OPEN_PREFIX: &str = "trade|";
+/// The prefix of an option that opens a transaction. Component actions carry the full
+/// `component|` prefix in both engines; trade was the one Rust shape missing it, which made its
+/// id tokenize differently at every action-phase decision.
+const OPEN_PREFIX: &str = "component|trade|";
 
 /// What a note sells for.
 ///
@@ -279,6 +349,58 @@ const OPEN_PREFIX: &str = "trade|";
 /// one rather than presented as the rule: a flat price makes a Research Agreement cost what a
 /// Ceasefire does.
 const NOTE_PRICE: i32 = 2;
+
+/// What each kind of note is worth to its receiver, in trade goods.
+///
+/// Ported from the oracle's `promissory.WORTH` table; an unknown alias prices at the oracle's
+/// default of 1.5 rather than failing a deal because its card was not in the table.
+const NOTE_WORTH: [(&str, f64); 10] = [
+    ("ra", 4.0),
+    ("an", 3.0),
+    ("convoys", 3.0),
+    ("ta", 2.5),
+    ("ce", 2.0),
+    ("ms", 2.0),
+    ("favor", 2.0),
+    ("war_funding", 2.0),
+    ("ps", 1.5),
+    ("cf", 1.5),
+];
+
+/// The name a player goes by at the table — its faction, which in the oracle is the player's id.
+#[must_use]
+pub fn faction_name(state: &GameState, player: &PlayerId) -> String {
+    state.player(player).map_or_else(
+        || player.as_str().to_owned(),
+        |seat| seat.faction.as_str().to_owned(),
+    )
+}
+
+/// What a note is worth to whoever receives it (oracle `_note_worth`). Support is priced by the
+/// rule's own number; a Trade Agreement prices off its live value on the table; everything else
+/// takes the `NOTE_WORTH` row for its alias.
+fn note_worth(state: &GameState, content: &ContentStore, note: &str) -> f64 {
+    if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
+        return 4.0;
+    }
+    let alias = crate::promissory::alias_of(note);
+    if alias == "ta" {
+        return crate::promissory::trade_agreement_worth(state, content, note);
+    }
+    NOTE_WORTH
+        .iter()
+        .find(|(name, _)| *name == alias)
+        .map_or(1.5, |(_, worth)| *worth)
+}
+
+/// What giving a note costs (oracle `_note_cost`): support gives up a victory point for 3 trade
+/// goods of value; every other note costs three quarters of what it is worth.
+fn note_cost(state: &GameState, content: &ContentStore, note: &str) -> f64 {
+    if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
+        return 3.0;
+    }
+    0.75 * note_worth(state, content, note)
+}
 
 /// Everyone this player may still open a transaction with this turn.
 ///
@@ -296,19 +418,34 @@ pub fn available_actions(
         .into_iter()
         .filter(|other| !already.contains(other))
         .map(|other| {
+            let name = faction_name(state, &other);
             crate::choice::ChoiceOption::labelled(
-                format!("{OPEN_PREFIX}{other}"),
+                format!("{OPEN_PREFIX}{name}"),
                 OPEN_KIND,
-                format!("open a transaction with {other}"),
+                format!("open a transaction with {name}"),
             )
         })
         .collect()
 }
 
 /// The partner an opening option names, or `None` for any other option.
+///
+/// The id names the partner's *faction* — the oracle's player identity is its faction name — so
+/// resolving it back to a seat needs the table: the first seat in seating order holding that
+/// faction answers. Duplicate-faction tables are outside the games the oracle can express; there,
+/// the earliest seat wins deterministically rather than the choice failing.
 #[must_use]
-pub fn opens_with(option: &crate::choice::ChoiceOption) -> Option<PlayerId> {
-    option.id.strip_prefix(OPEN_PREFIX).map(PlayerId::new)
+pub fn opens_with(state: &GameState, option: &crate::choice::ChoiceOption) -> Option<PlayerId> {
+    let named = option.id.strip_prefix(OPEN_PREFIX)?;
+    state
+        .seating_order
+        .iter()
+        .find(|seat| {
+            state
+                .player(seat)
+                .is_some_and(|player| player.faction.as_str() == named)
+        })
+        .cloned()
 }
 
 /// What one side holds that a deal can be built from.
@@ -325,15 +462,15 @@ fn holdings(state: &GameState, player: &PlayerId) -> (i32, i32) {
 #[must_use]
 pub fn offer_options(
     state: &GameState,
+    content: &ContentStore,
     proposer: &PlayerId,
     partner: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
     let (mine_goods, mine_commodities) = holdings(state, proposer);
     let (their_goods, their_commodities) = holdings(state, partner);
-    let mut options = Vec::new();
-    let mut offer = |id: String, label: String| {
-        options.push(crate::choice::ChoiceOption::labelled(id, OFFER_KIND, label));
-    };
+    // Shapes first, pricing last: every offer — note sale included — is priced against the same
+    // deal its id names, exactly as the oracle prices in one pass after building.
+    let mut shapes: Vec<(String, String, BTreeMap<String, Value>)> = Vec::new();
 
     // Support for the Throne, swapped. Both sides gain a victory point, which is why it is the
     // one note worth trading rather than lending — and why the oracle records it as the deal
@@ -343,10 +480,11 @@ pub fn offer_options(
         crate::promissory::available_support(state, partner),
     ) {
         let _ = (&mine, &theirs);
-        offer(
+        shapes.push((
             "ss".to_owned(),
             "exchange Support for the Throne notes".to_owned(),
-        );
+            BTreeMap::new(),
+        ));
     }
 
     // Any other note the proposer holds, sold for trade goods. Until these were offered the
@@ -354,10 +492,18 @@ pub fn offer_options(
     // unreachable at any price.
     for note in crate::promissory::available_notes(state, proposer) {
         if their_goods >= NOTE_PRICE {
-            offer(
-                format!("pn{note}"),
-                format!("sell {note} for {NOTE_PRICE} trade goods"),
+            // The alias goes in the payload rather than the id: token matching splits an option
+            // id on "|", never ":", so a `pn{alias}` suffix would silently leak the note's kind
+            // into every feature bucket (oracle `_priced` keeps ids clean for exactly this).
+            let mut payload = BTreeMap::new();
+            payload.insert("note".to_owned(), Value::String(note.clone()));
+            payload.insert(
+                "alias".to_owned(),
+                Value::String(crate::promissory::alias_of(&note).to_owned()),
             );
+            let id = format!("pn{note}");
+            let label = format!("sell {note} for {NOTE_PRICE} trade goods");
+            shapes.push((id, label, payload));
         }
     }
 
@@ -366,32 +512,39 @@ pub fn offer_options(
     // exists — an engine that cannot propose it has a trade economy in name only.
     let swap = mine_commodities.min(their_commodities);
     if swap > 0 {
-        offer(
-            format!("cc{swap}"),
-            format!("swap {swap} commodities each — both gain"),
-        );
+        // The oracle's label uses a plain hyphen; the em dash is not in the feature tokenizer's
+        // alphabet and would split this option's text into different buckets than its twin.
+        let id = format!("cc{swap}");
+        let label = format!("swap {swap} commodities each -- both gain");
+        shapes.push((id, label, BTreeMap::new()));
         if swap > 1 {
-            offer("cc1".to_owned(), "swap 1 commodity each".to_owned());
+            shapes.push((
+                "cc1".to_owned(),
+                "swap 1 commodity each".to_owned(),
+                BTreeMap::new(),
+            ));
         }
     }
     if mine_commodities > 0 && their_goods > 0 {
         let give = mine_commodities.min(3);
         let want = their_goods.min(give);
         if want > 0 {
-            offer(
+            shapes.push((
                 format!("ct{give}:{want}"),
                 format!("give {give} commodities for {want} trade goods"),
-            );
+                BTreeMap::new(),
+            ));
         }
     }
     if their_commodities > 0 && mine_goods > 0 {
         let want = their_commodities.min(3);
         let give = mine_goods.min(want);
         if give > 0 {
-            offer(
+            shapes.push((
                 format!("tc{give}:{want}"),
                 format!("give {give} trade goods for {want} commodities"),
-            );
+                BTreeMap::new(),
+            ));
         }
     }
     for give in 0..=mine_goods.min(3) {
@@ -399,14 +552,61 @@ pub fn offer_options(
             if give == 0 && want == 0 {
                 continue; // nothing for nothing is not an offer
             }
-            offer(format!("{give}:{want}"), format!("give {give} for {want}"));
+            shapes.push((
+                format!("{give}:{want}"),
+                format!("give {give} for {want}"),
+                BTreeMap::new(),
+            ));
         }
     }
     if mine_commodities > 0 {
-        offer(
+        shapes.push((
             format!("c{mine_commodities}:0"),
             format!("gift {mine_commodities} commodities"),
-        );
+            BTreeMap::new(),
+        ));
+    }
+
+    priced(state, content, proposer, partner, shapes)
+}
+
+/// Price every shape and build the option list.
+///
+/// Net to the proposer and, from the other chair, net to the partner: a proposal is only worth
+/// anything if it gets accepted, so both sides are priced (oracle `_priced`). Unpriced before —
+/// which made every deal look exactly as good as any other at feature time.
+fn priced(
+    state: &GameState,
+    content: &ContentStore,
+    proposer: &PlayerId,
+    partner: &PlayerId,
+    shapes: Vec<(String, String, BTreeMap<String, Value>)>,
+) -> Vec<crate::choice::ChoiceOption> {
+    let mut options = Vec::new();
+    for (id, label, mut payload) in shapes {
+        if let Some(deal) = offer_from(&id, proposer, partner) {
+            // Net to the proposer and, from the other chair, net to the partner: a proposal is
+            // only worth anything if it gets accepted, so both sides are priced (oracle
+            // `_priced`). Unpriced before — which made every deal look exactly as good as any
+            // other at feature time.
+            payload.insert(
+                "net".to_owned(),
+                Value::from(
+                    deal.received.worth_to_receiver(state, content)
+                        - deal.given.cost_to_giver(state, content),
+                ),
+            );
+            payload.insert(
+                "their_net".to_owned(),
+                Value::from(
+                    deal.given.worth_to_receiver(state, content)
+                        - deal.received.cost_to_giver(state, content),
+                ),
+            );
+        }
+        let mut option = crate::choice::ChoiceOption::labelled(id, OFFER_KIND, label);
+        option.payload.extend(payload);
+        options.push(option);
     }
     options
 }
@@ -536,7 +736,9 @@ enum Stage {
 /// let window = TradeWindow::open(&mut state, &players[0], &players[1]);
 /// assert!(state.transacted_with(&players[0]).contains(&players[1]));
 ///
-/// let choice = window.pending_choice(&state).expect("there are deals to propose");
+/// let choice = window
+///     .pending_choice(&state, ti4_content::ContentStore::embedded())
+///     .expect("there are deals to propose");
 /// assert!(choice.ids().contains(&"cc3"), "swap three commodities each");
 /// ```
 pub struct TradeWindow {
@@ -572,30 +774,53 @@ impl TradeWindow {
 
     /// The decision this negotiation owes, if any.
     #[must_use]
-    pub fn pending_choice(&self, state: &GameState) -> Option<crate::choice::Choice> {
+    pub fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+    ) -> Option<crate::choice::Choice> {
         match &self.stage {
             Stage::Done => None,
             Stage::Proposing => {
-                let mut options = offer_options(state, &self.proposer, &self.partner);
+                let mut options = offer_options(state, content, &self.proposer, &self.partner);
                 if options.is_empty() {
                     return None;
                 }
                 options.push(crate::choice::ChoiceOption::decline());
                 Some(crate::choice::Choice::new(
                     self.proposer.clone(),
-                    format!("transaction with {}", self.partner),
+                    format!("transaction with {}", faction_name(state, &self.partner)),
                     options,
                 ))
             }
-            Stage::Answering(offer) => Some(crate::choice::Choice::new(
-                self.partner.clone(),
-                format!("{} offers — accept?", offer.proposer),
-                vec![
-                    crate::choice::ChoiceOption::labelled("accept", ANSWER_KIND, "accept"),
-                    crate::choice::ChoiceOption::labelled("counter", ANSWER_KIND, "counter-offer"),
-                    crate::choice::ChoiceOption::decline(),
-                ],
-            )),
+            Stage::Answering(offer) => {
+                // Priced from the *receiver's* side: what they are being handed against what is
+                // being asked of them. Unpriced before, so a deal that gave two trade goods for
+                // nothing was accepted exactly as often as one that took them.
+                let accept = crate::choice::ChoiceOption::labelled("accept", ANSWER_KIND, "accept")
+                    .with(
+                        "net",
+                        offer.given.worth_to_receiver(state, content)
+                            - offer.received.cost_to_giver(state, content),
+                    );
+                Some(crate::choice::Choice::new(
+                    self.partner.clone(),
+                    format!("{} -- accept?", offer.describe(state)),
+                    vec![
+                        accept,
+                        crate::choice::ChoiceOption::labelled(
+                            "refuse",
+                            crate::choice::DECLINE_KIND,
+                            "refuse",
+                        ),
+                        crate::choice::ChoiceOption::labelled(
+                            "counter",
+                            ANSWER_KIND,
+                            "counter-offer",
+                        ),
+                    ],
+                ))
+            }
         }
     }
 
@@ -921,7 +1146,9 @@ mod tests {
         );
 
         let mut window = TradeWindow::open(&mut state, &a(), &b());
-        let choice = window.pending_choice(&state).expect("a deal to propose");
+        let choice = window
+            .pending_choice(&state, ti4_content::ContentStore::embedded())
+            .expect("a deal to propose");
         window.resolve(&mut state, &hub.galaxy, &ChoiceOption::decline());
 
         assert!(
@@ -948,7 +1175,9 @@ mod tests {
             &ChoiceOption::labelled("cc3", OFFER_KIND, ""),
         );
         assert_eq!(offered, Traded::Offered);
-        let answering = window.pending_choice(&state).expect("b answers");
+        let answering = window
+            .pending_choice(&state, ti4_content::ContentStore::embedded())
+            .expect("b answers");
         assert_eq!(answering.player, b());
 
         let outcome = window.resolve(
@@ -986,7 +1215,9 @@ mod tests {
         );
 
         assert_eq!(outcome, Traded::Countered);
-        let counter = window.pending_choice(&state).expect("b now proposes");
+        let counter = window
+            .pending_choice(&state, ti4_content::ContentStore::embedded())
+            .expect("b now proposes");
         assert_eq!(counter.player, b(), "the counter comes from the other side");
     }
 
@@ -1014,7 +1245,9 @@ mod tests {
         // is worth a victory point.
         let (hub, mut state) = trading_partners();
         let mut window = TradeWindow::open(&mut state, &a(), &b());
-        let choice = window.pending_choice(&state).expect("deals on offer");
+        let choice = window
+            .pending_choice(&state, ti4_content::ContentStore::embedded())
+            .expect("deals on offer");
         assert!(choice.ids().contains(&"ss"), "the swap is offered");
 
         window.resolve(
@@ -1045,7 +1278,7 @@ mod tests {
         );
         state.player_mut(&b()).unwrap().trade_goods = 5;
 
-        let offers = offer_options(&state, &a(), &b());
+        let offers = offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b());
         let sale = offers
             .iter()
             .find(|option| option.id.starts_with("pn"))
@@ -1106,7 +1339,7 @@ mod tests {
     fn support_is_not_offered_once_it_is_lent() {
         let (_, mut state) = trading_partners();
         assert!(
-            offer_options(&state, &a(), &b())
+            offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b())
                 .iter()
                 .any(|o| o.id == "ss")
         );
@@ -1114,7 +1347,7 @@ mod tests {
         crate::promissory::receive(&mut state, &b(), &crate::promissory::support(&a()));
 
         assert!(
-            !offer_options(&state, &a(), &b())
+            !offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b())
                 .iter()
                 .any(|o| o.id == "ss"),
             "a has nothing left to swap"
@@ -1141,7 +1374,7 @@ mod tests {
         let (hub, mut state) = trading_partners();
         state.player_mut(&b()).unwrap().trade_goods = 0;
 
-        for option in offer_options(&state, &a(), &b()) {
+        for option in offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b()) {
             let offer = offer_from(&option.id, &a(), &b())
                 .unwrap_or_else(|| panic!("{} does not parse back into a deal", option.id));
             assert_eq!(
@@ -1156,7 +1389,7 @@ mod tests {
     #[test]
     fn nothing_for_nothing_is_never_offered() {
         let (hub, state) = trading_partners();
-        for option in offer_options(&state, &a(), &b()) {
+        for option in offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b()) {
             let offer = offer_from(&option.id, &a(), &b()).unwrap();
             assert!(
                 !(offer.given.is_empty() && offer.received.is_empty()),
@@ -1181,7 +1414,7 @@ mod tests {
         // A sampling decider draws per option, so a shape written twice is twice as likely as
         // an equally good one written once.
         let (_, state) = trading_partners();
-        let options = offer_options(&state, &a(), &b());
+        let options = offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b());
         let mut deals: Vec<(Terms, Terms)> = options
             .iter()
             .map(|option| {
@@ -1195,5 +1428,143 @@ mod tests {
         deals.dedup();
 
         assert_eq!(before, deals.len(), "a deal shape appears more than once");
+    }
+
+    #[test]
+    fn terms_read_the_way_the_oracle_reads_them() {
+        assert_eq!(Terms::default().describe(), "nothing");
+        let goods = Terms {
+            trade_goods: 2,
+            ..Terms::default()
+        };
+        assert_eq!(goods.describe(), "2 trade goods");
+        let full = Terms {
+            trade_goods: 1,
+            commodities: 3,
+            fragments: vec!["engine".to_owned()],
+            promissory: Some("cf:b".to_owned()),
+        };
+        assert_eq!(
+            full.describe(),
+            "1 trade goods, 3 commodities, 1 relic fragments, cf:b"
+        );
+    }
+
+    #[test]
+    fn the_offer_prompt_names_the_faction_and_every_term() {
+        let (_, state) = trading_partners();
+        let offer = Offer {
+            proposer: a(),
+            partner: b(),
+            given: Terms {
+                trade_goods: 1,
+                ..Terms::default()
+            },
+            received: Terms::default(),
+        };
+        let name = state.player(&a()).unwrap().faction.as_str();
+        assert_eq!(
+            offer.describe(&state),
+            format!("{name} gives 1 trade goods for nothing")
+        );
+    }
+
+    #[test]
+    fn answering_an_offer_offers_accept_refuse_counter_like_the_oracle() {
+        let (hub, mut state) = trading_partners();
+        let content = ti4_content::ContentStore::embedded();
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let proposing = window
+            .pending_choice(&state, content)
+            .expect("offers exist");
+        assert_eq!(
+            proposing.prompt,
+            format!("transaction with {}", faction_name(&state, &b()))
+        );
+
+        // Offer one trade good for nothing; the receiver answers.
+        let answer = proposing
+            .option("1:0")
+            .cloned()
+            .expect("a 1-for-0 deal is on the table");
+        assert_eq!(
+            window.resolve(&mut state, &hub.galaxy, &answer),
+            Traded::Offered
+        );
+
+        let answering = window.pending_choice(&state, content).unwrap();
+        let name_a = state.player(&a()).unwrap().faction.as_str();
+        assert_eq!(
+            answering.prompt,
+            format!("{name_a} gives 1 trade goods for nothing -- accept?")
+        );
+
+        // Same ids, kinds and order as the oracle's answer tuple: accept, refuse, counter.
+        let refuse = answering
+            .option("refuse")
+            .expect("refuse exists by that name");
+        assert_eq!(refuse.kind, crate::choice::DECLINE_KIND);
+        assert!(
+            refuse.is_decline(),
+            "the window must still treat it as a decline"
+        );
+
+        // Accept is priced from the receiver's side: handed 1 trade good, asked for nothing.
+        let net = answering
+            .option("accept")
+            .unwrap()
+            .payload
+            .get("net")
+            .and_then(Value::as_f64)
+            .expect("the accept option is priced");
+        assert!(
+            (net - 1.0).abs() < f64::EPSILON,
+            "handed a trade good for nothing: {net}"
+        );
+    }
+
+    #[test]
+    fn every_offer_option_carries_its_net_like_the_oracle() {
+        let (_, state) = trading_partners();
+        for option in offer_options(&state, ti4_content::ContentStore::embedded(), &a(), &b()) {
+            assert!(
+                option.payload.contains_key("net"),
+                "{} is unpriced",
+                option.id
+            );
+            assert!(
+                option.payload.contains_key("their_net"),
+                "{} is unpriced from the other chair",
+                option.id
+            );
+        }
+    }
+
+    #[test]
+    fn opening_a_transaction_names_the_partners_faction() {
+        let (hub, mut state) = trading_partners();
+        // Distinct factions: the id names a faction, and two "generic" seats cannot be told
+        // apart by that name. Real tables seat distinct ones (the oracle's player *is* its
+        // faction), so this is the path parity actually runs on.
+        state.player_mut(&a()).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        let options = crate::transactions::available_actions(
+            &state,
+            ti4_content::ContentStore::embedded(),
+            &hub.galaxy,
+            &a(),
+        );
+        assert!(!options.is_empty());
+        for option in &options {
+            let named = option
+                .id
+                .strip_prefix(OPEN_PREFIX)
+                .unwrap_or("<wrong prefix>");
+            assert!(option.id.starts_with(OPEN_PREFIX), "{}", option.id);
+            assert_eq!(option.label, format!("open a transaction with {named}"));
+            // The id must resolve back to the seat that holds that faction.
+            let seat = opens_with(&state, option).expect("the id resolves back to a seat");
+            assert_eq!(faction_name(&state, &seat), named);
+        }
     }
 }

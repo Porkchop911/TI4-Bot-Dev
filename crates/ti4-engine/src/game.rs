@@ -829,7 +829,7 @@ impl<'a> Game<'a> {
                     self.advance_turn();
                     return Ok(());
                 }
-                if let Some(partner) = crate::transactions::opens_with(&answer) {
+                if let Some(partner) = crate::transactions::opens_with(&self.state, &answer) {
                     self.trade = Some(crate::transactions::TradeWindow::open(
                         &mut self.state,
                         &active,
@@ -1474,7 +1474,7 @@ impl<'a> Game<'a> {
             .trade
             .as_ref()
             .expect("checked above")
-            .pending_choice(&self.state);
+            .pending_choice(&self.state, self.content);
         let Some(choice) = choice else {
             self.trade = None;
             return self.result(false, None);
