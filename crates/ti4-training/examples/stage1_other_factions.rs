@@ -151,6 +151,7 @@ fn main() -> Result<(), String> {
         factions,
         generations: 0, // set per-batch below
         train_seeds: 16,
+        train_seed_stride: 16,
         step: Step {
             learning_rate: 0.03,
             entropy: 0.01,

@@ -160,9 +160,13 @@ pub struct FactionPlan {
     pub generations: usize,
     /// Independent varied-map seeds per update. Each is played once per seat rotation.
     pub train_seeds: u64,
+    /// Spacing between consecutive updates' first training seed. This engine's historical
+    /// default strides by one full batch (the count); the oracle strides by `10_000`, which an
+    /// experiment can restore for differential comparisons against Python checkpoints.
+    pub train_seed_stride: u64,
     /// Learning rule. The reference uses 0.03 / 0.01 / 1.0.
     pub step: Step,
-    /// First training seed. Resumption advances by `train_seeds` per completed update.
+    /// First training seed. Resumption advances by `train_seed_stride` per completed update.
     pub seed: u64,
     /// Content scope used by every rollout.
     pub sources: SourceSet,
@@ -218,6 +222,7 @@ impl FactionPlan {
                 .collect(),
             generations: 25,
             train_seeds: 16,
+            train_seed_stride: 16,
             step: Step {
                 learning_rate: 0.03,
                 entropy: 0.01,
@@ -247,6 +252,7 @@ impl FactionPlan {
                 .collect(),
             generations: 25,
             train_seeds: 16,
+            train_seed_stride: 16,
             step: Step {
                 learning_rate: 0.03,
                 entropy: 0.01,
@@ -296,7 +302,7 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
         let elapsed = u64::try_from(index).unwrap_or(u64::MAX);
         let first = plan
             .seed
-            .wrapping_add(elapsed.wrapping_mul(plan.train_seeds));
+            .wrapping_add(elapsed.wrapping_mul(plan.train_seed_stride));
         let seeds: Vec<u64> = (first..first + plan.train_seeds).collect();
         let reduced = plan.map_pool.as_ref().map_or_else(
             || {

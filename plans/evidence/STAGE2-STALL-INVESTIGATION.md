@@ -248,6 +248,17 @@ entry (`validation_first_seed`, `Option` with serde default so old checkpoints l
 (`--updates 50 --every 25 --train-seeds 1 --validation-seeds 2 --panel-step 3`) shows history
 seeds 96000000 / 96000003 / 96000006 for boundaries 0/1/2 as expected.
 
+**Pairing-contract bug caught in the T4 launch (attempt 1, killed at ~u4729):** `GainEvidence::paired`
+matches candidate and champion measurements by shared source seed. With stepping on, each fresh
+candidate panel shares no seeds with the champion's bootstrap measurement, so every boundary
+reported `gain=+0.000, samples=0` (visible in `out/logs/t4_oracle_parity_attempt1_brokenpairing.log`
+and preserved artifact `out/stage2_t4_attempt1_brokenpairing.json`) and the aggregate margin clause
+could never fire — the run was mathematically incapable of promoting. Fix: when stepping is on, the
+loop re-measures the current incumbent on each boundary's fresh validation **and** confirmation
+panel before any paired comparison (one extra 2×192-game evaluation per boundary); default mode is
+untouched. The oracle gets comparability for free from its fixed per-run panels; Rust pays explicit
+re-measurement instead. T4 relaunched with the fix under an unchanged pre-registered decision rule.
+
 ## Open questions for follow-up packages
 
 - If T2 had shown drift at lr=0.01, the fix would have been a step-size schedule/decay plus
@@ -274,3 +285,126 @@ seeds 96000000 / 96000003 / 96000006 for boundaries 0/1/2 as expected.
 
 Deprioritized by operator: `--rounds 8` ("plays too many rounds"); kept on file as a fallback if
 T4 fails and game-length compression is implicated.
+
+## Python retest (control run, completed 02:54 WEDT)
+
+The operator redirected the investigation: instead of a Rust-bootstrap experiment, re-run the
+Python pipeline itself from its own stage-1 champions with the latest Python stage-2 settings.
+Launched ~01:27 WEDT (PID 65312 + ~30 worker processes), completed at u3550 in ~87 min wall,
+`run_complete=True`. All outputs in this repo (`out/py_retest_stage2_pychamp.json`, logs, surrogate
+snapshots); the oracle repo was verified byte-untouched via `git status` before and after.
+
+Config = verbatim latest segment settings (seed 74000000, train_seeds 16, val/conf/audit seeds 32,
+eval_every 50, lr 0.03 / entropy 0.01 / clip 1.0, gate tolerances 0.05/0.03/0.15/0.10, game_seconds
+30, save52 pool), resumed from `stage1_pg_six_to5000_20260810.json` (u3050) with `--updates 500`.
+
+### Reproduction verdict vs the original a->b->c chain
+
+- Gate decisions identical at **9 of 10** boundaries: u3100 assembled (all six), u3150-u3300
+  rejected, **u3350 isolated sol**, rest rejected. Single flip: the original promoted
+  **xxcha @ u3450**; this run did not.
+- Trajectory comparison (candidate metrics per boundary): **bit-identical through u3150**, then
+  per-faction deltas of +/-0.06..0.22 emerge at u3200 and wander (sums -0.60..+0.28). Onset at one
+  discrete point indicates run-to-run nondeterminism in the Python pipeline itself, most plausibly
+  wall-clock `game_seconds=30` abandonment (a game over budget is dropped as stalled; which games
+  exceed 30s depends on machine load) plus hash-seed/parallel-reduction ordering. The original chain
+  ran under August load; this run ran idle at night.
+
+### Forensics of the u3450 xxcha flip (out/forensic_xxcha_u3450.py, .json)
+
+Reconstructed each run's exact isolated-xxcha swap table from surrogate snapshots
+(accepted@u3450 = learner-table@u3100 + sol<-learner-sol@u3350; xxcha swapped in), measured both on
+the identical validation panel:
+
+| clause (limit) | original (promoted) | retest (rejected) |
+|---|---|---|
+| aggregate gain >= +0.300 | **+0.474** pass | **+0.016 FAIL** |
+| worst faction VP regression >= -0.15 | -0.021 pass | **-0.172 (sol) FAIL** |
+| worst clearance regression >= -3pp | -2.08pp pass | -2.08pp pass |
+
+The retest's swap table had drifted enough by u3450 that xxcha's addition no longer moved the table:
+total gain collapsed from +0.47 to +0.02 and sol tripped the VP veto. So the original promotion was a
+comfortable call in its own run; the retest rejection is also comfortable in its own -- the flip came
+from compounded profile drift, not from either decision being razor-thin against its own measurements.
+
+### Start vs final (requested report tables)
+
+Starting profile = stage-1 champion @u3050 (horizon-1 trained), measured on the identical 4-round
+validation panel by out/eval_starting_profile.py -> out/py_retest_starting_panel.json:
+
+| faction | start VP / clr | final ACCEPTED vp / clr (u3550) | dVP | dClr | final LEARNER vp / clr | learner dVP |
+|---|---|---|---|---|---|---|
+| sol    | 1.240 / 83.9% | 2.135 / 92.7% | +0.895 | +8.8pp  | 2.172 / 88.5% | +0.932 |
+| letnev | 1.542 / 15.6% | 1.865 / 28.6% | +0.323 | +13.0pp | 2.161 / 34.4% | +0.619 |
+| xxcha  | 1.380 / 69.3% | 1.901 / 79.7% | +0.521 | +10.4pp | 2.135 / 80.7% | +0.755 |
+| hacan  | 1.411 / 67.7% | 1.958 / 79.2% | +0.547 | +11.5pp | 1.964 / 72.9% | +0.553 |
+| jolnar | 1.198 / 60.9% | 1.932 / 68.2% | +0.734 | +7.3pp  | 2.276 / 65.6% | +1.078 |
+| l1z1x  | 1.271 / 71.4% | 1.771 / 71.4% | +0.500 | +0.0pp  | 1.870 / 71.4% | +0.599 |
+| SUM    | 8.042         | 11.562           | **+3.52** |       | 12.582          | **+4.54** |
+
+Promotion timeline: u3100 assembled (all six) -> u3350 isolated sol. Original chain additionally had
+xxcha @u3450 (see flip above).
+
+### Interpretation
+
+- Most of the stage-2 "progress" is a **horizon reorientation jump in the first 50 updates**: the
+  starting profile was trained at horizon 1, so it is handicapped on full 4-round games; +2.9 total VP
+  by u3100 (assembled promotion) does most of the visible work in both runs identically.
+- After that, improvement is slow and gate decisions are sensitive to run-to-run noise: xxcha's u3450
+  attempt flipped under timing/hash nondeterminism. The old system works, reproduces its main results,
+  and its promotions were real -- but the pipeline is not bit-reproducible across runs (wall-clock
+  game abandonment + parallel reduction order). Rust's deterministic engine should be cleaner here;
+  verify whether any wall-clock abandonment exists in the Rust trainer.
+- T4 comparability caveat: Rust T4 resumed from a stage-2 lineage resume point, i.e. already past its
+  own reorientation jump, so "zero promotions over +2100 updates" is not directly comparable to
+  Python's "+300/+400 from raw stage-1 champions". The decisive differential experiment now is: run
+  the Rust stage-2 trainer **from this same Python stage-1 champion file** (schema-compat check first)
+  with T4-equivalent settings and compare boundary-by-boundary against both Python runs.
+
+Artifacts: out/py_retest_stage2_pychamp.json (+ _surrogate/), out/logs/py_retest_stage2.log,
+out/py_retest_starting_panel.json, out/eval_starting_profile.py, out/forensic_xxcha_u3450.{py,json},
+out/compare_trajectories.py.
+
+## T5 differential experiment (Rust from Python champion) — pilot +50 updates, completed 08:10 WEDT
+
+**Setup.** `stage2_training.exe` (HEAD incl. new opt-in training-seed-stream flags) resumed the oracle's own
+stage-1 champion file (`D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json`, u3050, schema 4 — loaded
+directly, no conversion), trained +50 updates on the oracle's exact seed stream
+(`--train-seed-base 74000000 --train-seed-stride 10000`), T4-equivalent settings (horizon 4, lr 0.03, entropy
+0.01, clip 1.0, train seeds 16, fixed panels at validation-first-seed 83M / confirmation-first-seed 88M, n=32,
+save52 pool, `--accept-sigmas 0` for Python gate parity). Output: `out/t5_pilot_u3100.json`; log
+`out/logs/t5_pilot.log`.
+
+**Pre-flight (`--eval-only`, same seeds):** Rust measured the starting table at sol 1.302/93.2%, letnev
+1.594/70.8%, xxcha 1.141/81.8%, hacan 1.010/91.7%, jolnar 1.010/71.9%, l1z1x 1.005/92.2% (vp/clearance).
+Standalone Python re-measure of the same table/seeds (`out/py_retest_starting_panel.json`) gave sol
+1.240/83.9%, letnev 1.542/15.6%, xxcha 1.380/69.3%, hacan 1.411/67.7%, jolnar 1.198/60.9%, l1z1x
+1.271/71.4% — already divergent (letnev clearance 70.8 vs 15.6).
+
+**u3100 boundary comparison** (Rust pilot vs the two Python chains, which recorded bit-identical u3100):
+
+| faction | Rust vp / clr    | Python vp / clr  | dv     | dclr      |
+|---------|------------------|------------------|--------|-----------|
+| sol     | 1.672 / 93.2%    | 1.536 / 90.6%    | +0.136 | +2.6pp    |
+| letnev  | 1.953 / 75.5%    | 1.901 / 29.7%    | +0.052 | **+45.8pp** |
+| xxcha   | 1.849 / 82.8%    | 1.943 / 81.3%    | -0.094 | +1.6pp    |
+| hacan   | 1.714 / 91.2%    | 1.766 / 77.6%    | -0.052 | +13.6pp   |
+| jolnar  | 1.370 / 68.2%    | 2.005 / 60.9%    | **-0.635** | +7.3pp |
+| l1z1x   | 1.609 / 85.9%    | 1.818 / 74.0%    | -0.209 | +12.0pp   |
+
+Sum VP 10.167 (Rust) vs 10.969 (Python). Panel SE at n=192 is ~0.05-0.08 VP / ~1.5-1.9pp, so jolnar and the
+clearance gaps are many sigma — systematic per-faction play divergence, not noise.
+
+**Gate decision matched:** both Rust and Python promoted the full assembled six-faction table at u3100.
+
+**Ruled out:** head routing (Rust `head()` falls back to the schema-4 `other` head for split-successor heads;
+the oracle's 4→5 migration is designed behaviour-preserving); metric definitions (both engines average own final
+VP over non-stalled games and cleared-fraction); seed stream (banner confirmed base/stride match).
+
+**Remaining suspects, in order:** faction-specific feature extraction differences; map/board generation or
+map-selection-from-seed differences; sampling/RNG differences. Next decisive step: single-source-seed
+per-decision diff between the engines to localize board-vs-scoring divergence.
+
+**Code added for T5 (opt-in, default-preserving):** `FactionPlan.train_seed_stride` + example flags
+`--train-seed-base`, `--train-seed-stride`; effective values recorded in checkpoint arguments; banner line.
+98 crate tests pass; clippy clean; release binary rebuilt.

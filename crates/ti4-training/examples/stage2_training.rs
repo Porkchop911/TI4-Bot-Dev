@@ -43,7 +43,10 @@ fn flag(name: &str) -> bool {
 ///
 /// With a step of zero every boundary re-measures the same fixed panel, which keeps old runs
 /// comparable; with a positive step each boundary's block starts further along so adjacent
-/// panels are disjoint and their gain estimates are statistically independent.
+/// panels are disjoint and their gain estimates are statistically independent. A stepped panel
+/// shares no source seeds with any earlier measurement, so paired evidence is only valid when
+/// every table compared at that boundary (candidate **and** incumbent) was measured on the same
+/// fresh block — see the champion re-measurement in the training loop.
 fn first_seed_for_boundary(base: u64, step: u64, index: usize) -> u64 {
     base.wrapping_add(step.wrapping_mul(u64::try_from(index).unwrap_or(0)))
 }
@@ -704,6 +707,13 @@ fn main() -> Result<(), String> {
     let updates = number("--updates", 1_000);
     let every = number("--every", 25).max(1);
     let train_seeds = u64::try_from(number("--train-seeds", 16)).unwrap_or(16);
+    // Seed-stream overrides for differential comparisons against Python checkpoints, which stride
+    // their training seeds by 10_000 from an explicit base. Unset keeps this engine's historical
+    // stream (base per plan, stride one full batch), so existing runs stay comparable.
+    let train_seed_base =
+        optional_number("--train-seed-base").and_then(|value| u64::try_from(value).ok());
+    let train_seed_stride =
+        optional_number("--train-seed-stride").and_then(|value| u64::try_from(value).ok());
     let validation_seeds =
         u64::try_from(number("--validation-seeds", number("--eval-seeds", 32))).unwrap_or(32);
     let confirmation_seeds = u64::try_from(number("--confirmation-seeds", 32)).unwrap_or(32);
@@ -742,6 +752,10 @@ fn main() -> Result<(), String> {
     let mut plan = FactionPlan::stage_two_reference();
     plan.step.learning_rate = learning_rate;
     plan.train_seeds = train_seeds;
+    if let Some(base) = train_seed_base {
+        plan.seed = base;
+    }
+    plan.train_seed_stride = train_seed_stride.unwrap_or(plan.train_seeds);
     if let Some(path) = &map_pool_path {
         let pool = ti4_sim::MapPool::load(path)
             .map_err(|error| format!("load {}: {error}", path.display()))?;
@@ -819,6 +833,11 @@ fn main() -> Result<(), String> {
     if let Some(path) = &map_pool_path {
         arguments.insert("map_pool".to_owned(), path.display().to_string());
     }
+    arguments.insert("train_seed_base".to_owned(), plan.seed.to_string());
+    arguments.insert(
+        "train_seed_stride".to_owned(),
+        plan.train_seed_stride.to_string(),
+    );
 
     println!("Stage-2 policy-gradient configuration");
     println!("  factions: sol,letnev,xxcha,hacan,jolnar,l1z1x");
@@ -826,7 +845,10 @@ fn main() -> Result<(), String> {
         "  stage: VP/objective reward, {}-round horizon",
         plan.rounds
     );
-    println!("  batch: {train_seeds} seeds x 6 rotations");
+    println!(
+        "  batch: {train_seeds} seeds x 6 rotations (training seed base {} stride {})",
+        plan.seed, plan.train_seed_stride
+    );
     println!(
         "  maps: {} and shared across rotations",
         map_pool_path.as_ref().map_or_else(
@@ -847,7 +869,7 @@ fn main() -> Result<(), String> {
         println!("  panels: one fixed validation/confirmation panel at every boundary");
     } else {
         println!(
-            "  panels: fresh per boundary (seed step {panel_step}); adjacent boundaries measure disjoint games"
+            "  panels: fresh per boundary (seed step {panel_step}); adjacent boundaries measure disjoint games; incumbent re-measured on each fresh panel to keep paired comparisons valid"
         );
     }
     println!("  execution: persistent Rayon pool + worker-side gradient statistics");
@@ -984,6 +1006,18 @@ fn main() -> Result<(), String> {
             println!(
                 "boundary {update}: fresh panels (validation first seed {panel_validation_seed}, confirmation first seed {panel_confirmation_seed})"
             );
+            // Pairing is per source seed: a stepped candidate panel shares no seeds with the
+            // champion's last measurement, so without this re-measurement every paired gain at
+            // this boundary degenerates to zero samples. The oracle gets comparability for free
+            // from its fixed per-run panels; stepping pays one extra incumbent evaluation per
+            // boundary instead.
+            accepted_panel = evaluate(&plan, &accepted, panel_validation_seed, validation_seeds)?;
+            accepted_confirmation_panel = evaluate(
+                &plan,
+                &accepted,
+                panel_confirmation_seed,
+                confirmation_seeds,
+            )?;
         }
         let candidate_panel = evaluate(&plan, &profiles, panel_validation_seed, validation_seeds)?;
         let validation_gain = GainEvidence::paired(&candidate_panel, &accepted_panel);

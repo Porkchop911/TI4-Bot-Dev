@@ -119,12 +119,85 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Checks: `cargo test -p ti4-training` 98/98 lib + 13/13 example; clippy clean; rustfmt applied;
   T2 binary built pre-fmt (cosmetic-only later edits).
 - Evidence: `plans/evidence/STAGE2-STALL-INVESTIGATION.md`.
-- Next safe action: **T4 oracle-parity run** — resume @4600 from
-  `out/stage2_from_stage1.json`, ~3500 updates, `--every 50 --accept-sigmas 0 --validation-seeds
-  32 --confirmation-seeds 32 --panel-step 32`. Success = ≥1 promotion by u≈3500 (oracle parity);
-  failure ⇒ implementation-level game/feature bug → frontier differential diagnosis. `--rounds 8`
-  deprioritized by operator; train-seeds=64 and reward re-examination remain fallbacks. Do not
-  touch the promotion-gate code — only its σ clause is bypassed via the existing flag.
+- T4 oracle-parity run: attempt 1 (PID 8752) killed at ~u4729 after its first two boundaries exposed
+  a pairing-contract bug — with `--panel-step` on, fresh candidate panels share no source seeds with
+  the champion's bootstrap measurement, so `GainEvidence::paired` degenerated to `samples=0,
+  gain=+0.000` at every boundary and the margin clause could never fire (artifact preserved as
+  `out/stage2_t4_attempt1_brokenpairing.json`, log
+  `out/logs/t4_oracle_parity_attempt1_brokenpairing.log`). Fix in the loop: stepping mode now
+  re-measures the incumbent on each boundary's fresh validation+confirmation panels before any paired
+  comparison (default fixed-panel mode untouched). Relaunched ~22:05 WEDT as PID 18224 with the same
+  pre-registered config (`--updates 3500 --every 50 --validation-seeds 32 --confirmation-seeds 32
+  --accept-sigmas 0 --panel-step 32` + save52 pool), output `out/stage2_t4_oracle_parity.json`,
+  log `out/logs/t4_oracle_parity.log`. Regression check on relaunch: first boundary must show
+  `source seeds=32`, not 0.
+- T4 decision rule (pre-registered): ≥1 promotion by u≈3500 = oracle parity achieved → the stall
+  was gate strictness + budget, and the promoted table is promotable evidence. Zero promotions ⇒
+  implementation-level game/feature divergence from the oracle → frontier-model differential
+  diagnosis (do not tune hyperparameters further). `--rounds 8` deprioritized by operator;
+  train-seeds=64 and reward re-examination remain fallbacks.
+- T4 ETA ≈ 6–7 h (~04:00–05:00 WEDT): T2 training rate (≈3.28 s/update) plus 3 panels per boundary
+  in stepping mode (incumbent validation + incumbent confirmation + candidate). Monitor via log tail /
+  checkpoint history; first boundary at update 4650.
+- T4 status ~00:10 WEDT: u6350/8100 (~78%), no promotions yet, all rejections clearance-veto driven
+  (mostly sol trading round-1 openings for mid-game VP). Real positive drift has emerged under valid
+  paired statistics (gains trending upward with updates; several +0.3–0.6 aggregate boundaries vetoed on
+  per-faction clearance). Revised ETA ~02:30–03:00 WEDT.
+- T4 CPU under-saturation diagnosis (operator question): **structural, not a bug.** Verified absent:
+  sleeps/deadlines/locks in engine+training code; memory pressure (93 GB RAM, ~37 GB free); map-pool
+  I/O (fully in-memory Vecs); checkpoint races (atomic tmp+rename — two concurrent `--eval-only` readers
+  of the live file came up clean). Measured: a 192-game panel takes only ~4–6 s wall when cores are free,
+  so training blocks are one short Rayon wave per update (~3 s, 96 tasks/32 threads) with barriers between
+  updates and variable game-length tails => oscillating 25–78% of all cores; stepping-mode rejected
+  boundaries run up to **10 panels** (incumbent x2 + candidate + isolated per-faction fallback x6, silent in
+  the log except final clause lines) as a sequence of short waves with small serial gaps => the long
+  low-CPU stretches seen in Task Manager. Measured pace ≈5.0 s/update incl. ~87 s/boundary matches u6350.
+  Correctness is scheduling-independent; making eval faster would save <20% wall — not worth a mid-run
+  rebuild/restart. Post-T4 option recorded: pre-filter the isolated fallback on the validation panel
+  (gate semantics unchanged) to cut rejected-boundary cost ~3x for future runs.
+
+- T4 ended by operator decision (~00:55 WEDT) at u6700/8100 after the operator judged the run a
+  failure ("none of the VPs have moved"). Final state preserved in `out/stage2_t4_oracle_parity.json`
+  (last boundary u6700, gain +0.490; 43 boundaries total, zero promotions). Run data: paired gains
+  first half mean +0.125 -> second half +0.391; 17/42 boundaries cleared the +0.30 oracle margin; all
+  rejections clearance-veto driven (rotating factions: sol early, letnev/l1z1x late). The operator's
+  read on absolute VP levels is correct by construction (4-round horizon compresses everything to
+  ~2.0 mean VP); the champion column only moves on promotion and there were none.
+- Operator direction (supersedes the Rust-bootstrap T5 plan, which is withdrawn): re-run the PYTHON
+  pipeline itself as a control retest — its own stage-1 champions through Stage-2 with the latest
+  Python stage-2 settings; "basically no rust". Oracle repo stays read-only: trainer runs from an
+  external cwd (PYTHONPATH + PYTHONDONTWRITEBYTECODE=1 + PYTHONPYCACHEPREFIX into this repo), all
+  outputs redirected here; `git -C D:/Projects/ti4-engine status --short` verified unchanged after
+  launch (one pre-existing untracked doc).
+- Python retest launched ~01:25 WEDT, PID 65312 (+~30 worker processes):
+  `python D:/Projects/ti4-engine/tools/train_stage1_policy_gradient.py --stage 2 --horizon 4
+  --resume D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json (u3050, schema-4 auto-migrated
+  to 5 exactly as the original chain) --out out/py_retest_stage2_pychamp.json --updates 500` with the
+  latest recorded segment settings verbatim: seed 74000000 (same panels + training stream as the
+  original chain), train_seeds 16, validation/confirmation/audit seeds 32, eval_every 50, workers 30,
+  lr 0.03, entropy 0.01, clip 1.0, vp/objective/secret weights 1.0/0.35/0.25, clear_bonus 22, r1_bonus
+  3.0, r1_shaping 0.1, expansion 2.0, unit 1.0, accept_vp_margin 0.05, max faction clearance/vp/shortfall
+  regression 0.03/0.15/0.10, shortfall margin 0.15, game_seconds 30, save52_e400_n8192 pool, six
+  factions sol,letnev,xxcha,hacan,jolnar,l1z1x, progress_interval 8, surrogate snapshots on (into this
+  repo). The original chain's three segments were each manually stopped early (+100/+100/+250 new
+  updates); --updates 500 covers their full span (promotions landed at +300 sol@u3350 and +400
+  xxcha@u3450) in one run to completion, ending u3550.
+- Python retest COMPLETED 02:54 WEDT (~87 min wall, run_complete=True, u3550). Verdict: old system
+  works and reproduces -- gate decisions identical at 9/10 boundaries (u3100 assembled all-six,
+  u3350 isolated sol both reproduced); trajectories bit-identical through u3150 then small drift from
+  u3200 (Python pipeline is not run-reproducible: wall-clock game_seconds abandonment + parallel
+  reduction order), and the single flip is xxcha@u3450 -- original's swap passed all gate clauses
+  comfortably (+0.474 vs 0.300 aggregate) while this run's drifted swap failed two (aggregate +0.016;
+  sol VP veto -0.172). Start->final: total VP 8.042 -> 11.562 accepted (+3.52), learner 12.582
+  (+4.54); per-faction table in plans/evidence/STAGE2-STALL-INVESTIGATION.md. Most of the gain is the
+  horizon reorientation jump in the first 50 updates (stage-1 champion was horizon-1 trained).
+- Next safe action: decide with the operator between (a) the decisive differential experiment -- run
+  the Rust stage2_training.exe from this same Python stage-1 champion file (schema-compat check of
+  `D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json` against the Rust checkpoint format
+  first) with T4-equivalent settings, comparing boundary-by-boundary; or (b) close out the
+  investigation here and commit the retest artifacts + evidence. Note the comparability caveat: T4's
+  resume point was already past its own reorientation jump, so its zero-promotion stretch is not
+  directly comparable to Python's +300/+400 promotions from raw stage-1 champions.
 
 ### M08-005 tactical scoring checkpoint (2026-08-13)
 
