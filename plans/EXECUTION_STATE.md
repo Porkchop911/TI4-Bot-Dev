@@ -1484,12 +1484,16 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   only — no legality/timing/hidden-information change. Carried unchanged: F1 (leader-component gap)
   gates full-game alignment → Phase 2; F11 tie-break stays Phase-2 backlog; F13 card lambdas stay in the
   Phase-2/Phase-3 backlog with the `is_playable` comment as anchor.
-- **Next exact action/command:** after commit — (a) Phase-1 exit checkpoint note in evidence + compact;
-  (b) C1 dry pilot: `cargo run --release -p ti4-training --example stage2_training -- --checkpoint
-  D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json --out out/stage2_p1g_dry_u50.json
-  --map-pool D:/Projects/ti4-engine/data/map_pools/save52_e400_n8192.json.gz --updates 50 --every 50
-  --accept-sigmas 0 --train-seed-base 74_000_000 --train-seed-stride 10_000`. Success = champion loads,
-  +50 updates complete, no behavioral break.
+- **Next exact action/command:** C1 dry pilot COMPLETED AND PASSED (2026-08-16; log
+  `out/c1_dry_pilot.log`, wall 241 s): champion loaded at internal update u3050, +50 updates to u3100
+  with **6,358,098 decisions, 0 errors, 0 zero-movement updates**; boundary panel (192 games/faction)
+  clean, aggregate gain +2.229 (se 0.175; `--accept-sigmas 0` per C1 design — sanity signal only);
+  checkpoint `out/stage2_p1g_dry_u50.json` structurally valid (`resumed_from` carries the champion
+  sha256). Path items 0–3 of `plans/CONTINUATION_PLAN.md` all hold → **Rust is verified startable**.
+  STOP POINT (plan decision point #3): a full T4-equivalent run (C2/C3: same seed stream, `--every 50
+  --accept-sigmas 0`, n=32, `--panel-step 32`) now **requires operator approval of pre-registered
+  thresholds before launch**; Phase 2 legality/timing work additionally requires a frontier review per
+  AGENTS.md. Either way the next session resumes from this handover + the continuation plan.
 - **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
   "Path to a startable training run" + Phase 1 table; evidence §P1-g (`plans/evidence/
   STAGE2-STALL-INVESTIGATION.md`, last sections, incl. F14).

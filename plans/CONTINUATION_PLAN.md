@@ -40,10 +40,19 @@ continuing automatically after each task. Concretely, "startable" means all of:
    tie-break hits (zero choice mismatches within common prefixes in all six factions; rust-vs-rust
    p1f→p1g pre-fork also zero), so F11 is recorded as a documented known difference and stays in the
    Phase-2 backlog.
-2. **Phase-1 exit checkpoint**: consolidated evidence + handover + compaction.
-3. **C1 dry pilot** (Phase 3 item 1): the Python champion
-   `D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json` loads in current Rust and a short
-   +50-update smoke run completes with no behavioral break from the alignment work.
+2. **Phase-1 exit checkpoint** — **DONE**: committed as `de2ac2c` (consolidated evidence §"Phase-1
+   exit checkpoint": row table P1-a→P1-g, parity position, carried differences F1/F11/F13 + emissions,
+   oracle integrity post-check) with the P1-g handover in `plans/EXECUTION_STATE.md`.
+3. **C1 dry pilot** (Phase 3 item 1) — **DONE, PASSED**: champion
+   `D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json` loaded in current Rust and the
+   +50-update smoke run completed with no behavioral break (log `out/c1_dry_pilot.log`, wall 241 s):
+   champion internal counter u3050 → learned u3050..u3100, **6,358,098 decisions, 0 errors,
+   0 zero-movement updates** (contrast: the pre-alignment stall was a zero-signal regime); boundary
+   panel at u3100 (32 seeds × 6 rotations = 192 games/faction) ran clean with aggregate gain +2.229
+   (paired se 0.175; sigma gate disabled per C1 design, so the number is a sanity signal only);
+   checkpoint `out/stage2_p1g_dry_u50.json` written and structurally valid (`resumed_from`
+   carries the champion sha256). **All of 0–3 hold: Rust is verified able to start a Stage-2
+   training run from the shared Python stage-1 champion.**
 
 When 0–3 hold, a full T4-equivalent run (C2/C3: `stage2_training`, same seed stream base 74_000_000
 stride 10_000, `--every 50 --accept-sigmas 0`, n=32, `--panel-step 32`) is **ready to launch**.

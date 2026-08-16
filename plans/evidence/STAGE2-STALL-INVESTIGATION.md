@@ -1582,3 +1582,14 @@ by an earlier agent) — not created by Phase-1 work.
 
 **Next:** item 3 of the operator path — C1 dry pilot (+50 updates from the Python stage-1 champion,
 sigma gate disabled); then T4-equivalent launch readiness (C2/C3).
+
+**C1 dry pilot result (same day, PASSED):** `cargo run --release -p ti4-training --example
+stage2_training` with `--updates 50 --every 50 --accept-sigmas 0`, seed stream base 74_000_000 / stride
+10_000 (log `out/c1_dry_pilot.log`, wall 241 s). Champion loaded at its internal counter u3050; learned
+u3050..u3100 with **6,358,098 decisions, 0 errors, 0 zero-movement updates** — the opposite of the
+pre-alignment zero-signal stall. Boundary panel at u3100 (32 seeds × 6 rotations = 192 games/faction)
+ran clean; aggregate gain +2.229 with paired se 0.175 (sigma gate disabled per C1 design — sanity
+signal only, not a learning claim). Checkpoint `out/stage2_p1g_dry_u50.json` written and structurally
+valid (`resumed_from` carries the champion sha256). All path items 0–3 hold: Rust is verified able to
+start a Stage-2 training run. A full T4-equivalent launch (C2/C3) stops at plan decision point #3:
+operator approval of pre-registered thresholds required; Phase 2 work requires a frontier review.
