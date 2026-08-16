@@ -163,6 +163,7 @@ fn main() -> Result<(), String> {
         tile_seed_offset: 20_000_000,
         start: None,
         high_vp_bonus: 0.0,
+        clearance_weight: 0.0,
         pipeline: false,
         rollout_depth: 1,
     };

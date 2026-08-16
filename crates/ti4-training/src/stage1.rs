@@ -186,6 +186,10 @@ pub struct FactionPlan {
     /// Terminal reward bonus for finishing with at least three victory points (Stage-2
     /// experiments only). Zero keeps the reference reward exactly; see `Reward::high_vp_bonus`.
     pub high_vp_bonus: f64,
+    /// Clearance floor: uniform penalty per game whose opening did not clear, credited at the
+    /// final slot so every decision's return carries it (Stage-2 gate experiments only). Zero
+    /// keeps the reference reward exactly; see `Reward::clearance_weight`.
+    pub clearance_weight: f64,
     /// Overlap consecutive updates' rollouts on a background thread while the previous update's
     /// gradients are applied. Each rollout sees the pre-apply weights (bounded staleness of one
     /// update), which keeps the worker pool saturated across batch boundaries; per-game results
@@ -252,6 +256,7 @@ impl FactionPlan {
             tile_seed_offset: 20_000_000,
             start: None,
             high_vp_bonus: 0.0,
+            clearance_weight: 0.0,
             pipeline: false,
             rollout_depth: 1,
         }
@@ -285,6 +290,7 @@ impl FactionPlan {
             tile_seed_offset: 20_000_000,
             start: None,
             high_vp_bonus: 0.0,
+            clearance_weight: 0.0,
             pipeline: false,
             rollout_depth: 1,
         }
@@ -321,6 +327,7 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     );
     let mut reward = Reward::for_stage(plan.stage);
     reward.high_vp_bonus = plan.high_vp_bonus;
+    reward.clearance_weight = plan.clearance_weight;
     let mut generations = Vec::with_capacity(plan.generations);
     // One update in flight at a time. In pipeline mode the previous batch's gradients are
     // applied while the current batch is still rolling out, so the worker pool never drains to

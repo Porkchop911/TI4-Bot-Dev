@@ -119,6 +119,11 @@ pub struct Reward {
     /// produced them. The bar is three points because that is the sustained-play target it exists
     /// to push toward; see the Stage-2 plateau work.
     pub high_vp_bonus: f64,
+    /// Uniform penalty per game whose opening did not clear, credited at the final slot so every
+    /// decision's return carries the full-game cost of an uncleared opening. The round-one bonus
+    /// is only visible to round-one decisions; this one prices the clearance risk everywhere.
+    /// Zero keeps the reference reward exactly (Stage-2 gate experiments).
+    pub clearance_weight: f64,
 }
 
 const fn default_requirement() -> Requirement {
@@ -150,6 +155,7 @@ impl Default for Reward {
             r1_shaping: 0.1,
             trade_bonus: 0.0,
             high_vp_bonus: 0.0,
+            clearance_weight: 0.0,
         }
     }
 }
@@ -318,6 +324,15 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                         * reward.high_vp_bonus;
                 }
             }
+            // The clearance floor, credited at the final slot so every decision's return carries
+            // the full-game cost of an uncleared opening (the round-one bonus is only visible to
+            // round-one decisions). Keeps learned play inside the gate's per-faction clearance
+            // band instead of trading opening safety for mid-game VP.
+            if reward.clearance_weight > 0.0 {
+                if let Some(last) = rewards.last_mut() {
+                    *last -= f64::from(u8::from(!episode.cleared)) * reward.clearance_weight;
+                }
+            }
         }
     }
 
@@ -438,6 +453,50 @@ mod tests {
             assert_eq!(with.len(), without.len());
             for (index, (got, base)) in with.iter().zip(without.iter()).enumerate() {
                 let expected_delta = if name == "crossed" { 0.5 } else { 0.0 };
+                assert!(
+                    (got - base - expected_delta).abs() < 1e-9,
+                    "{name} step {index}: {got} against {base}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_clearance_penalty_pays_only_when_the_opening_misses_the_bar() {
+        // The Stage-2 gate experiment: an uncleared opening costs exactly this much in every
+        // decision's return (suffix sums), whatever VP the game later reaches; cleared games are
+        // untouched. This is what keeps learned play inside the gate's clearance band.
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.clearance_weight = 1.0;
+        let reference = Reward::for_stage(Stage::Two); // penalty stays off
+
+        let cleared = Episode {
+            steps: vec![opening(0, 1, 0, 1), opening(2, 2, 1, 1)],
+            final_progress: Progress {
+                victory_points: 3,
+                ..opening(3, 3, 1, 1)
+            },
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+        };
+        let missed = Episode {
+            final_progress: Progress {
+                victory_points: 4,
+                ..opening(3, 3, 1, 1)
+            },
+            cleared: false,
+            shortfall: 2.0,
+            ..cleared.clone()
+        };
+
+        for (name, episode) in [("cleared", &cleared), ("missed", &missed)] {
+            let with = returns(episode, &reward);
+            let without = returns(episode, &reference);
+            assert_eq!(with.len(), without.len());
+            for (index, (got, base)) in with.iter().zip(without.iter()).enumerate() {
+                // The missed game's high VP must not offset the penalty: it is a flat cost.
+                let expected_delta = if name == "missed" { -1.0 } else { 0.0 };
                 assert!(
                     (got - base - expected_delta).abs() < 1e-9,
                     "{name} step {index}: {got} against {base}"

@@ -740,6 +740,10 @@ fn main() -> Result<(), String> {
     // the reference reward exactly; nonzero sharpens credit toward high-scoring games (Stage-2
     // plateau experiments).
     let high_vp_bonus = decimal("--high-vp-bonus", 0.0);
+    // Clearance floor: uniform penalty per game whose opening did not clear, credited at the
+    // final slot so every decision's return carries it (keeps learned play inside the gate's
+    // per-faction clearance band). Zero keeps the reference reward exactly.
+    let clearance_weight = decimal("--clearance-weight", 0.0);
     // Overlap consecutive updates' rollouts with the previous update's gradient apply so the
     // worker pool stays saturated across batch boundaries (bounded staleness of one update).
     // Off by default: the sequential reference path is byte-identical to earlier runs.
@@ -779,6 +783,7 @@ fn main() -> Result<(), String> {
     plan.step.learning_rate = learning_rate;
     plan.step.entropy = entropy;
     plan.high_vp_bonus = high_vp_bonus;
+    plan.clearance_weight = clearance_weight;
     plan.pipeline = pipeline;
     plan.rollout_depth = rollout_depth;
     plan.train_seeds = train_seeds;
@@ -842,6 +847,7 @@ fn main() -> Result<(), String> {
         ("learning_rate".to_owned(), learning_rate.to_string()),
         ("entropy".to_owned(), entropy.to_string()),
         ("high_vp_bonus".to_owned(), high_vp_bonus.to_string()),
+        ("clearance_weight".to_owned(), clearance_weight.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
@@ -897,6 +903,11 @@ fn main() -> Result<(), String> {
     );
     if high_vp_bonus > 0.0 {
         println!("  reward: +{high_vp_bonus:.2} terminal bonus for finishing with >=3 VP");
+    }
+    if clearance_weight > 0.0 {
+        println!(
+            "  reward: -{clearance_weight:.2} per uncleared opening (full-game cost, final slot)"
+        );
     }
     if pipeline {
         println!(
