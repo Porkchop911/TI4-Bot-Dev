@@ -51,8 +51,6 @@ fn main() {
             .iter()
             .map(|f| ti4_model::id::FactionId::new(*f))
             .collect();
-    let content = ti4_content::ContentStore::embedded();
-
     fn panel(
         label: &str,
         profiles: &std::collections::BTreeMap<

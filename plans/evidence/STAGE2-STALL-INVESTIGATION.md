@@ -1647,3 +1647,83 @@ learning-only run ≈ 3 min).
 **New standing operator rule:** every test/verification run must complete within a **10-minute
 timeout or it is considered failed/broken**. Long training runs are not "tests" but require explicit
 operator approval and monitored checkpoints. Recorded in `plans/EXECUTION_STATE.md`.
+
+## P-E results + per-faction own-merit gate (2026-08-17)
+
+### P-E run results (`out/noveto_run.log`, `out/noveto_run_u500.json`)
+
+From u5100, +500 updates → u5600: `--entropy 0.05 --high-vp-bonus 1.0
+--clearance-weight 1.0 --rollout-depth 4` with per-faction vetoes disabled via the existing
+flags (`--max-faction-clearance-regression 1.0 --max-faction-vp-regression 10.0`, unfireable),
+real aggregate margin + paired 2σ otherwise, `--every 100`.
+
+- **u5200: ALL SIX PROMOTED (assembled)** — the first promotion in the entire Stage-2 saga
+  (~1500 updates of rejections before this). Net gain +1.79, far beyond 2σ. Removing the
+  per-faction vetoes immediately let a large real improvement bank; the ratchet mechanism works.
+- u5300–u5600: rejected at +0.08 / +0.11 / +0.16 / +0.07 — all inside the ±~0.3 noise band. The
+  sigma clause correctly held them as luck; no ratcheting on noise.
+- New champion panel VP (u5200): letnev 2.09, xxcha 2.05, hacan 2.02, l1z1x 1.94, sol 1.86,
+  jolnar 1.89 — mean ≈ 1.98. Still below the ≥3.0 target; the climb continues under the new gate.
+- Wall: 500 updates in 1380.2 s (2.760 s/update).
+
+### Operator final gate decision: per-faction own merit, no cross-faction conflation
+
+Operator directives (verbatim intent): "remove every gate that conflates different factions — each
+faction should be promoted based solely on its own merit" and "whether or not a faction clears the
+Stage-1 requirements counts as their own merit." Consequence: **no table-level decision exists at
+all**. The assembled all-or-nothing promotion, the aggregate VP margin clause, the paired sum-over-
+table sigma clause, and cross-faction vetoes are all removed.
+
+New gate, per faction X (measured on an isolated panel: candidate-X head + the other five seats at
+their champion heads; reference = all-champion table on identical games):
+
+1. **own VP margin**: X's paired own-VP gain > `--accept-vp-margin` (0.05);
+2. **own sigma evidence**: that gain > `--accept-sigmas` (2.0) × its own standard error, paired per
+   source seed over the 32 seeds;
+3. **own clearance**: X's clearance within `--max-faction-clearance-regression` (0.03) of its own
+   champion's clearance — clearing the Stage-1 bar is part of a faction's own merit.
+
+All three must pass on both the validation and confirmation panels. Factions are judged
+independently: one head can neither block nor carry another; all passing heads promote together at
+the boundary (each was tested against the same pre-boundary champion table, so no promotion
+confounds a sibling's evidence). `--max-faction-vp-regression` is retained in the CLI/checkpoint
+schema for compatibility but no longer participates in any decision.
+
+### Implementation (`crates/ti4-training/examples/stage2_training.rs`, + panel_probe cleanup)
+
+- `PanelEvaluation.faction_vp_by_seed: BTreeMap<FactionId, BTreeMap<u64, f64>>` — each faction's
+  own VP per source seed (rotation-averaged), built in `evaluate()`. The table-level
+  `table_vp_by_seed` map and `GainEvidence::paired` (the conflation mechanism) are deleted.
+- `GainEvidence::paired_faction(candidate, champion, faction)` — pairs only the tested faction's
+  own seeds; shared factor: `from_differences`.
+- `own_clauses(...)` replaces `failed_stage_two_clauses` / `acceptable_stage_two_table`; every
+  clause string names the tested faction's own metric ("own VP margin", "own sigma evidence",
+  "own clearance").
+- Boundary loop: champion validation + confirmation panels re-measured every boundary (never stale,
+  stepping on or off); then per faction in plan order: isolated primary panel → own clauses →
+  confirmation panel for passers → batch promotion. History entries now carry `faction_gains` /
+  `confirmation_gains` maps (history is `Vec<serde_json::Value>`, so old checkpoints load
+  unchanged). Banner documents the new gate; `--eval-only` prints per-faction verdicts.
+- Tests: old aggregate-gate tests replaced by per-faction ones, including the core independence
+  property (`one_factions_regression_does_not_block_another_factions_promotion`: sol collapses to
+  0.5 VP while letnev's +0.8 clean gain still passes) and `clearance_is_part_of_own_merit`.
+
+### Verification
+
+- Example tests: **14/14** release (all new per-faction gate tests pass).
+- ti4-training lib: **104/104** release (`out/libtest_perfaction.log`).
+- clippy `--release --all-targets`: no new warnings in touched files (one pre-existing
+  `useless_conversion` at the rollout-depth parse, carried from an earlier package); fmt clean.
+- End-to-end smoke on the u5600 checkpoint (`--eval-only`): per-faction own gains printed with SE
+  and n=32; verdicts name only own clauses (e.g. l1z1x +0.104 vs 2σ = 0.137 → held as noise).
+
+### Overnight run launched
+
+From u5600 (`out/noveto_run_u500.json`), **+4000 updates → u9600**, `--every 100` (40
+boundaries): `--entropy 0.05 --high-vp-bonus 1.0 --clearance-weight 1.0 --rollout-depth 4
+--panel-step 32`, new per-faction gate at defaults (margin 0.05, 2σ, clearance tolerance 0.03).
+Fresh panels per boundary so promotions generalize instead of overfitting fixed games. Expected
+wall ≈ 3.5 h (learning ~2.76 s/update + ~40 s/boundary). Log `out/overnight_u4000.log`, output
+`out/overnight_u4000.json`. Success signal: sustained per-faction promotions with champion mean VP
+trending toward ≥3.0 for at least one faction; the target remains a fully-learned head clearing
+Stage 2 at ≥3.0 mean VP.

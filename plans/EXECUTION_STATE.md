@@ -1707,3 +1707,43 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   still open and independent of F15. Resume from `out/clearing_run_u600.json` (+600 updates →
   u4900, same flags: `--entropy 0.05 --high-vp-bonus 0.5 --clearance-weight 1.0 --rollout-depth 4`,
   real gate, `--every 100 --panel-step 32`) now that the trainer no longer idles between panels.
+- **Operator gate-semantics decision (P-E): per-faction vetoes disabled for Stage-2 runs.** Rationale
+  (operator, verbatim intent): one candidate regressing must not block every other candidate that
+  did not; if a faction's metrics dip because the others improved, that is competition and it will
+  catch up. Implementation: no gate code change — existing CLI flags set to unfireable values:
+  `--max-faction-clearance-regression 1.0` (clearance ∈ [0,1], so candidate < champion − 1.0 is
+  impossible) and `--max-faction-vp-regression 10.0` (VP cannot regress by more than ~5). The
+  aggregate margin (0.05/faction) and paired 2σ evidence clauses remain in force, so a promotion
+  must still be a real net improvement beyond noise; the isolated fallback's own-VP-improvement
+  requirement also remains. This is an explicit project-level deviation from the oracle's default
+  gate (Python defaults 0.03/0.15) authorized by the operator; reference runs keep the defaults.
+  Motivation data: at u5100 every faction except jolnar beat the frozen champion by +0.2 to +0.5
+  VP, yet all boundaries were rejected on sol/jolnar clearance vetoes while hacan/xxcha had already
+  recovered inside the band; the uniform clearance penalty was also degrading jolnar (clearance fell
+  73% → 68% under it) instead of helping it clear.
+- **P-E run LAUNCHED** from u5100 (`out/clearing_run2_u300.json`), +500 updates → u5600, boundaries
+  at u5200/5300/5400/5500/5600: `--entropy 0.05 --high-vp-bonus 1.0 --clearance-weight 1.0
+  --rollout-depth 4` plus the two veto-disabling flags above; real aggregate/sigma gate otherwise,
+  `--every 100`. Bonus escalated 0.5 → 1.0 per the pre-planned rule (mean VP plateaued ~2.0–2.2
+  under 0.5 for ~1100 updates); clearance-weight relaxed 2.0 → 1.0 since it no longer gates and was
+  distorting jolnar. Log `out/noveto_run.log`, output `out/noveto_run_u500.json`. Success signal:
+  promotions resume (isolated or assembled) with candidate mean VP trending toward ≥3.0 for at
+  least one faction; the target remains a fully-learned head clearing Stage 2 at ≥3.0 mean VP.
+- **P-E results:** u5200 ALL SIX PROMOTED (assembled) — first promotion in the Stage-2 saga; net
+  gain +1.79 ≫ 2σ. u5300–u5600 rejected at +0.08/+0.11/+0.16/+0.07, inside the noise band (sigma
+  clause correctly held). New champion mean VP ≈ 1.98. Log `out/noveto_run.log`.
+- **Per-faction own-merit gate implemented** (operator final decision: no cross-faction conflation;
+  clearance counts as own merit): assembled promotion, aggregate margin, table-level sigma, and
+  cross-faction vetoes all removed. Each head is judged on its own paired gain (>0.05 and >2σ of
+  its own SE) + own clearance (within 0.03 of its own champion), validation AND confirmation
+  panels; factions promote independently in a batch per boundary. `PanelEvaluation` now carries
+  per-faction VP-by-seed; table-level pairing deleted as dead conflation machinery. Evidence:
+  `plans/evidence/STAGE2-STALL-INVESTIGATION.md` §"P-E results + per-faction own-merit gate".
+  Checks: example tests **14/14**, ti4-training lib **104/104** release, clippy no new warnings in
+  touched files, fmt clean, `--eval-only` smoke on u5600 checkpoint behaves as designed.
+- **Overnight run LAUNCHED** from u5600 (`out/noveto_run_u500.json`), +4000 updates → u9600,
+  `--every 100 --panel-step 32`: `--entropy 0.05 --high-vp-bonus 1.0 --clearance-weight 1.0
+  --rollout-depth 4`, per-faction gate at defaults. Log `out/overnight_u4000.log`, output
+  `out/overnight_u4000.json`. Expected wall ≈ 3.5 h; checkpoints every boundary so nothing is lost
+  if killed. Next action on resume: read the log's promotion lines, check champion mean VP trend
+  toward ≥3.0, and decide bonus escalation (2.0) or per-faction reward targeting if flat again.
