@@ -1674,3 +1674,17 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   (`--clearance-weight`, default 0, final-slot penalty per uncleared opening — design in
   `out/pb_prep_notes.md`); (3) launch the long clearing run from u4300 with entropy 0.05 +
   high-vp-bonus 0.5 + clearance-weight ~1.0 + `--rollout-depth 4`, real gate, monitored checkpoints.
+
+## Status (2026-08-16, after scheduling commit)
+
+- Scheduling package committed: `0d0c30a` (`--rollout-depth`, `--pipeline`, group-wave rollout API,
+  evidence `plans/evidence/STAGE2-SCHEDULING-WAVES.md`).
+- P-B clearance-aware reward committed: `f168a26` (`--clearance-weight`, default 0 = reference;
+  unit test `the_clearance_penalty_pays_only_when_the_opening_misses_the_bar`; lib suite 103/103).
+- **P-C clearing run LAUNCHED** (operator-approved long run, monitored): from u4300 checkpoint
+  (`out/exp_bonus05_entropy05_u400.json`), +600 updates → u4900, `--entropy 0.05 --high-vp-bonus 0.5
+  --clearance-weight 1.0 --rollout-depth 4`, real gate, `--every 100 --panel-step 32`. Log
+  `out/clearing_run.log`, CPU sampler `out/clearing_cpu.txt` (10 s cadence), output checkpoint
+  `out/clearing_run_u600.json`. Expected ~50 min. Success signal: clearance vetoes stop firing and
+  promotions resume with candidate VP trending up; target remains ≥3.0 mean VP for at least one
+  faction on its panel. If flat after u4500: raise clearance-weight to 2.0 or high-vp-bonus to 1.0.
