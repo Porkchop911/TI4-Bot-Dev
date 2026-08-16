@@ -1570,3 +1570,25 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   horizon. So: sustained ≥3 avg VP is *demonstrated achievable* on this horizon — by a different
   algorithm than the one currently implemented in Rust. Decision needed: keep pushing pg, port the
   evolution approach, or hybrid.
+
+## Pivot: fixing the pg plateau (2026-08-16)
+
+- **Operator direction:** the target stays a *fully learned, gradient-search* policy (the evolution
+  archive results are only proof that ≥3 avg VP is reachable on this horizon by some policy class;
+  they evolved hand-crafted heuristic weights, not learned heads). So: find and fix what caps the
+  pg trainer at ~2.0–2.3.
+- **Diagnosis from sustained-run telemetry (u3050..u3900):** `mean_return_std` stays healthy and
+  slowly rises (~1.8→2.0) while per-head weight `movement` decays (~1.6→1.3). Return variance is not
+  dying; the optimizer is taking smaller steps in a region where games still differ but VP does not
+  improve — the signature of a **local optimum / flat basin**, not entropy collapse or reward death.
+  The current policy already plays ≥3-VP games in ~8–20% of games (ceiling probe), so the feature
+  space can express good play; it must be made consistent.
+- **Sustained run stopped at u3900** (checkpointed cleanly; operator redirected priorities). Final
+  state: jolnar accepted @u3550 (~2.1 VP), other five factions at u3100 heads; Rust pg dynamics
+  matched Python's boundary-for-boundary through this point.
+- **Experiment A launched:** `--entropy 0.05` (5× the reference 0.01, new CLI flag added to
+  stage2_training.rs and recorded in checkpoint arguments), from u3900, +400 updates → u4300,
+  `--every 100 --panel-step 32`, real gate. Log `out/exp_entropy05.log`. Success = candidate avg VP
+  clearly exceeds the ~2.1–2.3 plateau (ideally a promotion ≥3). If it fails: next experiments are
+  blank-start stage-2 (tests whether the Stage-1 prior is the blocker) and reward shaping toward
+  high-VP games.

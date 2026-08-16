@@ -733,6 +733,9 @@ fn main() -> Result<(), String> {
     // The reference plan ships the Stage-1 step size; an experiment overrides it here and the value
     // is recorded in the checkpoint arguments so a run is reproducible from its own document.
     let learning_rate = decimal("--learning-rate", 0.03);
+    // Same pattern as the learning rate: the reference plan ships the Stage-1 entropy bonus, and
+    // an experiment overrides it here; the value is recorded in the checkpoint arguments.
+    let entropy = decimal("--entropy", 0.01);
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
@@ -751,6 +754,7 @@ fn main() -> Result<(), String> {
         optional_number("--rounds").and_then(|rounds| u32::try_from(rounds).ok());
     let mut plan = FactionPlan::stage_two_reference();
     plan.step.learning_rate = learning_rate;
+    plan.step.entropy = entropy;
     plan.train_seeds = train_seeds;
     if let Some(base) = train_seed_base {
         plan.seed = base;
@@ -810,6 +814,7 @@ fn main() -> Result<(), String> {
         ("accept_vp_margin".to_owned(), accept_vp_margin.to_string()),
         ("accept_sigmas".to_owned(), accept_sigmas.to_string()),
         ("learning_rate".to_owned(), learning_rate.to_string()),
+        ("entropy".to_owned(), entropy.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
         (
             "max_faction_vp_regression".to_owned(),
