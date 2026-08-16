@@ -1545,3 +1545,40 @@ from the shared content-driven `planet_value`; no value-table change.
 
 **Artifacts.** `out/rust_ff_83000001_p1g.json`, `out/p1g_payment_counts.py` (payment-question audit),
 `out/p1g_spec.md`. Oracle repo untouched (read-only env guards; post-check below).
+
+## Phase-1 exit checkpoint (2026-08-16)
+
+Phase 1 of the continuation plan is closed. Row status, all committed on `codex/stage1-parity-fixes`:
+
+| row | commit | scope |
+|---|---|---|
+| P1-a / a2 / a3 / a4 (F3 correction) | `8c628b6` / `54f16f2` / `cd863f9` / `ca5333a`+`9fa7766` | trade/note/pricing decision surfaces |
+| P1-b | `69ffaa9` | payment prompts/labels (scoring features) |
+| P1-c | `4e69348` | ground-commit / ready-planet / free-trade-replenishment surfaces |
+| P1-d | `f019ca4` | reaction option identity + inner card-choice surface |
+| P1-e | `00d7415` | speaker + signal-jamming prompt naming |
+| P1-f | `6958935` | Leadership influence-purchase window + MC trade-good worth |
+| P1-g | `b518340` | payment-loop mechanics (auto-pick/payloads/guard/xxcha faces) + jamming system set; F14 settle-spin regression found, fixed, guarded in-package |
+| P1-h *(conditional)* | — | **checked post-P1-g and skipped per its own gate**: zero tie-break hits in the post-P1-g T6 differential (zero choice mismatches within common prefixes, all six factions); F11 recorded as a documented known difference, Phase-2 backlog |
+
+**Consolidated parity position after P1-g** (T6 seed 83000001 rot 4-round protocol vs the unchanged
+Python artifact `out/py_ff_learn_83000001_p1a2.json`, 1868 decisions): all six factions
+`max_score_gap = 0.000000` and zero choice mismatches within common prefixes; first structural
+mismatch per faction only the recorded F1 class at idx 1/2 (hacan leader component absent from
+Python's action-phase surface; sol `faction|orbital_drop` id naming); Rust payment questions all
+oracle-shaped (91, zero degenerate vs Python's 0-degenerate of 111).
+
+**Carried known differences into Phase 2/3:** F1 leader-component gap (gates full-game alignment —
+the largest remaining structural class), F11 agenda tie-break surface + silence path, F13 the ~17
+per-card eligibility lambdas beyond jamming (anchor: `is_playable` comment in `action_cards.rs`),
+deferred PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED/SPEAKER_CHANGED-family emissions (observability,
+T6b-verified no bound window), and per-seat sampling-RNG stream divergence between engines
+(expected; choice-only flips at identical scores).
+
+**Oracle integrity post-check:** `D:/Projects/ti4-engine` HEAD still
+`37061c511a4780d4c0719e0342533a498cd4b457`, tracked tree clean; one untracked file
+(`docs/POLICY_GRADIENT_HANDOVER.md`) predates this session (mtime Aug 13, porting handover written
+by an earlier agent) — not created by Phase-1 work.
+
+**Next:** item 3 of the operator path — C1 dry pilot (+50 updates from the Python stage-1 champion,
+sigma gate disabled); then T4-equivalent launch readiness (C2/C3).
