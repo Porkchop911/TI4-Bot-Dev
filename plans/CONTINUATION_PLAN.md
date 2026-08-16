@@ -26,6 +26,35 @@ settings (paired gains +0.125 → +0.391 across halves; 17/42 boundaries past th
 rejections clearance-veto driven with rotating factions), and T6 proved the earlier cross-engine
 divergence was surface labels plus harness table artifacts — now being closed by Phase 1.
 
+## Path to a startable training run (operator directive, 2026-08-15)
+
+The operator's terminal goal for the current push: **keep working package-by-package until Rust is
+verified able to start a Stage-2 training run** from the shared Python stage-1 champion,
+continuing automatically after each task. Concretely, "startable" means all of:
+
+0. **P1-g** lands (last default Phase-1 package: payment mechanics F5/F6/F7 + xxcha alternate
+   payment faces F2 + jamming option set F12) — **DONE**; the P1-g T6 trace also surfaced and fixed
+   an intra-package regression (F14: `settle()` fall-through on `Stage::Done` → infinite spin;
+   guarded by a new test, post-fix trace byte-identical to recorded evidence).
+1. **P1-h conditional check** — **DONE: skipped per its own gate.** Post-P1-g T6 shows zero
+   tie-break hits (zero choice mismatches within common prefixes in all six factions; rust-vs-rust
+   p1f→p1g pre-fork also zero), so F11 is recorded as a documented known difference and stays in the
+   Phase-2 backlog.
+2. **Phase-1 exit checkpoint**: consolidated evidence + handover + compaction.
+3. **C1 dry pilot** (Phase 3 item 1): the Python champion
+   `D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json` loads in current Rust and a short
+   +50-update smoke run completes with no behavioral break from the alignment work.
+
+When 0–3 hold, a full T4-equivalent run (C2/C3: `stage2_training`, same seed stream base 74_000_000
+stride 10_000, `--every 50 --accept-sigmas 0`, n=32, `--panel-step 32`) is **ready to launch**.
+Launching the full run itself stops at decision point #3 below (C2 pre-registered thresholds need
+operator approval); Phase 2 F1 is *recommended before C2* for clean prefixes but does **not** block
+startability — it blocks prefix cleanliness, and T6 will say whether it's needed first.
+
+Execution mode per directive: after each completed task move immediately to the next without pausing;
+report compactly at package boundaries; compaction checkpoints use the standard handover so any fresh
+session resumes from this file + `plans/EXECUTION_STATE.md`.
+
 ## Where we stand (verified against repository state)
 
 | item | status | anchor |
@@ -65,14 +94,14 @@ wins are visible.
 | **P1-e** — done | Speaker choice + seat-id prompts → faction names: `"who becomes speaker"` with id/label = faction (`"{faction} becomes speaker"`) vs Rust seat ids under `"choose the new speaker"`; signal-jamming victim prompt `"…whose token goes into {system}"` + labels `"{faction}'s command token"` | `strategy_cards.rs`, `action_cards.rs` | implemented as spec'd; answers map back to seats via first-match-in-order lookup scoped to the presented candidates. T6 all six factions max_score_gap=0, zero new classes; 4/4 speaker decisions now oracle-format (count matches Python); only remaining seat-id surface is P1-c's `grant free Trade replenishment`. Rust-vs-rust p1d→p1e: first fork for l1z1x is the rename itself (speaker genuinely flipped hacan→jolnar) — expected feature-space movement per P1-b precedent. New findings **F10** (Rust never emits SPEAKER_CHANGED; Python does in 3 places), **F11** (agenda tie-break surface diverges: prompt/kind/ids + missing silence path), **F12** (jamming system option set: no adjacency/home-exclusion/galaxy dependency) |
 | **P1-c** — done | Ground-commit + ready/retreat surface: `"commit ground forces in {sys}"` with ids `commit\|n\|planet` + `done_committing`; `"ready a planet"` wording; free-trade replenishment prompt/options (`"let another player replenish commodities"`, done/factions) vs Rust `land\|…`/decline and seat options | `invasion.rs`, `strategy_cards.rs`, replenishment sites, `bot.rs`/`learned.rs` (mechanical kind rename) | implemented as spec'd; 27.1 Mecatol filter included per oracle. T6 all six factions max_score_gap=0; surface-level diff: every same-event commit pair matches option sets **and** labels (hacan 18/18 etc.); zero legacy-form rows in the Rust trace; ready/replenish residuals are post-break game-state cascade only, not identity. Rust-vs-rust p1e→p1c: per-faction decision totals identical (no window-shape change); every faction's first fork is the rename itself — intended feature-space movement, no forks before it |
 | **P1-f** — done (spec `out/p1f_spec.md`, split f1–f4) | Leadership influence-purchase window shape/identity (oracle immediate clockwise follower window, affordability-gated, `[no/yes]` kind-`strategy` question; phantom `"{card} secondary"` decline/follow retired), buy-loop oracle identity incl. actor-during-primary + ask-based payment via the aligned `pay_seeing` surface, and MC trade-good worth 2 (pulled from P1-g: F4). Em-dash item verified absent in all prompt strings on both engines (VNA) | `strategy.rs`, `strategy_cards.rs`, `production.rs`, `game.rs`, `ti4-sim/run.rs` | T6 seed 83000001 vs unchanged Python artifact: all six factions max_score_gap=0.000000 / zero choice mismatches on common prefixes; first structural mismatch only the recorded F1 class; zero phantom prompts, all purchase/payment asks oracle-shaped. ti4-sim batch guard widened 8→32 seeds (causation verified against base worktree; mechanism: per-seat RNG streams shifted once phantom decisions were removed and purchases became asks). Evidence §P1-f |
-| **P1-g** | Payment mechanics (findings F5/F6/F7 from P1-b scoping/tests — F4/MC worth completed in P1-f): single-option auto-pick in Python vs always-ask in Rust; xxcha cross-source `exhaust\|{planet}\|{source}` options + affordability guard + PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions (F2); F7 zero-worth planets offered as payment options (Python filters `worth > 0`); **F12** jamming system option set — add Python's adjacency expansion, home-system exclusion, and galaxy dependency (`_jamming_systems`, action_cards.py:1023–1037) | `production.rs` both sites; `action_cards.rs` (jamming) | behavioral (option set, values, window shape) — needs its own failing tests and rust-vs-rust trace diff; do after P1-f so text-only deltas stay clean first |
-| **P1-h** *(conditional)* | Agenda tie-break surface + silence path (**F11**): Python prompts `"speaker breaks the tie"` with kind `tiebreak`, faction-name ids, and `candidates = tied if tied else choices` at every effect site (agenda.py:426); Rust diverges in prompt/kind/ids per site and lacks the silence branch | `agenda_effects.rs` + effect sites located at spec time | **Execute only if T6 shows tie-break hits after P1-g lands** (zero hits so far); otherwise record as a documented known difference. Mixes surface text with option-set behavior → audit each Rust site against the shared oracle function first, same review posture as P1-f |
+| **P1-g** — done (spec `out/p1g_spec.md`, split f5/f6/f7/f12/f-payload) | Payment-loop mechanics + Signal Jamming option set, per spec: oracle `pay()` auto-pick of a lone option at both Rust sites (`production.rs` free function + `ProductionWindow::Stage::Paying` settle arm); xxcha *Archon's Gift* alternate faces with the affordability guard applied to **all** faces; zero-worth face exclusion; Site B trade-good worth via `trade_good_worth` (F4 completion); payload keys aligned (`payment_kind`→`kind`, new `source`); `available()` max-face parity; **F12** jamming set/eligibility per `_jamming_systems` (pub `jamming_systems`: effective galaxy, ships only, adjacency reach, home exclusion, sorted) | `production.rs` both sites + shared helpers; `action_cards.rs` (+ `game.rs` driver passes the galaxy); `ti4-policy/bot.rs` payload reader/fixtures | T6 seed 83000001 rot 0 vs unchanged Python artifact: all six factions **max_score_gap=0.000000, zero choice mismatches** on common prefixes; first structural mismatch per faction only the recorded F1 class (idx 1/2). Rust payment questions 91 with **zero degenerate (<2 options)** — P1-f had 106 with 15 degenerate, Python has 111 with 0. rust-vs-rust p1f→p1g: every first break is an intended delta (auto-pick disappearance ×4, guard filtering a stranding face, xxcha alternate faces); pre-fork score movement is exactly the f-payload token rename (bucket-verified), nothing else moves. Emissions remain deferred (T6b-verified no bound window). Evidence §P1-g |
+| **P1-h** *(conditional — checked post-P1-g: skipped)* | Agenda tie-break surface + silence path (**F11**) | `agenda_effects.rs` + effect sites | Conditional check run against the P1-g T6 differential: **zero choice mismatches within common prefixes in all six factions (and zero in rust-vs-rust p1f→p1g)** — no tie-break hits observed, so per the row's own gate this is recorded as a documented known difference and not executed. F11 stays in the Phase-2 backlog; revisit if any later differential shows equal-score choice divergence | | Agenda tie-break surface + silence path (**F11**): Python prompts `"speaker breaks the tie"` with kind `tiebreak`, faction-name ids, and `candidates = tied if tied else choices` at every effect site (agenda.py:426); Rust diverges in prompt/kind/ids per site and lacks the silence branch | `agenda_effects.rs` + effect sites located at spec time | **Execute only if T6 shows tie-break hits after P1-g lands** (zero hits so far); otherwise record as a documented known difference. Mixes surface text with option-set behavior → audit each Rust site against the shared oracle function first, same review posture as P1-f |
 
 **Phase-1 exit criterion:** full-workspace gates green; T6 re-run (seed 83000001, rot 0, rounds 4,
 greedy 0.0001, `--full-features`, correct Python table) shows comparable prefixes extended past
 idx=1 for jolnar/l1z1x/letnev/sol; residuals only from F1 (hacan/xxcha leader components) and the
-documented post-fork state cascade; P1-g findings (F4/F5/F6) remain as recorded residuals until that
-package lands. Then a single consolidated evidence section + handover, compact.
+documented post-fork state cascade; the P1-g findings (F5/F6/F7 and the xxcha alternate *payment* faces) landed in that package, leaving only deferred
+PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions as recorded residuals. Then a single consolidated evidence section + handover, compact.
 
 **Findings backlog added by completed packages:** F8 and F9 (both from P1-d — reaction outer `"cards"`
 payload; single-card ask asymmetry) are deferred to a later package after P1-f so window-shape changes

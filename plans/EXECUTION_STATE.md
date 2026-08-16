@@ -1419,58 +1419,77 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
   Phase 1 table; evidence §P1-c (`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, from line ~1244).
 
-## Handover (P1-f complete)
 
-- **Objective:** Phase 1 decision-surface alignment, sub-package P1-f — Leadership
-  influence-purchase window shape/identity + buy-loop oracle identity + ask-based payment + MC
-  trade-good worth, per `engine/strategy.py:80–182`, `engine/production.py` (spec
-  `out/p1f_spec.md`, split f1–f4 recorded pre-implementation).
-- **Active milestone/package:** Phase 1 / P1-f — COMPLETE. Next ready package: **P1-g** (payment
-  mechanics F5/F6/F7 + xxcha alternate payment faces F2 + jamming F12), then conditional P1-h
-  (tie-break, only if T6 shows hits after P1-g). After Phase 1 closes: Phase 2 legality/timing
-  work **requires a frontier review first** per AGENTS.md.
-- **Status:** Window question for Leadership followers is now the oracle influence-purchase
-  question (`spend 3 influence for a command token`, `[no/yes]` kind `strategy`), gated on
-  affordability (unaffordable followers auto-skip as Ineligible, zero decisions); non-`yes` ends
-  the buyer's loop; each accepted token paid through the aligned ask-based `pay_seeing` surface
-  (`exhaust|{planet}` / `trade_good`, kind `pay`), payment failure terminal; actor-during-primary
-  loop pre-existing and now oracle-shaped; MC doubles trade-good worth in `available()`/payment.
-  Em-dash normalization verified absent on both engines (VNA). Phantom `"{card} secondary"`
-  decline/follow for Leadership retired.
-- **Branch/HEAD:** `codex/stage1-parity-fixes` at P1-c commit `4e69348`; this package's changes
-  committed as the focused P1-f commit (this handover included).
-- **Working-tree state:** modified-for-commit: `crates/ti4-engine/src/{strategy,strategy_cards,production,game}.rs`,
-  `crates/ti4-sim/src/run.rs` (batch guard 8→32 seeds), `plans/evidence/STAGE2-STALL-INVESTIGATION.md`
-  (§P1-f appended), `plans/CONTINUATION_PLAN.md` (P1-f done; F4 moved out of P1-g row). Untracked
-  out/: p1f spec + trace artifacts. Oracle repo untouched.
-- **Tests last run and exact results:** fmt clean; clippy `-p ti4-engine --all-targets` zero
-  warnings; workspace green — ti4-content 126, ti4-engine **787 lib + 5 doctests** (+5 new),
-  ti4-legacy 25, ti4-model 72, ti4-policy 102, ti4-sim 27 (incl. widened batch test — base commit
-  verified passing the old 8-seed form in a temp worktree; widening causation + mechanism recorded
-  in evidence), ti4-training 98.
-- **Compatibility evidence:** T6 seed 83000001 rot 0 vs unchanged Python artifact (1868): rust
-  `out/rust_ff_83000001_p1f.json` = 1087 decisions (phantom window decisions removed); all six
-  factions max_score_gap=0.000000 and zero choice mismatches within common prefixes; first
-  structural mismatch per faction only the recorded F1 class; zero phantom prompts, 40/48 purchase
-  asks oracle-shaped (count gap = post-break cascade), all payment asks oracle-shaped, zero
-  decline/follow in any strategy-card secondary. Window shape verified against `strategy.py
-  resolve()` (immediate clockwise follower window, actor excluded).
-- **Decisions made:** (1) relabel-in-place: the per-follower window question becomes the oracle
-  influence question instead of special-casing Leadership outside the window architecture — keeps
-  bookkeeping/resolutions/Ineligible semantics. (2) non-`yes` ends the buyer's whole loop,
-  mirroring Python `return`. (3) secondary arm uses an assumed-first-yes variant because the
-  window already asked question one. (4) payment reuses the existing aligned ask surface rather
-  than extending deterministic `payment::plans`. (5) MC worth pulled from P1-g into P1-f (f4) so
-  all of Leadership's payment path is verified in one package; P1-g row updated. (6) ti4-sim batch
-  guard widened to 32 seeds with causation evidence — recorded, not silent.
-- **Open review findings or blockers:** none for P1-f. No frontier review required: surface text +
-  eligibility gate only, no legality/timing/hidden-information change; red-first-style tests + T6 +
-  spot checks in evidence §P1-f. Carried: F1 (leader-component gap) gates full-game alignment —
-  Phase 2; F2 xxcha faces stay P1-g; single-card/single-candidate ask asymmetries stay P1-g/P1-h.
-- **Next exact action/command:** P1-g spec from the recorded row (single-option auto-pick vs
-  always-ask; xxcha `exhaust|{planet}|{source}` alternate faces + affordability guard + emissions;
-  F7 zero-worth planet filtering; F12 jamming option set per `_jamming_systems`) — investigate
-  oracle + Rust sites read-only, write `out/p1g_spec.md`, red-first tests, implement, gates, T6
-  re-run vs the same Python artifact.
-- **Files to read first after compaction:** this file (handover section);
-  `plans/CONTINUATION_PLAN.md` Phase 1 table; evidence §P1-f (`plans/evidence/STAGE2-STALL-INVESTIGATION.md`, last section).
+## Handover (P1-g complete)
+
+- **Objective:** Phase 1 decision-surface alignment, sub-package P1-g — payment-loop mechanics
+  (F5 lone-option auto-pick, F6 oracle payload identity, F7 zero-worth face filtering + the
+  affordability guard), Xxcha *Archon's Gift* alternate payment faces (F2), Signal Jamming option-set
+  parity (F12) per `engine/production.py` and `_jamming_systems`. Spec `out/p1g_spec.md`, split
+  f5/f6/f7/f12/f-payload recorded pre-implementation.
+- **Active milestone/package:** Phase 1 / P1-g — COMPLETE. Conditional P1-h: CHECKED AND SKIPPED per
+  its own gate (post-P1-g T6 shows zero tie-break hits; F11 stays a documented known difference in the
+  Phase-2 backlog). Next ready actions: item 2 of `plans/CONTINUATION_PLAN.md` "Path to a startable
+  training run" — Phase-1 exit checkpoint (consolidated evidence + handover + compaction), then item 3,
+  the C1 dry pilot.
+- **Status:** lone payment options are consumed silently at settle (oracle `pay()` auto-pick) so Rust
+  traces contain zero degenerate payment questions; payment option identity matches oracle
+  (`kind`/`owed`/`source`/`worth`, cross-source `|{source}` id suffix only when the face is genuinely
+  cross-source — planet ids containing '|' or single-segment decode safely); zero-worth faces are never
+  offered and the affordability guard filters any face whose use would strand the bill; Archon's Gift
+  offers its alternate faces with per-face values; `available()` sums max-face per planet. Jamming: pub
+  `jamming_systems` (effective galaxy from the driver, ships-only reach, home exclusion via
+  `is_home_system`, BTreeSet-sorted), eligibility in `is_playable`/`available_actions`, perform gate
+  fizzles on the empty set. PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions remain deferred as a
+  documented known difference (T6b-verified no bound window).
+- **F14 (in-package regression found and fixed):** an early version of P1-g's settle loop had an empty
+  `Stage::Done => {}` arm → infinite spin whenever production ended by decline; it masqueraded as
+  "multi-hour test suites" (one run accumulated ~65 CPU-hours spinning a single instruction). Found by
+  A/B-bisecting the P1-f worktree plus temporary instrumentation, fixed with `Stage::Done => break`,
+  guarded by regression test `a_declined_production_window_settles_without_spinning`. Post-fix T6 trace
+  regenerates **byte-identical** to `out/rust_ff_83000001_p1g.json` (zero behavioral effect on recorded
+  evidence). No pre-existing test drove the decline→settle path, which is why all unit tests were green
+  on the spinning code.
+- **Branch/HEAD:** `codex/stage1-parity-fixes` at P1-f commit `6958935`; this package's changes are
+  committed as the focused P1-g commit (this handover included).
+- **Working-tree state (at commit):** modified: `crates/ti4-engine/src/{production,action_cards,
+  strategy_cards,game}.rs`, `crates/ti4-policy/src/bot.rs` (payload key rename + fixtures),
+  `crates/ti4-sim/src/run.rs` (fmt-only re-wrap carried over from P1-f's committed test),
+  `plans/evidence/STAGE2-STALL-INVESTIGATION.md` (§P1-g: gates final, F14), `plans/CONTINUATION_PLAN.md`
+  (path items 0–1 closed). Untracked out/: p1g spec/handover artifacts. Oracle repo untouched.
+- **Tests last run and exact results:** fmt clean workspace-wide; clippy --all-targets zero warnings on
+  ti4-engine/ti4-sim/ti4-policy; ti4-content 126, ti4-engine **793 lib + 5 doctests** (net +11 over P1-f:
+  T-A lone-option auto-pick, T-B Archon's Gift faces/guard/payloads, T-C zero-worth never offered,
+  T-D window settling a lone option in `Stage::Paying`, jamming set/eligibility/no-galaxy rewrites, F14
+  regression test; two P1-b prompt tests flipped to assert auto-pick per f5), ti4-legacy 25, ti4-model
+  72, ti4-policy 102, **ti4-sim 27/27 (release, wall 0.34 s)**, **ti4-training lib 98/98 (release, wall
+  1.16 s)**.
+- **Compatibility evidence:** T6 seed 83000001 rot 0 (rounds 4, greedy temp 0.0001, `--full-features`,
+  pool save52_e400_n8192) vs unchanged Python artifact `out/py_ff_learn_83000001_p1a2.json` (1868):
+  rust p1g = **1106 decisions**; all six factions **max_score_gap=0.000000, zero choice mismatches** on
+  common prefixes; first structural mismatch per faction only the recorded F1 class at idx 1/2 (hacan
+  leader component absent; sol `faction|orbital_drop` id). Payment questions: Rust p1g **91 with zero
+  degenerate (<2 options)** vs P1-f's 106 with 15 and Python's 111 with 0. rust-vs-rust p1f→p1g: every
+  first break is an intended delta; pre-fork score movement exactly the f-payload token rename
+  (bucket-verified). Trace regenerated post-F14-fix: byte-identical to the recorded artifact.
+- **Decisions made:** (1) lone-option auto-pick happens in settle rather than by filtering the option
+  list — mirrors oracle `pay()` and keeps degenerate questions out of traces entirely. (2) payment id
+  decode keys off the payload's `source` instead of re-splitting the id string, because planet ids may
+  contain '|' or be single-segment. (3) zero-worth faces excluded at offer time AND re-checked by the
+  affordability guard on every face (both match Python). (4) jamming scope limited to the system set +
+  eligibility; the other ~17 per-card eligibility lambdas stay in the F13 backlog. (5) P1-h skipped per
+  its recorded gate condition (zero tie-break hits post-P1-g).
+- **Open review findings or blockers:** none for P1-g proper; F14 was self-discovered, fixed, and
+  regression-tested inside this package. No frontier review required: payment/jamming surface identity
+  only — no legality/timing/hidden-information change. Carried unchanged: F1 (leader-component gap)
+  gates full-game alignment → Phase 2; F11 tie-break stays Phase-2 backlog; F13 card lambdas stay in the
+  Phase-2/Phase-3 backlog with the `is_playable` comment as anchor.
+- **Next exact action/command:** after commit — (a) Phase-1 exit checkpoint note in evidence + compact;
+  (b) C1 dry pilot: `cargo run --release -p ti4-training --example stage2_training -- --checkpoint
+  D:/Projects/ti4-engine/out/stage1_pg_six_to5000_20260810.json --out out/stage2_p1g_dry_u50.json
+  --map-pool D:/Projects/ti4-engine/data/map_pools/save52_e400_n8192.json.gz --updates 50 --every 50
+  --accept-sigmas 0 --train-seed-base 74_000_000 --train-seed-stride 10_000`. Success = champion loads,
+  +50 updates complete, no behavioral break.
+- **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
+  "Path to a startable training run" + Phase 1 table; evidence §P1-g (`plans/evidence/
+  STAGE2-STALL-INVESTIGATION.md`, last sections, incl. F14).

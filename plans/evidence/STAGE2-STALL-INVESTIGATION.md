@@ -1449,3 +1449,99 @@ gated). Observation: planet id `exhaust|0.0.0` appears in **both** pre-P1-f Rust
 `pay 5 more influence` (cost-7 ability payment through `pay_seeing`) is an existing surface; the
 MC edit changes nothing there (no MC owned → worth stays 1). Ready single-candidate auto-pick
 asymmetry and all behavioral payment/jamming items remain P1-g/P1-h.
+
+## P1-g — payment-loop mechanics + Signal Jamming option set (complete)
+
+**Scope (split recorded pre-implementation in `out/p1g_spec.md`):** f5 single-option auto-pick at
+both payment sites; f6 xxcha *Archon's Gift* alternate payment faces + the per-face affordability
+guard applied to **all** faces + Site B trade-good worth via `trade_good_worth` (F4 completion);
+f7 zero-worth face exclusion; f12 Signal Jamming option set/eligibility per `_jamming_systems`;
+f-payload payload-key parity (`payment_kind` → `kind`, new `source`).
+
+**Oracle evidence (read-only, commit 37061c5):** `engine/production.py:201–213`
+`_planet_payment_values` (ordinary face kept iff > 0; xxchabt adds the other kind's value iff
+`alternate > 0 and alternate != ordinary`; one exhaust per bill); `engine/production.py:243–367`
+`pay()` — entry gate via `available()`, MC-multiplied goods capacity, per-planet face loop with the
+guard (`paid + worth + remaining_after < cost → skip`, `remaining_after` = goods + Σ max-face of the
+*other* spendable planets), trade_good appended unguarded iff held > 0, `if not options: return
+False`, **lone option taken without asking**, prompt `pay {cost - paid} more {kind}`, ids
+`exhaust|{planet}` / cross-source `exhaust|{planet}|{source}`, labels with ` using its {source}`
+suffix, payload keys exactly `worth/owed/kind/source` (goods: no `source`); worth read from the
+payload with recompute fallback; emissions PLANET_EXHAUSTED + BREAKTHROUGH_TRIGGERED (deferred as a
+known difference — T6b audit found no reaction window bound to them in either engine).
+`engine/production.py:173–194` `available()` sums the **max face** per spendable planet, not just
+the ordinary one. `engine/action_cards.py:1023–1048` `_jamming_systems`: effective galaxy (None →
+empty), own systems with ships only (galaxy-restricted), reach = mine ∪ adjacent(mine), home
+systems excluded at the end, sorted; eligibility lambda `bool(systems) and len(players) > 1`.
+
+**Implementation.** Shared helpers in `production.rs` (`payment_faces`, `max_face_value`,
+`payment_options`, `apply_payment_option`) used by both sites: Site A `pay_with_observation` (free
+payments, leadership purchase loop, Jol-Nar ability payment) and Site B `ProductionWindow`
+(`Stage::Paying` pending_choice/resolve plus a `settle()` arm that completes a lone option without
+a question after every resolve). `available()` now sums max-face per planet (oracle parity; matters
+for Xxcha holders — previously under-counted). The payment id parser keys off the payload's `source`
+and strips the cross-source suffix only when the face is genuinely cross-source, because planet ids
+may contain '|' or be single-segment. `action_cards.rs`: new pub `jamming_systems(state, content,
+sources, galaxy, player)` (BTreeSet → sorted; home exclusion via `is_home_system`), eligibility in
+`is_playable`/`available_actions`, perform gate fizzles on the empty set; `game.rs` driver passes
+the effective galaxy. `bot.rs`: payload reader key rename + fixtures.
+
+**Gates.** fmt clean workspace-wide (plus a two-line re-wrap in `ti4-sim/src/run.rs` carried over
+from P1-f's committed test, included here to keep the workspace fmt gate green); clippy
+--all-targets zero warnings on ti4-engine/ti4-sim/ti4-policy. Crate tests: ti4-content 126,
+**ti4-engine 793 lib + 5 doctests** (net +11 over P1-f's 787+5: T-A lone-option auto-pick, T-B
+Archon's Gift faces/guard/payloads, T-C zero-worth never offered, T-D window settling a lone option
+in `Stage::Paying`, jamming set/eligibility/no-galaxy rewrites, the **F14 regression test**; the two
+P1-b prompt tests flipped to assert auto-pick per f5), ti4-legacy 25, ti4-model 72, ti4-policy 102.
+Slow crates (release): **ti4-sim 27/27 in 0.34 s**, **ti4-training lib 98/98 in 1.16 s**. The
+earlier multi-hour "slow" suite runs were the F14 spin, not real workload; post-fix wall times are
+seconds.
+
+**F14 (new): P1-g's `settle()` fell through on `Stage::Done` → infinite spin.** The first version of
+the new settle loop had an empty `Stage::Done => {}` arm: declining production ends the window in
+Done, and every subsequent settle call spun forever. This is what made the ti4-sim/ti4-training
+suites appear to "run for hours" (one process accumulated ~65 CPU-hours spinning a single
+instruction). Found by A/B-bisecting against the P1-f worktree (0.02 s/game) plus temporary
+instrumentation; fixed with `Stage::Done => break` and guarded by regression test `a_declined_
+production_window_settles_without_spinning`. No pre-existing test drove the decline→settle path,
+which is why all 792 unit tests were green on the spinning code. Post-fix verification: the T6
+protocol trace regenerates **byte-identical** to `out/rust_ff_83000001_p1g.json` (1106 decisions),
+confirming zero behavioral effect of the fix on recorded evidence.
+
+**Tests updated for parity (behavior asserted against oracle semantics, not old Rust):** `the_payment_
+prompt_names_the_remaining_debt_and_its_kind` now expects one real question (lone final option
+auto-picks); the two P1-f leadership scripts (`strategy_cards`, `game`) drop their per-unit payment
+answers — a goods-only payer never sees a payment question under oracle pay().
+
+**T6 differential (same protocol: checkpoint stage1_pg_six_to5000_20260810.json, seed 83000001, rot
+0, rounds 4, greedy temp 0.0001, `--full-features`, pool save52_e400_n8192).** Rust trace
+`out/rust_ff_83000001_p1g.json` (**1106 decisions**, was 1087 at P1-f; regenerated post-F14-fix,
+byte-identical) vs Python
+`out/py_ff_learn_83000001_p1a2.json` (1868, unchanged artifact):
+- All six factions: **max_score_gap = 0.000000, choice_mismatches_within_common = 0** on the common
+  prefix; `prompt_text_mismatches=1` for jolnar/xxcha is the recorded diff-script artifact (counts
+  the first structurally-divergent decision itself).
+- First structural mismatch per faction remains **only the recorded F1 class** at idx 1/2 (hacan
+  leader component absent; sol `faction|orbital_drop` id; post-break window interleaving for
+  jolnar/xxcha) — no new classes.
+- Payment questions: Rust p1g has **91, degenerate (<2 options): zero** vs P1-f's 106 with **15**
+  degenerate and Python's 111 with 0. The drop is exactly the 15 auto-picked payments; every
+  remaining Rust payment question matches oracle ask shape (≥2 options).
+
+**rust-vs-rust diff p1f → p1g (`out/diff_decisions.py`):** in all six factions the first structural
+mismatch is a **payment decision carrying an intended P1-g delta**: sol idx4 / l1z1x idx2 / letnev
+idx32 / jolnar idx7 — degenerate single-option payment questions that now auto-pick (decision stream
+shifts); hacan idx38 — the affordability guard filters a face (`exhaust|kamdorn`) whose use would
+strand the bill, matching Python's guard exactly; xxcha idx61 — *Archon's Gift* alternate faces now
+appear alongside ordinary ones. Pre-fork: `choice_mismatches_within_common = 0` everywhere; the only
+score movement (jolnar idx6, letnev idx29–31, xxcha idx2 — all payment decisions) is exactly the
+f-payload token rename, verified at bucket level (`payload:payment_kind:*` → `payload:kind:*`, new
+`payload:source:*`; no other buckets differ). No non-payment decision moves pre-fork.
+
+**Known differences / backlog:** PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions remain deferred
+(observability-only, T6b-verified); F13 (≈17 per-card eligibility lambdas beyond jamming) stays in
+the Phase-2/Phase-3 backlog with the `is_playable` comment as its anchor. Xxcha face *values* come
+from the shared content-driven `planet_value`; no value-table change.
+
+**Artifacts.** `out/rust_ff_83000001_p1g.json`, `out/p1g_payment_counts.py` (payment-question audit),
+`out/p1g_spec.md`. Oracle repo untouched (read-only env guards; post-check below).

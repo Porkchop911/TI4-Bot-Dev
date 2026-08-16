@@ -1547,23 +1547,20 @@ mod tests {
         // engine/strategy.py:_leadership_primary = gain three tokens, then the
         // _buy_tokens_with_influence loop: "spend 3 influence for a command token" with
         // ("no","strategy","spend nothing further") and ("yes","strategy","spend 3
-        // influence"); each accepted token is paid through the ordinary payment ask, then one
-        // pool choice follows.
+        // influence"); an accepted token is paid through the ordinary payment loop — which,
+        // with trade goods as the only asset, offers one lone option per step and therefore
+        // never asks (oracle pay() auto-picks) — then one pool choice follows.
         let content = ContentStore::embedded();
         let mut state = game(&["a", "b"]);
         let actor = PlayerId::new("a");
         state.player_mut(&actor).unwrap().trade_goods = 6; // exactly two purchasable tokens
         let before = state.player(&actor).unwrap().clone();
 
-        // A trade good is worth one influence at a time: each token costs three payment asks.
         let (recorder, seen) = SpeakerRecording::new(&[
             "fleet_tokens",
             "strategic_tokens",
             "tactic_tokens",
             "yes",
-            "trade_good",
-            "trade_good",
-            "trade_good",
             "fleet_tokens",
             "no",
         ]);
@@ -1583,13 +1580,16 @@ mod tests {
         let asks = seen.borrow();
         assert_eq!(
             asks.len(),
-            9,
-            "three pool gains, one purchase, then the loop stops on no"
+            6,
+            "three pool gains, a silently paid purchase plus its pool gain, then the loop stops on no"
         );
         for index in [0usize, 1, 2] {
             assert_eq!(asks[index].0, "gain a command token into which pool");
         }
-        for index in [3usize, 8] {
+        // Oracle pay(): with trade goods as the only asset every step is a lone option and no
+        // payment question reaches the table at all.
+        assert!(!asks.iter().any(|(prompt, _)| prompt.starts_with("pay ")));
+        for index in [3usize, 5] {
             assert_eq!(
                 asks[index].0, "spend 3 influence for a command token",
                 "re-asked while still affordable"
@@ -1610,13 +1610,7 @@ mod tests {
                 ]
             );
         }
-        for (index, owed) in [(4usize, 3i64), (5, 2), (6, 1)] {
-            assert_eq!(asks[index].0, format!("pay {owed} more influence"));
-            assert!(asks[index].1.iter().any(|(id, kind, label)| {
-                id == "trade_good" && kind == "pay" && label == "spend a trade good"
-            }));
-        }
-        assert_eq!(asks[7].0, "gain a command token into which pool");
+        assert_eq!(asks[4].0, "gain a command token into which pool");
         let seat = state.player(&actor).unwrap();
         assert_eq!(seat.fleet_tokens, before.fleet_tokens + 2);
         assert_eq!(seat.strategic_tokens, before.strategic_tokens + 1);

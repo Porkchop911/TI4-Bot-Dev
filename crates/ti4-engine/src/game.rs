@@ -699,6 +699,8 @@ impl<'a> Game<'a> {
             .extend(crate::action_cards::available_actions(
                 &self.state,
                 self.content,
+                self.sources,
+                self.galaxy.as_ref(),
                 active,
             ));
         Some(choice)
@@ -2402,9 +2404,9 @@ mod tests {
 
     #[test]
     fn leadership_follower_yes_pays_through_the_payment_loop() {
-        // Oracle `_leadership_secondary`: the window's `yes` is followed by the payment ask
-        // and one pool choice, all recorded for the follower; an unaffordable follower makes
-        // no decision at all.
+        // Oracle `_leadership_secondary`: the window's `yes` is followed by a payment (silent —
+        // lone options auto-pick) and one pool choice, recorded for the follower; an
+        // unaffordable follower makes no decision at all.
         let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
         let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
         let mut game = Game::with_table(
@@ -2422,16 +2424,11 @@ mod tests {
             .player_mut(&PlayerId::new("b"))
             .unwrap()
             .trade_goods = 3;
-        // A trade good covers one influence at a time, so the token costs three payment asks.
+        // A trade good covers one influence at a time; with goods as the only asset every payment
+        // step is a lone option, which oracle pay() takes without asking (P1-g f5).
         game.table.seat(
             PlayerId::new("b"),
-            Box::new(Scripted::new([
-                "yes",
-                "trade_good",
-                "trade_good",
-                "trade_good",
-                "fleet_tokens",
-            ])),
+            Box::new(Scripted::new(["yes", "fleet_tokens"])),
         );
 
         assert!(game.step().resolved_choice); // a's Leadership primary (no purchase: unaffordable)
@@ -2439,18 +2436,15 @@ mod tests {
         assert!(follow.resolved_choice);
 
         let tail = &game.table.log.records[10..];
-        // window yes, three payment asks (one good covers one influence), then the pool.
-        assert_eq!(tail.len(), 5);
+        // window yes, the payment settles silently (lone options auto-pick), then the pool.
+        assert_eq!(tail.len(), 2);
         for record in tail {
             assert_eq!(record.player, PlayerId::new("b"));
         }
         assert_eq!(tail[0].prompt, "spend 3 influence for a command token");
         assert_eq!(tail[0].offered, vec!["no", "yes"]);
         assert_eq!(tail[0].chosen, "yes");
-        assert_eq!(tail[1].prompt, "pay 3 more influence");
-        assert_eq!(tail[2].prompt, "pay 2 more influence");
-        assert_eq!(tail[3].prompt, "pay 1 more influence");
-        assert_eq!(tail[4].prompt, "gain a command token into which pool");
+        assert_eq!(tail[1].prompt, "gain a command token into which pool");
 
         let b = game.state.player(&PlayerId::new("b")).unwrap();
         assert_eq!(b.fleet_tokens, b_before.fleet_tokens + 1);

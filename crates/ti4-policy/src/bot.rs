@@ -574,7 +574,7 @@ impl ScoredBot {
         }
         let kind = match option
             .payload
-            .get("payment_kind")
+            .get("kind")
             .and_then(serde_json::Value::as_str)
         {
             Some("resources") => Spend::Resources,
@@ -1439,11 +1439,11 @@ mod tests {
                 ChoiceOption::new("large", "pay")
                     .with("worth", 5)
                     .with("owed", 5)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
                 ChoiceOption::new("small", "pay")
                     .with("worth", 1)
                     .with("owed", 5)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
             ],
         );
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
@@ -1479,11 +1479,11 @@ mod tests {
                 ChoiceOption::new("large", "pay")
                     .with("worth", 5)
                     .with("owed", 5)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
                 ChoiceOption::new("small", "pay")
                     .with("worth", 1)
                     .with("owed", 5)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
             ],
         );
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
@@ -1517,11 +1517,11 @@ mod tests {
                 ChoiceOption::new("trade_good", "pay")
                     .with("worth", 1)
                     .with("owed", 1)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
                 ChoiceOption::new("overpay", "pay")
                     .with("worth", 20)
                     .with("owed", 1)
-                    .with("payment_kind", "resources"),
+                    .with("kind", "resources"),
             ],
         );
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();

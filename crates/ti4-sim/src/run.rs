@@ -485,7 +485,12 @@ mod tests {
         // that first calibrated this guard. Wider coverage is asserted at a size where every
         // subsystem below still shows up with margin.
         let players = seats(&["a", "b", "c", "d", "e", "f"]);
-        let batch = run(ContentStore::embedded(), &players, 0..32, Horizon::default());
+        let batch = run(
+            ContentStore::embedded(),
+            &players,
+            0..32,
+            Horizon::default(),
+        );
 
         assert_eq!(batch.errors().len(), 0, "no game failed");
         let silent = batch.never_happened(&[

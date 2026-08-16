@@ -3,10 +3,12 @@
 //! Ported from the oracle's `engine/action_cards.py`: `draw`, `_first_of_each`,
 //! `enforce_hand_limit`, `discard` and `unimplemented`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ti4_content::ContentStore;
-use ti4_model::content_types::{ContentType, POK};
+use ti4_content::galaxy::Galaxy;
+use ti4_content::units::UnitType;
+use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::state::GameState;
 
@@ -149,8 +151,25 @@ pub fn is_component_action(content: &ContentStore, alias: &ActionCardId) -> bool
 /// keeps an unimplemented card countable rather than invisible. The alternative hides the gap
 /// behind a card that simply never appears.
 #[must_use]
-pub fn is_playable(state: &GameState, player: &PlayerId, _alias: &ActionCardId) -> bool {
-    !crate::laws::action_cards_forbidden(state, player)
+pub fn is_playable(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    player: &PlayerId,
+    alias: &ActionCardId,
+) -> bool {
+    if crate::laws::action_cards_forbidden(state, player) {
+        return false;
+    }
+    // Oracle parity (engine/action_cards.py): each card's printed text gates itself. Signal
+    // Jamming needs a jammable system and an opponent whose token can be stranded. The other
+    // cards' eligibility lambdas are not modelled yet (F13 backlog).
+    if alias.as_str() == "jamming" {
+        return !jamming_systems(state, content, sources, galaxy, player).is_empty()
+            && state.players.len() > 1;
+    }
+    true
 }
 
 /// Component actions this player could take with the cards in hand (22.1).
@@ -162,6 +181,8 @@ pub fn is_playable(state: &GameState, player: &PlayerId, _alias: &ActionCardId) 
 pub fn available_actions(
     state: &GameState,
     content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
     let Some(seat) = state.player(player) else {
@@ -171,7 +192,7 @@ pub fn available_actions(
         .iter()
         .enumerate()
         .filter(|(_, alias)| is_component_action(content, alias))
-        .filter(|(_, alias)| is_playable(state, player, alias))
+        .filter(|(_, alias)| is_playable(state, content, sources, galaxy, player, alias))
         .map(|(index, alias)| {
             crate::choice::ChoiceOption::labelled(
                 format!("{PLAY_PREFIX}{index}"),
@@ -206,7 +227,15 @@ pub fn perform(
     let Some(alias) = held else {
         return Ok(false);
     };
-    if !is_component_action(context.content, &alias) || !is_playable(context.state, player, &alias)
+    if !is_component_action(context.content, &alias)
+        || !is_playable(
+            context.state,
+            context.content,
+            context.sources,
+            context.galaxy,
+            player,
+            &alias,
+        )
     {
         return Ok(false);
     }
@@ -1127,19 +1156,68 @@ fn tactical_bombardment(context: &mut crate::timing::TimingContext<'_>, player: 
     }
 }
 
+/// The systems Signal Jamming can close off.
+///
+/// Oracle parity (`engine/action_cards.py` `_jamming_systems`, 6): non-home systems within the
+/// effective galaxy that hold one of your ships, or are adjacent to such a system, sorted by id.
+/// A ship on your homeworld still counts for adjacency; the home system itself is never offered
+/// (88.2). No effective galaxy means nothing can be jammed at all.
+#[must_use]
+pub fn jamming_systems(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    player: &PlayerId,
+) -> Vec<String> {
+    let Some(galaxy) = galaxy else {
+        return Vec::new();
+    };
+    // Own systems restricted to the effective galaxy; only ships count (6).
+    let types = ti4_content::units::catalogue(content, sources);
+    let mut mine: BTreeSet<&str> = BTreeSet::new();
+    for (system, board) in &state.board {
+        if galaxy.coord_of(system.as_str()).is_none() {
+            continue;
+        }
+        let has_ship = board.units.iter().any(|unit| {
+            &unit.owner == player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ship)
+        });
+        if has_ship {
+            mine.insert(system.as_str());
+        }
+    }
+    let mut reach: BTreeSet<&str> = mine.clone();
+    for system in &mine {
+        reach.extend(galaxy.adjacent(system));
+    }
+    // Home systems are never jammable, even when they hold the player's ships.
+    reach.retain(|system| !ti4_content::galaxy::is_home_system(content, system, sources));
+    reach.into_iter().map(str::to_owned).collect()
+}
+
 /// Signal Jamming: strand a rival's command token in a system near your ships.
 ///
 /// 20.6: a token placed where that player already has one goes back to their reinforcements
 /// instead — which here is a set that already holds it, so the placement is idempotent and the
 /// system stays closed to them (89.1).
 fn signal_jamming(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let systems: Vec<(String, String)> = context
-        .state
-        .board
-        .iter()
-        .filter(|(_, board)| !board.units_of(player).is_empty())
-        .map(|(system, _)| (system.to_string(), format!("jam {system}")))
-        .collect();
+    // The oracle's option set is the eligibility itself (`_jamming_systems`): ships only, in
+    // the effective galaxy, adjacency expanded, home systems excluded. An empty set means
+    // there is nothing to jam and the card fizzles.
+    let systems: Vec<(String, String)> = jamming_systems(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        player,
+    )
+    .into_iter()
+    .map(|system| (system.clone(), format!("jam {system}")))
+    .collect();
     let Some(where_to) = pick(
         context,
         player,
@@ -1567,7 +1645,7 @@ mod tests {
         state.player_mut(&player).unwrap().action_cards =
             vec![ActionCardId::new("fs1"), card.clone()];
 
-        let offered = available_actions(&state, content, &player);
+        let offered = available_actions(&state, content, POK, None, &player);
 
         assert_eq!(offered.len(), 1, "one of the two is a turn action");
         assert!(
@@ -1587,7 +1665,10 @@ mod tests {
         let mut state = crate::fixtures::game(&["a"]);
         state.player_mut(&player).unwrap().action_cards = vec![card.clone(), card];
 
-        assert_eq!(available_actions(&state, content, &player).len(), 2);
+        assert_eq!(
+            available_actions(&state, content, POK, None, &player).len(),
+            2
+        );
     }
 
     #[test]
@@ -1596,15 +1677,18 @@ mod tests {
         let player = PlayerId::new("a");
         let mut state = crate::fixtures::game(&["a", "b"]);
         state.player_mut(&player).unwrap().action_cards = vec![a_component_action_card()];
-        assert_eq!(available_actions(&state, content, &player).len(), 1);
+        assert_eq!(
+            available_actions(&state, content, POK, None, &player).len(),
+            1
+        );
 
         state.enact_law("censure", "a");
         assert!(
-            available_actions(&state, content, &player).is_empty(),
+            available_actions(&state, content, POK, None, &player).is_empty(),
             "the elected owner cannot play action cards"
         );
         assert_eq!(
-            available_actions(&state, content, &PlayerId::new("b")).len(),
+            available_actions(&state, content, POK, None, &PlayerId::new("b")).len(),
             0,
             "and b has no cards either way"
         );
@@ -1625,7 +1709,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
         let mut resolver = crate::timing::Resolver::default();
-        let option = available_actions(&state, content, &player)
+        let option = available_actions(&state, content, POK, None, &player)
             .into_iter()
             .next()
             .expect("it is offered");
@@ -2186,19 +2270,191 @@ mod tests {
         }
     }
 
+    /// A test-only galaxy from a stable set of system ids, leaked once per process.
+    fn galaxy_of(systems: &[&str]) -> &'static Galaxy {
+        Box::leak(Box::new(
+            Galaxy::build(ContentStore::embedded(), systems, POK, 1)
+                .expect("one ring holds the tiles"),
+        ))
+    }
+
+    /// As `resolve_card`, but with an effective galaxy for cards that need board structure.
+    fn resolve_card_galaxed(
+        state: &mut GameState,
+        alias: &str,
+        player: &PlayerId,
+        answers: &[&str],
+        galaxy: Option<&Galaxy>,
+    ) {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new(
+            answers.iter().map(|a| (*a).to_owned()),
+        )));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy,
+        };
+        effect(&mut context, player);
+    }
+
     #[test]
     fn signal_jamming_closes_a_system_to_a_rival() {
+        let store = ContentStore::embedded();
+        // A non-home planet's system inside an effective galaxy: without a map the oracle offers
+        // no jammable systems at all (engine/action_cards.py `_jamming_systems`).
+        let planet = crate::fixtures::non_home_planets(1)[0].clone();
+        let system_str = ti4_content::galaxy::all_planets(store, POK)
+            .get(planet.as_str())
+            .and_then(ti4_content::Planet::system_id)
+            .expect("a placed planet has a system");
+        let galaxy = galaxy_of(&[system_str]);
+        let system = ti4_model::id::SystemId::new(system_str);
+
         let player = PlayerId::new("a");
         let rival = PlayerId::new("b");
         let mut state = crate::fixtures::game(&["a", "b"]);
-        let (system, _) = crate::fixtures::a_placed_planet();
         crate::fixtures::put(&mut state, &system, "cruiser", &player, 1);
 
-        resolve_card(&mut state, "jamming", &player, &[]);
+        resolve_card_galaxed(&mut state, "jamming", &player, &[], Some(galaxy));
 
         assert!(
             state.system_state(&system).command_tokens.contains(&rival),
             "b cannot activate it again (89.1)"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scenario walks every oracle rule of the jammable set"
+    )]
+    fn signal_jamming_offers_ship_adjacent_reach_minus_homes() {
+        // Oracle `_jamming_systems`: ships only, in the effective galaxy, adjacency expanded,
+        // home systems excluded from the offered set (though they still count for reach).
+        let store = ContentStore::embedded();
+        // The first dozen systems of the corpus are faction homeworlds, so scan past them.
+        let plain = crate::fixtures::plain_systems(60);
+        let mut picked: Vec<&str> = Vec::new();
+        for system in &plain {
+            if !ti4_content::galaxy::is_home_system(store, system, POK) {
+                picked.push(system);
+            }
+            if picked.len() == 2 {
+                break;
+            }
+        }
+        assert_eq!(picked.len(), 2, "two non-home plain systems in the corpus");
+        let (s0, s1) = (picked[0], picked[1]);
+        // s0 is the galaxy centre and s1 its first ring cell: adjacent by construction.
+        let galaxy = galaxy_of(&[s0, s1]);
+        assert!(
+            galaxy.are_adjacent(s0, s1),
+            "spiral placement puts them next to each other"
+        );
+
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        // A ship in s0; the same player's infantry and a rival's cruiser sit in adjacent s1, so
+        // only the ship counts for reach.
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(s0),
+            "fighter",
+            &player,
+            1,
+        );
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(s1),
+            "infantry",
+            &player,
+            1,
+        );
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(s1),
+            "cruiser",
+            &PlayerId::new("b"),
+            1,
+        );
+
+        let mut expected = vec![s0.to_owned(), s1.to_owned()];
+        expected.sort();
+        assert_eq!(
+            jamming_systems(&state, store, POK, Some(galaxy), &player),
+            expected,
+            "reach is ship systems plus their neighbours"
+        );
+
+        // No ship in the effective galaxy, or no map at all: nothing can be jammed.
+        let bare = crate::fixtures::game(&["a", "b"]);
+        assert!(jamming_systems(&bare, store, POK, Some(galaxy), &player).is_empty());
+        assert!(jamming_systems(&state, store, POK, None, &player).is_empty());
+
+        // A ship on a homeworld system still counts for reach, but the home is never offered:
+        // with only that system in the galaxy the jammable set is empty.
+        let home = ti4_content::galaxy::all_planets(store, POK)
+            .values()
+            .find(|p| p.homeworld_of().is_some())
+            .and_then(ti4_content::Planet::system_id)
+            .expect("the corpus has a homeworld");
+        crate::fixtures::put(
+            &mut state,
+            &ti4_model::id::SystemId::new(home),
+            "fighter",
+            &player,
+            1,
+        );
+        assert!(
+            jamming_systems(&state, store, POK, Some(galaxy_of(&[home])), &player).is_empty(),
+            "the home system is never jammable (88.2)"
+        );
+
+        // Eligibility: unplayable without a ship or an opponent, offered with both.
+        let alias = ActionCardId::new("jamming");
+        assert!(!is_playable(
+            &bare,
+            store,
+            POK,
+            Some(galaxy),
+            &player,
+            &alias
+        ));
+        let mut solo = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(
+            &mut solo,
+            &ti4_model::id::SystemId::new(s0),
+            "fighter",
+            &player,
+            1,
+        );
+        assert!(
+            !is_playable(&solo, store, POK, Some(galaxy), &player, &alias),
+            "one player has nobody to jam"
+        );
+        state.player_mut(&player).unwrap().action_cards = vec![alias.clone()];
+        assert!(is_playable(
+            &state,
+            store,
+            POK,
+            Some(galaxy),
+            &player,
+            &alias
+        ));
+        let offered = available_actions(&state, store, POK, Some(galaxy), &player);
+        assert_eq!(
+            offered.len(),
+            1,
+            "the held jamming card is the one turn action"
         );
     }
 
@@ -2273,7 +2529,16 @@ mod tests {
         state.player_mut(&rival).unwrap().faction = ti4_model::id::FactionId::new("hacan");
         state.player_mut(&PlayerId::new("c")).unwrap().faction =
             ti4_model::id::FactionId::new("jolnar");
-        let (system, _) = crate::fixtures::a_placed_planet();
+        // A non-home planet's system inside an effective galaxy: without a map the oracle offers
+        // no jammable systems at all (engine/action_cards.py `_jamming_systems`).
+        let store = ContentStore::embedded();
+        let planet = crate::fixtures::non_home_planets(1)[0].clone();
+        let system_str = ti4_content::galaxy::all_planets(store, POK)
+            .get(planet.as_str())
+            .and_then(ti4_content::Planet::system_id)
+            .expect("a placed planet has a system");
+        let galaxy = galaxy_of(&[system_str]);
+        let system = ti4_model::id::SystemId::new(system_str);
         crate::fixtures::put(&mut state, &system, "cruiser", &player, 1);
 
         // The system pick is a single candidate and auto-picks without an ask; the script
@@ -2291,7 +2556,7 @@ mod tests {
             dice: &mut dice,
             rng: &mut rng,
             event_sequence: &mut sequence,
-            galaxy: None,
+            galaxy: Some(galaxy),
         };
         signal_jamming(&mut context, &player);
 
