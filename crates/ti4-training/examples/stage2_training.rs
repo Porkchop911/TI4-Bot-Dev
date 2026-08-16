@@ -740,6 +740,25 @@ fn main() -> Result<(), String> {
     // the reference reward exactly; nonzero sharpens credit toward high-scoring games (Stage-2
     // plateau experiments).
     let high_vp_bonus = decimal("--high-vp-bonus", 0.0);
+    // Overlap consecutive updates' rollouts with the previous update's gradient apply so the
+    // worker pool stays saturated across batch boundaries (bounded staleness of one update).
+    // Off by default: the sequential reference path is byte-identical to earlier runs.
+    let pipeline = flag("--pipeline");
+    // Roll out this many consecutive updates' games in one shared parallel wave before applying
+    // any of their gradients (bounded staleness of depth-1). One is the sequential reference;
+    // larger values keep the pool saturated across update boundaries when game lengths vary.
+    let rollout_depth = optional_number("--rollout-depth")
+        .and_then(|depth| usize::try_from(depth).ok())
+        .unwrap_or(1);
+    if rollout_depth == 0 {
+        return Err("--rollout-depth must be at least 1".to_owned());
+    }
+    if pipeline && rollout_depth > 1 {
+        return Err(
+            "--pipeline and --rollout-depth are alternative schedulers; use one or the other"
+                .to_owned(),
+        );
+    }
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
@@ -760,6 +779,8 @@ fn main() -> Result<(), String> {
     plan.step.learning_rate = learning_rate;
     plan.step.entropy = entropy;
     plan.high_vp_bonus = high_vp_bonus;
+    plan.pipeline = pipeline;
+    plan.rollout_depth = rollout_depth;
     plan.train_seeds = train_seeds;
     if let Some(base) = train_seed_base {
         plan.seed = base;
@@ -821,6 +842,8 @@ fn main() -> Result<(), String> {
         ("learning_rate".to_owned(), learning_rate.to_string()),
         ("entropy".to_owned(), entropy.to_string()),
         ("high_vp_bonus".to_owned(), high_vp_bonus.to_string()),
+        ("pipeline".to_owned(), pipeline.to_string()),
+        ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
         (
             "max_faction_vp_regression".to_owned(),
@@ -874,6 +897,17 @@ fn main() -> Result<(), String> {
     );
     if high_vp_bonus > 0.0 {
         println!("  reward: +{high_vp_bonus:.2} terminal bonus for finishing with >=3 VP");
+    }
+    if pipeline {
+        println!(
+            "  scheduling: pipelined rollouts (staleness 1, pool kept busy across update boundaries)"
+        );
+    }
+    if rollout_depth > 1 {
+        println!(
+            "  scheduling: rollout waves of {rollout_depth} updates (staleness {}, pool kept busy across update boundaries)",
+            rollout_depth - 1
+        );
     }
     println!("  meta teacher: none (no specified or validated artifact)");
     println!(

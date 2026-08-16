@@ -1639,3 +1639,38 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - **Reachability proof in-protocol:** six-faction evolution run `save52_six_stage2_FINAL.json` reached
   hacan best_vp=4.83@g55, jolnar 3.96, letnev 3.71 (panel means, horizon 4) — ≥3 VP is reachable in the
   six-faction protocol by some policy class; pg must be steered there.
+
+## Scheduling package + speed measurement (2026-08-16)
+
+- **P-A/P-C scheduling implemented and measured** (evidence: `plans/evidence/STAGE2-SCHEDULING-WAVES.md`):
+  - Root cause of spotty CPU: game-length variance leaves each update's fixed 96-game batch with
+    stragglers; learning phase ran at **52% utilization** (16.7/32 cores) in the pure-learning probe.
+  - `--rollout-depth D` (default 1 = reference): D consecutive updates' games roll out in one shared
+    parallel wave before applying gradients (bounded staleness D-1; per-game results and apply order
+    unchanged). **Depth=4: learning 357.3s → 293.0s (+18%), utilization 52% → 63%.** Depth=8 regresses
+    (305.5s) — depth 4 is the recommended speed setting.
+  - `--pipeline` (background-thread overlap, staleness 1): implemented but **measured worse on this
+    machine** (652s vs 503s per 100 updates; memory pressure from ~192 live games). Kept behind its
+    flag for other machines. Mutually exclusive with `--rollout-depth > 1` at the CLI.
+  - New unit tests: wave == sequential per-group play (frozen profiles); empty-group handling.
+    `ti4-training --lib` release **102/102**; clippy/fmt clean.
+- **Hot-path attribution** (temporary instrumentation, removed): feature construction ≈ 5.5× scoring;
+  policy side is ~32% of game time, engine ~68%. Policy micro-opts alone cannot reach 5x wall-time.
+- **Python comparables measured** (same champion u3050, seed base 74M/stride 10k, save52 pool):
+  - Python `workers=32`, train-seeds=16: **1034 s / 100 updates** (`out/py_baseline_u100.*`); u3100 all
+    six promoted (matches Rust C2). Per-game ~1.73 core-s; avg 19/32 cores.
+  - Python natural defaults `workers=1`, train-seeds=8: **2977 s / 25 updates** (`out/py_default_u25.*`);
+    u3075 all six promoted (consistent dynamics). Per-game ~1.74 core-s single worker.
+  - Rust reference depth=1: **503 s / 100 updates**; per-game ~0.62 core-s → **~2.8x per-game engine
+    speedup** vs Python; wall-time ratio vs maxed-out Python currently 2.0-2.8x depending on whole-run
+    average cores (Python sustains ~19, Rust reference ~14.3).
+- **5x arithmetic recorded plainly:** total CPU for the standard workload ≈ 7,000 core-s; on 32 cores
+  the wall-time floor is ~219 s = a ceiling of **~4.7x vs Python@w32 even at perfect utilization**.
+  Reaching 5x against maxed-out Python also needs ~6-8% less total CPU work (boundary/I/O) or slightly
+  faster games. Against Python's shipped default (`workers=1`, train-seeds=8), Rust is **>40x** on
+  identical game counts. Which configuration defines "comparable" is an operator call; both numbers are
+  in the evidence file.
+- **Next:** (1) commit scheduling package; (2) implement P-B clearance-aware reward
+  (`--clearance-weight`, default 0, final-slot penalty per uncleared opening — design in
+  `out/pb_prep_notes.md`); (3) launch the long clearing run from u4300 with entropy 0.05 +
+  high-vp-bonus 0.5 + clearance-weight ~1.0 + `--rollout-depth 4`, real gate, monitored checkpoints.

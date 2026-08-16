@@ -993,6 +993,153 @@ fn play_rotated_map_batch_statistics(
     merge_partials(&partials)
 }
 
+/// Play several seed groups (one per update) in one shared parallel wave, returning one reduced
+/// batch per group in group order.
+///
+/// The wave lets straggler games from one update overlap with faster games from neighbouring
+/// updates instead of idling the pool at each update boundary. Every job is independent and
+/// seeded by its own (group seed, rotation), so per-game results are identical to playing the
+/// groups sequentially; only the wall-clock schedule differs.
+fn play_rotated_map_group_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seed_groups: &[Vec<u64>],
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    reward: &Reward,
+) -> Vec<ReducedBatch<FactionId>> {
+    if factions.is_empty() || seed_groups.iter().all(|seeds| seeds.is_empty()) {
+        return (0..seed_groups.len())
+            .map(|_| ReducedBatch::default())
+            .collect();
+    }
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let shared_profiles: BTreeMap<FactionId, Arc<Profile>> = profiles
+        .iter()
+        .map(|(faction, profile)| (faction.clone(), Arc::new(profile.clone())))
+        .collect();
+    let jobs: Vec<(usize, u64, usize)> = seed_groups
+        .iter()
+        .enumerate()
+        .flat_map(|(group, seeds)| {
+            seeds.iter().flat_map(move |seed| {
+                (0..factions.len()).map(move |rotation| (group, *seed, rotation))
+            })
+        })
+        .collect();
+
+    let partials: Vec<(usize, ReducedBatch<FactionId>)> = jobs
+        .par_iter()
+        .map(|(group, seed, rotation)| {
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| {
+                    (
+                        player.clone(),
+                        factions[(seat + rotation) % factions.len()].clone(),
+                    )
+                })
+                .collect();
+            let seated_profiles = assignments
+                .iter()
+                .filter_map(|(player, faction)| {
+                    shared_profiles
+                        .get(faction)
+                        .cloned()
+                        .map(|profile| (player.clone(), profile))
+                })
+                .collect();
+            let rollout = play_assigned_on_map_shared(
+                content,
+                &players,
+                &assignments,
+                &seated_profiles,
+                sources,
+                *seed,
+                horizon,
+                requirement,
+                map,
+            );
+            let reduced = reduce_rollout(&rollout, &shared_profiles, reward, |seat| {
+                seat.faction.clone()
+            });
+            (*group, reduced)
+        })
+        .collect();
+
+    // `collect` preserves job order, so each group's partials arrive in seed/rotation order.
+    let mut per_group: Vec<Vec<ReducedBatch<FactionId>>> =
+        (0..seed_groups.len()).map(|_| Vec::new()).collect();
+    for (group, partial) in partials {
+        per_group[group].push(partial);
+    }
+    per_group
+        .into_iter()
+        .map(|partials| merge_partials(&partials))
+        .collect()
+}
+
+/// Play and reduce several updates' faction-rotated varied-map batches in one shared wave.
+#[must_use]
+pub fn play_rotated_batch_group_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seed_groups: &[Vec<u64>],
+    horizon: Horizon,
+    requirement: Requirement,
+    reward: &Reward,
+) -> Vec<ReducedBatch<FactionId>> {
+    play_rotated_map_group_statistics(
+        content,
+        factions,
+        profiles,
+        sources,
+        seed_groups,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+        reward,
+    )
+}
+
+/// Play and reduce several updates' faction-rotated Python map-pool batches in one shared wave.
+#[must_use]
+pub fn play_rotated_save54_pool_batch_group_statistics(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seed_groups: &[Vec<u64>],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+    reward: &Reward,
+) -> Vec<ReducedBatch<FactionId>> {
+    play_rotated_map_group_statistics(
+        content,
+        factions,
+        profiles,
+        sources,
+        seed_groups,
+        horizon,
+        requirement,
+        &OpeningMap::PythonPool {
+            pool,
+            tile_seed_offset,
+        },
+        reward,
+    )
+}
+
 /// Play and reduce a faction-rotated varied-map training batch on rollout workers.
 #[must_use]
 pub fn play_rotated_batch_statistics(
@@ -1776,5 +1923,101 @@ mod tests {
                 .collect();
             assert_eq!(seats.len(), 3, "{faction} was not fully rotated");
         }
+    }
+
+    #[test]
+    fn a_group_wave_matches_sequential_groups_with_frozen_profiles() {
+        use crate::reward::Stage;
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "hacan"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let content = ContentStore::embedded();
+        let reward = Reward::for_stage(Stage::Two);
+        let group_a = vec![201u64, 202];
+        let group_b = vec![203u64, 204];
+
+        // One shared wave over both groups...
+        let waved = play_rotated_batch_group_statistics(
+            &content,
+            &factions,
+            &profiles,
+            POK,
+            &[group_a.clone(), group_b.clone()],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+            &reward,
+        );
+        // ...must equal playing each group on its own with the same frozen profiles.
+        let sequential = [
+            play_rotated_batch_statistics(
+                &content,
+                &factions,
+                &profiles,
+                POK,
+                &group_a,
+                Horizon::opening(),
+                DEFAULT_REQUIREMENT,
+                &reward,
+            ),
+            play_rotated_batch_statistics(
+                &content,
+                &factions,
+                &profiles,
+                POK,
+                &group_b,
+                Horizon::opening(),
+                DEFAULT_REQUIREMENT,
+                &reward,
+            ),
+        ];
+
+        assert_eq!(waved.len(), 2);
+        for (index, (wave, own)) in waved.iter().zip(sequential.iter()).enumerate() {
+            assert_eq!(
+                wave, own,
+                "group {index} differs between wave and sequential play"
+            );
+        }
+    }
+
+    #[test]
+    fn a_group_wave_with_empty_groups_returns_empty_batches() {
+        use crate::reward::Stage;
+        let factions: Vec<FactionId> = ["letnev", "jolnar"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let reward = Reward::for_stage(Stage::Two);
+        let waved = play_rotated_batch_group_statistics(
+            &ContentStore::embedded(),
+            &factions,
+            &profiles,
+            POK,
+            &[vec![301u64], vec![]],
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+            &reward,
+        );
+        assert_eq!(waved.len(), 2);
+        assert!(waved[1].statistics.is_empty());
     }
 }

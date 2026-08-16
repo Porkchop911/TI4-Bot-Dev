@@ -45,7 +45,8 @@ fn main() {
     pool.validate_systems(content, plan.sources)
         .unwrap_or_else(|error| panic!("validate {}: {error}", pool_path.display()));
 
-    let bytes = std::fs::read(&checkpoint).unwrap_or_else(|error| panic!("read checkpoint: {error}"));
+    let bytes =
+        std::fs::read(&checkpoint).unwrap_or_else(|error| panic!("read checkpoint: {error}"));
     let document: serde_json::Value =
         serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("parse checkpoint: {error}"));
     // Prefer the accepted (champion) table; fall back to the active learner table.
@@ -65,7 +66,10 @@ fn main() {
             .validate(Some(faction.as_str()))
             .unwrap_or_else(|error| panic!("{faction}: {error}"));
         if !profile.is_explicit() {
-            panic!("{faction}: schema {} is hashed; probe requires explicit profiles", profile.schema);
+            panic!(
+                "{faction}: schema {} is hashed; probe requires explicit profiles",
+                profile.schema
+            );
         }
         profiles.insert(faction.clone(), profile.clone());
     }
@@ -102,9 +106,15 @@ fn main() {
         plan.factions.len(),
         plan.rounds
     );
-    println!("{:<8} {:>5} {:>7} {:>6} {:>6} {:>5} {:>9}", "faction", "n", "mean", "p50", "p90", "max", "games>=3");
+    println!(
+        "{:<8} {:>5} {:>7} {:>6} {:>6} {:>5} {:>9}",
+        "faction", "n", "mean", "p50", "p90", "max", "games>=3"
+    );
     for faction in &plan.factions {
-        let values = by_faction.get(faction.as_str()).cloned().unwrap_or_default();
+        let values = by_faction
+            .get(faction.as_str())
+            .cloned()
+            .unwrap_or_default();
         if values.is_empty() {
             println!("{:<8} {:>5}", faction.as_str(), 0);
             continue;

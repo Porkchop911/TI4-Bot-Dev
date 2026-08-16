@@ -26,7 +26,8 @@ use ti4_policy::learned::{DEFAULT_DIMENSIONS, Profile, blank_explicit_profile};
 use crate::gradient::{Step, Telemetry, apply};
 use crate::reward::{Reward, Stage};
 use crate::rollout::{
-    Horizon, Rollout, play_batch_statistics, play_rotated_batch_statistics,
+    Horizon, ReducedBatch, Rollout, play_batch_statistics, play_rotated_batch_group_statistics,
+    play_rotated_batch_statistics, play_rotated_save54_pool_batch_group_statistics,
     play_rotated_save54_pool_batch_statistics,
 };
 
@@ -185,6 +186,20 @@ pub struct FactionPlan {
     /// Terminal reward bonus for finishing with at least three victory points (Stage-2
     /// experiments only). Zero keeps the reference reward exactly; see `Reward::high_vp_bonus`.
     pub high_vp_bonus: f64,
+    /// Overlap consecutive updates' rollouts on a background thread while the previous update's
+    /// gradients are applied. Each rollout sees the pre-apply weights (bounded staleness of one
+    /// update), which keeps the worker pool saturated across batch boundaries; per-game results
+    /// and apply order are unchanged, so only the sampled weight trajectory differs from the
+    /// sequential reference.
+    pub pipeline: bool,
+    /// Roll out this many consecutive updates' games in one shared parallel wave before applying
+    /// any of their gradients. One (default) is the strict sequential reference; larger values
+    /// let straggler games overlap with faster games from neighbouring updates, which keeps the
+    /// worker pool saturated across update boundaries on machines where game lengths vary.
+    /// Every rollout in a wave sees the pre-wave weights (bounded staleness of `depth - 1`
+    /// updates), so per-game results and apply order are unchanged but the sampled weight
+    /// trajectory differs from the sequential reference.
+    pub rollout_depth: usize,
 }
 
 /// Where a faction-keyed run resumes.
@@ -237,6 +252,8 @@ impl FactionPlan {
             tile_seed_offset: 20_000_000,
             start: None,
             high_vp_bonus: 0.0,
+            pipeline: false,
+            rollout_depth: 1,
         }
     }
 
@@ -268,6 +285,8 @@ impl FactionPlan {
             tile_seed_offset: 20_000_000,
             start: None,
             high_vp_bonus: 0.0,
+            pipeline: false,
+            rollout_depth: 1,
         }
     }
 
@@ -303,6 +322,50 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     let mut reward = Reward::for_stage(plan.stage);
     reward.high_vp_bonus = plan.high_vp_bonus;
     let mut generations = Vec::with_capacity(plan.generations);
+    // One update in flight at a time. In pipeline mode the previous batch's gradients are
+    // applied while the current batch is still rolling out, so the worker pool never drains to
+    // its tail at an update boundary; each rollout then sees pre-apply weights (staleness 1).
+    if plan.rollout_depth > 1 && !plan.pipeline {
+        // Wave path: roll out `rollout_depth` consecutive updates' games in one shared parallel
+        // wave, then apply their gradients in update order. Straggler games overlap with faster
+        // games from neighbouring updates instead of idling the pool at each boundary.
+        let depth = plan.rollout_depth;
+        let mut local = 0usize;
+        while local < plan.generations {
+            let end = (local + depth).min(plan.generations);
+            let groups: Vec<(usize, Vec<u64>)> = (local..end)
+                .map(|offset| {
+                    let index = already + offset;
+                    let first = plan
+                        .seed
+                        .wrapping_add((index as u64).wrapping_mul(plan.train_seed_stride));
+                    (index, (first..first + plan.train_seeds).collect())
+                })
+                .collect();
+            let seed_lists: Vec<Vec<u64>> = groups.iter().map(|(_, seeds)| seeds.clone()).collect();
+            let reduceds = run_batch_group(
+                content,
+                &plan.factions,
+                &profiles,
+                plan.sources,
+                &seed_lists,
+                plan.horizon(),
+                plan.map_pool.as_ref(),
+                plan.tile_seed_offset,
+                &reward,
+            );
+            for ((index, _), reduced) in groups.iter().zip(reduceds.into_iter()) {
+                commit_generation(&mut profiles, &reduced, plan.step, *index, &mut generations);
+            }
+            local = end;
+        }
+        return FactionRun {
+            profiles,
+            generations,
+        };
+    }
+
+    let mut pending: Option<(usize, ReducedBatch<FactionId>)> = None;
     for local in 0..plan.generations {
         let index = already + local;
         let elapsed = u64::try_from(index).unwrap_or(u64::MAX);
@@ -310,54 +373,177 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
             .seed
             .wrapping_add(elapsed.wrapping_mul(plan.train_seed_stride));
         let seeds: Vec<u64> = (first..first + plan.train_seeds).collect();
-        let reduced = plan.map_pool.as_ref().map_or_else(
-            || {
-                play_rotated_batch_statistics(
-                    content,
-                    &plan.factions,
-                    &profiles,
-                    plan.sources,
-                    &seeds,
-                    plan.horizon(),
-                    ti4_engine::opening::DEFAULT_REQUIREMENT,
-                    &reward,
-                )
-            },
-            |pool| {
-                play_rotated_save54_pool_batch_statistics(
-                    content,
-                    &plan.factions,
-                    &profiles,
-                    plan.sources,
-                    &seeds,
-                    plan.horizon(),
-                    ti4_engine::opening::DEFAULT_REQUIREMENT,
-                    Arc::clone(pool),
-                    plan.tile_seed_offset,
-                    &reward,
-                )
-            },
-        );
-        let errors = reduced.errors;
-        let decisions = reduced.decisions();
-        let collected = reduced.statistics;
-        let mut telemetry = BTreeMap::new();
-        for (faction, rows) in &collected {
-            if let Some(profile) = profiles.get_mut(faction) {
-                telemetry.insert(faction.to_string(), apply(profile, rows, plan.step));
-            }
+
+        if !plan.pipeline {
+            // Reference path: play this update's batch, then apply its gradients.
+            let reduced = run_batch(
+                content,
+                &plan.factions,
+                &profiles,
+                plan.sources,
+                &seeds,
+                plan.horizon(),
+                plan.map_pool.as_ref(),
+                plan.tile_seed_offset,
+                &reward,
+            );
+            commit_generation(&mut profiles, &reduced, plan.step, index, &mut generations);
+            continue;
         }
-        generations.push(Generation {
-            index,
-            errors,
-            decisions,
-            telemetry,
+
+        // Pipelined path: launch this update's rollout on a background thread with a snapshot of
+        // the current profiles. The Rayon pool shares work between this batch and the previous
+        // batch still draining, so threads pick up new games instead of idling at the boundary.
+        let snapshot: BTreeMap<FactionId, Profile> = profiles.clone();
+        let factions2 = plan.factions.clone();
+        let sources2 = plan.sources;
+        let horizon2 = plan.horizon();
+        let pool2 = plan.map_pool.clone();
+        let tile2 = plan.tile_seed_offset;
+        let reward2 = reward;
+        let handle = std::thread::spawn(move || {
+            run_batch(
+                content,
+                &factions2,
+                &snapshot,
+                sources2,
+                &seeds,
+                horizon2,
+                pool2.as_ref(),
+                tile2,
+                &reward2,
+            )
         });
+
+        // Apply the previous update's gradients while this rollout runs.
+        if let Some((prev_index, prev_reduced)) = pending.take() {
+            commit_generation(
+                &mut profiles,
+                &prev_reduced,
+                plan.step,
+                prev_index,
+                &mut generations,
+            );
+        }
+
+        let reduced = handle.join().expect("rollout thread panicked");
+        pending = Some((index, reduced));
+    }
+    if plan.pipeline {
+        if let Some((prev_index, prev_reduced)) = pending.take() {
+            commit_generation(
+                &mut profiles,
+                &prev_reduced,
+                plan.step,
+                prev_index,
+                &mut generations,
+            );
+        }
     }
     FactionRun {
         profiles,
         generations,
     }
+}
+
+/// Play one update's rotated batch, with or without a Python-compatible map pool.
+fn run_batch(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    map_pool: Option<&Arc<ti4_sim::MapPool>>,
+    tile_seed_offset: u64,
+    reward: &Reward,
+) -> ReducedBatch<FactionId> {
+    match map_pool {
+        None => play_rotated_batch_statistics(
+            content,
+            factions,
+            profiles,
+            sources,
+            seeds,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            reward,
+        ),
+        Some(pool) => play_rotated_save54_pool_batch_statistics(
+            content,
+            factions,
+            profiles,
+            sources,
+            seeds,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            Arc::clone(pool),
+            tile_seed_offset,
+            reward,
+        ),
+    }
+}
+
+/// Play several updates' rotated batches in one shared wave (Python map pool only).
+fn run_batch_group(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seed_groups: &[Vec<u64>],
+    horizon: Horizon,
+    map_pool: Option<&Arc<ti4_sim::MapPool>>,
+    tile_seed_offset: u64,
+    reward: &Reward,
+) -> Vec<ReducedBatch<FactionId>> {
+    match map_pool {
+        None => play_rotated_batch_group_statistics(
+            content,
+            factions,
+            profiles,
+            sources,
+            seed_groups,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            reward,
+        ),
+        Some(pool) => play_rotated_save54_pool_batch_group_statistics(
+            content,
+            factions,
+            profiles,
+            sources,
+            seed_groups,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            Arc::clone(pool),
+            tile_seed_offset,
+            reward,
+        ),
+    }
+}
+
+/// Apply one completed batch's statistics to the live profiles and record its generation.
+fn commit_generation(
+    profiles: &mut BTreeMap<FactionId, Profile>,
+    reduced: &ReducedBatch<FactionId>,
+    step: Step,
+    index: usize,
+    generations: &mut Vec<Generation>,
+) {
+    let errors = reduced.errors;
+    let decisions = reduced.decisions();
+    let mut telemetry = BTreeMap::new();
+    for (faction, rows) in &reduced.statistics {
+        if let Some(profile) = profiles.get_mut(faction) {
+            telemetry.insert(faction.to_string(), apply(profile, rows, step));
+        }
+    }
+    generations.push(Generation {
+        index,
+        errors,
+        decisions,
+        telemetry,
+    });
 }
 
 /// Evaluate a faction table on held-out varied maps, with every faction in every seat.
@@ -828,5 +1014,40 @@ mod tests {
                 > 0.0,
             "and no weight moved"
         );
+    }
+
+    #[test]
+    fn pipelined_training_keeps_generation_order_and_is_deterministic() {
+        // Two updates, one seed (six short Stage-1 games per update): enough to exercise the
+        // snapshot/apply overlap without a long game load.
+        let content = ContentStore::embedded();
+        let mut plan = FactionPlan::python_reference();
+        plan.generations = 2;
+        plan.train_seeds = 1;
+        plan.pipeline = true;
+
+        let first = train_factions(content, &plan);
+        let second = train_factions(content, &plan);
+
+        assert_eq!(first.generations.len(), 2);
+        assert_eq!(second.generations.len(), 2);
+        for (i, generation) in first.generations.iter().enumerate() {
+            assert_eq!(generation.index, i, "generation order must stay sequential");
+            assert_eq!(generation.telemetry.len(), plan.factions.len());
+            for faction in &plan.factions {
+                let heads = generation
+                    .telemetry
+                    .get(faction.as_str())
+                    .unwrap_or_else(|| panic!("faction {faction} was not credited"));
+                let actions: usize = heads.values().map(|row| row.actions).sum();
+                assert!(actions > 0, "faction {faction} saw no decisions");
+            }
+        }
+
+        // Same seed stream and same staleness schedule => identical weight trajectory.
+        for (faction, profile) in &first.profiles {
+            let other = &second.profiles[faction];
+            assert_eq!(profile, other, "pipeline run diverged from itself");
+        }
     }
 }
