@@ -182,6 +182,9 @@ pub struct FactionPlan {
     pub rounds: u32,
     /// Optional continuation state.
     pub start: Option<FactionStart>,
+    /// Terminal reward bonus for finishing with at least three victory points (Stage-2
+    /// experiments only). Zero keeps the reference reward exactly; see `Reward::high_vp_bonus`.
+    pub high_vp_bonus: f64,
 }
 
 /// Where a faction-keyed run resumes.
@@ -233,6 +236,7 @@ impl FactionPlan {
             map_pool: None,
             tile_seed_offset: 20_000_000,
             start: None,
+            high_vp_bonus: 0.0,
         }
     }
 
@@ -263,6 +267,7 @@ impl FactionPlan {
             map_pool: None,
             tile_seed_offset: 20_000_000,
             start: None,
+            high_vp_bonus: 0.0,
         }
     }
 
@@ -295,7 +300,8 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
         || (blank(), 0),
         |start| (start.profiles.clone(), start.generation),
     );
-    let reward = Reward::for_stage(plan.stage);
+    let mut reward = Reward::for_stage(plan.stage);
+    reward.high_vp_bonus = plan.high_vp_bonus;
     let mut generations = Vec::with_capacity(plan.generations);
     for local in 0..plan.generations {
         let index = already + local;

@@ -162,6 +162,7 @@ fn main() -> Result<(), String> {
         map_pool: None,
         tile_seed_offset: 20_000_000,
         start: None,
+        high_vp_bonus: 0.0,
     };
 
     // Load map pool if provided

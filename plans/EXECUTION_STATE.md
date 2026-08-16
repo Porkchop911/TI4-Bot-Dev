@@ -1592,3 +1592,23 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   clearly exceeds the ~2.1–2.3 plateau (ideally a promotion ≥3). If it fails: next experiments are
   blank-start stage-2 (tests whether the Stage-1 prior is the blocker) and reward shaping toward
   high-VP games.
+- **Experiment A (entropy 0.05 only) — VERDICT: no sustained break.** u3900→u4300, four boundaries,
+  all rejected; candidate VP per boundary (sol/letnev/xxcha/hacan/jolnar/l1z1x):
+  - u4000: 2.17 / 2.20 / 2.15 / 2.02 / **2.38** / 2.23
+  - u4100: 1.92 / 2.15 / 2.14 / 2.04 / 2.27 / 2.03
+  - u4200: 1.99 / 2.12 / 2.08 / 1.91 / 2.05 / 1.93
+  - u4300: 1.92 / 2.08 / 2.00 / 1.85 / 2.10 / 1.81
+  The u4000 spike regressed; no upward trend (slight downward drift). Exploration without
+  directional pressure does not escape the basin — it wanders in it. Rejections were clearance
+  vetoes (jolnar/sol), consistent with VP-for-clearance trades under flatter policies.
+- **Implemented `--high-vp-bonus`** (default 0 = reference behavior preserved): terminal reward
+  bonus paid when a seat finishes with ≥3 VP, credited at the final slot so every decision's return
+  carries it exactly; field on `Reward` + `FactionPlan`, CLI flag recorded in checkpoint arguments,
+  focused unit test (`the_high_vp_bonus_pays_only_when_the_seat_finishes_at_or_above_three`).
+  Rationale: the reference reward pays per-VP via potential differences, so crossing 2→3 is one
+  more unit of weight spread over ~7M decisions — weak credit for exactly the threshold that
+  matters. Full `ti4-training --lib` release suite running before commit.
+- **Experiment B (queued):** entropy 0.05 + high-vp-bonus 0.5, same u3900 start, +400 updates →
+  u4300, `--every 100 --panel-step 32`, real gate — directly comparable to A. Success = sustained
+  candidate VP above ~2.3 with an upward trend (ideally a promotion ≥3). If B also fails: next is
+  blank-start stage-2 (tests whether the Stage-1 prior itself is the blocker) and/or bonus 1.0.

@@ -111,6 +111,14 @@ pub struct Reward {
     pub r1_shaping: f64,
     /// Trade goods obtained through a transaction. Off by default: goods are not points.
     pub trade_bonus: f64,
+    /// Terminal bonus paid when the seat finishes with at least three victory points.
+    ///
+    /// Off by default (reference behavior). An experiment turns it on to sharpen credit toward
+    /// high-scoring games: added to the final reward slot, so every decision's return — a suffix
+    /// sum — carries exactly this much more in games that cross the bar, no matter which decisions
+    /// produced them. The bar is three points because that is the sustained-play target it exists
+    /// to push toward; see the Stage-2 plateau work.
+    pub high_vp_bonus: f64,
 }
 
 const fn default_requirement() -> Requirement {
@@ -141,6 +149,7 @@ impl Default for Reward {
             r1_bonus: 3.0,
             r1_shaping: 0.1,
             trade_bonus: 0.0,
+            high_vp_bonus: 0.0,
         }
     }
 }
@@ -301,6 +310,14 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
             if let Some(last) = rewards.last_mut() {
                 *last += reward.trade_bonus * episode.traded_goods;
             }
+            // The high-VP terminal bonus, credited at the final slot so every decision's return
+            // (a suffix sum) carries it. Only games that finish at or above the bar pay it.
+            if reward.high_vp_bonus > 0.0 {
+                if let Some(last) = rewards.last_mut() {
+                    *last += f64::from(u8::from(episode.final_progress.victory_points >= 3))
+                        * reward.high_vp_bonus;
+                }
+            }
         }
     }
 
@@ -387,6 +404,46 @@ mod tests {
         // The bonus lands on the last step and telescopes back through every earlier return.
         assert!((with[0] - without[0] - reward.clear_bonus).abs() < 1e-9);
         assert!((with[1] - without[1] - reward.clear_bonus).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_high_vp_bonus_pays_only_when_the_seat_finishes_at_or_above_three() {
+        // The Stage-2 plateau experiment: games that cross the bar are worth exactly this much
+        // more, and every decision's return carries it (suffix sums). Below the bar nothing moves.
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.high_vp_bonus = 0.5;
+        let reference = Reward::for_stage(Stage::Two); // bonus stays off
+
+        let crossed = Episode {
+            steps: vec![opening(0, 1, 0, 1), opening(2, 2, 1, 1)],
+            final_progress: Progress {
+                victory_points: 3,
+                ..opening(3, 3, 1, 1)
+            },
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+        };
+        let below = Episode {
+            final_progress: Progress {
+                victory_points: 2,
+                ..opening(3, 3, 1, 1)
+            },
+            ..crossed.clone()
+        };
+
+        for (name, episode) in [("crossed", &crossed), ("below", &below)] {
+            let with = returns(episode, &reward);
+            let without = returns(episode, &reference);
+            assert_eq!(with.len(), without.len());
+            for (index, (got, base)) in with.iter().zip(without.iter()).enumerate() {
+                let expected_delta = if name == "crossed" { 0.5 } else { 0.0 };
+                assert!(
+                    (got - base - expected_delta).abs() < 1e-9,
+                    "{name} step {index}: {got} against {base}"
+                );
+            }
+        }
     }
 
     #[test]

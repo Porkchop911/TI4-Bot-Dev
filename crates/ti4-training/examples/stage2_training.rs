@@ -736,6 +736,10 @@ fn main() -> Result<(), String> {
     // Same pattern as the learning rate: the reference plan ships the Stage-1 entropy bonus, and
     // an experiment overrides it here; the value is recorded in the checkpoint arguments.
     let entropy = decimal("--entropy", 0.01);
+    // Terminal reward bonus for games that finish with at least three victory points. Zero keeps
+    // the reference reward exactly; nonzero sharpens credit toward high-scoring games (Stage-2
+    // plateau experiments).
+    let high_vp_bonus = decimal("--high-vp-bonus", 0.0);
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
@@ -755,6 +759,7 @@ fn main() -> Result<(), String> {
     let mut plan = FactionPlan::stage_two_reference();
     plan.step.learning_rate = learning_rate;
     plan.step.entropy = entropy;
+    plan.high_vp_bonus = high_vp_bonus;
     plan.train_seeds = train_seeds;
     if let Some(base) = train_seed_base {
         plan.seed = base;
@@ -815,6 +820,7 @@ fn main() -> Result<(), String> {
         ("accept_sigmas".to_owned(), accept_sigmas.to_string()),
         ("learning_rate".to_owned(), learning_rate.to_string()),
         ("entropy".to_owned(), entropy.to_string()),
+        ("high_vp_bonus".to_owned(), high_vp_bonus.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
         (
             "max_faction_vp_regression".to_owned(),
@@ -866,6 +872,9 @@ fn main() -> Result<(), String> {
         "  step: learning rate {learning_rate:.4} (entropy {}, clip {})",
         plan.step.entropy, plan.step.gradient_clip
     );
+    if high_vp_bonus > 0.0 {
+        println!("  reward: +{high_vp_bonus:.2} terminal bonus for finishing with >=3 VP");
+    }
     println!("  meta teacher: none (no specified or validated artifact)");
     println!(
         "  promotion: {validation_seeds} validation + {confirmation_seeds} confirmation seeds; aggregate VP margin {accept_vp_margin:.2}; paired evidence {accept_sigmas:.1}σ; per-faction veto VP {max_faction_vp_regression:.2}, clearance {max_faction_clearance_regression:.2}"
