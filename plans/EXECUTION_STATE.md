@@ -1612,3 +1612,30 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   u4300, `--every 100 --panel-step 32`, real gate — directly comparable to A. Success = sustained
   candidate VP above ~2.3 with an upward trend (ideally a promotion ≥3). If B also fails: next is
   blank-start stage-2 (tests whether the Stage-1 prior itself is the blocker) and/or bonus 1.0.
+- **Operator mission (2026-08-16):** clear Stage 2 with learned heads; Rust must be ≥5× faster than a
+  comparable Python process on the same workload; no prolonged CPU idle during runs; learning-algorithm
+  experiments explicitly permitted. Standing rules unchanged (4-round horizon, 10-minute test budget for
+  verification runs — long training runs are operator-approved monitored work).
+- **Experiment B (entropy 0.05 + high-vp-bonus 0.5) — VERDICT: no break.** u3900→u4300, four boundaries,
+  all rejected; candidate VP per boundary (sol/letnev/xxcha/hacan/jolnar/l1z1x):
+  - u4000: 2.05 / **2.28** / 2.16 / 2.16 / 2.22 / 2.23
+  - u4100: 1.88 / 2.10 / — / — / — / — (rejected)
+  - u4200: 1.95 / 2.12 / — / — / — / — (rejected; jolnar clearance −0.036 veto)
+  - u4300: 2.02 / 2.09 / — / — / — / — (rejected; xxcha clearance −0.073 veto)
+- **Revised diagnosis (supersedes "plateau/basin"):** the learner is NOT stuck. Checkpoint audit history
+  shows candidates beat the frozen champion by **+1.9 to +2.1 aggregate VP per boundary (~6–7σ paired)**;
+  every rejection is a **per-faction clearance veto (0.03, raw panel means)**: the ≥3-VP bonus pressure makes
+  the learner trade opening safety for mid-game VP (xxcha −0.073 clr for +0.51 VP at u4300). The gate blocks
+  real Pareto moves; isolated fallback cannot save them because gains are interdependent across the table.
+  Champion frozen at u3100/u3550 values while learner oscillates ~2.0–2.3 = equilibrium, not a basin.
+- **Plan (out/stage2_clearance_plan.md):** P-A `--pipeline` staleness=1 training loop (fixes tail-idle,
+  target ≥90% duty); P-B clearance-aware reward (`--clearance-floor/--clearance-weight`, default off) so the
+  learner finds high-VP play inside the gate's 0.03 clearance band; P-C long clearing run with real gate.
+  Gate semantics stay oracle-compatible (no veto changes).
+- **Python comparable baseline RUNNING:** `out/py_baseline_launch.sh` — same champion u3050, seed base 74M
+  stride 10k, 16 seeds × 6 rotations, horizon 4, save52 pool, workers=32, eval-every 50, 100 updates.
+  First boundary u3100: **all six factions promoted** — matches Rust C2's first-boundary decision exactly
+  (parity signal). CPU sampler logging to out/pybase_cpu_samples.txt for duty-cycle measurement.
+- **Reachability proof in-protocol:** six-faction evolution run `save52_six_stage2_FINAL.json` reached
+  hacan best_vp=4.83@g55, jolnar 3.96, letnev 3.71 (panel means, horizon 4) — ≥3 VP is reachable in the
+  six-faction protocol by some policy class; pg must be steered there.
