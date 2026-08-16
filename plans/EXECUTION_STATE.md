@@ -1546,3 +1546,12 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   `out/sustained_u1000.log`, checkpoint written every boundary. Success = some faction's accepted
   panel mean VP reaches ≥3.0 and holds; plateau well below after ~1000 updates = the finding, then
   diagnose (ceiling vs gate vs reward). ETA ~1.5–2 h; compact reports at boundaries.
+- **Standing rule (operator, 2026-08-16):** never train or evaluate with an 8-round horizon unless
+  specifically instructed — it wastes compute. All runs stay on the 4-round horizon.
+- **Operator claim under investigation:** "the python version used to crack 5 vp at the last run
+  before port to rust started." Exhaustive search of `D:/Projects/ti4-engine` (all .log files, all
+  JSON checkpoints incl. subdirectories and audit/learner metrics, telemetry arrays, git history for
+  deleted logs) found **no record of any faction averaging ≥2.5 VP**; the maximum anywhere is
+  jolnar 2.34 at u3350 in `out/stage2_pg_six_c_20260810.log`. Single-game maxima of 5 VP do exist
+  (Rust ceiling probe: jolnar/l1z1x max=5 on current profiles), so the memory may be a single-game
+  result. Awaiting operator pointer to the specific full log if one exists elsewhere.
