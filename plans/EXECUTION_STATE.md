@@ -1522,3 +1522,27 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   ≈ 4 min).
 - **Next exact action:** operator decision on R1–R4 (which, if any, to implement) and whether to
   relaunch a full run after fixes; otherwise resume from this handover. No uncommitted changes.
+
+## Status update: sustained-learning test launched (2026-08-16)
+
+- **Operator task:** determine whether Stage-2 can *sustainably* get at least one faction to a
+  3.0 average VP; fix what blocks it if not. Wall-time improvements approved as prerequisite.
+- **VP ceiling probe** (new example `crates/ti4-training/examples/vp_ceiling_probe.rs`; u3100
+  accepted champion, 192 games/faction): max game VP is only **4–5**; current means 1.35–1.73 with
+  p50 of 1–2 and only ~8–20% of games reaching ≥3 (letnev/jolnar best at ~20%). A *mean* of 3.0
+  therefore requires the median game to be a ≥3-VP game — reachable in principle, but a step change
+  from current play, not an extrapolation. C2 candidates already hit 1.96 (jolnar) after just 50
+  updates, so the early trend is steep; whether it continues toward 3.0 is exactly what this run
+  tests.
+- **Wall-time attempt reverted:** a `rayon::join` parallelization of the three boundary evaluations
+  was implemented and determinism-verified (identical decisions/gains/promotion to C2) but measured
+  **3× slower** on the boundary (174 s vs 55 s): concurrent CPU-bound tasks on a fixed pool only
+  split threads, plus ~576 live game states thrash memory. Reverted; sequential evaluations are
+  back. Real levers remain: fewer evaluations per rejected boundary (isolated-fallback pre-filter —
+  semantic change, needs approval) or faster games (engine-level).
+- **Sustained run launched:** `stage2_training` resuming from C2's checkpoint (learner u3250,
+  accepted = u3100 champion), **+1000 updates → u4250**, `--every 50 --panel-step 32`, real 2.0σ
+  gate, seed stream continues at base 74_000_000 stride 10_000 (next chunk u3250..u3300). Log
+  `out/sustained_u1000.log`, checkpoint written every boundary. Success = some faction's accepted
+  panel mean VP reaches ≥3.0 and holds; plateau well below after ~1000 updates = the finding, then
+  diagnose (ceiling vs gate vs reward). ETA ~1.5–2 h; compact reports at boundaries.
