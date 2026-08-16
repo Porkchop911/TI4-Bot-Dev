@@ -1593,3 +1593,57 @@ signal only, not a learning claim). Checkpoint `out/stage2_p1g_dry_u50.json` wri
 valid (`resumed_from` carries the champion sha256). All path items 0–3 hold: Rust is verified able to
 start a Stage-2 training run. A full T4-equivalent launch (C2/C3) stops at plan decision point #3:
 operator approval of pre-registered thresholds required; Phase 2 work requires a frontier review.
+
+## C2 real-gate run + performance review (2026-08-16)
+
+**C2 run.** Operator-approved launch of the held C2 test: same champion
+(`stage1_pg_six_to5000_20260810.json`, internal u3050), `--updates 500 --every 50 --panel-step 32`
+(fresh disjoint panels per boundary, incumbent re-measured each time), **real gate** (default
+`--accept-sigmas 2.0` + VP margin 0.05 + per-faction veto VP 0.15 / clearance 0.03), Python-parity
+training seed stream base 74_000_000 stride 10_000, 4-round horizon. Log `out/c2_realgate_u500.log`,
+checkpoint `out/stage2_phase1_realgate_u500.json`.
+
+**Result (4 boundaries before stop):** u3100 **+PROMOTED all six factions** ("assembled"; val +2.349
+se .231, conf +1.990 se .201); u3150 rejected (clearance veto xxcha 0.792 vs 0.8385, jolnar 0.620 vs
+0.6823; no isolated survivor); u3200 rejected (sol 0.922 vs 0.9688, xxcha 0.786 vs 0.8177); u3250
+rejected (sol 0.922 vs 0.9635). Every boundary produced a real paired gain (+0.98 to +2.35, i.e.
+5–10× SE) — the pre-alignment zero-signal stall is gone; rejections are principled clearance
+guardrails, not absence of signal. Net: champion improved at u3100 and was held (not regressed)
+through u3250.
+
+**Stop/exit.** Run ended after the u3250 checkpoint with exit code 1 and **no panic or error text in
+the log**; `main` returns `Result<(), String>` which would print `Error: …`, and no crate calls
+`process::exit`. Consistent with an external kill (operator "stop run"); no evidence of an internal
+crash. If it ever exits 1 silently on its own, that is a different bug to chase.
+
+**Performance review (operator complaint: spotty CPU).** Measured, not inferred: 25-update probe
+(`out/cpu_probe2.log`, wall 231 s) with 3-s CPU sampling (`out/cpu_samples.csv`, 76 samples; sampler
+`out/cpu_sampler.ps1`). Utilization as % of all 32 logical cores: **min 3.1, p10 3.1, median 43.1,
+mean 34.8, max 89.8**; 41/76 samples below 50%. Phase structure from checkpoint `elapsed_seconds`:
+
+- Learning phase runs at only ~60% of cores. Per-update structure in `train_factions`
+  (`crates/ti4-training/src/stage1.rs:287`): parallel rollout (16 seeds × 6 rotations = 96 games via
+  Rayon `par_iter`) → **serial** per-faction `apply()` gradient step. The pipeline barrier plus
+  variable game-length tail explains the ~60% duty cycle.
+- Deep valleys to ~3% at phase transitions (bootstrap→learning, learning→boundary, checkpoint write).
+- Cost model: one panel evaluation (192 games) ≈ 10–15 s. Promoted boundary with `--panel-step 32`
+  = incumbent re-measure (2 evals) + candidate val+conf (2 evals). **Rejected boundary ≈ 153–182 s**
+  (u3150/3200/3250: 165.8 / 153.0 / 182.1 s) = incumbent re-measure + candidate val + the **isolated
+  fallback** (~90–150 s: up to six full validation panels, plus confirmation for any that pass).
+  Rejected boundaries cost ~3× promoted ones; in C2, ~45% of total wall time (≈490 s of 1374 s) was
+  spent on rejected-boundary fallbacks that produced no promotion. This is the main reason "no
+  progress" felt slow: most wall time goes into rejections.
+- Learning cost drift within one process: C2 chunks grew 140.8 → 158.4 → 183.0 → 205.3 s per 50
+  updates (+47%) while decisions grew only +9.5% (6.36M → 6.97M) — per-decision cost rose ~+33%.
+  Cause not yet isolated (longer games as play improves vs memory pressure); needs a dedicated probe.
+
+**Recommendations (not implemented; awaiting operator decision):** R1 pipeline the training loop
+(overlap rollout(N+1) with apply(N)) to push learning utilization from ~60% toward 90%+. R2 make the
+isolated fallback cheaper: pre-filter factions using the already-computed candidate validation panel
+before spending full panels, and cap attempts per boundary. R3 log per-evaluation timings (today only
+inferable from checkpoint `elapsed_seconds`). R4 probe the learning cost drift (50-update
+learning-only run ≈ 3 min).
+
+**New standing operator rule:** every test/verification run must complete within a **10-minute
+timeout or it is considered failed/broken**. Long training runs are not "tests" but require explicit
+operator approval and monitored checkpoints. Recorded in `plans/EXECUTION_STATE.md`.

@@ -1498,3 +1498,27 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - **Files to read first after compaction:** this file (handover section); `plans/CONTINUATION_PLAN.md`
   "Path to a startable training run" + Phase 1 table; evidence §P1-g (`plans/evidence/
   STAGE2-STALL-INVESTIGATION.md`, last sections, incl. F14).
+
+## Status update: C2 real-gate run stopped; performance reviewed (2026-08-16)
+
+- **C2** (operator-approved, real 2.0σ gate, `--panel-step 32`, +500 updates from u3050): 4
+  boundaries before stop — u3100 **+PROMOTED all six factions** (val +2.349 / conf +1.990); u3150,
+  u3200, u3250 rejected by per-faction clearance vetoes with no isolated fallback survivor. Every
+  boundary showed a real paired gain (+0.98 to +2.35) — the zero-signal stall is gone; rejections are
+  principled guardrails. Run ended after the u3250 checkpoint, exit code 1 with **no panic/error
+  text** → consistent with external kill (operator "stop run"), no evidence of internal crash.
+- **Performance review (spotty CPU — confirmed and quantified):** probe + 3-s sampler over a
+  25-update run: utilization % of 32 cores min 3.1 / median 43.1 / mean 34.8 / max 89.8; learning
+  phase ~60% (serial `apply()` gradient step between parallel rollout waves, stage1.rs:287); deep
+  valleys at phase transitions; **rejected boundaries cost ~3× promoted ones** (~153–182 s each)
+  because the isolated fallback runs up to six full validation panels — in C2 that was ~45% of wall
+  time producing no promotion. Learning cost drifts +47% per chunk over 200 updates (+9.5% decisions
+  → +33% per-decision) — cause not yet isolated. Full numbers: evidence §"C2 real-gate run +
+  performance review". Recommendations R1–R4 (pipeline the loop, cheaper fallback, per-eval timing
+  logs, drift probe) recorded there; none implemented pending operator decision.
+- **New standing rule (operator):** every test/verification run must finish within a **10-minute
+  timeout or it is considered failed/broken**; long training runs need explicit approval + monitored
+  checkpoints. All subsequent verification work is designed to fit the budget (e.g., 25-update probe
+  ≈ 4 min).
+- **Next exact action:** operator decision on R1–R4 (which, if any, to implement) and whether to
+  relaunch a full run after fixes; otherwise resume from this handover. No uncommitted changes.
