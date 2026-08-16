@@ -1494,14 +1494,14 @@ Archon's Gift faces/guard/payloads, T-C zero-worth never offered, T-D window set
 in `Stage::Paying`, jamming set/eligibility/no-galaxy rewrites, the **F14 regression test**; the two
 P1-b prompt tests flipped to assert auto-pick per f5), ti4-legacy 25, ti4-model 72, ti4-policy 102.
 Slow crates (release): **ti4-sim 27/27 in 0.34 s**, **ti4-training lib 98/98 in 1.16 s**. The
-earlier multi-hour "slow" suite runs were the F14 spin, not real workload; post-fix wall times are
-seconds.
+earlier multi-hour suite runs were F14 non-terminating, not slow; post-fix wall times are seconds.
 
 **F14 (new): P1-g's `settle()` fell through on `Stage::Done` → infinite spin.** The first version of
 the new settle loop had an empty `Stage::Done => {}` arm: declining production ends the window in
-Done, and every subsequent settle call spun forever. This is what made the ti4-sim/ti4-training
-suites appear to "run for hours" (one process accumulated ~65 CPU-hours spinning a single
-instruction). Found by A/B-bisecting against the P1-f worktree (0.02 s/game) plus temporary
+Done, and every subsequent settle call spun forever — an infinite loop: any game containing one
+production decline could never finish. The ti4-sim/ti4-training suite runs were therefore not slow,
+they did not terminate; the multi-hour wall times were real (one process accumulated ~65 CPU-hours
+spinning a single instruction). Found by A/B-bisecting against the P1-f worktree (0.02 s/game) plus temporary
 instrumentation; fixed with `Stage::Done => break` and guarded by regression test `a_declined_
 production_window_settles_without_spinning`. No pre-existing test drove the decline→settle path,
 which is why all 792 unit tests were green on the spinning code. Post-fix verification: the T6

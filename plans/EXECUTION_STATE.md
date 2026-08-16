@@ -1443,8 +1443,9 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   fizzles on the empty set. PLANET_EXHAUSTED/BREAKTHROUGH_TRIGGERED emissions remain deferred as a
   documented known difference (T6b-verified no bound window).
 - **F14 (in-package regression found and fixed):** an early version of P1-g's settle loop had an empty
-  `Stage::Done => {}` arm → infinite spin whenever production ended by decline; it masqueraded as
-  "multi-hour test suites" (one run accumulated ~65 CPU-hours spinning a single instruction). Found by
+  `Stage::Done => {}` arm → infinite loop: any game with one production decline could never finish,
+  so the multi-hour suite runs genuinely did not terminate (one process accumulated ~65 CPU-hours
+  spinning a single instruction) — pathological by construction, not slow. Found by
   A/B-bisecting the P1-f worktree plus temporary instrumentation, fixed with `Stage::Done => break`,
   guarded by regression test `a_declined_production_window_settles_without_spinning`. Post-fix T6 trace
   regenerates **byte-identical** to `out/rust_ff_83000001_p1g.json` (zero behavioral effect on recorded
