@@ -1555,3 +1555,18 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   jolnar 2.34 at u3350 in `out/stage2_pg_six_c_20260810.log`. Single-game maxima of 5 VP do exist
   (Rust ceiling probe: jolnar/l1z1x max=5 on current profiles), so the memory may be a single-game
   result. Awaiting operator pointer to the specific full log if one exists elsewhere.
+- **RESOLVED: the "python cracked 5 vp" claim (operator pointer: python branch / stats folder / HDD
+  backup).** Found in `E:\ti4-engine\archive` (HDD backup of evolution-trainer runs, all with
+  `horizon_round: 4`, i.e. directly comparable):
+  - `stage2_blank_002`: **xxcha sustained ~4.5–4.6 avg VP** (4.57@g122, 4.54@g41, 4.53@g43,
+    4.49@g124, 4.43@g130) — this is the "cracked 5 vp" memory; no run ever recorded ≥5.0 exactly.
+  - `stage2_rich_001`: sol 4.25@g414, hacan 4.25@g363 — its manifest shows **`--vp-gate 5.0`**
+    (the target the operator remembers).
+  - `stage2_from_s1gen222_001`: letnev ~4.0–4.1 sustained g238–g258.
+  - `stage2_blank_001`: letnev 2.71 (early, short run).
+  **Critical distinction:** these are the *evolution* trainer (`tools/evolve_save54_three_player.py`,
+  mutation + per-faction champion selection, seeds=12/gen), NOT the policy-gradient trainer that was
+  ported to Rust. The pg trainer plateaus at ~2.0–2.3 avg VP in both Python and Rust on the same
+  horizon. So: sustained ≥3 avg VP is *demonstrated achievable* on this horizon — by a different
+  algorithm than the one currently implemented in Rust. Decision needed: keep pushing pg, port the
+  evolution approach, or hybrid.
