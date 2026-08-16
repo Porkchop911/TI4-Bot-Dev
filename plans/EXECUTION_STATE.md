@@ -1688,3 +1688,22 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   `out/clearing_run_u600.json`. Expected ~50 min. Success signal: clearance vetoes stop firing and
   promotions resume with candidate VP trending up; target remains ≥3.0 mean VP for at least one
   faction on its panel. If flat after u4500: raise clearance-weight to 2.0 or high-vp-bonus to 1.0.
+- **F15 (boundary-phase idle gap): diagnosed, fixed, verified.** Operator report: CPU idles ~10 s
+  between spikes during runs. Instrumented probes (`out/dbg_boundary*.log`) proved each 192-game
+  panel plays in ~3–4 s but a ~10–12 s serial gap followed every panel evaluation (growing to
+  ~12.6 s within one boundary). Root cause: the trainer's `evaluate()` consumed full training
+  rollouts — every decision's trajectory with all legal options' feature vectors plus per-decision
+  progress snapshots — gigabytes per panel that it never reads, freed serially on the main thread
+  at each drop. Fix: new evaluation-only rollout API (`play_rotated_batch_evaluation`,
+  `play_rotated_save54_pool_batch_evaluation`) with bots built without `.recording()`; all prior
+  public APIs unchanged (training still records). Parity unit test pins identical finals + empty
+  trajectories. Result on the identical workload: boundary phase **~136 s → ~15 s**, learning
+  block unchanged (~228–231 s), gate decisions unchanged (same clearance vetoes). Evidence:
+  `plans/evidence/STAGE2-SCHEDULING-WAVES.md` §F15. Checks: ti4-training lib **104/104** release,
+  clippy no new warnings vs HEAD, fmt clean.
+- **P-C clearing run status:** killed at u4700 (checkpointed cleanly to
+  `out/clearing_run_u600.json`) when the F15 idle-gap complaint was filed; boundaries u4400–u4700
+  all rejected by clearance vetoes with VP flat ~2.0–2.3 — the reward-shape question (P-B/P-C) is
+  still open and independent of F15. Resume from `out/clearing_run_u600.json` (+600 updates →
+  u4900, same flags: `--entropy 0.05 --high-vp-bonus 0.5 --clearance-weight 1.0 --rollout-depth 4`,
+  real gate, `--every 100 --panel-step 32`) now that the trainer no longer idles between panels.

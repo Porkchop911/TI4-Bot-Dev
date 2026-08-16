@@ -15,7 +15,9 @@ use ti4_model::id::FactionId;
 use ti4_policy::learned::{Profile, blank_explicit_profile};
 use ti4_training::archive::{Archive, Checkpoint};
 use ti4_training::reward::Stage;
-use ti4_training::rollout::{Horizon, play_rotated_batch, play_rotated_save54_pool_batch};
+use ti4_training::rollout::{
+    Horizon, play_rotated_batch_evaluation, play_rotated_save54_pool_batch_evaluation,
+};
 use ti4_training::stage1::{FactionPlan, FactionStart, train_factions};
 
 fn number(name: &str, fallback: usize) -> usize {
@@ -382,9 +384,12 @@ fn evaluate(
         shortfall: f64,
     }
     let seed_block: Vec<u64> = (first_seed..first_seed + seeds).collect();
+    // Evaluation-only rollouts: panels need final progress and opening measurements, not the
+    // per-decision trajectories that training retains. Skipping recording keeps this phase from
+    // allocating — and then serially freeing — gigabytes of feature vectors between panels.
     let rollouts = plan.map_pool.as_ref().map_or_else(
         || {
-            play_rotated_batch(
+            play_rotated_batch_evaluation(
                 ContentStore::embedded(),
                 &plan.factions,
                 profiles,
@@ -395,7 +400,7 @@ fn evaluate(
             )
         },
         |pool| {
-            play_rotated_save54_pool_batch(
+            play_rotated_save54_pool_batch_evaluation(
                 ContentStore::embedded(),
                 &plan.factions,
                 profiles,

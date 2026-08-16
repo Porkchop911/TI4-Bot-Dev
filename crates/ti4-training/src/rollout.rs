@@ -378,6 +378,7 @@ fn play_shared(
         horizon,
         requirement,
         &OpeningMap::RustVaried,
+        true,
     )
 }
 
@@ -445,6 +446,7 @@ pub fn play_assigned_on_map(
         horizon,
         requirement,
         map,
+        true,
     )
 }
 
@@ -499,6 +501,7 @@ fn play_assigned_on_map_shared(
     horizon: Horizon,
     requirement: Requirement,
     map: &OpeningMap,
+    record_trajectories: bool,
 ) -> Rollout {
     let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
         Ok(seated) => seated,
@@ -522,10 +525,17 @@ fn play_assigned_on_map_shared(
         let stream = seed
             .wrapping_mul(1_000_003)
             .wrapping_add(u64::try_from(index).unwrap_or(0));
-        let bot = LearnedBot::from_shared(profile, stream)
-            .recording()
-            .from_setup(baselines.get(player).copied().unwrap_or_default());
-        handles.insert(player.clone(), bot.trajectory());
+        // Recording is opt-in: evaluation panels only need final progress and opening
+        // measurements, and retaining every decision's feature vectors for a whole panel
+        // costs gigabytes of allocation that are then freed serially on the main thread.
+        let mut bot = LearnedBot::from_shared(profile, stream);
+        if record_trajectories {
+            bot = bot.recording();
+        }
+        bot = bot.from_setup(baselines.get(player).copied().unwrap_or_default());
+        if record_trajectories {
+            handles.insert(player.clone(), bot.trajectory());
+        }
         deciders.insert(player.clone(), Box::new(bot));
     }
 
@@ -540,7 +550,11 @@ fn play_assigned_on_map_shared(
         horizon,
         requirement,
         deciders,
-        Some(&handles),
+        if record_trajectories {
+            Some(&handles)
+        } else {
+            None
+        },
     )
 }
 
@@ -670,6 +684,7 @@ fn play_rotated_on_map_batch(
     horizon: Horizon,
     requirement: Requirement,
     map: &OpeningMap,
+    record_trajectories: bool,
 ) -> Vec<Rollout> {
     if seeds.is_empty() || factions.is_empty() {
         return Vec::new();
@@ -717,6 +732,7 @@ fn play_rotated_on_map_batch(
                 horizon,
                 requirement,
                 map,
+                record_trajectories,
             )
         })
         .collect()
@@ -741,6 +757,7 @@ pub fn play_rotated_batch(
         horizon,
         requirement,
         &OpeningMap::RustVaried,
+        true,
     )
 }
 
@@ -764,6 +781,7 @@ pub fn play_rotated_save54_batch(
         horizon,
         requirement,
         &OpeningMap::Save54Captured,
+        true,
     )
 }
 
@@ -795,6 +813,7 @@ pub fn play_rotated_save54_pool_batch(
         pool,
         tile_seed_offset,
         0,
+        true,
     )
 }
 
@@ -813,6 +832,7 @@ fn play_rotated_save54_pool_batch_with_workers(
     pool: Arc<ti4_sim::MapPool>,
     tile_seed_offset: u64,
     workers: usize,
+    record_trajectories: bool,
 ) -> Vec<Rollout> {
     if seeds.is_empty() || factions.is_empty() {
         return Vec::new();
@@ -868,6 +888,7 @@ fn play_rotated_save54_pool_batch_with_workers(
                         horizon,
                         requirement,
                         &map,
+                        record_trajectories,
                     ),
                 )
             })
@@ -884,6 +905,62 @@ fn play_rotated_save54_pool_batch_with_workers(
     };
     indexed.sort_by_key(|(index, _)| *index);
     indexed.into_iter().map(|(_, rollout)| rollout).collect()
+}
+
+/// Evaluation-only variant of [`play_rotated_batch`]: plays the identical games but does not
+/// record per-decision trajectories, so a panel that only needs final metrics neither retains
+/// nor serially frees gigabytes of feature vectors. Final progress and opening measurements are
+/// identical to the recording variant for a given seed.
+#[must_use]
+pub fn play_rotated_batch_evaluation(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+) -> Vec<Rollout> {
+    play_rotated_on_map_batch(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        &OpeningMap::RustVaried,
+        false,
+    )
+}
+
+/// Evaluation-only variant of [`play_rotated_save54_pool_batch`]. See
+/// [`play_rotated_batch_evaluation`] for what is and is not retained.
+#[must_use]
+pub fn play_rotated_save54_pool_batch_evaluation(
+    content: &ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    requirement: Requirement,
+    pool: Arc<ti4_sim::MapPool>,
+    tile_seed_offset: u64,
+) -> Vec<Rollout> {
+    play_rotated_save54_pool_batch_with_workers(
+        content,
+        factions,
+        profiles,
+        sources,
+        seeds,
+        horizon,
+        requirement,
+        pool,
+        tile_seed_offset,
+        0,
+        false,
+    )
 }
 
 fn failed(seed: u64, error: String) -> Rollout {
@@ -983,6 +1060,7 @@ fn play_rotated_map_batch_statistics(
                 horizon,
                 requirement,
                 map,
+                true,
             );
             reduce_rollout(&rollout, &shared_profiles, reward, |seat| {
                 seat.faction.clone()
@@ -1065,6 +1143,7 @@ fn play_rotated_map_group_statistics(
                 horizon,
                 requirement,
                 map,
+                true,
             );
             let reduced = reduce_rollout(&rollout, &shared_profiles, reward, |seat| {
                 seat.faction.clone()
@@ -1573,6 +1652,7 @@ mod tests {
                 save54_pool(),
                 20_000_000,
                 workers,
+                true,
             )
         };
 
@@ -2019,5 +2099,82 @@ mod tests {
         );
         assert_eq!(waved.len(), 2);
         assert!(waved[1].statistics.is_empty());
+    }
+
+    #[test]
+    fn an_evaluation_rollout_matches_the_recording_rollout_on_finals() {
+        let factions: Vec<FactionId> = ["letnev", "jolnar"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let content = ContentStore::embedded();
+        let seeds = vec![7u64];
+
+        let full = play_rotated_batch(
+            content,
+            &factions,
+            &profiles,
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        let evaluation = play_rotated_batch_evaluation(
+            content,
+            &factions,
+            &profiles,
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+
+        assert_eq!(full.len(), evaluation.len());
+        for (index, (recording, unrecorded)) in full.iter().zip(evaluation.iter()).enumerate() {
+            assert_eq!(recording.seed, unrecorded.seed);
+            assert!(
+                unrecorded
+                    .seats
+                    .iter()
+                    .all(|seat| seat.trajectory.is_empty()),
+                "evaluation rollout {index} retained a trajectory"
+            );
+            assert!(
+                unrecorded
+                    .seats
+                    .iter()
+                    .all(|seat| seat.episode.steps.is_empty()),
+                "evaluation rollout {index} retained per-decision snapshots"
+            );
+            for (recording_seat, unrecorded_seat) in
+                recording.seats.iter().zip(unrecorded.seats.iter())
+            {
+                assert_eq!(recording_seat.faction, unrecorded_seat.faction);
+                assert_eq!(
+                    recording_seat.episode.final_progress, unrecorded_seat.episode.final_progress,
+                    "rollout {index}: final progress differs"
+                );
+                assert_eq!(
+                    recording_seat.episode.cleared,
+                    unrecorded_seat.episode.cleared
+                );
+                // Same deterministic computation on both sides: exact equality is the claim.
+                let shortfall_delta =
+                    (recording_seat.episode.shortfall - unrecorded_seat.episode.shortfall).abs();
+                assert!(
+                    shortfall_delta <= f64::EPSILON,
+                    "rollout {index}: shortfall differs"
+                );
+            }
+        }
     }
 }

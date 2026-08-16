@@ -111,3 +111,59 @@ which one is "the comparable process" is an operator call.
 - Engine-side per-game cost (~68% of game time) is the remaining lever for further wall-time
   gains; requires a dedicated profiling package with parity risk review. Deferred pending operator
   decision on which Python configuration defines "comparable".
+
+## F15: boundary-phase idle gap — root cause and fix (post-commit follow-up)
+
+### Symptom
+
+Operator report during the C2/P-C runs: CPU "does nothing for ~10 s, then spikes", unlike the
+Python trainer which kept all cores busy. Coarse 3–10 s sampling showed learning blocks at
+~52–63% utilization and boundary phases dipping to 2–9 cores for ~125–160 s per rejected
+boundary.
+
+### Diagnosis (instrumented probes, `out/dbg_boundary*.log`, `out/evalfix_probe.*`)
+
+- Each 192-game panel plays in **~3–4 s** even inside the trainer; panels are not slow.
+- Fine-grained timestamps showed a consistent **~10–12 s idle gap between consecutive panel
+  evaluations**, growing slowly over the boundary (7.5 → 12.6 s).
+- Ruled out by direct measurement: profile cloning (0.02 s), `GainEvidence::paired` (<1 ms),
+  gate clause checks (trivial), stdout buffering artifacts (in-process epoch timestamps used, not
+  log line order).
+- Root cause: the evaluation path (`evaluate()` in `stage2_training.rs`) consumed full
+  `Rollout`s from `play_rotated_save54_pool_batch`. Each `SeatRollout` retains **every decision's
+  trajectory** — per step: chosen features, *all legal options'* feature vectors, and all option
+  probabilities — plus a per-decision `Progress` snapshot list in the episode. A panel therefore
+  retained gigabytes of allocation that `evaluate()` never reads (it only needs final progress,
+  clearance/shortfall, and seed), and freed it **serially on the main thread** when each
+  `Rollout` was dropped — the ~10 s gap per panel, worsening as the heap fragmented.
+
+### Fix (this commit)
+
+- New opt-in evaluation-only rollout API in `ti4-training::rollout`:
+  - `play_rotated_batch_evaluation`, `play_rotated_save54_pool_batch_evaluation`.
+  - Internally `play_assigned_on_map_shared` takes a `record_trajectories: bool`; when false the
+    bots are built without `.recording()` (already documented as off-by-default for batch runs)
+    and no trajectory handles are attached, so seats carry empty trajectories/snapshots.
+- All existing public APIs keep their signatures and behavior (`true` at every prior call site);
+  training paths still record exactly as before.
+- `evaluate()` in the stage-2 trainer now calls the evaluation-only variants.
+
+### Verification
+
+- New unit test `an_evaluation_rollout_matches_the_recording_rollout_on_finals`: same seed, both
+  variants — identical seeds/factions/final progress/cleared/shortfall; evaluation rollouts have
+  empty trajectories and snapshot lists. Passes (release).
+- `cargo test --release -p ti4-training --lib`: **104/104**. Clippy: no new warnings vs HEAD
+  (24 before, 24 after). `cargo fmt --all --check`: clean.
+- Before/after on the identical workload (u4700 checkpoint + 100 updates + one rejected boundary,
+  same flags as P-C): learning block unchanged at ~228–231 s; **boundary phase ~136 s → ~15 s**
+  (`out/dbg_boundary2.log` vs `out/evalfix_probe.json`: cumulative 243 s − learning 228 s).
+- No behavioral change to gate decisions: the probe boundary was rejected by the same clearance
+  vetoes as pre-fix runs; per-game results are untouched (recording is observational).
+
+### Effect on the operator's three requirements
+
+- "No prolonged CPU idle": the ~10 s inter-panel valleys and the multi-minute low-utilization
+  stretches of rejected boundaries are gone; a full rejected boundary now costs ~15 s wall.
+- Speed vs Python: boundary overhead drops from ~2× to ~0.1× of one learning block, improving the
+  Rust/Python wall-time ratio on any run with rejections (the common case at this plateau).
