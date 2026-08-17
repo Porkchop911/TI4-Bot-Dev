@@ -1756,3 +1756,27 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   clause will keep gating it). No faction at ≥3.0 yet; best hacan 2.49. Checkpoint
   `out/overnight_u4000.json`. Next decision: continue as-is vs escalate `--high-vp-bonus` 1.0 →
   2.0 for stronger directional pressure toward the ≥3-VP target.
+- **Run with --every 500 launched then killed at u11100** (operator parameter change mid-run):
+  from u9600 (`out/overnight_u4000.json`), +4000 → u13600 planned, same flags as overnight. First
+  three boundaries (u10100/u10600/u11100) all rejected; binding constraint shifted to clearance
+  regression — l1z1x at u10600 had +0.203 own gain (>2σ=0.184, genuine improvement) but was held
+  by its own clearance clause (0.828 vs 0.859). Candidates systematically trading opening
+  reliability for VP under bonus-1.0 pressure. Checkpoint `out/run_e500_u4000.json`.
+- **Two-path own-merit gate implemented** (operator clarification: a large enough CLEARANCE gain
+  should accept bounded VP regression — clearance is merit, not just a guard). Each faction now has
+  two promotion paths, both requiring validation AND confirmation panels to pass: **VP merit** — own
+  paired VP gain > `--accept-vp-margin` (0.05) and > `--accept-sigmas` × its own SE, with own
+  clearance within `--max-faction-clearance-regression` of its champion's; or **clearance merit** —
+  own paired clearance gain ≥ new `--clearance-gain-bar` (default 0.03) and > σ × its own SE, with
+  own VP regression bounded by `--max-faction-vp-regression` (0.15). The passing path is recorded per
+  faction in history (`promotion_paths`). Per-seed clearance pairing added
+  (`PanelEvaluation.faction_clearance_by_seed`, `GainEvidence::paired_faction_clearance`). Tests:
+  14/14 example (7 two-path tests incl. "a large clearance gain accepts bounded VP regression"),
+  lib 104/104 release, clippy/fmt clean; end-to-end smoke on u11100 shows both paths naming their
+  clauses correctly (xxcha's +0.0365 clearance gain would pass at 1σ with its −0.125 VP regression
+  inside the bound — exactly the intended behavior).
+- **New run LAUNCHED** from u11100 (`out/run_e500_u4000.json`), +4000 updates → u15100, boundaries
+  every 500: `--accept-sigmas 1.0 --clearance-weight 5.0 --entropy 0.05 --high-vp-bonus 1.0
+  --rollout-depth 4 --panel-step 32 --every 500` (operator directive: "reduce to 1 sigma, clearance
+  should be heavily rewarded and weighted for promotion until like 99%"). Output
+  `out/run_2path_u4000.json`, log `out/run_2path.log`.

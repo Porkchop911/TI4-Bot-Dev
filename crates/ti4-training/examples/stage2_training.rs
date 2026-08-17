@@ -229,9 +229,16 @@ struct Evaluation {
     /// Each tested faction's own paired VP gain against its own champion (validation panel).
     #[serde(default)]
     faction_gains: BTreeMap<FactionId, GainEvidence>,
+    /// Each tested faction's own paired clearance gain against its own champion (validation
+    /// panel).
+    #[serde(default)]
+    faction_clearance_gains: BTreeMap<FactionId, GainEvidence>,
     /// Own gains for the factions that passed validation and were confirmed.
     #[serde(default)]
     confirmation_gains: Option<BTreeMap<FactionId, GainEvidence>>,
+    /// Merit path ("vp" / "clearance") by which each promoted faction was accepted.
+    #[serde(default)]
+    promotion_paths: Option<BTreeMap<FactionId, String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -241,6 +248,9 @@ struct PanelEvaluation {
     /// per-faction gate pairs on this, so one head is judged against its own champion with the
     /// other five seats held fixed — never through a sum over other factions.
     faction_vp_by_seed: BTreeMap<FactionId, BTreeMap<u64, f64>>,
+    /// Each faction's own clearance (cleared rotations / rotations), per source seed. Pairs the
+    /// same way as VP so the clearance-merit path of the gate is measured on identical games.
+    faction_clearance_by_seed: BTreeMap<FactionId, BTreeMap<u64, f64>>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -257,18 +267,38 @@ impl GainEvidence {
         champion: &PanelEvaluation,
         faction: &FactionId,
     ) -> Self {
+        match (
+            candidate.faction_vp_by_seed.get(faction),
+            champion.faction_vp_by_seed.get(faction),
+        ) {
+            (Some(candidate_table), Some(champion_table)) => {
+                Self::pair_tables(candidate_table, champion_table)
+            }
+            _ => Self::default(),
+        }
+    }
+
+    /// Paired gain for one faction's own clearance against its own champion, per source seed.
+    fn paired_faction_clearance(
+        candidate: &PanelEvaluation,
+        champion: &PanelEvaluation,
+        faction: &FactionId,
+    ) -> Self {
+        match (
+            candidate.faction_clearance_by_seed.get(faction),
+            champion.faction_clearance_by_seed.get(faction),
+        ) {
+            (Some(candidate_table), Some(champion_table)) => {
+                Self::pair_tables(candidate_table, champion_table)
+            }
+            _ => Self::default(),
+        }
+    }
+
+    fn pair_tables(candidate: &BTreeMap<u64, f64>, champion: &BTreeMap<u64, f64>) -> Self {
         let differences: Vec<f64> = candidate
-            .faction_vp_by_seed
-            .get(faction)
-            .into_iter()
-            .flat_map(|table| table.iter())
-            .filter_map(|(seed, own)| {
-                champion
-                    .faction_vp_by_seed
-                    .get(faction)?
-                    .get(seed)
-                    .map(|champion| own - champion)
-            })
+            .iter()
+            .filter_map(|(seed, own)| champion.get(seed).map(|champion| own - champion))
             .collect();
         Self::from_differences(&differences)
     }
@@ -438,6 +468,9 @@ fn evaluate(
     let mut totals: BTreeMap<FactionId, Totals> = BTreeMap::new();
     // Per faction, per source seed: total VP and rotation count, for own-merit pairing.
     let mut faction_seed_totals: BTreeMap<FactionId, BTreeMap<u64, (i64, usize)>> = BTreeMap::new();
+    // Per faction, per source seed: cleared rotations and rotation count, for clearance pairing.
+    let mut faction_clearance_totals: BTreeMap<FactionId, BTreeMap<u64, (usize, usize)>> =
+        BTreeMap::new();
     for rollout in rollouts.iter().filter(|rollout| rollout.error.is_none()) {
         for seat in &rollout.seats {
             let progress = seat.episode.final_progress;
@@ -467,6 +500,13 @@ fn evaluate(
                 .or_default();
             per_seed.0 += progress.victory_points;
             per_seed.1 += 1;
+            let clr_seed = faction_clearance_totals
+                .entry(seat.faction.clone())
+                .or_default()
+                .entry(rollout.seed)
+                .or_default();
+            clr_seed.0 += usize::from(seat.episode.cleared);
+            clr_seed.1 += 1;
         }
     }
     let metrics = totals
@@ -516,9 +556,26 @@ fn evaluate(
             (faction, table)
         })
         .collect();
+    let faction_clearance_by_seed = faction_clearance_totals
+        .into_iter()
+        .map(|(faction, per_seed)| {
+            let table = per_seed
+                .into_iter()
+                .map(|(seed, (cleared, games))| {
+                    let games = f64::from(u32::try_from(games.max(1)).unwrap_or(u32::MAX));
+                    (
+                        seed,
+                        f64::from(u32::try_from(cleared).unwrap_or(u32::MAX)) / games,
+                    )
+                })
+                .collect();
+            (faction, table)
+        })
+        .collect();
     Ok(PanelEvaluation {
         metrics,
         faction_vp_by_seed,
+        faction_clearance_by_seed,
     })
 }
 
@@ -547,44 +604,109 @@ fn report(update: usize, metrics: &BTreeMap<FactionId, Metrics>) {
     }
 }
 
-/// Per-faction gate clauses. Every clause references only the tested faction's own metrics —
-/// no sum over other factions, so one head can never block or carry another. A faction is
-/// promoted when all of these pass on both the validation and confirmation panels:
-///   1. its own paired VP gain exceeds `vp_margin` (own merit must be a real improvement);
-///   2. that gain exceeds `accept_sigmas` x its own standard error (the panel can see it);
-///   3. its own clearance is within `max_faction_clearance_regression` of its own champion's
-///      clearance (clearing the Stage-1 bar is part of a faction's own merit).
-fn own_clauses(
+/// Per-faction gate verdict on one panel. Every clause references only the tested faction's own
+/// metrics — no sum over other factions, so one head can never block or carry another. A head
+/// passes when either merit path clears (on both validation and confirmation panels):
+///   VP merit — its own paired VP gain exceeds `vp_margin` and `accept_sigmas` x its own SE,
+///     with its own clearance within `max_faction_clearance_regression` of the champion's;
+///   Clearance merit — its own paired clearance gain is at least `clearance_gain_bar`
+///     ("large enough") and exceeds `accept_sigmas` x its own SE; this path accepts a bounded
+///     VP regression up to `max_faction_vp_regression`. A large enough gain in clearance is
+///     accepting VP regression. The bar keeps pushing until the champion's own clearance is
+///     near 1.0, after which there is no room left for the path to fire.
+fn own_verdict(
     candidate: &BTreeMap<FactionId, Metrics>,
     champion: &BTreeMap<FactionId, Metrics>,
-    evidence: GainEvidence,
+    vp_evidence: GainEvidence,
+    clr_evidence: GainEvidence,
     faction: &FactionId,
     vp_margin: f64,
     max_faction_clearance_regression: f64,
+    clearance_gain_bar: f64,
+    max_faction_vp_regression: f64,
     accept_sigmas: f64,
-) -> Vec<String> {
-    let mut failed = Vec::new();
-    if evidence.gain <= vp_margin + 1e-12 {
-        failed.push(format!(
-            "own VP margin: gain {:.4} is not above {vp_margin:.4}",
-            evidence.gain
-        ));
-    }
-    if !evidence.beyond_noise(accept_sigmas) {
-        failed.push(format!(
-            "own sigma evidence: paired gain {:.4} does not exceed {accept_sigmas:.1} x SE {:.4} over {} seeds",
-            evidence.gain, evidence.standard_error, evidence.samples
-        ));
-    }
-    if candidate[faction].clearance
-        < champion[faction].clearance - max_faction_clearance_regression - 1e-12
+) -> (bool, String) {
+    let cand = &candidate[faction];
+    let champ = &champion[faction];
+
+    // VP merit path.
+    if vp_evidence.gain > vp_margin + 1e-12
+        && vp_evidence.beyond_noise(accept_sigmas)
+        && cand.clearance >= champ.clearance - max_faction_clearance_regression - 1e-12
     {
-        failed.push(format!(
-            "own clearance: {:.4} is more than {max_faction_clearance_regression:.4} below the champion's {:.4}",
-            candidate[faction].clearance, champion[faction].clearance
+        return (
+            true,
+            format!(
+                "VP merit: own gain {:+.4} > margin and {}σ; clearance {:.3}/{:.3}",
+                vp_evidence.gain, accept_sigmas, cand.clearance, champ.clearance
+            ),
+        );
+    }
+    // Clearance merit path.
+    if clr_evidence.gain >= clearance_gain_bar - 1e-12
+        && clr_evidence.beyond_noise(accept_sigmas)
+        && cand.victory_points >= champ.victory_points - max_faction_vp_regression - 1e-12
+    {
+        return (
+            true,
+            format!(
+                "clearance merit: own gain {:+.4} >= bar and {}σ; VP {:+.4} within bound {:.3}/{:.3}",
+                clr_evidence.gain,
+                accept_sigmas,
+                vp_evidence.gain,
+                cand.victory_points,
+                champ.victory_points
+            ),
+        );
+    }
+
+    // Both paths failed: name every clause that refused each of them.
+    let mut vp_failed = Vec::new();
+    if vp_evidence.gain <= vp_margin + 1e-12 {
+        vp_failed.push(format!(
+            "own VP margin: gain {:.4} is not above {vp_margin:.4}",
+            vp_evidence.gain
         ));
     }
-    failed
+    if !vp_evidence.beyond_noise(accept_sigmas) {
+        vp_failed.push(format!(
+            "own sigma evidence: paired gain {:.4} does not exceed {accept_sigmas:.1} x SE {:.4} over {} seeds",
+            vp_evidence.gain, vp_evidence.standard_error, vp_evidence.samples
+        ));
+    }
+    if cand.clearance < champ.clearance - max_faction_clearance_regression - 1e-12 {
+        vp_failed.push(format!(
+            "own clearance guard: {:.4} is more than {max_faction_clearance_regression:.4} below the champion's {:.4}",
+            cand.clearance, champ.clearance
+        ));
+    }
+    let mut clr_failed = Vec::new();
+    if clr_evidence.gain < clearance_gain_bar - 1e-12 {
+        clr_failed.push(format!(
+            "clearance merit bar: gain {:.4} is below {clearance_gain_bar:.4}",
+            clr_evidence.gain
+        ));
+    }
+    if !clr_evidence.beyond_noise(accept_sigmas) {
+        clr_failed.push(format!(
+            "clearance sigma evidence: paired gain {:.4} does not exceed {accept_sigmas:.1} x SE {:.4} over {} seeds",
+            clr_evidence.gain, clr_evidence.standard_error, clr_evidence.samples
+        ));
+    }
+    if cand.victory_points < champ.victory_points - max_faction_vp_regression - 1e-12 {
+        clr_failed.push(format!(
+            "VP regression bound: {:.4} is more than {max_faction_vp_regression:.4} below the champion's {:.4}",
+            cand.victory_points, champ.victory_points
+        ));
+    }
+    (
+        false,
+        format!(
+            "VP merit failed [{}]; clearance merit failed [{}]",
+            vp_failed.join("; "),
+            clr_failed.join("; ")
+        ),
+    )
 }
 
 fn report_learning(block: &LearningBlock) {
@@ -734,6 +856,9 @@ fn main() -> Result<(), String> {
     }
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
+    // "Large enough" own clearance gain that accepts a bounded VP regression (clearance merit
+    // path). Keeps pushing until the champion's own clearance is near 1.0.
+    let clearance_gain_bar = decimal("--clearance-gain-bar", 0.03);
     let checkpoint_path = path_argument("--checkpoint");
     let map_pool_path = path_argument("--map-pool");
     let output = path_argument("--out");
@@ -829,6 +954,10 @@ fn main() -> Result<(), String> {
             max_faction_clearance_regression.to_string(),
         ),
         (
+            "clearance_gain_bar".to_owned(),
+            clearance_gain_bar.to_string(),
+        ),
+        (
             "factions".to_owned(),
             "sol,letnev,xxcha,hacan,jolnar,l1z1x".to_owned(),
         ),
@@ -891,7 +1020,7 @@ fn main() -> Result<(), String> {
     }
     println!("  meta teacher: none (no specified or validated artifact)");
     println!(
-        "  promotion: per-faction own merit — each head vs its own champion with the other five seats fixed; own VP gain > {accept_vp_margin:.2} and > {accept_sigmas:.1}σ (own SE); own clearance within {max_faction_clearance_regression:.2}; validation + confirmation panels ({validation_seeds}+{confirmation_seeds} seeds)"
+        "  promotion: per-faction own merit — each head vs its own champion with the other five seats fixed; VP path: own gain > {accept_vp_margin:.2} and > {accept_sigmas:.1}σ (own SE), clearance within {max_faction_clearance_regression:.2}; OR clearance path: own clearance gain >= {clearance_gain_bar:.2} and > {accept_sigmas:.1}σ, accepting VP regression up to {max_faction_vp_regression:.2}; validation + confirmation panels ({validation_seeds}+{confirmation_seeds} seeds)"
     );
     if panel_step == 0 {
         println!("  panels: one fixed validation/confirmation panel at every boundary");
@@ -919,13 +1048,22 @@ fn main() -> Result<(), String> {
     report(starting_update, &initial_candidate.metrics);
     // Per-faction own gains: each head paired against its own champion on the same games.
     let mut bootstrap_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+    let mut bootstrap_clearance_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
     for faction in &plan.factions {
         let gain = GainEvidence::paired_faction(&initial_candidate, &accepted_panel, faction);
+        let clr_gain =
+            GainEvidence::paired_faction_clearance(&initial_candidate, &accepted_panel, faction);
         println!(
-            "  {:12} own_gain {:+8.4} (SE {:.4}, n={})",
-            faction, gain.gain, gain.standard_error, gain.samples
+            "  {:12} own_vp {:+8.4} (SE {:.4})  own_clr {:+7.4} (SE {:.4}, n={})",
+            faction,
+            gain.gain,
+            gain.standard_error,
+            clr_gain.gain,
+            clr_gain.standard_error,
+            gain.samples
         );
         bootstrap_gains.insert(faction.clone(), gain);
+        bootstrap_clearance_gains.insert(faction.clone(), clr_gain);
     }
     if flag("--eval-only") {
         println!(
@@ -947,26 +1085,27 @@ fn main() -> Result<(), String> {
                 candidate.clearance - accepted.clearance,
             );
         }
-        println!("gate (per-faction own merit):");
+        println!("gate (per-faction own merit, two paths):");
         for faction in &plan.factions {
             let gain = bootstrap_gains[faction];
-            let failed = own_clauses(
+            let clr_gain = bootstrap_clearance_gains[faction];
+            let (passed, detail) = own_verdict(
                 &initial_candidate.metrics,
                 &accepted_panel.metrics,
                 gain,
+                clr_gain,
                 faction,
                 accept_vp_margin,
                 max_faction_clearance_regression,
+                clearance_gain_bar,
+                max_faction_vp_regression,
                 accept_sigmas,
             );
             println!(
-                "  {:12} {}",
+                "  {:12} {} — {}",
                 faction,
-                if failed.is_empty() {
-                    "PASS".to_owned()
-                } else {
-                    format!("FAIL — {}", failed.join("; "))
-                }
+                if passed { "PASS" } else { "FAIL" },
+                detail
             );
         }
         if let Some(path) = path_argument("--eval-out") {
@@ -977,6 +1116,7 @@ fn main() -> Result<(), String> {
                 "candidate_metrics": initial_candidate.metrics,
                 "accepted_metrics": accepted_panel.metrics,
                 "faction_gains": bootstrap_gains,
+                "faction_clearance_gains": bootstrap_clearance_gains,
             });
             std::fs::write(&path, serde_json::to_string_pretty(&report).unwrap())
                 .map_err(|error| format!("write {}: {error}", path.display()))?;
@@ -994,8 +1134,10 @@ fn main() -> Result<(), String> {
             confirmation_metrics: Some(accepted_confirmation_panel.metrics.clone()),
             accepted: Vec::new(),
             accepted_kind: Some("bootstrap".to_owned()),
-            faction_gains: bootstrap_gains,
+            faction_gains: bootstrap_gains.clone(),
+            faction_clearance_gains: bootstrap_clearance_gains,
             confirmation_gains: None,
+            promotion_paths: None,
         })
         .map_err(|error| format!("serialize initial evaluation: {error}"))?,
     );
@@ -1063,36 +1205,44 @@ fn main() -> Result<(), String> {
         let mut promoted = Vec::new();
         let mut candidate_metrics: BTreeMap<FactionId, Metrics> = BTreeMap::new();
         let mut faction_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+        let mut faction_clearance_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
         let mut confirmation_rows: BTreeMap<FactionId, Metrics> = BTreeMap::new();
         let mut confirmation_gains_map: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+        let mut promotion_paths: BTreeMap<FactionId, String> = BTreeMap::new();
         for faction in &plan.factions {
             let mut isolated = accepted.clone();
             isolated.insert(faction.clone(), profiles[faction].clone());
             let primary = evaluate(&plan, &isolated, panel_validation_seed, validation_seeds)?;
             candidate_metrics.insert(faction.clone(), primary.metrics[faction]);
             let own_gain = GainEvidence::paired_faction(&primary, &champion_panel, faction);
+            let own_clr_gain =
+                GainEvidence::paired_faction_clearance(&primary, &champion_panel, faction);
             faction_gains.insert(faction.clone(), own_gain);
-            let failed = own_clauses(
+            faction_clearance_gains.insert(faction.clone(), own_clr_gain);
+            let (passed, detail) = own_verdict(
                 &primary.metrics,
                 &champion_panel.metrics,
                 own_gain,
+                own_clr_gain,
                 faction,
                 accept_vp_margin,
                 max_faction_clearance_regression,
+                clearance_gain_bar,
+                max_faction_vp_regression,
                 accept_sigmas,
             );
-            if !failed.is_empty() {
+            if !passed {
                 println!(
-                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_gain {:+.4} (SE {:.4}, n={}) clr {:.3}/{:.3} rejected: {}",
+                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) rejected: {}",
                     faction,
                     primary.metrics[faction].victory_points,
                     champion_panel.metrics[faction].victory_points,
                     own_gain.gain,
                     own_gain.standard_error,
+                    own_clr_gain.gain,
+                    own_clr_gain.standard_error,
                     own_gain.samples,
-                    primary.metrics[faction].clearance,
-                    champion_panel.metrics[faction].clearance,
-                    failed.join("; ")
+                    detail
                 );
                 continue;
             }
@@ -1104,40 +1254,60 @@ fn main() -> Result<(), String> {
             )?;
             let conf_own_gain =
                 GainEvidence::paired_faction(&confirmation, &champion_confirmation_panel, faction);
-            let conf_failed = own_clauses(
+            let conf_own_clr_gain = GainEvidence::paired_faction_clearance(
+                &confirmation,
+                &champion_confirmation_panel,
+                faction,
+            );
+            let (conf_passed, conf_detail) = own_verdict(
                 &confirmation.metrics,
                 &champion_confirmation_panel.metrics,
                 conf_own_gain,
+                conf_own_clr_gain,
                 faction,
                 accept_vp_margin,
                 max_faction_clearance_regression,
+                clearance_gain_bar,
+                max_faction_vp_regression,
                 accept_sigmas,
             );
-            if !conf_failed.is_empty() {
+            if !conf_passed {
                 println!(
-                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_gain {:+.4} (SE {:.4}, n={}) confirmation rejected: {}",
+                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmation rejected: {}",
                     faction,
                     primary.metrics[faction].victory_points,
                     champion_panel.metrics[faction].victory_points,
                     conf_own_gain.gain,
                     conf_own_gain.standard_error,
+                    conf_own_clr_gain.gain,
+                    conf_own_clr_gain.standard_error,
                     conf_own_gain.samples,
-                    conf_failed.join("; ")
+                    conf_detail
                 );
                 continue;
             }
             println!(
-                "  {:12} cand_vp {:.3} acc_vp {:.3} own_gain {:+.4} (SE {:.4}, n={}) confirmed ({:+.4})",
+                "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmed: {}",
                 faction,
                 primary.metrics[faction].victory_points,
                 champion_panel.metrics[faction].victory_points,
                 own_gain.gain,
                 own_gain.standard_error,
+                own_clr_gain.gain,
+                own_clr_gain.standard_error,
                 own_gain.samples,
-                conf_own_gain.gain
+                detail
             );
             confirmation_rows.insert(faction.clone(), confirmation.metrics[faction]);
             confirmation_gains_map.insert(faction.clone(), conf_own_gain);
+            promotion_paths.insert(
+                faction.clone(),
+                if detail.starts_with("VP") {
+                    "vp".to_owned()
+                } else {
+                    "clearance".to_owned()
+                },
+            );
             promoted.push(faction.clone());
         }
         if !promoted.is_empty() {
@@ -1175,8 +1345,10 @@ fn main() -> Result<(), String> {
                 accepted: promoted,
                 accepted_kind,
                 faction_gains,
+                faction_clearance_gains,
                 confirmation_gains: (!confirmation_gains_map.is_empty())
                     .then_some(confirmation_gains_map),
+                promotion_paths: (!promotion_paths.is_empty()).then_some(promotion_paths),
             })
             .map_err(|error| format!("serialize evaluation: {error}"))?,
         );
@@ -1207,6 +1379,9 @@ fn main() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use ti4_training::gradient::Telemetry;
+    use ti4_training::stage1::Generation;
 
     /// Metrics for a faction at a given mean VP and spread over `games` games.
     fn metrics_at(victory_points: f64, stdev: f64, games: usize) -> Metrics {
@@ -1238,6 +1413,7 @@ mod tests {
         let panel = |values: &[(u64, f64)]| PanelEvaluation {
             metrics: BTreeMap::new(),
             faction_vp_by_seed: BTreeMap::from([(sol.clone(), values.iter().copied().collect())]),
+            faction_clearance_by_seed: BTreeMap::new(),
         };
         // Absolute scores vary by 100 points across seeds, but candidate-minus-champion is exactly
         // one on each seed. Pairing correctly removes that shared seed difficulty.
@@ -1265,17 +1441,40 @@ mod tests {
         );
     }
 
+    /// Test harness for the two-path verdict with fixed gate parameters (VP margin 0.05,
+    /// clearance guard 0.03, clearance merit bar 0.03, VP regression bound 0.15). Returns the
+    /// failure detail text; empty when the head passes.
+    fn verdict_detail(
+        candidate: &BTreeMap<FactionId, Metrics>,
+        champion: &BTreeMap<FactionId, Metrics>,
+        vp_evidence: GainEvidence,
+        clr_evidence: GainEvidence,
+        faction: &FactionId,
+        accept_sigmas: f64,
+    ) -> String {
+        let (passed, detail) = own_verdict(
+            candidate,
+            champion,
+            vp_evidence,
+            clr_evidence,
+            faction,
+            0.05,
+            0.03,
+            0.03,
+            0.15,
+            accept_sigmas,
+        );
+        if passed { String::new() } else { detail }
+    }
+
     #[test]
-    fn own_gain_below_the_margins_or_above_the_noise_is_refused() {
-        // A point estimate can clear the authored margin while remaining smaller than two
-        // standard errors of its own paired source-seed differences. That is not promotion
-        // evidence yet.
+    fn vp_merit_requires_margin_and_visible_gain() {
         let sol = FactionId::new("sol");
         let champion = BTreeMap::from([(sol.clone(), metrics_at(2.0, 1.6, 192))]);
         let candidate = BTreeMap::from([(sol.clone(), metrics_at(2.06, 1.6, 192))]);
 
-        // gain 0.06 > margin 0.05, but SE 0.20 makes 2σ = 0.40: refused on sigma evidence only.
-        let failed = own_clauses(
+        // gain 0.06 > margin 0.05 but SE 0.20 makes 2σ = 0.40: refused on sigma evidence.
+        let failed = verdict_detail(
             &candidate,
             &champion,
             GainEvidence {
@@ -1283,16 +1482,14 @@ mod tests {
                 standard_error: 0.20,
                 samples: 32,
             },
+            GainEvidence::default(),
             &sol,
-            0.05,
-            0.03,
             2.0,
         );
-        assert_eq!(failed.len(), 1, "{failed:?}");
-        assert!(failed[0].starts_with("own sigma evidence"));
+        assert!(failed.contains("own sigma evidence"), "{failed}");
 
-        // The same point estimate on a panel that can see it passes everything.
-        let clean = own_clauses(
+        // The same point estimate on a panel that can see it passes via VP merit.
+        let clean = verdict_detail(
             &candidate,
             &champion,
             GainEvidence {
@@ -1300,15 +1497,14 @@ mod tests {
                 standard_error: 0.01,
                 samples: 32,
             },
+            GainEvidence::default(),
             &sol,
-            0.05,
-            0.03,
             2.0,
         );
-        assert!(clean.is_empty(), "{clean:?}");
+        assert!(clean.is_empty(), "{clean}");
 
         // A gain below the authored margin is refused even when perfectly visible.
-        let small = own_clauses(
+        let small = verdict_detail(
             &candidate,
             &champion,
             GainEvidence {
@@ -1316,79 +1512,216 @@ mod tests {
                 standard_error: 0.01,
                 samples: 32,
             },
+            GainEvidence::default(),
             &sol,
-            0.05,
-            0.03,
             2.0,
         );
-        assert_eq!(small.len(), 1, "{small:?}");
-        assert!(small[0].starts_with("own VP margin"));
+        assert!(small.contains("own VP margin"), "{small}");
     }
 
     #[test]
-    fn own_gain_the_panel_can_actually_see_is_accepted() {
-        // The other half: the check must not simply refuse everything, or it is a stopped clock.
+    fn a_large_clearance_gain_accepts_bounded_vp_regression() {
+        // The core property of the clearance merit path: a large enough own clearance gain is
+        // accepting a bounded VP regression.
         let sol = FactionId::new("sol");
-        let champion = BTreeMap::from([(sol.clone(), metrics_at(2.0, 1.6, 192))]);
-        let candidate = BTreeMap::from([(sol.clone(), metrics_at(2.6, 1.6, 192))]);
-        assert!(
-            own_clauses(
-                &candidate,
-                &champion,
-                GainEvidence {
-                    gain: 0.60,
-                    standard_error: 0.20,
-                    samples: 32
-                },
-                &sol,
-                0.05,
-                0.03,
-                2.0
-            )
-            .is_empty()
+        let champion = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.4,
+                clearance: 0.83,
+                ..Metrics::default()
+            },
+        )]);
+
+        // VP down by 0.10 (within the 0.15 bound), clearance up by 0.10 and visible: passes via
+        // clearance merit.
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.3,
+                clearance: 0.93,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: -0.10,
+                standard_error: 0.05,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: 0.10,
+                standard_error: 0.04,
+                samples: 32,
+            },
+            &sol,
+            2.0,
         );
+        assert!(detail.is_empty(), "clearance merit should pass: {detail}");
+
+        // The same clearance gain with a VP regression beyond the bound is refused.
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.1,
+                clearance: 0.93,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: -0.30,
+                standard_error: 0.05,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: 0.10,
+                standard_error: 0.04,
+                samples: 32,
+            },
+            &sol,
+            2.0,
+        );
+        assert!(detail.contains("VP regression bound"), "{detail}");
     }
 
     #[test]
-    fn a_larger_panel_can_see_a_smaller_own_gain() {
-        // More independent source seeds lower the paired standard error. The same point estimate
-        // can therefore become detectable without weakening the authored gain requirement.
+    fn clearance_merit_requires_a_large_enough_visible_gain() {
         let sol = FactionId::new("sol");
-        let champion = BTreeMap::from([(sol.clone(), metrics_at(2.0, 1.6, 192))]);
-        let candidate = BTreeMap::from([(sol.clone(), metrics_at(2.06, 1.6, 40_000))]);
+        let champion = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.4,
+                clearance: 0.83,
+                ..Metrics::default()
+            },
+        )]);
 
-        assert!(
-            !own_clauses(
-                &candidate,
-                &champion,
-                GainEvidence {
-                    gain: 0.06,
-                    standard_error: 0.20,
-                    samples: 32
-                },
-                &sol,
-                0.05,
-                0.03,
-                2.0
-            )
-            .is_empty()
+        // Clearance up by only 0.01 (below the 0.03 bar) with VP down: neither path passes.
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.3,
+                clearance: 0.84,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: -0.10,
+                standard_error: 0.05,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: 0.01,
+                standard_error: 0.01,
+                samples: 32,
+            },
+            &sol,
+            2.0,
         );
-        assert!(
-            own_clauses(
-                &candidate,
-                &champion,
-                GainEvidence {
-                    gain: 0.06,
-                    standard_error: 0.01,
-                    samples: 128
-                },
-                &sol,
-                0.05,
-                0.03,
-                2.0
-            )
-            .is_empty()
+        assert!(detail.contains("clearance merit bar"), "{detail}");
+
+        // Clearance up by 0.10 but invisible in the panel's own noise: refused on sigma evidence.
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.3,
+                clearance: 0.93,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: -0.10,
+                standard_error: 0.05,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: 0.10,
+                standard_error: 0.40,
+                samples: 32,
+            },
+            &sol,
+            2.0,
         );
+        assert!(detail.contains("clearance sigma evidence"), "{detail}");
+    }
+
+    #[test]
+    fn vp_merit_blocked_by_own_clearance_guard() {
+        // A strong visible VP gain still cannot promote a head whose own clearance falls below
+        // the guard — unless the clearance merit path itself fires (it does not here: the
+        // clearance gain is negative).
+        let sol = FactionId::new("sol");
+        let champion = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.0,
+                clearance: 0.93,
+                ..Metrics::default()
+            },
+        )]);
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.6,
+                clearance: 0.85,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: 0.6,
+                standard_error: 0.1,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: -0.08,
+                standard_error: 0.04,
+                samples: 32,
+            },
+            &sol,
+            2.0,
+        );
+        assert!(detail.contains("own clearance guard"), "{detail}");
+
+        // Within the guard: passes via VP merit.
+        let candidate = BTreeMap::from([(
+            sol.clone(),
+            Metrics {
+                victory_points: 2.6,
+                clearance: 0.91,
+                ..Metrics::default()
+            },
+        )]);
+        let detail = verdict_detail(
+            &candidate,
+            &champion,
+            GainEvidence {
+                gain: 0.6,
+                standard_error: 0.1,
+                samples: 32,
+            },
+            GainEvidence {
+                gain: -0.02,
+                standard_error: 0.04,
+                samples: 32,
+            },
+            &sol,
+            2.0,
+        );
+        assert!(detail.is_empty(), "{detail}");
     }
 
     #[test]
@@ -1411,7 +1744,7 @@ mod tests {
         let letnev = FactionId::new("letnev");
         let sol = FactionId::new("sol");
         assert!(
-            own_clauses(
+            verdict_detail(
                 &candidate,
                 &champion,
                 GainEvidence {
@@ -1419,15 +1752,14 @@ mod tests {
                     standard_error: 0.1,
                     samples: 32
                 },
+                GainEvidence::default(),
                 &letnev,
-                0.05,
-                0.03,
                 2.0
             )
             .is_empty(),
             "letnev's own merit must not be touched by sol's collapse"
         );
-        let sol_failed = own_clauses(
+        let sol_failed = verdict_detail(
             &candidate,
             &champion,
             GainEvidence {
@@ -1435,28 +1767,25 @@ mod tests {
                 standard_error: 0.1,
                 samples: 32,
             },
+            GainEvidence::default(),
             &sol,
-            0.05,
-            0.03,
             2.0,
         );
         assert!(
-            sol_failed
-                .iter()
-                .any(|line| line.starts_with("own VP margin")),
-            "sol's own regression must still refuse sol: {sol_failed:?}"
+            sol_failed.contains("own VP margin"),
+            "sol's own regression must still refuse sol: {sol_failed}"
         );
     }
 
     #[test]
-    fn zero_sigmas_disables_only_the_sigma_clause() {
-        // Opt-out rather than imposed: at 0σ the noise check is off, but the authored margin and
-        // own clearance still apply.
+    fn zero_sigmas_disables_only_the_sigma_clauses() {
+        // Opt-out rather than imposed: at 0σ the noise checks are off, but the authored margin,
+        // clearance guard, and merit bar still apply.
         let sol = FactionId::new("sol");
         let champion = BTreeMap::from([(sol.clone(), metrics_at(2.0, 1.6, 192))]);
         let candidate = BTreeMap::from([(sol.clone(), metrics_at(2.06, 1.6, 192))]);
         assert!(
-            own_clauses(
+            verdict_detail(
                 &candidate,
                 &champion,
                 GainEvidence {
@@ -1464,9 +1793,8 @@ mod tests {
                     standard_error: 5.0,
                     samples: 32
                 },
+                GainEvidence::default(),
                 &sol,
-                0.05,
-                0.03,
                 0.0
             )
             .is_empty()
@@ -1474,9 +1802,9 @@ mod tests {
     }
 
     #[test]
-    fn clearance_is_part_of_own_merit() {
-        // Clearing the Stage-1 bar is the faction's own business: a strong VP gain does not
-        // compensate for the tested head's own clearance falling below its champion's.
+    fn the_verdict_names_every_refused_clause_on_both_paths() {
+        // A head that fails everything must name clauses from both paths, and nothing about the
+        // other five seats may appear in the explanation.
         let sol = FactionId::new("sol");
         let champion = BTreeMap::from([(
             sol.clone(),
@@ -1486,53 +1814,58 @@ mod tests {
                 ..Metrics::default()
             },
         )]);
-
-        // Strong VP gain but own clearance falls below the bar: refused on own clearance only.
         let candidate = BTreeMap::from([(
             sol.clone(),
             Metrics {
-                victory_points: 2.6,
+                victory_points: 1.7,
                 clearance: 0.85,
                 ..Metrics::default()
             },
         )]);
-        let failed = own_clauses(
+        let detail = verdict_detail(
             &candidate,
             &champion,
             GainEvidence {
-                gain: 0.6,
-                standard_error: 0.1,
-                samples: 32,
+                gain: 0.1,
+                standard_error: 0.4,
+                samples: 8,
+            },
+            GainEvidence {
+                gain: -0.08,
+                standard_error: 0.3,
+                samples: 8,
             },
             &sol,
-            0.05,
-            0.03,
             2.0,
         );
-        assert_eq!(failed.len(), 1, "{failed:?}");
-        assert!(failed[0].starts_with("own clearance"));
+        assert!(detail.contains("own sigma evidence"), "{detail}");
+        assert!(detail.contains("own clearance guard"), "{detail}");
+        assert!(detail.contains("clearance merit bar"), "{detail}");
+        assert!(
+            detail.starts_with("VP merit failed [") && detail.contains("clearance merit failed ["),
+            "{detail}"
+        );
 
-        // Within tolerance: passes.
-        let candidate = BTreeMap::from([(
+        // A clean head explains nothing.
+        let improved = BTreeMap::from([(
             sol.clone(),
             Metrics {
-                victory_points: 2.6,
-                clearance: 0.91,
+                victory_points: 2.06,
+                clearance: 0.93,
                 ..Metrics::default()
             },
         )]);
         assert!(
-            own_clauses(
-                &candidate,
+            verdict_detail(
+                &improved,
                 &champion,
                 GainEvidence {
-                    gain: 0.6,
-                    standard_error: 0.1,
-                    samples: 32
+                    gain: 0.06,
+                    standard_error: 0.01,
+                    samples: 8
                 },
+                GainEvidence::default(),
                 &sol,
-                0.05,
-                0.03,
                 2.0
             )
             .is_empty()
@@ -1545,6 +1878,7 @@ mod tests {
         let mut candidate = PanelEvaluation {
             metrics: BTreeMap::new(),
             faction_vp_by_seed: BTreeMap::new(),
+            faction_clearance_by_seed: BTreeMap::new(),
         };
         candidate
             .faction_vp_by_seed
@@ -1552,6 +1886,7 @@ mod tests {
         let mut champion = PanelEvaluation {
             metrics: BTreeMap::new(),
             faction_vp_by_seed: BTreeMap::new(),
+            faction_clearance_by_seed: BTreeMap::new(),
         };
         champion
             .faction_vp_by_seed
@@ -1566,69 +1901,6 @@ mod tests {
         // A faction absent from one panel contributes nothing to the other's evidence.
         let missing = GainEvidence::paired_faction(&candidate, &champion, &FactionId::new("sol"));
         assert_eq!(missing.samples, 2);
-    }
-    use super::*;
-    use ti4_training::gradient::Telemetry;
-    use ti4_training::stage1::Generation;
-
-    fn metric(victory_points: f64, clearance: f64) -> Metrics {
-        Metrics {
-            victory_points,
-            clearance,
-            ..Metrics::default()
-        }
-    }
-
-    #[test]
-    fn own_clauses_name_every_refusal() {
-        // A head that fails its own sigma evidence and its own clearance must name both, and
-        // nothing about the other five seats may appear in the explanation.
-        let sol = FactionId::new("sol");
-        let champion = BTreeMap::from([(sol.clone(), metric(2.0, 0.93))]);
-        let candidate = BTreeMap::from([(sol.clone(), metric(1.7, 0.85))]);
-        let failed = own_clauses(
-            &candidate,
-            &champion,
-            GainEvidence {
-                gain: 0.1,
-                standard_error: 0.4,
-                samples: 8,
-            },
-            &sol,
-            0.05,
-            0.03,
-            2.0,
-        );
-        assert_eq!(
-            failed.len(),
-            2,
-            "expected two distinct clause failures: {failed:?}"
-        );
-        assert!(
-            failed
-                .iter()
-                .any(|line| line.starts_with("own sigma evidence"))
-        );
-        assert!(failed.iter().any(|line| line.starts_with("own clearance")));
-
-        // A clean head explains nothing.
-        let improved = BTreeMap::from([(sol.clone(), metric(2.06, 0.93))]);
-        assert!(
-            own_clauses(
-                &improved,
-                &champion,
-                GainEvidence {
-                    gain: 0.06,
-                    standard_error: 0.01,
-                    samples: 8
-                },
-                &sol,
-                0.05,
-                0.03,
-                2.0
-            )
-            .is_empty()
-        );
     }
 
     #[test]
