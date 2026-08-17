@@ -797,6 +797,9 @@ fn save(
 fn main() -> Result<(), String> {
     let updates = number("--updates", 1_000);
     let every = number("--every", 25).max(1);
+    // Pure learning mode: no boundary evaluation, no gate, no promotion — only training and
+    // per-block telemetry. The champion stays frozen for the whole run.
+    let no_boundaries = flag("--no-boundaries");
     let train_seeds = u64::try_from(number("--train-seeds", 16)).unwrap_or(16);
     // Seed-stream overrides for differential comparisons against Python checkpoints, which stride
     // their training seeds by 10_000 from an explicit base. Unset keeps this engine's historical
@@ -929,6 +932,7 @@ fn main() -> Result<(), String> {
     let mut arguments = BTreeMap::from([
         ("updates".to_owned(), updates.to_string()),
         ("every".to_owned(), every.to_string()),
+        ("no_boundaries".to_owned(), no_boundaries.to_string()),
         ("train_seeds".to_owned(), train_seeds.to_string()),
         ("validation_seeds".to_owned(), validation_seeds.to_string()),
         (
@@ -1022,7 +1026,11 @@ fn main() -> Result<(), String> {
     println!(
         "  promotion: per-faction own merit — each head vs its own champion with the other five seats fixed; VP path: own gain > {accept_vp_margin:.2} and > {accept_sigmas:.1}σ (own SE), clearance within {max_faction_clearance_regression:.2}; OR clearance path: own clearance gain >= {clearance_gain_bar:.2} and > {accept_sigmas:.1}σ, accepting VP regression up to {max_faction_vp_regression:.2}; validation + confirmation panels ({validation_seeds}+{confirmation_seeds} seeds)"
     );
-    if panel_step == 0 {
+    if no_boundaries {
+        println!(
+            "  boundaries: DISABLED (--no-boundaries) — pure learning; no evaluation, no gate, no promotion; champion frozen for the whole run"
+        );
+    } else if panel_step == 0 {
         println!("  panels: one fixed validation/confirmation panel at every boundary");
     } else {
         println!(
@@ -1175,65 +1183,126 @@ fn main() -> Result<(), String> {
         profiles = run.profiles;
         done += count;
         let update = starting_update + done;
-        // Boundary panels: the fixed historical panel when stepping is off, otherwise a fresh
-        // disjoint block per boundary so cross-boundary trends use independent samples.
-        let panel_validation_seed =
-            first_seed_for_boundary(validation_first_seed, panel_step, boundary_index);
-        let panel_confirmation_seed =
-            first_seed_for_boundary(confirmation_first_seed, panel_step, boundary_index);
-        boundary_index += 1;
-        if panel_step > 0 {
-            println!(
-                "boundary {update}: fresh panels (validation first seed {panel_validation_seed}, confirmation first seed {panel_confirmation_seed})"
-            );
-        }
-        // Per-faction gate: each head is measured against its own champion with the other five
-        // seats held at their champion heads, and judged on its own metrics only — no clause ever
-        // sums over other factions, so one head can neither block nor carry another. All six are
-        // tested against the same pre-boundary champion table so no promotion confounds a
-        // sibling's evidence; promotions apply together afterwards. The champion panels are
-        // re-measured every boundary (cheap after F15) so they are never stale, whether or not
-        // stepping is on.
-        let champion_panel = evaluate(&plan, &accepted, panel_validation_seed, validation_seeds)?;
-        let champion_confirmation_panel = evaluate(
-            &plan,
-            &accepted,
-            panel_confirmation_seed,
-            confirmation_seeds,
-        )?;
-        report(update, &champion_panel.metrics);
-        let mut promoted = Vec::new();
-        let mut candidate_metrics: BTreeMap<FactionId, Metrics> = BTreeMap::new();
-        let mut faction_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
-        let mut faction_clearance_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
-        let mut confirmation_rows: BTreeMap<FactionId, Metrics> = BTreeMap::new();
-        let mut confirmation_gains_map: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
-        let mut promotion_paths: BTreeMap<FactionId, String> = BTreeMap::new();
-        for faction in &plan.factions {
-            let mut isolated = accepted.clone();
-            isolated.insert(faction.clone(), profiles[faction].clone());
-            let primary = evaluate(&plan, &isolated, panel_validation_seed, validation_seeds)?;
-            candidate_metrics.insert(faction.clone(), primary.metrics[faction]);
-            let own_gain = GainEvidence::paired_faction(&primary, &champion_panel, faction);
-            let own_clr_gain =
-                GainEvidence::paired_faction_clearance(&primary, &champion_panel, faction);
-            faction_gains.insert(faction.clone(), own_gain);
-            faction_clearance_gains.insert(faction.clone(), own_clr_gain);
-            let (passed, detail) = own_verdict(
-                &primary.metrics,
-                &champion_panel.metrics,
-                own_gain,
-                own_clr_gain,
-                faction,
-                accept_vp_margin,
-                max_faction_clearance_regression,
-                clearance_gain_bar,
-                max_faction_vp_regression,
-                accept_sigmas,
-            );
-            if !passed {
+        // --no-boundaries: pure learning mode — skip evaluation and the gate entirely;
+        // telemetry above and checkpointing below still run every block.
+        if !no_boundaries {
+            // Boundary panels: the fixed historical panel when stepping is off, otherwise a fresh
+            // disjoint block per boundary so cross-boundary trends use independent samples.
+            let panel_validation_seed =
+                first_seed_for_boundary(validation_first_seed, panel_step, boundary_index);
+            let panel_confirmation_seed =
+                first_seed_for_boundary(confirmation_first_seed, panel_step, boundary_index);
+            boundary_index += 1;
+            if panel_step > 0 {
                 println!(
-                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) rejected: {}",
+                    "boundary {update}: fresh panels (validation first seed {panel_validation_seed}, confirmation first seed {panel_confirmation_seed})"
+                );
+            }
+            // Per-faction gate: each head is measured against its own champion with the other five
+            // seats held at their champion heads, and judged on its own metrics only — no clause ever
+            // sums over other factions, so one head can neither block nor carry another. All six are
+            // tested against the same pre-boundary champion table so no promotion confounds a
+            // sibling's evidence; promotions apply together afterwards. The champion panels are
+            // re-measured every boundary (cheap after F15) so they are never stale, whether or not
+            // stepping is on.
+            let champion_panel =
+                evaluate(&plan, &accepted, panel_validation_seed, validation_seeds)?;
+            let champion_confirmation_panel = evaluate(
+                &plan,
+                &accepted,
+                panel_confirmation_seed,
+                confirmation_seeds,
+            )?;
+            report(update, &champion_panel.metrics);
+            let mut promoted = Vec::new();
+            let mut candidate_metrics: BTreeMap<FactionId, Metrics> = BTreeMap::new();
+            let mut faction_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+            let mut faction_clearance_gains: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+            let mut confirmation_rows: BTreeMap<FactionId, Metrics> = BTreeMap::new();
+            let mut confirmation_gains_map: BTreeMap<FactionId, GainEvidence> = BTreeMap::new();
+            let mut promotion_paths: BTreeMap<FactionId, String> = BTreeMap::new();
+            for faction in &plan.factions {
+                let mut isolated = accepted.clone();
+                isolated.insert(faction.clone(), profiles[faction].clone());
+                let primary = evaluate(&plan, &isolated, panel_validation_seed, validation_seeds)?;
+                candidate_metrics.insert(faction.clone(), primary.metrics[faction]);
+                let own_gain = GainEvidence::paired_faction(&primary, &champion_panel, faction);
+                let own_clr_gain =
+                    GainEvidence::paired_faction_clearance(&primary, &champion_panel, faction);
+                faction_gains.insert(faction.clone(), own_gain);
+                faction_clearance_gains.insert(faction.clone(), own_clr_gain);
+                let (passed, detail) = own_verdict(
+                    &primary.metrics,
+                    &champion_panel.metrics,
+                    own_gain,
+                    own_clr_gain,
+                    faction,
+                    accept_vp_margin,
+                    max_faction_clearance_regression,
+                    clearance_gain_bar,
+                    max_faction_vp_regression,
+                    accept_sigmas,
+                );
+                if !passed {
+                    println!(
+                        "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) rejected: {}",
+                        faction,
+                        primary.metrics[faction].victory_points,
+                        champion_panel.metrics[faction].victory_points,
+                        own_gain.gain,
+                        own_gain.standard_error,
+                        own_clr_gain.gain,
+                        own_clr_gain.standard_error,
+                        own_gain.samples,
+                        detail
+                    );
+                    continue;
+                }
+                let confirmation = evaluate(
+                    &plan,
+                    &isolated,
+                    panel_confirmation_seed,
+                    confirmation_seeds,
+                )?;
+                let conf_own_gain = GainEvidence::paired_faction(
+                    &confirmation,
+                    &champion_confirmation_panel,
+                    faction,
+                );
+                let conf_own_clr_gain = GainEvidence::paired_faction_clearance(
+                    &confirmation,
+                    &champion_confirmation_panel,
+                    faction,
+                );
+                let (conf_passed, conf_detail) = own_verdict(
+                    &confirmation.metrics,
+                    &champion_confirmation_panel.metrics,
+                    conf_own_gain,
+                    conf_own_clr_gain,
+                    faction,
+                    accept_vp_margin,
+                    max_faction_clearance_regression,
+                    clearance_gain_bar,
+                    max_faction_vp_regression,
+                    accept_sigmas,
+                );
+                if !conf_passed {
+                    println!(
+                        "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmation rejected: {}",
+                        faction,
+                        primary.metrics[faction].victory_points,
+                        champion_panel.metrics[faction].victory_points,
+                        conf_own_gain.gain,
+                        conf_own_gain.standard_error,
+                        conf_own_clr_gain.gain,
+                        conf_own_clr_gain.standard_error,
+                        conf_own_gain.samples,
+                        conf_detail
+                    );
+                    continue;
+                }
+                println!(
+                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmed: {}",
                     faction,
                     primary.metrics[faction].victory_points,
                     champion_panel.metrics[faction].victory_points,
@@ -1244,114 +1313,62 @@ fn main() -> Result<(), String> {
                     own_gain.samples,
                     detail
                 );
-                continue;
-            }
-            let confirmation = evaluate(
-                &plan,
-                &isolated,
-                panel_confirmation_seed,
-                confirmation_seeds,
-            )?;
-            let conf_own_gain =
-                GainEvidence::paired_faction(&confirmation, &champion_confirmation_panel, faction);
-            let conf_own_clr_gain = GainEvidence::paired_faction_clearance(
-                &confirmation,
-                &champion_confirmation_panel,
-                faction,
-            );
-            let (conf_passed, conf_detail) = own_verdict(
-                &confirmation.metrics,
-                &champion_confirmation_panel.metrics,
-                conf_own_gain,
-                conf_own_clr_gain,
-                faction,
-                accept_vp_margin,
-                max_faction_clearance_regression,
-                clearance_gain_bar,
-                max_faction_vp_regression,
-                accept_sigmas,
-            );
-            if !conf_passed {
-                println!(
-                    "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmation rejected: {}",
-                    faction,
-                    primary.metrics[faction].victory_points,
-                    champion_panel.metrics[faction].victory_points,
-                    conf_own_gain.gain,
-                    conf_own_gain.standard_error,
-                    conf_own_clr_gain.gain,
-                    conf_own_clr_gain.standard_error,
-                    conf_own_gain.samples,
-                    conf_detail
+                confirmation_rows.insert(faction.clone(), confirmation.metrics[faction]);
+                confirmation_gains_map.insert(faction.clone(), conf_own_gain);
+                promotion_paths.insert(
+                    faction.clone(),
+                    if detail.starts_with("VP") {
+                        "vp".to_owned()
+                    } else {
+                        "clearance".to_owned()
+                    },
                 );
-                continue;
+                promoted.push(faction.clone());
             }
-            println!(
-                "  {:12} cand_vp {:.3} acc_vp {:.3} own_vp {:+.4} (SE {:.4}) own_clr {:+.4} (SE {:.4}, n={}) confirmed: {}",
-                faction,
-                primary.metrics[faction].victory_points,
-                champion_panel.metrics[faction].victory_points,
-                own_gain.gain,
-                own_gain.standard_error,
-                own_clr_gain.gain,
-                own_clr_gain.standard_error,
-                own_gain.samples,
-                detail
-            );
-            confirmation_rows.insert(faction.clone(), confirmation.metrics[faction]);
-            confirmation_gains_map.insert(faction.clone(), conf_own_gain);
-            promotion_paths.insert(
-                faction.clone(),
-                if detail.starts_with("VP") {
-                    "vp".to_owned()
-                } else {
-                    "clearance".to_owned()
-                },
-            );
-            promoted.push(faction.clone());
-        }
-        if !promoted.is_empty() {
-            for faction in &promoted {
-                accepted.insert(faction.clone(), profiles[faction].clone());
+            if !promoted.is_empty() {
+                for faction in &promoted {
+                    accepted.insert(faction.clone(), profiles[faction].clone());
+                }
             }
-        }
-        let accepted_kind = if promoted.is_empty() {
-            None
-        } else {
-            Some("per_faction".to_owned())
-        };
-        let promoted_label = promoted
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        println!(
-            "promotion: {} ({})",
-            if promoted_label.is_empty() {
-                "none"
+            let accepted_kind = if promoted.is_empty() {
+                None
             } else {
-                &promoted_label
-            },
-            accepted_kind.as_deref().unwrap_or("rejected")
-        );
-        history.push(
-            serde_json::to_value(Evaluation {
-                update,
-                validation_first_seed: Some(panel_validation_seed),
-                elapsed_seconds: started.elapsed().as_secs_f64(),
-                candidate_metrics,
-                accepted_metrics: champion_panel.metrics.clone(),
-                confirmation_metrics: (!confirmation_rows.is_empty()).then_some(confirmation_rows),
-                accepted: promoted,
-                accepted_kind,
-                faction_gains,
-                faction_clearance_gains,
-                confirmation_gains: (!confirmation_gains_map.is_empty())
-                    .then_some(confirmation_gains_map),
-                promotion_paths: (!promotion_paths.is_empty()).then_some(promotion_paths),
-            })
-            .map_err(|error| format!("serialize evaluation: {error}"))?,
-        );
+                Some("per_faction".to_owned())
+            };
+            let promoted_label = promoted
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            println!(
+                "promotion: {} ({})",
+                if promoted_label.is_empty() {
+                    "none"
+                } else {
+                    &promoted_label
+                },
+                accepted_kind.as_deref().unwrap_or("rejected")
+            );
+            history.push(
+                serde_json::to_value(Evaluation {
+                    update,
+                    validation_first_seed: Some(panel_validation_seed),
+                    elapsed_seconds: started.elapsed().as_secs_f64(),
+                    candidate_metrics,
+                    accepted_metrics: champion_panel.metrics.clone(),
+                    confirmation_metrics: (!confirmation_rows.is_empty())
+                        .then_some(confirmation_rows),
+                    accepted: promoted,
+                    accepted_kind,
+                    faction_gains,
+                    faction_clearance_gains,
+                    confirmation_gains: (!confirmation_gains_map.is_empty())
+                        .then_some(confirmation_gains_map),
+                    promotion_paths: (!promotion_paths.is_empty()).then_some(promotion_paths),
+                })
+                .map_err(|error| format!("serialize evaluation: {error}"))?,
+            );
+        }
         if let Some(path) = &output {
             save(
                 path,
