@@ -22,7 +22,7 @@
 //! and nothing to a gradient, and storing it would make a vector's size depend on how many facts
 //! happened to be zero.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1056,6 +1056,8 @@ pub const fn structured_features_status() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use serde::Deserialize;
     use ti4_engine::choice::Observed;
@@ -1500,7 +1502,7 @@ mod tests {
 
         let dropped: Vec<_> = full[0]
             .keys()
-            .filter(|key| !kept[0].contains_key(*key))
+            .filter(|key| !kept[0].contains_key(key))
             .copied()
             .collect();
         assert!(!dropped.is_empty(), "the rule should drop something here");
