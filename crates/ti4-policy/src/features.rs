@@ -80,8 +80,18 @@ impl Features {
 }
 
 /// The tokens the oracle's `[a-z0-9]+` finds in a lowercased string.
+///
+/// `to_lowercase` allocates a whole second copy of its input unconditionally, and almost every
+/// string reaching here — option ids, labels, prompts — is already lowercase, so that copy was
+/// usually made only to be thrown away. Borrowing when nothing needs changing costs one scan for
+/// an uppercase byte.
 fn tokens(text: &str) -> Vec<String> {
-    text.to_lowercase()
+    let lowered = if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        std::borrow::Cow::Owned(text.to_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    };
+    lowered
         .split(|character: char| !character.is_ascii_alphanumeric())
         .filter(|part| !part.is_empty())
         .map(ToOwned::to_owned)
