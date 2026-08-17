@@ -7,13 +7,14 @@ Companion to `plans/PLAN_2026-08-17_ENGINE_EFFICIENCY.md`, which this supersedes
 
 ## Headline
 
-**2.53× on a full training update.**
+**2.61× on a full training update.**
 
-| | baseline `46404a0` | after `f7b2716` | |
+| | baseline `46404a0` | now | |
 |---|---|---|---|
-| play (rollout) | 15.056 ms/game | **6.791** | 2.22× |
-| reduce (gradient statistics + merge) | 5.751 ms/game | **1.421** | 4.05× |
-| **full update** | **20.807 ms/game** | **8.212** | **2.53×** |
+| **full update** | **20.807 ms/game** | **7.978** | **2.61×** |
+
+Split of the 7.978 ms: policy 4.094 (51%), record ~1.6 (20%), reduce ~1.4 (18%),
+engine 0.77 (9%).
 
 The first ten commits (up to `0789519`) reached 1.68× and were **bit-identical**. The eleventh
 (`f7b2716`, feature vectors keyed by hash rather than by name) took that to 2.53× and is the one
@@ -130,6 +131,39 @@ it is "identity against the *old* ordering is gone, and reproducibility between 
 The evidence gate changed accordingly, from a digest to distributional agreement, and the result
 came back stronger than the standard required: zero differing decisions in a traced game, and
 per-faction VP and clearance identical to four decimal places over 720 games.
+
+## Feature naming, and where it stopped
+
+After keying by hash, three further passes at the naming cost:
+
+| Change | Effect |
+|---|---|
+| `add_named` takes `fmt::Arguments` into a reused buffer instead of `&format!` | policy 4.508 → 4.289 (4.9%) |
+| Reduce pairs probabilities with vectors by iteration, not by id lookup | within noise |
+| Hot families hash from their **pieces**, never building the string | policy 4.289 → 4.094 (4.5%) |
+
+The last one rests on FNV-1a being a *streaming* hash: folding
+`["prompt-option:", p, ":", o]` gives bit-for-bit the same key as hashing the joined string, so
+the name is built only on the first sighting of a key. The decision trace is byte-identical
+across it.
+
+**And that is where naming stops paying.** A census over 3,953 real options (94,436 features,
+23.9 per option) shows the five converted families are **92.6% of all features**:
+
+| family | share | |
+|---|---|---|
+| `prompt-option` | 35.4% | converted |
+| `state-kind` | 27.5% | converted |
+| `prompt-kind` | 14.2% | converted |
+| `option` | 11.4% | converted |
+| `kind` | 4.2% | converted |
+| `target` | 6.8% | still formats |
+
+So removing `format!` from essentially every feature bought 4.5% of policy — not the ~60%
+predicted by microbenchmarking `format!` in isolation. That prediction was wrong, and it is
+recorded here so the next reader does not act on it again. Naming is no longer the bottleneck;
+what remains is the map inserts, the hashing, tokenising, and the board queries in
+`structured_features`.
 
 ## What is left
 
