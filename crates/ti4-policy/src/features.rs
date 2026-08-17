@@ -28,7 +28,7 @@ use serde_json::Value;
 use ti4_engine::choice::{Choice, ChoiceOption, Observed};
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 
-use crate::intern::{FeatureKey, register};
+use crate::intern::{FeatureKey, first_sighting, record, register};
 use crate::learned::bucket;
 
 /// A sparse feature vector: feature key to accumulated signed value.
@@ -374,7 +374,7 @@ fn explicit_option_features_with(
 ) -> FeatureVector {
     let mut features = FeatureVector::new();
     let kind = canonical_feature_kind(&option.kind);
-    add_named(&mut features, format_args!("kind:{kind}"), 1.0);
+    add_parts(&mut features, &["kind:", kind], 1.0);
 
     let mut option_tokens: BTreeSet<String> = tokens(&option.id)
         .into_iter()
@@ -383,19 +383,19 @@ fn explicit_option_features_with(
         .collect();
     // Stable iteration is part of the feature contract even though addition is commutative.
     for token in &option_tokens {
-        add_named(&mut features, format_args!("option:{token}"), 1.0);
+        add_parts(&mut features, &["option:", token], 1.0);
     }
 
     for prompt_token in prompt_tokens {
-        add_named(
+        add_parts(
             &mut features,
-            format_args!("prompt-kind:{prompt_token}:{kind}"),
+            &["prompt-kind:", prompt_token, ":", kind],
             1.0,
         );
         for option_token in &option_tokens {
-            add_named(
+            add_parts(
                 &mut features,
-                format_args!("prompt-option:{prompt_token}:{option_token}"),
+                &["prompt-option:", prompt_token, ":", option_token],
                 1.0,
             );
         }
@@ -453,16 +453,29 @@ fn explicit_option_features_with(
     }
 
     for (name, value) in seat_facts {
-        add_named(
-            &mut features,
-            format_args!("state-kind:{kind}:{name}"),
-            *value,
-        );
+        add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
     }
 
     structured_features(seen, option, player, &mut features);
     option_tokens.clear();
     features
+}
+
+/// Add a feature whose name is a fixed shape with string pieces slotted in.
+///
+/// The hot families all look like `family:{a}` or `family:{a}:{b}`, and formatting them was
+/// measured at roughly 60% of what naming a feature costs. FNV-1a is a streaming hash, so
+/// folding the pieces gives bit-for-bit the same key as hashing the joined string — the name
+/// itself is only ever built on the first sighting of a key, to record it for later resolution.
+fn add_parts(features: &mut FeatureVector, parts: &[&str], value: f64) {
+    if value == 0.0 || !value.is_finite() {
+        return;
+    }
+    let key = FeatureKey::of_parts(parts);
+    if first_sighting(key) {
+        record(key, &parts.concat());
+    }
+    *features.entry(key).or_insert(0.0) += value;
 }
 
 thread_local! {

@@ -63,10 +63,57 @@ impl FeatureKey {
         Self(hash)
     }
 
+    /// The key for a name given in pieces, without ever joining them.
+    ///
+    /// FNV-1a is a streaming hash, so folding `["a:", b, ":", c]` gives bit-for-bit the same key
+    /// as hashing the string `"a:{b}:{c}"`. That is what lets the hot feature families skip
+    /// formatting entirely: the name is only ever built on the first sighting of a key, to record
+    /// it for later resolution.
+    #[must_use]
+    pub fn of_parts(parts: &[&str]) -> Self {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for part in parts {
+            for byte in part.as_bytes() {
+                hash ^= u64::from(*byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        Self(hash)
+    }
+
     /// The raw key, for callers building side tables.
     #[must_use]
     pub const fn bits(self) -> u64 {
         self.0
+    }
+}
+
+/// Whether this thread has already recorded `key`, marking it recorded if not.
+///
+/// Split out of [`register`] so a caller that computed a key from pieces can skip building the
+/// name at all on the overwhelmingly common path where the key is already known.
+#[must_use]
+pub fn first_sighting(key: FeatureKey) -> bool {
+    SEEN.with(|seen| seen.borrow_mut().insert(key.0))
+}
+
+/// Record the name for a key already known to be new to this thread.
+///
+/// # Panics
+/// If the name table's lock is poisoned; see [`register`].
+pub fn record(key: FeatureKey, name: &str) {
+    let mut names = NAMES.write().expect("feature name table poisoned");
+    match names.entry(key.0) {
+        std::collections::hash_map::Entry::Occupied(existing) => {
+            debug_assert_eq!(
+                existing.get().as_ref(),
+                name,
+                "two feature names collided on one 64-bit key"
+            );
+        }
+        std::collections::hash_map::Entry::Vacant(slot) => {
+            slot.insert(name.into());
+        }
     }
 }
 
@@ -98,21 +145,8 @@ pub fn register(name: &str) -> FeatureKey {
     // features are registered around 340,000 times per game and thirty-two workers sharing one
     // reader count turn a read-mostly table into cache-line ping-pong. The set converges to the
     // corpus (~50,000 keys, ~8 bytes each) within the first games and never grows again.
-    let fresh = SEEN.with(|seen| seen.borrow_mut().insert(key.0));
-    if fresh {
-        let mut names = NAMES.write().expect("feature name table poisoned");
-        match names.entry(key.0) {
-            std::collections::hash_map::Entry::Occupied(existing) => {
-                debug_assert_eq!(
-                    existing.get().as_ref(),
-                    name,
-                    "two feature names collided on one 64-bit key"
-                );
-            }
-            std::collections::hash_map::Entry::Vacant(slot) => {
-                slot.insert(name.into());
-            }
-        }
+    if first_sighting(key) {
+        record(key, name);
     }
     key
 }
@@ -172,6 +206,29 @@ mod tests {
             FeatureKey::of("kind:activate"),
             FeatureKey::of("kind:produce")
         );
+    }
+
+    #[test]
+    fn a_key_from_pieces_equals_the_key_from_the_joined_name() {
+        // The property the whole fast path rests on.
+        for (parts, joined) in [
+            (vec!["kind:", "activate"], "kind:activate"),
+            (
+                vec!["prompt-option:", "action", ":", "activate"],
+                "prompt-option:action:activate",
+            ),
+            (
+                vec!["state-kind:", "pay", ":", "trade_goods"],
+                "state-kind:pay:trade_goods",
+            ),
+            (vec![""], ""),
+        ] {
+            assert_eq!(
+                FeatureKey::of_parts(&parts),
+                FeatureKey::of(joined),
+                "pieces {parts:?} against {joined}"
+            );
+        }
     }
 
     #[test]
