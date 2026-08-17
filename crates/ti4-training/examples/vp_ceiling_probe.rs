@@ -101,7 +101,9 @@ fn main() {
                 .or_default()
                 .push(seat.episode.final_progress.victory_points);
             if seat.episode.cleared {
-                *cleared_by_faction.entry(seat.faction.as_str().to_owned()).or_insert(0) += 1;
+                *cleared_by_faction
+                    .entry(seat.faction.as_str().to_owned())
+                    .or_insert(0) += 1;
             }
         }
     }
@@ -134,7 +136,10 @@ fn main() {
         let p90 = sorted[min((n * 9) / 10, n - 1)];
         let max = sorted[n - 1];
         let above3 = values.iter().filter(|v| **v >= 3).count();
-        let cleared = cleared_by_faction.get(faction.as_str()).copied().unwrap_or(0);
+        let cleared = cleared_by_faction
+            .get(faction.as_str())
+            .copied()
+            .unwrap_or(0);
         println!(
             "{:<8} {:>5} {:>7.2} {:>6} {:>6} {:>6} {:>6} {:>7.3} {:>9}",
             faction.as_str(),
