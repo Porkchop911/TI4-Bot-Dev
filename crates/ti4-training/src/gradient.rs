@@ -96,7 +96,10 @@ impl Statistics {
             (&mut self.entropy_gradient_sum, &other.entropy_gradient_sum),
         ] {
             for (slot, value) in source {
-                *target.entry(slot.clone()).or_insert(0.0) += value;
+                // Same reason as `statistics`: `entry` would clone the slot name before it can
+                // look it up, and merging 96 partials means nearly every slot is already present
+                // in the target by the second partial.
+                accumulate(target, slot, *value);
             }
         }
     }
@@ -132,7 +135,12 @@ fn accumulate(into: &mut BTreeMap<String, f64>, slot: &str, value: f64) {
     if let Some(existing) = into.get_mut(slot) {
         *existing += value;
     } else {
-        into.insert(slot.to_owned(), value);
+        // `0.0 + value`, not `value`. The form this replaces was `entry(..).or_insert(0.0) +=
+        // value`, and that addition is not an identity: IEEE 754 gives `0.0 + -0.0 == +0.0`, so
+        // a slot whose first contribution is a negative zero stored `+0.0` before and would
+        // store `-0.0` here. The two compare equal and sum alike, so no test could see it — a
+        // bit-level digest of the reduced batch can, and did.
+        into.insert(slot.to_owned(), 0.0 + value);
     }
 }
 
