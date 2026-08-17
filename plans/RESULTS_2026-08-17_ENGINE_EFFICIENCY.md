@@ -215,13 +215,28 @@ Two fixes inside `structured_features`, both byte-identical on the trace:
 | Read a system's planets from its own record instead of scanning every planet for a matching `tileId` (2,327 ns per call, one to three calls per option) | 0.709 → ~0.660 s (~7%) |
 | Count a system's units in one pass rather than four, each doing its own content lookup per unit | 0.660 → 0.642 s (2.8%) |
 
-Still unexamined inside `structured_features`: `system_reachable`, which walks the whole board and
-runs a graph distance per candidate origin, once per option — and whose result for the *active*
-system is identical across a choice's options.
+### `system_reachable` — examined, and not a lever
+
+Flagged as the obvious next target because it walks the whole board per option. Two attempts,
+both reverted:
+
+- Hoisting `galaxy.distance` out of the per-unit loop **made it slower** (0.650 against 0.642):
+  the distance was moved ahead of the unit check, so it then ran for every non-pinned system
+  including the many holding none of the player's ships — which the original ordering
+  short-circuited.
+- A lazy version, taking the distance on the first own unit seen, measured flat (0.644 against
+  0.642).
+
+`galaxy.distance` is two coordinate lookups and hex arithmetic, not the graph search the shape of
+the code suggests. Reverted both rather than bank a neutral change.
 
 ## Measurement note
 
-Two samples cannot resolve a 3% effect on this machine; three tight ones can. An earlier reading
+Two samples cannot resolve a 3% effect on this machine; three tight ones can. Between sessions
+there is also **~1.2% drift** — the same commit measured 0.642 s mean at one point and 0.650 s
+mean an hour later — so an A/B is only trustworthy when both arms are run back to back. That puts
+the practical resolution floor around 3%, and everything above it in the per-option path has now
+been taken. An earlier reading
 of 0.636 s was a lucky low sample against a true level of ~0.660, and one commit message
 overstated its change as 10% before `cb28495` corrected it to ~7%. Every A/B from that point uses
 three samples per arm and reports them individually.
