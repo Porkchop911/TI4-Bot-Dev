@@ -245,12 +245,42 @@ pub fn option_feature_names(
 /// extractors separate preserves schema-2 compatibility while making the representation used for
 /// new training unambiguous.
 #[must_use]
-// Keeping the extractor in one linear block makes its ordering and parity with the Python
-// reference auditable; splitting it would obscure which crosses belong to the base feature set.
-#[allow(clippy::too_many_lines)]
 pub fn explicit_option_features(
     seen: &Observed<'_>,
     choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+) -> FeatureVector {
+    explicit_option_features_with(seen, &tokens(&choice.prompt), option, player)
+}
+
+/// Features for every option of one choice, in the choice's own option order.
+///
+/// The prompt is tokenised **once for the whole choice** rather than once per option.
+/// [`tokens`] allocates a lowercased copy of its input plus one `String` per token, and a single
+/// transaction decision offers up to 37 options — so the per-option form did that work 37 times
+/// over one unchanging prompt. The feature set is identical either way; only the allocation
+/// count differs.
+#[must_use]
+pub fn explicit_choice_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+) -> Vec<FeatureVector> {
+    let prompt_tokens = tokens(&choice.prompt);
+    choice
+        .options
+        .iter()
+        .map(|option| explicit_option_features_with(seen, &prompt_tokens, option, player))
+        .collect()
+}
+
+// Keeping the extractor in one linear block makes its ordering and parity with the Python
+// reference auditable; splitting it would obscure which crosses belong to the base feature set.
+#[allow(clippy::too_many_lines)]
+fn explicit_option_features_with(
+    seen: &Observed<'_>,
+    prompt_tokens: &[String],
     option: &ChoiceOption,
     player: &PlayerId,
 ) -> FeatureVector {
@@ -268,7 +298,7 @@ pub fn explicit_option_features(
         add_named(&mut features, &format!("option:{token}"), 1.0);
     }
 
-    for prompt_token in tokens(&choice.prompt) {
+    for prompt_token in prompt_tokens {
         add_named(
             &mut features,
             &format!("prompt-kind:{prompt_token}:{kind}"),

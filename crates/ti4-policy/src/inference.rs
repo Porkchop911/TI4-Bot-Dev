@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
 use ti4_model::id::PlayerId;
 
-use crate::features::{FeatureVector, explicit_option_features, option_features};
+use crate::features::{FeatureVector, explicit_choice_features, option_features};
 use crate::learned::{Profile, decision_head};
 use crate::progress::{Baseline, Progress};
 
@@ -186,26 +186,33 @@ impl LearnedBot {
         // every other head's weights.
         let requested_head = decision_head(choice);
         let head = self.profile.resolved_head(requested_head);
-        let legal: BTreeMap<String, FeatureVector> = choice
-            .options
-            .iter()
-            .map(|option| {
-                (
-                    option.id.clone(),
-                    if self.profile.is_explicit() {
-                        explicit_option_features(seen, choice, option, &choice.player)
-                    } else {
+        // The explicit path builds the whole choice at once so the prompt is tokenised once
+        // rather than once per option (see `explicit_choice_features`).
+        let legal: BTreeMap<String, FeatureVector> = if self.profile.is_explicit() {
+            choice
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .zip(explicit_choice_features(seen, choice, &choice.player))
+                .collect()
+        } else {
+            choice
+                .options
+                .iter()
+                .map(|option| {
+                    (
+                        option.id.clone(),
                         option_features(
                             seen,
                             choice,
                             option,
                             &choice.player,
                             self.profile.dimensions(),
-                        )
-                    },
-                )
-            })
-            .collect();
+                        ),
+                    )
+                })
+                .collect()
+        };
         let scores: BTreeMap<String, f64> = legal
             .iter()
             .map(|(id, vector)| (id.clone(), self.profile.score_vector(head, vector)))
