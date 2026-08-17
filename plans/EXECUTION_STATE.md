@@ -1747,3 +1747,12 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   `out/overnight_u4000.json`. Expected wall ≈ 3.5 h; checkpoints every boundary so nothing is lost
   if killed. Next action on resume: read the log's promotion lines, check champion mean VP trend
   toward ≥3.0, and decide bonus escalation (2.0) or per-faction reward targeting if flat again.
+- **Overnight run COMPLETE** (u5600 → u9600, +4000 updates, 12973.5 s ≈ 3.6 h, 3.243 s/update,
+  zero errors across ~445M decisions). Per-faction gate delivered **6 independent promotions**:
+  u6000 xxcha, u6700 hacan, u7100 l1z1x, u9300 xxcha (+0.172 val / +0.188 conf), u9500 hacan
+  (+0.151 / +0.182), u9600 jolnar (+0.208 / +0.349). Champion mean VP rose ~1.98 → **2.35**;
+  final champion panel (pre-u9600 measurement): hacan 2.49, xxcha 2.48, sol 2.44, l1z1x 2.28,
+  letnev 2.23, jolnar 2.17; mean clearance 0.85 (jolnar 0.73 is the weak spot — its own clearance
+  clause will keep gating it). No faction at ≥3.0 yet; best hacan 2.49. Checkpoint
+  `out/overnight_u4000.json`. Next decision: continue as-is vs escalate `--high-vp-bonus` 1.0 →
+  2.0 for stronger directional pressure toward the ≥3-VP target.
