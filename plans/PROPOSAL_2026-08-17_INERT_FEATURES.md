@@ -1,5 +1,25 @@
 # The largest remaining efficiency lever: nearly half the features do nothing
 
+> **OUTCOME (implemented in `78b971b`): the analysis held, the speed prediction did not.**
+>
+> The kind rule was implemented and works exactly as designed — features per option fell
+> **23.9 → 18.5 (−22.6%)**, and 70.7% of options turn out to be in uniform-kind choices. Play is
+> unchanged: 720 games give per-faction VP and clearance identical to four decimal places.
+>
+> But the full update went **7.978 → 7.763 ms/game — 2.7%**, against the ~1.39× predicted from
+> this rule alone, and the **policy slice did not move at all** (4.094 → 4.116).
+>
+> Building 22.6% fewer features costs the same. Feature *count* is not what drives feature
+> construction; the **per-option fixed work** is — tokenising the id and label, the token
+> `BTreeSet`, the board queries in `structured_features`, and allocating the vector. The small
+> gain came from the trajectory and the reduction, which do scale with count.
+>
+> **This retires §"How to avoid it" rule 2.** The token-intersection rule would drop a further
+> ~13% of features and, by the evidence above, be worth about 1.5%. Not worth its complexity.
+>
+> **Where to look instead:** per-option fixed cost, at ~2,565 options per game. The estimate below
+> is left unedited as a record of how wrong a features-are-the-cost model was.
+
 Date 2026-08-17. Follows `plans/RESULTS_2026-08-17_ENGINE_EFFICIENCY.md` (2.96× already banked).
 
 ---
