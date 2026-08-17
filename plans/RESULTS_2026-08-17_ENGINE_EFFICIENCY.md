@@ -7,13 +7,36 @@ Companion to `plans/PLAN_2026-08-17_ENGINE_EFFICIENCY.md`, which this supersedes
 
 ## Headline
 
-**2.61× on a full training update.**
+**2.96× on the production configuration**, measured on exactly one training update.
 
-| | baseline `46404a0` | now | |
+| save52 pool, 96 games = one update | baseline `46404a0` | now |
+|---|---|---|
+| one update | 2.11 s | **0.71 s** |
+| per game | 21.98 ms | **7.42 ms** |
+| 1,000 updates | 35.2 min | **11.9 min** |
+
+(The recorded run `learning 15100..16100` took 2616.6 s = 43.6 min for 1,000 updates, against
+35.2 min measured here for the same work — the live run also checkpoints and competes with
+whatever else the machine was doing. Applying the ratio to the observed figure gives ~14.7 min.)
+
+On the probe configuration used for attribution throughout this document — Rust varied maps,
+90 games — the same work is **2.61×**.
+
+## Attribution: two changes did nearly all of it
+
+| stage | probe ms/game | step | share of the gain |
 |---|---|---|---|
-| **full update** | **20.807 ms/game** | **7.978** | **2.61×** |
+| baseline `46404a0` | 20.807 | — | — |
+| ten bit-identical commits (mimalloc-dominated) | 12.415 | 1.68× | **54%** |
+| feature vectors keyed by hash | 8.212 | 1.51× | **43%** |
+| naming (buffer, part-hashing, zip) | 7.978 | 1.03× | 3% |
 
-Split of the 7.978 ms: policy 4.094 (51%), record ~1.6 (20%), reduce ~1.4 (18%),
+Shares are log-space, so they compose. **`mimalloc` and hash-keying account for ~95% of the
+total**; the other ten perf commits together are ~5%. Several of those ten measured within
+run-to-run noise individually and are kept because they are strictly less work, not because they
+were shown to pay.
+
+Split of the remaining 7.978 ms: policy 4.094 (51%), record ~1.6 (20%), reduce ~1.4 (18%),
 engine 0.77 (9%).
 
 The first ten commits (up to `0789519`) reached 1.68× and were **bit-identical**. The eleventh
