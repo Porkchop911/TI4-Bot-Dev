@@ -7,7 +7,20 @@ Companion to `plans/PLAN_2026-08-17_ENGINE_EFFICIENCY.md`, which this supersedes
 
 ## Headline
 
-**1.68× on a full training update, verified numerically inert.**
+**2.53× on a full training update.**
+
+| | baseline `46404a0` | after `f7b2716` | |
+|---|---|---|---|
+| play (rollout) | 15.056 ms/game | **6.791** | 2.22× |
+| reduce (gradient statistics + merge) | 5.751 ms/game | **1.421** | 4.05× |
+| **full update** | **20.807 ms/game** | **8.212** | **2.53×** |
+
+The first ten commits (up to `0789519`) reached 1.68× and were **bit-identical**. The eleventh
+(`f7b2716`, feature vectors keyed by hash rather than by name) took that to 2.53× and is the one
+change that gives up bit-identity — deliberately, on instruction, and with the evidence recorded
+in §"Keying features by hash" below.
+
+## The bit-identical portion (1.68×)
 
 Measurement protocol, identical at both ends: 15 seeds × 6 rotations = **90 games**, trained
 profiles from `out/run_pure_u5000.json` (286,431 weights), `FULL` sources, four rounds, release,
@@ -64,7 +77,34 @@ Workspace: **1255 tests pass**; clippy at 21 warnings, all pre-existing.
 | Checkpoint I/O → bincode | load 190 ms, save 18 ms (JSON), 8 ms (bincode) | **Skip.** Negligible per run. Note the recorded "~38 s per run" in `STAGE2-SCHEDULING-WAVES.md` is not reproducible here. |
 | Profile deep-copy → `Arc` | 28.7 ms per batch call, ~2.6% of an update | **Deferred.** Ripples through the public rollout API for 2.6%. |
 
-## Where the cost is now, and the one thing left
+## Keying features by hash — the one change that is not bit-identical
+
+`FeatureVector` was `BTreeMap<String, f64>`: an allocation per key, a string comparison per tree
+level, for ~22 features on each of ~5.7 options at every one of ~450 decisions per game. It is now
+keyed by an FNV-1a hash of the name.
+
+**Why a hash and not a counter.** Handing out 0, 1, 2… as names are first seen makes the order
+depend on which seeds a run happened to play first, so two runs of one configuration drift apart
+in the low bits for reasons nobody can reconstruct. A hash is a pure function of the name, so
+iteration order is fixed by the corpus rather than by history.
+
+**What it cost before it paid.** The first version took a read lock on the shared name table per
+registration — 340,000 registrations per game across 32 workers sharing one reader count. That
+made the rollout **22% slower** (8.228 → 10.073) even as the reduction got 4.3× faster. A
+thread-local set of already-recorded keys removes the lock from the hot path and recovers it.
+
+**Evidence, in place of bit-identity.** Summation order changed, so dot products differ in their
+low bits and the digest gate no longer applies. Measured instead:
+
+- One traced game (seed 83000001, 1,115 decisions): **zero** differing choices, zero differing
+  prompts, zero differing option counts. The 91-byte trace delta is entirely printed score digits.
+- 720 games on the 96M validation panel: per-faction mean VP and clearance **identical to four
+  decimal places** for all six factions; table total 13.7125 both ways.
+
+Checkpoints are unaffected — weights are stored by name, and always were. A `FeatureKey`
+serialises as its name, never its number.
+
+## Where the cost is now
 
 Of the 12.415 ms full update: **reduce ~34%, feature construction ~48%, trajectory recording
 ~10%, engine ~9%.**
@@ -74,8 +114,10 @@ scoring, at 22 features/option) — consistent with the project's own instrument
 no redundant work left in it. The cost *is* the representation: `format!` (65 ns) plus a
 `BTreeMap<String, f64>` insert (50 ns) per feature, ~22 features per option.
 
-**Interning the feature namespace is the only remaining large lever — and it cannot meet the
-verification standard used here.** `BTreeMap<String, _>` iterates in lexicographic name order;
+**Done, in `f7b2716`.** The original text of this section read:
+
+> Interning the feature namespace is the only remaining large lever — and it cannot meet the
+> verification standard used here. `BTreeMap<String, _>` iterates in lexicographic name order;
 a `Vec` indexed by interned id iterates in id-assignment order. Feature names appear dynamically
 during training, so ids cannot be assigned in name order, so the gradient sums would accumulate
 in a **different order** and produce different floats. Mathematically equivalent, bit-wise not.
