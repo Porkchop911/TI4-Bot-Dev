@@ -94,21 +94,25 @@ pub fn probabilities(scores: &BTreeMap<String, f64>, temperature: f64) -> BTreeM
     }
     let temperature = temperature.max(1e-6);
     let best = scores.values().copied().fold(f64::NEG_INFINITY, f64::max);
-    let weights: Vec<(String, f64)> = scores
-        .iter()
-        .map(|(id, score)| (id.clone(), ((score - best) / temperature).exp()))
+    // Weights alone, positionally aligned with `scores.keys()`, rather than carrying a cloned
+    // copy of every option id through the intermediate. The ids are cloned once, into the
+    // result. Iteration order is the map's, so every sum and quotient is unchanged.
+    let weights: Vec<f64> = scores
+        .values()
+        .map(|score| ((score - best) / temperature).exp())
         .collect();
-    let total: f64 = weights.iter().map(|(_, weight)| weight).sum();
+    let total: f64 = weights.iter().sum();
     if !total.is_finite() || total <= 0.0 {
         // Uniform rather than a fabricated preference: an unusable score distribution is a bug to
         // notice, and a policy that quietly favours whatever sorted first would hide it.
         #[expect(clippy::cast_precision_loss, reason = "option counts are small")]
         let share = 1.0 / weights.len() as f64;
-        return weights.into_iter().map(|(id, _)| (id, share)).collect();
+        return scores.keys().map(|id| (id.clone(), share)).collect();
     }
-    weights
-        .into_iter()
-        .map(|(id, weight)| (id, weight / total))
+    scores
+        .keys()
+        .cloned()
+        .zip(weights.into_iter().map(|weight| weight / total))
         .collect()
 }
 
