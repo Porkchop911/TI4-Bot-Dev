@@ -224,7 +224,7 @@ fn semantic_gate(
         .flat_map(|rollout| &rollout.seats)
         .flat_map(|seat| &seat.trajectory)
         .flat_map(|step| step.legal.values())
-        .flat_map(BTreeMap::keys)
+        .flat_map(ti4_policy::features::FeatureVector::keys)
         .map(|key| ti4_policy::intern::name_of(*key))
         .collect();
     for (label, prefixes) in [

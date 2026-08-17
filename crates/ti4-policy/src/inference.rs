@@ -74,7 +74,7 @@ impl TrajectoryStep {
     /// construction, and the test below still pins that.
     #[must_use]
     pub fn features(&self) -> &FeatureVector {
-        static EMPTY: FeatureVector = BTreeMap::new();
+        static EMPTY: FeatureVector = FeatureVector::new();
         self.legal.get(&self.chosen).unwrap_or(&EMPTY)
     }
 }
