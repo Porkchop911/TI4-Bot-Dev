@@ -292,6 +292,7 @@ pub fn explicit_option_features(
         &seat_facts(seen, player),
         option,
         player,
+        uniform_kind(choice),
     )
 }
 
@@ -355,11 +356,42 @@ pub fn explicit_choice_features(
     // Both of these are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
     let facts = seat_facts(seen, player);
+    let uniform = uniform_kind(choice);
     choice
         .options
         .iter()
-        .map(|option| explicit_option_features_with(seen, &prompt_tokens, &facts, option, player))
+        .map(|option| {
+            explicit_option_features_with(seen, &prompt_tokens, &facts, option, player, uniform)
+        })
         .collect()
+}
+
+/// Whether every option of this choice canonicalises to the same feature kind.
+///
+/// When it does, the three kind-keyed families — `kind:`, `prompt-kind:` and `state-kind:` —
+/// take the **same value on every option**, and a feature with that property is inert:
+///
+/// - its score contribution is one constant added to every logit, and softmax ignores that;
+/// - its policy-gradient term is `φ_chosen − Σₒ pₒφₒ = c − c·1 = 0`;
+/// - its entropy-gradient term is `Σₒ coeffₒ·φₒ = c·Σₒ coeffₒ`, and
+///   `Σₒ coeffₒ = −(Σₒ pₒ ln pₒ + H)/T = −(−H + H)/T = 0`.
+///
+/// So it can never move a weight and never change a decision, and building, storing and summing
+/// it is work whose result arithmetic discards. Measured over 600 real choices, these three
+/// families are 45.9% of every feature instance and 70–82% of each is inert.
+///
+/// Checked on the *kinds* rather than on the finished vectors, because comparing vectors would
+/// cost what it saves. A choice whose options differ in kind keeps everything: `state-kind:move:*`
+/// and `state-kind:decline:*` are different slots, so each one does distinguish its options.
+fn uniform_kind(choice: &Choice) -> bool {
+    let mut kinds = choice
+        .options
+        .iter()
+        .map(|option| canonical_feature_kind(&option.kind));
+    let Some(first) = kinds.next() else {
+        return true;
+    };
+    kinds.all(|kind| kind == first)
 }
 
 // Keeping the extractor in one linear block makes its ordering and parity with the Python
@@ -371,10 +403,14 @@ fn explicit_option_features_with(
     seat_facts: &[(&'static str, f64); 8],
     option: &ChoiceOption,
     player: &PlayerId,
+    uniform_kind: bool,
 ) -> FeatureVector {
     let mut features = FeatureVector::new();
     let kind = canonical_feature_kind(&option.kind);
-    add_parts(&mut features, &["kind:", kind], 1.0);
+    // Skipped when every option shares this kind: see `uniform_kind`.
+    if !uniform_kind {
+        add_parts(&mut features, &["kind:", kind], 1.0);
+    }
 
     let mut option_tokens: BTreeSet<String> = tokens(&option.id)
         .into_iter()
@@ -452,8 +488,10 @@ fn explicit_option_features_with(
         }
     }
 
-    for (name, value) in seat_facts {
-        add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
+    if !uniform_kind {
+        for (name, value) in seat_facts {
+            add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
+        }
     }
 
     structured_features(seen, option, player, &mut features);
@@ -1068,8 +1106,18 @@ mod tests {
             .id()
             .to_owned();
         let land = ChoiceOption::new("land", "land").with("planet", planet);
-        let landing_choice =
-            Choice::new(player.clone(), "commit ground forces", vec![land.clone()]);
+        // With the terminator, as the engine always offers it (`invasion::commit_options`). It
+        // matters here beyond realism: a choice whose options all share one kind has its
+        // kind-keyed features skipped as inert, so `state-kind:commit:*` below is only a fact
+        // about this decision when some option has a different kind.
+        let landing_choice = Choice::new(
+            player.clone(),
+            "commit ground forces",
+            vec![
+                land.clone(),
+                ChoiceOption::new("done_committing", "decline"),
+            ],
+        );
         let landing = explicit_option_features(&seen, &landing_choice, &land, &player);
         assert!(
             value_of(&landing, "landing:resources").is_some()
@@ -1305,5 +1353,89 @@ mod tests {
             rebuilt.add(&name, value);
         }
         assert_eq!(hashed, rebuilt.into_vector());
+    }
+
+    #[test]
+    fn a_uniform_kind_choice_drops_exactly_the_features_that_cannot_matter() {
+        // The property the skip rests on, checked rather than argued: everything dropped had the
+        // same value on every option, and everything that distinguished the options was kept.
+        let (state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let options: Vec<ChoiceOption> = ["pok2diplomacy", "pok3politics", "pok7technology"]
+            .iter()
+            .map(|id| ChoiceOption::new(*id, "strategy_card"))
+            .collect();
+        let choice = Choice::new(player.clone(), "choose a strategy card", options.clone());
+        assert!(uniform_kind(&choice), "the fixture is a single-kind choice");
+
+        let prompt_tokens = tokens(&choice.prompt);
+        let facts = seat_facts(&seen, &player);
+        let full: Vec<FeatureVector> = options
+            .iter()
+            .map(|option| {
+                explicit_option_features_with(&seen, &prompt_tokens, &facts, option, &player, false)
+            })
+            .collect();
+        let kept = explicit_choice_features(&seen, &choice, &player);
+
+        let dropped: Vec<_> = full[0]
+            .keys()
+            .filter(|key| !kept[0].contains_key(*key))
+            .copied()
+            .collect();
+        assert!(!dropped.is_empty(), "the rule should drop something here");
+        for key in &dropped {
+            let value = full[0].get(key).copied();
+            assert!(
+                full.iter().all(|vector| vector.get(key).copied() == value),
+                "{} was dropped but does not have one value across the options",
+                crate::intern::name_of(*key)
+            );
+        }
+        for key in full[0].keys() {
+            let value = full[0].get(key).copied();
+            if !full.iter().all(|vector| vector.get(key).copied() == value) {
+                assert!(
+                    kept[0].contains_key(key),
+                    "{} distinguishes the options and must be kept",
+                    crate::intern::name_of(*key)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_mixed_kind_choice_keeps_everything() {
+        // `state-kind:move:*` and `state-kind:decline:*` are different slots, so each one does
+        // distinguish its options and none of them is inert.
+        let (state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let choice = Choice::new(
+            player.clone(),
+            "movement",
+            vec![
+                ChoiceOption::new("move|16|2", "move"),
+                ChoiceOption::new("done_moving", "decline"),
+            ],
+        );
+        assert!(!uniform_kind(&choice));
+
+        let full = explicit_option_features_with(
+            &seen,
+            &tokens(&choice.prompt),
+            &seat_facts(&seen, &player),
+            &choice.options[0],
+            &player,
+            false,
+        );
+        assert_eq!(
+            explicit_choice_features(&seen, &choice, &player)[0],
+            full,
+            "a mixed-kind choice loses nothing"
+        );
     }
 }
