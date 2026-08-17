@@ -122,6 +122,21 @@ pub struct Telemetry {
     pub update_norm: f64,
 }
 
+/// Add into a named accumulator without cloning the name when it is already there.
+///
+/// `entry` requires the owned key up front, so it allocates a copy of the slot name on every
+/// call even though the overwhelming majority of calls land on a slot the batch has already
+/// seen. Asking first costs one extra lookup on the miss path and saves an allocation on the
+/// hit path; a training batch accumulates tens of thousands of slots over hundreds of thousands
+/// of steps, so nearly every call is a hit.
+fn accumulate(into: &mut BTreeMap<String, f64>, slot: &str, value: f64) {
+    if let Some(existing) = into.get_mut(slot) {
+        *existing += value;
+    } else {
+        into.insert(slot.to_owned(), value);
+    }
+}
+
 /// Collect the statistics one seat's episode contributes.
 #[must_use]
 pub fn statistics(
@@ -138,7 +153,12 @@ pub fn statistics(
             .head(&step.head)
             .map_or(1.0, |head| head.temperature)
             .max(1e-6);
-        let row = collected.entry(step.head.clone()).or_default();
+        // `entry` would need the head name cloned before it can even look it up, on every step;
+        // there are only a dozen heads and hundreds of steps, so ask first and clone once.
+        if !collected.contains_key(&step.head) {
+            collected.insert(step.head.clone(), Statistics::default());
+        }
+        let row = collected.get_mut(&step.head).expect("just inserted");
 
         let entropy: f64 = -step
             .probabilities
@@ -147,13 +167,17 @@ pub fn statistics(
             .sum::<f64>();
 
         // What the policy expected to see, over the options it might have taken.
-        let mut expected: FeatureVector = BTreeMap::new();
+        //
+        // Keyed by borrowed slot name: this map is a temporary that dies with the step, and
+        // owning its keys meant cloning a heap string for every slot of every legal option --
+        // the largest single source of allocation in the whole reduction.
+        let mut expected: BTreeMap<&str, f64> = BTreeMap::new();
         for (option, chance) in &step.probabilities {
             let Some(vector) = step.legal.get(option) else {
                 continue;
             };
             for (slot, value) in vector {
-                *expected.entry(slot.clone()).or_insert(0.0) += chance * value;
+                *expected.entry(slot.as_str()).or_insert(0.0) += chance * value;
             }
         }
 
@@ -162,17 +186,21 @@ pub fn statistics(
         row.return_square_sum += credit * credit;
         row.entropy_sum += entropy;
 
-        let slots: BTreeSet<&String> = expected.keys().chain(step.features().keys()).collect();
+        let slots: BTreeSet<&str> = expected
+            .keys()
+            .copied()
+            .chain(step.features().keys().map(String::as_str))
+            .collect();
         for slot in slots {
             let difference = (step.features().get(slot).copied().unwrap_or(0.0)
                 - expected.get(slot).copied().unwrap_or(0.0))
                 / temperature;
-            *row.feature_difference_sum
-                .entry(slot.clone())
-                .or_insert(0.0) += difference;
-            *row.return_feature_difference_sum
-                .entry(slot.clone())
-                .or_insert(0.0) += credit * difference;
+            accumulate(&mut row.feature_difference_sum, slot, difference);
+            accumulate(
+                &mut row.return_feature_difference_sum,
+                slot,
+                credit * difference,
+            );
         }
 
         for (option, chance) in &step.probabilities {
@@ -181,7 +209,7 @@ pub fn statistics(
             };
             let coefficient = -chance * (chance.max(1e-12).ln() + entropy) / temperature;
             for (slot, value) in vector {
-                *row.entropy_gradient_sum.entry(slot.clone()).or_insert(0.0) += coefficient * value;
+                accumulate(&mut row.entropy_gradient_sum, slot, coefficient * value);
             }
         }
     }
