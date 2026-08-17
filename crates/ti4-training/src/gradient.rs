@@ -182,10 +182,15 @@ pub fn statistics(
         // owning its keys meant cloning a heap string for every slot of every legal option --
         // the largest single source of allocation in the whole reduction.
         let mut expected: BTreeMap<FeatureKey, f64> = BTreeMap::new();
-        for (option, chance) in &step.probabilities {
-            let Some(vector) = step.legal.get(option) else {
-                continue;
-            };
+        // `probabilities` and `legal` are built from the same option list and are both ordered by
+        // the same ids, so walking them in lockstep pairs each option with its own vector. The
+        // form this replaces looked the vector up by id -- a string-keyed tree descent per option
+        // per step, twice over, for a pairing the iteration order already gives.
+        for ((option, chance), (paired, vector)) in step.probabilities.iter().zip(&step.legal) {
+            debug_assert_eq!(
+                option, paired,
+                "probabilities and legal disagree on option order"
+            );
             for (slot, value) in vector {
                 *expected.entry(*slot).or_insert(0.0) += chance * value;
             }
@@ -213,10 +218,11 @@ pub fn statistics(
             );
         }
 
-        for (option, chance) in &step.probabilities {
-            let Some(vector) = step.legal.get(option) else {
-                continue;
-            };
+        for ((option, chance), (paired, vector)) in step.probabilities.iter().zip(&step.legal) {
+            debug_assert_eq!(
+                option, paired,
+                "probabilities and legal disagree on option order"
+            );
             let coefficient = -chance * (chance.max(1e-12).ln() + entropy) / temperature;
             for (slot, value) in vector {
                 accumulate(&mut row.entropy_gradient_sum, *slot, coefficient * value);
