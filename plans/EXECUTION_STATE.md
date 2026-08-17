@@ -1780,3 +1780,17 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   --rollout-depth 4 --panel-step 32 --every 500` (operator directive: "reduce to 1 sigma, clearance
   should be heavily rewarded and weighted for promotion until like 99%"). Output
   `out/run_2path_u4000.json`, log `out/run_2path.log`.
+- **Two-path run COMPLETE** (u11100 → u15100, +4000 updates, 12049.0 s ≈ 3.3 h, 3.012 s/update,
+  zero errors). Five independent promotions across five factions — only letnev never promoted:
+  u12100 jolnar (**clearance merit**: +0.104 clr ≥ bar at 1σ, VP −0.031 in bound) and l1z1x (VP
+  merit +0.146, own clearance also up); u12600 xxcha (VP merit +0.083, clearance up 0.839→0.896);
+  u13600 sol (**clearance merit**: +0.037 clr at 1σ, VP −0.042 in bound); u14600 hacan (**clearance
+  merit**: +0.047 clr at 1σ with VP also +0.042). Three of five promotions used the new clearance-merit
+  path — exactly the operator's intended behavior. Rejected boundaries (u11600/u13100/u14100/u15100)
+  were inside-noise candidates with named per-clause reasons. Final champion panel (u15100 fresh
+  panel, 192 games): hacan 2.56/0.880, jolnar 2.36/0.823, l1z1x 2.33/0.880, letnev 2.19/0.885,
+  sol 2.26/0.953, xxcha 2.34/0.901 — mean VP ≈ 2.34 on that panel (panel-to-panel variance ±~0.1;
+  the ratchet evidence is the paired per-boundary gains), mean clearance 0.887 (up from 0.85 at
+  u9600). Checkpoint `out/run_2path_u4000.json` (run_complete: true). Next decision: continue with
+  another +4000 block under the same regime, or adjust parameters (e.g. clearance-gain-bar, bonus)
+  per operator direction.
