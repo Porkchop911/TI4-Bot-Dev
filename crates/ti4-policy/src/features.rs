@@ -815,39 +815,38 @@ fn add_system_features(
         ),
     );
 
-    let own_ships = system
-        .units
-        .iter()
-        .filter(|unit| {
-            unit.owner == *player && unit_stats(seen, unit).is_some_and(|stats| stats.is_ship())
-        })
-        .count();
-    let enemy_ships = system
-        .units
-        .iter()
-        .filter(|unit| {
-            unit.owner != *player && unit_stats(seen, unit).is_some_and(|stats| stats.is_ship())
-        })
-        .count();
-    let own_ground_space = system
-        .units
-        .iter()
-        .filter(|unit| {
-            unit.owner == *player
-                && unit_stats(seen, unit).is_some_and(|stats| stats.is_ground_force())
-        })
-        .count();
-    let all_units = system
-        .units
-        .iter()
-        .chain(system.planet_units.values().flatten());
+    // One pass, five counters. Each `unit_stats` is a content lookup, and the four separate
+    // filters this replaces performed that lookup once per counter per unit -- four times over
+    // the same units, in a function that runs for every option of every movement, invasion,
+    // production and activation decision.
+    let mut own_ships = 0usize;
+    let mut enemy_ships = 0usize;
+    let mut own_ground_space = 0usize;
     let mut enemy_ground_total = 0usize;
     let mut own_production_units = 0usize;
-    for unit in all_units {
-        if let Some(stats) = unit_stats(seen, unit) {
-            enemy_ground_total += usize::from(unit.owner != *player && stats.is_ground_force());
-            own_production_units += usize::from(unit.owner == *player && stats.has_production());
+    for unit in &system.units {
+        let Some(stats) = unit_stats(seen, unit) else {
+            continue;
+        };
+        let mine = unit.owner == *player;
+        if stats.is_ship() {
+            own_ships += usize::from(mine);
+            enemy_ships += usize::from(!mine);
         }
+        if stats.is_ground_force() {
+            own_ground_space += usize::from(mine);
+            enemy_ground_total += usize::from(!mine);
+        }
+        own_production_units += usize::from(mine && stats.has_production());
+    }
+    // Ground forces on planets count towards the totals but not towards the in-space counters.
+    for unit in system.planet_units.values().flatten() {
+        let Some(stats) = unit_stats(seen, unit) else {
+            continue;
+        };
+        let mine = unit.owner == *player;
+        enemy_ground_total += usize::from(!mine && stats.is_ground_force());
+        own_production_units += usize::from(mine && stats.has_production());
     }
     for (name, value) in [
         ("own-ships", count_value(own_ships)),
