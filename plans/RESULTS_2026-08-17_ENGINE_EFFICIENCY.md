@@ -7,13 +7,13 @@ Companion to `plans/PLAN_2026-08-17_ENGINE_EFFICIENCY.md`, which this supersedes
 
 ## Headline
 
-**3.29× on the production configuration**, measured on exactly one training update.
+**3.42× on the production configuration**, measured on exactly one training update.
 
 | save52 pool, 96 games = one update | baseline `46404a0` | now |
 |---|---|---|
-| one update | 2.11 s | **0.642 s** |
-| per game | 21.98 ms | **6.69 ms** |
-| 1,000 updates | 35.2 min | **10.7 min** |
+| one update | 2.11 s | **0.617 s** |
+| per game | 21.98 ms | **6.43 ms** |
+| 1,000 updates | 35.2 min | **10.3 min** |
 
 Later work on the per-option path (`8c60d33`, `cb28495`) took this from 2.96× to 3.29×; see
 "Per-option cost" below.
@@ -240,6 +240,30 @@ been taken. An earlier reading
 of 0.636 s was a lucky low sample against a true level of ~0.660, and one commit message
 overstated its change as 10% before `cb28495` corrected it to ~7%. Every A/B from that point uses
 three samples per arm and reports them individually.
+
+## The structural items, examined
+
+**Container shape — taken, 5.1%.** A feature vector holds ~18 entries, is built once, iterated
+two or three times and dropped. A B-tree is the wrong shape at that size: heap nodes chased by
+pointer where the whole thing fits in two cache lines. `BTreeMap` 177–181 ns against a sorted
+`Vec` at 57–58 ns for build+iterate — **3.1×** — and 5.1% end to end, bit-identical because
+sorted-by-key iteration is the order a `BTreeMap<FeatureKey, _>` already used.
+
+**Fewer decisions per game — not available.** Measured over one full game: 764 decisions, 4,060
+options. The option count is dominated by **`activation` at 44.5%** (53 decisions × 34.1 options
+— every reachable system), then `turn` at 30.9%. It is not the trade surface, and neither can be
+trimmed without shortlisting the options a policy is shown, which `inference.rs` rules out by
+design.
+
+**`f32` instead of `f64` — superseded.** The claim was that it halves memory traffic in the
+memory-bound slices. The sorted-`Vec` change took the layout win without any numerical change;
+what `f32` would add on top is 4 bytes per entry against a 16-byte entry in a contiguous buffer,
+and it would cost bit-identity. Not worth it at the current resolution floor.
+
+**Reduce-path expectation as a sorted `Vec` — neutral, reverted.** Same treatment applied to the
+per-step `expected` map. Verified bit-identical (statistics digest `68c6afc0baafa99d` over 196,605
+accumulated values) but measured 0.613 against 0.617 — inside noise. Reverted rather than banked,
+on the same threshold that rejected `system_reachable`.
 
 ## What is left
 
