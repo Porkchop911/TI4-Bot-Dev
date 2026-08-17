@@ -374,7 +374,7 @@ fn explicit_option_features_with(
 ) -> FeatureVector {
     let mut features = FeatureVector::new();
     let kind = canonical_feature_kind(&option.kind);
-    add_named(&mut features, &format!("kind:{kind}"), 1.0);
+    add_named(&mut features, format_args!("kind:{kind}"), 1.0);
 
     let mut option_tokens: BTreeSet<String> = tokens(&option.id)
         .into_iter()
@@ -383,19 +383,19 @@ fn explicit_option_features_with(
         .collect();
     // Stable iteration is part of the feature contract even though addition is commutative.
     for token in &option_tokens {
-        add_named(&mut features, &format!("option:{token}"), 1.0);
+        add_named(&mut features, format_args!("option:{token}"), 1.0);
     }
 
     for prompt_token in prompt_tokens {
         add_named(
             &mut features,
-            &format!("prompt-kind:{prompt_token}:{kind}"),
+            format_args!("prompt-kind:{prompt_token}:{kind}"),
             1.0,
         );
         for option_token in &option_tokens {
             add_named(
                 &mut features,
-                &format!("prompt-option:{prompt_token}:{option_token}"),
+                format_args!("prompt-option:{prompt_token}:{option_token}"),
                 1.0,
             );
         }
@@ -405,7 +405,7 @@ fn explicit_option_features_with(
         match value {
             Value::Bool(flag) => add_named(
                 &mut features,
-                &format!(
+                format_args!(
                     "payload-bool:{key}:{}",
                     if *flag { "True" } else { "False" }
                 ),
@@ -413,10 +413,10 @@ fn explicit_option_features_with(
             ),
             Value::Number(number) => {
                 if let Some(number) = number.as_f64() {
-                    add_named(&mut features, &format!("payload-number:{key}"), number);
+                    add_named(&mut features, format_args!("payload-number:{key}"), number);
                     add_named(
                         &mut features,
-                        &format!("payload-number-kind:{key}:{kind}"),
+                        format_args!("payload-number-kind:{key}:{kind}"),
                         number,
                     );
                 }
@@ -426,14 +426,14 @@ fn explicit_option_features_with(
                     .into_iter()
                     .filter(|token| !token.chars().all(|character| character.is_ascii_digit()))
                 {
-                    add_named(&mut features, &format!("payload:{key}:{token}"), 1.0);
+                    add_named(&mut features, format_args!("payload:{key}:{token}"), 1.0);
                 }
             }
             Value::Array(items) => {
                 #[expect(clippy::cast_precision_loss, reason = "option payloads are small")]
                 add_named(
                     &mut features,
-                    &format!("payload-count:{key}"),
+                    format_args!("payload-count:{key}"),
                     items.len() as f64,
                 );
                 for item in items {
@@ -442,7 +442,7 @@ fn explicit_option_features_with(
                     {
                         add_named(
                             &mut features,
-                            &format!("payload:{key}:{}", text.to_lowercase()),
+                            format_args!("payload:{key}:{}", text.to_lowercase()),
                             1.0,
                         );
                     }
@@ -453,7 +453,11 @@ fn explicit_option_features_with(
     }
 
     for (name, value) in seat_facts {
-        add_named(&mut features, &format!("state-kind:{kind}:{name}"), *value);
+        add_named(
+            &mut features,
+            format_args!("state-kind:{kind}:{name}"),
+            *value,
+        );
     }
 
     structured_features(seen, option, player, &mut features);
@@ -461,11 +465,28 @@ fn explicit_option_features_with(
     features
 }
 
-fn add_named(features: &mut FeatureVector, name: &str, value: f64) {
+thread_local! {
+    /// One reusable buffer per thread for composing feature names.
+    ///
+    /// `format!` allocates a fresh `String` for every feature of every option, for a string that
+    /// is hashed and dropped immediately. Taking `fmt::Arguments` instead lets callers keep
+    /// writing names exactly as before while the bytes land in a buffer that is cleared and
+    /// reused.
+    static SCRATCH: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::with_capacity(160));
+}
+
+fn add_named(features: &mut FeatureVector, name: std::fmt::Arguments<'_>, value: f64) {
     if value == 0.0 || !value.is_finite() {
         return;
     }
-    *features.entry(register(name)).or_insert(0.0) += value;
+    SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        scratch.clear();
+        // Writing into a String is infallible; the Result exists for the general Write contract.
+        let _ = std::fmt::Write::write_fmt(&mut *scratch, name);
+        *features.entry(register(&scratch)).or_insert(0.0) += value;
+    });
 }
 
 /// Local choice kinds translated to the oracle identity used by imported explicit weights.
@@ -558,11 +579,15 @@ fn add_route_features(
         return;
     };
     if let Some(distance) = galaxy.distance(origin, destination) {
-        add_named(features, "route:hex-distance", f64::from(distance));
+        add_named(
+            features,
+            format_args!("route:hex-distance"),
+            f64::from(distance),
+        );
     }
     add_named(
         features,
-        "route:adjacent",
+        format_args!("route:adjacent"),
         f64::from(u8::from(galaxy.are_adjacent(origin, destination))),
     );
 }
@@ -587,7 +612,7 @@ fn add_unit_features(
         ("has-production", f64::from(u8::from(unit.has_production()))),
         ("sustain", f64::from(u8::from(unit.sustain_damage()))),
     ] {
-        add_named(features, &format!("{prefix}:{name}"), value);
+        add_named(features, format_args!("{prefix}:{name}"), value);
     }
 }
 
@@ -616,12 +641,12 @@ fn add_planet_features(
             count_value(planet.tech_specialties().len()),
         ),
     ] {
-        add_named(features, &format!("{prefix}:{name}"), value);
+        add_named(features, format_args!("{prefix}:{name}"), value);
     }
     if let Some(trait_name) = planet.planet_type() {
         add_named(
             features,
-            &format!("{prefix}:trait:{}", trait_name.to_lowercase()),
+            format_args!("{prefix}:trait:{}", trait_name.to_lowercase()),
             1.0,
         );
     }
@@ -633,17 +658,17 @@ fn add_planet_features(
     let controller = state.planet_control.get(&planet_id);
     add_named(
         features,
-        &format!("{prefix}:controlled-by-us"),
+        format_args!("{prefix}:controlled-by-us"),
         f64::from(u8::from(controller == Some(player))),
     );
     add_named(
         features,
-        &format!("{prefix}:uncontrolled"),
+        format_args!("{prefix}:uncontrolled"),
         f64::from(u8::from(controller.is_none())),
     );
     add_named(
         features,
-        &format!("{prefix}:controlled-by-enemy"),
+        format_args!("{prefix}:controlled-by-enemy"),
         f64::from(u8::from(controller.is_some_and(|owner| owner != player))),
     );
     let occupants = state.on_planet(&planet_id);
@@ -663,12 +688,12 @@ fn add_planet_features(
         .count();
     add_named(
         features,
-        &format!("{prefix}:own-ground"),
+        format_args!("{prefix}:own-ground"),
         count_value(own_ground),
     );
     add_named(
         features,
-        &format!("{prefix}:enemy-ground"),
+        format_args!("{prefix}:enemy-ground"),
         count_value(enemy_ground),
     );
 }
@@ -702,12 +727,12 @@ fn add_system_features(
         .collect();
     add_named(
         features,
-        &format!("{prefix}:planet-count"),
+        format_args!("{prefix}:planet-count"),
         count_value(planets.len()),
     );
     add_named(
         features,
-        &format!("{prefix}:not-controlled-count"),
+        format_args!("{prefix}:not-controlled-count"),
         count_value(
             planet_ids
                 .iter()
@@ -717,7 +742,7 @@ fn add_system_features(
     );
     add_named(
         features,
-        &format!("{prefix}:uncontrolled-count"),
+        format_args!("{prefix}:uncontrolled-count"),
         count_value(
             planet_ids
                 .iter()
@@ -727,7 +752,7 @@ fn add_system_features(
     );
     add_named(
         features,
-        &format!("{prefix}:enemy-controlled-count"),
+        format_args!("{prefix}:enemy-controlled-count"),
         count_value(
             planet_ids
                 .iter()
@@ -781,7 +806,7 @@ fn add_system_features(
             f64::from(u8::from(system_reachable(seen, player, system_id))),
         ),
     ] {
-        add_named(features, &format!("{prefix}:{name}"), value);
+        add_named(features, format_args!("{prefix}:{name}"), value);
     }
 }
 
