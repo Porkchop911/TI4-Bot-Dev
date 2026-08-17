@@ -251,7 +251,57 @@ pub fn explicit_option_features(
     option: &ChoiceOption,
     player: &PlayerId,
 ) -> FeatureVector {
-    explicit_option_features_with(seen, &tokens(&choice.prompt), option, player)
+    explicit_option_features_with(
+        seen,
+        &tokens(&choice.prompt),
+        &seat_facts(seen, player),
+        option,
+        player,
+    )
+}
+
+/// The eight per-seat facts every option of a choice is described against.
+///
+/// None of them varies with the option: they are the round, this seat's pools, its goods, its
+/// planet count and its technology count. Only the feature *name* varies, because it is crossed
+/// with the option's kind. Computing them per option meant
+/// [`Observed::controlled_planets`] — which scans the whole board and allocates a `Vec` — ran
+/// once for every option offered, to take its length each time.
+#[must_use]
+#[expect(clippy::cast_precision_loss, reason = "public counts are small")]
+fn seat_facts(seen: &Observed<'_>, player: &PlayerId) -> [(&'static str, f64); 8] {
+    let seat = seen.seat(player);
+    [
+        ("round", f64::from(seen.round())),
+        (
+            "tactic_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.tactic_tokens)),
+        ),
+        (
+            "strategic_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.strategic_tokens)),
+        ),
+        (
+            "fleet_tokens",
+            f64::from(seat.as_ref().map_or(0, |s| s.fleet_tokens)),
+        ),
+        (
+            "trade_goods",
+            f64::from(seat.as_ref().map_or(0, |s| s.trade_goods)),
+        ),
+        (
+            "commodities",
+            f64::from(seat.as_ref().map_or(0, |s| s.commodities)),
+        ),
+        (
+            "controlled_planets",
+            seen.controlled_planets(player).len() as f64,
+        ),
+        (
+            "technologies",
+            seat.as_ref().map_or(0, |s| s.technologies.len()) as f64,
+        ),
+    ]
 }
 
 /// Features for every option of one choice, in the choice's own option order.
@@ -267,11 +317,13 @@ pub fn explicit_choice_features(
     choice: &Choice,
     player: &PlayerId,
 ) -> Vec<FeatureVector> {
+    // Both of these are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
+    let facts = seat_facts(seen, player);
     choice
         .options
         .iter()
-        .map(|option| explicit_option_features_with(seen, &prompt_tokens, option, player))
+        .map(|option| explicit_option_features_with(seen, &prompt_tokens, &facts, option, player))
         .collect()
 }
 
@@ -281,6 +333,7 @@ pub fn explicit_choice_features(
 fn explicit_option_features_with(
     seen: &Observed<'_>,
     prompt_tokens: &[String],
+    seat_facts: &[(&'static str, f64); 8],
     option: &ChoiceOption,
     player: &PlayerId,
 ) -> FeatureVector {
@@ -364,41 +417,8 @@ fn explicit_option_features_with(
         }
     }
 
-    let seat = seen.seat(player);
-    #[expect(clippy::cast_precision_loss, reason = "public counts are small")]
-    let state_facts: [(&str, f64); 8] = [
-        ("round", f64::from(seen.round())),
-        (
-            "tactic_tokens",
-            f64::from(seat.as_ref().map_or(0, |s| s.tactic_tokens)),
-        ),
-        (
-            "strategic_tokens",
-            f64::from(seat.as_ref().map_or(0, |s| s.strategic_tokens)),
-        ),
-        (
-            "fleet_tokens",
-            f64::from(seat.as_ref().map_or(0, |s| s.fleet_tokens)),
-        ),
-        (
-            "trade_goods",
-            f64::from(seat.as_ref().map_or(0, |s| s.trade_goods)),
-        ),
-        (
-            "commodities",
-            f64::from(seat.as_ref().map_or(0, |s| s.commodities)),
-        ),
-        (
-            "controlled_planets",
-            seen.controlled_planets(player).len() as f64,
-        ),
-        (
-            "technologies",
-            seat.as_ref().map_or(0, |s| s.technologies.len()) as f64,
-        ),
-    ];
-    for (name, value) in state_facts {
-        add_named(&mut features, &format!("state-kind:{kind}:{name}"), value);
+    for (name, value) in seat_facts {
+        add_named(&mut features, &format!("state-kind:{kind}:{name}"), *value);
     }
 
     structured_features(seen, option, player, &mut features);
