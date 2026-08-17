@@ -1794,3 +1794,21 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   u9600). Checkpoint `out/run_2path_u4000.json` (run_complete: true). Next decision: continue with
   another +4000 block under the same regime, or adjust parameters (e.g. clearance-gain-bar, bonus)
   per operator direction.
+- **`--no-boundaries` pure-learning mode added** (commit d30a20b): no boundary evaluation, no gate,
+  no promotion — only training and per-block telemetry; champion frozen for the whole run. Telemetry
+  and per-block checkpointing still run every block so `--every N` gives intermediate reports without
+  any measurement or banking. Default off; existing runs unchanged. Smoke-verified (20 updates / two
+  blocks, zero boundary lines).
+- **Pure-learning experiment COMPLETE (killed by operator at u19100 of a planned +5000 from u15100):**
+  four full 1000-update blocks ran with zero boundaries/promotions — learning dynamics healthy and
+  steady-state throughout (movement ~41–57, mean-return-sd 2.59–3.04, ~106–109M decisions/block,
+  zero errors; block times drifting up slowly 43.6→49 min as games deepen). Decisive measurement via
+  extended `vp_ceiling_probe` (new: `--table profiles|accepted`, per-game min/max + clearance columns)
+  on identical 192 games for both tables at u19100: **the unbanked learner had drifted BELOW its own
+  frozen champion on 5 of 6 factions** — sol +0.16 VP (only gainer), letnev −0.09 VP with clearance
+  collapsing 0.802→0.615, jolnar −0.19 VP, xxcha/hacan/l1z1x −0.08 to −0.11; all deltas far beyond
+  paired SE (~0.06–0.08). Conclusion recorded plainly: unbanked policy gradient wanders off the local
+  optimum it already found — the boundary/ratchet is not overhead, it is what converts exploration
+  into retained progress. The experiment demonstrated both halves: healthy dynamics AND drift when
+  unbanked. Checkpoint `out/run_pure_u5000.json` at u19100 (run_complete false; partial block 5
+  discarded by design). Champion state unchanged from u15100 (`out/safepoint_u15100_pre_nobound.json`).

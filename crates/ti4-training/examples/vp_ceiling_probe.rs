@@ -37,6 +37,9 @@ fn main() {
     let checkpoint = path_argument("--checkpoint").expect("usage: --checkpoint <path>");
     let pool_path = path_argument("--map-pool").expect("usage: --map-pool <path>");
     let seeds = u64::try_from(number("--seeds", 32)).unwrap_or(32);
+    // Which profile table to play: the frozen champion ("accepted") or the active learner
+    // ("profiles"). Both tables can be probed on identical seeds for paired comparison.
+    let table_name = argument("--table").unwrap_or_else(|| "accepted".to_owned());
 
     let content = ContentStore::embedded();
     let plan = FactionPlan::stage_two_reference();
@@ -49,11 +52,10 @@ fn main() {
         std::fs::read(&checkpoint).unwrap_or_else(|error| panic!("read checkpoint: {error}"));
     let document: serde_json::Value =
         serde_json::from_slice(&bytes).unwrap_or_else(|error| panic!("parse checkpoint: {error}"));
-    // Prefer the accepted (champion) table; fall back to the active learner table.
+    // Select the requested profile table (default: accepted/champion).
     let table = document
-        .get("accepted")
-        .or_else(|| document.get("profiles"))
-        .expect("checkpoint has neither 'accepted' nor 'profiles'");
+        .get(table_name.as_str())
+        .unwrap_or_else(|| panic!("checkpoint has no '{table_name}' table"));
     let loaded: BTreeMap<String, Profile> = serde_json::from_value(table.clone())
         .unwrap_or_else(|error| panic!("read profile table: {error}"));
 
@@ -88,6 +90,7 @@ fn main() {
     );
 
     let mut by_faction: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    let mut cleared_by_faction: BTreeMap<String, i64> = BTreeMap::new();
     for rollout in &rollouts {
         if rollout.error.is_some() {
             continue;
@@ -97,6 +100,9 @@ fn main() {
                 .entry(seat.faction.as_str().to_owned())
                 .or_default()
                 .push(seat.episode.final_progress.victory_points);
+            if seat.episode.cleared {
+                *cleared_by_faction.entry(seat.faction.as_str().to_owned()).or_insert(0) += 1;
+            }
         }
     }
 
@@ -107,8 +113,8 @@ fn main() {
         plan.rounds
     );
     println!(
-        "{:<8} {:>5} {:>7} {:>6} {:>6} {:>5} {:>9}",
-        "faction", "n", "mean", "p50", "p90", "max", "games>=3"
+        "{:<8} {:>5} {:>7} {:>6} {:>6} {:>6} {:>6} {:>7} {:>9}",
+        "faction", "n", "mean", "min", "max", "p50", "p90", "clearance", "games>=3"
     );
     for faction in &plan.factions {
         let values = by_faction
@@ -123,18 +129,22 @@ fn main() {
         sorted.sort_unstable();
         let n = sorted.len();
         let mean: f64 = sorted.iter().sum::<i64>() as f64 / n as f64;
+        let min_vp = sorted[0];
         let p50 = sorted[n / 2];
         let p90 = sorted[min((n * 9) / 10, n - 1)];
         let max = sorted[n - 1];
         let above3 = values.iter().filter(|v| **v >= 3).count();
+        let cleared = cleared_by_faction.get(faction.as_str()).copied().unwrap_or(0);
         println!(
-            "{:<8} {:>5} {:>7.2} {:>6} {:>6} {:>5} {:>9}",
+            "{:<8} {:>5} {:>7.2} {:>6} {:>6} {:>6} {:>6} {:>7.3} {:>9}",
             faction.as_str(),
             n,
             mean,
+            min_vp,
+            max,
             p50,
             p90,
-            max,
+            cleared as f64 / n as f64,
             above3
         );
     }
