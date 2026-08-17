@@ -72,6 +72,31 @@ returns early on `0.0`, so `target:own-ships = 0` is *absent*, and "no ships her
 indistinguishable from "this fact does not apply". That collapse is half of why the ten features
 in the worked example became three.
 
+## Comparing arms: cross-play, not separate panels
+
+Running arm A as all six seats and arm B as all six seats pairs the *maps and decks* but not the
+**opponents** — A's score was earned against A's table. Putting them in the same game pairs the
+opponents too, which is the strongest variance reduction available and measures the thing that
+actually matters, relative strength.
+
+The faction confound is fatal if ignored (the evolution anchor spans xxcha 4.57 to jolnar 2.08, so
+whichever arm draws xxcha wins by default) and completely solved by rotation. This project is
+unusually well set up for it: it already trains **six independent per-faction profiles** and
+already rotates factions across seats, so every arm owns a profile for every faction. Rotate the
+arm→faction assignment as well, and with six arms and six factions each arm plays each faction
+exactly once per seed. The gate is already per-faction, so nothing else changes.
+
+**Training stays separate.** Mixing arms at the table during *training* would break two things:
+the baseline stops being a baseline once it is learning against five other algorithms, and in
+self-play the opponents *are* what is being learned — a more sample-efficient arm pulls ahead
+mid-run and thereby changes the environment the others are learning in. That measures an
+interaction, not two algorithms.
+
+**But mixed-table training is worth its own arm later.** The six factions currently converge to
+within 0.24 VP of each other — six abilities, one indistinguishable policy — which is what you
+would expect from every seat training against near-copies of itself. Opponent diversity as a
+learning hypothesis is the cheap version of the league-play arm, and needs no frozen pool.
+
 ## Two independent success criteria
 
 Keeping these apart matters, because one can move without the other and they mean different
@@ -118,6 +143,17 @@ Written now so a marginal morning result cannot be argued into a conclusion.
 
 Across-seed spread is reported for every arm. Three seeds is few; a difference smaller than the
 spread is not a result, and will be labelled as such.
+
+## Method note from the smoke run
+
+The first launcher put `--clearance-weight 5.0` in the shared flag block and let arms override it.
+They could not: the argument parser takes the **first** occurrence, so A4 and A5 silently trained
+with 5.0 and would have produced two arms that were copies of A1 and A2 under different names. The
+six-update smoke run caught it because A4's own banner still printed `-5.00 per uncleared opening`.
+Anything an arm overrides is now passed per-arm and never in the shared block.
+
+That is the whole reason for a smoke run: the failure was silent, produced plausible output files
+of the right size, and would have cost the night.
 
 ## What is deliberately not in this
 
