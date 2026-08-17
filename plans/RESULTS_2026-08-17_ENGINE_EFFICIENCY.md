@@ -7,13 +7,16 @@ Companion to `plans/PLAN_2026-08-17_ENGINE_EFFICIENCY.md`, which this supersedes
 
 ## Headline
 
-**2.96× on the production configuration**, measured on exactly one training update.
+**3.29× on the production configuration**, measured on exactly one training update.
 
 | save52 pool, 96 games = one update | baseline `46404a0` | now |
 |---|---|---|
-| one update | 2.11 s | **0.71 s** |
-| per game | 21.98 ms | **7.42 ms** |
-| 1,000 updates | 35.2 min | **11.9 min** |
+| one update | 2.11 s | **0.642 s** |
+| per game | 21.98 ms | **6.69 ms** |
+| 1,000 updates | 35.2 min | **10.7 min** |
+
+Later work on the per-option path (`8c60d33`, `cb28495`) took this from 2.96× to 3.29×; see
+"Per-option cost" below.
 
 (The recorded run `learning 15100..16100` took 2616.6 s = 43.6 min for 1,000 updates, against
 35.2 min measured here for the same work — the live run also checkpoints and competes with
@@ -187,6 +190,41 @@ predicted by microbenchmarking `format!` in isolation. That prediction was wrong
 recorded here so the next reader does not act on it again. Naming is no longer the bottleneck;
 what remains is the map inserts, the hashing, tokenising, and the board queries in
 `structured_features`.
+
+## Per-option cost — where the money actually was
+
+Two failed predictions (see the naming section and the inert-feature proposal) had one cause: a
+model in which cost is proportional to *feature count*. Instrumenting the real training path
+over 562,200 options replaced the model with a measurement:
+
+| region of feature construction | share |
+|---|---|
+| **`structured_features`** | **67.3%** |
+| prompt loops | 15.9% |
+| tokens + token set | 5.9% |
+| payload | 2.7% |
+
+(Absolute values were inflated ~7× by six shared atomics across 32 workers; only the ratios are
+usable, and they are decisive enough.) The cost is **per option**, not per feature — which is why
+dropping 22.6% of features moved nothing.
+
+Two fixes inside `structured_features`, both byte-identical on the trace:
+
+| Change | Effect |
+|---|---|
+| Read a system's planets from its own record instead of scanning every planet for a matching `tileId` (2,327 ns per call, one to three calls per option) | 0.709 → ~0.660 s (~7%) |
+| Count a system's units in one pass rather than four, each doing its own content lookup per unit | 0.660 → 0.642 s (2.8%) |
+
+Still unexamined inside `structured_features`: `system_reachable`, which walks the whole board and
+runs a graph distance per candidate origin, once per option — and whose result for the *active*
+system is identical across a choice's options.
+
+## Measurement note
+
+Two samples cannot resolve a 3% effect on this machine; three tight ones can. An earlier reading
+of 0.636 s was a lucky low sample against a true level of ~0.660, and one commit message
+overstated its change as 10% before `cb28495` corrected it to ~7%. Every A/B from that point uses
+three samples per arm and reports them individually.
 
 ## What is left
 
