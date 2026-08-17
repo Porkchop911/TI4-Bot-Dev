@@ -35,7 +35,7 @@ scheduler noise, which was swamping 2% effects under a mean).
 
 **Stats digest `d821a383e110b21e` at both ends.** An FNV-1a hash over every accumulated value in
 the reduced batch — hashed by *raw f64 bits*, in deterministic order — is identical before and
-after all eleven commits. Nothing about what the trainer computes has changed.
+after all ten of those commits. Nothing about what the trainer computed changed across them.
 
 ## The two verification gates used throughout
 
@@ -66,7 +66,7 @@ no test could have caught it. Fixed in `20349a5`.
 | `b5fb5d0` | Build the softmax without a cloned copy of every option id | within noise |
 | `0789519` | Find every homeworld system in one corpus pass | **`map_filler` 287 → 21 µs (13.6×)** |
 
-Workspace: **1255 tests pass**; clippy at 21 warnings, all pre-existing.
+Workspace: **1261 tests pass**; clippy at 21 warnings, all pre-existing.
 
 ## Negative results — measured, so nobody re-treads them
 
@@ -114,20 +114,34 @@ scoring, at 22 features/option) — consistent with the project's own instrument
 no redundant work left in it. The cost *is* the representation: `format!` (65 ns) plus a
 `BTreeMap<String, f64>` insert (50 ns) per feature, ~22 features per option.
 
-**Done, in `f7b2716`.** The original text of this section read:
+**Done, in `f7b2716`** — see the section above. What this section originally said, and why it was
+wrong to treat it as a blocker:
 
 > Interning the feature namespace is the only remaining large lever — and it cannot meet the
-> verification standard used here. `BTreeMap<String, _>` iterates in lexicographic name order;
-a `Vec` indexed by interned id iterates in id-assignment order. Feature names appear dynamically
-during training, so ids cannot be assigned in name order, so the gradient sums would accumulate
-in a **different order** and produce different floats. Mathematically equivalent, bit-wise not.
+> verification standard used here. Feature names appear dynamically during training, so ids
+> cannot be assigned in name order, so the gradient sums would accumulate in a different order
+> and produce different floats.
 
-That is a genuine trade-off for the operator, not a technical obstacle:
+The reasoning about *ids* was right; the conclusion was too quick. Hashing the name instead of
+counting removes the dependence on history entirely, and the resulting order — while still not
+alphabetical — is a fixed function of the corpus. So the loss is smaller than "identity is gone":
+it is "identity against the *old* ordering is gone, and reproducibility between runs is kept".
 
-- Keep bit-exactness → the remaining ~1.5–2× stays on the table.
-- Accept "statistically equivalent but not bit-identical" → interning is available, and the
-  verification argument has to change from *identity* to *distributional agreement over N seeds*,
-  which is a much weaker and more expensive thing to establish.
+The evidence gate changed accordingly, from a digest to distributional agreement, and the result
+came back stronger than the standard required: zero differing decisions in a traced game, and
+per-faction VP and clearance identical to four decimal places over 720 games.
 
-Everything committed so far sits on the identity side of that line, which is why each commit
-could be verified rather than argued.
+## What is left
+
+Of the 8.212 ms update: reduce ~17%, and the rest is rollout — feature construction still the
+largest single block within it, now paying a hash per feature rather than an allocation.
+
+Remaining known items, none large:
+
+- **Profile deep-copy → `Arc`** (~2.6%): ripples through the public rollout API.
+- **Compositional keys** — build a `FeatureKey` from `(family, token, token)` without ever
+  formatting the name. `format!` was measured at 65 ns of the ~134 ns naming cost, and it is now
+  the largest remaining component. This is a bigger change to `features.rs` than the keying was,
+  because every feature family needs a tag.
+- **Utilisation** (63% at `--rollout-depth 4`): re-measure now that the allocation pressure that
+  made depth 8 regress is much lower.
