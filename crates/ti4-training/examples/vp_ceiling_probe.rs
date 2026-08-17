@@ -67,12 +67,11 @@ fn main() {
         profile
             .validate(Some(faction.as_str()))
             .unwrap_or_else(|error| panic!("{faction}: {error}"));
-        if !profile.is_explicit() {
-            panic!(
-                "{faction}: schema {} is hashed; probe requires explicit profiles",
-                profile.schema
-            );
-        }
+        assert!(
+            profile.is_explicit(),
+            "{faction}: schema {} is hashed; probe requires explicit profiles",
+            profile.schema
+        );
         profiles.insert(faction.clone(), profile.clone());
     }
 

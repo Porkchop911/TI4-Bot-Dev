@@ -318,20 +318,20 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
             }
             // The high-VP terminal bonus, credited at the final slot so every decision's return
             // (a suffix sum) carries it. Only games that finish at or above the bar pay it.
-            if reward.high_vp_bonus > 0.0 {
-                if let Some(last) = rewards.last_mut() {
-                    *last += f64::from(u8::from(episode.final_progress.victory_points >= 3))
-                        * reward.high_vp_bonus;
-                }
+            if reward.high_vp_bonus > 0.0
+                && let Some(last) = rewards.last_mut()
+            {
+                *last += f64::from(u8::from(episode.final_progress.victory_points >= 3))
+                    * reward.high_vp_bonus;
             }
             // The clearance floor, credited at the final slot so every decision's return carries
             // the full-game cost of an uncleared opening (the round-one bonus is only visible to
             // round-one decisions). Keeps learned play inside the gate's per-faction clearance
             // band instead of trading opening safety for mid-game VP.
-            if reward.clearance_weight > 0.0 {
-                if let Some(last) = rewards.last_mut() {
-                    *last -= f64::from(u8::from(!episode.cleared)) * reward.clearance_weight;
-                }
+            if reward.clearance_weight > 0.0
+                && let Some(last) = rewards.last_mut()
+            {
+                *last -= f64::from(u8::from(!episode.cleared)) * reward.clearance_weight;
             }
         }
     }

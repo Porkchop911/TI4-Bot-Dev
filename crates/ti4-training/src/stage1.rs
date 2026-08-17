@@ -436,16 +436,16 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
         let reduced = handle.join().expect("rollout thread panicked");
         pending = Some((index, reduced));
     }
-    if plan.pipeline {
-        if let Some((prev_index, prev_reduced)) = pending.take() {
-            commit_generation(
-                &mut profiles,
-                &prev_reduced,
-                plan.step,
-                prev_index,
-                &mut generations,
-            );
-        }
+    if plan.pipeline
+        && let Some((prev_index, prev_reduced)) = pending.take()
+    {
+        commit_generation(
+            &mut profiles,
+            &prev_reduced,
+            plan.step,
+            prev_index,
+            &mut generations,
+        );
     }
     FactionRun {
         profiles,

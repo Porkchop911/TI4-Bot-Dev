@@ -21,12 +21,11 @@ fn main() {
         }
         i += 1;
     }
-    let (checkpoint, pool_path) = match (checkpoint, pool_path) {
-        (Some(c), Some(p)) => (c, p),
-        _ => {
-            eprintln!("usage: panel_probe --checkpoint <json> --map-pool <gz>");
-            return;
-        }
+    let (checkpoint, pool_path) = if let (Some(c), Some(p)) = (checkpoint, pool_path) {
+        (c, p)
+    } else {
+        eprintln!("usage: panel_probe --checkpoint <json> --map-pool <gz>");
+        return;
     };
 
     let load_started = Instant::now();

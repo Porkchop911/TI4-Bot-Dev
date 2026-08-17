@@ -1089,7 +1089,7 @@ fn play_rotated_map_group_statistics(
     map: &OpeningMap,
     reward: &Reward,
 ) -> Vec<ReducedBatch<FactionId>> {
-    if factions.is_empty() || seed_groups.iter().all(|seeds| seeds.is_empty()) {
+    if factions.is_empty() || seed_groups.iter().all(std::vec::Vec::is_empty) {
         return (0..seed_groups.len())
             .map(|_| ReducedBatch::default())
             .collect();
@@ -2028,7 +2028,7 @@ mod tests {
 
         // One shared wave over both groups...
         let waved = play_rotated_batch_group_statistics(
-            &content,
+            content,
             &factions,
             &profiles,
             POK,
@@ -2040,7 +2040,7 @@ mod tests {
         // ...must equal playing each group on its own with the same frozen profiles.
         let sequential = [
             play_rotated_batch_statistics(
-                &content,
+                content,
                 &factions,
                 &profiles,
                 POK,
@@ -2050,7 +2050,7 @@ mod tests {
                 &reward,
             ),
             play_rotated_batch_statistics(
-                &content,
+                content,
                 &factions,
                 &profiles,
                 POK,
@@ -2088,7 +2088,7 @@ mod tests {
             .collect();
         let reward = Reward::for_stage(Stage::Two);
         let waved = play_rotated_batch_group_statistics(
-            &ContentStore::embedded(),
+            ContentStore::embedded(),
             &factions,
             &profiles,
             POK,
