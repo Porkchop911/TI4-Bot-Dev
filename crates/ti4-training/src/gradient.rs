@@ -29,7 +29,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use ti4_model::id::{FactionId, PlayerId};
-use ti4_policy::features::FeatureVector;
 use ti4_policy::inference::TrajectoryStep;
 use ti4_policy::learned::Profile;
 
@@ -158,7 +157,9 @@ pub fn statistics(
         if !collected.contains_key(&step.head) {
             collected.insert(step.head.clone(), Statistics::default());
         }
-        let row = collected.get_mut(&step.head).expect("just inserted");
+        let Some(row) = collected.get_mut(&step.head) else {
+            continue; // unreachable: inserted immediately above
+        };
 
         let entropy: f64 = -step
             .probabilities
@@ -363,6 +364,7 @@ pub fn faction_batch_statistics(
 
 #[cfg(test)]
 mod tests {
+    use ti4_policy::features::FeatureVector;
     use super::*;
     use crate::reward::Stage;
     use ti4_policy::learned::{DEFAULT_DIMENSIONS, blank_profile, bucket};
