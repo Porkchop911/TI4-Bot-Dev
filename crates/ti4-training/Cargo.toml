@@ -21,6 +21,7 @@ tracing.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 rayon.workspace = true
+mimalloc.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true

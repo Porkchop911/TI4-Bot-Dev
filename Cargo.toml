@@ -51,6 +51,7 @@ globset = "0.4"
 anyhow = "1"
 itertools = "0.14"
 rayon = "1.11"
+mimalloc = { version = "0.1", default-features = false }
 smallvec = "1"
 hashbrown = "0.15"
 indexmap = "2"
