@@ -218,13 +218,14 @@ fn semantic_gate(
     if let Some(error) = rollouts.iter().find_map(|rollout| rollout.error.as_ref()) {
         return Err(format!("rollout failed: {error}"));
     }
-    let feature_names: std::collections::BTreeSet<&str> = rollouts
+    // Feature vectors are keyed by hash; this diagnostic reads names, so resolve them.
+    let feature_names: std::collections::BTreeSet<String> = rollouts
         .iter()
         .flat_map(|rollout| &rollout.seats)
         .flat_map(|seat| &seat.trajectory)
         .flat_map(|step| step.legal.values())
         .flat_map(BTreeMap::keys)
-        .map(String::as_str)
+        .map(|key| ti4_policy::intern::name_of(*key))
         .collect();
     for (label, prefixes) in [
         ("activation target", &["target:"][..]),
@@ -291,7 +292,7 @@ fn diagnose_profile_use(plan: &FactionPlan, profiles: &BTreeMap<FactionId, Profi
             entry.2 += step
                 .features()
                 .keys()
-                .filter(|name| weights.contains_key(*name))
+                .filter(|key| weights.contains_key(&ti4_policy::intern::name_of(**key)))
                 .count();
             *chosen
                 .entry((step.head.clone(), step.chosen.clone()))
@@ -383,8 +384,9 @@ fn print_trace_matching(rollouts: &[Rollout], wanted: &str, label: &str, require
                     let reachable = step
                         .legal
                         .get(option)
-                        .and_then(|features| features.get("target:reachable"))
-                        .copied()
+                        .and_then(|features| {
+                            ti4_policy::features::value_of(features, "target:reachable")
+                        })
                         .unwrap_or(0.0);
                     format!("{option}:{probability:.3}/r{reachable:.0}")
                 })
@@ -394,7 +396,8 @@ fn print_trace_matching(rollouts: &[Rollout], wanted: &str, label: &str, require
             if let (Some(probability), Some(features)) =
                 (step.probabilities.get("26"), step.legal.get("26"))
             {
-                let reachable = features.get("target:reachable").copied().unwrap_or(0.0);
+                let reachable =
+                    ti4_policy::features::value_of(features, "target:reachable").unwrap_or(0.0);
                 println!("      tile 26 p={probability:.3} reachable={reachable:.0}");
             }
         }
@@ -406,14 +409,17 @@ fn print_trace_matching(rollouts: &[Rollout], wanted: &str, label: &str, require
                     let features = step.legal.get(option);
                     let unit = features
                         .and_then(|features| {
-                            features
-                                .keys()
-                                .find_map(|name| name.strip_prefix("payload:unit:"))
+                            ti4_policy::features::names_of(features)
+                                .into_iter()
+                                .find_map(|name| {
+                                    name.strip_prefix("payload:unit:").map(str::to_owned)
+                                })
                         })
-                        .unwrap_or("done");
+                        .unwrap_or_else(|| "done".to_owned());
                     let capacity = features
-                        .and_then(|features| features.get("payload-number:capacity"))
-                        .copied()
+                        .and_then(|features| {
+                            ti4_policy::features::value_of(features, "payload-number:capacity")
+                        })
                         .unwrap_or(0.0);
                     format!("{option}:{probability:.3}/{unit}/c{capacity:.0}")
                 })
@@ -434,7 +440,7 @@ fn print_trace_matching(rollouts: &[Rollout], wanted: &str, label: &str, require
             if let Some(features) = step.legal.get("sr") {
                 println!(
                     "      sr features {}",
-                    features.keys().cloned().collect::<Vec<_>>().join(" ")
+                    ti4_policy::features::names_of(features).join(" ")
                 );
             }
         }

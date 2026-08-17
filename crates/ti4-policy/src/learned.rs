@@ -29,11 +29,14 @@
 //! vectors of numbers indexed by it. A hash that disagreed in one bit would load every trained
 //! profile and score it as noise, and nothing would report an error.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::OnceLock;
 
 use blake2::digest::consts::U8;
 use blake2::{Blake2b, Digest};
 use serde::{Deserialize, Serialize};
+
+use crate::intern::{FeatureKey, register};
 use ti4_engine::choice::Choice;
 
 /// The legacy hashed-policy schema.
@@ -287,12 +290,77 @@ pub struct Learned {
 }
 
 /// One head's fitted weights and how sharply it commits to them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Head {
     /// Bucket name to weight. Buckets absent from the map score zero.
+    ///
+    /// Stored by **name**, which is what keeps checkpoints readable and portable. Scoring reads
+    /// [`Self::by_key`] instead, which is this map re-keyed by hash; anything that mutates this
+    /// map must call [`Self::invalidate`].
     pub weights: BTreeMap<String, f64>,
     /// How sharply to prefer the best option. One is the fitted default.
     pub temperature: f64,
+    /// `weights`, re-keyed by [`FeatureKey`], built on first use.
+    ///
+    /// Feature vectors are keyed by hash, and resolving each key back to a name to look it up
+    /// here would allocate a string per feature per option -- worse than the tree it replaced.
+    /// Built once per `Head` instance and shared by every game in a batch, because a batch scores
+    /// against one immutable `Arc<Profile>`.
+    ///
+    /// Deliberately not part of `Clone` or `PartialEq`: a clone starts empty rather than
+    /// inheriting a cache that may not match the weights it is about to be given, and two heads
+    /// with equal weights are equal whether or not either has been scored with.
+    #[serde(skip)]
+    by_key: OnceLock<KeyedWeights>,
+}
+
+/// A `HashMap` over keys that are already uniformly distributed 64-bit hashes.
+type KeyedWeights = HashMap<FeatureKey, f64, BuildKeyHasher>;
+
+/// Hashing a [`FeatureKey`] again would be wasted work: it is an FNV-1a digest already. This
+/// passes the bits straight through, which is what `HashMap` wants of a pre-hashed key.
+#[derive(Default, Clone, Copy)]
+pub struct BuildKeyHasher;
+
+impl std::hash::BuildHasher for BuildKeyHasher {
+    type Hasher = KeyHasher;
+    fn build_hasher(&self) -> KeyHasher {
+        KeyHasher(0)
+    }
+}
+
+/// The hasher [`BuildKeyHasher`] builds.
+pub struct KeyHasher(u64);
+
+impl std::hash::Hasher for KeyHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        // Only ever fed a FeatureKey's eight bytes; fold anything else so the impl stays total.
+        for byte in bytes {
+            self.0 = self.0.rotate_left(8) ^ u64::from(*byte);
+        }
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
+
+impl Clone for Head {
+    fn clone(&self) -> Self {
+        Self {
+            weights: self.weights.clone(),
+            temperature: self.temperature,
+            by_key: OnceLock::new(),
+        }
+    }
+}
+
+impl PartialEq for Head {
+    fn eq(&self, other: &Self) -> bool {
+        self.weights == other.weights && self.temperature == other.temperature
+    }
 }
 
 impl Head {
@@ -304,6 +372,7 @@ impl Head {
                 .map(|index| (format!("h{index:04}"), 0.0))
                 .collect(),
             temperature: 1.0,
+            by_key: OnceLock::new(),
         }
     }
 
@@ -312,11 +381,31 @@ impl Head {
     /// The signs are baked into the vector when it is built, so this is a plain dot product and
     /// not a second hashing.
     #[must_use]
-    pub fn score_vector(&self, features: &BTreeMap<String, f64>) -> f64 {
+    pub fn score_vector(&self, features: &crate::features::FeatureVector) -> f64 {
+        let keyed = self.keyed();
         features
             .iter()
-            .map(|(slot, value)| self.weights.get(slot).copied().unwrap_or(0.0) * value)
+            .map(|(slot, value)| keyed.get(slot).copied().unwrap_or(0.0) * value)
             .sum()
+    }
+
+    /// The weights re-keyed by hash, built on first use.
+    fn keyed(&self) -> &KeyedWeights {
+        self.by_key.get_or_init(|| {
+            self.weights
+                .iter()
+                .map(|(name, weight)| (register(name), *weight))
+                .collect()
+        })
+    }
+
+    /// Drop the scoring index, because the weights it was built from have changed.
+    ///
+    /// Every mutation of [`Self::weights`] must be followed by this. Cloning a head already
+    /// starts it empty, so the only way to go stale is to mutate one in place -- which is what
+    /// applying a gradient does.
+    pub fn invalidate(&mut self) {
+        self.by_key = OnceLock::new();
     }
 }
 
@@ -406,6 +495,7 @@ pub fn blank_explicit_profile(faction: &str) -> Profile {
                         Head {
                             weights: BTreeMap::new(),
                             temperature: 1.0,
+                            by_key: OnceLock::new(),
                         },
                     )
                 })
@@ -535,7 +625,7 @@ impl Profile {
 
     /// Score an already-hashed sparse vector against one head.
     #[must_use]
-    pub fn score_vector(&self, head: &str, features: &BTreeMap<String, f64>) -> f64 {
+    pub fn score_vector(&self, head: &str, features: &crate::features::FeatureVector) -> f64 {
         self.head(head)
             .map_or(0.0, |head| head.score_vector(features))
     }

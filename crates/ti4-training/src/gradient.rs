@@ -30,6 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::TrajectoryStep;
+use ti4_policy::intern::{FeatureKey, name_of};
 use ti4_policy::learned::Profile;
 
 use crate::reward::{Episode, Reward, returns};
@@ -70,11 +71,11 @@ pub struct Statistics {
     /// The sum of the distributions' entropies, for telemetry.
     pub entropy_sum: f64,
     /// Σ of `(chosen − expected) / temperature`, per bucket.
-    pub feature_difference_sum: BTreeMap<String, f64>,
+    pub feature_difference_sum: BTreeMap<FeatureKey, f64>,
     /// The same, weighted by each decision's return.
-    pub return_feature_difference_sum: BTreeMap<String, f64>,
+    pub return_feature_difference_sum: BTreeMap<FeatureKey, f64>,
     /// The gradient of the entropy bonus, per bucket.
-    pub entropy_gradient_sum: BTreeMap<String, f64>,
+    pub entropy_gradient_sum: BTreeMap<FeatureKey, f64>,
 }
 
 impl Statistics {
@@ -99,7 +100,7 @@ impl Statistics {
                 // Same reason as `statistics`: `entry` would clone the slot name before it can
                 // look it up, and merging 96 partials means nearly every slot is already present
                 // in the target by the second partial.
-                accumulate(target, slot, *value);
+                accumulate(target, *slot, *value);
             }
         }
     }
@@ -131,8 +132,8 @@ pub struct Telemetry {
 /// seen. Asking first costs one extra lookup on the miss path and saves an allocation on the
 /// hit path; a training batch accumulates tens of thousands of slots over hundreds of thousands
 /// of steps, so nearly every call is a hit.
-fn accumulate(into: &mut BTreeMap<String, f64>, slot: &str, value: f64) {
-    if let Some(existing) = into.get_mut(slot) {
+fn accumulate(into: &mut BTreeMap<FeatureKey, f64>, slot: FeatureKey, value: f64) {
+    if let Some(existing) = into.get_mut(&slot) {
         *existing += value;
     } else {
         // `0.0 + value`, not `value`. The form this replaces was `entry(..).or_insert(0.0) +=
@@ -140,7 +141,7 @@ fn accumulate(into: &mut BTreeMap<String, f64>, slot: &str, value: f64) {
         // a slot whose first contribution is a negative zero stored `+0.0` before and would
         // store `-0.0` here. The two compare equal and sum alike, so no test could see it — a
         // bit-level digest of the reduced batch can, and did.
-        into.insert(slot.to_owned(), 0.0 + value);
+        into.insert(slot, 0.0 + value);
     }
 }
 
@@ -180,13 +181,13 @@ pub fn statistics(
         // Keyed by borrowed slot name: this map is a temporary that dies with the step, and
         // owning its keys meant cloning a heap string for every slot of every legal option --
         // the largest single source of allocation in the whole reduction.
-        let mut expected: BTreeMap<&str, f64> = BTreeMap::new();
+        let mut expected: BTreeMap<FeatureKey, f64> = BTreeMap::new();
         for (option, chance) in &step.probabilities {
             let Some(vector) = step.legal.get(option) else {
                 continue;
             };
             for (slot, value) in vector {
-                *expected.entry(slot.as_str()).or_insert(0.0) += chance * value;
+                *expected.entry(*slot).or_insert(0.0) += chance * value;
             }
         }
 
@@ -195,14 +196,14 @@ pub fn statistics(
         row.return_square_sum += credit * credit;
         row.entropy_sum += entropy;
 
-        let slots: BTreeSet<&str> = expected
+        let slots: BTreeSet<FeatureKey> = expected
             .keys()
             .copied()
-            .chain(step.features().keys().map(String::as_str))
+            .chain(step.features().keys().copied())
             .collect();
         for slot in slots {
-            let difference = (step.features().get(slot).copied().unwrap_or(0.0)
-                - expected.get(slot).copied().unwrap_or(0.0))
+            let difference = (step.features().get(&slot).copied().unwrap_or(0.0)
+                - expected.get(&slot).copied().unwrap_or(0.0))
                 / temperature;
             accumulate(&mut row.feature_difference_sum, slot, difference);
             accumulate(
@@ -218,7 +219,7 @@ pub fn statistics(
             };
             let coefficient = -chance * (chance.max(1e-12).ln() + entropy) / temperature;
             for (slot, value) in vector {
-                accumulate(&mut row.entropy_gradient_sum, slot, coefficient * value);
+                accumulate(&mut row.entropy_gradient_sum, *slot, coefficient * value);
             }
         }
     }
@@ -255,25 +256,31 @@ pub fn apply(
             1.0
         };
 
-        let slots: BTreeSet<&String> = row
+        let slots: BTreeSet<FeatureKey> = row
             .feature_difference_sum
             .keys()
             .chain(row.return_feature_difference_sum.keys())
             .chain(row.entropy_gradient_sum.keys())
+            .copied()
             .collect();
-        let gradient: BTreeMap<String, f64> = slots
+        let gradient: BTreeMap<FeatureKey, f64> = slots
             .into_iter()
             .map(|slot| {
                 let centered = (row
                     .return_feature_difference_sum
-                    .get(slot)
+                    .get(&slot)
                     .copied()
                     .unwrap_or(0.0)
-                    - mean * row.feature_difference_sum.get(slot).copied().unwrap_or(0.0))
+                    - mean
+                        * row
+                            .feature_difference_sum
+                            .get(&slot)
+                            .copied()
+                            .unwrap_or(0.0))
                     / scale;
                 let bonus =
-                    step.entropy * row.entropy_gradient_sum.get(slot).copied().unwrap_or(0.0);
-                (slot.clone(), centered + bonus)
+                    step.entropy * row.entropy_gradient_sum.get(&slot).copied().unwrap_or(0.0);
+                (slot, centered + bonus)
             })
             .collect();
 
@@ -293,10 +300,14 @@ pub fn apply(
             for (slot, value) in &gradient {
                 let delta = step.learning_rate * shrink * value / divisor;
                 if delta.abs() > 1e-15 && delta.is_finite() {
-                    *weights.weights.entry(slot.clone()).or_insert(0.0) += delta;
+                    // The weight table is keyed by name -- that is what makes a checkpoint
+                    // portable -- so a key becomes a name here, once per slot per update.
+                    *weights.weights.entry(name_of(*slot)).or_insert(0.0) += delta;
                     squared += delta * delta;
                 }
             }
+            // The scoring index was built from the weights just changed.
+            weights.invalidate();
         }
 
         told.insert(
@@ -372,16 +383,16 @@ pub fn faction_batch_statistics(
 
 #[cfg(test)]
 mod tests {
-    use ti4_policy::features::FeatureVector;
     use super::*;
     use crate::reward::Stage;
+    use ti4_policy::features::FeatureVector;
     use ti4_policy::learned::{DEFAULT_DIMENSIONS, blank_profile, bucket};
     use ti4_policy::progress::Progress;
 
     fn vector(pairs: &[(&str, f64)]) -> FeatureVector {
         pairs
             .iter()
-            .map(|(slot, value)| ((*slot).to_owned(), *value))
+            .map(|(slot, value)| (ti4_policy::intern::register(slot), *value))
             .collect()
     }
 

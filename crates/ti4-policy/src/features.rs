@@ -28,10 +28,35 @@ use serde_json::Value;
 use ti4_engine::choice::{Choice, ChoiceOption, Observed};
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 
+use crate::intern::{FeatureKey, register};
 use crate::learned::bucket;
 
-/// A sparse feature vector: bucket name to accumulated signed value.
-pub type FeatureVector = BTreeMap<String, f64>;
+/// A sparse feature vector: feature key to accumulated signed value.
+///
+/// Keyed by [`FeatureKey`] rather than by name. See `crate::intern` for what that buys and what
+/// it costs; the short version is that a name is hashed once here and never allocated again.
+pub type FeatureVector = BTreeMap<FeatureKey, f64>;
+
+/// The value a named feature carries in a vector, if any.
+///
+/// A vector is keyed by hash, so a caller holding a name has to hash it. Provided here rather
+/// than left to every test and diagnostic to spell out.
+#[must_use]
+pub fn value_of(features: &FeatureVector, name: &str) -> Option<f64> {
+    features.get(&FeatureKey::of(name)).copied()
+}
+
+/// Every name in a vector, for tests and diagnostics that want to read one back.
+///
+/// Only names this process has registered resolve; anything else comes back empty. Allocates a
+/// string per entry, so this is not for the hot path.
+#[must_use]
+pub fn names_of(features: &FeatureVector) -> Vec<String> {
+    features
+        .keys()
+        .map(|key| crate::intern::name_of(*key))
+        .collect()
+}
 
 /// Builds a hashed sparse vector from facts.
 pub struct Features {
@@ -63,7 +88,7 @@ impl Features {
             return;
         }
         let (slot, sign) = bucket(name, self.dimensions);
-        *self.buckets.entry(slot).or_insert(0.0) += sign * value;
+        *self.buckets.entry(register(&slot)).or_insert(0.0) += sign * value;
     }
 
     /// The sparse vector.
@@ -440,7 +465,7 @@ fn add_named(features: &mut FeatureVector, name: &str, value: f64) {
     if value == 0.0 || !value.is_finite() {
         return;
     }
-    *features.entry(name.to_owned()).or_insert(0.0) += value;
+    *features.entry(register(name)).or_insert(0.0) += value;
 }
 
 /// Local choice kinds translated to the oracle identity used by imported explicit weights.
@@ -925,21 +950,17 @@ mod tests {
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
         let features = explicit_option_features(&seen, &choice, &option, &player);
 
-        assert_eq!(features.get("target:reachable"), Some(&1.0));
+        assert_eq!(value_of(&features, "target:reachable"), Some(1.0));
+        assert!(value_of(&features, "target:planet-count").is_some_and(|count| count > 0.0));
+        assert!(value_of(&features, &format!("option:{target}")).is_none());
         assert!(
-            features
-                .get("target:planet-count")
-                .is_some_and(|count| *count > 0.0)
-        );
-        assert!(!features.contains_key(&format!("option:{target}")));
-        assert!(
-            features
-                .keys()
+            names_of(&features)
+                .iter()
                 .all(|name| !name.starts_with("kind-faction:"))
         );
         assert!(
-            features
-                .keys()
+            names_of(&features)
+                .iter()
                 .all(|name| !name.starts_with("state-option:"))
         );
     }
@@ -957,7 +978,7 @@ mod tests {
 
         let features = explicit_option_features(&seen, &choice, &option, &player);
 
-        assert_eq!(features.get("target:reachable"), Some(&1.0));
+        assert_eq!(value_of(&features, "target:reachable"), Some(1.0));
     }
 
     #[test]
@@ -999,9 +1020,9 @@ mod tests {
             .unwrap();
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
         let movement = explicit_option_features(&seen, &move_choice, move_option, &player);
-        assert_eq!(movement.get("route:adjacent"), Some(&1.0));
-        assert_eq!(movement.get("move-unit:capacity"), Some(&4.0));
-        assert!(movement.contains_key("origin:own-ships"));
+        assert_eq!(value_of(&movement, "route:adjacent"), Some(1.0));
+        assert_eq!(value_of(&movement, "move-unit:capacity"), Some(4.0));
+        assert!(value_of(&movement, "origin:own-ships").is_some());
 
         let planet = ti4_content::galaxy::planets_in(content, &destination, POK)
             .first()
@@ -1013,10 +1034,11 @@ mod tests {
             Choice::new(player.clone(), "commit ground forces", vec![land.clone()]);
         let landing = explicit_option_features(&seen, &landing_choice, &land, &player);
         assert!(
-            landing.contains_key("landing:resources") || landing.contains_key("landing:influence")
+            value_of(&landing, "landing:resources").is_some()
+                || value_of(&landing, "landing:influence").is_some()
         );
-        assert!(landing.contains_key("invasion:planet-count"));
-        assert!(landing.contains_key("state-kind:commit:round"));
+        assert!(value_of(&landing, "invasion:planet-count").is_some());
+        assert!(value_of(&landing, "state-kind:commit:round").is_some());
     }
 
     #[test]
@@ -1058,7 +1080,7 @@ mod tests {
                 case.features.len()
             );
             for (slot, want) in &case.features {
-                let got = ours.get(slot).copied().unwrap_or(0.0);
+                let got = value_of(&ours, slot).unwrap_or(0.0);
                 assert!(
                     (got - want).abs() < 1e-9,
                     "{} bucket {slot}: {got} against the oracle's {want}",
@@ -1129,13 +1151,13 @@ mod tests {
         let doubled = option_features(&seen, &asked, &twice, &player, DIMENSIONS);
         let (slot, sign) = bucket("option:carrier", DIMENSIONS);
         assert!(
-            (single.get(&slot).copied().unwrap_or(0.0) - sign).abs() < 1e-9
-                || single.contains_key(&slot),
+            (value_of(&single, &slot).unwrap_or(0.0) - sign).abs() < 1e-9
+                || value_of(&single, &slot).is_some(),
             "the id alone records the word"
         );
         // The label repeating it must not double its contribution beyond the extra `build`/`one`
         // tokens, which land elsewhere.
-        assert!(doubled.contains_key(&slot));
+        assert!(value_of(&doubled, &slot).is_some());
     }
 
     #[test]

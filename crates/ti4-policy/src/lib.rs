@@ -11,6 +11,7 @@
 pub mod bot;
 pub mod features;
 pub mod inference;
+pub mod intern;
 pub mod learned;
 pub mod progress;
 pub mod scoring;

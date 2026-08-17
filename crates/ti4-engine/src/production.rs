@@ -79,11 +79,10 @@ pub fn planet_value(
 ) -> i64 {
     // A point lookup, not the whole catalogue: this is called once per payment face, inside
     // `payment_options`' per-planet affordability guard, which is itself O(planets squared).
-    ti4_content::galaxy::planet(content, planet.as_str(), sources)
-        .map_or(0, |record| match kind {
-            Spend::Resources => record.resources(),
-            Spend::Influence => record.influence(),
-        })
+    ti4_content::galaxy::planet(content, planet.as_str(), sources).map_or(0, |record| match kind {
+        Spend::Resources => record.resources(),
+        Spend::Influence => record.influence(),
+    })
 }
 
 /// Controlled planets whose cards are still readied (LRR 34, 75.2).
