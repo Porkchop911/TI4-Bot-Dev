@@ -77,8 +77,9 @@ pub fn planet_value(
     planet: &PlanetId,
     kind: Spend,
 ) -> i64 {
-    ti4_content::galaxy::all_planets(content, sources)
-        .get(planet.as_str())
+    // A point lookup, not the whole catalogue: this is called once per payment face, inside
+    // `payment_options`' per-planet affordability guard, which is itself O(planets squared).
+    ti4_content::galaxy::planet(content, planet.as_str(), sources)
         .map_or(0, |record| match kind {
             Spend::Resources => record.resources(),
             Spend::Influence => record.influence(),

@@ -119,9 +119,8 @@ pub fn votable_planets(
 /// 8.6a: exhausting a planet casts its *full* influence, never part of it.
 #[must_use]
 pub fn influence_of(content: &ContentStore, sources: SourceSet, planet: &PlanetId) -> i64 {
-    all_planets(content, sources)
-        .get(planet.as_str())
-        .map_or(0, ti4_content::galaxy::Planet::influence)
+    ti4_content::galaxy::planet(content, planet.as_str(), sources)
+        .map_or(0, |record| record.influence())
 }
 
 /// Whether an agenda is a law, which decides if a passed outcome stays in play (8.20).
