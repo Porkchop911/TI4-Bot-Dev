@@ -30,6 +30,9 @@ use ti4_engine::choice::{Choice, ChoiceOption, Observed};
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 
 use crate::intern::{FeatureKey, first_sighting, record, register};
+
+/// Mecatol Rex, the fixed reference point every position is measured against.
+pub const MECATOL: &str = ti4_engine::seating::MECATOL;
 use crate::learned::bucket;
 
 /// A sparse feature vector: feature key to accumulated signed value.
@@ -401,14 +404,28 @@ pub fn explicit_option_features(
     option: &ChoiceOption,
     player: &PlayerId,
 ) -> FeatureVector {
+    let context = ChoiceContext {
+        facts: seat_facts(seen, player),
+        own_units: seen.systems_with_units_of(player).into_iter().collect(),
+    };
     explicit_option_features_with(
         seen,
         &tokens(&choice.prompt),
-        &seat_facts(seen, player),
+        &context,
         option,
         player,
         uniform_kind(choice),
     )
+}
+
+/// Facts about the seat that every option of a choice is described against, computed once.
+///
+/// `own_units` is here rather than looked up per option because
+/// [`Observed::systems_with_units_of`] scans the board and allocates, and an activation choice
+/// offers thirty-odd options that would each have asked the same question.
+struct ChoiceContext<'a> {
+    facts: [(&'static str, f64); 8],
+    own_units: Vec<&'a SystemId>,
 }
 
 /// The eight per-seat facts every option of a choice is described against.
@@ -470,13 +487,16 @@ pub fn explicit_choice_features(
 ) -> Vec<FeatureVector> {
     // Both of these are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
-    let facts = seat_facts(seen, player);
+    let context = ChoiceContext {
+        facts: seat_facts(seen, player),
+        own_units: seen.systems_with_units_of(player).into_iter().collect(),
+    };
     let uniform = uniform_kind(choice);
     choice
         .options
         .iter()
         .map(|option| {
-            explicit_option_features_with(seen, &prompt_tokens, &facts, option, player, uniform)
+            explicit_option_features_with(seen, &prompt_tokens, &context, option, player, uniform)
         })
         .collect()
 }
@@ -515,7 +535,7 @@ fn uniform_kind(choice: &Choice) -> bool {
 fn explicit_option_features_with(
     seen: &Observed<'_>,
     prompt_tokens: &[String],
-    seat_facts: &[(&'static str, f64); 8],
+    context: &ChoiceContext<'_>,
     option: &ChoiceOption,
     player: &PlayerId,
     uniform_kind: bool,
@@ -604,12 +624,12 @@ fn explicit_option_features_with(
     }
 
     if !uniform_kind {
-        for (name, value) in seat_facts {
+        for (name, value) in &context.facts {
             add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
         }
     }
 
-    structured_features(seen, option, player, &mut features);
+    structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
     features
@@ -678,12 +698,13 @@ fn structured_features(
     seen: &Observed<'_>,
     option: &ChoiceOption,
     player: &PlayerId,
+    context: &ChoiceContext<'_>,
     features: &mut FeatureVector,
 ) {
     let kind = canonical_feature_kind(&option.kind);
     let active = seen.active_system();
     if matches!(kind, "activate" | "system") {
-        add_system_features(seen, &option.id, player, "target", features);
+        add_system_features(seen, &option.id, player, context, "target", features);
     }
 
     if let Some(system) = payload_string(option, "system") {
@@ -693,29 +714,50 @@ fn structured_features(
             "load" => "origin",
             _ => "option-system",
         };
-        add_system_features(seen, system, player, prefix, features);
+        add_system_features(seen, system, player, context, prefix, features);
     }
 
     match kind {
         "move" => {
             if let Some(origin) = payload_string(option, "origin") {
-                add_system_features(seen, origin, player, "origin", features);
+                add_system_features(seen, origin, player, context, "origin", features);
                 if let Some(destination) = active {
                     add_route_features(seen, origin, destination.as_str(), features);
                 }
             }
             if let Some(destination) = active {
-                add_system_features(seen, destination.as_str(), player, "destination", features);
+                add_system_features(
+                    seen,
+                    destination.as_str(),
+                    player,
+                    context,
+                    "destination",
+                    features,
+                );
             }
         }
         "load" => {
             if let Some(destination) = active {
-                add_system_features(seen, destination.as_str(), player, "destination", features);
+                add_system_features(
+                    seen,
+                    destination.as_str(),
+                    player,
+                    context,
+                    "destination",
+                    features,
+                );
             }
         }
         "commit" => {
             if let Some(destination) = active {
-                add_system_features(seen, destination.as_str(), player, "invasion", features);
+                add_system_features(
+                    seen,
+                    destination.as_str(),
+                    player,
+                    context,
+                    "invasion",
+                    features,
+                );
             }
             if let Some(planet) = payload_string(option, "planet") {
                 add_planet_features(
@@ -876,6 +918,7 @@ fn add_system_features(
     seen: &Observed<'_>,
     system_id: &str,
     player: &PlayerId,
+    context: &ChoiceContext<'_>,
     prefix: &str,
     features: &mut FeatureVector,
 ) {
@@ -964,6 +1007,94 @@ fn add_system_features(
         enemy_ground_total += usize::from(!mine && stats.is_ground_force());
         own_production_units += usize::from(mine && stats.has_production());
     }
+    // Where this system sits, and what is on it. Without these, two tiles carrying the same
+    // planet counts are the same decision: `option:{id}` is filtered out for being all-digit, so
+    // the identity of an activation target reaches the policy through nothing else. Measured at
+    // 94% of activation decisions holding at least two options with identical vectors.
+    //
+    // Facts, not judgements: none of them says a system is worth taking, only what it is and
+    // where it is relative to the seat's own ships and to Mecatol.
+    if let Some(record) = ti4_content::galaxy::system(seen.content(), system_id, seen.sources()) {
+        let (mut resources, mut influence) = (0, 0);
+        for id in &planet_ids {
+            if let Some(planet) = ti4_content::galaxy::planet(seen.content(), id, seen.sources()) {
+                resources += planet.resources();
+                influence += planet.influence();
+            }
+        }
+        add_named(
+            features,
+            format_args!("{prefix}:resources"),
+            small_integer_value(resources),
+        );
+        add_named(
+            features,
+            format_args!("{prefix}:influence"),
+            small_integer_value(influence),
+        );
+        add_named(
+            features,
+            format_args!("{prefix}:wormholes"),
+            count_value(record.wormholes().len()),
+        );
+        add_named(
+            features,
+            format_args!("{prefix}:anomaly"),
+            f64::from(u8::from(record.is_anomaly())),
+        );
+    }
+    // Distance to the nearest system this seat already has units in, and to Mecatol. Two systems
+    // with identical contents are still different moves if one is next to your fleet.
+    let nearest = context
+        .own_units
+        .iter()
+        .filter_map(|origin| galaxy.distance(origin.as_str(), system_id))
+        .min();
+    if let Some(distance) = nearest {
+        add_named(
+            features,
+            format_args!("{prefix}:own-distance"),
+            small_integer_value(i64::from(distance)),
+        );
+    }
+    add_named(
+        features,
+        format_args!("{prefix}:own-adjacent"),
+        f64::from(u8::from(nearest == Some(1))),
+    );
+    add_named(
+        features,
+        format_args!("{prefix}:own-here"),
+        f64::from(u8::from(nearest == Some(0))),
+    );
+    if let Some(distance) = galaxy.distance(crate::features::MECATOL, system_id) {
+        add_named(
+            features,
+            format_args!("{prefix}:mecatol-distance"),
+            small_integer_value(i64::from(distance)),
+        );
+    }
+    // How many *other* seats are present, which is what makes a system contested rather than open.
+    let rivals: std::collections::BTreeSet<&PlayerId> = system
+        .units
+        .iter()
+        .map(|unit| &unit.owner)
+        .chain(
+            system
+                .planet_units
+                .values()
+                .flatten()
+                .map(|unit| &unit.owner),
+        )
+        .chain(controls.values())
+        .filter(|owner| *owner != player)
+        .collect();
+    add_named(
+        features,
+        format_args!("{prefix}:rival-seats"),
+        count_value(rivals.len()),
+    );
+
     for (name, value) in [
         ("own-ships", count_value(own_ships)),
         ("enemy-ships", count_value(enemy_ships)),
@@ -1491,11 +1622,21 @@ mod tests {
         assert!(uniform_kind(&choice), "the fixture is a single-kind choice");
 
         let prompt_tokens = tokens(&choice.prompt);
-        let facts = seat_facts(&seen, &player);
+        let context = ChoiceContext {
+            facts: seat_facts(&seen, &player),
+            own_units: seen.systems_with_units_of(&player).into_iter().collect(),
+        };
         let full: Vec<FeatureVector> = options
             .iter()
             .map(|option| {
-                explicit_option_features_with(&seen, &prompt_tokens, &facts, option, &player, false)
+                explicit_option_features_with(
+                    &seen,
+                    &prompt_tokens,
+                    &context,
+                    option,
+                    &player,
+                    false,
+                )
             })
             .collect();
         let kept = explicit_choice_features(&seen, &choice, &player);
@@ -1544,10 +1685,14 @@ mod tests {
         );
         assert!(!uniform_kind(&choice));
 
+        let context = ChoiceContext {
+            facts: seat_facts(&seen, &player),
+            own_units: seen.systems_with_units_of(&player).into_iter().collect(),
+        };
         let full = explicit_option_features_with(
             &seen,
             &tokens(&choice.prompt),
-            &seat_facts(&seen, &player),
+            &context,
             &choice.options[0],
             &player,
             false,
