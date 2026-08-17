@@ -1195,7 +1195,9 @@ pub fn jamming_systems(
         reach.extend(galaxy.adjacent(system));
     }
     // Home systems are never jammable, even when they hold the player's ships.
-    reach.retain(|system| !ti4_content::galaxy::is_home_system(content, system, sources));
+    // One corpus pass for the whole set, not one per system in `reach`.
+    let homes = ti4_content::galaxy::home_systems(content, sources);
+    reach.retain(|system| !homes.contains(*system));
     reach.into_iter().map(str::to_owned).collect()
 }
 

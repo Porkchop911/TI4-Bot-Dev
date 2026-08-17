@@ -229,11 +229,29 @@ pub fn planets_in<'a>(
 }
 
 /// Whether a system holds any faction's homeworld.
+///
+/// A single check. Filtering a *collection* of systems with this rescans the whole planet corpus
+/// once per system — use [`home_systems`] for that, which scans it once in total.
 #[must_use]
 pub fn is_home_system(store: &ContentStore, system_id: &str, sources: SourceSet) -> bool {
     planets_in(store, system_id, sources)
         .iter()
         .any(|p| p.homeworld_of().is_some())
+}
+
+/// Every system holding a faction's homeworld, in one pass over the planet corpus.
+///
+/// The set form of [`is_home_system`]. Both key on a planet's `tileId`, so
+/// `home_systems(..).contains(id)` and `is_home_system(.., id, ..)` agree by construction; this
+/// one just does not re-read the corpus for each system asked about.
+#[must_use]
+pub fn home_systems(store: &ContentStore, sources: SourceSet) -> BTreeSet<&str> {
+    store
+        .from_sources(ContentType::Planets, sources)
+        .map(Planet::new)
+        .filter(|planet| planet.homeworld_of().is_some())
+        .filter_map(|planet| planet.system_id())
+        .collect()
 }
 
 /// Something went wrong building a board.

@@ -247,6 +247,9 @@ pub fn build_board(
 /// keeps board-dependent tests stable. Seeded selection belongs with the simulation harness.
 #[must_use]
 pub fn neutral_systems(content: &ContentStore, count: usize, sources: SourceSet) -> Vec<SystemId> {
+    // One pass over the planet corpus for every homeworld system, rather than asking
+    // `is_home_system` per candidate -- which rescans that corpus each time it is asked.
+    let homes = ti4_content::galaxy::home_systems(content, sources);
     all_systems(content, sources)
         .into_iter()
         .filter(|(id, system)| {
@@ -255,7 +258,7 @@ pub fn neutral_systems(content: &ContentStore, count: usize, sources: SourceSet)
                 && !system.is_anomaly()
                 && !system.is_hyperlane()
                 && system.wormholes().is_empty()
-                && !is_home_tile(content, system.id(), sources)
+                && !homes.contains(system.id())
         })
         .map(|(id, _)| SystemId::new(id))
         .take(count)
@@ -284,12 +287,6 @@ pub fn map_filler(
     rng.shuffle(crate::rng::domain::GALAXY, &mut pool);
     pool.truncate(count);
     pool
-}
-
-fn is_home_tile(content: &ContentStore, system_id: &str, sources: SourceSet) -> bool {
-    ti4_content::galaxy::planets_in(content, system_id, sources)
-        .iter()
-        .any(|p| p.homeworld_of().is_some())
 }
 
 #[cfg(test)]
