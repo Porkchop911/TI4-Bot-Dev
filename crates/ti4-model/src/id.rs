@@ -61,6 +61,15 @@ impl PlanetId {
     }
 }
 
+/// Borrowing as `str` lets a `BTreeMap<PlanetId, _>` be probed with a plain `&str`, without
+/// allocating a `PlanetId` for every lookup. The `Ord` used for the probe is `str`'s, which is
+/// exactly the `Ord` the map was built with, since `PlanetId` derives its own from the `String`.
+impl std::borrow::Borrow<str> for PlanetId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl fmt::Display for PlanetId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

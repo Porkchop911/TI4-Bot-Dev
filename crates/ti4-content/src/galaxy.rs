@@ -214,6 +214,18 @@ pub fn planet<'a>(store: &'a ContentStore, id: &str, sources: SourceSet) -> Opti
     store.get(ContentType::Planets, resolved).map(Planet::new)
 }
 
+/// One system by id, within a source scope.
+///
+/// A point lookup against the store's index, where [`all_systems`] materialises the whole
+/// catalogue. Its [`System::planets`] list is the same set [`planets_in`] finds by scanning every
+/// planet for a matching `tileId` — checked across all 231 systems of the corpus — so a caller
+/// that wants only the planet *ids* of a system should come here rather than pay the scan.
+#[must_use]
+pub fn system<'a>(store: &'a ContentStore, id: &str, sources: SourceSet) -> Option<System<'a>> {
+    let resolved = store.resolve_id(ContentType::Systems, id, sources)?;
+    store.get(ContentType::Systems, resolved).map(System::new)
+}
+
 /// The planets that sit in a given system.
 #[must_use]
 pub fn planets_in<'a>(
