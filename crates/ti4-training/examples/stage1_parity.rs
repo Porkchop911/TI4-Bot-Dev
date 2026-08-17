@@ -287,9 +287,9 @@ fn diagnose_profile_use(plan: &FactionPlan, profiles: &BTreeMap<FactionId, Profi
                 .expect("validated head");
             let entry = by_head.entry(step.head.clone()).or_default();
             entry.0 += 1;
-            entry.1 += step.features.len();
+            entry.1 += step.features().len();
             entry.2 += step
-                .features
+                .features()
                 .keys()
                 .filter(|name| weights.contains_key(*name))
                 .count();

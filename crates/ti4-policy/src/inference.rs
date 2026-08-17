@@ -48,13 +48,13 @@ pub struct TrajectoryStep {
     pub head: String,
     /// The option taken.
     pub chosen: String,
-    /// The hashed features of the option taken.
-    ///
-    /// Only the chosen option's, because that is what the gradient of the log-probability needs
-    /// alongside the expectation over the rest.
-    pub features: FeatureVector,
     /// The features of every legal option, so the update can compute the expectation the chosen
     /// option is measured against.
+    ///
+    /// The chosen option's own vector lives in here too, under `chosen`; [`Self::features`] reads
+    /// it back. It used to be cloned into a separate field as well, which deep-copied a whole
+    /// feature vector -- twenty-odd heap-allocated keys -- on every recorded decision, to store a
+    /// second copy of something already present.
     pub legal: BTreeMap<String, FeatureVector>,
     /// What the policy thought each legal option's chance was.
     pub probabilities: BTreeMap<String, f64>,
@@ -65,6 +65,18 @@ pub struct TrajectoryStep {
     /// reward is a difference between consecutive snapshots, so one taken late is not merely
     /// imprecise — it moves the credit onto the wrong decision.
     pub progress: Progress,
+}
+
+impl TrajectoryStep {
+    /// The features of the option actually taken.
+    ///
+    /// Read out of [`Self::legal`] rather than stored beside it: the two were always equal by
+    /// construction, and the test below still pins that.
+    #[must_use]
+    pub fn features(&self) -> &FeatureVector {
+        static EMPTY: FeatureVector = BTreeMap::new();
+        self.legal.get(&self.chosen).unwrap_or(&EMPTY)
+    }
 }
 
 /// Softmax over the legal set.
@@ -268,7 +280,6 @@ impl Decider for LearnedBot {
                 player: choice.player.clone(),
                 head: self.profile.resolved_head(decision_head(choice)).to_owned(),
                 chosen: chosen.id.clone(),
-                features: legal.get(&chosen.id).cloned().unwrap_or_default(),
                 legal,
                 probabilities: chances,
                 progress: crate::progress::measure(seen, &choice.player, self.baseline),
@@ -492,7 +503,8 @@ mod tests {
             "every legal option's features are kept"
         );
         assert_eq!(
-            step.features, step.legal[&taken.id],
+            step.features(),
+            &step.legal[&taken.id],
             "and the chosen one's are the ones it took"
         );
         assert!((step.probabilities.values().sum::<f64>() - 1.0).abs() < 1e-12);

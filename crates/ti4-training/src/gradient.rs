@@ -162,9 +162,9 @@ pub fn statistics(
         row.return_square_sum += credit * credit;
         row.entropy_sum += entropy;
 
-        let slots: BTreeSet<&String> = expected.keys().chain(step.features.keys()).collect();
+        let slots: BTreeSet<&String> = expected.keys().chain(step.features().keys()).collect();
         for slot in slots {
-            let difference = (step.features.get(slot).copied().unwrap_or(0.0)
+            let difference = (step.features().get(slot).copied().unwrap_or(0.0)
                 - expected.get(slot).copied().unwrap_or(0.0))
                 / temperature;
             *row.feature_difference_sum
@@ -360,7 +360,6 @@ mod tests {
             player: PlayerId::new("a"),
             head: head.to_owned(),
             chosen: chosen.to_owned(),
-            features: legal[chosen].clone(),
             legal,
             probabilities: chances
                 .iter()
