@@ -75,6 +75,53 @@ fn main() {
         }
     }
 
+    // Do the crossed seat facts actually VARY at this head's decisions?
+    //
+    // Crossing a fact that never changes is worse than useless: it is perfectly collinear with the
+    // option-identity feature it is crossed with, so it adds no information and multiplies the
+    // gradient along that one direction by the sum of the squared fact values.
+    let mut fact_values: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    for game in &games {
+        for seat in &game.seats {
+            for step in &seat.trajectory {
+                if step.head != head_name {
+                    continue;
+                }
+                for vector in step.legal.values() {
+                    for (slot, value) in vector {
+                        let name = name_of(*slot);
+                        let Some(rest) = name
+                            .strip_prefix("state-option:")
+                            .or_else(|| name.strip_prefix("state-kind:"))
+                        else {
+                            continue;
+                        };
+                        let Some((_, fact)) = rest.split_once(':') else {
+                            continue;
+                        };
+                        *fact_values
+                            .entry(fact.to_owned())
+                            .or_default()
+                            .entry(format!("{value}"))
+                            .or_default() += 1;
+                    }
+                }
+            }
+        }
+    }
+    println!("
+crossed seat facts at every {head_name} decision, and how often each value appears:");
+    for (fact, counts) in &fact_values {
+        let distinct = counts.len();
+        let mut shown: Vec<String> = counts
+            .iter()
+            .map(|(value, count)| format!("{value}x{count}"))
+            .collect();
+        shown.truncate(6);
+        let flag = if distinct == 1 { "  <-- CONSTANT" } else { "" };
+        println!("  {fact:<20} {distinct:>3} distinct  {}{flag}", shown.join(" "));
+    }
+
     // How many distinct vectors does the head ever see?
     let mut distinct: BTreeSet<String> = BTreeSet::new();
     let mut distinct_yes: BTreeSet<String> = BTreeSet::new();
