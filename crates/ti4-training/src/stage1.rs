@@ -396,10 +396,17 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
 
             let report = ppo::update(&mut profiles, &batch, &reward, ppo_step);
 
-            // The last epoch's telemetry is the one that describes the weights the next batch
-            // will be rolled out from; the clip reading is pooled over every epoch, because the
-            // question it answers -- was the batch exhausted -- is about the epochs together.
+            // Returns and entropy are read from the last epoch, which is the one describing the
+            // weights the next batch will be rolled out from. Movement is *summed* across epochs,
+            // because it is a distance travelled and all of the epochs travelled it -- the
+            // trainer already accumulates it the same way across successive updates.
+            //
+            // Taking it from the last epoch like the rest would divide PPO's reported movement by
+            // `epochs` and make a run taking K steps look like one taking a single step. That
+            // reads as "PPO moves no further than REINFORCE", which is the opposite of what it
+            // does, and it is the sort of wrong number that gets believed because it is plausible.
             let mut telemetry: BTreeMap<String, BTreeMap<String, Telemetry>> = BTreeMap::new();
+            let mut movement: BTreeMap<(String, String), f64> = BTreeMap::new();
             let (mut clip_sum, mut kl_sum, mut rows) = (0.0, 0.0, 0usize);
             for (position, epoch) in report.iter().enumerate() {
                 let last = position + 1 == report.len();
@@ -408,6 +415,9 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
                         clip_sum += clipped.clip_fraction;
                         kl_sum += clipped.kl_mean;
                         rows += 1;
+                        *movement
+                            .entry((faction.to_string(), head.clone()))
+                            .or_insert(0.0) += told.update_norm;
                         if last {
                             telemetry
                                 .entry(faction.to_string())
@@ -415,6 +425,11 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
                                 .insert(head.clone(), told.clone());
                         }
                     }
+                }
+            }
+            for ((faction, head), travelled) in movement {
+                if let Some(told) = telemetry.get_mut(&faction).and_then(|h| h.get_mut(&head)) {
+                    told.update_norm = travelled;
                 }
             }
             #[expect(
