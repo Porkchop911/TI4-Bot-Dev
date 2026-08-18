@@ -164,6 +164,8 @@ fn main() -> Result<(), String> {
         start: None,
         high_vp_bonus: 0.0,
         clearance_weight: 0.0,
+        discount: 1.0,
+        round_baseline: false,
         pipeline: false,
         rollout_depth: 1,
     };

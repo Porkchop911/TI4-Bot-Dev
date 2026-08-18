@@ -914,6 +914,10 @@ fn unit_stats<'a>(
     ti4_content::units::unit_type(seen.content(), unit.type_id.as_str(), seen.sources())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear list of the facts a system carries; splitting it would hide which are recorded"
+)]
 fn add_system_features(
     seen: &Observed<'_>,
     system_id: &str,

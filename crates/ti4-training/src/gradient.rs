@@ -125,6 +125,12 @@ pub struct Telemetry {
     pub update_norm: f64,
 }
 
+/// Separates a head name from its round in a bucketed statistics key.
+///
+/// A head name never contains this, so a key either splits into `(head, round)` or is a bare
+/// head, and `apply` can tell which without being told.
+pub const ROUND_BUCKET: &str = "#r";
+
 /// Add into a named accumulator without cloning the name when it is already there.
 ///
 /// `entry` requires the owned key up front, so it allocates a copy of the slot name on every
@@ -161,12 +167,18 @@ pub fn statistics(
             .head(&step.head)
             .map_or(1.0, |head| head.temperature)
             .max(1e-6);
-        // `entry` would need the head name cloned before it can even look it up, on every step;
-        // there are only a dozen heads and hundreds of steps, so ask first and clone once.
-        if !collected.contains_key(&step.head) {
-            collected.insert(step.head.clone(), Statistics::default());
+        // Under `round_baseline` the statistics are bucketed by round as well as head, so each
+        // bucket can be centred against its own mean; `apply` splits the key back apart. The
+        // default key is the bare head name and is unchanged.
+        let key = if reward.round_baseline {
+            format!("{}{ROUND_BUCKET}{}", step.head, step.progress.round_number)
+        } else {
+            step.head.clone()
+        };
+        if !collected.contains_key(&key) {
+            collected.insert(key.clone(), Statistics::default());
         }
-        let Some(row) = collected.get_mut(&step.head) else {
+        let Some(row) = collected.get_mut(&key) else {
             continue; // unreachable: inserted immediately above
         };
 
@@ -241,54 +253,41 @@ pub fn apply(
     statistics: &BTreeMap<String, Statistics>,
     step: Step,
 ) -> BTreeMap<String, Telemetry> {
+    // Buckets belonging to one head share its weight vector, so each is centred and scaled
+    // against its own returns and their gradients are summed before a single clip and a single
+    // update. Without round bucketing every key is a bare head name, every group has exactly one
+    // member, and this is the original computation unchanged.
+    let mut grouped: BTreeMap<&str, Vec<&Statistics>> = BTreeMap::new();
+    for (key, row) in statistics {
+        let head = key.split(ROUND_BUCKET).next().unwrap_or(key);
+        grouped.entry(head).or_default().push(row);
+    }
+
     let mut told = BTreeMap::new();
-    for (head, row) in statistics {
-        if row.actions == 0 {
+    for (head, buckets) in grouped {
+        let actions: usize = buckets.iter().map(|row| row.actions).sum();
+        if actions == 0 {
             continue;
         }
         #[expect(
             clippy::cast_precision_loss,
             reason = "an action count is far below 2^53"
         )]
-        let divisor = row.actions as f64;
-        let mean = row.return_sum / divisor;
-        let variance = (row.return_square_sum / divisor - mean * mean).max(0.0);
-        // A batch where every return was identical has nothing to say about which decision was
-        // better. Dividing by its (zero) spread would turn rounding error into a gradient, so the
-        // scale falls back to one and the centered returns are all zero — no update, correctly.
-        let scale = if variance > 1e-12 {
-            variance.sqrt()
-        } else {
-            1.0
-        };
+        let divisor = actions as f64;
 
-        let slots: BTreeSet<FeatureKey> = row
-            .feature_difference_sum
-            .keys()
-            .chain(row.return_feature_difference_sum.keys())
-            .chain(row.entropy_gradient_sum.keys())
-            .copied()
-            .collect();
-        let gradient: BTreeMap<FeatureKey, f64> = slots
-            .into_iter()
-            .map(|slot| {
-                let centered = (row
-                    .return_feature_difference_sum
-                    .get(&slot)
-                    .copied()
-                    .unwrap_or(0.0)
-                    - mean
-                        * row
-                            .feature_difference_sum
-                            .get(&slot)
-                            .copied()
-                            .unwrap_or(0.0))
-                    / scale;
-                let bonus =
-                    step.entropy * row.entropy_gradient_sum.get(&slot).copied().unwrap_or(0.0);
-                (slot, centered + bonus)
-            })
-            .collect();
+        let mut gradient: BTreeMap<FeatureKey, f64> = BTreeMap::new();
+        let (mut return_sum, mut return_squares, mut entropy_sum) = (0.0, 0.0, 0.0);
+        for row in &buckets {
+            if row.actions == 0 {
+                continue;
+            }
+            centred_into(row, step, &mut gradient);
+            return_sum += row.return_sum;
+            return_squares += row.return_square_sum;
+            entropy_sum += row.entropy_sum;
+        }
+        let mean = return_sum / divisor;
+        let variance = (return_squares / divisor - mean * mean).max(0.0);
 
         let norm = gradient
             .values()
@@ -317,18 +316,64 @@ pub fn apply(
         }
 
         told.insert(
-            head.clone(),
+            head.to_owned(),
             Telemetry {
-                actions: row.actions,
+                actions,
                 return_mean: mean,
                 return_std: variance.sqrt(),
-                entropy_mean: row.entropy_sum / divisor,
+                entropy_mean: entropy_sum / divisor,
                 gradient_norm: norm,
                 update_norm: squared.sqrt(),
             },
         );
     }
     told
+}
+
+/// Add one bucket's centred, scale-normalised gradient into `into`.
+///
+/// Centring is against **this bucket's** mean return, which is the whole point of bucketing: a
+/// suffix-sum return is systematically larger early in a game than late, and one mean per head
+/// leaves that difference in the advantage and treats it as signal.
+fn centred_into(row: &Statistics, step: Step, into: &mut BTreeMap<FeatureKey, f64>) {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "an action count is far below 2^53"
+    )]
+    let divisor = row.actions as f64;
+    let mean = row.return_sum / divisor;
+    let variance = (row.return_square_sum / divisor - mean * mean).max(0.0);
+    // A bucket where every return was identical has nothing to say about which decision was
+    // better. Dividing by its (zero) spread would turn rounding error into a gradient, so the
+    // scale falls back to one and the centred returns are all zero -- no update, correctly.
+    let scale = if variance > 1e-12 {
+        variance.sqrt()
+    } else {
+        1.0
+    };
+    let slots: BTreeSet<FeatureKey> = row
+        .feature_difference_sum
+        .keys()
+        .chain(row.return_feature_difference_sum.keys())
+        .chain(row.entropy_gradient_sum.keys())
+        .copied()
+        .collect();
+    for slot in slots {
+        let centered = (row
+            .return_feature_difference_sum
+            .get(&slot)
+            .copied()
+            .unwrap_or(0.0)
+            - mean
+                * row
+                    .feature_difference_sum
+                    .get(&slot)
+                    .copied()
+                    .unwrap_or(0.0))
+            / scale;
+        let bonus = step.entropy * row.entropy_gradient_sum.get(&slot).copied().unwrap_or(0.0);
+        *into.entry(slot).or_insert(0.0) += centered + bonus;
+    }
 }
 
 /// Statistics for every seat in a batch of rollouts, keyed by seat.

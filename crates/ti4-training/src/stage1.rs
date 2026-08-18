@@ -190,6 +190,10 @@ pub struct FactionPlan {
     /// final slot so every decision's return carries it (Stage-2 gate experiments only). Zero
     /// keeps the reference reward exactly; see `Reward::clearance_weight`.
     pub clearance_weight: f64,
+    /// Discount on the suffix-sum return (gamma). One is the undiscounted reference.
+    pub discount: f64,
+    /// Centre returns against their round's mean rather than one mean per head.
+    pub round_baseline: bool,
     /// Overlap consecutive updates' rollouts on a background thread while the previous update's
     /// gradients are applied. Each rollout sees the pre-apply weights (bounded staleness of one
     /// update), which keeps the worker pool saturated across batch boundaries; per-game results
@@ -257,6 +261,8 @@ impl FactionPlan {
             start: None,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
+            discount: 1.0,
+            round_baseline: false,
             pipeline: false,
             rollout_depth: 1,
         }
@@ -291,6 +297,8 @@ impl FactionPlan {
             start: None,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
+            discount: 1.0,
+            round_baseline: false,
             pipeline: false,
             rollout_depth: 1,
         }
@@ -328,6 +336,8 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     let mut reward = Reward::for_stage(plan.stage);
     reward.high_vp_bonus = plan.high_vp_bonus;
     reward.clearance_weight = plan.clearance_weight;
+    reward.discount = plan.discount;
+    reward.round_baseline = plan.round_baseline;
     let mut generations = Vec::with_capacity(plan.generations);
     // One update in flight at a time. In pipeline mode the previous batch's gradients are
     // applied while the current batch is still rolling out, so the worker pool never drains to

@@ -838,6 +838,12 @@ fn main() -> Result<(), String> {
     // final slot so every decision's return carries it (keeps learned play inside the gate's
     // per-faction clearance band). Zero keeps the reference reward exactly.
     let clearance_weight = decimal("--clearance-weight", 0.0);
+    // Discount on the suffix-sum return. One is the undiscounted rule this trainer has always
+    // used; below one, a decision is credited less for what happens far after it.
+    let discount = decimal("--discount", 1.0);
+    // Centre returns against their round's mean rather than one mean per head, which removes the
+    // systematic difference between early decisions and late ones.
+    let round_baseline = flag("--round-baseline");
     // Overlap consecutive updates' rollouts with the previous update's gradient apply so the
     // worker pool stays saturated across batch boundaries (bounded staleness of one update).
     // Off by default: the sequential reference path is byte-identical to earlier runs.
@@ -881,6 +887,8 @@ fn main() -> Result<(), String> {
     plan.step.entropy = entropy;
     plan.high_vp_bonus = high_vp_bonus;
     plan.clearance_weight = clearance_weight;
+    plan.discount = discount;
+    plan.round_baseline = round_baseline;
     plan.pipeline = pipeline;
     plan.rollout_depth = rollout_depth;
     plan.train_seeds = train_seeds;
@@ -946,6 +954,8 @@ fn main() -> Result<(), String> {
         ("entropy".to_owned(), entropy.to_string()),
         ("high_vp_bonus".to_owned(), high_vp_bonus.to_string()),
         ("clearance_weight".to_owned(), clearance_weight.to_string()),
+        ("discount".to_owned(), discount.to_string()),
+        ("round_baseline".to_owned(), round_baseline.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
@@ -1005,6 +1015,12 @@ fn main() -> Result<(), String> {
     );
     if high_vp_bonus > 0.0 {
         println!("  reward: +{high_vp_bonus:.2} terminal bonus for finishing with >=3 VP");
+    }
+    if discount < 1.0 {
+        println!("  reward: returns discounted at gamma {discount:.3}");
+    }
+    if round_baseline {
+        println!("  baseline: per (head, round) rather than one mean per head");
     }
     if clearance_weight > 0.0 {
         println!(

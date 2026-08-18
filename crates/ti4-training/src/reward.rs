@@ -124,6 +124,21 @@ pub struct Reward {
     /// is only visible to round-one decisions; this one prices the clearance risk everywhere.
     /// Zero keeps the reference reward exactly (Stage-2 gate experiments).
     pub clearance_weight: f64,
+    /// How much a decision is credited for what happens later (gamma).
+    ///
+    /// One (the default) is the undiscounted suffix sum this trainer has always used: every
+    /// decision carries the entire rest of the game, ~190 decisions for a seat, so a round-one
+    /// decision is credited with round four's outcome at full weight. Below one, credit decays
+    /// with distance, which trades a little bias for a large drop in variance -- the standard
+    /// reason discounting exists, and the one thing the current rule does not do.
+    pub discount: f64,
+    /// Centre returns against the mean for their **round**, not one mean for the whole head.
+    ///
+    /// Off by default. A suffix-sum return is systematically larger early in a game than late,
+    /// simply because more of the game remains, so one scalar baseline per head leaves that
+    /// difference in the advantage and calls it signal. Bucketing the baseline by round removes
+    /// it. Costs nothing in data: the buckets partition the same decisions.
+    pub round_baseline: bool,
 }
 
 const fn default_requirement() -> Requirement {
@@ -154,6 +169,8 @@ impl Default for Reward {
             r1_bonus: 3.0,
             r1_shaping: 0.1,
             trade_bonus: 0.0,
+            discount: 1.0,
+            round_baseline: false,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
         }
@@ -336,10 +353,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
         }
     }
 
+    // Discounted suffix sum. At gamma = 1 this is exactly the undiscounted form, bit for bit:
+    // `future = future * 1.0 + value` and multiplying by one is exact in IEEE 754.
+    let gamma = reward.discount;
     let mut future = 0.0;
     let mut result = vec![0.0; rewards.len()];
     for (index, value) in rewards.iter().enumerate().rev() {
-        future += value;
+        future = future * gamma + value;
         result[index] = future;
     }
     result
