@@ -125,6 +125,12 @@ fn main() -> Result<(), String> {
     let ppo_clip = decimal("--ppo-clip", 0.2);
     let checkpoint = argument("--checkpoint").map(PathBuf::from);
     let map_pool_path = argument("--map-pool").map(PathBuf::from);
+    // A separate pool for the held-out panel. The shipped pool contains 8,192 entries but only
+    // 2,222 distinct boards, each repeated 1-44 times, so a training run sweeping it sees every
+    // board many times over and an evaluation drawn from the same pool is not held out in any
+    // sense that matters. Splitting by *distinct board* -- never by index, which leaves 733 boards
+    // in both halves -- is what makes a generalisation claim possible.
+    let eval_pool_path = argument("--eval-map-pool").map(PathBuf::from);
     let output = argument("--out")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("out/stage1_arena.json"));
@@ -202,6 +208,18 @@ fn main() -> Result<(), String> {
     };
     plan.map_pool = Some(Arc::clone(&pool));
 
+    let eval_pool = match &eval_pool_path {
+        Some(path) => {
+            let loaded = ti4_sim::MapPool::load(path)
+                .map_err(|error| format!("load {}: {error}", path.display()))?;
+            loaded
+                .validate_systems(ContentStore::embedded(), plan.sources)
+                .map_err(|error| format!("validate {}: {error}", path.display()))?;
+            Arc::new(loaded)
+        }
+        None => Arc::clone(&pool),
+    };
+
     let mut profiles = match &checkpoint {
         Some(path) => load(path, &factions)?,
         None => factions
@@ -231,7 +249,11 @@ fn main() -> Result<(), String> {
         println!("  algorithm: REINFORCE -- one step per batch");
     }
     println!(
-        "  held-out panel: {eval_seeds} seeds x 6 rotations from {eval_first} (disjoint from training)"
+        "  panel: {eval_seeds} seeds x 6 rotations from {eval_first}, maps from {}",
+        eval_pool_path.as_ref().map_or_else(
+            || "the TRAINING pool -- seeds are held out, boards are NOT".to_owned(),
+            |path| format!("{} (boards disjoint from training)", path.display())
+        )
     );
     println!(
         "  start: {}",
@@ -248,13 +270,18 @@ fn main() -> Result<(), String> {
         plan.sources,
         eval_first,
         eval_seeds,
-        Arc::clone(&pool),
+        Arc::clone(&eval_pool),
         plan.tile_seed_offset,
     );
     report(0, &initial);
 
     let started = std::time::Instant::now();
     let mut done = 0usize;
+    // A production run keeps its best policy, not merely its last. Training is not monotone --
+    // an arm can peak and drift back down -- and overwriting one file every block silently throws
+    // the peak away, which is only discovered after the run and costs the whole run to recover.
+    let mut best = f64::NEG_INFINITY;
+    let best_path = output.with_extension("best.json");
     while done < updates {
         let count = every.min(updates - done);
         plan.generations = count;
@@ -286,7 +313,7 @@ fn main() -> Result<(), String> {
             plan.sources,
             eval_first,
             eval_seeds,
-            Arc::clone(&pool),
+            Arc::clone(&eval_pool),
             plan.tile_seed_offset,
         );
         report(done, &metrics);
@@ -318,6 +345,19 @@ fn main() -> Result<(), String> {
         )
         .map_err(|error| format!("write {}: {error}", output.display()))?;
         println!("checkpointed {} at update {done}", output.display());
+
+        let count = f64::from(u32::try_from(metrics.len().max(1)).unwrap_or(1));
+        let mean = metrics.values().map(|row| row.clearance).sum::<f64>() / count;
+        if mean > best {
+            best = mean;
+            std::fs::write(
+                &best_path,
+                serde_json::to_vec_pretty(&document)
+                    .map_err(|error| format!("serialize best: {error}"))?,
+            )
+            .map_err(|error| format!("write {}: {error}", best_path.display()))?;
+            println!("  new best {mean:.4} -> {}", best_path.display());
+        }
     }
 
     let elapsed = started.elapsed().as_secs_f64();
