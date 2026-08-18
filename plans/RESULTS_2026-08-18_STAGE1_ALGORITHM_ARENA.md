@@ -1,8 +1,25 @@
 # Stage-1 algorithm arena: PPO is 3.3–4.0× more sample-efficient
 
 Date 2026-08-18. 5 arms × 3 seeds × 3,000 updates = **4.3 million games**, 2h45m on 32 cores.
-Trained from **blank weights** on the Python map pool; evaluated on a held-out 200-seed panel
-(1,200 games per faction) disjoint from every training stream.
+Trained from **blank weights** on the Python map pool; evaluated on a fixed 200-seed panel
+(200 boards x 6 rotations = 1,200 games per faction), identical for every arm and every seed.
+
+**What the panel does and does not hold out.** A seed fixes three things at once: the map
+(`pool.draw(seed + 20,000,000)`, one of 8,192 arrangements), the deck shuffles, and each seat's
+sampling stream. The six rotations of a seed share the map *and* the decks, so the panel is 200
+distinct boards played six ways, not 1,200 independent situations.
+
+The evaluation *seeds* are disjoint from training. The evaluation **maps are not**: each training
+run consumes 48,000 seeds and therefore sweeps all 8,192 arrangements about 5.86 times, so **all
+200 evaluation boards were seen in training**, roughly six times each, paired with different decks
+and sampling. This is a test of generalisation across shuffles and sampling, **not across boards**.
+Nothing here should be read as a clean generalisation result. A genuinely map-held-out panel needs
+the pool partitioned, which is a protocol change rather than a re-analysis.
+
+For the same reason the across-seed ranges below measure **training stochasticity, not map
+variability**: all three seeds train on the identical set of 8,192 maps and differ only in the
+order they arrive and in which deck and sampling stream each is paired with. That is the right
+control for comparing arms, and it is narrower than "run-to-run variation" sounds.
 
 ---
 
