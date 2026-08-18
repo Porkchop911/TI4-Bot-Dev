@@ -894,6 +894,11 @@ fn main() -> Result<(), String> {
     // PPO: take this many clipped-surrogate steps from each retained batch instead of one
     // REINFORCE step. One (the default) leaves the update as REINFORCE and retains nothing, so
     // the reference path is untouched unless the flag is given with a value above one.
+    // Draw each seed's cyclic seating order at random rather than always rotating the same one.
+    // The fixed rotation leaves draft precedence between any two factions at 16.7%-83.3% and never
+    // changes which factions border each other; see `rollout::set_seat_scramble`.
+    let scramble_seats = flag("--scramble-seats");
+    ti4_training::rollout::set_seat_scramble(scramble_seats);
     let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
     if ppo_epochs > 1 && ppo_clip <= 0.0 {
@@ -1008,6 +1013,7 @@ fn main() -> Result<(), String> {
         ("discount".to_owned(), discount.to_string()),
         ("round_baseline".to_owned(), round_baseline.to_string()),
         ("ppo_epochs".to_owned(), ppo_epochs.to_string()),
+        ("scramble_seats".to_owned(), scramble_seats.to_string()),
         ("ppo_clip".to_owned(), ppo_clip.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
@@ -1075,6 +1081,14 @@ fn main() -> Result<(), String> {
     if round_baseline {
         println!("  baseline: per (head, round) rather than one mean per head");
     }
+    println!(
+        "  seating: {}",
+        if scramble_seats {
+            "per-seed random cyclic order (precedence and neighbours balanced)"
+        } else {
+            "fixed cyclic rotation -- precedence and neighbours NOT balanced"
+        }
+    );
     if ppo_epochs > 1 {
         println!(
             "  algorithm: PPO -- {ppo_epochs} clipped-surrogate epochs per retained batch, clip {ppo_clip:.2}"
