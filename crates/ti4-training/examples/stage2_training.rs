@@ -343,6 +343,9 @@ struct FactionLearning {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LearningBlock {
+    /// The pooled trust-region reading, when the block was trained with PPO.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<ti4_training::ppo::ClipTelemetry>,
     from_update: usize,
     to_update: usize,
     updates: usize,
@@ -364,6 +367,22 @@ fn learning_block(
         return_observations: usize,
     }
 
+    // Pooled over the block's updates. Absent unless the update was PPO, because REINFORCE has
+    // no ratio and therefore nothing to clip -- and a reported zero would wrongly read as "the
+    // trust region never bound".
+    let clipped: Vec<&ti4_training::ppo::ClipTelemetry> = generations
+        .iter()
+        .filter_map(|generation| generation.clip.as_ref())
+        .collect();
+    let clip = if clipped.is_empty() {
+        None
+    } else {
+        let count = f64::from(u32::try_from(clipped.len()).unwrap_or(u32::MAX));
+        Some(ti4_training::ppo::ClipTelemetry {
+            clip_fraction: clipped.iter().map(|row| row.clip_fraction).sum::<f64>() / count,
+            kl_mean: clipped.iter().map(|row| row.kl_mean).sum::<f64>() / count,
+        })
+    };
     let mut factions: BTreeMap<String, Accumulator> = BTreeMap::new();
     for generation in generations {
         for (faction, heads) in &generation.telemetry {
@@ -389,6 +408,7 @@ fn learning_block(
         })
         .collect();
     LearningBlock {
+        clip,
         from_update,
         to_update: from_update + generations.len(),
         updates: generations.len(),
@@ -719,6 +739,14 @@ fn report_learning(block: &LearningBlock) {
         block.errors,
         block.zero_movement_updates
     );
+    if let Some(clip) = &block.clip {
+        // Near zero the epochs are unconstrained and the batch is being used freely; approaching
+        // one it has been exhausted and further epochs are spending compute for no gradient.
+        println!(
+            "  trust region: clip fraction {:.4}, approximate KL {:.5}",
+            clip.clip_fraction, clip.kl_mean
+        );
+    }
     println!("faction       movement  mean-return-sd  max-return-sd  decisions");
     println!("------------  --------  --------------  -------------  ---------");
     for (faction, row) in &block.factions {
@@ -863,6 +891,20 @@ fn main() -> Result<(), String> {
                 .to_owned(),
         );
     }
+    // PPO: take this many clipped-surrogate steps from each retained batch instead of one
+    // REINFORCE step. One (the default) leaves the update as REINFORCE and retains nothing, so
+    // the reference path is untouched unless the flag is given with a value above one.
+    let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
+    let ppo_clip = decimal("--ppo-clip", 0.2);
+    if ppo_epochs > 1 && ppo_clip <= 0.0 {
+        return Err("--ppo-clip must be positive; the trust region is what makes reuse safe".to_owned());
+    }
+    if ppo_epochs > 1 && (pipeline || rollout_depth > 1) {
+        return Err(
+            "--ppo-epochs cannot be combined with --pipeline or --rollout-depth: both hand a batch              to weights that have since moved, which would make the importance ratio measure the              scheduler rather than the epochs"
+                .to_owned(),
+        );
+    }
     let max_faction_vp_regression = decimal("--max-faction-vp-regression", 0.15);
     let max_faction_clearance_regression = decimal("--max-faction-clearance-regression", 0.03);
     // "Large enough" own clearance gain that accepts a bounded VP regression (clearance merit
@@ -891,6 +933,15 @@ fn main() -> Result<(), String> {
     plan.round_baseline = round_baseline;
     plan.pipeline = pipeline;
     plan.rollout_depth = rollout_depth;
+    if ppo_epochs > 1 {
+        plan.ppo = Some(ti4_training::ppo::PpoStep {
+            learning_rate: plan.step.learning_rate,
+            entropy: plan.step.entropy,
+            gradient_clip: plan.step.gradient_clip,
+            clip: ppo_clip,
+            epochs: ppo_epochs,
+        });
+    }
     plan.train_seeds = train_seeds;
     if let Some(base) = train_seed_base {
         plan.seed = base;
@@ -956,6 +1007,8 @@ fn main() -> Result<(), String> {
         ("clearance_weight".to_owned(), clearance_weight.to_string()),
         ("discount".to_owned(), discount.to_string()),
         ("round_baseline".to_owned(), round_baseline.to_string()),
+        ("ppo_epochs".to_owned(), ppo_epochs.to_string()),
+        ("ppo_clip".to_owned(), ppo_clip.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
@@ -1021,6 +1074,13 @@ fn main() -> Result<(), String> {
     }
     if round_baseline {
         println!("  baseline: per (head, round) rather than one mean per head");
+    }
+    if ppo_epochs > 1 {
+        println!(
+            "  algorithm: PPO -- {ppo_epochs} clipped-surrogate epochs per retained batch, clip {ppo_clip:.2}"
+        );
+    } else {
+        println!("  algorithm: REINFORCE -- one step per batch, trajectories reduced on the workers");
     }
     if clearance_weight > 0.0 {
         println!(

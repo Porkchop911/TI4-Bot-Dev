@@ -168,6 +168,7 @@ fn main() -> Result<(), String> {
         round_baseline: false,
         pipeline: false,
         rollout_depth: 1,
+        ppo: None,
     };
 
     // Load map pool if provided

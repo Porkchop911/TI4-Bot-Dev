@@ -24,6 +24,7 @@ pub mod archive;
 pub mod capture;
 pub mod evaluation;
 pub mod gradient;
+pub mod ppo;
 pub mod promotion;
 pub mod reward;
 pub mod rollout;

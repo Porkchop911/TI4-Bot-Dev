@@ -24,6 +24,7 @@ use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::learned::{DEFAULT_DIMENSIONS, Profile, blank_explicit_profile};
 
 use crate::gradient::{Step, Telemetry, apply};
+use crate::ppo::{self, ClipTelemetry, PpoStep};
 use crate::reward::{Reward, Stage};
 use crate::rollout::{
     Horizon, ReducedBatch, Rollout, play_batch_statistics, play_rotated_batch_group_statistics,
@@ -114,6 +115,13 @@ pub struct Generation {
     pub decisions: usize,
     /// Telemetry per seat and head.
     pub telemetry: BTreeMap<String, BTreeMap<String, Telemetry>>,
+    /// How hard the trust region bound, when the update was PPO rather than REINFORCE.
+    ///
+    /// Absent on a REINFORCE generation, which has no ratio and so nothing to clip. Optional
+    /// rather than zero because a clip fraction of zero is a real and meaningful reading -- the
+    /// batch was still being used freely -- and must not be confused with "not applicable".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<ClipTelemetry>,
 }
 
 impl Generation {
@@ -208,6 +216,14 @@ pub struct FactionPlan {
     /// updates), so per-game results and apply order are unchanged but the sampled weight
     /// trajectory differs from the sequential reference.
     pub rollout_depth: usize,
+    /// Take several clipped-surrogate steps from each retained batch instead of one REINFORCE
+    /// step. `None` is the REINFORCE reference and changes nothing.
+    ///
+    /// Incompatible with `pipeline` and with `rollout_depth > 1`: both of those exist to let one
+    /// batch's rollout overlap the next update's, and PPO's whole point is that the batch it is
+    /// stepping on must be the one the current weights produced. Reusing a stale batch across a
+    /// wave would make the ratio measure the wave rather than the epochs.
+    pub ppo: Option<PpoStep>,
 }
 
 /// Where a faction-keyed run resumes.
@@ -265,6 +281,7 @@ impl FactionPlan {
             round_baseline: false,
             pipeline: false,
             rollout_depth: 1,
+            ppo: None,
         }
     }
 
@@ -301,6 +318,7 @@ impl FactionPlan {
             round_baseline: false,
             pipeline: false,
             rollout_depth: 1,
+            ppo: None,
         }
     }
 
@@ -342,6 +360,85 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     // One update in flight at a time. In pipeline mode the previous batch's gradients are
     // applied while the current batch is still rolling out, so the worker pool never drains to
     // its tail at an update boundary; each rollout then sees pre-apply weights (staleness 1).
+    if let Some(ppo_step) = plan.ppo {
+        // PPO path: the loop inverts. REINFORCE reduces each game to statistics inside the
+        // parallel map and drops the trajectory, which is why a batch can only ever produce one
+        // gradient step. Here the batch is retained and stepped on `epochs` times.
+        //
+        // Neither the wave nor the pipeline scheduler is used, and that is not an oversight: both
+        // hand a batch to weights that have since moved, and PPO's importance ratio would then be
+        // measuring the scheduler's staleness rather than its own epochs.
+        for local in 0..plan.generations {
+            let index = already + local;
+            let elapsed = u64::try_from(index).unwrap_or(u64::MAX);
+            let first = plan
+                .seed
+                .wrapping_add(elapsed.wrapping_mul(plan.train_seed_stride));
+            let seeds: Vec<u64> = (first..first + plan.train_seeds).collect();
+
+            let batch = run_batch_retained(
+                content,
+                &plan.factions,
+                &profiles,
+                plan.sources,
+                &seeds,
+                plan.horizon(),
+                plan.map_pool.as_ref(),
+                plan.tile_seed_offset,
+            );
+            let errors = batch.iter().filter(|game| game.error.is_some()).count();
+            let decisions: usize = batch
+                .iter()
+                .filter(|game| game.error.is_none())
+                .flat_map(|game| game.seats.iter())
+                .map(|seat| seat.trajectory.len())
+                .sum();
+
+            let report = ppo::update(&mut profiles, &batch, &reward, ppo_step);
+
+            // The last epoch's telemetry is the one that describes the weights the next batch
+            // will be rolled out from; the clip reading is pooled over every epoch, because the
+            // question it answers -- was the batch exhausted -- is about the epochs together.
+            let mut telemetry: BTreeMap<String, BTreeMap<String, Telemetry>> = BTreeMap::new();
+            let (mut clip_sum, mut kl_sum, mut rows) = (0.0, 0.0, 0usize);
+            for (position, epoch) in report.iter().enumerate() {
+                let last = position + 1 == report.len();
+                for (faction, heads) in epoch {
+                    for (head, (told, clipped)) in heads {
+                        clip_sum += clipped.clip_fraction;
+                        kl_sum += clipped.kl_mean;
+                        rows += 1;
+                        if last {
+                            telemetry
+                                .entry(faction.to_string())
+                                .or_default()
+                                .insert(head.clone(), told.clone());
+                        }
+                    }
+                }
+            }
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "a head count over a few epochs is tiny"
+            )]
+            let divisor = rows.max(1) as f64;
+            generations.push(Generation {
+                index,
+                errors,
+                decisions,
+                telemetry,
+                clip: Some(ClipTelemetry {
+                    clip_fraction: clip_sum / divisor,
+                    kl_mean: kl_sum / divisor,
+                }),
+            });
+        }
+        return FactionRun {
+            profiles,
+            generations,
+        };
+    }
+
     if plan.rollout_depth > 1 && !plan.pipeline {
         // Wave path: roll out `rollout_depth` consecutive updates' games in one shared parallel
         // wave, then apply their gradients in update order. Straggler games overlap with faster
@@ -501,6 +598,45 @@ fn run_batch(
     }
 }
 
+/// Play one update's rotated batch and keep every trajectory.
+///
+/// The counterpart of [`run_batch`] for PPO. `run_batch` reduces on the rollout workers, which is
+/// what makes REINFORCE cheap in memory and also what makes a second epoch impossible; this keeps
+/// the games so they can be stepped on more than once.
+fn run_batch_retained(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seeds: &[u64],
+    horizon: Horizon,
+    map_pool: Option<&Arc<ti4_sim::MapPool>>,
+    tile_seed_offset: u64,
+) -> Vec<crate::rollout::Rollout> {
+    match map_pool {
+        None => crate::rollout::play_rotated_batch(
+            content,
+            factions,
+            profiles,
+            sources,
+            seeds,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+        ),
+        Some(pool) => crate::rollout::play_rotated_save54_pool_batch(
+            content,
+            factions,
+            profiles,
+            sources,
+            seeds,
+            horizon,
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            Arc::clone(pool),
+            tile_seed_offset,
+        ),
+    }
+}
+
 /// Play several updates' rotated batches in one shared wave (Python map pool only).
 fn run_batch_group(
     content: &'static ContentStore,
@@ -560,6 +696,7 @@ fn commit_generation(
         errors,
         decisions,
         telemetry,
+        clip: None,
     });
 }
 
@@ -723,6 +860,7 @@ pub fn train(content: &'static ContentStore, plan: &Plan) -> Run {
             errors,
             decisions,
             telemetry,
+            clip: None,
         });
     }
 
