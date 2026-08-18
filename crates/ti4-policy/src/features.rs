@@ -524,15 +524,30 @@ pub enum StateCross {
     None,
 }
 
-/// Option ids that name a control word rather than a piece of the board.
+/// Whether an option id names a fixed vocabulary word rather than a piece of the board.
 ///
-/// The gate is the *identity* of the ids, not how many there are. Counting options was the obvious
-/// rule and it is wrong: an activation choice can offer two systems, and crossing seat state with
-/// a tile id is precisely the memorisation the explicit schema removed exact option ids to
-/// prevent -- `explicit_activation_reads_the_real_board_without_memorising_a_tile_id` asserts it.
-/// These ids are fixed vocabulary, so the cross adds one slot per fact per control word and
-/// nothing that varies with the board.
-const CONTROL_OPTION_IDS: [&str; 7] = ["yes", "no", "decline", "accept", "done", "pass", "follow"];
+/// The gate on crossing seat state with the option id is the *identity* of the ids, not how many
+/// there are. Counting options was the obvious rule and it is wrong: an activation choice can
+/// offer two systems, and crossing seat state with a tile id is precisely the memorisation the
+/// explicit schema removed exact option ids to prevent -- the activation test asserts it.
+///
+/// This engine writes board references in exactly two shapes, and both are rejected here:
+///
+/// * a bare system id, which is all digits (`01`, `100`);
+/// * a composite naming a target, which carries a separator (`exhaust|accoen`, `move|16|2`).
+///
+/// Everything else is drawn from a closed vocabulary the content defines -- `yes`, `no`,
+/// `decline`, the three command pools, the eight strategy cards -- so crossing adds one slot per
+/// fact per vocabulary word and nothing that varies with the board.
+///
+/// It is a heuristic and it fails closed only for the two shapes above. `inert_audit` prints the
+/// ids of every head that carries no state, which is how to re-check it after a content change.
+fn is_fixed_vocabulary_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains('|')
+        && !id.contains(':')
+        && !id.chars().all(|character| character.is_ascii_digit())
+}
 
 /// Which cross a choice gets.
 #[must_use]
@@ -544,7 +559,7 @@ pub fn state_cross(choice: &Choice) -> StateCross {
         && choice
             .options
             .iter()
-            .all(|option| CONTROL_OPTION_IDS.contains(&option.id.as_str()))
+            .all(|option| is_fixed_vocabulary_id(&option.id))
     {
         StateCross::ByOption
     } else {
