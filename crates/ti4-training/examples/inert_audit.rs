@@ -76,10 +76,18 @@ fn main() {
                         .collect();
                     names.sort();
                     row.features += names.len();
-                    if names
-                        .iter()
-                        .any(|n| n.starts_with("state-kind:") || n.starts_with("state-option:"))
-                    {
+                    // Either the seat's state crossed with the option, or an interaction that
+                    // folds the seat's state into a property of the option. Heads whose options
+                    // are board references cannot take the first -- crossing with a tile id is
+                    // memorisation -- so they get the second, and both count as "can see it".
+                    if names.iter().any(|n| {
+                        n.starts_with("state-kind:")
+                            || n.starts_with("state-option:")
+                            || n.contains(":distance-beyond-tokens")
+                            || n.contains(":within-token-budget")
+                            || n.contains(":enemy-ships-over-fleet")
+                            || n.starts_with("pay:")
+                    }) {
                         sees_state = true;
                     }
                     vectors.insert(names.join("|"));

@@ -29,6 +29,9 @@ fn main() {
             .expect("pool"),
     );
     ti4_training::rollout::set_seat_scramble(true);
+    let head_name = std::env::args()
+        .find(|a| a.starts_with("--head="))
+        .map_or_else(|| "secondary".to_owned(), |a| a[7..].to_owned());
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "out/prod2/stage1_ppo_s0.json".to_owned());
@@ -52,7 +55,7 @@ fn main() {
     for game in &games {
         for seat in &game.seats {
             for step in &seat.trajectory {
-                if step.head != "secondary" || shown >= 4 {
+                if step.head != head_name || shown >= 2 {
                     continue;
                 }
                 shown += 1;
@@ -79,7 +82,7 @@ fn main() {
     for game in &games {
         for seat in &game.seats {
             for step in &seat.trajectory {
-                if step.head != "secondary" {
+                if step.head != head_name {
                     continue;
                 }
                 total += 1;

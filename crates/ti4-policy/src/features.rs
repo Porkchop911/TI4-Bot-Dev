@@ -614,10 +614,37 @@ fn explicit_option_features_with(
         add_parts(&mut features, &["kind:", kind], 1.0);
     }
 
+    // Identity as words, with board *identities* removed and vocabulary kept.
+    //
+    // A composite id names a verb and its argument, but the argument is not always a board
+    // reference: `exhaust|archonren` names a planet, while `build|carrier|1` names a unit type.
+    // Dropping everything after the separator was the first attempt and it cost the production
+    // head its ability to tell a carrier from a cruiser. What has to go is the specific planet,
+    // so that the policy learns about planets rather than about Archon Ren.
+    //
+    // The all-digit filter was doing this job by accident and only for tiles -- system ids are
+    // numbers, so `option:72` was dropped, while `option:archonren` sailed through because planet
+    // names are words. That accident is why the activation head carries no tile identity and the
+    // payment head carried every planet's.
+    //
+    // The planet lookup is scoped to the argument of a composite id rather than run over every
+    // word of every option: that is the only place a board identity appears, and testing all of
+    // them cost 35% of an update.
+    let dropped: BTreeSet<String> = option
+        .id
+        .split_once('|')
+        .map(|(_, argument)| {
+            tokens(argument)
+                .into_iter()
+                .filter(|token| is_planet_id(token))
+                .collect()
+        })
+        .unwrap_or_default();
     let mut option_tokens: BTreeSet<String> = tokens(&option.id)
         .into_iter()
         .chain(tokens(&option.label))
         .filter(|token| !token.chars().all(|character| character.is_ascii_digit()))
+        .filter(|token| !dropped.contains(token))
         .collect();
     // Stable iteration is part of the feature contract even though addition is commutative.
     for token in &option_tokens {
@@ -657,6 +684,33 @@ fn explicit_option_features_with(
                         format_args!("payload-number-kind:{key}:{kind}"),
                         number,
                     );
+                    // A payment option carries what it is worth; the choice carries what is owed.
+                    // Which planet to exhaust is decided by the two together -- does this cover
+                    // the debt, and how much is wasted if it overshoots -- and a weighted sum of
+                    // the two separately cannot express either. Recorded only where both are
+                    // present, so no other head is touched.
+                    if key == "worth"
+                        && let Some(owed) = option
+                            .payload
+                            .get("owed")
+                            .and_then(Value::as_f64)
+                    {
+                        add_named(
+                            &mut features,
+                            format_args!("pay:covers-owed"),
+                            f64::from(u8::from(number >= owed)),
+                        );
+                        add_named(
+                            &mut features,
+                            format_args!("pay:overpay"),
+                            (number - owed).max(0.0),
+                        );
+                        add_named(
+                            &mut features,
+                            format_args!("pay:shortfall"),
+                            (owed - number).max(0.0),
+                        );
+                    }
                 }
             }
             Value::String(text) => {
@@ -1174,6 +1228,46 @@ fn add_system_features(
         count_value(rivals.len()),
     );
 
+    // Interactions between the seat's own position and this system, which a linear model cannot
+    // form for itself: it scores a weighted sum of features, so the product of two of them is not
+    // available unless it is supplied. Without these the ranking of systems is identical whether
+    // the seat has one command token or five.
+    //
+    // Crossing state with the *system id* would be the memorisation the explicit schema exists to
+    // prevent. These cross it with what the system IS -- how far, how contested -- so they say
+    // "this is beyond my reach" and never "this is tile 72".
+    //
+    // Kept bounded and on the same scale as the surrounding counts. A raw product would run to
+    // tokens x distance and dominate a sum of small integers.
+    let tactic = context
+        .facts
+        .iter()
+        .find(|(name, _)| *name == "tactic_tokens")
+        .map_or(0.0, |(_, value)| *value);
+    let fleet = context
+        .facts
+        .iter()
+        .find(|(name, _)| *name == "fleet_tokens")
+        .map_or(0.0, |(_, value)| *value);
+    if let Some(distance) = nearest {
+        let reach = f64::from(distance) - tactic;
+        add_named(
+            features,
+            format_args!("{prefix}:distance-beyond-tokens"),
+            reach.max(0.0),
+        );
+        add_named(
+            features,
+            format_args!("{prefix}:within-token-budget"),
+            f64::from(u8::from(reach <= 0.0)),
+        );
+    }
+    add_named(
+        features,
+        format_args!("{prefix}:enemy-ships-over-fleet"),
+        (count_value(enemy_ships) - fleet).max(0.0),
+    );
+
     for (name, value) in [
         ("own-ships", count_value(own_ships)),
         ("enemy-ships", count_value(enemy_ships)),
@@ -1187,6 +1281,30 @@ fn add_system_features(
     ] {
         add_named(features, format_args!("{prefix}:{name}"), value);
     }
+}
+
+/// Every planet id the content defines, built once.
+///
+/// Used to drop a specific planet's name from an option's words. The set is a superset across
+/// source sets, which is the safe direction: a name that is a planet under any printing is a board
+/// identity and should not become a feature under another.
+fn planet_ids() -> &'static BTreeSet<String> {
+    static IDS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        ti4_content::galaxy::all_planets(
+            ti4_content::ContentStore::embedded(),
+            ti4_model::content_types::FULL,
+        )
+        .into_keys()
+        .map(str::to_owned)
+        .collect()
+    })
+}
+
+/// Whether a word names a specific planet rather than a piece of vocabulary.
+fn is_planet_id(token: &str) -> bool {
+    // Cheap rejects first: the set lookup runs for every word of every option of every decision.
+    token.len() >= 4 && planet_ids().contains(token)
 }
 
 fn small_integer_value(value: i64) -> f64 {
