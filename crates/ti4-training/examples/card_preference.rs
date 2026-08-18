@@ -23,30 +23,43 @@ fn main() {
         ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
             .expect("pool"),
     );
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "out/prod/stage1_ppo_s0.json".to_owned());
-    let document: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("parse");
-    let loaded: BTreeMap<String, Profile> =
-        serde_json::from_value(document["profiles"].clone()).expect("profiles");
-    let profiles: BTreeMap<FactionId, Profile> = factions
-        .iter()
-        .map(|f| (f.clone(), loaded[f.as_str()].clone()))
+    // Seating must match the run being analysed: card preference IS a function of draft order, so
+    // reading a scrambled run through rotated seating would report a preference that never existed.
+    let scramble = std::env::args().any(|a| a == "--scramble");
+    ti4_training::rollout::set_seat_scramble(scramble);
+    let paths: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| a.ends_with(".json"))
         .collect();
+    let paths = if paths.is_empty() {
+        vec!["out/prod2/stage1_ppo_s0.json".to_owned()]
+    } else {
+        paths
+    };
 
-    let seeds: Vec<u64> = (98_000_000..98_000_150).collect();
-    let games = play_rotated_save54_pool_batch(
-        store,
-        &factions,
-        &profiles,
-        FULL,
-        &seeds,
-        Horizon::opening(),
-        ti4_engine::opening::DEFAULT_REQUIREMENT,
-        Arc::clone(&pool),
-        20_000_000,
-    );
+    let seeds: Vec<u64> = (98_000_000..98_000_100).collect();
+    let mut games = Vec::new();
+    for path in &paths {
+        let document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).expect("read")).expect("parse");
+        let loaded: BTreeMap<String, Profile> =
+            serde_json::from_value(document["profiles"].clone()).expect("profiles");
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|f| (f.clone(), loaded[f.as_str()].clone()))
+            .collect();
+        games.extend(play_rotated_save54_pool_batch(
+            store,
+            &factions,
+            &profiles,
+            FULL,
+            &seeds,
+            Horizon::opening(),
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            Arc::clone(&pool),
+            20_000_000,
+        ));
+    }
 
     let mut cross: BTreeMap<(String, String), BTreeMap<String, usize>> = BTreeMap::new();
     let mut by_faction: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
@@ -84,26 +97,46 @@ fn main() {
         }
     }
 
-    let mut cards: Vec<String> = by_faction
+    // Cards in initiative order with short labels. Initiative is what decides action-phase turn
+    // order, so reading the tables in card-id order would scramble the one axis that matters.
+    const CARDS: [(&str, &str); 8] = [
+        ("pok1leadership", "Lead"),
+        ("pok2diplomacy", "Dipl"),
+        ("pok3politics", "Poli"),
+        ("te4construction", "Cons"),
+        ("pok5trade", "Trad"),
+        ("te6warfare", "Warf"),
+        ("pok7technology", "Tech"),
+        ("pok8imperial", "Impe"),
+    ];
+    let seen: Vec<String> = by_faction
         .values()
         .flat_map(|row| row.keys().cloned())
         .collect();
-    cards.sort();
-    cards.dedup();
-    println!("checkpoint: {path}");
+    // Match on prefix so a printing suffix cannot silently drop a column.
+    let cards: Vec<(String, &str)> = CARDS
+        .iter()
+        .filter_map(|(id, label)| {
+            seen.iter()
+                .find(|found| found.starts_with(&id[..7.min(id.len())]))
+                .map(|found| (found.clone(), *label))
+        })
+        .collect();
+    println!("checkpoints: {}", paths.join(", "));
+    println!("seating: {}", if scramble { "scrambled" } else { "fixed rotation" });
     println!("{} games, strategy-phase picks on held-out boards\n", games.len());
 
     let show = |title: &str, table: &BTreeMap<String, BTreeMap<String, usize>>| {
         println!("{title}");
-        print!("{:<9}", "");
-        for card in &cards {
-            print!("{:>10}", card.chars().take(9).collect::<String>());
+        print!("{:<18}", "");
+        for (_, label) in &cards {
+            print!("{label:>7}");
         }
-        println!("{:>8}", "picks");
+        println!("{:>9}", "picks");
         for (key, row) in table {
             let total: usize = row.values().sum();
-            print!("{key:<9}");
-            for card in &cards {
+            print!("{key:<18}");
+            for (card, _) in &cards {
                 let count = row.get(card).copied().unwrap_or(0);
                 #[expect(clippy::cast_precision_loss, reason = "counts are small")]
                 let share = if total == 0 {
@@ -111,28 +144,28 @@ fn main() {
                 } else {
                     100.0 * count as f64 / total as f64
                 };
-                print!("{share:>9.1}%");
+                print!("{share:>7.1}");
             }
-            println!("{total:>8}");
+            println!("{total:>9}");
         }
         println!();
     };
     show("PICKED, by faction (% of that faction's picks)", &by_faction);
     // Faction x seat, for the factions whose first choice is contested.
     println!("FACTION x SEAT: what each faction takes from each seat (% of that cell)");
-    print!("{:<17}", "faction / seat");
-    for card in &cards {
-        print!("{:>10}", card.chars().take(9).collect::<String>());
+    print!("{:<18}", "faction / seat");
+    for (_, label) in &cards {
+        print!("{label:>7}");
     }
     println!();
     for ((faction, seat), row) in &cross {
         let total: usize = row.values().sum();
-        print!("{:<9}{:<8}", faction, seat);
-        for card in &cards {
+        print!("{:<10}{:<8}", faction, seat);
+        for (card, _) in &cards {
             let count = row.get(card).copied().unwrap_or(0);
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let share = if total == 0 { 0.0 } else { 100.0 * count as f64 / total as f64 };
-            print!("{share:>9.1}%");
+            print!("{share:>7.1}");
         }
         println!();
     }
@@ -140,15 +173,15 @@ fn main() {
     show("PICKED, by seat (% of that seat's picks)", &by_seat);
     // What each seat was even offered: seat0 chooses from all six, seat5 from whatever is left.
     println!("AVAILABILITY: % of that seat's picks where the card was still on the table");
-    print!("{:<9}", "");
-    for card in &cards {
-        print!("{:>10}", card.chars().take(9).collect::<String>());
+    print!("{:<18}", "");
+    for (_, label) in &cards {
+        print!("{label:>7}");
     }
     println!();
     for (seat, row) in &offered {
         let picks: usize = by_seat.get(seat).map_or(0, |r| r.values().sum());
-        print!("{seat:<9}");
-        for card in &cards {
+        print!("{seat:<18}");
+        for (card, _) in &cards {
             let count = row.get(card).copied().unwrap_or(0);
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let share = if picks == 0 {
@@ -156,7 +189,7 @@ fn main() {
             } else {
                 100.0 * count as f64 / picks as f64
             };
-            print!("{share:>9.1}%");
+            print!("{share:>7.1}");
         }
         println!();
     }
