@@ -35,6 +35,33 @@ pub struct InvasionReport {
     pub captured: Vec<(PlanetId, Option<PlayerId>)>,
     /// Ground forces destroyed by bombardment.
     pub bombardment_kills: usize,
+    /// Whether this invasion lifted the custodians token from Mecatol Rex (27.3).
+    pub custodians_removed: bool,
+}
+
+/// 27.2: six influence, paid before ground forces are committed.
+pub const CUSTODIANS_COST: i64 = 6;
+
+/// Whether this invader may lift the custodians token now (27.2).
+///
+/// Mecatol only, once, and only by a player who can actually pay. Until this existed there was no
+/// production path in the engine that removed the token: every assignment was in a test, so the
+/// agenda phase -- which 8.1 gates on the token being lifted -- never ran in a simulated game, and
+/// with it went every law and every agenda victory point. In 5,881 recorded human games the
+/// custodians point is the single most-scored entry.
+#[must_use]
+pub fn custodians_removable(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> bool {
+    if state.custodians_removed || system.as_str() != crate::seating::MECATOL {
+        return false;
+    }
+    crate::production::available(state, content, sources, player, crate::production::Spend::Influence)
+        >= CUSTODIANS_COST
 }
 
 /// 15.1f: Planetary Shield makes a planet immune to bombardment entirely.
@@ -521,6 +548,8 @@ pub fn establish_control(
 /// Where an open invasion has reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
+    /// Offering to lift the custodians token from Mecatol Rex (27.2).
+    Custodians,
     /// Choosing which ground forces to land, and where (49.2).
     Committing,
     /// Fighting on `planets[index]`, having already resolved the earlier ones.
@@ -561,7 +590,7 @@ impl InvasionWindow {
         Self {
             invader: invader.clone(),
             system: system.clone(),
-            stage: Stage::Committing,
+            stage: Stage::Custodians,
             report: InvasionReport {
                 bombardment_kills: kills,
                 ..InvasionReport::default()
@@ -588,6 +617,24 @@ impl InvasionWindow {
         }
         let planets = landable_planets(state, content, sources, &self.system);
         commit_options(&troops, &planets)
+    }
+
+    /// The commit-ground-forces ask, or `None` when there is nothing left to land.
+    fn committing_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        let options = self.landing_options(state, content, sources);
+        if options.is_empty() {
+            return None;
+        }
+        Some(Choice::new(
+            self.invader.clone(),
+            format!("commit ground forces in {}", self.system),
+            options,
+        ))
     }
 
     /// Who is defending `planet`, if anyone.
@@ -704,17 +751,27 @@ impl Window for InvasionWindow {
     ) -> Option<Choice> {
         match &self.stage {
             Stage::Done => None,
-            Stage::Committing => {
-                let options = self.landing_options(state, content, sources);
-                if options.is_empty() {
-                    return None;
+            Stage::Custodians => {
+                // Falls through rather than returning None: the driver stops the moment a window
+                // has no choice, so a stage that is merely inapplicable would end the invasion
+                // before any ground force was committed.
+                if !custodians_removable(state, content, sources, &self.invader, &self.system) {
+                    return self.committing_choice(state, content, sources);
                 }
                 Some(Choice::new(
                     self.invader.clone(),
-                    format!("commit ground forces in {}", self.system),
-                    options,
+                    format!("spend {CUSTODIANS_COST} influence to remove the custodians token"),
+                    vec![
+                        ChoiceOption::labelled("no", "decline", "leave it"),
+                        ChoiceOption::labelled(
+                            "yes",
+                            "custodians",
+                            "remove it for a victory point",
+                        ),
+                    ],
                 ))
             }
+            Stage::Committing => self.committing_choice(state, content, sources),
             Stage::Fighting {
                 planets,
                 index,
@@ -754,6 +811,35 @@ impl Window for InvasionWindow {
 
         match self.stage.clone() {
             Stage::Done => {}
+            Stage::Custodians
+                if !custodians_removable(state, content, sources, &self.invader, &self.system) =>
+            {
+                // The ask that was actually answered was the commit one, reached by fall-through.
+                self.stage = Stage::Committing;
+                return self.resolve(state, ctx, option);
+            }
+            Stage::Custodians => {
+                if !option.is_decline() {
+                    // 27.3: pay six influence, take the token, gain a victory point.
+                    if crate::production::pay(
+                        state,
+                        content,
+                        sources,
+                        ctx.table,
+                        &self.invader,
+                        CUSTODIANS_COST,
+                        crate::production::Spend::Influence,
+                    )? {
+                        state.custodians_removed = true;
+                        if let Some(seat) = state.player_mut(&self.invader) {
+                            seat.victory_points = (seat.victory_points + 1)
+                                .min(crate::objectives::VICTORY_TARGET);
+                        }
+                        self.report.custodians_removed = true;
+                    }
+                }
+                self.stage = Stage::Committing;
+            }
             Stage::Committing => {
                 if option.is_decline() {
                     let planets = self.report.committed.clone();
@@ -1492,6 +1578,82 @@ mod tests {
                 )
             ]
         );
+    }
+
+    #[test]
+    fn lifting_the_custodians_token_costs_six_influence_and_pays_a_point() {
+        // 27.2/27.3. Until this existed, every assignment to `custodians_removed` in the whole
+        // codebase was inside a test, so the agenda phase -- gated on the token by 8.1 -- never
+        // ran in a simulated game, and every law and agenda victory point was unreachable.
+        let content = ContentStore::embedded();
+        let mut state =
+            start_game(content, &[invader(), holder()], POK, None).unwrap();
+        let mecatol = SystemId::new(crate::seating::MECATOL);
+        assert!(!state.custodians_removed);
+
+        // A freshly started game controls no planets, so the seat is funded with trade goods --
+        // spendable as influence -- rather than by hand-placing planet control.
+        if let Some(seat) = state.player_mut(&invader()) {
+            seat.trade_goods = 6;
+        }
+        let influence = crate::production::available(
+            &state,
+            content,
+            POK,
+            &invader(),
+            crate::production::Spend::Influence,
+        );
+        assert!(
+            influence >= CUSTODIANS_COST,
+            "a starting seat should be able to afford the token, had {influence}"
+        );
+        assert!(custodians_removable(&state, content, POK, &invader(), &mecatol));
+
+        let before = state.player(&invader()).map_or(0, |seat| seat.victory_points);
+        let mut window = InvasionWindow {
+            invader: invader(),
+            system: mecatol.clone(),
+            stage: Stage::Custodians,
+            report: InvasionReport::default(),
+        };
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("the custodians ask is offered on Mecatol");
+        assert!(choice.prompt.contains("custodians"), "got {}", choice.prompt);
+
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut table = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        let yes = choice
+            .options
+            .iter()
+            .find(|option| option.id == "yes")
+            .cloned()
+            .expect("the accepting option exists");
+        window.resolve(&mut state, &mut ctx, yes).unwrap();
+
+        assert!(state.custodians_removed, "the token comes off");
+        assert_eq!(
+            state.player(&invader()).map_or(0, |seat| seat.victory_points),
+            before + 1,
+            "27.3 pays a victory point"
+        );
+        let after = crate::production::available(
+            &state,
+            content,
+            POK,
+            &invader(),
+            crate::production::Spend::Influence,
+        );
+        assert!(after <= influence - CUSTODIANS_COST, "six influence was spent");
     }
 
     #[test]
