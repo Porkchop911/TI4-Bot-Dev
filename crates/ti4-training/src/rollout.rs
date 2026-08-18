@@ -17,6 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -173,6 +174,71 @@ where
         statistics.entry(key).or_default().insert(head, row);
     }
     ReducedBatch { errors, statistics }
+}
+
+
+/// Whether the faction-to-seat assignment scrambles its cyclic order per seed.
+///
+/// Off by default, which reproduces every checkpoint and parity fixture in the repository.
+static SCRAMBLE_SEATS: AtomicBool = AtomicBool::new(false);
+
+/// Draw each seed's cyclic seating order at random instead of always using the caller's order.
+///
+/// **What was wrong with the default.** The assignment `factions[(seat + rotation) % n]` is a
+/// cyclic rotation, so the offset between any two factions never changes and only the cut moves.
+/// That balances what it looks like it balances -- every faction takes every seat once, is speaker
+/// once, and occupies every map slot once -- and silently fails to balance two things:
+///
+/// * **draft precedence.** For factions at cyclic distance `d`, the first drafts before the second
+///   in `(n-d)/n` of rotations. Measured on six factions: 83.3% at d=1, 50% only at d=3, 16.7% at
+///   d=5. Six of thirty ordered pairs are fair and the rest are not.
+/// * **who borders whom.** Ring-neighbours are the adjacent indices, so with the shipped faction
+///   list Sol borders Letnev and L1Z1X in *every game ever played*.
+///
+/// Both matter: two factions that want the same strategy card resolve it by a fixed precedence,
+/// and the loser takes a fallback that may be worthless.
+///
+/// **What this does instead.** One permutation per seed, then the same rotation within the seed.
+/// The rotation is kept deliberately -- it is what makes each faction play each seat exactly once
+/// per seed, which is the design's variance reduction and is worth preserving. Only the order
+/// being rotated becomes a function of the seed, so across a training stream every cyclic order
+/// appears, precedence averages to even, and neighbours vary.
+pub fn set_seat_scramble(enabled: bool) {
+    SCRAMBLE_SEATS.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether seat scrambling is on. Reported by trainers so a run's log states which it used.
+#[must_use]
+pub fn seat_scramble() -> bool {
+    SCRAMBLE_SEATS.load(Ordering::Relaxed)
+}
+
+/// The faction seated at `seat` for this `seed` and `rotation`.
+fn seated_faction(factions: &[FactionId], seed: u64, rotation: usize, seat: usize) -> FactionId {
+    let count = factions.len();
+    if count == 0 {
+        return FactionId::new("");
+    }
+    if !seat_scramble() {
+        return factions[(seat + rotation) % count].clone();
+    }
+    // Fisher-Yates over a seed-derived stream. The constant keeps this stream distinct from the
+    // deck and sampling streams the same seed already drives, so seating does not move in lockstep
+    // with them.
+    let mut order: Vec<FactionId> = factions.to_vec();
+    let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
+    for index in (1..count).rev() {
+        // SplitMix64, so the permutation needs no rng dependency and stays reproducible.
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        #[expect(clippy::cast_possible_truncation, reason = "modulo a small index")]
+        let pick = (z % (index as u64 + 1)) as usize;
+        order.swap(index, pick);
+    }
+    order[(seat + rotation) % count].clone()
 }
 
 /// Board family used by a parity rollout.
@@ -709,7 +775,7 @@ fn play_rotated_on_map_batch(
                 .map(|(seat, player)| {
                     (
                         player.clone(),
-                        factions[(seat + rotation) % factions.len()].clone(),
+                        seated_faction(factions, *seed, *rotation, seat),
                     )
                 })
                 .collect();
@@ -863,7 +929,7 @@ fn play_rotated_save54_pool_batch_with_workers(
                     .map(|(seat, player)| {
                         (
                             player.clone(),
-                            factions[(seat + rotation) % factions.len()].clone(),
+                            seated_faction(factions, *seed, *rotation, seat),
                         )
                     })
                     .collect();
@@ -1037,7 +1103,7 @@ fn play_rotated_map_batch_statistics(
                 .map(|(seat, player)| {
                     (
                         player.clone(),
-                        factions[(seat + rotation) % factions.len()].clone(),
+                        seated_faction(factions, *seed, *rotation, seat),
                     )
                 })
                 .collect();
@@ -1120,7 +1186,7 @@ fn play_rotated_map_group_statistics(
                 .map(|(seat, player)| {
                     (
                         player.clone(),
-                        factions[(seat + rotation) % factions.len()].clone(),
+                        seated_faction(factions, *seed, *rotation, seat),
                     )
                 })
                 .collect();
@@ -1433,7 +1499,7 @@ pub fn play_rotated_pool_batch_authored(
                 .map(|(seat, player)| {
                     (
                         player.clone(),
-                        factions[(seat + rotation) % factions.len()].clone(),
+                        seated_faction(factions, *seed, *rotation, seat),
                     )
                 })
                 .collect();

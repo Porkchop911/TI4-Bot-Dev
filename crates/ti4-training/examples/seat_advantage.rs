@@ -65,11 +65,17 @@ fn main() {
     );
 
     // Keyed by physical seat, pooled over every faction that occupied it.
+    let mut grid: BTreeMap<(String, String), (usize, usize)> = BTreeMap::new();
     let mut cleared: BTreeMap<String, (usize, usize, f64)> = BTreeMap::new();
     for game in &games {
         for seat in &game.seats {
             let row = cleared.entry(seat.player.to_string()).or_insert((0, 0, 0.0));
             row.0 += 1;
+            let cell = grid
+                .entry((seat.faction.to_string(), seat.player.to_string()))
+                .or_insert((0, 0));
+            cell.0 += 1;
+            cell.1 += usize::from(seat.episode.cleared);
             row.1 += usize::from(seat.episode.cleared);
             #[expect(clippy::cast_precision_loss, reason = "planet counts are tiny")]
             let gained = seat.episode.final_progress.planets_gained as f64;
@@ -88,6 +94,25 @@ fn main() {
         let w = *wins as f64;
         let role = if seat == "seat0" { "SPEAKER + map slot 0" } else { "" };
         println!("{seat:<8} {games_played:>7} {:>10.4} {:>9.2}   {role}", w / n, planets / n);
+    }
+    println!("
+CLEARANCE, faction x seat");
+    let seats: Vec<String> = cleared.keys().cloned().collect();
+    print!("{:<9}", "faction");
+    for s in &seats { print!("{s:>9}"); }
+    println!();
+    let mut current = String::new();
+    for ((faction, _), _) in &grid {
+        if *faction == current { continue; }
+        current.clone_from(faction);
+        print!("{faction:<9}");
+        for s in &seats {
+            let (n, w) = grid.get(&(faction.clone(), s.clone())).copied().unwrap_or((0, 0));
+            #[expect(clippy::cast_precision_loss, reason = "small counts")]
+            let share = if n == 0 { 0.0 } else { w as f64 / n as f64 };
+            print!("{share:>9.3}");
+        }
+        println!();
     }
     let values: Vec<f64> = cleared
         .values()

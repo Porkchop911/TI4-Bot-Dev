@@ -121,6 +121,9 @@ fn main() -> Result<(), String> {
     let entropy = decimal("--entropy", 0.01);
     let discount = decimal("--discount", 1.0);
     let round_baseline = flag("--round-baseline");
+    // Draw each seed's cyclic seating order at random rather than always rotating the same one.
+    // Off by default so existing checkpoints and parity fixtures reproduce exactly.
+    let scramble_seats = flag("--scramble-seats");
     let ppo_epochs = number("--ppo-epochs", 1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
     let checkpoint = argument("--checkpoint").map(PathBuf::from);
@@ -149,6 +152,8 @@ fn main() -> Result<(), String> {
     if ppo_epochs == 0 {
         return Err("--ppo-epochs must be at least 1".to_owned());
     }
+
+    ti4_training::rollout::set_seat_scramble(scramble_seats);
 
     let factions: Vec<FactionId> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
         .into_iter()
@@ -261,6 +266,14 @@ fn main() -> Result<(), String> {
             .as_ref()
             .map_or("blank".to_owned(), |path| path.display().to_string())
     );
+    println!(
+        "  seating: {}",
+        if scramble_seats {
+            "per-seed random cyclic order, rotated within the seed (precedence and neighbours balanced)"
+        } else {
+            "fixed cyclic rotation -- draft precedence and board neighbours are NOT balanced"
+        }
+    );
     println!("  early stop: none -- every arm runs the full {updates} updates");
 
     let initial = evaluate_factions_on_pool(
@@ -331,6 +344,7 @@ fn main() -> Result<(), String> {
                 "entropy": entropy,
                 "discount": discount,
                 "ppo_epochs": ppo_epochs,
+                "scramble_seats": scramble_seats,
                 "ppo_clip": ppo_clip,
                 "train_seeds": train_seeds,
                 "train_seed_base": train_seed_base,

@@ -36,7 +36,16 @@ fn main() {
         .iter()
         .map(|f| (f.clone(), blank_explicit_profile(f.as_str())))
         .collect();
-    let seeds: Vec<u64> = (98_000_000..98_000_030).collect();
+    let scramble = std::env::args().any(|a| a == "scramble");
+    ti4_training::rollout::set_seat_scramble(scramble);
+    println!(
+        "seating mode: {}
+",
+        if scramble { "SCRAMBLED per seed" } else { "fixed cyclic rotation" }
+    );
+    // More seeds under scrambling: the balance is across seeds, not within one.
+    let span = if scramble { 600 } else { 30 };
+    let seeds: Vec<u64> = (98_000_000..98_000_000 + span).collect();
     let games = play_rotated_save54_pool_batch(
         store,
         &factions,
