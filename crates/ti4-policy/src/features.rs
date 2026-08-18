@@ -414,7 +414,7 @@ pub fn explicit_option_features(
         &context,
         option,
         player,
-        uniform_kind(choice),
+        state_cross(choice),
     )
 }
 
@@ -491,14 +491,65 @@ pub fn explicit_choice_features(
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
     };
-    let uniform = uniform_kind(choice);
+    let cross = state_cross(choice);
     choice
         .options
         .iter()
         .map(|option| {
-            explicit_option_features_with(seen, &prompt_tokens, &context, option, player, uniform)
+            explicit_option_features_with(seen, &prompt_tokens, &context, option, player, cross)
         })
         .collect()
+}
+
+/// How a choice's per-seat state facts are crossed so they can influence the decision.
+///
+/// A linear softmax cannot see an option-invariant feature: the same name with the same value on
+/// every option adds one constant to every logit and cancels. So state facts only reach a decision
+/// if their *name* differs between options, and what they are crossed with decides that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateCross {
+    /// Cross with the option's kind. Discriminates whenever the options' kinds differ.
+    ByKind,
+    /// Cross with the option's id, for a small option set whose kinds are all the same.
+    ///
+    /// Every strategy-card secondary is exactly this case: both options are built with
+    /// `STRATEGY_KIND`, so the kind cross is inert and the seat's tokens, goods and planets could
+    /// not reach the decision at all -- the head answered "should I take this secondary" from the
+    /// card's identity alone, never from whether the seat could afford it.
+    ByOption,
+    /// Neither. The kinds are uniform and the option set is too large to cross state with option
+    /// ids, which are systems and planets on the big heads -- that would multiply the weight table
+    /// by the number of facts and invite memorising specific boards, which is exactly what the
+    /// explicit schema removed exact option ids to prevent.
+    None,
+}
+
+/// Option ids that name a control word rather than a piece of the board.
+///
+/// The gate is the *identity* of the ids, not how many there are. Counting options was the obvious
+/// rule and it is wrong: an activation choice can offer two systems, and crossing seat state with
+/// a tile id is precisely the memorisation the explicit schema removed exact option ids to
+/// prevent -- `explicit_activation_reads_the_real_board_without_memorising_a_tile_id` asserts it.
+/// These ids are fixed vocabulary, so the cross adds one slot per fact per control word and
+/// nothing that varies with the board.
+const CONTROL_OPTION_IDS: [&str; 7] = ["yes", "no", "decline", "accept", "done", "pass", "follow"];
+
+/// Which cross a choice gets.
+#[must_use]
+pub fn state_cross(choice: &Choice) -> StateCross {
+    if !uniform_kind(choice) {
+        return StateCross::ByKind;
+    }
+    if !choice.options.is_empty()
+        && choice
+            .options
+            .iter()
+            .all(|option| CONTROL_OPTION_IDS.contains(&option.id.as_str()))
+    {
+        StateCross::ByOption
+    } else {
+        StateCross::None
+    }
 }
 
 /// Whether every option of this choice canonicalises to the same feature kind.
@@ -538,12 +589,13 @@ fn explicit_option_features_with(
     context: &ChoiceContext<'_>,
     option: &ChoiceOption,
     player: &PlayerId,
-    uniform_kind: bool,
+    cross: StateCross,
 ) -> FeatureVector {
     let mut features = FeatureVector::new();
     let kind = canonical_feature_kind(&option.kind);
-    // Skipped when every option shares this kind: see `uniform_kind`.
-    if !uniform_kind {
+    // Skipped when every option shares this kind: it would be the same name and value on every
+    // option, and `StateCross::ByKind` is exactly the case where the kinds differ.
+    if cross == StateCross::ByKind {
         add_parts(&mut features, &["kind:", kind], 1.0);
     }
 
@@ -623,10 +675,18 @@ fn explicit_option_features_with(
         }
     }
 
-    if !uniform_kind {
-        for (name, value) in &context.facts {
-            add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
+    match cross {
+        StateCross::ByKind => {
+            for (name, value) in &context.facts {
+                add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
+            }
         }
+        StateCross::ByOption => {
+            for (name, value) in &context.facts {
+                add_parts(&mut features, &["state-option:", &option.id, ":", name], *value);
+            }
+        }
+        StateCross::None => {}
     }
 
     structured_features(seen, option, player, context, &mut features);
@@ -1639,7 +1699,7 @@ mod tests {
                     &context,
                     option,
                     &player,
-                    false,
+                    StateCross::ByKind,
                 )
             })
             .collect();
@@ -1666,6 +1726,56 @@ mod tests {
                     kept[0].contains_key(key),
                     "{} distinguishes the options and must be kept",
                     crate::intern::name_of(*key)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_binary_choice_can_see_the_seat_state() {
+        // Every strategy-card secondary builds both options with the same kind, so crossing state
+        // with the kind produced one name and one value on both options -- provably inert in a
+        // softmax. The head could only ever answer from the card's identity, never from whether
+        // the seat could afford the cost. Crossing with the option id instead is what lets the
+        // state through, and this is the property that has to hold.
+        let (state, galaxy) = observed_three_player_board();
+        let content = ti4_content::ContentStore::embedded();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let choice = Choice::new(
+            player.clone(),
+            "spend a strategy token to replenish commodities",
+            vec![
+                ChoiceOption::labelled("no", "strategy", "decline"),
+                ChoiceOption::labelled("yes", "strategy", "replenish"),
+            ],
+        );
+        assert!(uniform_kind(&choice), "a secondary is a single-kind choice");
+        assert_eq!(state_cross(&choice), StateCross::ByOption);
+
+        let vectors = explicit_choice_features(&seen, &choice, &player);
+        let named = |index: usize| -> Vec<String> {
+            vectors[index]
+                .keys()
+                .map(|key| crate::intern::name_of(*key))
+                .collect()
+        };
+        let no = named(0);
+        let yes = named(1);
+        assert!(
+            no.iter().any(|name| name.starts_with("state-option:no:")),
+            "the declining option must carry the seat state, got {no:?}"
+        );
+        assert!(
+            yes.iter().any(|name| name.starts_with("state-option:yes:")),
+            "the accepting option must carry the seat state"
+        );
+        // The point of the cross: the two options must not share these slots, or they cancel again.
+        for name in &yes {
+            if name.starts_with("state-option:") {
+                assert!(
+                    !no.contains(name),
+                    "{name} appears on both options and would be inert again"
                 );
             }
         }
@@ -1699,7 +1809,7 @@ mod tests {
             &context,
             &choice.options[0],
             &player,
-            false,
+            StateCross::ByKind,
         );
         assert_eq!(
             explicit_choice_features(&seen, &choice, &player)[0],
