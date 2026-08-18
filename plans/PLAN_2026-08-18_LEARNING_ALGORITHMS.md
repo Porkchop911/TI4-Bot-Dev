@@ -119,10 +119,58 @@ against a configuration known to be degrading would flatter everything.
   untested axis is the **policy class**, bilinear or a small MLP over the same features, and that
   becomes the next plan rather than a fifth algorithm.
 
+## 3a. What the first two steps measured (2026-08-18)
+
+**Batch retention — settled, and it went the easy way.** One retained batch of 96 games is 105,449
+steps, 567,559 option-vectors and 15,362,544 feature entries, costing **572 MB** of resident
+memory against the machine's 93.6 GB. PPO holds a full batch with room for eight concurrent arms;
+**no minibatching**, which was the larger job the plan was braced for.
+
+**PPO implemented and verified by parity, not by inspection.** At epoch zero the current policy
+*is* the behaviour policy, so every importance ratio is exactly one and PPO must collapse to
+REINFORCE. Across 573,458 weight deltas the worst relative disagreement is **4.2e-12** — pure
+summation-order noise, since REINFORCE defers the centring mean and keeps two sums apart while PPO
+knows the mean up front and weights each decision as it goes.
+
+One thing turned out simpler here than in the general case, and it is worth stating because
+getting it wrong would be invisible: **returns do not depend on the policy.** They are a function
+of the episode, fixed once the batch is played. So the baseline is computed once and shared by
+every epoch. Recomputing it per epoch would let it drift with the weights and quietly stop being
+an advantage.
+
+**Cost, at equal games simulated** (8 threads, contended):
+
+| | games/step | s/step | steps per 96 games |
+|---|---|---|---|
+| REINFORCE | 96 | 1.797 | 1 |
+| PPO K=4 | 24 | 0.758 | 4 |
+
+Four times the gradient steps for 1.69x the wall clock; an extra step costs **28%** of a fresh one.
+Equal games is automatic rather than something the protocol has to enforce — one update is one
+batch of 96 games for every arm, whatever it then does with them, so PPO's cost lands in wall clock
+and never in extra games.
+
+### The result that changed the pilot: the clip never binds
+
+Measured clip fraction is **0.0007**, rising only to 0.0053 by epoch 8. The trust region is
+essentially never active, so PPO at K=4 is currently **four unconstrained gradient steps on one
+batch** — which is hard to distinguish from one step at four times the rate.
+
+That makes an arm the plan did not specify the one that decides whether the others mean anything:
+
+> **P3 — REINFORCE at `--learning-rate 0.12`.** If PPO K=4 and REINFORCE at 4x the step land in
+> the same place, PPO is buying nothing an existing flag could not, and reporting it as an
+> algorithmic win would be reporting a step-size change.
+
+Comparing tuned PPO against untuned REINFORCE would measure tuning; this is the cheapest way not
+to make that mistake. The pilot is therefore P0 REINFORCE lr 0.03, P1 PPO K=4, P2 PPO K=2,
+P3 REINFORCE lr 0.12 — every arm at `--rollout-depth 1`, because PPO cannot use the wave scheduler
+and the control gives up the same throughput to keep the scheduler constant.
+
 ## 4. Order
 
-1. Measure batch retention. An hour, and it decides P1's shape.
-2. **P1 PPO** — best value per unit effort, and its result reframes everything after it.
+1. ~~Measure batch retention.~~ **Done** — 572 MB, fits, no minibatching.
+2. ~~**P1 PPO**~~ — **implemented, parity-verified, pilot running.** See §3a.
 3. **P3 ES** — cheapest of the rest, and the most informative negative if it works.
 4. **P2 A2C** — only once the state-feature gap is scoped as its own piece of work.
 5. **P4 ExIt** — only if P1 to P3 all fail, or if its ceiling is wanted for distillation.
