@@ -483,6 +483,24 @@ impl<'a> Game<'a> {
     /// Give the game its map, which is what makes a tactical action possible.
     #[must_use]
     pub fn with_galaxy(mut self, galaxy: Galaxy) -> Self {
+        // 35.5: a frontier token sits on every planetless system from the start. Placing them
+        // here rather than in setup is what the galaxy makes possible -- setup has no board yet,
+        // and until this existed `frontier_tokens` was written by nothing at all, which left the
+        // twenty-card frontier deck unreachable and frontier fragments impossible to gain.
+        let placed = crate::exploration::place_frontier_tokens(
+            &mut self.state,
+            self.content,
+            self.sources,
+            &galaxy,
+        );
+        if placed > 0 {
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "count".to_owned(),
+                serde_json::Value::from(u64::try_from(placed).unwrap_or(0)),
+            );
+            let _ = self.emit_typed("FRONTIER_TOKENS_PLACED", payload);
+        }
         self.galaxy = Some(galaxy);
         self
     }
@@ -1166,6 +1184,32 @@ impl<'a> Game<'a> {
                             serde_json::Value::String(window.player.to_string()),
                         );
                         let _ = self.emit_typed("SHIP_MOVED", payload);
+
+                        // 35.5: ending movement on a frontier token explores it.
+                        let destination = self.state.active_system.clone();
+                        if let Some(system) = destination {
+                            let player = window.player.clone();
+                            let mut dice = crate::dice::Dice::new();
+                            let mut rng = crate::rng::GameRng::new(0);
+                            let mut ctx = crate::choice::Resolving {
+                                content: self.content,
+                                sources: self.sources,
+                                dice: &mut dice,
+                                rng: &mut rng,
+                                table: &mut self.table,
+                                timing: None,
+                            };
+                            if crate::exploration::explore_frontier(
+                                &mut self.state,
+                                &mut ctx,
+                                &player,
+                                &system,
+                            )
+                            .is_some()
+                            {
+                                self.emit("FRONTIER_EXPLORED");
+                            }
+                        }
                     }
                     self.emit(match outcome {
                         MoveOutcome::Arrived { .. } => "SHIP_MOVED",

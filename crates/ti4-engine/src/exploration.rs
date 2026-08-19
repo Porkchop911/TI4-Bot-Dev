@@ -5,7 +5,8 @@
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{PlanetId, PlayerId, RelicId};
+use ti4_content::galaxy::Galaxy;
+use ti4_model::id::{PlanetId, PlayerId, RelicId, SystemId};
 use ti4_model::state::GameState;
 
 use crate::deck::EXPLORATION_TRAITS;
@@ -421,6 +422,68 @@ fn resolve_instant(
         seat.trade_goods += goods;
     }
     true
+}
+
+/// Systems with nothing to land on, which is where a frontier token goes (35.5).
+///
+/// Deep space and planetless anomalies both qualify: what matters is that there is nothing to
+/// land on, which is what makes the token the only reason to go there at all.
+#[must_use]
+pub fn frontier_systems(content: &ContentStore, sources: SourceSet, galaxy: &Galaxy) -> Vec<SystemId> {
+    let mut systems: Vec<SystemId> = galaxy
+        .system_ids()
+        .into_iter()
+        .filter(|id| {
+            ti4_content::galaxy::system(content, id, sources)
+                .is_none_or(|record| record.planets().is_empty())
+        })
+        .map(SystemId::new)
+        .collect();
+    systems.sort();
+    systems
+}
+
+/// Put a frontier token on every planetless system (35.5). Returns how many were placed.
+///
+/// Nothing in this engine placed one: `frontier_tokens` was declared, initialised empty, and never
+/// written, so the twenty-card frontier deck was unreachable and no frontier fragment could ever
+/// be gained. The oracle places them at game start (`engine/game.py`), and this mirrors that.
+pub fn place_frontier_tokens(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &Galaxy,
+) -> usize {
+    let systems = frontier_systems(content, sources, galaxy);
+    let count = systems.len();
+    state.frontier_tokens = systems.into_iter().collect();
+    count
+}
+
+/// A ship has ended its movement on a frontier token: explore it and take it away (35.5).
+///
+/// The token is removed whether or not the card does anything, so it is consumed before the card
+/// resolves — a card that fails to resolve must not leave the token for the same fleet to trip
+/// over again next turn.
+pub fn explore_frontier(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Option<Explored> {
+    if !state.frontier_tokens.contains(system) {
+        return None;
+    }
+    let has_ship = state
+        .system_state(system)
+        .units
+        .iter()
+        .any(|unit| &unit.owner == player);
+    if !has_ship {
+        return None;
+    }
+    state.frontier_tokens.remove(system);
+    explore_with(state, ctx, player, FRONTIER, None)
 }
 
 /// Explore a planet, resolving one card (35.2).

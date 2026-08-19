@@ -182,6 +182,49 @@ fn main() {
         }
     }
     println!("\n{ok} mechanics exercised, {missing} never reached");
+
+    // Why the one that never fires, does not. A purge needs three fragments of one trait, with
+    // frontier fragments making up the shortfall, so the question is whether anyone ever holds
+    // that many rather than whether the option is wired.
+    println!("
+relic fragments held at the end, per seat:");
+    let mut hist: BTreeMap<i32, usize> = BTreeMap::new();
+    let mut best = 0;
+    let mut ever_purgeable = 0usize;
+    for seed in 98_000_000..98_000_000 + games {
+        let (_, state) = audit_game(
+            store, &factions, &profiles, FULL, seed, Horizon::rounds(rounds), &map,
+        );
+        for seat in &state.players {
+            let frontier = seat.relic_fragments.get("FRONTIER").copied().unwrap_or(0);
+            let total: i32 = seat.relic_fragments.values().sum();
+            *hist.entry(total).or_default() += 1;
+            best = best.max(total);
+            let purgeable = seat
+                .relic_fragments
+                .iter()
+                .filter(|(name, _)| name.as_str() != "FRONTIER")
+                .any(|(_, held)| *held + frontier >= 3);
+            ever_purgeable += usize::from(purgeable);
+        }
+    }
+    for (count, seats) in &hist {
+        println!("   {count} fragments  {seats} seats");
+    }
+    println!("   most held by any seat: {best}, purge available to {ever_purgeable} seats");
+    let mut traits: BTreeMap<String, i32> = BTreeMap::new();
+    for seed in 98_000_000..98_000_000 + games {
+        let (_, state) = audit_game(
+            store, &factions, &profiles, FULL, seed, Horizon::rounds(rounds), &map,
+        );
+        for seat in &state.players {
+            for (name, held) in &seat.relic_fragments {
+                *traits.entry(name.clone()).or_default() += *held;
+            }
+        }
+    }
+    println!("   fragments by trait: {traits:?}");
+
     println!("\nevents the engine emitted at least once:");
     println!("  {}", seen.iter().cloned().collect::<Vec<_>>().join(" "));
 }
