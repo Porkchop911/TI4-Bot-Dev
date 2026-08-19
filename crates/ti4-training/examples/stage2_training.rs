@@ -913,6 +913,8 @@ fn main() -> Result<(), String> {
     ti4_training::rollout::set_seat_scramble(scramble_seats);
     let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
+    // Self-imitation: reinforce what beat the batch mean, punish nothing.
+    let positive_advantage = flag("--positive-advantage");
     if ppo_epochs > 1 && ppo_clip <= 0.0 {
         return Err("--ppo-clip must be positive; the trust region is what makes reuse safe".to_owned());
     }
@@ -959,6 +961,7 @@ fn main() -> Result<(), String> {
             gradient_clip: plan.step.gradient_clip,
             clip: ppo_clip,
             epochs: ppo_epochs,
+            positive_only: positive_advantage,
         });
     }
     plan.train_seeds = train_seeds;
@@ -1031,6 +1034,7 @@ fn main() -> Result<(), String> {
         ("r1_bonus".to_owned(), r1_bonus.to_string()),
         ("r1_shaping".to_owned(), r1_shaping.to_string()),
         ("ppo_clip".to_owned(), ppo_clip.to_string()),
+        ("positive_advantage".to_owned(), positive_advantage.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
@@ -1110,7 +1114,8 @@ fn main() -> Result<(), String> {
     );
     if ppo_epochs > 1 {
         println!(
-            "  algorithm: PPO -- {ppo_epochs} clipped-surrogate epochs per retained batch, clip {ppo_clip:.2}"
+            "  algorithm: PPO -- {ppo_epochs} clipped-surrogate epochs per retained batch, clip {ppo_clip:.2}{}",
+            if positive_advantage { ", positive advantages only (self-imitation)" } else { "" }
         );
     } else {
         println!("  algorithm: REINFORCE -- one step per batch, trajectories reduced on the workers");

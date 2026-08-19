@@ -46,6 +46,20 @@ pub struct PpoStep {
     pub clip: f64,
     /// How many gradient steps to take from one batch.
     pub epochs: usize,
+    /// Reinforce what went better than the batch, and do not punish what went worse.
+    ///
+    /// The advantage is `return - batch mean`, so above-average decisions are already reinforced
+    /// and below-average ones already discouraged. Clamping the negative half to zero turns the
+    /// update into self-imitation: the policy is pulled toward its own better games and pushed
+    /// away from nothing.
+    ///
+    /// Worth being explicit about what this cannot distinguish. A seat's return depends on its
+    /// game as well as its play -- every seat that reached 6+ VP was in a game where the
+    /// custodians came off, which is not a property of that seat's decisions -- so reinforcing on
+    /// outcome also reinforces having been in a favourable game. Self-imitation is the mild
+    /// version of that error; elite filtering, which discards the rest of the batch, is the
+    /// severe one.
+    pub positive_only: bool,
 }
 
 impl Default for PpoStep {
@@ -56,6 +70,7 @@ impl Default for PpoStep {
             gradient_clip: 1.0,
             clip: 0.2,
             epochs: 4,
+            positive_only: false,
         }
     }
 }
@@ -257,6 +272,7 @@ pub fn epoch_statistics(
     reward: &Reward,
     baselines: &BTreeMap<String, (f64, f64)>,
     clip: f64,
+    positive_only: bool,
 ) -> BTreeMap<String, EpochStatistics> {
     let credited = returns(episode, reward);
     let mut collected: BTreeMap<String, EpochStatistics> = BTreeMap::new();
@@ -270,7 +286,10 @@ pub fn epoch_statistics(
             .get(&bucket_of(step, reward))
             .copied()
             .unwrap_or((0.0, 1.0));
-        let advantage = (credit - mean) / scale;
+        let mut advantage = (credit - mean) / scale;
+        if positive_only {
+            advantage = advantage.max(0.0);
+        }
 
         let current = current_probabilities(step, profile, temperature);
         if current.len() != step.legal.len() {
@@ -504,6 +523,7 @@ pub fn update(
                         reward,
                         bases,
                         step.clip,
+                        step.positive_only,
                     );
                     let target = per_faction.entry(seat.faction.clone()).or_default();
                     for (head, row) in rows {
