@@ -57,6 +57,7 @@ fn main() {
             gradient_clip: 1.0,
             clip: 0.2,
             epochs,
+            positive_only: false,
         });
         let spent = started.elapsed().as_secs_f64();
         #[expect(clippy::cast_precision_loss, reason = "epoch counts are tiny")]

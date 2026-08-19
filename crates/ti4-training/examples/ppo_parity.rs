@@ -88,6 +88,7 @@ fn main() {
             gradient_clip: step.gradient_clip,
             clip: 1e9,
             epochs: 1,
+            positive_only: false,
         },
     );
 
