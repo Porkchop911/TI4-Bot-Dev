@@ -155,6 +155,14 @@ pub fn deploy(
     // Commodities are deliberately not set. LRR 21: the faction record's `commodities` is
     // the *capacity* a player refreshes to, not an opening balance, and a player starts
     // with none. The oracle sets trade_goods to 0 here for the same reason.
+
+    // 51.1: a player begins with their faction's three leaders. `leaders::deploy` existed, was
+    // tested, and had no caller outside a test -- so every seat in every simulated game held an
+    // empty leader map, and the agent, commander and hero subsystems were unreachable no matter
+    // how well they worked. The same shape as the custodians token: implemented, wired, never
+    // reached.
+    crate::leaders::deploy(state, content, sources, player);
+
     Ok(())
 }
 

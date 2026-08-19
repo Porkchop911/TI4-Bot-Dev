@@ -737,6 +737,61 @@ fn finish_game(
     Rollout { seed, seats, error }
 }
 
+/// Play one game and keep what a mechanics audit needs: the events emitted and the final state.
+///
+/// The ordinary rollout path keeps neither, which is right for training -- a batch of 96 games has
+/// no use for either -- but it left the only check that a subsystem is reachable a source-text one
+/// asserting the driver still contains a call to it. That check passed for the agenda phase the
+/// whole time no simulated game ever ran one, because nothing lifted the custodians token. Wiring
+/// is not reachability, and this is how to tell them apart.
+///
+/// # Panics
+/// Panics if seating cannot be built for `seed`, which would mean a broken map pool.
+#[must_use]
+pub fn audit_game(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    profiles: &BTreeMap<FactionId, Profile>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    map: &OpeningMap,
+) -> (Vec<String>, ti4_model::state::GameState) {
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let wanted: BTreeMap<PlayerId, FactionId> = players
+        .iter()
+        .enumerate()
+        .map(|(seat, player)| (player.clone(), seated_faction(factions, seed, 0, seat)))
+        .collect();
+    let (state, galaxy, assignments) =
+        seated(content, &players, &wanted, sources, seed, map).expect("seating");
+
+    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    for (index, player) in players.iter().enumerate() {
+        let faction = assignments
+            .get(player)
+            .cloned()
+            .unwrap_or_else(|| FactionId::new(""));
+        let profile = profiles.get(&faction).cloned().unwrap_or_else(|| {
+            ti4_policy::learned::blank_explicit_profile(faction.as_str())
+        });
+        let stream = seed
+            .wrapping_mul(1_000_003)
+            .wrapping_add(u64::try_from(index).unwrap_or(0));
+        table.seat(
+            player.clone(),
+            Box::new(LearnedBot::from_shared(Arc::new(profile), stream)),
+        );
+    }
+    let mut game = Game::with_table(state, content, table)
+        .with_sources(sources)
+        .with_galaxy(galaxy);
+    let _ = game.run(horizon.rounds, horizon.steps);
+    (game.events.clone(), game.state.clone())
+}
+
 /// Play every faction in every physical seat on every seed.
 ///
 /// Profiles are keyed by faction, not by seat. Each seed therefore yields `factions.len()` games

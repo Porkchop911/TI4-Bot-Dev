@@ -20,7 +20,7 @@ const SOURCES: [(&str, &[&str]); 9] = [
     ("public objective", &["public objective", "score a public"]),
     ("secret objective", &["secret"]),
     ("custodians / Mecatol", &["custodian", "mecatol"]),
-    ("Support for the Throne", &["support for the throne", "support_for"]),
+    ("Support for the Throne (option id \"ss\")", &["ss"]),
     ("Shard of the Throne", &["shard"]),
     ("Crown of Emphidia", &["emphidia", "crown"]),
     ("Imperial Rider", &["rider"]),
@@ -75,6 +75,12 @@ fn main() {
                 seen.insert(step.head.to_lowercase());
                 for option in step.legal.keys() {
                     seen.insert(option.to_lowercase());
+                    if option == "ss" {
+                        *heads.entry("[offered:support-swap]".to_owned()).or_default() += 1;
+                    }
+                }
+                if step.chosen == "ss" {
+                    *heads.entry("[CHOSEN:support-swap]".to_owned()).or_default() += 1;
                 }
             }
         }
