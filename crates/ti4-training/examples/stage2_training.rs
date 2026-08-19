@@ -897,6 +897,18 @@ fn main() -> Result<(), String> {
     // Draw each seed's cyclic seating order at random rather than always rotating the same one.
     // The fixed rotation leaves draft precedence between any two factions at 16.7%-83.3% and never
     // changes which factions border each other; see `rollout::set_seat_scramble`.
+    // Stage-1 clearance reward, inside a Stage-2 run. Two distinct knobs, and neither is the
+    // `--clearance-weight` penalty that measured -1.045 table VP: that one lands in the final slot
+    // so every decision of the game carries the same constant, which separates games and never
+    // separates decisions inside one.
+    //
+    //   --r1-bonus    paid at the LAST round-one decision, as cleared - 0.1*shortfall, so every
+    //                 round-one decision carries it and no later one does. Default 3.0.
+    //   --r1-shaping  scales the opening-potential delta within round one. Default 0.1, and the
+    //                 reward validator refuses anything above 1.0 because at Stage-1 magnitudes
+    //                 the opening potential would swamp victory points.
+    let r1_bonus = decimal("--r1-bonus", 3.0);
+    let r1_shaping = decimal("--r1-shaping", 0.1);
     let scramble_seats = flag("--scramble-seats");
     ti4_training::rollout::set_seat_scramble(scramble_seats);
     let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
@@ -936,6 +948,8 @@ fn main() -> Result<(), String> {
     plan.clearance_weight = clearance_weight;
     plan.discount = discount;
     plan.round_baseline = round_baseline;
+    plan.r1_bonus = Some(r1_bonus);
+    plan.r1_shaping = Some(r1_shaping);
     plan.pipeline = pipeline;
     plan.rollout_depth = rollout_depth;
     if ppo_epochs > 1 {
@@ -1014,6 +1028,8 @@ fn main() -> Result<(), String> {
         ("round_baseline".to_owned(), round_baseline.to_string()),
         ("ppo_epochs".to_owned(), ppo_epochs.to_string()),
         ("scramble_seats".to_owned(), scramble_seats.to_string()),
+        ("r1_bonus".to_owned(), r1_bonus.to_string()),
+        ("r1_shaping".to_owned(), r1_shaping.to_string()),
         ("ppo_clip".to_owned(), ppo_clip.to_string()),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
@@ -1081,6 +1097,9 @@ fn main() -> Result<(), String> {
     if round_baseline {
         println!("  baseline: per (head, round) rather than one mean per head");
     }
+    println!(
+        "  round-one clearance: bonus {r1_bonus:.2} at the last round-one decision, shaping {r1_shaping:.2}"
+    );
     println!(
         "  seating: {}",
         if scramble_seats {

@@ -168,6 +168,8 @@ fn main() -> Result<(), String> {
         round_baseline: false,
         pipeline: false,
         rollout_depth: 1,
+        r1_bonus: None,
+        r1_shaping: None,
         ppo: None,
     };
 

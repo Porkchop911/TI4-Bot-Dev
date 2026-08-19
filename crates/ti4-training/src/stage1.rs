@@ -216,6 +216,11 @@ pub struct FactionPlan {
     /// updates), so per-game results and apply order are unchanged but the sampled weight
     /// trajectory differs from the sequential reference.
     pub rollout_depth: usize,
+    /// Round-one clearance bonus, paid at the last round-one decision. `None` keeps the stage's
+    /// own default, so an unset flag cannot silently change Stage-1 behaviour.
+    pub r1_bonus: Option<f64>,
+    /// How strongly the opening potential shapes round-one rewards. `None` keeps the default.
+    pub r1_shaping: Option<f64>,
     /// Take several clipped-surrogate steps from each retained batch instead of one REINFORCE
     /// step. `None` is the REINFORCE reference and changes nothing.
     ///
@@ -282,6 +287,8 @@ impl FactionPlan {
             pipeline: false,
             rollout_depth: 1,
             ppo: None,
+            r1_bonus: None,
+            r1_shaping: None,
         }
     }
 
@@ -319,6 +326,8 @@ impl FactionPlan {
             pipeline: false,
             rollout_depth: 1,
             ppo: None,
+            r1_bonus: None,
+            r1_shaping: None,
         }
     }
 
@@ -356,6 +365,12 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     reward.clearance_weight = plan.clearance_weight;
     reward.discount = plan.discount;
     reward.round_baseline = plan.round_baseline;
+    if let Some(bonus) = plan.r1_bonus {
+        reward.r1_bonus = bonus;
+    }
+    if let Some(shaping) = plan.r1_shaping {
+        reward.r1_shaping = shaping;
+    }
     let mut generations = Vec::with_capacity(plan.generations);
     // One update in flight at a time. In pipeline mode the previous batch's gradients are
     // applied while the current batch is still rolling out, so the worker pool never drains to
