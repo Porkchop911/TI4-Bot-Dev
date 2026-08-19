@@ -66,6 +66,9 @@ fn main() {
     let dir = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "out/stage2_v2".to_owned());
+    let prefix = std::env::args()
+        .find_map(|a| a.strip_prefix("--arm=").map(ToOwned::to_owned))
+        .unwrap_or_default();
     let panel: u64 = std::env::args()
         .find_map(|a| a.strip_prefix("--seeds=").and_then(|v| v.parse().ok()))
         .unwrap_or(60);
@@ -86,7 +89,12 @@ fn main() {
     let mut runs = 0;
 
     for index in 0..8 {
-        let path = format!("{dir}/s{index}.json");
+        // Arms in a shared directory are named `<arm>-s<seed>.json`; a single run is `s<seed>.json`.
+        let path = if prefix.is_empty() {
+            format!("{dir}/s{index}.json")
+        } else {
+            format!("{dir}/{prefix}-s{index}.json")
+        };
         let Some(profiles) = load(&path, &factions) else {
             continue;
         };
