@@ -141,12 +141,19 @@ fn main() {
             Horizon::rounds(rounds),
             &map,
         );
+        // Per game. An earlier version extended one shared set and asked whether the event had
+        // ever been seen, which reported "the fraction of games at or after the first occurrence"
+        // -- so the agenda phase read 97% while the custodians token it is gated on read 67%.
+        // The inconsistency between an event count and a state count is what gave it away.
+        let this_game: BTreeSet<String> = events.iter().cloned().collect();
         seen.extend(events);
         for (_, name, evidence) in &list {
             let fired = match evidence {
-                Evidence::Event(names) => names
-                    .iter()
-                    .any(|n| seen.iter().any(|event| event == n || event.starts_with(&format!("{n}:")))),
+                Evidence::Event(names) => names.iter().any(|n| {
+                    this_game
+                        .iter()
+                        .any(|event| event == n || event.starts_with(&format!("{n}:")))
+                }),
                 Evidence::State(check) => check(&state),
             };
             if fired {
