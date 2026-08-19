@@ -169,11 +169,22 @@ fn main() {
                 // inferred from what every game happens to hold — inferring it would misclassify
                 // anything researched in every single game as a starting technology.
                 let base = starting.entry(faction.clone()).or_insert_with(|| {
+                    // Resolved the same way seating resolves them. The record holds printed
+                    // names while the state holds resolved ids, so comparing the two directly
+                    // matches nothing -- which is why Jol-Nar's starting Sarween Tools was
+                    // reported as its most-acquired technology.
                     ti4_content::factions::get(store, faction.as_str())
                         .map(|record| {
                             record
                                 .starting_tech()
-                                .into_iter()
+                                .iter()
+                                .filter_map(|name| {
+                                    store.resolve_id(
+                                        ti4_model::content_types::ContentType::Technologies,
+                                        name,
+                                        FULL,
+                                    )
+                                })
                                 .map(ToString::to_string)
                                 .collect()
                         })
@@ -239,7 +250,18 @@ fn main() {
         let text: Vec<String> = rows
             .iter()
             .take(6)
-            .map(|(tech, n)| format!("{tech} ({n})"))
+            .map(|(tech, n)| {
+                // Printed name, not the corpus abbreviation: `sr` is Sling Relay and `st` is
+                // Sarween Tools, which are easy to read as each other at a glance.
+                let name = store
+                    .get(
+                        ti4_model::content_types::ContentType::Technologies,
+                        tech.as_str(),
+                    )
+                    .and_then(|record| record.text("name").map(ToOwned::to_owned))
+                    .unwrap_or_else(|| (*tech).clone());
+                format!("{name} ({n})")
+            })
             .collect();
         println!(
             "  {:<9} {}",
