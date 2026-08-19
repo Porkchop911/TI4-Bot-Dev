@@ -561,6 +561,23 @@ impl<'a> Observed<'a> {
 
     /// What a player has already scored, which is public once scored (61.18).
     #[must_use]
+    /// The initiative number printed on a strategy card.
+    ///
+    /// Public: it is printed on the card, and it decides the whole action phase's turn order.
+    /// The draft head could not see it, so a card was chosen from its identity alone.
+    #[must_use]
+    pub fn card_initiative(&self, card: &ti4_model::id::StrategyCardId) -> Option<i32> {
+        self.state.card_initiative.get(card).copied()
+    }
+
+    /// Trade goods sitting on an unpicked strategy card (LRR 83.2).
+    ///
+    /// Public, on the table, and one of the two reasons to take a card you do not otherwise want.
+    #[must_use]
+    pub fn strategy_card_goods(&self, card: &ti4_model::id::StrategyCardId) -> i32 {
+        self.state.strategy_card_goods.get(card).copied().unwrap_or(0)
+    }
+
     pub fn scored_by(&self, player: &PlayerId) -> BTreeSet<ObjectiveId> {
         self.state.scored_by(player)
     }

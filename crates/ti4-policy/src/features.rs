@@ -846,6 +846,42 @@ fn structured_features(
         add_system_features(seen, system, player, context, prefix, features);
     }
 
+    // The strategy draft. Until this existed the head saw the card's *identity* and the seat's
+    // state, and nothing about what any card does -- so "take Warfare" and "take Imperial" were
+    // two names with no properties between them, and the only way to learn a preference was to
+    // memorise one weight per card per faction.
+    //
+    // Both facts are public. Initiative is printed on the card and decides the whole action
+    // phase's turn order; trade goods sit visibly on unpicked cards and are one of the two
+    // reasons to take a card you do not otherwise want (LRR 83.2).
+    if kind == "strategy_card" {
+        let card = ti4_model::id::StrategyCardId::new(option.id.as_str());
+        if let Some(initiative) = seen.card_initiative(&card) {
+            add_named(
+                features,
+                format_args!("card:initiative"),
+                small_integer_value(i64::from(initiative)),
+            );
+            // Going early and going last are different things, and a linear model reads a raw
+            // initiative number as "more is better" in one direction only.
+            add_named(
+                features,
+                format_args!("card:first-pick"),
+                f64::from(u8::from(initiative <= 2)),
+            );
+            add_named(
+                features,
+                format_args!("card:last-pick"),
+                f64::from(u8::from(initiative >= 7)),
+            );
+        }
+        add_named(
+            features,
+            format_args!("card:goods"),
+            small_integer_value(i64::from(seen.strategy_card_goods(&card))),
+        );
+    }
+
     match kind {
         "move" => {
             if let Some(origin) = payload_string(option, "origin") {
