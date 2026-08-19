@@ -181,6 +181,8 @@ fn main() -> Result<(), String> {
         clearance_weight: 0.0,
         discount,
         round_baseline: false,
+        r1_bonus: None,
+        r1_shaping: None,
         pipeline: false,
         rollout_depth: 1,
         ppo: (ppo_epochs > 1).then_some(PpoStep {
@@ -189,6 +191,7 @@ fn main() -> Result<(), String> {
             gradient_clip: 1.0,
             clip: ppo_clip,
             epochs: ppo_epochs,
+            positive_only: false,
         }),
     };
 
