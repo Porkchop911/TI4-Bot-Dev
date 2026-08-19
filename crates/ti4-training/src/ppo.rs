@@ -46,6 +46,20 @@ pub struct PpoStep {
     pub clip: f64,
     /// How many gradient steps to take from one batch.
     pub epochs: usize,
+    /// Extra entropy for one named head, on top of `entropy`.
+    ///
+    /// The strategy draft collapses: a converged policy takes one card 100% of the time, six
+    /// factions partition the six cards they want, and no faction ever experiences being denied
+    /// one. A per-episode reward cannot correct that, because within a single game a faction picks
+    /// exactly one card -- "picked more than 75% of the time" is a property of the policy across
+    /// games, not of any episode. Entropy is where it can live, and applying it to one head keeps
+    /// the pressure off the heads that are supposed to become decisive.
+    ///
+    /// Preferred over a hard 75% threshold because a threshold is discontinuous -- 74% gets
+    /// nothing and 76% gets a shove -- while entropy pushes in proportion to how concentrated the
+    /// distribution already is.
+    /// Applies to the `strategy` head alone; zero leaves it on the global coefficient.
+    pub draft_entropy: f64,
     /// Reinforce what went better than the batch, and do not punish what went worse.
     ///
     /// The advantage is `return - batch mean`, so above-average decisions are already reinforced
@@ -70,6 +84,7 @@ impl Default for PpoStep {
             gradient_clip: 1.0,
             clip: 0.2,
             epochs: 4,
+            draft_entropy: 0.0,
             positive_only: false,
         }
     }
@@ -405,8 +420,10 @@ pub fn apply(
         let combined: BTreeMap<FeatureKey, f64> = slots
             .into_iter()
             .map(|slot| {
+                let entropy = step.entropy
+                    + if head == "strategy" { step.draft_entropy } else { 0.0 };
                 let value = row.gradient.get(&slot).copied().unwrap_or(0.0)
-                    + step.entropy * row.entropy_gradient.get(&slot).copied().unwrap_or(0.0);
+                    + entropy * row.entropy_gradient.get(&slot).copied().unwrap_or(0.0);
                 (slot, value)
             })
             .collect();

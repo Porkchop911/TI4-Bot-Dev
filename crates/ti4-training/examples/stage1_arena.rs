@@ -126,6 +126,7 @@ fn main() -> Result<(), String> {
     let scramble_seats = flag("--scramble-seats");
     let ppo_epochs = number("--ppo-epochs", 1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
+    let draft_entropy = decimal("--draft-entropy", 0.0);
     let checkpoint = argument("--checkpoint").map(PathBuf::from);
     let map_pool_path = argument("--map-pool").map(PathBuf::from);
     // A separate pool for the held-out panel. The shipped pool contains 8,192 entries but only
@@ -192,6 +193,7 @@ fn main() -> Result<(), String> {
             clip: ppo_clip,
             epochs: ppo_epochs,
             positive_only: false,
+            draft_entropy,
         }),
     };
 
@@ -255,6 +257,11 @@ fn main() -> Result<(), String> {
         );
     } else {
         println!("  algorithm: REINFORCE -- one step per batch");
+    }
+    if draft_entropy > 0.0 {
+        println!(
+            "  draft entropy: +{draft_entropy:.3} on the strategy head, against {entropy:.3} elsewhere"
+        );
     }
     println!(
         "  panel: {eval_seeds} seeds x 6 rotations from {eval_first}, maps from {}",
@@ -349,6 +356,7 @@ fn main() -> Result<(), String> {
                 "ppo_epochs": ppo_epochs,
                 "scramble_seats": scramble_seats,
                 "ppo_clip": ppo_clip,
+                "draft_entropy": draft_entropy,
                 "train_seeds": train_seeds,
                 "train_seed_base": train_seed_base,
             },

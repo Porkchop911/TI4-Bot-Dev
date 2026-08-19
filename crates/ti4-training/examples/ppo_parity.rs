@@ -89,6 +89,7 @@ fn main() {
             clip: 1e9,
             epochs: 1,
             positive_only: false,
+            draft_entropy: 0.0,
         },
     );
 

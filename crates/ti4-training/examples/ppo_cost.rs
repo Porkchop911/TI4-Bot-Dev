@@ -58,6 +58,7 @@ fn main() {
             clip: 0.2,
             epochs,
             positive_only: false,
+            draft_entropy: 0.0,
         });
         let spent = started.elapsed().as_secs_f64();
         #[expect(clippy::cast_precision_loss, reason = "epoch counts are tiny")]

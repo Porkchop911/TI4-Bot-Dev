@@ -913,6 +913,7 @@ fn main() -> Result<(), String> {
     ti4_training::rollout::set_seat_scramble(scramble_seats);
     let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
+    let draft_entropy = decimal("--draft-entropy", 0.0);
     // Self-imitation: reinforce what beat the batch mean, punish nothing.
     let positive_advantage = flag("--positive-advantage");
     if ppo_epochs > 1 && ppo_clip <= 0.0 {
@@ -962,6 +963,7 @@ fn main() -> Result<(), String> {
             clip: ppo_clip,
             epochs: ppo_epochs,
             positive_only: positive_advantage,
+            draft_entropy,
         });
     }
     plan.train_seeds = train_seeds;
