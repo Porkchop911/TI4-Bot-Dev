@@ -43,13 +43,21 @@ fn card_label(id: &str) -> &'static str {
 
 /// Which secondary an accepting option belongs to, from the verb it carries.
 fn secondary_of(words: &BTreeSet<String>) -> Option<&'static str> {
+    // Built from what the options actually carry, not from the card text. Option features come
+    // from the option id and label only (features.rs:290), never the prompt, so Technology --
+    // whose label is bare "spend" -- was invisible to a mapping that looked for "research".
+    // Leadership carries "influence" alongside "spend" and must be tested first.
     for (token, card) in [
         ("produce", "Warf"),
         ("build", "Cons"),
         ("place", "Cons"),
         ("replenish", "Trad"),
-        ("research", "Tech"),
         ("ready", "Dipl"),
+        // Imperial and Politics both label their accepting option "draw" and carry no word that
+        // separates them; they share a column.
+        ("draw", "Draw"),
+        ("influence", "Lead"),
+        ("spend", "Tech"),
     ] {
         if words.contains(token) {
             return Some(card);
@@ -79,6 +87,9 @@ fn main() {
         .iter()
         .filter_map(|f| loaded.get(f.as_str()).map(|p| (f.clone(), p.clone())))
         .collect();
+    let rounds: u32 = std::env::args()
+        .find_map(|a| a.strip_prefix("--rounds=").and_then(|v| v.parse().ok()))
+        .unwrap_or(4);
     let pool = Arc::new(ti4_sim::MapPool::load(std::path::Path::new(POOL)).expect("pool"));
     let seeds: Vec<u64> = (98_000_000..98_000_000 + panel).collect();
 
@@ -88,7 +99,7 @@ fn main() {
         &profiles,
         FULL,
         &seeds,
-        Horizon::rounds(4),
+        Horizon::rounds(rounds),
         ti4_engine::opening::DEFAULT_REQUIREMENT,
         Arc::clone(&pool),
         20_000_000,
@@ -99,6 +110,9 @@ fn main() {
     let mut by_primary: BTreeMap<(FactionId, &'static str), (usize, usize)> = BTreeMap::new();
     let mut by_route: BTreeMap<(FactionId, &'static str), (usize, usize)> = BTreeMap::new();
     let mut overall: BTreeMap<FactionId, (usize, usize)> = BTreeMap::new();
+    // How often each faction opted into each card's secondary in round one.
+    let mut by_secondary: BTreeMap<(FactionId, &'static str), usize> = BTreeMap::new();
+    let mut seats_seen: BTreeMap<FactionId, usize> = BTreeMap::new();
 
     for game in &games {
         for seat in &game.seats {
@@ -157,6 +171,11 @@ fn main() {
             let cell = by_route.entry((seat.faction.clone(), route)).or_insert((0, 0));
             cell.0 += 1;
             cell.1 += cleared;
+
+            *seats_seen.entry(seat.faction.clone()).or_default() += 1;
+            for card in &followed {
+                *by_secondary.entry((seat.faction.clone(), *card)).or_default() += 1;
+            }
         }
     }
 
@@ -207,6 +226,26 @@ fn main() {
                 let rate = cleared as f64 / n as f64;
                 print!("{:>20.3}{:>6}", rate, format!("({n})"));
             }
+        }
+        println!();
+    }
+
+    println!("
+ROUND-1 SECONDARIES FOLLOWED (% of that faction's seats)");
+    let secondaries = ["Lead", "Dipl", "Cons", "Trad", "Warf", "Tech", "Draw"];
+    print!("{:<9}", "faction");
+    for card in secondaries {
+        print!("{card:>9}");
+    }
+    println!();
+    for faction in &factions {
+        print!("{:<9}", faction.as_str());
+        let seats = seats_seen.get(faction).copied().unwrap_or(0).max(1);
+        for card in secondaries {
+            let n = by_secondary.get(&(faction.clone(), card)).copied().unwrap_or(0);
+            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+            let rate = 100.0 * n as f64 / seats as f64;
+            print!("{rate:>8.0}%");
         }
         println!();
     }

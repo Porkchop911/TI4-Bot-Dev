@@ -75,6 +75,9 @@ fn main() {
         .iter()
         .filter_map(|f| loaded.get(f.as_str()).map(|p| (f.clone(), p.clone())))
         .collect();
+    let rounds: u32 = std::env::args()
+        .find_map(|a| a.strip_prefix("--rounds=").and_then(|v| v.parse().ok()))
+        .unwrap_or(4);
     let pool = Arc::new(ti4_sim::MapPool::load(std::path::Path::new(POOL)).expect("pool"));
     let seeds: Vec<u64> = (98_000_000..98_000_000 + panel).collect();
     let games = play_rotated_save54_pool_batch(
@@ -83,7 +86,7 @@ fn main() {
         &profiles,
         FULL,
         &seeds,
-        Horizon::rounds(4),
+        Horizon::rounds(rounds),
         ti4_engine::opening::DEFAULT_REQUIREMENT,
         Arc::clone(&pool),
         20_000_000,
@@ -105,7 +108,11 @@ fn main() {
                 .iter()
                 .find(|step| step.head == "strategy")
                 .is_some_and(|step| step.chosen.starts_with(&card[..7.min(card.len())]));
-            if !took {
+            // --any drops the card filter: for a faction whose starting units already meet the
+            // bar, the card is not the question and conditioning on it only shrinks the sample.
+            let invert = std::env::args().any(|a| a == "--invert");
+            let unconditional = std::env::args().any(|a| a == "--any");
+            if !unconditional && took == invert {
                 continue;
             }
             let tally = if seat.episode.cleared {

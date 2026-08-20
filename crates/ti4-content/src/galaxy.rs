@@ -163,9 +163,56 @@ impl<'a> Planet<'a> {
         self.record.int("influence").unwrap_or(0)
     }
 
+    /// Every trait this planet carries.
+    ///
+    /// Two field names are in the corpus and no record uses both: base, Prophecy of Kings and
+    /// codex planets store a single `planetType`, while all 49 Thunder's Edge planets store a
+    /// `planetTypes` list -- six of which carry two traits. Reading only the singular field made
+    /// those 49 look traitless to the engine, which on a `save52` board is 15 of the 31 non-home
+    /// planets, and silently disabled every trait objective, trait secret and trait exploration
+    /// on them.
+    #[must_use]
+    pub fn planet_types(&self) -> Vec<&'a str> {
+        self.record.text("planetType").map_or_else(
+            || self.record.strings("planetTypes"),
+            |single| vec![single],
+        )
+    }
+
+    /// The planet's first trait, when it has one.
+    ///
+    /// Kept for callers that only need a label. Anything asking a trait *question* wants
+    /// [`Planet::has_trait`] instead: a dual-trait planet answers to both of its traits, and
+    /// picking the first would drop one of them.
     #[must_use]
     pub fn planet_type(&self) -> Option<&'a str> {
-        self.record.text("planetType")
+        self.planet_types().first().copied()
+    }
+
+    /// Whether this planet carries `trait_name`, ignoring case.
+    #[must_use]
+    pub fn has_trait(&self, trait_name: &str) -> bool {
+        self.planet_types()
+            .iter()
+            .any(|kind| kind.eq_ignore_ascii_case(trait_name))
+    }
+
+    /// The traits that count as traits for objectives and secrets.
+    ///
+    /// The corpus also uses this field for `FACTION`, and Thunder's Edge adds `FAKE`,
+    /// `SPACESTATION` and `LIGHTNING`. None of those is a planet trait in the rules -- "control 4
+    /// planets that each have the same planet trait" does not mean four homeworlds -- so they are
+    /// excluded from trait matching while remaining visible through [`Planet::planet_types`].
+    #[must_use]
+    pub fn traits(&self) -> Vec<&'a str> {
+        self.planet_types()
+            .into_iter()
+            .filter(|kind| {
+                ["CULTURAL", "HAZARDOUS", "INDUSTRIAL"]
+                    .iter()
+                    .any(|known| kind.eq_ignore_ascii_case(known))
+            })
+            .collect()
     }
 
     #[must_use]

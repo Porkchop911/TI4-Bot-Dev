@@ -317,11 +317,83 @@ fn secondary_eligible(
             state, content, sources, player,
         );
     }
-    state.player(player).is_some_and(|seat| {
+    if !state.player(player).is_some_and(|seat| {
         !secondary_costs_token(content, card)
             || secondary_is_free(state, content, player, card)
             || seat.strategic_tokens > 0
-    })
+    }) {
+        return false;
+    }
+    secondary_can_do_something(state, content, sources, player, card)
+}
+
+/// Whether this seat's secondary could actually accomplish anything.
+///
+/// Three secondaries resolve to nothing under conditions the offer did not check, and every one
+/// of them still charges the strategy token:
+///
+/// * **Technology** costs "1 token **and** 4 resources" (LRR 74.2) -- one price, not two. A seat
+///   that cannot pay the resources cannot resolve it, and `paid_research` returned early for want
+///   of them. The same early return covers an empty researchable set, so that is checked too.
+/// * **Diplomacy** readies exhausted planets; `ready_planets` breaks immediately when the seat has
+///   none exhausted.
+/// * **Trade** replenishes commodities; `replenish` assigns the limit, which is a no-op for a seat
+///   already at it.
+/// * **Warfare** produces from the home system; `home_production` no-ops when that system has no
+///   production capacity.
+///
+/// Construction is deliberately *not* gated: a seat essentially always controls a planet to build
+/// on, and scuttling a dock to place one further forward is a legitimate choice rather than a
+/// wasted token.
+///
+/// Without these gates the windows opened regardless and the policies accepted them at close to
+/// 100%, burning tokens for nothing.
+///
+/// Jol-Nar is deliberately exempt from the Technology clause: Brilliant substitutes the primary
+/// ([`crate::faction_abilities::substitutes_primary`]), which researches free, so the resource
+/// price never applies to them and the window stays open however little they hold.
+fn secondary_can_do_something(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    card: &StrategyCardId,
+) -> bool {
+    let Some(name) = crate::strategy_cards::card_name(content, card.as_str()) else {
+        return true;
+    };
+    match name.as_str() {
+        "Technology" => {
+            if crate::technology::researchable(state, content, sources, player).is_empty() {
+                return false;
+            }
+            crate::faction_abilities::substitutes_primary(state, content, player, &name)
+                || crate::payment::affordable(
+                    state,
+                    content,
+                    sources,
+                    player,
+                    crate::strategy_cards::TECHNOLOGY_SECONDARY_COST,
+                    crate::production::Spend::Resources,
+                )
+        }
+        "Diplomacy" => state
+            .controlled_planets(player)
+            .into_iter()
+            .any(|(_, planet)| state.exhausted_planets.contains(planet)),
+        "Trade" => state.player(player).is_some_and(|seat| {
+            seat.commodities < crate::strategy_cards::commodity_limit(state, content, player)
+        }),
+        // Warfare's secondary produces from the units in the seat's home system; `home_production`
+        // no-ops when that system has no production capacity, i.e. no space dock.
+        "Warfare" => state
+            .player(player)
+            .and_then(|seat| seat.home_system.clone())
+            .is_some_and(|home| {
+                crate::production::capacity(state, content, sources, player, &home) > 0
+            }),
+        _ => true,
+    }
 }
 
 /// Legal structural strategic actions for one player.
@@ -475,6 +547,170 @@ mod tests {
         state
     }
 
+    /// The Technology card id in the dealt deck, whichever variant the sources carry.
+    fn technology_card(state: &GameState) -> StrategyCardId {
+        state
+            .players
+            .iter()
+            .flat_map(|seat| seat.strategy_cards.iter())
+            .chain(state.unclaimed_strategy_cards.iter())
+            .find(|card: &&StrategyCardId| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    == Some("Technology")
+            })
+            .cloned()
+            .unwrap_or_else(|| StrategyCardId::new("pok7technology"))
+    }
+
+    #[test]
+    fn technology_secondary_is_withheld_from_a_seat_that_cannot_pay_the_resources() {
+        let mut state = drafted_three_player_game();
+        let player = PlayerId::new("a");
+        let card = technology_card(&state);
+        // The fixture seats hold no planets, so trade goods are the whole resource pool and the
+        // affordability clause is the only thing that can change the answer.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.strategic_tokens = 3;
+            seat.trade_goods = 0;
+        }
+        assert!(
+            !secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "a seat with a token but no resources cannot resolve 'spend 1 token AND 4 resources'"
+        );
+    }
+
+    #[test]
+    fn a_seat_that_can_pay_is_still_offered_the_technology_secondary() {
+        let mut state = drafted_three_player_game();
+        let player = PlayerId::new("a");
+        let card = technology_card(&state);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.strategic_tokens = 3;
+            seat.trade_goods = crate::strategy_cards::TECHNOLOGY_SECONDARY_COST as i32;
+        }
+        assert!(
+            secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "four trade goods cover the four resources"
+        );
+    }
+
+    /// A drafted three-player game in which the first picker takes a named card.
+    ///
+    /// The generic follower-window tests need a secondary that is always offered. Politics,
+    /// Imperial and Construction qualify; Technology, Diplomacy, Trade and Warfare are
+    /// conditionally withheld by `secondary_can_do_something`, and taking whatever happened to be
+    /// first would couple those tests to the draft order.
+    fn drafted_with_first_pick(wanted: &str) -> (GameState, StrategyCardId) {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut taken = None;
+        while let Some(choice) = strategy_options(&state, ContentStore::embedded()) {
+            let pick = choice
+                .options
+                .iter()
+                .find(|option| {
+                    taken.is_none()
+                        && crate::strategy_cards::card_name(
+                            ContentStore::embedded(),
+                            option.id.as_str(),
+                        )
+                        .as_deref()
+                            == Some(wanted)
+                })
+                .unwrap_or(&choice.options[0])
+                .clone();
+            if taken.is_none()
+                && crate::strategy_cards::card_name(ContentStore::embedded(), pick.id.as_str())
+                    .as_deref()
+                    == Some(wanted)
+            {
+                taken = Some(StrategyCardId::new(pick.id.clone()));
+            }
+            take_strategy_card(&mut state, ContentStore::embedded(), pick).unwrap();
+        }
+        let card = taken.expect("the wanted card was available to the first picker");
+        (state, card)
+    }
+
+    fn card_named(state: &GameState, wanted: &str) -> StrategyCardId {
+        state
+            .players
+            .iter()
+            .flat_map(|seat| seat.strategy_cards.iter())
+            .chain(state.unclaimed_strategy_cards.iter())
+            .find(|card: &&StrategyCardId| {
+                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
+                    == Some(wanted)
+            })
+            .cloned()
+            .expect("the dealt deck carries this card")
+    }
+
+    #[test]
+    fn diplomacy_secondary_is_withheld_when_nothing_is_exhausted() {
+        let mut state = drafted_three_player_game();
+        let player = PlayerId::new("a");
+        let card = card_named(&state, "Diplomacy");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.strategic_tokens = 3;
+        }
+        assert!(
+            !secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "readying two planets does nothing when none are exhausted"
+        );
+    }
+
+    #[test]
+    fn trade_secondary_is_withheld_when_commodities_are_already_full() {
+        let mut state = drafted_three_player_game();
+        let player = PlayerId::new("a");
+        let card = card_named(&state, "Trade");
+        // The bare three-player fixture seats no faction, so the commodity limit resolves to zero
+        // and the gate would pass for the wrong reason. Name one with commodities to spend.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.faction = ti4_model::id::FactionId::new("hacan");
+        }
+        let limit = crate::strategy_cards::commodity_limit(&state, ContentStore::embedded(), &player);
+        assert!(limit > 0, "hacan has a commodity value");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.strategic_tokens = 3;
+            seat.commodities = limit;
+        }
+        assert!(
+            !secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "replenishing to the limit does nothing when already at it"
+        );
+        if let Some(seat) = state.player_mut(&player) {
+            seat.commodities = limit - 1;
+        }
+        assert!(
+            secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "one commodity short, so there is something to replenish"
+        );
+    }
+
+    #[test]
+    fn warfare_secondary_is_withheld_without_home_production() {
+        let mut state = drafted_three_player_game();
+        let player = PlayerId::new("a");
+        let card = card_named(&state, "Warfare");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.strategic_tokens = 3;
+        }
+        // The bare fixture seats no home system, so there is nothing to produce from and the
+        // window must stay shut.
+        assert!(
+            state
+                .player(&player)
+                .is_some_and(|seat| seat.home_system.is_none()),
+            "the fixture seat has no home system"
+        );
+        assert!(
+            !secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),
+            "producing at home does nothing without a home system to produce in"
+        );
+    }
+
     #[test]
     fn a_player_with_one_unused_card_keeps_the_legacy_bare_action_id() {
         let players = [PlayerId::new("a"), PlayerId::new("b")];
@@ -542,21 +778,10 @@ mod tests {
 
     #[test]
     fn followers_resolve_clockwise_pay_or_decline_then_exhaust_the_primary_card() {
-        let mut state = drafted_three_player_game();
+        let (mut state, card) = drafted_with_first_pick("Politics");
         let primary = PlayerId::new("a");
         let first_follower = PlayerId::new("b");
         let second_follower = PlayerId::new("c");
-        let card = state
-            .player(&primary)
-            .unwrap()
-            .strategy_cards
-            .iter()
-            .find(|card| {
-                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
-                    != Some("Leadership")
-            })
-            .expect("a three-player hand includes a token-costing card")
-            .clone();
         let first_tokens = state.player(&first_follower).unwrap().strategic_tokens;
 
         let mut window = begin_strategic_action(
@@ -678,18 +903,10 @@ mod tests {
 
     #[test]
     fn an_invented_secondary_response_is_atomic() {
-        let mut state = drafted_three_player_game();
+        // A token-costing card with an unconditional secondary: the invented answer must be
+        // rejected against a real prompt.
+        let (mut state, card) = drafted_with_first_pick("Politics");
         let primary = PlayerId::new("a");
-        // A token-costing card: the invented answer must be rejected against a real prompt.
-        let cards = &state.player(&primary).unwrap().strategy_cards;
-        let card = cards
-            .iter()
-            .find(|card| {
-                crate::strategy_cards::card_name(ContentStore::embedded(), card.as_str()).as_deref()
-                    != Some("Leadership")
-            })
-            .cloned()
-            .unwrap_or_else(|| cards[0].clone());
         let mut window = begin_strategic_action(
             &mut state,
             ContentStore::embedded(),

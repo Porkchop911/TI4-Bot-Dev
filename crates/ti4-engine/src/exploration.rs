@@ -37,11 +37,15 @@ pub enum Explored {
 pub fn trait_of(content: &ContentStore, sources: SourceSet, planet: &PlanetId) -> Option<String> {
     let catalogue = ti4_content::galaxy::all_planets(content, sources);
     let record = catalogue.get(planet.as_str())?;
-    let trait_name = record.planet_type()?.to_ascii_uppercase();
-    EXPLORATION_TRAITS
-        .iter()
-        .find(|known| **known == trait_name && **known != FRONTIER)
-        .map(|known| (*known).to_owned())
+    // A planet may carry more than one trait (Thunder's Edge has six such); it explores into the
+    // first of them that is an exploration deck.
+    record.planet_types().into_iter().find_map(|kind| {
+        let trait_name = kind.to_ascii_uppercase();
+        EXPLORATION_TRAITS
+            .iter()
+            .find(|known| **known == trait_name && **known != FRONTIER)
+            .map(|known| (*known).to_owned())
+    })
 }
 
 /// Draw the top card of one exploration deck.

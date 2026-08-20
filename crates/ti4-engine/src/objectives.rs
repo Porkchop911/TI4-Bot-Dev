@@ -393,7 +393,10 @@ fn same_trait(count: usize) -> impl Fn(&Position<'_>) -> bool {
     move |position| {
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
         for planet in position.controlled() {
-            if let Some(trait_name) = planet.planet_type() {
+            // A dual-trait planet counts toward both of its traits, and `traits` excludes the
+            // non-trait values the field also carries (FACTION, and Thunder's Edge's FAKE,
+            // SPACESTATION, LIGHTNING).
+            for trait_name in planet.traits() {
                 *counts.entry(trait_name).or_default() += 1;
             }
         }

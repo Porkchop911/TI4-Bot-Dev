@@ -127,6 +127,15 @@ fn main() -> Result<(), String> {
     let ppo_epochs = number("--ppo-epochs", 1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
     let draft_entropy = decimal("--draft-entropy", 0.0);
+    // Extra report points on top of --every, for the early part of a run where the interesting
+    // movement happens in the first few hundred updates and a 500-update block hides it.
+    let report_at: Vec<usize> = argument("--report-at")
+        .map(|list| {
+            list.split(',')
+                .filter_map(|part| part.trim().parse::<usize>().ok())
+                .collect()
+        })
+        .unwrap_or_default();
     let checkpoint = argument("--checkpoint").map(PathBuf::from);
     let map_pool_path = argument("--map-pool").map(PathBuf::from);
     // A separate pool for the held-out panel. The shipped pool contains 8,192 entries but only
@@ -306,7 +315,14 @@ fn main() -> Result<(), String> {
     let mut best = f64::NEG_INFINITY;
     let best_path = output.with_extension("best.json");
     while done < updates {
-        let count = every.min(updates - done);
+        // The next boundary: whichever comes first of the regular block and an extra report point.
+        let mut next = done + every.min(updates - done);
+        for point in &report_at {
+            if *point > done && *point < next {
+                next = *point;
+            }
+        }
+        let count = next - done;
         plan.generations = count;
         plan.start = Some(FactionStart {
             profiles,

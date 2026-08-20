@@ -891,8 +891,7 @@ fn unstable_planet(context: &mut crate::timing::TimingContext<'_>, player: &Play
         .filter(|(_, planet)| {
             catalogue
                 .get(planet.as_str())
-                .and_then(ti4_content::galaxy::Planet::planet_type)
-                .is_some_and(|kind| kind.eq_ignore_ascii_case("hazardous"))
+                .is_some_and(|record| record.has_trait("hazardous"))
         })
         .map(|(system, planet)| (format!("{system}|{planet}"), planet.to_string()))
         .collect();
@@ -2165,8 +2164,7 @@ mod tests {
             .find_map(|(id, planet)| {
                 let system = planet.system_id()?;
                 planet
-                    .planet_type()
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("hazardous"))
+                    .has_trait("hazardous")
                     .then(|| {
                         (
                             ti4_model::id::SystemId::new(system),

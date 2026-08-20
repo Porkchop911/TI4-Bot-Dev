@@ -540,7 +540,7 @@ fn place_structure(
     Ok(Some(system))
 }
 
-fn commodity_limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
+pub(crate) fn commodity_limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
     state
         .player(player)
         .and_then(|seat| ti4_content::factions::get(content, seat.faction.as_str()))

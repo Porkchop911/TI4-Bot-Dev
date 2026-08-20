@@ -205,11 +205,9 @@ impl Position<'_> {
             .controlled_planets(self.player)
             .into_iter()
             .filter(|(_, planet)| {
-                catalogue.get(planet.as_str()).is_some_and(|record| {
-                    record
-                        .planet_type()
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case(trait_name))
-                })
+                catalogue
+                    .get(planet.as_str())
+                    .is_some_and(|record| record.has_trait(trait_name))
             })
             .count()
     }

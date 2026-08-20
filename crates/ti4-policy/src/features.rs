@@ -1017,7 +1017,9 @@ fn add_planet_features(
     ] {
         add_named(features, format_args!("{prefix}:{name}"), value);
     }
-    if let Some(trait_name) = planet.planet_type() {
+    // One feature per trait: a dual-trait planet is described by both, which is what the
+    // objectives that read them do.
+    for trait_name in planet.planet_types() {
         add_named(
             features,
             format_args!("{prefix}:trait:{}", trait_name.to_lowercase()),

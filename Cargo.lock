@@ -1849,6 +1849,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "chrono",
+ "flate2",
  "itertools 0.14.0",
  "mimalloc",
  "parquet",
