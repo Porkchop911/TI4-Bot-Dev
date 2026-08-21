@@ -1961,3 +1961,30 @@ non-reproducible checkpoints are not durable yet; M09-020 is a hard prerequisite
   bought-objective aliases/cost families/targets explicitly; M06-024 has an exact frontier-review
   specification; M07-019/M07-020 and M08-018/M08-019 now have scoped revalidation/review
   specifications. None of their source implementation has started or bypassed its dependency.
+
+## M06-023 implementation checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-023 — remaining position and exact bought-cost objective
+  progress.
+- **Branch/base:** `wp/m06-023-remaining-objective-progress` / accepted M06-022 commit `d58622c`.
+- **Status:** accepted after independent Claude Opus 5 Tier-C review. H1's production-format
+  promissory-note lookup is fixed through `promissory::alias_of`, its test uses a real note key, and
+  H2's misleading helper name is corrected. The package is ready to commit.
+- **Implemented:** exact typed progress for six public and seventeen secret position families;
+  greatest exactly-affordable scaled progress for all ten bought objectives; legality derived from
+  or proven equivalent to the same predicate/payment path; unavailable map state preserved.
+- **Checks:** focused mappings/unavailable cases pass; bounded exhaustive affordability campaign
+  covers 1,792 states x ten costs plus all 64 small token-pool splits; engine 832 plus 5 doctests;
+  full workspace exit 0; engine Clippy
+  has no package-local warning; `git diff --check` passes.
+- **Intentional active-package paths:** `crates/ti4-engine/src/objectives.rs`, `secrets.rs`,
+  `plans/M06-023_BESPOKE_AND_BOUGHT_PROGRESS.md`, `plans/evidence/M06-023.md`,
+  `plans/M06-023_OPEN_REVIEW_ITEMS.md`, and this execution state.
+- **Preserved dependency-safe preparation:** M06-024, M07-019/020, and M08-018/019 specifications
+  remain untracked and uncommitted; they contain no source implementation and do not bypass gates.
+  Their path audit corrected stale nonexistent `ti4-policy/src/authored.rs` references to `bot.rs`,
+  tightened review packages to read-only source access before a documented finding, and fixed the
+  future M06 review base to exact commit `92edea4` with accepted additions `5d027e8`/`d58622c`.
+- **Next exact action:** rerun the final workspace/Clippy gates, commit only M06-023 scoped paths,
+  create the M06-024 review branch, and begin its exact committed-frontier campaign. The related
+  pre-existing Betray-a-Friend note-owner emitter defect is a named blocking M06-024 input.

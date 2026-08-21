@@ -1,9 +1,8 @@
 # M06-023 — Remaining position and exact bought-cost objective progress
 
-## Preparation status
+## Status
 
-This specification is dependency-safe preparation only. Implementation has **not** started and may
-not start until M06-022 is accepted. M06-021a is accepted.
+Implementation is in progress. M06-022 and M06-021a are accepted.
 
 | Field | Value |
 |---|---|
@@ -33,6 +32,7 @@ Writable paths:
   crates/ti4-engine/src/objectives.rs
   crates/ti4-engine/src/secrets.rs
   plans/M06-023_BESPOKE_AND_BOUGHT_PROGRESS.md
+  plans/M06-023_OPEN_REVIEW_ITEMS.md
   plans/evidence/M06-023.md
   plans/EXECUTION_STATE.md
 Read-only supporting paths:
@@ -68,7 +68,7 @@ M06-021a's thirteen occurrence aliases. None remains implicit or boolean-only:
 
 | Alias | Exact progress | Threshold | Map required |
 |---|---|---:|---|
-| `csl` | rival space docks with an adjacent own ship | 1 | no |
+| `csl` | rival space-dock systems containing an own ship | 1 | no |
 | `dhw` | held relic fragments | 2 | no |
 | `fsn` | held action cards | 5 | no |
 | `sb` | distinct rival note issuers held | 1 | no |

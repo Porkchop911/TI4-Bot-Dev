@@ -69,6 +69,28 @@ pub enum CountFamily {
     SameColourTechnologies,
     ShipsInSystems,
     Units { base_type: &'static str },
+    RivalHomePlanets,
+    CapitalShipSystems,
+    CapitalShipsInRivalHomeOrMecatol,
+    ShipsAdjacentToMecatol,
+    WeakerNeighbours,
+    DistinctRivalHomeReaches,
+    RivalDockSystemsWithShips,
+    RelicFragments,
+    ActionCards,
+    RivalNoteIssuers,
+    ShipSystemsBesideAnomaly,
+    ShipSystemsBesideRivalHome,
+    Neighbours,
+    UnitsInNexus,
+    WormholeKinds,
+    FactionTechnologies,
+    Laws,
+    SharedPlanetSystems,
+    ProductionInOneSystem,
+    LegendaryPlanets,
+    MecatolShipsWhileControlling,
+    CombinedValue { kind: crate::production::Spend },
 }
 
 /// Exact raw progress toward one counting requirement.
@@ -238,26 +260,28 @@ fn rival_home_systems(position: &Position<'_>) -> std::collections::BTreeSet<Str
 }
 
 /// Control one planet in another player's home system.
-fn conquer_the_weak(position: &Position<'_>) -> bool {
+fn rival_home_planets_count(position: &Position<'_>) -> usize {
     let rivals = rival_home_planets(position);
     position
         .controlled()
         .iter()
-        .any(|planet| rivals.contains(planet.id()))
+        .filter(|planet| rivals.contains(planet.id()))
+        .count()
 }
 
 /// Have your flagship or a war sun on the game board.
-fn engineer_a_marvel(position: &Position<'_>) -> bool {
-    !flagship_or_war_sun(position).is_empty()
+fn capital_ship_systems_count(position: &Position<'_>) -> usize {
+    flagship_or_war_sun(position).len()
 }
 
 /// Have your flagship or war sun in another player's home system, or Mecatol Rex's.
-fn achieve_supremacy(position: &Position<'_>) -> bool {
+fn capital_ships_in_rival_home_or_mecatol_count(position: &Position<'_>) -> usize {
     let mut theirs = rival_home_systems(position);
     theirs.insert(crate::seating::MECATOL.to_owned());
     flagship_or_war_sun(position)
         .iter()
-        .any(|system| theirs.contains(system))
+        .filter(|system| theirs.contains(*system))
+        .count()
 }
 
 /// Systems on the edge of the board: those with a neighbouring hex that holds no tile.
@@ -330,46 +354,39 @@ fn on_the_rim_count(position: &Position<'_>) -> Option<usize> {
 }
 
 /// Have ships in two systems adjacent to Mecatol Rex's.
-fn intimidate_council(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
+fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
     let beside: std::collections::BTreeSet<&str> = galaxy.adjacent(crate::seating::MECATOL);
-    if beside.is_empty() {
-        return false; // Mecatol is not on this map, so nothing is adjacent to it
-    }
-    position
-        .systems_with_ships()
-        .into_iter()
-        .filter(|system| beside.contains(system.as_str()))
-        .count()
-        >= 2
+    Some(
+        position
+            .systems_with_ships()
+            .into_iter()
+            .filter(|system| beside.contains(system.as_str()))
+            .count(),
+    )
 }
 
 /// Control more planets than each of two of your neighbours.
 ///
 /// "More than each of two" is the difficulty: beating one neighbour twice over is not beating
 /// two neighbours.
-fn push_boundaries(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
+fn weaker_neighbours_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
     let mine = position.state.controlled_planets(position.player).len();
-    crate::transactions::neighbours(position.state, galaxy, position.player)
-        .into_iter()
-        .filter(|other| position.state.controlled_planets(other).len() < mine)
-        .count()
-        >= 2
+    Some(
+        crate::transactions::neighbours(position.state, galaxy, position.player)
+            .into_iter()
+            .filter(|other| position.state.controlled_planets(other).len() < mine)
+            .count(),
+    )
 }
 
 /// Control two planets each in or adjacent to a *different* other player's home system.
 ///
 /// "Different" is the whole difficulty: two planets around one opponent's home are one distant
 /// land, not two.
-fn rule_distant_lands(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
+fn distinct_rival_home_reaches_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
     let mut homes: Vec<(PlayerId, std::collections::BTreeSet<String>)> = Vec::new();
     for seat in &position.state.players {
         if &seat.id == position.player {
@@ -404,11 +421,12 @@ fn rule_distant_lands(position: &Position<'_>) -> bool {
         .into_iter()
         .map(|(system, _)| system.to_string())
         .collect();
-    homes
-        .iter()
-        .filter(|(_, reach)| held.iter().any(|system| reach.contains(system)))
-        .count()
-        >= 2
+    Some(
+        homes
+            .iter()
+            .filter(|(_, reach)| held.iter().any(|system| reach.contains(system)))
+            .count(),
+    )
 }
 
 fn non_home_count(position: &Position<'_>) -> usize {
@@ -560,6 +578,81 @@ fn in_notable_systems_count(position: &Position<'_>) -> usize {
                 })
         })
         .count()
+}
+
+/// Exact progress for the six formerly bespoke public position objectives.
+#[must_use]
+pub fn remaining_position_progress(
+    alias: &ObjectiveId,
+    position: &Position<'_>,
+) -> Option<RequirementProgress> {
+    let (family, have, threshold) = match alias.as_str() {
+        "conquer" => (
+            CountFamily::RivalHomePlanets,
+            rival_home_planets_count(position),
+            1,
+        ),
+        "engineer_marvel" => (
+            CountFamily::CapitalShipSystems,
+            capital_ship_systems_count(position),
+            1,
+        ),
+        "supremacy" => (
+            CountFamily::CapitalShipsInRivalHomeOrMecatol,
+            capital_ships_in_rival_home_or_mecatol_count(position),
+            1,
+        ),
+        "intimidate" => (
+            CountFamily::ShipsAdjacentToMecatol,
+            ships_adjacent_to_mecatol_count(position)?,
+            2,
+        ),
+        "push_boundaries" => (
+            CountFamily::WeakerNeighbours,
+            weaker_neighbours_count(position)?,
+            2,
+        ),
+        "distant_lands" => (
+            CountFamily::DistinctRivalHomeReaches,
+            distinct_rival_home_reaches_count(position)?,
+            2,
+        ),
+        _ => return None,
+    };
+    Some(RequirementProgress {
+        family,
+        have,
+        threshold,
+    })
+}
+
+fn remaining_position_satisfied(alias: &str, position: &Position<'_>) -> bool {
+    remaining_position_progress(&ObjectiveId::new(alias), position)
+        .is_some_and(|progress| progress.satisfied())
+}
+
+fn conquer_the_weak(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("conquer", position)
+}
+
+fn engineer_a_marvel(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("engineer_marvel", position)
+}
+
+fn achieve_supremacy(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("supremacy", position)
+}
+
+fn intimidate_council(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("intimidate", position)
+}
+
+fn push_boundaries(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("push_boundaries", position)
+}
+
+fn rule_distant_lands(position: &Position<'_>) -> bool {
+    remaining_position_satisfied("distant_lands", position)
 }
 
 /// Exact progress for public objectives backed by counting families.
@@ -1030,6 +1123,69 @@ pub fn can_afford(
     }
 }
 
+/// Stable identity for a bought-objective affordability family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CostFamily {
+    Spend(crate::production::Spend),
+    TradeGoods,
+    Tokens,
+    AllThree,
+}
+
+/// Greatest exactly affordable scaled cost toward a bought objective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CostProgress {
+    pub family: CostFamily,
+    pub have: i64,
+    pub target: i64,
+}
+
+impl CostProgress {
+    #[must_use]
+    pub const fn satisfied(self) -> bool {
+        self.have >= self.target
+    }
+}
+
+fn scaled_cost(family: CostFamily, amount: i64) -> Cost {
+    match family {
+        CostFamily::Spend(kind) => Cost::Spend { amount, kind },
+        CostFamily::TradeGoods => Cost::TradeGoods(i32::try_from(amount).unwrap_or(i32::MAX)),
+        CostFamily::Tokens => Cost::Tokens(i32::try_from(amount).unwrap_or(i32::MAX)),
+        CostFamily::AllThree => Cost::AllThree(amount),
+    }
+}
+
+/// Compute the greatest `k <= target` accepted by the same payment planner as the objective.
+#[must_use]
+pub fn bought_progress(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &ObjectiveId,
+) -> Option<CostProgress> {
+    let cost = cost_of(alias)?;
+    let (family, target) = match cost {
+        Cost::Spend { amount, kind } => (CostFamily::Spend(kind), amount),
+        Cost::TradeGoods(amount) => (CostFamily::TradeGoods, i64::from(amount)),
+        Cost::Tokens(amount) => (CostFamily::Tokens, i64::from(amount)),
+        Cost::AllThree(amount) => (CostFamily::AllThree, amount),
+    };
+    if target <= 0 {
+        return None;
+    }
+    let have = (0..=target)
+        .rev()
+        .find(|&amount| can_afford(state, content, sources, player, scaled_cost(family, amount)))
+        .unwrap_or(0);
+    Some(CostProgress {
+        family,
+        have,
+        target,
+    })
+}
+
 /// Pay for a bought objective. `false` without spending anything if it cannot be met.
 ///
 /// Token costs are taken from the strategy pool first, then fleet, then tactic. The oracle
@@ -1184,7 +1340,10 @@ pub fn scoreable_on(
             // checked here and charged in `award`, so being asked costs nothing.
             cost_of(alias).map_or_else(
                 || satisfied(&position, alias),
-                |cost| can_afford(state, content, sources, player, cost),
+                |_| {
+                    bought_progress(state, content, sources, player, alias)
+                        .is_some_and(CostProgress::satisfied)
+                },
             )
         })
         .cloned()
@@ -1643,6 +1802,301 @@ mod tests {
     }
 
     #[test]
+    fn all_remaining_public_aliases_have_exact_progress() {
+        let player = PlayerId::new("a");
+        let state = game(std::slice::from_ref(&player));
+        let before_position_queries = state.clone();
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let position =
+            Position::new(&state, ContentStore::embedded(), POK, &player).with_galaxy(&hub.galaxy);
+        let position_expected = [
+            ("conquer", CountFamily::RivalHomePlanets, 1),
+            ("engineer_marvel", CountFamily::CapitalShipSystems, 1),
+            (
+                "supremacy",
+                CountFamily::CapitalShipsInRivalHomeOrMecatol,
+                1,
+            ),
+            ("intimidate", CountFamily::ShipsAdjacentToMecatol, 2),
+            ("push_boundaries", CountFamily::WeakerNeighbours, 2),
+            ("distant_lands", CountFamily::DistinctRivalHomeReaches, 2),
+        ];
+        for (alias, family, threshold) in position_expected {
+            let id = ObjectiveId::new(alias);
+            let progress = remaining_position_progress(&id, &position).expect(alias);
+            assert_eq!(progress.family, family, "{alias}");
+            assert_eq!(progress.threshold, threshold, "{alias}");
+            assert_eq!(
+                requirement_for(&id).unwrap()(&position),
+                progress.satisfied(),
+                "{alias} legality derives from progress"
+            );
+        }
+        assert!(remaining_position_progress(&ObjectiveId::new("unknown"), &position).is_none());
+        assert_eq!(
+            state, before_position_queries,
+            "position progress is read-only"
+        );
+    }
+
+    #[test]
+    fn all_bought_aliases_have_exact_progress() {
+        let player = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&player));
+        state.player_mut(&player).unwrap().trade_goods = 7;
+        let before = state.clone();
+        let bought_expected = [
+            (
+                "monument",
+                CostFamily::Spend(crate::production::Spend::Resources),
+                8,
+            ),
+            (
+                "golden_age",
+                CostFamily::Spend(crate::production::Spend::Resources),
+                16,
+            ),
+            (
+                "sway_council",
+                CostFamily::Spend(crate::production::Spend::Influence),
+                8,
+            ),
+            (
+                "manipulate_law",
+                CostFamily::Spend(crate::production::Spend::Influence),
+                16,
+            ),
+            ("trade_routes", CostFamily::TradeGoods, 5),
+            ("centralize_trade", CostFamily::TradeGoods, 10),
+            ("lead", CostFamily::Tokens, 3),
+            ("galvanize", CostFamily::Tokens, 6),
+            ("amass_wealth", CostFamily::AllThree, 3),
+            ("vast_reserves", CostFamily::AllThree, 6),
+        ];
+        for (alias, family, target) in bought_expected {
+            let id = ObjectiveId::new(alias);
+            let progress =
+                bought_progress(&state, ContentStore::embedded(), POK, &player, &id).expect(alias);
+            assert_eq!(progress.family, family, "{alias}");
+            assert_eq!(progress.target, target, "{alias}");
+            assert!(
+                can_afford(
+                    &state,
+                    ContentStore::embedded(),
+                    POK,
+                    &player,
+                    scaled_cost(progress.family, progress.have),
+                ),
+                "{alias}: reported progress must be affordable"
+            );
+            if progress.have < progress.target {
+                assert!(
+                    !can_afford(
+                        &state,
+                        ContentStore::embedded(),
+                        POK,
+                        &player,
+                        scaled_cost(progress.family, progress.have + 1),
+                    ),
+                    "{alias}: reported progress must be maximal"
+                );
+            }
+            assert_eq!(
+                progress.satisfied(),
+                can_afford(
+                    &state,
+                    ContentStore::embedded(),
+                    POK,
+                    &player,
+                    cost_of(&id).unwrap(),
+                ),
+                "{alias} completion equals exact affordability"
+            );
+        }
+        assert_eq!(
+            bought_progress(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &player,
+                &ObjectiveId::new("centralize_trade"),
+            )
+            .unwrap()
+            .have,
+            7,
+            "progress is the greatest exactly affordable scaled cost"
+        );
+        assert!(
+            bought_progress(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &player,
+                &ObjectiveId::new("unknown"),
+            )
+            .is_none()
+        );
+        assert_eq!(state, before, "all progress queries must preserve state");
+    }
+
+    #[test]
+    fn bought_progress_is_maximal_across_bounded_small_states() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let aliases = [
+            "monument",
+            "golden_age",
+            "sway_council",
+            "manipulate_law",
+            "trade_routes",
+            "centralize_trade",
+            "lead",
+            "galvanize",
+            "amass_wealth",
+            "vast_reserves",
+        ];
+        let planets: Vec<PlanetId> = ti4_content::galaxy::all_planets(content, POK)
+            .keys()
+            .take(4)
+            .map(|id| PlanetId::new(*id))
+            .collect();
+        let (system, _) = crate::fixtures::a_placed_planet();
+
+        for controlled in 0_u8..(1 << planets.len()) {
+            for exhausted in 0_u8..(1 << planets.len()) {
+                for goods in 0..=6 {
+                    let mut state = game(std::slice::from_ref(&player));
+                    let seat = state.player_mut(&player).unwrap();
+                    seat.trade_goods = goods;
+                    seat.tactic_tokens = goods % 3;
+                    seat.fleet_tokens = (goods + 1) % 3;
+                    seat.strategic_tokens = (goods + 2) % 3;
+                    for (index, planet) in planets.iter().enumerate() {
+                        let bit = 1 << index;
+                        if controlled & bit != 0 {
+                            state
+                                .system_mut(&system)
+                                .set_control(planet.clone(), player.clone());
+                        }
+                        if exhausted & bit != 0 {
+                            state.exhausted_planets.insert(planet.clone());
+                        }
+                    }
+                    let before = state.clone();
+                    for alias in aliases {
+                        let progress = bought_progress(
+                            &state,
+                            content,
+                            POK,
+                            &player,
+                            &ObjectiveId::new(alias),
+                        )
+                        .unwrap();
+                        assert!(can_afford(
+                            &state,
+                            content,
+                            POK,
+                            &player,
+                            scaled_cost(progress.family, progress.have)
+                        ));
+                        if progress.have < progress.target {
+                            assert!(!can_afford(
+                                &state,
+                                content,
+                                POK,
+                                &player,
+                                scaled_cost(progress.family, progress.have + 1)
+                            ));
+                        }
+                        assert_eq!(
+                            progress.satisfied(),
+                            can_afford(
+                                &state,
+                                content,
+                                POK,
+                                &player,
+                                cost_of(&ObjectiveId::new(alias)).unwrap()
+                            )
+                        );
+                    }
+                    assert_eq!(state, before, "progress queries must not spend state");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn token_progress_is_exact_across_all_small_pool_splits() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        for tactic in 0..=3 {
+            for fleet in 0..=3 {
+                for strategic in 0..=3 {
+                    let mut state = game(std::slice::from_ref(&player));
+                    let seat = state.player_mut(&player).unwrap();
+                    seat.tactic_tokens = tactic;
+                    seat.fleet_tokens = fleet;
+                    seat.strategic_tokens = strategic;
+                    let total = i64::from(tactic + fleet + strategic);
+                    for (alias, target) in [("lead", 3), ("galvanize", 6)] {
+                        let progress = bought_progress(
+                            &state,
+                            content,
+                            POK,
+                            &player,
+                            &ObjectiveId::new(alias),
+                        )
+                        .unwrap();
+                        assert_eq!(progress.have, total.min(target), "{alias}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_bought_progress_family_caps_at_its_target_with_surplus() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&player));
+        let seat = state.player_mut(&player).unwrap();
+        seat.trade_goods = 20;
+        seat.tactic_tokens = 5;
+        seat.fleet_tokens = 5;
+        seat.strategic_tokens = 5;
+        let before = state.clone();
+
+        for alias in [
+            "monument",
+            "golden_age",
+            "sway_council",
+            "manipulate_law",
+            "trade_routes",
+            "centralize_trade",
+            "lead",
+            "galvanize",
+            "amass_wealth",
+            "vast_reserves",
+        ] {
+            let progress =
+                bought_progress(&state, content, POK, &player, &ObjectiveId::new(alias)).unwrap();
+            assert_eq!(progress.have, progress.target, "{alias}");
+            assert!(progress.satisfied(), "{alias}");
+        }
+        assert_eq!(state, before, "surplus progress queries do not pay");
+    }
+
+    #[test]
+    fn remaining_map_progress_is_unavailable_without_a_galaxy() {
+        let player = PlayerId::new("a");
+        let state = game(std::slice::from_ref(&player));
+        let position = Position::new(&state, ContentStore::embedded(), POK, &player);
+        for alias in ["intimidate", "push_boundaries", "distant_lands"] {
+            assert!(remaining_position_progress(&ObjectiveId::new(alias), &position).is_none());
+        }
+    }
+
+    #[test]
     fn an_objective_with_no_registered_predicate_is_never_scoreable() {
         // The design the oracle documents: a coverage gap shows up as an objective nobody can
         // take, never as a bot winning on a rule that was never written.
@@ -1789,6 +2243,16 @@ mod tests {
             !can_afford(&state, content, POK, &seat, Cost::AllThree(3)),
             "one planet cannot pay both the resources and the influence"
         );
+        let progress = bought_progress(
+            &state,
+            content,
+            POK,
+            &seat,
+            &ObjectiveId::new("amass_wealth"),
+        )
+        .unwrap();
+        assert!(progress.have < 3);
+        assert!(!progress.satisfied());
     }
 
     #[test]
@@ -1933,10 +2397,13 @@ mod tests {
             &seat,
             5,
         );
-        assert!(
-            !intimidate_council(&on_map(&state, &seat, &hub.galaxy)),
-            "five ships in one system is one system"
-        );
+        let one_system = remaining_position_progress(
+            &ObjectiveId::new("intimidate"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(one_system.have, 1, "five ships in one system count once");
+        assert!(!one_system.satisfied());
 
         crate::fixtures::put(
             &mut state,
@@ -1945,7 +2412,13 @@ mod tests {
             &seat,
             1,
         );
-        assert!(intimidate_council(&on_map(&state, &seat, &hub.galaxy)));
+        let two_systems = remaining_position_progress(
+            &ObjectiveId::new("intimidate"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(two_systems.have, 2);
+        assert!(two_systems.satisfied());
     }
 
     #[test]
@@ -2009,8 +2482,14 @@ mod tests {
                 .set_control(planet, PlayerId::new("c"));
         }
 
+        let one_weaker = remaining_position_progress(
+            &ObjectiveId::new("push_boundaries"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(one_weaker.have, 1);
         assert!(
-            !push_boundaries(&on_map(&state, &seat, &hub.galaxy)),
+            !one_weaker.satisfied(),
             "beating one neighbour is not beating two"
         );
 
@@ -2019,7 +2498,13 @@ mod tests {
             .system_mut(&system)
             .planet_control
             .retain(|_, owner| owner == &seat || owner == &PlayerId::new("b"));
-        assert!(push_boundaries(&on_map(&state, &seat, &hub.galaxy)));
+        let two_weaker = remaining_position_progress(
+            &ObjectiveId::new("push_boundaries"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(two_weaker.have, 2);
+        assert!(two_weaker.satisfied());
     }
 
     #[test]
@@ -2048,10 +2533,13 @@ mod tests {
             .system_mut(&SystemId::new(hub.outer[1].clone()))
             .set_control(planets[1].clone(), seat.clone());
 
-        assert!(
-            !rule_distant_lands(&on_map(&state, &seat, &hub.galaxy)),
-            "two planets around one opponent's home are one distant land"
-        );
+        let one_reach = remaining_position_progress(
+            &ObjectiveId::new("distant_lands"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(one_reach.have, 1, "two planets around one home count once");
+        assert!(!one_reach.satisfied());
 
         // c's home is outer[3]; a planet in it reaches a second opponent.
         state
@@ -2061,7 +2549,13 @@ mod tests {
             .system_mut(&SystemId::new(hub.outer[1].clone()))
             .planet_control
             .clear();
-        assert!(rule_distant_lands(&on_map(&state, &seat, &hub.galaxy)));
+        let two_reaches = remaining_position_progress(
+            &ObjectiveId::new("distant_lands"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!(two_reaches.have, 2);
+        assert!(two_reaches.satisfied());
     }
 
     #[test]

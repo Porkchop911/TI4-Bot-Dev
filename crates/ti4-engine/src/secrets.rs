@@ -249,11 +249,6 @@ fn planets_of_trait_count(position: &Position<'_>, trait_name: &str) -> usize {
     position.planets_of_trait(trait_name)
 }
 
-/// Control planets with a combined value of at least `total`.
-fn combined_value(total: i64, kind: crate::production::Spend) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.combined(kind) >= total
-}
-
 /// Own `count` technologies of the same colour.
 ///
 /// The same colour, not four technologies: a spread across four tracks is the opposite of what
@@ -264,44 +259,6 @@ fn same_colour_technologies_count(position: &Position<'_>) -> usize {
         .map(|colour| position.technologies_of_colour(colour))
         .max()
         .unwrap_or(0)
-}
-
-/// Control a legendary planet.
-fn a_legendary_planet() -> impl Fn(&Position<'_>) -> bool {
-    |position| {
-        let catalogue = ti4_content::galaxy::all_planets(position.content, position.sources);
-        position
-            .state
-            .controlled_planets(position.player)
-            .into_iter()
-            .any(|(_, planet)| {
-                catalogue
-                    .get(planet.as_str())
-                    .is_some_and(ti4_content::galaxy::Planet::is_legendary)
-            })
-    }
-}
-
-/// Control Mecatol Rex and have `ships` or more ships in its system.
-fn hold_mecatol(ships: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let mecatol = ti4_model::id::SystemId::new(crate::seating::MECATOL);
-        let board = position.state.system_state(&mecatol);
-        if !board.controls_a_planet(position.player) {
-            return false;
-        }
-        let types = ti4_content::units::catalogue(position.content, position.sources);
-        board
-            .units_of(position.player)
-            .into_iter()
-            .filter(|unit| {
-                types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(ti4_content::units::UnitType::is_ship)
-            })
-            .count()
-            >= ships
-    }
 }
 
 /// Have `count` mechs, each on a different planet.
@@ -368,196 +325,6 @@ fn ship_systems<'a>(position: &Position<'a>) -> Vec<&'a ti4_model::id::SystemId>
         .collect()
 }
 
-/// Have a ship in the same system as another player's space dock.
-fn beside_a_rival_dock(position: &Position<'_>) -> bool {
-    let types = ti4_content::units::catalogue(position.content, position.sources);
-    ship_systems(position).into_iter().any(|system| {
-        position
-            .state
-            .system_state(system)
-            .planet_units
-            .values()
-            .flatten()
-            .any(|unit| {
-                &unit.owner != position.player
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(|kind| kind.base_type() == "spacedock")
-            })
-    })
-}
-
-/// Have a ship at an alpha wormhole *and* one at a beta — two systems, not one.
-///
-/// The wormholes are read from the corpus record for each system the player has ships in.
-/// A system on the board is a system that was placed, so this asks the same question as the
-/// oracle's galaxy lookup of the same records.
-fn ships_at_both_wormhole_kinds(position: &Position<'_>) -> bool {
-    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
-    let mut kinds = std::collections::BTreeSet::new();
-    for system in ship_systems(position) {
-        if let Some(record) = systems.get(system.as_str()) {
-            for wormhole in record.wormholes() {
-                if wormhole == "ALPHA" || wormhole == "BETA" {
-                    kinds.insert(wormhole);
-                }
-            }
-        }
-    }
-    kinds.len() == 2
-}
-
-/// Own two faction technologies.
-///
-/// The card excludes Valefar Assimilator technologies, which this engine does not model; when
-/// the Nekro ability arrives it has to exclude them here or this scores early for one faction.
-fn two_faction_technologies(position: &Position<'_>) -> bool {
-    let Some(seat) = position.state.player(position.player) else {
-        return false;
-    };
-    seat.technologies
-        .iter()
-        .filter(|alias| {
-            position
-                .content
-                .get(ContentType::Technologies, alias.as_str())
-                .and_then(|record| record.text("faction"))
-                .is_some()
-        })
-        .count()
-        >= 2
-}
-
-/// There are three or more laws in play. Not a thing you do — a state of the table.
-fn three_laws_in_play(position: &Position<'_>) -> bool {
-    position.state.laws.len() >= 3
-}
-
-/// Control a planet in a system that contains a planet controlled by another player.
-fn share_a_system_with_a_rival(position: &Position<'_>) -> bool {
-    position.state.board.values().any(|board| {
-        let mut mine = false;
-        let mut theirs = false;
-        for owner in board.planet_control.values() {
-            if owner == position.player {
-                mine = true;
-            } else {
-                theirs = true;
-            }
-        }
-        mine && theirs
-    })
-}
-
-/// Units with a combined PRODUCTION value of at least 8 in a single system.
-fn production_eight_in_one_system(position: &Position<'_>) -> bool {
-    position.state.board.keys().any(|system| {
-        crate::production::capacity(
-            position.state,
-            position.content,
-            position.sources,
-            position.player,
-            system,
-        ) >= 8
-    })
-}
-
-/// Have ships in three systems that are each adjacent to an anomaly.
-///
-/// Three systems beside anomalies, not three anomalies: one system with three anomalous
-/// neighbours is one system.
-fn ships_beside_three_anomalies(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
-    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
-    ship_systems(position)
-        .into_iter()
-        .filter(|here| {
-            galaxy.adjacent(here.as_str()).into_iter().any(|other| {
-                systems
-                    .get(other)
-                    .is_some_and(ti4_content::galaxy::System::is_anomaly)
-            })
-        })
-        .count()
-        >= 3
-}
-
-/// Have a ship in a system adjacent to another player's home system.
-fn ships_beside_a_rival_home(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
-    let mine = position
-        .state
-        .player(position.player)
-        .map(|seat| seat.faction.to_string());
-    let planets = ti4_content::galaxy::all_planets(position.content, position.sources);
-    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
-
-    let is_rival_home = |system_id: &str| {
-        systems.get(system_id).is_some_and(|system| {
-            system.planets().into_iter().any(|planet| {
-                planets
-                    .get(planet)
-                    .and_then(ti4_content::galaxy::Planet::homeworld_of)
-                    .is_some_and(|faction| Some(faction.to_owned()) != mine)
-            })
-        })
-    };
-
-    ship_systems(position).into_iter().any(|here| {
-        galaxy
-            .adjacent(here.as_str())
-            .into_iter()
-            .any(is_rival_home)
-    })
-}
-
-/// Be neighbours with every other player (LRR 60).
-fn neighbours_with_everyone(position: &Position<'_>) -> bool {
-    let Some(galaxy) = position.galaxy else {
-        return false;
-    };
-    let others: Vec<&PlayerId> = position
-        .state
-        .players
-        .iter()
-        .map(|seat| &seat.id)
-        .filter(|id| *id != position.player)
-        .collect();
-    if others.is_empty() {
-        return false; // a table of one is not cohesion
-    }
-    let reached = crate::transactions::neighbours(position.state, galaxy, position.player);
-    others.into_iter().all(|other| reached.contains(other))
-}
-
-/// Have units in the wormhole nexus.
-///
-/// The nexus is a `PoK` system; a board without it simply never satisfies this, which is a legal
-/// state of affairs rather than a gap. No map is needed — the question is only whether the
-/// player has units there.
-fn units_in_the_nexus(position: &Position<'_>) -> bool {
-    ti4_content::galaxy::all_systems(position.content, position.sources)
-        .iter()
-        .filter(|(_, system)| {
-            system
-                .name()
-                .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
-        })
-        .any(|(id, _)| {
-            let system = ti4_model::id::SystemId::new(*id);
-            position.state.board.contains_key(&system)
-                && !position
-                    .state
-                    .system_state(&system)
-                    .units_of(position.player)
-                    .is_empty()
-        })
-}
-
 /// Relic fragments this player holds, of any trait.
 fn fragment_count(state: &GameState, player: &PlayerId) -> i32 {
     state.player(player).map_or(0, |seat| {
@@ -568,49 +335,246 @@ fn fragment_count(state: &GameState, player: &PlayerId) -> i32 {
     })
 }
 
-/// Hold two relic fragments of any type — and purge them to score (see [`pay_for`]).
-fn two_relic_fragments(position: &Position<'_>) -> bool {
-    fragment_count(position.state, position.player) >= 2
+fn legendary_planets_count(position: &Position<'_>) -> usize {
+    let catalogue = ti4_content::galaxy::all_planets(position.content, position.sources);
+    position
+        .state
+        .controlled_planets(position.player)
+        .into_iter()
+        .filter(|(_, planet)| {
+            catalogue
+                .get(planet.as_str())
+                .is_some_and(ti4_content::galaxy::Planet::is_legendary)
+        })
+        .count()
 }
 
-/// Hold five action cards, which scoring then discards.
-fn five_action_cards(position: &Position<'_>) -> bool {
+fn mecatol_ships_while_controlling_count(position: &Position<'_>) -> usize {
+    let mecatol = ti4_model::id::SystemId::new(crate::seating::MECATOL);
+    let board = position.state.system_state(&mecatol);
+    if !board.controls_a_planet(position.player) {
+        return 0;
+    }
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    board
+        .units_of(position.player)
+        .into_iter()
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ship)
+        })
+        .count()
+}
+
+fn rival_dock_systems_with_ships_count(position: &Position<'_>) -> usize {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    ship_systems(position)
+        .into_iter()
+        .filter(|system| {
+            position
+                .state
+                .system_state(system)
+                .planet_units
+                .values()
+                .flatten()
+                .any(|unit| {
+                    &unit.owner != position.player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(|kind| kind.base_type() == "spacedock")
+                })
+        })
+        .count()
+}
+
+fn wormhole_kinds_count(position: &Position<'_>) -> usize {
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    let mut kinds = std::collections::BTreeSet::new();
+    for system in ship_systems(position) {
+        if let Some(record) = systems.get(system.as_str()) {
+            kinds.extend(
+                record
+                    .wormholes()
+                    .into_iter()
+                    .filter(|wormhole| matches!(*wormhole, "ALPHA" | "BETA")),
+            );
+        }
+    }
+    kinds.len()
+}
+
+fn faction_technologies_count(position: &Position<'_>) -> usize {
+    position.state.player(position.player).map_or(0, |seat| {
+        seat.technologies
+            .iter()
+            .filter(|alias| {
+                position
+                    .content
+                    .get(ContentType::Technologies, alias.as_str())
+                    .and_then(|record| record.text("faction"))
+                    .is_some()
+            })
+            .count()
+    })
+}
+
+fn shared_planet_systems_count(position: &Position<'_>) -> usize {
     position
+        .state
+        .board
+        .values()
+        .filter(|board| {
+            let mine = board
+                .planet_control
+                .values()
+                .any(|owner| owner == position.player);
+            let theirs = board
+                .planet_control
+                .values()
+                .any(|owner| owner != position.player);
+            mine && theirs
+        })
+        .count()
+}
+
+fn production_in_one_system_count(position: &Position<'_>) -> usize {
+    position
+        .state
+        .board
+        .keys()
+        .map(|system| {
+            crate::production::capacity(
+                position.state,
+                position.content,
+                position.sources,
+                position.player,
+                system,
+            )
+        })
+        .max()
+        .and_then(|capacity| usize::try_from(capacity).ok())
+        .unwrap_or(0)
+}
+
+fn ship_systems_beside_anomaly_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    Some(
+        ship_systems(position)
+            .into_iter()
+            .filter(|here| {
+                galaxy.adjacent(here.as_str()).into_iter().any(|other| {
+                    systems
+                        .get(other)
+                        .is_some_and(ti4_content::galaxy::System::is_anomaly)
+                })
+            })
+            .count(),
+    )
+}
+
+fn ship_systems_beside_rival_home_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
+    let mine = position
         .state
         .player(position.player)
-        .is_some_and(|seat| seat.action_cards.len() >= 5)
+        .map(|seat| seat.faction.to_string());
+    let planets = ti4_content::galaxy::all_planets(position.content, position.sources);
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    Some(
+        ship_systems(position)
+            .into_iter()
+            .filter(|here| {
+                galaxy.adjacent(here.as_str()).into_iter().any(|other| {
+                    systems.get(other).is_some_and(|system| {
+                        system.planets().into_iter().any(|planet| {
+                            planets
+                                .get(planet)
+                                .and_then(ti4_content::galaxy::Planet::homeworld_of)
+                                .is_some_and(|faction| Some(faction.to_owned()) != mine)
+                        })
+                    })
+                })
+            })
+            .count(),
+    )
 }
 
-/// Have another player's promissory note in your play area.
-fn holds_a_rivals_note(position: &Position<'_>) -> bool {
-    let Some(seat) = position.state.player(position.player) else {
-        return false;
-    };
-    // Support for the Throne has its own field, because it is the one note whose position is
-    // worth a victory point. Reading only the general map would miss the commonest case.
-    if position
+fn neighbour_progress(position: &Position<'_>) -> Option<(usize, usize)> {
+    let galaxy = position.galaxy?;
+    let threshold = position
         .state
-        .support_holders
+        .players
         .iter()
-        .any(|(owner, holder)| holder == position.player && owner != position.player)
-    {
-        return true;
+        .filter(|seat| seat.id != *position.player)
+        .count();
+    if threshold == 0 {
+        return None;
     }
-    position
+    let reached = crate::transactions::neighbours(position.state, galaxy, position.player);
+    let have = position
         .state
-        .promissory_notes
+        .players
         .iter()
-        .filter(|(_, holder)| *holder == position.player)
-        .any(|(note, _)| {
-            // A note is "another player's" when the corpus attributes it to a faction that is
-            // not this seat's. A note with no faction is a generic one, which anybody's copy
-            // could be, so it cannot show whose it was.
-            position
-                .content
-                .get(ContentType::PromissoryNotes, note)
-                .and_then(|record| record.text("faction"))
-                .is_some_and(|faction| faction != seat.faction.as_str())
+        .filter(|seat| seat.id != *position.player && reached.contains(&seat.id))
+        .count();
+    Some((have, threshold))
+}
+
+fn units_in_nexus_count(position: &Position<'_>) -> usize {
+    ti4_content::galaxy::all_systems(position.content, position.sources)
+        .iter()
+        .filter(|(_, system)| {
+            system
+                .name()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("nexus"))
         })
+        .map(|(id, _)| {
+            position
+                .state
+                .system_state(&ti4_model::id::SystemId::new(*id))
+                .units_of(position.player)
+                .len()
+        })
+        .sum()
+}
+
+fn rival_note_issuers_count(position: &Position<'_>) -> usize {
+    let mut issuers = std::collections::BTreeSet::new();
+    for (owner, holder) in &position.state.support_holders {
+        if holder == position.player && owner != position.player {
+            issuers.insert(format!("player:{owner}"));
+        }
+    }
+    let faction = position
+        .state
+        .player(position.player)
+        .map(|seat| seat.faction.as_str());
+    for (note, holder) in &position.state.promissory_notes {
+        if holder == position.player
+            && let Some(issuer) = position
+                .content
+                .get(
+                    ContentType::PromissoryNotes,
+                    crate::promissory::alias_of(note),
+                )
+                .and_then(|record| record.text("faction"))
+            && Some(issuer) != faction
+        {
+            let issuer_key = position
+                .state
+                .players
+                .iter()
+                .find(|seat| seat.faction.as_str() == issuer)
+                .map_or_else(
+                    || format!("faction:{issuer}"),
+                    |seat| format!("player:{}", seat.id),
+                );
+            issuers.insert(issuer_key);
+        }
+    }
+    issuers.len()
 }
 
 /// What scoring a secret costs, beyond meeting its requirement.
@@ -734,6 +698,137 @@ fn counting_satisfied(alias: &str, position: &Position<'_>) -> bool {
         .is_some_and(|progress| progress.satisfied())
 }
 
+/// Exact progress for every registered position secret not covered by M06-022.
+#[must_use]
+pub fn remaining_position_progress(
+    alias: &SecretObjectiveId,
+    position: &Position<'_>,
+) -> Option<crate::objectives::RequirementProgress> {
+    use crate::objectives::{CountFamily, RequirementProgress};
+    let (family, have, threshold) = match alias.as_str() {
+        "csl" => (
+            CountFamily::RivalDockSystemsWithShips,
+            rival_dock_systems_with_ships_count(position),
+            1,
+        ),
+        "dhw" => (
+            CountFamily::RelicFragments,
+            usize::try_from(fragment_count(position.state, position.player)).unwrap_or(0),
+            2,
+        ),
+        "fsn" => (
+            CountFamily::ActionCards,
+            position
+                .state
+                .player(position.player)
+                .map_or(0, |seat| seat.action_cards.len()),
+            5,
+        ),
+        "sb" => (
+            CountFamily::RivalNoteIssuers,
+            rival_note_issuers_count(position),
+            1,
+        ),
+        "lsc" => (
+            CountFamily::ShipSystemsBesideAnomaly,
+            ship_systems_beside_anomaly_count(position)?,
+            3,
+        ),
+        "te" => (
+            CountFamily::ShipSystemsBesideRivalHome,
+            ship_systems_beside_rival_home_count(position)?,
+            1,
+        ),
+        "fc" => {
+            let (have, threshold) = neighbour_progress(position)?;
+            (CountFamily::Neighbours, have, threshold)
+        }
+        "dfat" => (CountFamily::UnitsInNexus, units_in_nexus_count(position), 1),
+        "btgk" => (
+            CountFamily::WormholeKinds,
+            wormhole_kinds_count(position),
+            2,
+        ),
+        "ans" => (
+            CountFamily::FactionTechnologies,
+            faction_technologies_count(position),
+            2,
+        ),
+        "dp" => (CountFamily::Laws, position.state.laws.len(), 3),
+        "syc" => (
+            CountFamily::SharedPlanetSystems,
+            shared_planet_systems_count(position),
+            1,
+        ),
+        "pem" => (
+            CountFamily::ProductionInOneSystem,
+            production_in_one_system_count(position),
+            8,
+        ),
+        "sai" => (
+            CountFamily::LegendaryPlanets,
+            legendary_planets_count(position),
+            1,
+        ),
+        "ose" => (
+            CountFamily::MecatolShipsWhileControlling,
+            mecatol_ships_while_controlling_count(position),
+            3,
+        ),
+        "eh" => (
+            CountFamily::CombinedValue {
+                kind: crate::production::Spend::Influence,
+            },
+            usize::try_from(position.combined(crate::production::Spend::Influence)).unwrap_or(0),
+            12,
+        ),
+        "hrm" => (
+            CountFamily::CombinedValue {
+                kind: crate::production::Spend::Resources,
+            },
+            usize::try_from(position.combined(crate::production::Spend::Resources)).unwrap_or(0),
+            12,
+        ),
+        _ => return None,
+    };
+    Some(RequirementProgress {
+        family,
+        have,
+        threshold,
+    })
+}
+
+fn remaining_position_satisfied(alias: &str, position: &Position<'_>) -> bool {
+    remaining_position_progress(&SecretObjectiveId::new(alias), position)
+        .is_some_and(|progress| progress.satisfied())
+}
+
+macro_rules! remaining_requirement {
+    ($name:ident, $alias:literal) => {
+        fn $name(position: &Position<'_>) -> bool {
+            remaining_position_satisfied($alias, position)
+        }
+    };
+}
+
+remaining_requirement!(progress_csl, "csl");
+remaining_requirement!(progress_dhw, "dhw");
+remaining_requirement!(progress_fsn, "fsn");
+remaining_requirement!(progress_sb, "sb");
+remaining_requirement!(progress_lsc, "lsc");
+remaining_requirement!(progress_te, "te");
+remaining_requirement!(progress_fc, "fc");
+remaining_requirement!(progress_dfat, "dfat");
+remaining_requirement!(progress_btgk, "btgk");
+remaining_requirement!(progress_ans, "ans");
+remaining_requirement!(progress_dp, "dp");
+remaining_requirement!(progress_syc, "syc");
+remaining_requirement!(progress_pem, "pem");
+remaining_requirement!(progress_sai, "sai");
+remaining_requirement!(progress_ose, "ose");
+remaining_requirement!(progress_eh, "eh");
+remaining_requirement!(progress_hrm, "hrm");
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -765,22 +860,10 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     fn four_industrial(p: &Position<'_>) -> bool {
         counting_satisfied("mp", p)
     }
-    fn twelve_influence(p: &Position<'_>) -> bool {
-        combined_value(12, crate::production::Spend::Influence)(p)
-    }
-    fn twelve_resources(p: &Position<'_>) -> bool {
-        combined_value(12, crate::production::Spend::Resources)(p)
-    }
     fn four_of_a_colour(p: &Position<'_>) -> bool {
         counting_satisfied("mlp", p)
     }
 
-    fn legendary(p: &Position<'_>) -> bool {
-        a_legendary_planet()(p)
-    }
-    fn mecatol_with_three(p: &Position<'_>) -> bool {
-        hold_mecatol(3)(p)
-    }
     fn four_mechs(p: &Position<'_>) -> bool {
         counting_satisfied("mtm", p)
     }
@@ -789,21 +872,21 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     }
 
     match alias.as_str() {
-        "csl" => Some(beside_a_rival_dock),
-        "dhw" => Some(two_relic_fragments),
-        "fsn" => Some(five_action_cards),
-        "sb" => Some(holds_a_rivals_note),
-        "lsc" => Some(ships_beside_three_anomalies),
-        "te" => Some(ships_beside_a_rival_home),
-        "fc" => Some(neighbours_with_everyone),
-        "dfat" => Some(units_in_the_nexus),
-        "btgk" => Some(ships_at_both_wormhole_kinds),
-        "ans" => Some(two_faction_technologies),
-        "dp" => Some(three_laws_in_play),
-        "syc" => Some(share_a_system_with_a_rival),
-        "pem" => Some(production_eight_in_one_system),
-        "sai" => Some(legendary),
-        "ose" => Some(mecatol_with_three),
+        "csl" => Some(progress_csl),
+        "dhw" => Some(progress_dhw),
+        "fsn" => Some(progress_fsn),
+        "sb" => Some(progress_sb),
+        "lsc" => Some(progress_lsc),
+        "te" => Some(progress_te),
+        "fc" => Some(progress_fc),
+        "dfat" => Some(progress_dfat),
+        "btgk" => Some(progress_btgk),
+        "ans" => Some(progress_ans),
+        "dp" => Some(progress_dp),
+        "syc" => Some(progress_syc),
+        "pem" => Some(progress_pem),
+        "sai" => Some(progress_sai),
+        "ose" => Some(progress_ose),
         "mtm" => Some(four_mechs),
         "otf" => Some(nine_ground_forces),
         "eap" => Some(four_pds),
@@ -813,8 +896,8 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         "faa" => Some(four_cultural),
         "mrm" => Some(four_hazardous),
         "mp" => Some(four_industrial),
-        "eh" => Some(twelve_influence),
-        "hrm" => Some(twelve_resources),
+        "eh" => Some(progress_eh),
+        "hrm" => Some(progress_hrm),
         "mlp" => Some(four_of_a_colour),
         _ => None,
     }
@@ -1084,6 +1167,124 @@ mod tests {
     }
 
     #[test]
+    fn all_remaining_secret_aliases_have_typed_progress_and_reconcile_the_deck() {
+        use crate::objectives::CountFamily;
+
+        let state = game(&["a", "b"]);
+        let before = state.clone();
+        let seat = player();
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let position = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: Some(&hub.galaxy),
+        };
+        let expected = [
+            ("csl", CountFamily::RivalDockSystemsWithShips, 1),
+            ("dhw", CountFamily::RelicFragments, 2),
+            ("fsn", CountFamily::ActionCards, 5),
+            ("sb", CountFamily::RivalNoteIssuers, 1),
+            ("lsc", CountFamily::ShipSystemsBesideAnomaly, 3),
+            ("te", CountFamily::ShipSystemsBesideRivalHome, 1),
+            ("fc", CountFamily::Neighbours, 1),
+            ("dfat", CountFamily::UnitsInNexus, 1),
+            ("btgk", CountFamily::WormholeKinds, 2),
+            ("ans", CountFamily::FactionTechnologies, 2),
+            ("dp", CountFamily::Laws, 3),
+            ("syc", CountFamily::SharedPlanetSystems, 1),
+            ("pem", CountFamily::ProductionInOneSystem, 8),
+            ("sai", CountFamily::LegendaryPlanets, 1),
+            ("ose", CountFamily::MecatolShipsWhileControlling, 3),
+            (
+                "eh",
+                CountFamily::CombinedValue {
+                    kind: crate::production::Spend::Influence,
+                },
+                12,
+            ),
+            (
+                "hrm",
+                CountFamily::CombinedValue {
+                    kind: crate::production::Spend::Resources,
+                },
+                12,
+            ),
+        ];
+        for (alias, family, threshold) in expected {
+            let id = SecretObjectiveId::new(alias);
+            let progress = remaining_position_progress(&id, &position).expect(alias);
+            assert_eq!(progress.family, family, "{alias}");
+            assert_eq!(progress.threshold, threshold, "{alias}");
+            assert_eq!(
+                requirement_for(&id).unwrap()(&position),
+                progress.satisfied(),
+                "{alias} legality derives from progress"
+            );
+        }
+        assert!(
+            remaining_position_progress(&SecretObjectiveId::new("unknown"), &position).is_none()
+        );
+
+        let counting: std::collections::BTreeSet<_> = [
+            "eap", "fwm", "gamf", "ctr", "faa", "mrm", "mp", "mlp", "mtm", "otf",
+        ]
+        .into_iter()
+        .collect();
+        let occurrence: std::collections::BTreeSet<_> = [
+            "dtgs", "mew", "ttfd", "fwp", "sar", "uf", "baf", "btv", "dts", "dyp", "dtd", "pe",
+            "bam",
+        ]
+        .into_iter()
+        .collect();
+        let remaining: std::collections::BTreeSet<_> = [
+            "csl", "dhw", "fsn", "sb", "lsc", "te", "fc", "dfat", "btgk", "ans", "dp", "syc",
+            "pem", "sai", "ose", "eh", "hrm",
+        ]
+        .into_iter()
+        .collect();
+        assert!(counting.is_disjoint(&occurrence));
+        assert!(counting.is_disjoint(&remaining));
+        assert!(occurrence.is_disjoint(&remaining));
+        let all: std::collections::BTreeSet<_> = counting
+            .into_iter()
+            .chain(occurrence)
+            .chain(remaining)
+            .collect();
+        assert_eq!(all.len(), 40);
+        assert_eq!(all, registered_aliases().into_iter().collect());
+        assert_eq!(state, before, "all secret progress queries are read-only");
+    }
+
+    #[test]
+    fn remaining_map_secret_progress_is_unavailable_without_a_map_or_opponents() {
+        let state = game(&["a"]);
+        let seat = player();
+        let position = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+        for alias in ["lsc", "te", "fc"] {
+            assert!(
+                remaining_position_progress(&SecretObjectiveId::new(alias), &position).is_none()
+            );
+        }
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let with_map = Position {
+            galaxy: Some(&hub.galaxy),
+            ..position
+        };
+        assert!(
+            remaining_position_progress(&SecretObjectiveId::new("fc"), &with_map).is_none(),
+            "a one-player table cannot manufacture a zero threshold"
+        );
+    }
+
+    #[test]
     fn a_hand_over_three_returns_one_to_the_deck() {
         // 45.4.
         let mut state = game(&["a"]);
@@ -1292,9 +1493,9 @@ mod tests {
             galaxy: None,
         };
 
-        assert!(!ships_beside_three_anomalies(&blind));
-        assert!(!ships_beside_a_rival_home(&blind));
-        assert!(!neighbours_with_everyone(&blind));
+        for alias in ["lsc", "te", "fc"] {
+            assert!(remaining_position_progress(&SecretObjectiveId::new(alias), &blind).is_none());
+        }
     }
 
     #[test]
@@ -1321,8 +1522,14 @@ mod tests {
                 3,
             );
         }
-        assert!(
-            !ships_beside_three_anomalies(&on_map(&state, &seat, &hub.galaxy)),
+        assert_eq!(
+            remaining_position_progress(
+                &SecretObjectiveId::new("lsc"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .unwrap()
+            .have,
+            2,
             "two systems beside an anomaly are two, however many ships are in them"
         );
 
@@ -1333,11 +1540,14 @@ mod tests {
             &seat,
             1,
         );
-        assert!(ships_beside_three_anomalies(&on_map(
-            &state,
-            &seat,
-            &hub.galaxy
-        )));
+        assert!(
+            remaining_position_progress(
+                &SecretObjectiveId::new("lsc"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .unwrap()
+            .satisfied()
+        );
     }
 
     #[test]
@@ -1386,14 +1596,24 @@ mod tests {
         );
 
         assert!(
-            ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            remaining_position_progress(
+                &SecretObjectiveId::new("te"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .unwrap()
+            .satisfied(),
             "a ship next to somebody else's home"
         );
 
         // Playing that faction makes it your own home, and the threat is empty.
         state.player_mut(&seat).unwrap().faction = ti4_model::id::FactionId::new(faction);
         assert!(
-            !ships_beside_a_rival_home(&on_map(&state, &seat, &hub.galaxy)),
+            !remaining_position_progress(
+                &SecretObjectiveId::new("te"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .unwrap()
+            .satisfied(),
             "your own home is not an enemy to threaten"
         );
     }
@@ -1407,17 +1627,26 @@ mod tests {
 
         crate::fixtures::put(&mut state, &centre, "cruiser", &seat, 1);
         crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("b"), 1);
+        let one_of_two = remaining_position_progress(
+            &SecretObjectiveId::new("fc"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .unwrap();
+        assert_eq!((one_of_two.have, one_of_two.threshold), (1, 2));
         assert!(
-            !neighbours_with_everyone(&on_map(&state, &seat, &hub.galaxy)),
+            !one_of_two.satisfied(),
             "c is not a neighbour, so this is not cohesion"
         );
 
         crate::fixtures::put(&mut state, &centre, "cruiser", &PlayerId::new("c"), 1);
-        assert!(neighbours_with_everyone(&on_map(
-            &state,
-            &seat,
-            &hub.galaxy
-        )));
+        assert!(
+            remaining_position_progress(
+                &SecretObjectiveId::new("fc"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .unwrap()
+            .satisfied()
+        );
     }
 
     #[test]
@@ -1454,6 +1683,38 @@ mod tests {
 
         put(&mut state, &nexus, "cruiser", &player(), 1);
         assert!(can_score(&state, "dfat"));
+    }
+
+    #[test]
+    fn seizing_an_icon_reports_each_controlled_legendary_planet() {
+        let content = ContentStore::embedded();
+        let legendary: Vec<ti4_model::id::PlanetId> =
+            ti4_content::galaxy::all_planets(content, POK)
+                .iter()
+                .filter(|(_, planet)| planet.is_legendary())
+                .take(2)
+                .map(|(id, _)| ti4_model::id::PlanetId::new(*id))
+                .collect();
+        assert!(!legendary.is_empty(), "the corpus has a legendary planet");
+        let mut state = game(&["a"]);
+        let (system, _) = a_placed_planet();
+        let seat = player();
+        for (index, planet) in legendary.iter().enumerate() {
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), seat.clone());
+            let position = Position {
+                state: &state,
+                content,
+                sources: POK,
+                player: &seat,
+                galaxy: None,
+            };
+            let progress =
+                remaining_position_progress(&SecretObjectiveId::new("sai"), &position).unwrap();
+            assert_eq!(progress.have, index + 1);
+            assert!(progress.satisfied());
+        }
     }
 
     #[test]
@@ -1553,6 +1814,43 @@ mod tests {
 
         state.support_holders.insert(PlayerId::new("b"), player());
         assert!(can_score(&state, "sb"));
+    }
+
+    #[test]
+    fn rival_note_progress_deduplicates_note_kinds_from_one_issuer() {
+        let content = ContentStore::embedded();
+        let (note, issuer) = content
+            .from_sources(ContentType::PromissoryNotes, POK)
+            .find_map(|record| {
+                record
+                    .text("alias")
+                    .zip(record.text("faction"))
+                    .map(|(alias, faction)| (alias.to_owned(), faction.to_owned()))
+            })
+            .expect("the corpus has a faction promissory note");
+        let mut state = game(&["a", "b"]);
+        let owner = PlayerId::new("b");
+        let seat = player();
+        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new(issuer);
+        state.support_holders.insert(owner.clone(), seat.clone());
+        let real_note =
+            crate::promissory::note_id(&note, state.player(&owner).unwrap().faction.as_str());
+        state.promissory_notes.insert(real_note, seat.clone());
+        let position = Position {
+            state: &state,
+            content,
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+
+        assert_eq!(
+            remaining_position_progress(&SecretObjectiveId::new("sb"), &position)
+                .unwrap()
+                .have,
+            1,
+            "two note kinds from the same seated issuer are one rival issuer"
+        );
     }
 
     #[test]
