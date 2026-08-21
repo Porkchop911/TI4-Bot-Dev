@@ -3,15 +3,17 @@
 Branch: `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`
 (carries the planet-trait fix and the secondary-eligibility gates; 1271 tests green).
 
-Status: **revision 4**, after a second codex review. Phase 2a is implemented and
-merged (`0d751a8`); everything from Phase 2b onward is argument, not code.
+Status: **revision 5**, approved as an implementation design after an independent
+Codex review. M06-021 is merged (`0d751a8`) but **failed its tier C
+review** and is not complete; M06-021a corrects it before any later package.
+Python parity is no longer an acceptance criterion by project decision; official
+rules and the Rust package specifications govern behavior (§11.3). Everything else
+in this document is design, not implemented behavior.
 
-Review history: revision 2 answered seven points on the plan's design; revision 3
-corrected the faction count and two numbers behind it; **revision 4 answers seven
-further blocking findings and clears five stale contradictions the earlier
-revisions left behind.** The largest of those findings is §12 — this work has been
-running outside the repository's own execution protocol, which it should not have
-been.
+Review history: revisions 2–4 corrected the original design and recorded its
+protocol deviations. **Revision 5 closes the remaining architecture, dependency,
+data-leakage, artifact, timing, and accelerator gaps.** Any implementation change
+to these decisions requires a recorded plan revision and the review tier in §11.2.
 
 ---
 
@@ -31,13 +33,15 @@ and I have two." The two changes are complementary, and the plan accepts the
 attribution cost.
 
 **Mitigation for the attribution cost:** three independently testable feature
-sets, not one flag.
+sets, not one flag. They start from the same distilled factual checkpoint and are
+then trained independently, so initialization is controlled rather than becoming
+a second experimental variable.
 
 | set | contents |
 |---|---|
-| `factual` | today's 13 prefixes, unchanged |
-| `factual+objective` | plus §5.1 requirement/progress |
-| `factual+objective+ability` | plus §5.3 faction decomposition |
+| `factual` | today's 13 actor prefixes unchanged; canonical option-free factual critic state |
+| `factual+objective` | plus §5.1 requirement/progress in actor and critic namespaces |
+| `factual+objective+ability` | plus §5.3 faction decomposition in both paths |
 
 Revision 1 claimed `--no-objective-features` would "reproduce today's vector
 exactly". Codex is right that this could not hold with ability features enabled
@@ -56,12 +60,16 @@ holds only for the `factual` set. A test pins it.
 
 ### Success criterion
 
-**Mean 6 VP per seat at the round-4 horizon on the holdout pool.**
+**Mean at least 6 VP per seat at the round-4 horizon on the sealed final pool.**
 
 This is the stated exit condition for widening the horizon, and it is an
-absolute bar rather than a comparison, so it does not flatter the architecture
-for being slow. r6's linear champions sit at **2.89 mean VP / 0.890 clearance**;
-that is the number to beat and the run to compare against.
+absolute bar rather than a comparison. The final panel is fixed before training:
+200 game seeds × six rotations, clustered by game seed for a 95% confidence
+interval. Acceptance requires a point estimate ≥ 6.0 and a lower 95% confidence
+bound ≥ 5.8. The existing seed-777 pool is validation data because its outcomes
+have already been inspected; M09-020 creates and seals a new final pool (§10).
+r6's linear champions sit at **2.89 mean VP / 0.890 clearance** on the old panel;
+that remains context, not a final-test baseline.
 
 The horizon stays at 4 rounds until that bar is met. It is not a second moving
 variable.
@@ -104,7 +112,7 @@ p             = softmax(score / temperature)
 
 The linear forward pass is well under 1% of that. **The engine and feature
 extraction dominate.** This number is inferred from the aggregate, not profiled
-— see Phase 0.
+— see M09-019 / Phase 2.
 
 ### Hardware
 
@@ -121,28 +129,28 @@ should be explicit.
 
 | # | Decision | Choice |
 |---|---|---|
-| D1 | Scope | MLP **and** objective features together, with an ablation flag |
+| D1 | Scope | MLP **and** objective features together, evaluated as three separately distilled/trained ablation runs |
 | D2 | Framework | **tch-rs / libtorch**, all in Rust — same C++/CUDA PyTorch uses, no Python on the hot path |
 | D3 | Option scoring | **Per-option MLP**: `trunk(state ++ option_i) → scalar`, run per legal option |
 | D4 | Warm start | **Distill** the six linear champions into the shared MLP, then hand over to PPO |
 | D5 | Objective features | **Requirement + progress decomposition**, derived from the engine's own scoring predicates |
 | D6 | Secret visibility | Own secrets in full; opponents' as **counts only** |
 | D7 | Critic | **Value head off the shared trunk** |
-| D8 | Parameter sharing | **Shared trunk**, faction conditioning at the input, **thin per-faction readout** at the output |
+| D8 | Parameter sharing | **Shared trunk**, faction conditioning at the input, and a **shared readout plus thin per-faction residual** at the output |
 | D9 | Promotion gate | **Table-wide merit + per-faction regression guard** |
-| D10 | Trunk shape | **2 × 256** to start; width sweep {64, 128, 256, 512} as a follow-up |
+| D10 | Trunk shape | **2 × 256** primary; exactly **2 × 128** is the sole throughput fallback before a required plan revision |
 | D11 | Roster | The current **six** (sol, letnev, xxcha, hacan, jolnar, l1z1x) |
 | ~~D12~~ | ~~GPU~~ | **Superseded by D19.** Revision 2 changed the decision and left the row standing |
 | D13 | Horizon | Hold at **4 rounds**; extend when mean VP reaches 6 |
-| D14 | Missing engine coverage | **In scope, done.** 14 (not 13) unreachable secrets implemented in `0d751a8` — see §5.4 |
-| D15 | Value input | **State-only encoder**, option block zeroed; invariance to option order and to the legal set is a tested property — §4.2 |
+| D14 | Missing engine coverage | **In scope, correction required.** `0d751a8` made 14 secrets reachable but failed official event-timing rules; M06-021a is mandatory — §5.4 |
+| D15 | Value input | **Canonical critic-state encoder** in a disjoint namespace; invariance to option order and legal-set contents is tested — §4.2 |
 | D16 | Distillation target | **Schema 4** (14 heads). The 19-head split is a later controlled migration, not part of this branch — §6.1 |
 | D17 | Count normalisation | **Clipped `progress / threshold`**, plus the threshold as its own feature — §5.1 |
-| D18 | Guard thresholds | **Derived from the r6 paired-panel variance**, not chosen — §6.3 |
-| D19 | GPU | **Conditional**, replacing D12: CUDA ships only if it beats CPU on a measured gate — §7.1 |
+| D18 | Guard thresholds | **Derived from the r6 paired-panel variance**, not chosen — §6.4 |
+| D19 | GPU | **Conditional optimizer backend only**: CUDA ships only if the same recorded-batch gradient step improves end-to-end updates under §7.1 |
 | D20 | Determinism | **CPU is authoritative.** All evaluation, panels and archived play run on CPU; CUDA is permitted for the gradient step only — §7.2 |
-| D21 | Feature columns | **Enumerated vocabulary**, ordered by `FeatureKey`, append-only, with a per-family OOV column — §4.5 |
-| D22 | Advantages | Computed once from the rollout-time value, **detached**, frozen across all four PPO epochs — §6.2 |
+| D21 | Feature columns | **Enumerated vocabulary**, ordered by `FeatureKey`, append-only, with per-family plus global OOV columns — §4.5 |
+| D22 | Advantages | Computed once from the rollout-time value, **detached**, frozen across all four PPO epochs — §6.3 |
 
 ### Why shared, when the gate was per-faction
 
@@ -193,68 +201,96 @@ the decomposition misses, zero-initialised for unseen factions.
 ### The redundancy to watch
 
 Faction information now enters at the input (abilities + embedding) *and* at the
-output (per-faction readout). Input-side conditioning is strictly more
-expressive — the trunk can compute faction-specific intermediates — while the
-readout only re-weights a faction-agnostic representation. Both are kept, but
-**the embedding and the readout are exactly where the model will park anything
+output (per-faction residual over a shared readout). Input-side conditioning is
+strictly more expressive — the trunk can compute faction-specific intermediates —
+while the residual only re-weights a shared representation. Both are kept, but
+**the embedding and residual are exactly where the model will park anything
 it fails to learn structurally.** Keep them small, weight-decay them, and treat
 a large embedding norm as a diagnostic that the ability decomposition is
 incomplete.
 
-The readout buys back a concrete capability: when one faction stalls, copy a
-healthy faction's readout onto it and leave the trunk alone — the manual Sol
-intervention from r6 update 7500, as a supported operation.
+The readout is decomposed as
+`w_effective[f,h] = w_shared[h] + delta[f,h]`, with every faction residual
+zero-initialised and weight-decayed. A faction absent from training therefore uses
+the learned shared readout, a zero residual, and a zero identity embedding; it does
+not fall onto an untrained output row. The manual recovery operation copies only a
+healthy faction's residual, leaving the shared readout and trunk alone. Residual and
+embedding norms are reported as diagnostics for missing structural features. That
+operation is compatibility/recovery tooling only and is forbidden in the three
+pre-registered ablation runs.
 
 ---
 
 ## 4. Target architecture
 
-### 4.1 The feature vector, split
+### 4.1 Policy and critic feature boundaries
 
-The input is split into two blocks that never overlap, because the critic needs
-one of them alone:
+The current extractor is option-conditioned throughout. In particular,
+`state-kind:` includes `option.kind` and `state-option:` includes `option.id`;
+neither is safe critic input. Revision 4 incorrectly called them state-only.
+
+M09-027 adds a separate canonical extractor:
 
 ```
-x_state(s, f) = state_feats(s) ++ ability_feats(f) ++ emb[f]     # no option content
-x_option(o)   = option_feats(o)                                  # no state content
+x_policy(s, o_i, f) = legacy_factual(s, o_i)
+                    ++ selected_objective_and_ability_features(s, o_i, f)
+                    ++ emb[f]
+
+x_critic(s, f)      = critic-state:* facts(s, f)
+                    ++ selected_critic_objective_and_ability_facts(s, f)
+                    ++ emb[f]
 ```
 
-`x_state` is what today's `state-kind:` / `state-option:` prefixes already
-produce, plus the two new faction families. `x_option` is what `option:`,
-`option-faction:`, `kind:` and the payload families produce. The existing
-extractor already emits these as separate name families, so the split is a
-partition of names, not a rewrite.
+`x_critic` is computed once per decision from the acting seat's redacted view. It
+contains no prompt, option id/kind/payload, target, legal-option count or aggregate,
+and no fact derived by iterating the legal set. Its names are in the new
+`critic-state:` namespace and never alias policy columns. Opponents' secrets are
+counts only. The critic vector is separately checksummed in the decision corpus.
+Its base inventory is option-free versions of current factual accessors: round/phase
+and acting-seat standing; public seat counts/VP/resources/tokens/technologies;
+board/system/planet/control/unit summaries; public score totals and reveal counts
+without objective aliases; and faction identity. It excludes authored valuations,
+scoreable-count helpers, future outcomes,
+and every choice-derived value. Objective aliases/progress and decomposed abilities
+are enabled only by their matching feature set, so a “factual” ablation cannot gain
+them indirectly through critic gradients.
+
+The `factual` compatibility assertion applies to the **legacy policy subvector**:
+its 13 existing prefixes remain byte-identical on the fixed corpus. The new critic
+vector is necessarily additional and is tested independently; it is not smuggled
+into the old compatibility claim.
 
 ### 4.2 Policy and value (D7, D15)
 
 ```
 per legal option i, for a decision by faction f on head h:
 
-  z_i = trunk( x_state(s, f) ++ x_option(o_i) )
-  s_i = w_readout[f, h] · z_i + b[f, h]
+  z_i = trunk( x_policy(s, o_i, f) )
+  w_i = w_shared[h] + delta[f, h]
+  s_i = w_i · z_i + b_shared[h] + b_delta[f, h]
   p   = softmax(s / temperature)
 
 once per decision, options absent:
 
-  z_s = trunk( x_state(s, f) ++ 0 )        # option block zeroed, same trunk
+  z_s = trunk( x_critic(s, f) )            # disjoint critic namespace, same trunk
   V   = w_value · z_s + b_value
 
   trunk(x) = relu(W2 · relu(W1 · x + b1) + b2)      # shared, 2 x 256
 ```
 
-**The value input contains no option content at all.** Revision 1 wrote
+**The value input contains no option or legal-set content at all.** Revision 1 wrote
 `V = w_value · z_state` without saying where `z_state` came from, which left the
 critic undefined — codex's blocker, and correctly raised. The fix is that `V` is
-computed from a *separate forward pass* whose option block is zeroed, not from
-anything derived from the option set.
+computed from a separate forward pass over the canonical critic extractor, not
+from anything derived from the option set.
 
 This buys the two properties a value must have, and both are cheap to test
 rather than argue:
 
 | property | test |
 |---|---|
-| **Permutation invariance** — `V` unchanged when the legal options are reordered | shuffle `choice.options`, assert `V` bit-identical |
-| **Legal-set invariance** — `V` unchanged when an option is added or removed | drop one legal option, assert `V` bit-identical |
+| **Permutation invariance** — both critic vector and `V` are unchanged when legal options are reordered | shuffle `choice.options`, assert both are bit-identical |
+| **Legal-set invariance** — both critic vector and `V` are unchanged when an option is added or removed | drop/add one legal option, assert both are bit-identical |
 | **Policy is not accidentally invariant** — the same shuffle *does* permute `p` correspondingly | shuffle, assert `p` permutes with it and its entropy is unchanged |
 
 The third exists because the first two are satisfiable by a bug: a model that
@@ -265,25 +301,26 @@ Cost: **one extra trunk pass per decision**, against N passes for N options. At
 the measured ~8 options per decision that is about +12% of model compute, which
 is itself under 1% of the 450 µs/decision total. Not a consideration.
 
-**Known wrinkle, accepted:** the shared trunk now sees two input distributions —
-one with a populated option block, one with a zeroed one. That is a real
-asymmetry and it is why D7 offered a separate value trunk as the alternative.
-Kept shared because the representation the policy learns is the one the value
-should be reading, and a zeroed block is a distribution the trunk can learn to
-recognise. **Fallback if the value fails to fit** (explained variance stays near
-zero while the policy improves): give the critic its own 2 × 128 trunk. That is
-a contained change and does not touch the policy path.
+**Known wrinkle, accepted:** the shared trunk sees two disjoint input namespaces —
+policy columns and critic columns. That is a real asymmetry and it is why D7
+offered a separate value trunk as the alternative.
+Kept shared because both paths can still benefit from common nonlinear weights,
+while the namespaces prevent accidental information flow. The pre-registered
+warm-up and separate-critic fallback are in §6.2;
+the architecture is chosen on validation data before the three PPO runs begin.
 
-**Parameter budget** (2 × 256, 41,113 measured feature names + headroom → V = 49,152):
+**Provisional parameter budget.** The exact physical capacity `V_cap` is computed
+after all feature packages (§4.5), so this uses 49,152 only as the current estimate:
 
 | block | params | notes |
 |---|---:|---|
-| input layer | 49,152 × 256 ≈ 12.6M | shared; sparse gather, ~30 active slots per option |
+| input layer | estimated 49,152 × 256 ≈ 12.6M | shared; sparse gather, active slots only |
 | hidden layer | 256 × 256 ≈ 66k | shared |
-| per-faction readout | 256 × 14 heads ≈ 3.6k each | × 33 seats ≈ 118k |
+| shared readout | 256 × 14 heads ≈ 3.6k | trained by every faction |
+| faction residuals | 256 × 14 heads ≈ 3.6k each | × 33 seats ≈ 118k; zero-init |
 | identity embedding | 16 × 33 ≈ 0.5k | |
 | value head | 256 | |
-| **total** | **~12.8M** | ~51 MB fp32 — still trivial for 24 GB |
+| **total** | **~12.8M at the estimate** | exact total and bytes recorded by M09-024 |
 
 The readout is costed at **14 heads, not 19**: D16 settled on schema 4 for
 distillation and revision 2 left the budget contradicting its own decision.
@@ -304,9 +341,17 @@ Batching within a decision is not optional — it is what turns N small matmuls
 into one `[N, d]` matmul, and it is the difference between the per-option model
 being free and being the bottleneck.
 
-The fallback stays a two-tower split — state trunk once per decision, thin
-option tower per option, bilinear score — at the price of losing free
-state×option interactions. Phase 4 measures; it is not decided in advance.
+The sparse first layer is an embedding-bag calculation, not a materialized
+`[N,V_cap]` tensor: aggregate duplicate feature names first, sort active slot indices,
+gather `[active,width]` rows, multiply by their f32 feature values, and reduce in
+that fixed order before adding bias. M09-026 tests logits and input-row gradients
+against a dense reference for duplicates, negative/fractional values, OOVs, empty
+vectors, and maximum legal option batches. Unsorted/hash iteration is forbidden.
+
+No two-tower fallback is hidden in this branch: the legacy factual extractor has
+option-crossed `state-kind:`/`state-option:` families, so splitting towers would
+change feature semantics and needs its own design review. The sole pre-registered
+throughput fallback is the identical architecture at width 128 (§7.1).
 
 ### 4.4 The checkpoint artifact (blocker, revision 1 had none)
 
@@ -321,13 +366,20 @@ JSON:
 
 ```
 checkpoint-<update>/
-  manifest.json        # schema, shapes, dtypes, provenance, checksums
   trunk.safetensors    # W1 b1 W2 b2
-  readout.safetensors  # per-faction [heads, width] + bias
-  value.safetensors    # w_value, b_value
+  readout.safetensors  # shared heads + per-faction residuals and biases
+  value.safetensors    # omitted for batch_mean; otherwise head + optional separate trunk
   embedding.safetensors
   slots.json           # interned feature name -> column index, ordered
+  optimizer.safetensors # M10 training extension: Adam m/v tensors
+  training.json        # M10 extension: optimiser config, cursors, RNG, data ids
+  manifest.json        # written last: schema, shapes, provenance, checksums
 ```
+
+M09-028 defines the inference bundle (model tensors plus `slots.json` and the
+manifest). M10-035 extends it for resumable training with the optimiser and
+training files; a training checkpoint missing either extension is playable but
+must be rejected by `resume`.
 
 `safetensors` rather than a bespoke encoding: it is a flat, checksummable,
 zero-copy format with no code execution on load, and it is readable from both
@@ -353,9 +405,22 @@ that does not exist while missing the one that does.
 | `dtype: "f32"` | training and inference must agree; f16 is a later decision |
 | `factions: [...]` | readout rows are positional; a reordered roster silently mislabels every faction |
 | `slot_count` and `slots_sha256` | the single most likely silent corruption — same weights, different feature meaning |
+| `slot_capacity` | physical input rows; append must not reshape a live model |
 | `heads: [...]` (schema-4 order) | see D16 below |
+| `student_temperature: 1.0` | fixes logit scale; teacher probabilities already encode teacher temperature |
+| `critic_mode: shared\|separate\|batch_mean` | determines required value tensors and resume semantics |
+| pinned `tch`, libtorch, compiler and deterministic-thread settings | reproducibility and load diagnostics |
 | `source`, `git_commit`, `update` | provenance for any number quoted from it |
 | `sha256` per tensor file | integrity |
+
+**Load bounds.** A schema-6 directory contains only the eight recognized names shown
+above (five or six for inference, seven or eight for training, by `critic_mode`),
+no symlinks or nested paths, at most 256 MiB total;
+`manifest.json` and `training.json` are each ≤1 MiB and `slots.json` ≤32 MiB.
+Tensor byte lengths must equal manifest shapes before allocation, slot names/keys
+are unique, indices are contiguous below `slot_count ≤ V_cap ≤ 65,536`, and every
+checksum/reference is validated before constructing a live model. Unknown required
+fields, files, dtypes, heads, or path separators fail closed.
 
 **Device behaviour.** Weights are always stored on CPU in the file and moved at
 load, so a checkpoint written from a CUDA run loads on a CPU-only machine. What
@@ -398,37 +463,52 @@ Sizing V to keep collisions rare is what breaks it:
 There is no setting that is both collision-free and affordable. So the vocabulary
 is **enumerated**.
 
-**Construction.** A corpus pass before training: play a fixed set of games with the
-r6 champions, collect every `FeatureKey` emitted, and assign columns by **ascending
-`FeatureKey`**. Because the key is a pure function of the name, that order is a
-function of the name set alone — not of seed order, thread order, or history — so
-two runs over the same corpus produce byte-identical `slots.json`. This is the
-property the counter design would have destroyed, which is why `intern.rs` avoids
-it.
+**Construction.** M09-024 runs after every new feature family exists. It takes the
+union of (a) the 41,113 names observed in the r6 profile, (b) every name emitted by
+replaying the fixed §6.1 teacher seed schedule with the completed feature extractors,
+and (c) every statically enumerable content name. This is a bounded discovery pass,
+not the M10 training corpus; M10-031 later captures full option/probability records.
+Reserved OOV columns are allocated first in a versioned family order. All other
+initial names are assigned by ascending `FeatureKey`. Because the key is a pure
+function of the name, two runs over the same inputs produce byte-identical
+`slots.json`; the package runs that construction twice with reversed corpus order.
+`slots.json` stores both UTF-8 name and key. Two distinct names with the same key
+are a hard collision error, not an arbitrary tie-break or silent alias.
 
-**Sizing.** Measured union is 41,113 names. V = 49,152 (41k + ~20% headroom),
-recorded in the manifest. The corpus pass reports coverage; if a training run
-reaches 90% of V the run is flagged, because appending is cheap but silent
-saturation is not.
+**Logical size and physical capacity are different.** `slot_count` is the number
+of assigned columns. `V_cap` is the next multiple of 4,096 at or above
+`1.2 × slot_count`, with an expected upper bound of 65,536. M09-024 records the
+exact value and parameter count; if the required value exceeds 65,536, it stops
+for an explicit architecture review rather than silently allocating a larger
+model. The input tensor is allocated once at `[V_cap, width]`.
+Rows at indices `slot_count..V_cap` and their Adam moments are explicitly zeroed,
+masked from optimization, and asserted zero at save/load until assigned.
 
-**Unseen features at inference.** Not dropped. Each of the feature families gets a
-reserved **OOV column**, and a name whose key is not in the map contributes to its
-family's OOV column instead of vanishing. Dropping silently would make an unknown
+**Unseen features at inference.** Not dropped. Each registered feature family gets
+a reserved **OOV column**, plus one global OOV for an unknown prefix. The prefix→OOV
+registry is versioned in the manifest. A name whose key is not in the map
+contributes to its family's OOV column instead of vanishing. Dropping silently would make an unknown
 `option:` word indistinguishable from its absence, which is exactly the case where
 the policy should be uncertain rather than confident. The OOV columns are part of V
 and are allocated first, so their indices never move.
 
 **Growth (D21: append-only).** The vocabulary may grow, under one rule: **columns
-are never reordered or reused.** A resume that finds new names appends them, in
-ascending `FeatureKey` within the appended batch, and:
+are never reordered or reused.** A resume that finds new names appends them into
+unused preallocated rows, in ascending `FeatureKey` within the appended batch, and:
 
-- the input weight matrix gains rows, zero-initialised;
-- **the Adam first and second moments gain matching zero rows**, so a new column
-  starts with no accumulated history rather than inheriting another name's;
+- the model tensor is not reshaped; newly assigned rows already contain zero;
+- the matching Adam first and second-moment rows already contain zero, so a new
+  column starts with no accumulated history;
 - `slots_sha256` in the manifest changes, and the manifest records `slot_count`
   before and after, so an append is visible in the checkpoint history;
-- appending is refused if it would exceed V; V is raised by an explicit migration,
+- appending is refused if it would exceed `V_cap`; capacity is raised only by an explicit migration,
   never implicitly.
+
+Vocabulary never mutates during a rollout or tensor batch. Unseen names use OOV for
+that batch and are collected by name; the coordinator deduplicates/sorts and appends
+only at the deterministic update/checkpoint boundary, before the next rollout.
+Worker arrival order therefore cannot affect slot assignment or the behavior batch
+already being optimized.
 
 Reordering, by contrast, invalidates every weight and every Adam moment at once,
 which is why the order is derived from the key rather than from anything a run
@@ -449,7 +529,7 @@ continuation, and not comparable to the run it claims to extend.
 | optimiser config | lr, betas, eps, weight decay, and the schedule's position |
 | training cursor | update number, the seed base and stride, and the next seed block |
 | data identity | feature set (`factual` / `+objective` / `+abilities`), `SourceSet`, map-pool path **and checksum**, horizon, rounds |
-| vocabulary | `slot_count`, `slots_sha256`, V |
+| vocabulary | `slot_count`, `slots_sha256`, `V_cap` |
 | RNG | the training RNG cursor, so a resumed run draws the same stream |
 
 The pool checksum is the one most easily left out and the most damaging to omit: a
@@ -461,14 +541,18 @@ resume against a regenerated-but-different pool is a silently different experime
    one filesystem;
 2. write every tensor file, then fsync each;
 3. write `manifest.json` **last**, then fsync it and the directory;
-4. rename `checkpoint-<n>.tmp/` to `checkpoint-<n>/`.
+4. require the destination not to exist, rename `checkpoint-<n>.tmp/` to
+   `checkpoint-<n>/` on the same filesystem, and flush the parent directory using
+   the strongest supported Windows primitive; record any weaker durability mode.
 
 **Recovery rule.** A directory without a readable `manifest.json` is incomplete by
-construction, because the manifest is written last. On startup: delete every
-`*.tmp/`, ignore every checkpoint directory lacking a manifest, and resume from the
-highest complete one. A checkpoint whose tensor checksums do not match its manifest
-is a hard error, not a warning — silently resuming from a truncated tensor is the
-failure this whole section exists to prevent.
+construction, because the manifest is written last. Startup resolves and validates
+each candidate as an exact child of the configured checkpoint root; only generated
+`checkpoint-<n>.tmp` siblings under that root may be quarantined or removed. It
+ignores incomplete directories and resumes from the highest complete checkpoint.
+A checksum mismatch, unknown schema, out-of-range slot, missing reference, or size
+limit violation is a hard error before any state is mutated. Recovery never expands
+a glob into an unverified deletion target.
 
 This is directly in scope: a 10,000-update run is hours long, and r6 was in fact
 resumed mid-flight (`resumed_from` is a field in the existing checkpoints).
@@ -550,6 +634,11 @@ completion is the one that changes what to do next. The threshold-keyed slot kee
 the two distinguishable when it matters. Both are cheap; only the family-only slot
 would have to carry the whole job if we picked one, and it cannot.
 
+The extractor groups objectives by `(family, threshold)` and applies `max` **before**
+constructing the `FeatureVector`. It must not emit duplicate names and rely on the
+vector's additive merge, which would turn two identical objectives into progress
+greater than one.
+
 **The six "bespoke" predicates are not bespoke.** Revision 3 listed them as lacking
 a progress representation. Reading them, every one is `count(...) >= k` with the
 threshold inlined:
@@ -570,12 +659,17 @@ on reading it.
 
 **The ten bought objectives** are affordability, not accumulation: `Cost` is
 `Spend { amount, kind }`, `TradeGoods(n)`, `Tokens(n)` or `AllThree(n)`
-(`objectives.rs:827`). Progress is `min(1, available / cost)` against the same
-`can_afford` path that gates the purchase, and for `AllThree` it is the **minimum**
-across the three, because the binding constraint is the one you are shortest on.
-These get their own family token (`objective-progress:cost-<kind>`) rather than
-sharing with the counting families, since "80% of the way to affording it" and
-"80% of the planets" are not the same quantity.
+(`objectives.rs:827`). For a cost with target `n`, progress is the greatest integer
+`k` in `0..=n` for which the **existing exact payment planner** accepts the same
+cost variant scaled to `k`, divided by `n`. Thus `AllThree(n)` queries
+`can_afford(AllThree(k))`; it does not take minima of independently available
+resources. Trade goods can substitute in several components and the planner must
+keep planet exhaustions disjoint, so independent ratios can overstate what is
+jointly affordable. The small bounded search preserves exact arithmetic and uses
+the same legality path as purchase. These get their own family token
+(`objective-progress:cost-<kind>`) rather than sharing with counting families.
+Content validation rejects zero thresholds/amounts before feature extraction, so
+normalization never divides by zero or invents a special zero-cost meaning.
 
 Keying on **family** rather than alias is the point: Outer Rim (`on_the_rim(3)`)
 and Control the Borderlands (`on_the_rim(5)`) share machinery, so learning about
@@ -621,69 +715,48 @@ already specified. So the decomposition separates every seat, and **the identity
 embedding is not doing the separating.**
 
 That leaves the embedding with only its stated job: absorbing idiosyncrasy the
-decomposition misses. Its norm stays a diagnostic (§3), and dropping it entirely
-is now a live option rather than a risk.
+decomposition misses. It remains in this branch as decided by D8; its norm is a
+diagnostic (§3), not a mid-run architecture switch.
 
-### 5.4 Missing engine coverage (D14) — **done, commit `0d751a8`**
+### 5.4 Missing engine coverage (D14) — **implemented, review failed**
 
-The count was 14, not 13. Twelve secrets had no scoring predicate, and two more
-(`dp` Dictate Policy, `dtd` Drive the Debate) had or would have had one but were
-never asked: `scoreable_on` returns status-timed secrets only, and no code path
-anywhere offered an action- or agenda-timed secret. `Timing::Action` and
-`Timing::Agenda` were read from the corpus, stored, and never consulted.
+Commit `0d751a8` made fourteen previously unreachable Rust paths scoreable with a
+turn-scoped feat ledger and an event window opened by `Game::advance_turn`. Its
+tests and 150-game measurement are preserved in `plans/evidence/M06-021.md`, but
+those results do not establish official-rules timing correctness.
 
-The twelve could not have a predicate in the shape `secrets.rs` was built for.
-`Requirement` is `fn(&Position) -> bool` and a `Position` is the board; "destroy
-another player's war sun" is not a fact about the board, because by the time
-anything could ask, the war sun is gone and what remains looks identical to a
-board where it never existed. Resolved with a **feat ledger** —
-`GameState::record_feat`, scoped to `turn_seq`, in the same shape as the
-one-shot markers already on `Player` — plus `ScoringWindow::for_event`, opened
-from `Game::advance_turn` (the single point every kind of turn passes through)
-and from `close_vote` after 8.20.
+The independent tier C review found a rules defect without relying on Python
+parity. The official [*Living Rules Reference 2.0*](https://images-cdn.fantasyflightgames.com/filer_public/51/55/51552c7f-c05c-445b-84bf-4b073456d008/ti10_pok_living_rules_reference_20_web.pdf),
+rule 61.7, permits any number of
+objectives during an action turn or agenda phase, limits scoring to one objective
+during or after each combat, and explicitly permits scoring during both space and
+ground combat in the same tactical action. The Rust implementation instead
+coalesces feats into one end-of-turn offer and implements Become a Martyr as a later
+board-position predicate. That loses valid timing windows and can award an event
+card after its printed condition rather than when it occurs.
 
-Evidence: **`plans/evidence/M06-021.md`** — command, fixed seed block,
-pool and checkpoint sha256, and raw output, committed. Revision 1 quoted the
-result with none of that, which codex correctly refused to accept as a completed
-gate; the numbers were real but not reproducible from anything in the repo.
+**M06-021 is therefore not complete. M06-021a must:**
 
-Measured on the r6 champions, 150 games, holdout pool: eight of the fourteen now
-score — Prove Endurance 40% of draws, Drive the Debate 17%, Dictate Policy 16%,
-Betray a Friend 7%, Turn Their Fleets to Dust 6%, Spark a Rebellion 5%, Make an
-Example of Their World 3%, Unveil Flagship 2%. The remaining six are rare events
-inside a four-round horizon rather than engine gaps. Direct scoring effect is
-about **+0.05 VP/seat** (mean 2.918, from 2.89) — though the 2.89 came from the
-r6 promotion panel rather than this command, so **the delta is indicative, not a
-paired measurement**, and the pre-fix binary is not archived to make it one.
-Treat 2.918 as the new baseline and the delta as unverified. The value is not the
-delta anyway: it is that fourteen cards are now pursuable at all.
+- replace turn-coalesced offering with typed, occurrence-scoped trigger records or
+  an equivalent immediate window at the exact combat-end, anti-fighter-barrage,
+  space-cannon, bombardment, control-loss, pass, or agenda-resolution event named
+  by each of the fourteen paths;
+- set the window limit from the rules: at most one objective per player for each
+  combat occurrence, but sequentially permit every eligible non-combat action- or
+  agenda-phase objective until the player declines or none remains;
+- score Become a Martyr only from the control-loss event, never from a persistent
+  board position observed later;
+- preserve attribution, stable choice IDs, hidden hands, replay determinism, and
+  atomic failure semantics;
+- add rules-traced tests for one secret per combat, separate space/ground events,
+  multiple eligible agenda objectives, home-planet loss, last-to-pass, and agenda timing, then run the affected
+  crate/workspace/property gates; and
+- receive a resolved tier C review before M06-022 begins.
 
-The original finding, kept for the record — 13 of 40 secrets had **no scoring
-predicate anywhere** in `ti4-engine` or `ti4-policy`:
-
-```
-dtgs  Destroy Their Greatest Ship     bam   Become a Martyr
-mew   Make an Example of Their World  baf   Betray a Friend
-sar   Spark a Rebellion               btv   Brave the Void
-ttfd  Turn Their Fleets to Dust       dts   Darken the Skies
-uf    Unveil Flagship                 dyp   Demonstrate Your Power
-fwp   Fight with Precision            pe    Prove Endurance
-dtd   Drive the Debate (2 incidental hits — confirm)
-```
-
-Earlier analysis recorded "24 secrets score zero" and attributed it to policy.
-At least half of that is unimplemented scoring. **A mean-6-VP target cannot be
-reached while roughly a third of the secret deck is unscoreable**, and no amount
-of model capacity will change it. These are combat-outcome and event secrets,
-which is also where the round-4 horizon bites hardest.
-
-Publics are fine: all 40 are registered (30 predicates + 10 bought).
-
-Several of these are **event-conditioned rather than state-conditioned** —
-"destroy another player's flagship", "win a combat against a player with more
-ships" — which the current `Position → bool` shape cannot express. They need an
-event ledger on `GameState` that combat and agenda resolution write to. That is
-the substantive part of Phase 2 and is where its risk sits.
+The 2.918 VP/seat measurement remains a post-commit diagnostic only. The quoted
+change from 2.89 was not paired, and no rarity conclusion may be drawn for zero-rate
+secrets until M06-021a passes and the panel is rerun. Public objective registration
+is unchanged (30 predicates plus 10 bought objectives).
 
 ---
 
@@ -700,7 +773,7 @@ phase 0:  minimise  Σ_f  KL( champion_f(·|s) ‖ mlp(·|s, f) )
 phase 1:  PPO from those weights
 ```
 
-Multi-teacher distillation onto a shared trunk with per-faction readouts is a
+Multi-teacher distillation onto a shared trunk with shared+residual readouts is a
 well-trodden setup and is arguably cleaner than six separate distillations: the
 trunk is forced to find the representation common to all six.
 
@@ -712,22 +785,95 @@ the head the objective features are meant to inform. **Target is schema 4.** The
 14→19 split is a separate controlled migration with its own before/after panel, and
 is not part of this branch.
 
-Exit criterion for distillation: mean VP within 0.1 of the r6 champions on the
-holdout panel. If it cannot reach that, the architecture cannot represent the
-current policy and something is wrong before PPO ever runs.
+**Fixed corpus and split.** M10-031 runs the r6 champions on the training map pool
+for game seeds `202_608_210..202_608_338` × six rotations (768 games), capturing
+every non-forced decision, its deterministic order/faction/head, all legal option
+IDs, the sparse factual actor vectors, the option-free factual critic vector, the
+complete teacher probability vector, and the accepted four-round return used by
+the critic warm-up. Capture is built only from the acting seat's authorized view;
+it does not retain a raw omniscient state as a shortcut. The split is by game seed,
+never by decision:
+`202_608_210..202_608_306` trains and `202_608_306..202_608_338` validates. Shards are
+deterministically ordered, zstd-compressed, checksummed, capped at 10 GiB, and
+identified by teacher/pool/feature-vocabulary hashes. Any overlap of seed clusters
+is a hard error.
 
-### 6.2 PPO changes
+The student temperature is fixed at **1.0**. Teacher probabilities already contain
+each teacher checkpoint's temperature, so learning another student temperature
+would introduce an unidentifiable second logit scale. Distillation initially uses
+only the legacy `factual` policy vector. Initialization is explicit and versioned:
+using RNG domain `mlp-init-v1` and seed `202_608_21`, active factual input rows use
+`U(-sqrt(6/32), sqrt(6/32))`, hidden weights use
+`U(-sqrt(6/width), sqrt(6/width))`, the shared readout uses
+`U(-1/sqrt(width), 1/sqrt(width))`, and all biases/value heads,
+critic rows, objective/ability rows, faction residuals and identity embeddings start
+at zero. A pinned Rust RNG generates f32 values in manifest tensor/name order before
+copying them into libtorch, so a backend default cannot change initialization. The
+six training factions' residuals and embeddings **are trainable during
+distillation**; untrained faction rows remain zero. The three ablation clones retain
+the identical learned factual trunk/readout/residual/embedding state and keep only
+the newly enabled objective/ability columns at zero.
+
+**Distillation optimizer.** Minimize the mean of six per-faction KL means, so a
+faction generating more decisions cannot dominate the shared trunk. Within a
+faction every captured non-forced decision has equal weight; heads are not
+artificially resampled. Use Adam `(lr=3e-4, betas=(0.9,0.999), eps=1e-8,
+weight_decay=1e-5)`, batches of 4,096 decisions, gradient-norm clip 1.0, at most 20
+epochs, and a pinned shuffle RNG domain. Validate after each epoch, retain the
+earliest minimum validation KL (ties within `1e-5` choose the earlier epoch), and
+stop after three epochs without improvement. Each DAgger round resumes the selected
+weights on the enlarged corpus but intentionally resets Adam state and the epoch
+cursor; that reset is recorded in lineage.
+
+**Bounded distribution correction.** The corpus is reproducible and never refreshed
+implicitly. If either imitation or gameplay validation fails after the base pass,
+at most two predeclared DAgger rounds may be added. They use
+`202_609_000..202_609_064` and `202_610_000..202_610_064`, respectively, each × six
+rotations, with student CPU self-play and teacher labels on visited states. The
+original 32-seed distillation validation split
+never enters training and remains fixed. Failure after the second round stops the
+package; it does not authorize an open-ended data loop. Base plus DAgger shards
+share the 10 GiB cap; a round that would exceed it is not started and the gate fails.
+
+**Exit gates, on validation data only:** mean KL ≤ 0.02 nats, top-1 agreement
+≥ 97%, no schema-4 head with KL > 0.05, and gameplay mean VP within 0.1 of the r6
+champions on game seeds `[380_000_000, 380_000_200)` × six rotations using the
+seed-777 validation pool, paired on identical games. The sealed final pool is not
+loaded. If these gates cannot be met, the architecture has not reproduced the
+teacher and PPO does not begin.
+
+### 6.2 Critic warm-up and fixed fallback
+
+The distilled actor does not train against a random critic. “Actor frozen” includes
+the shared `W2`, biases, all policy input rows, readouts, residuals, and embeddings;
+otherwise a nominal critic warm-up would silently destroy imitation. For the shared
+critic warm-up, train only the disjoint `critic-state:` input rows and value head on
+captured four-round returns. Use the same seed-cluster train/validation split, at
+most 20 epochs, Adam `(lr=1e-3, betas=(0.9,0.999), eps=1e-8,
+weight_decay=1e-5)`, batch size 4,096, MSE loss and gradient-norm clip 1.0. Select
+the earliest checkpoint with validation explained variance ≥ 0.10; assert policy
+logits are bit-identical before/after.
+
+If that restricted shared critic misses the threshold, run the same bounded warm-up
+once with a separate 2 × 128 critic trunk while the entire actor remains frozen. If
+that also fails, pre-register the batch-mean baseline for **all three** ablation runs
+and record `critic_mode` in the manifest. No fallback may be selected after PPO
+outcomes are seen. Once joint PPO begins, the selected shared-trunk mode may update
+the trunk through both detached actor and critic losses as specified in §6.3.
+
+### 6.3 PPO changes
 
 Existing: clipped surrogate, K=4 epochs, clip 0.2, lr 0.03, entropy 0.01,
 `--draft-entropy 0.10` on the `strategy` head. `ppo.rs:398 apply`, `:486 update`.
 
 Changes:
-- Optimiser moves to Adam under tch (lr will need retuning — 0.03 is a
-  plain-SGD-scale learning rate and is almost certainly wrong for Adam).
+- Optimiser moves to Adam under tch. Betas are `(0.9, 0.999)`, epsilon `1e-8`,
+  global gradient-norm clipping is `1.0`, and no parameter uses an implicit
+  framework default.
 - **Value head (D7, D22):** advantage becomes `return − V(s)` instead of
-  `return − batch_mean`. Adds a value-loss coefficient to tune; if weighted too
-  heavily it destabilises the shared trunk. Start at 0.5 and treat explained
-  variance of `V` as the health metric.
+  `return − batch_mean`. A large value-loss coefficient could destabilise the
+  shared trunk. The coefficient is fixed at `0.5`
+  and explained variance of `V` is the health metric.
 
   **Detach semantics (D22).** Revision 2 wrote `advantage = return − V(s)` and
   said nothing about gradient flow, which leaves two real bugs available:
@@ -763,10 +909,42 @@ Changes:
   This matches what the linear trainer already does, where the batch-mean baseline
   is a constant by construction. The value head is what makes the distinction
   expressible, and therefore what makes it possible to get wrong.
-- Entropy handling is unchanged in intent but the per-head entropy bonus now
-  applies to a shared trunk — worth checking it does not fight the readouts.
+- If §6.2 selected `critic_mode=batch_mean`, use the existing fixed batch-mean
+  advantage, set critic loss to zero, and do not update/store unused value tensors.
+  If it selected `separate`, critic loss updates only the separate critic; if
+  `shared`, it updates the shared trunk and value head. Actor advantages remain
+  detached/frozen in every mode.
+- Entropy handling is unchanged in intent. Per-head entropy, KL, shared-readout
+  norm and faction-residual norms are mandatory telemetry; the coefficients do
+  not change during a run.
+- Each update is 16 game seeds × six rotations. Store behavior log-probabilities,
+  returns, behavior values and legal option segments before optimization. Each of
+  four epochs uses a domain-separated deterministic shuffle into 4,096-decision
+  minibatches; flatten ragged option logits with segment offsets, so padding can
+  never enter softmax/entropy. The final short minibatch is retained. Advantages
+  remain the one frozen vector above even though record order changes per epoch.
 
-### 6.3 Promotion gate (D9)
+**Pre-registered optimizer selection (M10-036a).** From the identical distilled
+and critic-warmed checkpoint, run exactly six 200-update factual-feature pilots:
+learning rate `{1e-4, 3e-4, 1e-3}` × weight decay `{0, 1e-5}`. All other settings
+are fixed: clip `0.2`, four epochs, value coefficient `0.5`, entropy `0.01`, strategy
+entropy `0.10`, CPU rollouts, and at pilot update `u` the 16 game seeds beginning at
+`650_000_000 + 16u`. Each pilot trains its learner for exactly 200 uninterrupted
+updates with no intermediate promotion or early stopping, then evaluates that
+final learner against the common starting champion on the fixed ranking panel.
+Reject non-finite runs or a final learner tripping any §6.4 regression guard. Rank survivors by aggregate VP
+on `[390_000_000,390_000_100)` × six rotations on the seed-777 validation pool;
+configurations within one paired SE of the best tie break toward lower learning
+rate, then higher weight decay. The selected config must independently avoid a
+guard trip on `[390_000_100,390_000_200)`. If none survives,
+stop. Then run one fixed 1,000-update factual smoke from the common start; it must
+promote at least twice without a guard trip, using ten boundary pairs with
+`B_k = 395_000_000 + 200k` rather than the ablation panels below and training game
+seeds beginning at `660_000_000 + 16u`. Freeze the winner
+for all three ablations, store it in `training.json`, and make no hyperparameter
+changes based on final outcomes.
+
+### 6.4 Promotion gate (D9)
 
 `promotion.rs` currently promotes per faction (`:212 is_better`, `:231 promote`,
 `:381 apply_promotion`). Codex is right that revision 1's "2σ plus guessed
@@ -791,16 +969,27 @@ Two things fall straight out, and the first is a real defect in revision 1:
 
 **Pre-registration:**
 
+For the three ablation runs, promotion boundaries occur after updates 100, 200, …,
+10,000. Boundary `k` below is zero-based and consumes fresh validation seed
+clusters; skipped/failed boundaries are still consumed and may not be reused.
+
 | element | specification |
 |---|---|
-| **paired unit** | one `(seed, rotation)` pair, candidate and champion on the identical board and seating. Pairing is what makes the SE 0.05 instead of the ~0.9 of unpaired game-to-game VP |
-| **panel** | 100 validation seeds, then 100 disjoint confirmation seeds, × 6 rotations. Fixed blocks, recorded per boundary |
+| **paired execution cell** | candidate and champion share each `(seed, rotation)` board/seating and RNG domains; the six rotations are averaged before statistical analysis, so the independent unit is one game-seed cluster |
+| **panel** | define `B_k = 400_000_000 + 200k`; validation uses `[B_k, B_k+100)` and confirmation `[B_k+100, B_k+200)`, each × 6 rotations on the seed-777 validation pool; seed clusters never repeat across boundaries |
 | **aggregate metric** | mean VP per seat across all 6 factions, paired difference |
 | **confidence** | SE of the paired differences over seeds, treating a rotation-set as one unit. Promote on `gain > 2 × SE` **and** `gain > 0.05` absolute — both, since at n=100 a 2σ bar alone admits gains too small to matter |
 | **confirmation rule** | the confirmation panel must independently clear the same bar. Two panels rather than one 200-seed panel because it also catches a candidate that is merely lucky on one block |
 | **regression guard** | per faction and metric, reject when the loss is **both** statistically real and practically meaningful — see below |
 | **multiplicity** | **twelve** tests, not six: six factions × two metrics. Revision 3 counted six |
-| **re-derivation** | the SEs are recomputed from this branch's own panels after the first ten boundaries; r6's variance is a prior, not a constant |
+| **variance audit** | summarize this branch's measured SEs after the first ten boundaries for diagnostics only; the 2× merit rule, `z12`, practical floors, panel sizes and schedule do not change during these runs without a reviewed plan revision and fresh run |
+
+This is an **operational ratchet**, not a family-wise scientific hypothesis test.
+The 2×SE rule and within-boundary Bonferroni guard are repeatedly consulted across
+up to 100 boundaries, so neither is reported as a global p-value or confidence
+claim. Fresh clusters and independent confirmation reduce selection noise; the
+sealed §6.5 final campaign is the only efficacy estimate and reports its fixed
+clustered confidence intervals.
 
 **The guard, corrected.** Revision 3 wrote a *fixed* 0.14 VP, obtained by
 multiplying the historical **mean** SE by 2.64. Codex is right that this is not
@@ -844,69 +1033,101 @@ merit is one pre-specified test at 2σ, guards are twelve at a combined 5%.
 
 Panel cost falls either way: one champion instead of six.
 
+### 6.5 Ablation training and final access
+
+After M10-036a freezes one optimizer configuration, clone the same distilled actor
+and selected critic state three times. Enable respectively `factual`,
+`factual+objective`, and `factual+objective+ability`; newly enabled objective/ability
+columns start at zero, while every clone keeps identical distilled embeddings and
+faction residuals. Each run receives exactly
+10,000 PPO updates, the same ordered training seed blocks, the same promotion-panel
+schedule, the same optimizer backend, and the same wall/resource limits. Random
+streams are domain-separated by run label so execution order cannot couple them.
+At zero-based update `u`, all three use the 16 environment game seeds beginning at
+`700_000_000 + 16u`, each × six rotations on the training pool. Policy sampling RNG
+adds the run label as a separate domain; map/deck/dice domains do not.
+No model is allowed extra updates because another ablation is ahead or behind.
+M10-038 has a 72-hour wall limit per run, at most 32 workers, a cancellation-safe
+checkpoint cadence, and a 100 GiB combined cap for ignored training output. Its
+smoke estimate must fit those limits before the campaign starts; exceeding one
+stops for a plan/resource review rather than silently expanding it.
+
+The retained artifact for each run is its promotion-gated champion at the end of
+the 10,000-update budget, not the unbanked learner. A non-finite update, corrupted
+checkpoint, repeated deterministic failure, or resource-bound breach stops that
+run and records failure; it does not grant replacement seeds or a larger budget.
+
+Only after all three artifacts, configs, hashes, and analysis code are committed
+does M10-038 unlock the final role. The single campaign evaluates the three MLP
+champions and the frozen r6 teacher on game seeds
+`600_000_000..600_000_200`, six rotations each, drawing only from the sealed final
+pool. It writes a manifest and `_SUCCESS` marker before results are read. An
+infrastructure interruption may resume the same checkpoint/seed matrix only; it
+cannot change the panel or model. Report per-faction outcomes, aggregate means,
+and 10,000-resample seed-cluster percentile intervals using analysis RNG seed
+`202_608_23`. Aggregate/per-faction descriptive intervals are two-sided 95%; the
+three pairwise MLP ablation differences use two-sided 98.33% Bonferroni intervals
+for familywise 95%. The pre-specified full-model success bound in §1 is the
+one-sided 5th percentile and is evaluated separately; per-faction intervals are
+descriptive and do not add hidden acceptance tests.
+The success criterion remains §1; final results cannot alter training or thresholds.
+
 ---
 
 ## 7. Phases
 
 | # | Phase | Exit criterion |
 |---|---|---|
-| **0** | **Profile.** `cargo flamegraph` on one rollout batch. Confirm or refute the ~450 µs/decision split between engine and feature extraction. | The split is a measured number, not an inference. If feature-string `format!` allocation is a large share, fix that first — it makes every later phase cheaper. |
-| **1** | **libtorch, pinned, with a throughput gate.** See §7.1 — a smoke test is not the exit criterion. | The CPU path meets the throughput gate. The CUDA path ships only if it also beats it. |
-| **2a** | ~~**Engine: close the coverage gap.** Implement the missing secrets and the event ledger they need.~~ **Done, `0d751a8`.** | ~~1274 tests green (was 1271). Eight of the fourteen show a non-zero draw-to-score rate; the rest are decidable and rare.~~ |
-| **2b** | **Engine: expose progress.** Refactor `requirement_for` and the secrets families to return counts rather than bools; `satisfied` derives from them. | Tests still green. No feature work yet. |
-| **3** | **Features.** Objective requirement/progress, ability decomposition, secret redaction. Three independent feature sets per §1; redaction always on. | `feature_inventory.rs` shows the new families in each set; a test asserts the `factual` set is byte-identical to r6's emitted names on a fixed decision corpus. |
-| **4** | **Model.** Shared trunk, per-faction readout, value head, per-option scoring, all options of a decision batched into one pass. Inference path only. | An untrained MLP plays legal games end to end; §7.1's gate is re-measured with the real model and the two-tower fallback decided on the number. |
-| **5** | **Distillation.** Six champions → one MLP. | Mean VP within 0.1 of r6 on the holdout panel. |
-| **6** | **PPO.** New gate, value head, Adam. | A run that promotes at least twice without a per-faction regression trip. |
-| **7** | **Evaluate.** Full run to the mean-6-VP bar, reported against the `factual` and `factual+objective` feature sets (§1). | Mean 6 VP at round 4 on holdout, or a documented account of what stopped it. |
-
-Phases 0–2 touch no machine learning at all and are worth doing whatever
-happens to the rest of the plan. **Phase 2a is done** — see §5.4 and
-`plans/evidence/M06-021.md`.
+| **0** | **Repair rules and expose progress.** Correct secret timing, then add counting/bespoke/exact bought-cost progress and close M06 again. | Rules-traced focused/property tests, exact payment progress, workspace suite, and M06-024 pass. |
+| **1** | **Reaffirm downstream gates.** Rerun faction/effect and authored-bot legality/redaction suites with nested scoring windows. | M07-020 and M08-019 have no unresolved finding. |
+| **2** | **Profile and seal inputs.** Re-baseline engine/feature/model time; archive the two irreplaceable checkpoints; create validation/final manifests. | Reproducible profile evidence exists, baseline artifacts are durable, and the new final pool is sealed without overlap. |
+| **3** | **Features and vocabulary.** Objective/ability/redaction families, canonical critic state, deterministic slots and OOV capacity. | Legacy factual policy subvector is unchanged; hidden-info and vocabulary gates pass. |
+| **4** | **CPU model.** Pin libtorch, implement batched MLP inference, shared+residual readouts, value path, and schema-6 inference bundle. | Legal deterministic CPU games complete and the CPU width/throughput gate is resolved. |
+| **5** | **Distillation.** Fixed corpus, bounded DAgger, then six champions → one factual MLP. | All §6.1 validation gates pass without final-pool access. |
+| **6** | **Critic and PPO.** Pre-warm/fallback, detached advantages, Adam resume, and shared promotion gate. | Resume equivalence passes and a validation run promotes twice without a guard trip. |
+| **7** | **Optional CUDA optimiser.** Apply the same recorded training batches on CPU and CUDA; rollouts remain CPU. | CUDA merges only if correctness, repeatability, and end-to-end benefit gates pass. |
+| **8** | **Three-run ablation and final evaluation.** Independently train `factual`, `factual+objective`, and full ability models. | Frozen models are evaluated once on the sealed final panel; the full model meets §1 or the branch reports failure without moving the bar. |
 
 ### 7.1 The GPU gate (D19)
 
-Revision 1 made Phase 1 a smoke test. Codex is right that this is the wrong exit
-criterion, and the underlying worry is well founded: **a sequential game engine
-calling CUDA once per decision will lose to CPU**, because a 2 × 256 MLP over
-~8 rows is microseconds of arithmetic wrapped in tens of microseconds of launch
-and synchronisation, and the engine is already the dominant cost. Nothing about
-owning a 3090 changes that arithmetic.
+CUDA is never an inference backend in this branch. Every action for rollout,
+validation and evaluation is selected by the deterministic CPU path. The only
+switch is `--optimizer-device cpu|cuda`: after CPU rollouts produce a fixed batch,
+the model and Adam state may move to CUDA for forward/backward/update and return to
+CPU before the next decision. Cross-game inference batching is out of scope.
 
-So the GPU is no longer assumed. D12 becomes D19: **the CUDA path ships only if
-it wins a measured gate.**
+M09-025 pins the `tch` version and matching libtorch distribution, verifies license
+and advisories, records compiler/CPU/driver/runtime versions, and proves a CPU-only
+load. M10-037 may add the CUDA optimizer backend later; no CUDA-only dependency is
+allowed to block CPU inference.
 
-**Pinned before anything is written:** `tch` version, the libtorch build it links
-(cu12x), the CUDA runtime, and the driver. Recorded in this document and in each
-checkpoint manifest, because "it got slower" is unanswerable without them.
-
-**Batching, in two tiers.** Within-decision batching — every legal option of one
-decision as a single `[N, d]` forward pass — is mandatory and is the only tier
-Phase 4 requires. It is also *not enough on its own*: N ≈ 8 leaves the GPU
-almost entirely idle. The tier that would actually use the hardware is
-cross-game batching, a request queue fed by the 96 games in flight, and it is
-deliberately **out of scope for this branch** — it means restructuring the
-rollout loop around a scheduler, and it should not be attempted before the gate
-below says there is anything to win.
-
-**CPU fallback is the default, not the emergency.** `--device cpu|cuda`, CPU
-selected unless asked otherwise, and the bit-identical-load test in §4.4 is what
-keeps that honest.
-
-**The gate.** One representative end-to-end measurement, not a microbenchmark:
-a full update — 16 seeds × 6 rotations, 4 rounds, `full_np8_12_train`, 32
-threads — timed for the current linear policy, the MLP on CPU, and the MLP on
-CUDA.
+**CPU gate.** M09 has no MLP optimizer yet, so this gate measures the entire rollout
+batch, not a fictitious “update.” Under the M00 protocol on the same
+machine/workload, run five warm-up and at least twenty timed rollout batches
+(16 seeds × six rotations, four rounds, training pool, 32 threads) for the linear
+policy and a **shadow-MLP** arm in alternating order. In the shadow arm the same
+linear champion still chooses every action with the same RNG; the initialized MLP
+scores the identical legal set first and its logits are discarded. Assert decision
+fingerprints and outcomes match arm-for-arm. This isolates MLP overhead without
+timing two different game trajectories; the tiny linear lookup remains in both
+arms. Preserve raw samples and variance, and exclude checkpoint I/O/training from
+both arms. A separate smoke lets the MLP itself choose actions to prove legality:
 
 | result | consequence |
 |---|---|
-| MLP-CPU within ~2× of linear | acceptable; the earlier estimate says 1.6–2.8× at these widths |
-| MLP-CUDA beats MLP-CPU | CUDA becomes the default |
-| MLP-CUDA loses to MLP-CPU | **CPU ships, CUDA is deleted from the branch.** Not kept "for later" — an unused second device path is a source of divergence, and §4.4's load test is the thing that lets it come back cheaply |
-| MLP-CPU worse than ~3× linear | stop and reconsider width or the two-tower fallback before Phase 5 |
+| shadow-MLP rollout ≤ 2× linear median | accept per-option architecture |
+| 256-wide shadow rollout > 2× and ≤ 3× | build the otherwise-identical 128-wide model and rerun the entire gate; accept it only at ≤2× |
+| 256-wide shadow rollout > 3× | stop before distillation for architecture review |
+| 128-wide fallback still >2× | stop before distillation for architecture review |
 
-Recorded with the same evidence discipline as §5.4: command, seeds, pool
-checksum, raw output, committed.
+**CUDA gate.** After the gradient path exists, replay the same recorded batches and
+CPU rollouts with CPU-gradient and CUDA-gradient backends. Five warm-ups and at
+least twenty alternating timed updates are required. CUDA merges only if its
+end-to-end median update time improves by at least 10%, the 95% paired-bootstrap
+confidence interval for improvement has lower bound > 0, and every §7.2 gate
+passes. Otherwise M10-037 is closed as a measured no-op and the CUDA code is not
+merged. Even on success, CUDA is the default **optimizer backend only**; CPU remains
+the only inference backend.
 
 ### 7.2 Determinism (D20)
 
@@ -928,24 +1149,18 @@ difference perturbs training rather than changing recorded history. Weights move
 to the device for the update and back afterwards; at ~51 MB that is not a cost
 worth optimising.
 
-Three tests, all cheap, none of them cross-device bit-identity:
+The deterministic configuration pins libtorch intra-op and inter-op thread counts,
+Rust worker count, RNG states, and deterministic-algorithm mode. If the installed
+API cannot enforce those settings, CUDA fails the gate. Required tests are:
 
 | test | assertion |
 |---|---|
-| **same-device repeatability** | the same batch, applied twice to the same starting weights on the same device, produces bit-identical updated weights. Requires a pinned seed and torch's deterministic-algorithm mode; a failure here means an atomics-based reduction is in the path and must be replaced |
-| **cross-device semantic agreement** | over a fixed corpus of ~10,000 recorded decisions, CPU and CUDA forward passes agree on the argmax in ≥ 99.9% of decisions, and `max abs` logit difference stays under 1e-4. This is a tolerance gate, not equality |
+| **same-device repeatability** | the same recorded batch, model, Adam state and RNG cursor applied twice on one device produce bit-identical loss traces and updated weights |
+| **cross-device training agreement** | on fixed batches, CPU and CUDA loss, gradients, Adam moments and updated weights meet predeclared `rtol=1e-4, atol=1e-6`; no NaN/Inf and CPU post-update argmax agreement ≥99.9% |
 | **round-trip** | save on CUDA, load on CPU, and assert the *weights* are bit-identical. Weights are copied, not recomputed, so this one genuinely is exact |
 
-The middle test is also the early warning for the real hazard: if CPU and CUDA
-disagree on materially more than 0.1% of decisions, something is wrong with the
-model or the batching, not with floating point.
-
-One consequence, stated plainly: **the GPU is now confined to the part of the loop
-that was never the bottleneck.** §7.1 already said the engine dominates at ~450
-µs/decision. D20 means CUDA cannot help rollouts at all, only the PPO step. That
-narrows the upside of the whole GPU path considerably, and it is the honest
-position — if the throughput gate then shows no gain, the answer is that there was
-never much to gain, not that the implementation was poor.
+Cross-device bit identity is neither promised nor used for decisions. The tolerances
+govern only the optional training backend; CPU produces every archived trajectory.
 
 ---
 
@@ -953,57 +1168,42 @@ never much to gain, not that the implementation was poor.
 
 | Risk | Assessment |
 |---|---|
-| **Attribution** — two changes at once (D1) | Accepted deliberately. Ablation flag is the mitigation; use it. |
-| **Per-option cost** (D3) | Decisions with large option sets could dominate. Phase 4 measures it; two-tower is the fallback. |
-| **Windows + libtorch** (D2, D19) | Real friction: ~2 GB download, `LIBTORCH` env, DLLs on PATH. Phase 1 exists to hit this before anything depends on it. |
-| **Adam lr** | The existing 0.03 will not transfer. Budget a sweep; a bad lr will look like "the MLP doesn't work". |
-| **Value head destabilising the trunk** | Watch explained variance. Falling back to the batch-mean baseline is a one-line change and a legitimate result. |
-| **Shared trunk averages away faction identity** | The per-faction readout and embedding exist for this. If a faction regresses, check whether its readout is doing anything. |
-| ~~**Event ledger touches combat**~~ (§5.4) | Landed additive-only; no change to combat resolution itself. 1274 tests green. Risk retired. |
-| **Newly-scoreable secrets shift the reward landscape** | Every prior run's VP numbers become non-comparable the moment Phase 2 lands. Re-baseline r6's champions on the fixed engine before drawing any MLP comparison. |
-| **`out/` is gitignored** (`.gitignore:24`) | Was listed as worth fixing independently; codex is right that it is a **prerequisite**, since the success and distillation gates both read those files. Addressed in §11. |
-| **Overfitting the 96-game batch** | 7.6M params against 96 games/update is a large ratio. Weight decay, and the holdout pool (`full_np8_12_holdout.json`, zero overlap with train) is the honest measure. |
+| **Attribution** — two changes at once (D1) | Accepted deliberately. Three identically initialized-from-distillation, independently trained ablation runs are mandatory. |
+| **Per-option cost** (D3) | Decisions with large option sets could dominate. M09-029 measures it; width 128 is the only in-plan fallback. |
+| **Windows + libtorch** (D2, D19) | Real friction: large download, `LIBTORCH` env, DLLs on PATH. M09-025 pins and proves the CPU path before model code depends on it. |
+| **Adam configuration** | The linear 0.03 does not transfer. M10-036a fixes a six-run validation-only grid and deterministic tie-break before ablations. |
+| **Value head destabilising the trunk** | §6.2 fixes a validation-only warm-up and fallback before PPO; it cannot change mid-run. |
+| **Shared trunk averages away faction identity** | Shared readout plus residual, ability facts and embedding cover this; residual/embedding norms are reported. |
+| **Event ledger timing** (§5.4) | Materialized: M06-021 failed tier C official-rules review. M06-021a and the reopened M06 exit gate block all later work. |
+| **Newly-scoreable secrets shift the reward landscape** | Prior VP numbers become non-comparable after M06-021a. M09-019 re-baselines r6 on the corrected engine before any MLP comparison. |
+| **`out/` is gitignored** (`.gitignore:24`) | M09-020 must archive bounded baseline fixtures and seal data manifests before distillation; §10. |
+| **Overfitting the 96-game batch** | The model is provisionally ~12.8M parameters. Seed-cluster splits, bounded DAgger, promotion panels, three independent runs, and a sealed final pool separate training from final measurement. |
 
 ---
 
 ## 9. Open questions
 
-**Closed by codex review (revision 2):**
+There are no implementation-authority questions left open. The formerly open
+items now have explicit gates:
 
-1. ~~Per-option vs two-tower~~ — per-option, batched across a decision's options,
-   CPU path retained. Two-tower stays the measured fallback (§4.3).
-2. ~~Schema 4 or 5~~ — schema 4 for distillation; the 14→19 split becomes a
-   separate controlled migration (D16, §4.4).
-4. ~~Regression-guard thresholds~~ — derived from the r6 paired-panel variance,
-   not chosen: 0.14 VP / 0.043 clearance, Bonferroni-corrected for six
-   simultaneous guards (D18, §6.3).
-5. ~~Count normalisation~~ — clipped `progress / threshold`, with the threshold
-   emitted as its own feature so the ratio is not asked to carry both (D17).
-3. ~~Ability decomposition completeness~~ — settled by measurement (§5.3): all 33
-   seats separate once starting fleet, home planets and commodities are included.
-   The sole ability-level collision is the three Keleres, which are one faction.
-6. ~~Event ledger shape~~ — `turn_seq`-scoped, one variant per card, offered once
-   per turn from `advance_turn` (§5.4).
+- 256 vs 128 width is decided by the CPU measurement bands in §7.1; a two-tower design is out of scope;
+- schema 4, progress normalization, regression guards and ability decomposition
+  are fixed in D16–D18 and §§5–6;
+- action/agenda secret timing follows exact official-rule/card event boundaries in M06-021a,
+  including separate space- and ground-combat events (§5.4); and
+- the corpus, split, bounded DAgger schedule, temperature and distillation gates
+  are fixed in §6.1.
 
-**Still open:**
-
-7. **One objective per turn, or per combat?** (§5.4). The event window is offered
-   once per turn, which approximates 61.6's one-per-action but is not identical
-   for a turn containing several fights. Tightening means a window per combat and
-   a per-combat feat scope. Currently rare enough not to matter; worth a decision
-   before it is load-bearing.
-8. **Distillation corpus** (§6.1). Decisions sampled from champion self-play — but
-   on which pool, how many, and refreshed as the student drifts, or fixed? A fixed
-   corpus is reproducible; an on-policy one avoids the student being trained only
-   where the teacher goes. Not yet specified.
+A failed gate stops its package and records evidence. It does not permit the
+implementer to move a threshold or choose a new dataset without a reviewed plan
+revision.
 
 ---
 
 ## 10. Artifact manifest (prerequisite, not a nice-to-have)
 
-The success criterion and the distillation gate both depend on files that are
-not in the repo. Codex is right that this makes them a prerequisite rather than
-housekeeping: a baseline nobody else can obtain is not a baseline.
+The success criterion and distillation depend on files outside Git. M09-020 owns
+their bounded retention and role separation before model work begins.
 
 The two kinds of artifact need different answers, and revision 1 conflated them.
 
@@ -1017,20 +1217,35 @@ cargo run --release --example generate_pool -- \
 cargo run --release --example generate_pool -- \
     --seed 777 --boards 1000 --min 8 --max 12 \
     --out out/pools/full_np8_12_holdout.json
+cargo run --release --example generate_pool -- \
+    --seed 20260822 --boards 1000 --min 8 --max 12 \
+    --out out/pools/full_np8_12_final.json
 ```
 
 xorshift64* seeded by `--seed`, no clock, no thread order.
 
-**Verified, not assumed.** Both pools were regenerated from these commands on
+The existing `train` and `holdout` pools were regenerated from these commands on
 commit `635d67d` and hashed: `full_np8_12_holdout.json` reproduces bit-for-bit in
 2.5 s, `full_np8_12_train.json` in 8.3 s. A regenerated pool that does *not* match
 the checksum below means the corpus moved, and every number measured against it
 needs re-reading.
 
-**Not reproducible — must be archived.** Training is stochastic across threads,
-so no checkpoint can be regenerated from source. These have to be stored out of
-band, and until they are, every r6 number in this document rests on one machine's
-disk.
+The seed-777 `holdout` file has already informed architecture and thresholds, so
+its logical role is now **validation** despite its filename. M09-020 generates the
+seed-20260822 final pool, verifies zero canonical board-hash overlap with train and
+validation, commits only its generation recipe/checksum/role manifest, and does not
+run any policy on it. A collision or generation mismatch blocks the package. Only
+M10-038 may load final-role data, once, after models and analysis are frozen.
+
+**Not reproducible — archive as bounded fixtures.** Training is stochastic across
+threads, so the two baseline checkpoints cannot be regenerated. M09-020
+deterministically compresses exactly those JSON files with a pinned single-threaded
+zstd tool into `fixtures/mlp-baselines/`, records raw and compressed hashes, tool
+version, license/provenance and extraction command, and commits them only if their
+combined compressed size is ≤ 50 MiB. The package may not add any other `out/`
+content. If the cap, repository policy, or license review fails, implementation
+stops for explicit P3 authority naming an external durable archive; a machine-local
+path is not accepted as durability.
 
 **The manifest** (`plans/evidence/MLP-ARTIFACTS.md`, checksums verified at use):
 
@@ -1040,12 +1255,12 @@ disk.
 | `out/pools/full_np8_12_holdout.json` | `aba33c81aa04cefb` | yes — **verified**, `--seed 777` |
 | `out/pools/full_np8_12_train.json` | `106153d4384435b1` | yes — **verified**, `--seed 1` |
 | `out/stage1_hacanclone/frozen5000.json` | `0d0fa9e5d7a3f9ce` | **no — archive required** |
+| `out/pools/full_np8_12_final.json` | assigned by M09-020 | yes — `--seed 20260822`; sealed final role |
 
-**Action before Phase 5:** archive the r6 champions and the Stage-1
-`frozen5000.json` somewhere durable, record the location, and add a check that
-refuses to run a comparison against a checkpoint whose checksum is not in the
-manifest. A gate that silently compares against the wrong file is worse than one
-that fails.
+Every corpus/panel command validates artifact role and checksum before starting.
+Training and validation commands reject final-role inputs; M10-038 requires them.
+Checkpoint comparison likewise rejects a teacher checksum absent from the durable
+manifest. These are fail-closed tests, not operator conventions.
 
 ---
 
@@ -1065,51 +1280,70 @@ Everything downstream followed from that.
 
 ### 11.1 Milestone placement
 
-The work spans three milestones, which is itself a reason it must be packaged
+The work reopens five sequential milestones, which is itself a reason it must be packaged
 rather than run as one branch:
 
 | milestone | scope owned here |
 |---|---|
-| **M06 — General rules** | the secret-objective ledger and windows; objective progress exposure |
-| **M09 — Learned policy** | feature families, the slot vocabulary, schema 6, MLP inference |
-| **M10 — Simulation and training** | libtorch, distillation, PPO, the promotion gate |
+| **M06 — General rules** | correct secret-objective event timing; objective progress exposure; reopened exit review |
+| **M07/M08 — downstream reaffirmation** | rerun faction/effect and authored-bot legality/redaction gates after nested scoring windows |
+| **M09 — Learned policy** | profiling/artifacts, feature families, vocabulary, CPU libtorch, schema 6 and inference |
+| **M10 — Simulation and training** | corpus, distillation, critic/PPO/resume, promotion, optional CUDA, ablations/final evaluation |
 
 ### 11.2 Package map
 
 Dependency-ordered. IDs continue each milestone's existing numbering (M06 ends at
-020, M09 at 018, M10 at 030). Sizes are held to the standard's one-to-five files
+020, M07 at 018, M08 at 017, M09 at 018, M10 at 030). Sizes are held to the standard's one-to-five files
 and 200–500 net lines; where a phase exceeds that it is split.
 
-| ID | Package | Depends | Tier | Phase |
-|---|---|---|---|---|
-| **M06-021** | Feat ledger and the 14 unreachable secrets | — | **C** (legality, hidden information) | 2a — *implemented, retro evidence, review outstanding* |
-| **M06-022** | Objective progress: counting families return counts | M06-021 | B | 2b |
-| **M06-023** | Objective progress: bespoke predicates and bought costs | M06-022 | B | 2b |
-| **M09-019** | Feature vocabulary, dense slot map, OOV columns | M06-023 | **C** (schema) | 3 |
-| **M09-020** | Objective requirement/progress features | M09-019 | B | 3 |
-| **M09-021** | Faction ability decomposition features | M09-019 | B | 3 |
-| **M09-022** | Secret redaction in the feature path | M09-019 | **C** (hidden information) | 3 |
-| **M09-023** | Schema 6 checkpoint: manifest, atomic write, resume | M09-019 | **C** (schema migration) | 4 |
-| **M09-024** | MLP inference: trunk, readout, value head, batched options | M09-023 | **C** (training mathematics) | 4 |
-| **M10-031** | libtorch integration, determinism harness, throughput gate | M09-024 | **D** (claimed performance gate) | 1, 7.1, 7.2 |
-| **M10-032** | Multi-teacher distillation | M10-031 | C | 5 |
-| **M10-033** | PPO with value head and detached advantages | M10-032 | **C** (training mathematics) | 6 |
-| **M10-034** | Promotion gate: table merit, twelve guards | M10-033 | **C** (training mathematics) | 6 |
+| ID | Package | Depends | Permission | Tier | Phase |
+|---|---|---|---|---|---|
+| **M06-021** | Existing feat ledger and 14 secret paths | M06-020 | P1 + prior P2 measurements | **C** — *implemented; review complete with critical finding* | 0 |
+| **M06-021a** | Event-scoped secret timing rules correction | M06-021 finding | P1 | **C** | 0 |
+| **M06-022** | Counting-family objective progress | M06-021a | P1 | B | 0 |
+| **M06-023** | Bespoke and exact bought-cost progress | M06-022 | P1 | **C** (payments) | 0 |
+| **M06-024** | Reopened M06 exit review | M06-021a–023 | P1 | **C** | 0 |
+| **M07-019** | Post-M06 faction/TE integration revalidation | M06-024, M07-018 | P1 | B | 1 |
+| **M07-020** | Reopened M07 exit review | M07-019 | P1 | **C** | 1 |
+| **M08-018** | Post-M07 authored-bot legality/redaction revalidation | M07-020, M08-017 | P1 | B | 1 |
+| **M08-019** | Reopened M08 exit review | M08-018 | P1 | **C** | 1 |
+| **M09-019** | Post-rules baseline/profile and feature inventory | M08-019, M09-018 | P2, bounded panel/profiler output | **D** (performance evidence) | 2 |
+| **M09-020** | Durable baseline fixtures and sealed data-role manifests | M08-019, M09-018 | P2, ≤50 MiB committed compressed artifacts | **C** (artifacts) | 2 |
+| **M09-021** | Objective requirement/progress policy features | M06-023, M08-019, M09-018 | P1 | B | 3 |
+| **M09-022** | Faction ability decomposition policy features | M08-019, M09-018 | P1 | B | 3 |
+| **M09-023** | Mandatory secret redaction in feature paths | M08-019, M09-018 | P1 | **C** (hidden information) | 3 |
+| **M09-024** | Deterministic dense vocabulary, OOV registry and capacity | M09-019–023 | P2, bounded feature-discovery replay | **C** (schema) | 3 |
+| **M09-025** | Pin CPU libtorch/tch and tensor adapter | M09-019 | P2, pinned dependency/download | **C** (architecture/dependency) | 4 |
+| **M09-026** | Batched MLP actor and shared+residual readouts | M09-024–025 | P1 | **C** (numerics) | 4 |
+| **M09-027** | Canonical critic-state extractor and value inference | M09-026 | P1 | **C** (hidden information/math) | 4 |
+| **M09-028** | Schema-6 inference bundle and atomic recovery | M09-024–027 | P1 | **C** (schema migration) | 4 |
+| **M09-029** | CPU game smoke and width/throughput decision | M09-028 | P2, bounded simulations/benchmarks | **D** | 4 |
+| **M09-030** | Reopened M09 exit review | M09-019–029 | P1 | **D** | 2–4 |
+| **M10-031** | Fixed teacher corpus capture and split | M09-030, M10-030 | P2, ≤10 GiB generated shards | **C** (hidden data/artifacts) | 5 |
+| **M10-032** | Multi-teacher factual distillation and bounded DAgger | M10-031 | P2, bounded training/panels | **C** (training math) | 5 |
+| **M10-033** | Critic warm-up and fixed fallback selection | M10-032 | P2, bounded training | **C** (training math) | 6 |
+| **M10-034** | PPO with detached frozen advantages and Adam | M10-033 | P2, bounded smoke training | **C** (training math) | 6 |
+| **M10-035** | Training checkpoint optimiser/cursor/resume extension | M10-034 | P1 | **C** (schema/crash safety) | 6 |
+| **M10-036** | Shared-model promotion merit and twelve guards | M10-035 | P2, synthetic/fixed validation panels | **C** (training math) | 6 |
+| **M10-036a** | Fixed validation-only optimizer selection | M10-036 | P2, six bounded pilots/panels | **C** (training math) | 6 |
+| **M10-037** | Optional CUDA optimizer determinism/throughput gate | M10-036a | P2, pinned CUDA/download/benchmarks | **D** | 7 |
+| **M10-038** | Three-run ablation and one-shot sealed final evaluation | M10-036a–037 (CUDA pass or recorded no-op) | P2, bounded training/evaluation | **D** | 8 |
+| **M10-039** | Reopened M10 exit review | M10-031–038 | P1 | **D** | 5–8 |
 
-Phase 0 (profiling) is not a package: it changes nothing and its output is an
-evidence file.
-
-M10-031 is tier D — two independent frontier passes — because it is a claimed
-performance gate, which is exactly what the standard names. That is the right bar:
-§7.1 lets a measurement delete the CUDA path, and a measurement with that authority
-should not be single-sourced.
+Profiling is a package because it invokes tools, writes evidence, and can authorize
+an architecture change. M09-025 precedes all `tch`-based model work; training resume
+follows the actual Adam/PPO types. Feature vocabulary follows all emitting feature
+families. Every milestone is closed again after its added packages. If a row cannot
+meet the standard's file/line/test bounds, its task specification records suffixed
+children before implementation; dependencies and the parent acceptance criterion
+remain unchanged.
 
 ### 11.3 Retrospective conformance for M06-021
 
 `0d751a8` is already merged, so the loop cannot be run in order. What is owed, and
 is not optional before the branch continues:
 
-1. `plans/evidence/M06-021.md` — commands, results, oracle commit, changed paths,
+1. `plans/evidence/M06-021.md` — commands, results, normative source, changed paths,
    and the protocol deviation recorded as a deviation rather than quietly fixed.
 2. A permission-class declaration. The work was **P1** throughout except the
    150-game measurement runs, which are **P2** (bounded simulation output) and were
@@ -1118,9 +1352,15 @@ is not optional before the branch continues:
    information, and the author cannot be its only reviewer.
 4. `plans/EXECUTION_STATE.md` updated to name it and the next ready package.
 
-Items 1, 2 and 4 are done in this revision. **Item 3 is outstanding and blocks
-M06-022**, which is the correct consequence: an unreviewed package does not clear a
-dependency.
+All four retrospective items now exist. The independent review found the critical
+event-scope mismatch in §5.4, so it is **resolved as a review activity but not as a
+finding**. M06-021a must fix and re-review the behavior; M06-022 remains blocked.
+
+Python parity is no longer an acceptance criterion. The historical repository is
+still read-only and its tracked pinned commit remains available through `git show`,
+but its pre-existing untracked `docs/POLICY_GRADIENT_HANDOVER.md` does not block
+Rust work. No package may mutate, clean, or claim behavioral conformance to that
+repository unless a future package explicitly restores Python compatibility scope.
 
 ### 11.4 Where this document belongs
 
@@ -1138,7 +1378,7 @@ the argument, and the packages are the work.
 - Widening the roster past six (D11) — the architecture supports it; the run
   does not attempt it.
 - Extending the horizon past 4 rounds (D13).
-- Width sweep beyond 2×256 (D10).
+- Any width other than the primary 256 and the pre-registered 128 throughput fallback (D10).
 - Replacing the batch-mean baseline in the *linear* pipeline.
 - Any hand-authored evaluator, teacher, or preference. The standing constraint is
   straight learning, and it holds throughout: every feature added here reports a

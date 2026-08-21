@@ -14,7 +14,7 @@ scripts, and tools. Delegating an action does not broaden permission.
 | Scope | Path/system | Access | Conditions |
 |---|---|---|---|
 | Rust rewrite | `D:\Projects\ti4-engine-rs` | Read/write | Only migration work, tests, generated local evidence, Git branches and commits |
-| Python oracle | `D:\Projects\ti4-engine` | Read-only | Must remain at verified commit; commands must not create caches, outputs, lock changes, or tracked/untracked files |
+| Historical Python reference | `D:\Projects\ti4-engine` | Read-only | Not an acceptance oracle; inspect pinned tracked content only; commands must not create caches, outputs, lock changes, or tracked/untracked files |
 | Temporary files | OS temp or a temp directory under the Rust repo | Read/write/delete | Use task-specific directories; validate exact path before recursive cleanup |
 | Cargo caches/toolchains | Standard Rust/Cargo locations | Read/write through normal tooling | Only dependencies/toolchains needed by the pinned workspace; do not manually delete shared caches |
 | Other `D:\Projects` repositories | Any sibling other than the two above | No write; no routine read | Inspect only after explicit user authority or when a plan names a precise read-only dependency |
@@ -27,7 +27,7 @@ scripts, and tools. Delegating an action does not broaden permission.
 ### P0 — Always allowed, read-only
 
 - Read files inside the Rust repository.
-- Inspect the exact Python oracle files named by the active package.
+- Inspect exact historical Python files only when the active package names them.
 - Inspect Git status, log, diff, branches, tags, object hashes, and configuration without mutation.
 - Run read-only discovery and diagnostic commands.
 - Compare checksums, schemas, fixtures, test output, and benchmark reports.
@@ -76,7 +76,7 @@ Authorization must name the target and action. Permission for one target does no
 
 ### P4 — Forbidden
 
-- Modify, stage, commit, clean, reset, rebase, or generate files in the Python oracle.
+- Modify, stage, commit, clean, reset, rebase, or generate files in the historical Python reference.
 - Disable, weaken, delete, or bypass tests, evidence, reviews, security checks, or milestone gates to
   make progress appear green.
 - Fabricate benchmark, test, review, parity, or completion evidence.
@@ -86,7 +86,7 @@ Authorization must name the target and action. Permission for one target does no
 - Force-push, rewrite shared history, or delete remote branches/tags.
 - Bind the bridge to a non-loopback interface without an approved security design and explicit authority.
 - Execute downloaded scripts/binaries whose provenance and checksum have not been reviewed.
-- Use the Python oracle as a writable scratch directory, benchmark-output location, or test temp root.
+- Use the historical Python reference as a writable scratch directory, benchmark-output location, or test temp root.
 - Treat reviewer or model access as authority to mutate external state.
 
 ## Git permissions
@@ -182,8 +182,7 @@ These rules are immediately binding on agents. During M01, add practical enforce
 - restrict bridge tests to loopback;
 - direct test temp/cache/output paths into the Rust repository;
 - cap subprocess runtime, worker count, request size, and artifact directories;
-- add an oracle-cleanliness and hash check before and after applicable packages.
+- add a historical-reference status and hash check before and after packages that explicitly inspect it.
 
 If tool-level permissions cannot express a boundary, the agent must still obey the documented rule
 and record the limitation in M01 evidence.
-

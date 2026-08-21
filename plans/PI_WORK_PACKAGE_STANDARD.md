@@ -19,8 +19,9 @@ Each atomic package prompt must contain:
 ID and title
 Milestone and dependencies
 One-sentence objective
-Exact Python source references
-Exact Python test references
+Exact normative rule/specification/source references
+Exact acceptance-test references
+Optional historical Python references, only when the package deliberately uses them
 Allowed Rust edit paths
 Permission class and scoped access declaration
 Inputs and outputs
@@ -55,9 +56,11 @@ Definition of done
 
 ## Evidence file
 
-Every package adds `plans/evidence/MNN-NNN.md` once implementation starts. It records commit, source
-oracle commit, changed paths, test commands/results, differential fixtures, benchmark delta, reviewer,
-findings, and resolution. Large raw outputs are referenced by hash rather than committed.
+Every package adds `plans/evidence/MNN-NNN.md` once implementation starts. It records commit,
+normative source versions, changed paths, test commands/results, conformance fixtures, benchmark
+delta, reviewer, findings, and resolution. Record the historical Python commit only when the
+package actually inspected or compared it. Large raw outputs are referenced by hash rather than
+committed.
 
 ## Review tiers
 

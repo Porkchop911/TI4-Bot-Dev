@@ -6,7 +6,11 @@ Port the existing scored bot, planning surfaces, and explainability without weak
 
 ## Work packages
 
-| ID | Package | Depends | Python oracle | Deliverable and acceptance test |
+Rows 001–017 retain their historical evidence. Python parity is no longer an
+acceptance criterion. Rows 018–019 revalidate bot legality/observation handling
+after the M06/M07 event-window correction.
+
+| ID | Package | Depends | Historical source / normative context | Deliverable and acceptance test |
 |---|---|---|---|---|
 | M08-001 | Policy observation API | M07 | `views.py`, bot game proxy | Typed authorized observation; compile/API design prevents direct hidden-state access. |
 | M08-002 | Base valuation | 001 | `valuation.py` | Item and state value primitives with golden component tests. |
@@ -25,9 +29,10 @@ Port the existing scored bot, planning surfaces, and explainability without weak
 | M08-015 | Behavioral distribution suite | 010–014 | sim baselines | Paired seeds compare action mix, VP pace, completion, faction differentiation. |
 | M08-016 | Bot performance benchmark | 014 | benchmark tool | Per-decision and game costs recorded; regression budget enforced. |
 | M08-017 | Frontier information/review gate | 001–016 | — | Review hidden information, parameter leakage, determinism, and statistical acceptance. |
+| M08-018 | Post-M07 bot observation/legality revalidation | M07-020,M08-017 | Accepted Rust bot contracts | New nested scoring choices remain legal, deterministic and redacted for every authored bot; full affected suites pass. |
+| M08-019 | Reopened frontier exit review | 018 | — | Resolve hidden-information, legality, determinism and downstream-regression findings before M09. |
 
 ## Exit gate
 
 Authored bots select only legal actions from authorized observations, explanations reconcile, and
-paired-seed behavior remains within approved statistical bounds.
-
+paired-seed behavior remains within approved statistical bounds; M08-019 has no unresolved finding.

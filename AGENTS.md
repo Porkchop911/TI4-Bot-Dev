@@ -2,11 +2,13 @@
 
 ## Mission
 
-Implement the Rust rewrite described in `plans/MASTER_PLAN.md` from M00 through M13 with minimal
-human involvement. Progress independently, but never trade correctness, determinism, compatibility,
-security, or evidence for apparent speed.
+Implement the Rust engine described in `plans/MASTER_PLAN.md` from M00 through M13 with minimal
+human involvement. Progress independently, but never trade correctness, determinism, the accepted
+Rust behavior, security, or evidence for apparent speed.
 
-The behavioral oracle is the separate Python repository:
+As of the 2026-08-21 project decision, behavioral parity with the former Python
+implementation is **not an acceptance criterion**. The separate Python repository is a historical,
+read-only reference only:
 
 ```text
 D:\Projects\ti4-engine
@@ -15,9 +17,10 @@ commit: 37061c5
 ```
 
 Treat that repository as read-only. Never edit, format, stage, commit, clean, reset, generate caches
-in, or run a command that writes artifacts into it. Copy required fixtures into this repository under
-the process defined by M00. If the oracle commit is unavailable or its integrity guard fails, stop
-implementation and record the blocker in `plans/EXECUTION_STATE.md`.
+in, or run a command that writes artifacts into it. When historical inspection is useful, read tracked
+content from the pinned commit with non-mutating Git commands. A dirty working tree or unavailable
+Python runtime does not block Rust work. Do not claim Python parity unless a package explicitly tests
+it; official rules, accepted Rust specifications, and package tests govern new behavior.
 
 ## Required reading order
 
@@ -59,15 +62,16 @@ For every work package:
 3. Declare its permission class, writable/read-only paths, network/process needs, artifact bounds,
    and external-state effects using `plans/SCOPED_PERMISSIONS.md`.
 4. Create the package branch from the active milestone integration branch.
-5. Inspect the named Python source and tests read-only. Expand inspection only when necessary to
-   understand a direct dependency.
+5. Inspect the package's named normative sources and tests. Inspect Python read-only only when the
+   package explicitly names it as historical context or a compatibility target.
 6. Write a failing focused test or compatibility fixture first where practical.
 7. Implement the smallest complete behavior. Do not add speculative abstractions or unrelated
    cleanup.
 8. Run formatting, focused tests, affected-crate tests, lints, and any specified differential,
    property, fuzz, mutation, or benchmark check.
-9. Write `plans/evidence/<package-id>.md` with commands, exact results, compatibility evidence,
-   benchmark effect, unresolved differences, and source-oracle commit.
+9. Write `plans/evidence/<package-id>.md` with commands, exact results, specification/rules evidence,
+   benchmark effect, unresolved differences, and source versions. Include the historical Python
+   commit only when it was actually used.
 10. Run the required independent review tier. The implementer may not be the sole reviewer.
 11. Fix every actionable finding and rerun affected checks.
 12. Commit only the package's scoped changes.
@@ -108,7 +112,7 @@ Handover format:
 
 ```text
 Objective:
-Oracle commit:
+Normative source versions (and historical Python commit if used):
 Active milestone/package:
 Status and completed acceptance criteria:
 Current branch and HEAD:
@@ -150,18 +154,19 @@ During a package, run the narrowest useful tests first, then the affected crate.
 milestone, run the entire workspace suite and every milestone-specific gate. Do not repeatedly rerun
 a flaky test until it passes; diagnose and remove the nondeterminism.
 
-A source Python test is not considered covered merely because a similarly named Rust test exists.
-The scope/test ledger must link it to an assertion of the same behavior or to a reviewed exception.
+When a package explicitly claims Python compatibility, a source Python test is not considered covered
+merely because a similarly named Rust test exists. Otherwise, Rust acceptance tests trace to the
+package's named rules/specification rather than to Python test names.
 
 Do not update golden fixtures simply to make a failure disappear. Regenerate a fixture only through
-the versioned oracle process, inspect the semantic diff, and record why the new fixture is correct.
+its versioned, package-approved process, inspect the semantic diff, and record why it is correct.
 
 ## Review and failure handling
 
 - First failure: diagnose in the current Qwen context and retry once.
 - Second failure of the same invariant: use a fresh Qwen 35B context for independent diagnosis.
-- Third failure, architecture conflict, nondeterminism, or unexplained oracle mismatch: obtain a
-  frontier-model diagnosis before further implementation.
+- Third failure, architecture conflict, nondeterminism, or an unexplained mismatch with a package's
+  normative source: obtain a frontier-model diagnosis before further implementation.
 - A reviewer reports findings; it does not silently rewrite critical code without preserving the
   review trail.
 - Record rejected review suggestions and technical rationale in evidence.
@@ -172,7 +177,7 @@ decision or broaden authority.
 
 ## Git and filesystem safety
 
-- Work only inside `D:\Projects\ti4-engine-rs`, except for read-only oracle inspection.
+- Work only inside `D:\Projects\ti4-engine-rs`, except for read-only historical-reference inspection.
 - Follow `plans/SCOPED_PERMISSIONS.md`; delegation never broadens those permissions.
 - Preserve unrelated changes. Never use destructive reset or checkout commands.
 - Use one branch and one focused commit per atomic package.
@@ -184,8 +189,8 @@ decision or broaden authority.
 
 ## Autonomous decision policy
 
-Proceed without asking for routine implementation choices when the answer follows from the oracle,
-plans, tests, or established architecture. Prefer the smallest reversible decision and record it.
+Proceed without asking for routine implementation choices when the answer follows from the accepted
+plans, rules, tests, or established architecture. Prefer the smallest reversible decision and record it.
 
 Stop and request authority only when a choice would materially change public behavior, accepted
 compatibility, security posture, licensing, deployment scope, external systems, or destructive data
@@ -220,7 +225,7 @@ At a milestone exit:
 1. Close every work-package row or record an approved exception.
 2. Run the full workspace suite and all milestone-specific campaigns.
 3. Reconcile the scope, test, artifact, and known-difference ledgers.
-4. Confirm the Python oracle is still unchanged.
+4. Confirm no command run by the package wrote to the historical Python reference, if it was accessed.
 5. Obtain and resolve the specified frontier review.
 6. Write the milestone report and update `plans/EXECUTION_STATE.md`.
 7. Compact context before beginning the next milestone.

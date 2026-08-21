@@ -2,11 +2,17 @@
 
 ## Goal
 
-Port the current branch's simulation, map, policy-gradient, promotion, and data-production workload.
+Maintain the accepted simulation/map/training workload and add deterministic MLP corpus capture,
+distillation, PPO, resume, promotion, optional optimizer acceleration, and sealed evaluation.
 
 ## Work packages
 
-| ID | Package | Depends | Python oracle | Deliverable and acceptance test |
+Rows 001–030 retain the historical source labels under which they were executed.
+For rows 031 onward, `docs/MLP_PLAN.md` revision 5, accepted Rust training math,
+and pre-registered data/gate manifests are normative; Python parity is not an
+acceptance criterion.
+
+| ID | Package | Depends | Normative source / context | Deliverable and acceptance test |
 |---|---|---|---|---|
 | M10-001 | GameResult/Batch schemas | M07–M09 | `engine/sim.py` | Success/failure/ending/timing/actions/VP structures; failures are counted, not hidden. |
 | M10-002 | Save 52 board | M04 | `sim.save_52_galaxy` | Exact placement, seats, rotations, content/source constraints. |
@@ -38,9 +44,20 @@ Port the current branch's simulation, map, policy-gradient, promotion, and data-
 | M10-028 | Stage 2 smoke | 010–026 | Stage 2 tests | Four-round update/evaluate/promote/resume run and objective progress cache checks. |
 | M10-029 | Training performance suite | 007–028 | benchmark/docs | Games/s, updates/s, memory, serialization, capture overhead versus M00 baseline. |
 | M10-030 | Frontier math/artifact review | 010–029 | — | Independent training math, numerical, crash safety, schema, and performance review. |
+| M10-031 | Fixed teacher corpus | M09-030,M10-030 | MLP plan §6.1 | P2 deterministic 128-seed × six-rotation capture of actor/critic vectors, legal sets, teacher probabilities and accepted four-round returns; seed-cluster split, checksummed ≤10 GiB shards, forced-choice filtering and no final data. |
+| M10-032 | Multi-teacher factual distillation | 031 | MLP plan §6.1 | Fixed temperature 1.0, predeclared imitation/gameplay gates, at most two fixed DAgger rounds, zero-init feature extensions. |
+| M10-033 | Critic warm-up and fallback | 032 | MLP plan §6.2 | Train only disjoint critic rows/value head with actor logits bit-identical; one bounded separate-critic retry; batch-mean fallback chosen before PPO and shared by ablations. |
+| M10-034 | MLP PPO and Adam | 033 | MLP plan §6.3 | Advantages detached/frozen from behavior values across four epochs; numerical gradients, entropy, actor/critic loss, deterministic reduction tests. |
+| M10-035 | Schema-6 training resume extension | 034 | MLP plan §§4.4,4.6 | Optimizer tensors/config, data/vocabulary/RNG cursors, manifest-last recovery and uninterrupted-vs-resumed equivalence. |
+| M10-036 | Shared-model promotion gate | 035 | MLP plan §6.4 | Fresh seed-cluster validation/confirmation panels, aggregate merit, twelve multiplicity-corrected guards, synthetic decisions and one bounded real boundary. |
+| M10-036a | Fixed optimizer selection | 036 | MLP plan §6.3 | Six 200-update validation-only pilots, guarded/confirmed selection, then a fixed 1,000-update factual smoke with ≥2 promotions; freeze for every ablation. |
+| M10-037 | Optional CUDA optimizer gate | 036a | MLP plan §§7.1–7.2 | P2/D: CPU rollouts only; fixed-batch gradient agreement/repeatability and ≥10% end-to-end median gain with positive paired 95% CI, else no CUDA merge. |
+| M10-038 | Three-run ablation and sealed final | 036a–037 (CUDA pass or recorded no-op) | MLP plan §§1,6.5,7 | P2/D: three fixed 10,000-update runs within 72h/100 GiB bounds; freeze artifacts/analysis; one resumable fixed-seed final campaign; clustered CI and fixed success bar. |
+| M10-039 | Reopened frontier exit review | 031–038 | — | Two independent tier D passes reconcile math, artifacts, data leakage, determinism, performance, ablations and final claims. |
 
 ## Exit gate
 
-Rust can resume an imported checkpoint, run Stage 1 and Stage 2, preserve learner/champion semantics,
-and emit valid compatible checkpoints, snapshots, archives, and Parquet decision shards.
-
+Rust can resume supported linear and schema-6 training, preserve learner/champion semantics, emit
+valid checkpoints/snapshots/archives/decision shards, and train/evaluate the three MLP ablations
+without validation/final leakage. Optional CUDA has passed or been omitted by its fixed gate, the
+one-shot final result is reported without threshold changes, and M10-039 has no unresolved finding.

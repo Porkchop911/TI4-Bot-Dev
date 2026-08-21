@@ -17,9 +17,9 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
-- Oracle repository: `D:\Projects\ti4-engine` (read-only)
-- Oracle branch: `codex/fully-learned-policy`
-- Oracle commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
+- Historical Python repository: `D:\Projects\ti4-engine` (read-only; not behavioral acceptance)
+- Historical branch: `codex/fully-learned-policy`
+- Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
 ### Codex Stage-1 parity repair checkpoint (2026-08-13)
@@ -1352,7 +1352,8 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 ## Decisions in force
 
 - Windows-first isolated Rust rewrite.
-- The Python repository at `37061c5` is a read-only behavioural oracle.
+- The Python repository at `37061c5` is a read-only historical scope/artifact/performance reference;
+  official rules and accepted Rust specifications govern behavior.
 - Public/semantic compatibility with translation layers where documented.
 - Content is compiled into the binary; `ContentStore::from_dir` remains for regenerated or
   reduced corpora, and a test proves the two agree.
@@ -1815,56 +1816,57 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
-### MLP policy branch — M06-021 and the package map (2026-08-21)
+### MLP policy branch — revision-5 plan review (2026-08-21)
 
-- **Branch:** `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`.
-- **Design note:** [`../docs/MLP_PLAN.md`](../docs/MLP_PLAN.md), revision 4. It is the argument
-  behind the packages below, not a milestone plan; it is not linked from `INDEX.md` and does not
-  replace package specifications. Section 11 records the protocol conformance position.
-- **Milestones touched:** M06 (rules), M09 (learned policy), M10 (training).
+- **Branch/HEAD before this review:** `codex/mlp-policy`, `851f8ad`.
+- **Design note:** [`../docs/MLP_PLAN.md`](../docs/MLP_PLAN.md), revision 5. Section 11.2 is the
+  dependency/permission/review map; exact package specifications are still required before each
+  package starts.
+- **Accepted compatibility policy:** by explicit operator decision on 2026-08-21, Python behavioral
+  parity is no longer an acceptance criterion. `AGENTS.md` now treats the pinned Python repository
+  as a read-only historical reference. Its pre-existing untracked
+  `docs/POLICY_GRADIENT_HANDOVER.md` is recorded but does not block Rust implementation; no command
+  may mutate or clean it.
+- **Milestones reopened:** M06 (rules), M07/M08 (downstream reaffirmation), M09 (learned policy),
+  and M10 (training). Each has a new exit review after its added packages.
 
-**Protocol deviation, recorded.** This branch ran outside the `AGENTS.md` package loop:
-`AGENTS.md` was not read before starting, so no package specification, no scoped permission
-declaration, no `plans/evidence/` file, and no independent review preceded the merged commit
-`0d751a8`. Retro-conformance is in [`evidence/M06-021.md`](evidence/M06-021.md). The tier C
-review is still outstanding.
+**M06-021 status: implemented, reviewed, NOT accepted.** The independent tier C review is recorded
+in [`evidence/M06-021.md`](evidence/M06-021.md). Official FFG Living Rules Reference 2.0 rule 61.7
+permits scoring in both space and ground combat in one tactical action; the merged turn-scoped
+window can offer only once at `advance_turn`. Become a Martyr is also represented as a later board
+position rather than a control-loss occurrence. M06-021a must resolve both findings and pass a
+fresh tier C review. The existing 1274-pass workspace result and 150-game report remain historical
+evidence, not acceptance.
 
-**M06-021 — feat ledger and the fourteen unreachable secrets.** Implemented and merged at
-`0d751a8`. Fourteen of forty secret objectives could not be scored by any sequence of play:
-twelve had no registered requirement, and `dp`/`dtd` had one that nothing offered, because
-`secrets::scoreable_on` returns status-timed secrets only and no code path opened an action- or
-agenda-timed window. Added `Feat` and a turn-scoped ledger on `GameState`, recording at the
-points where the fact still exists (either side of the AFB and bombardment removals, a snapshot
-before the first combat die, the moment the last seat passes, and after 8.20 in `close_vote`),
-plus `ScoringWindow::for_event` opened from `Game::advance_turn`. `cargo test --workspace`:
-**1274 passed, 0 failed** (1271 before). Measured on the r6 champions over 150 holdout games,
-eight of the fourteen now score; the other six are rare inside a four-round horizon.
+**Next ready package after this docs-only review is committed:** M06-021a — event-scoped secret
+timing rules correction. It is P1, tier C, and must receive an exact task specification before code.
+M06-022 and all later work remain dependency-blocked behind it; after M06-024, M07-019/020 and
+M08-018/019 formally reaffirm downstream gates before M09 begins.
 
-**Status: implemented, NOT complete.** Tier C review outstanding — the package touches scoring
-legality and hidden information, and the implementer may not be its only reviewer.
+**Plan-review decisions now closed:** canonical option-free critic features; shared readout plus
+zero-init faction residuals; post-feature deterministic vocabulary with fixed physical capacity;
+schema-6 inference vs training-resume split; exact payment-planner progress; CPU-authoritative
+rollouts and optional CUDA optimizer only; fixed distillation/DAgger seed clusters; validation/final
+data separation; bounded durable baseline fixtures; three independently trained ablations; and
+reopened M06–M10 exit reviews. The final consistency pass also made milestone dependencies explicit,
+added the actor/critic vectors and returns required of the teacher corpus, forbade intermediate
+promotion/early stopping in optimizer pilots, fixed the promotion variance audit as diagnostic-only,
+and superseded M00's former behavioral-oracle wording.
 
-**Next ready package:** none. **M06-022 is blocked** by the M06-021 review; an unreviewed
-package does not clear a dependency.
+**Working tree intentionally dirty for the active docs-only plan review:** `AGENTS.md`,
+`docs/MLP_PLAN.md`, `plans/MASTER_PLAN.md`, `plans/INDEX.md`, `plans/SCOPED_PERMISSIONS.md`,
+`plans/EXECUTION_STATE.md`, `plans/M00_ORACLE_AND_BASELINE.md`,
+`plans/PI_WORK_PACKAGE_STANDARD.md`,
+`plans/M06_GENERAL_RULES.md`, `plans/M07_FACTIONS_AND_TE.md`, `plans/M08_AUTHORED_BOTS.md`,
+`plans/M09_LEARNED_POLICY.md`, `plans/M10_SIMULATION_AND_TRAINING.md`,
+`plans/M12_QUALIFICATION.md`, `plans/M13_CUTOVER.md`, `plans/evidence/M06-021.md`, and
+`plans/evidence/MLP-ARTIFACTS.md`. No source code, generated artifact, or historical Python
+repository path is modified. Validation passed: Markdown table and local-link scan; stale-term and
+dependency-reference scan; 31-row package-map reconciliation; `git diff --check`; and all four
+baseline artifact hashes/sizes. The read-only historical repository remains at
+`37061c511a4780d4c0719e0342533a498cd4b457` on `codex/fully-learned-policy`, with only its pre-existing
+untracked `docs/POLICY_GRADIENT_HANDOVER.md`. Cargo tests were not run because the changes are
+documentation-only.
 
-**Package map** (IDs continue each milestone's numbering; M06 ended at 020, M09 at 018, M10 at 030):
-
-| ID | Package | Depends | Tier |
-|---|---|---|---|
-| M06-021 | Feat ledger and the 14 unreachable secrets | — | C — *merged, review outstanding* |
-| M06-022 | Objective progress: counting families return counts | M06-021 | B |
-| M06-023 | Objective progress: bespoke predicates and bought costs | M06-022 | B |
-| M09-019 | Feature vocabulary, dense slot map, OOV columns | M06-023 | C |
-| M09-020 | Objective requirement/progress features | M09-019 | B |
-| M09-021 | Faction ability decomposition features | M09-019 | B |
-| M09-022 | Secret redaction in the feature path | M09-019 | C |
-| M09-023 | Schema 6 checkpoint: manifest, atomic write, resume | M09-019 | C |
-| M09-024 | MLP inference: trunk, readout, value head, batched options | M09-023 | C |
-| M10-031 | libtorch integration, determinism harness, throughput gate | M09-024 | D |
-| M10-032 | Multi-teacher distillation | M10-031 | C |
-| M10-033 | PPO with value head and detached advantages | M10-032 | C |
-| M10-034 | Promotion gate: table merit, twelve guards | M10-033 | C |
-
-**Artifact checksums** for the r6 baseline this branch measures against:
-[`evidence/MLP-ARTIFACTS.md`](evidence/MLP-ARTIFACTS.md). Map pools regenerate from committed
-code and were verified to reproduce bit-for-bit; checkpoints do not regenerate and are not
-archived, which is an open risk.
+Baseline hashes remain in [`evidence/MLP-ARTIFACTS.md`](evidence/MLP-ARTIFACTS.md). The two
+non-reproducible checkpoints are not durable yet; M09-020 is a hard prerequisite for corpus capture.

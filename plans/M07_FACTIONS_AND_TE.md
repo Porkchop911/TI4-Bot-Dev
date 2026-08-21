@@ -2,11 +2,16 @@
 
 ## Goal
 
-Reach parity with every faction-specific and Thunder's Edge behavior implemented on the source branch.
+Implement and preserve the accepted faction-specific and Thunder's Edge behavior under official
+rules and versioned Rust specifications.
 
 ## Work packages
 
-| ID | Package | Depends | Python oracle | Deliverable and acceptance test |
+Rows 001–018 retain the historical comparison evidence under which they were
+executed. Python parity is no longer an acceptance criterion. Rows 019–020
+revalidate the accepted Rust scope after M06's event-window correction.
+
+| ID | Package | Depends | Historical source / normative context | Deliverable and acceptance test |
 |---|---|---|---|---|
 | M07-001 | Faction plugin contract | M06 | `factions.py`, ability modules | Registration, setup, modifiers, timing hooks, validation, coverage reporting. |
 | M07-002 | Sol | 001 | `faction_abilities/sol.py` | Setup, abilities, leaders, tech/mech behaviors and existing tests. |
@@ -26,9 +31,11 @@ Reach parity with every faction-specific and Thunder's Edge behavior implemented
 | M07-016 | Scoped-effect regression suite | 002–015 | combat/production/activation sequence tests | Effects expire by sequence even on early exit/cancellation. |
 | M07-017 | Faction differential suite | 002–016 | all faction/TE tests | Choices, events, state, and coverage match selected oracle cases. |
 | M07-018 | Frontier coverage review | 001–017 | — | Verify no corpus-only record is falsely called implemented and no branch behavior is omitted. |
+| M07-019 | Post-M06 faction/TE integration revalidation | M06-024,M07-018 | Accepted Rust faction/TE scope; FFG objective timing | Run faction integration/scoped-effect/full-workspace gates with nested secret windows; fix only demonstrated regressions. |
+| M07-020 | Reopened frontier exit review | 019 | — | Resolve timing/effect-scope/coverage findings and reaffirm the accepted faction/TE scope. |
 
 ## Exit gate
 
-The supported faction slice and current TE subsystems match Python; unimplemented content remains
-visible and accurately counted.
-
+The supported faction slice and current TE subsystems meet the accepted Rust specifications and
+named official rules; unimplemented content remains visible and accurately counted; M07-020 has no
+unresolved finding.

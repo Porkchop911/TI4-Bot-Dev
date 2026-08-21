@@ -2,11 +2,16 @@
 
 ## Goal
 
-Port current non-faction rules families without silently expanding or shrinking implementation coverage.
+Implement the accepted non-faction rules scope without silent expansion/shrinkage, including exact
+official objective timing and exact payment-backed progress semantics.
 
 ## Work packages
 
-| ID | Package | Depends | Python oracle | Deliverable and acceptance test |
+Rows 001–020 retain the historical source labels under which they were executed.
+For rows 021 onward, official rules and accepted Rust specifications are normative;
+Python parity is not an acceptance criterion.
+
+| ID | Package | Depends | Normative source / context | Deliverable and acceptance test |
 |---|---|---|---|---|
 | M06-001 | Generic payment planner | M05 | production/objectives/strategy payments | Atomic multi-currency/disjoint-planet planner with exhaustive small-state properties. |
 | M06-002 | Trade economy | 001 | `transactions.py`, trade tests | Commodities, trade goods, replenishment, exchange, transaction validation. |
@@ -28,9 +33,14 @@ Port current non-faction rules families without silently expanding or shrinking 
 | M06-018 | General differential suite | 001–017 | corresponding test families | Choice/event/state fixtures ported family by family. |
 | M06-019 | Payment/parser fuzzing | 001–016 | — | Malformed content and generated payments never panic or partially mutate state. |
 | M06-020 | Frontier critical review | 001–019 | — | Review payments, hidden information, scoring, victory, laws, and coverage claims. |
+| M06-021 | Feat ledger and fourteen secret paths (implemented; finding open) | 020 | FFG LRR 2.0 §61.7, printed timings | Historical merged implementation and evidence; not accepted until 021a. |
+| M06-021a | Event-scoped secret timing correction | 021 finding | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Per-occurrence windows at combat end and the relevant AFB, space-cannon, bombardment, control-loss, pass, and agenda-resolution steps; one objective per combat, every eligible non-combat action/agenda objective; separate space/ground, multi-agenda, attribution/redaction tests; tier C review. |
+| M06-022 | Counting-family objective progress | 021a | Accepted Rust scoring predicates | Exact counts expose progress while `satisfied` preserves existing legality. |
+| M06-023 | Bespoke and bought-cost progress | 022 | Accepted Rust predicates/payment planner | Count families plus greatest exactly-affordable scaled cost; no heuristic or duplicate-feature summation. |
+| M06-024 | Reopened frontier critical review | 021a–023 | — | Resolve timing, scoring, payment, hidden-information, property, and workspace findings before M09 additions. |
 
 ## Exit gate
 
-All applicable non-faction rules tests pass, registry coverage agrees exactly, and payment/scoring
-operations are atomic under property and mutation testing.
-
+All applicable non-faction rules tests pass, registry coverage matches the accepted Rust scope,
+event-scoped objective timing satisfies the named official rules, and payment/scoring operations are
+atomic under property and mutation testing. M06-024 has no unresolved finding.

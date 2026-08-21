@@ -2,9 +2,10 @@
 
 ## Decision
 
-Build a new repository at `D:\Projects\ti4-engine-rs`. Preserve public behavior and persisted
-artifacts while redesigning internals idiomatically in Rust. Keep the Python repository unchanged
-and use it as a differential oracle until cutover.
+Build the engine at `D:\Projects\ti4-engine-rs`. Preserve accepted Rust APIs and persisted artifact
+contracts while redesigning internals idiomatically in Rust. By project decision on 2026-08-21,
+behavioral parity with Python is no longer a goal. Keep the historical Python repository unchanged;
+it may inform investigations but cannot override official rules or accepted Rust specifications.
 
 The scope is everything present on `codex/fully-learned-policy` at `37061c5`, including the rules
 engine, current implemented content, documented gaps, bots, fully learned policy schemas, Stage 1
@@ -27,9 +28,9 @@ and Stage 2 training, simulation tools, artifact formats, and TTS bridge.
 
 M00 must remeasure these figures before they become contractual.
 
-## Compatibility policy
+## Compatibility policy (revised 2026-08-21)
 
-Preserve:
+Preserve unless an explicit versioned migration says otherwise:
 
 - legal-choice sets, stable option IDs, state transitions, and event ordering;
 - documented deterministic behavior and replay semantics;
@@ -37,11 +38,13 @@ Preserve:
 - policy profiles and checkpoint schemas 2–5;
 - JSON, JSON.GZ, Parquet, map-pool, baseline, telemetry, and surrogate artifacts;
 - TTS HTTP endpoints and command/telemetry JSON;
-- implemented behavior and explicit `unimplemented` registries.
+- accepted Rust behavior and explicit `unimplemented` registries.
 
 Internal Rust layouts may differ. Existing artifacts may use a checked translation command where
-direct loading would permanently constrain the Rust design. Every compatibility surface is marked
-`exact`, `semantic`, `translated`, `intentional-change`, or `not-applicable` in M00's ledger.
+direct loading would permanently constrain the Rust design. Historical Python comparisons already
+recorded remain useful evidence, but new acceptance traces to official rules, versioned Rust
+specifications, public artifact/API contracts, and focused tests. Every compatibility surface is
+marked `exact`, `semantic`, `translated`, `intentional-change`, or `not-applicable` in M00's ledger.
 
 Native Rust games use a pinned, versioned RNG. Legacy Python seeds are converted into an explicit
 entropy/replay stream; they do not force all future games to use Python's RNG behavior.
@@ -79,7 +82,7 @@ Measured on the same Windows host and workload:
 | Stage 2 training throughput | 2x | 4x | 8x |
 | Peak memory per worker | no regression | 40% lower | 60% lower |
 
-No performance result counts unless semantic parity tests for that workload pass.
+No performance result counts unless the workload's Rust semantic/correctness gates pass.
 
 ## Quality gates
 
@@ -89,25 +92,25 @@ No performance result counts unless semantic parity tests for that workload pass
 - No unresolved critical or high dependency vulnerability.
 - No unreviewed `unsafe`.
 - Deterministic hash equality across repeated native runs.
-- 10,000 differential tactical scenarios and 1,000 complete-game soak runs.
+- 10,000 rules-boundary/property scenarios and 1,000 complete-game soak runs.
 - Every external parser has malformed, oversized, and fuzzed inputs.
 - Checkpoint writes are atomic and crash-recovery tested.
 
 ## Milestone gates
 
-1. M00 freezes scope and the oracle.
+1. M00 freezes scope, historical references, and baselines.
 2. M01 creates a reproducible workspace.
 3. M02 establishes content and state.
 4. M03 establishes choices, timing, and replay.
 5. M04 completes generic games.
 6. M05 completes the tactical action.
 7. M06 ports general rules.
-8. M07 closes current faction/TE parity.
+8. M07 closes the accepted faction/TE scope.
 9. M08 ports authored bots.
 10. M09 ports learned inference.
 11. M10 ports simulation and training.
 12. M11 replaces the Python bridge.
-13. M12 proves parity, safety, and speed.
+13. M12 proves rules conformance, safety, and speed.
 14. M13 qualifies and cuts over the workload.
 
 Each milestone requires a frontier-model exit review. Completion means passing evidence, not merely
@@ -115,8 +118,8 @@ the presence of code.
 
 ## Completion definition
 
-The Rust engine is ready only when the scope ledger is closed, legacy artifacts import, applicable
-behavior is equivalent, known gaps are accurate, security gates pass, minimum speedups are measured,
-the representative workload soaks successfully, and rollback to the frozen Python engine has been
-tested.
-
+The Rust engine is ready only when the scope ledger is closed, supported legacy artifacts import,
+accepted behavior passes its rules/specification tests, known gaps are accurate, security gates pass,
+minimum speedups are measured, the representative workload soaks successfully, and operational
+rollback to the frozen incumbent Python deployment has been tested without treating it as a
+behavioral oracle.
