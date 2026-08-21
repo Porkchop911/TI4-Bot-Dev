@@ -136,12 +136,35 @@ should be explicit.
 
 ### Why shared, when the gate was per-faction
 
-`factions.json` carries **34** factions. Six independent models each see 16
-games of gradient per update; thirty would see ~3. Gradient variance is already
-the constraint the promotion gate has rejected on for four consecutive runs —
-independent models make the one existing problem five times worse, and the
-boundary-panel cost (100+100 seeds × 6 rotations, per faction) scales linearly
-on top.
+`factions.json` holds 34 **records**, which is not the same as 34 factions —
+revision 2 said it was, from a `len()` on the array. The breakdown:
+
+| source | records | |
+|---|---:|---|
+| `base` | 17 | playable |
+| `pok` | 7 | playable |
+| `codex3` | 3 | the Keleres, as three home-system flavours of **one** faction |
+| `thunders_edge` | 7 | 6 playable, plus `neutral` — no home system, no planets, no abilities, not a faction |
+
+**33 selectable seats, 31 distinct faction identities.** The readout and the
+embedding are sized on 33, because the three Keleres differ in home system,
+home planets, starting fleet and commodities even though they share everything
+else.
+
+The sampling argument, with the arithmetic done properly this time. An update is
+96 games × 6 seats = **576 seat-trajectories**, drawn from **16 distinct boards**
+(16 seeds × 6 rotations, where a rotation permutes seating on the same board).
+Split across 6 faction models that is 96 trajectories each; across 31 it is ~19.
+Revision 2 said "16, and thirty would see ~3", which was wrong in both terms —
+though the ratio it turned on, 5×, is right, because the reduction is just the
+faction-count ratio.
+
+The sharper point is the one neither number captured: **only 16 of those samples
+are independent.** Six rotations of one board share its map, its objectives and
+its deck order. Gradient variance is already the constraint the promotion gate
+has rejected on for four consecutive runs, and independent models divide an
+effective sample size of 16 boards by another factor of five. The boundary-panel
+cost (100+100 seeds × 6 rotations, per faction) scales linearly on top.
 
 The consequence is that promotion can no longer be per-faction: you cannot move
 Hacan's trunk without moving Jol-Nar's. Hence D9.
@@ -247,10 +270,13 @@ a contained change and does not touch the policy path.
 |---|---:|---|
 | input layer | 29k × 256 ≈ 7.4M | shared; sparse gather, ~30 active slots per option |
 | hidden layer | 256 × 256 ≈ 66k | shared |
-| per-faction readout | 256 × 19 heads ≈ 4.9k each | × 34 factions ≈ 165k |
-| identity embedding | 16 × 34 ≈ 0.5k | |
+| per-faction readout | 256 × 14 heads ≈ 3.6k each | × 33 seats ≈ 118k |
+| identity embedding | 16 × 33 ≈ 0.5k | |
 | value head | 256 | |
 | **total** | **~7.6M** | ~30 MB fp32 — trivial for 24 GB |
+
+The readout is costed at **14 heads, not 19**: D16 settled on schema 4 for
+distillation and revision 2 left the budget contradicting its own decision.
 
 The input layer dominates the parameter count but not the compute: with ~30
 active slots per option it is a gather of 30 columns, not a 29k-wide matmul.
@@ -414,9 +440,27 @@ reacts to cards it could not legally see and misplays against anything else.
 ### 5.3 Faction abilities
 
 New family derived from `abilities.json`, plus starting units, home planets and
-faction technologies. Must be complete enough that two factions are never
-identical under decomposition — **flagged for codex: verify this holds across
-all 34 before relying on it.**
+faction technologies. Must be complete enough that two seats are never identical
+under decomposition, or the embedding silently becomes load-bearing.
+
+**Checked, over all 33 playable seats:**
+
+| decomposition | distinct | collisions |
+|---|---:|---|
+| abilities only | 31 / 33 | `keleresa = keleresm = keleresx` |
+| + starting tech | 31 / 33 | same |
+| + units, faction tech | 31 / 33 | same |
+| **+ starting fleet, home planets, commodities** | **33 / 33** | none |
+
+The one collision is not a defect: the three Keleres genuinely *are* one faction,
+with identical abilities, starting technology, units and faction technology. They
+differ only in the four fields the last row adds — which is exactly the set §5.3
+already specified. So the decomposition separates every seat, and **the identity
+embedding is not doing the separating.**
+
+That leaves the embedding with only its stated job: absorbing idiosyncrasy the
+decomposition misses. Its norm stays a diagnostic (§3), and dropping it entirely
+is now a live option rather than a risk.
 
 ### 5.4 Missing engine coverage (D14) — **done, commit `0d751a8`**
 
@@ -659,15 +703,14 @@ checksum, raw output, committed.
    simultaneous guards (D18, §6.3).
 5. ~~Count normalisation~~ — clipped `progress / threshold`, with the threshold
    emitted as its own feature so the ratio is not asked to carry both (D17).
+3. ~~Ability decomposition completeness~~ — settled by measurement (§5.3): all 33
+   seats separate once starting fleet, home planets and commodities are included.
+   The sole ability-level collision is the three Keleres, which are one faction.
 6. ~~Event ledger shape~~ — `turn_seq`-scoped, one variant per card, offered once
    per turn from `advance_turn` (§5.4).
 
 **Still open:**
 
-3. **Ability decomposition completeness** (§5.3). Does it separate all 34
-   factions? If not, the identity embedding is doing load-bearing work and the
-   generalisation claim weakens. Cheap to settle: decompose all 34 and check for
-   collisions before Phase 3 relies on it.
 7. **One objective per turn, or per combat?** (§5.4). The event window is offered
    once per turn, which approximates 61.6's one-per-action but is not identical
    for a turn containing several fights. Tightening means a window per combat and
