@@ -369,12 +369,25 @@ fn same_trait_progress(p: &Position) -> usize { ... }
 Emitted features, per revealed public and per held secret:
 
 ```
-objective-need:<family>:<threshold>      1.0
-objective-have:<family>                  count      (normalised)
-objective-gap:<family>                   max(0, threshold - count)
+objective-need:<family>:<threshold>      1.0        # threshold as its own feature
+objective-progress:<family>              min(1, have / threshold)
 objective-met:<alias>                    0/1
 objective-stage:<1|2>                    count of each revealed
 ```
+
+**Normalisation (D17).** Codex's ruling: clipped `progress / threshold`, with the
+threshold emitted separately. Revision 1 proposed raw counts plus a raw gap, which
+is the standard way to hand a network a badly conditioned first layer — `have` for
+"control 11 planets" and `have` for "own 2 faction technologies" would share a
+scale and a weight while differing by an order of magnitude. The ratio puts every
+family on `[0, 1]` and makes "80% of the way there" mean the same thing across all
+of them; clipping at 1 stops an overshoot from reading as more urgent than
+completion. The threshold is kept as a distinct feature because the ratio alone
+cannot distinguish "3 of 4" from "9 of 12", and the difficulty of the remaining
+step is not the same.
+
+The gap feature is dropped: `1 - progress` is a linear function of what is already
+there, and a layer that wants it can form it.
 
 Keying on **family** rather than alias is the point: Outer Rim (`on_the_rim(3)`)
 and Control the Borderlands (`on_the_rim(5)`) share machinery, so learning about
@@ -679,13 +692,21 @@ The two kinds of artifact need different answers, and revision 1 conflated them.
 output of committed code:
 
 ```sh
-cargo run --release --example generate_pool -- --seed 1   --count 4000     --min 8 --max 12 --out out/pools/full_np8_12_train.json
-cargo run --release --example generate_pool -- --seed 777 --count 1000     --min 8 --max 12 --out out/pools/full_np8_12_holdout.json
+cargo run --release --example generate_pool -- \
+    --seed 1 --boards 4000 --min 8 --max 12 \
+    --out out/pools/full_np8_12_train.json
+cargo run --release --example generate_pool -- \
+    --seed 777 --boards 1000 --min 8 --max 12 \
+    --out out/pools/full_np8_12_holdout.json
 ```
 
-xorshift64* seeded by `--seed`, no clock, no thread order. A regenerated pool
-must match the checksum below; if it does not, the corpus moved and every number
-measured against it needs re-reading.
+xorshift64* seeded by `--seed`, no clock, no thread order.
+
+**Verified, not assumed.** Both pools were regenerated from these commands on
+commit `635d67d` and hashed: `full_np8_12_holdout.json` reproduces bit-for-bit in
+2.5 s, `full_np8_12_train.json` in 8.3 s. A regenerated pool that does *not* match
+the checksum below means the corpus moved, and every number measured against it
+needs re-reading.
 
 **Not reproducible — must be archived.** Training is stochastic across threads,
 so no checkpoint can be regenerated from source. These have to be stored out of
@@ -697,8 +718,9 @@ disk.
 | artifact | sha256 (first 16) | recoverable? |
 |---|---|---|
 | `out/stage2_r6/final10000.json` | `be792a2a207ced25` | **no — archive required** |
-| `out/pools/full_np8_12_holdout.json` | `aba33c81aa04cefb` | yes, `--seed 777` |
-| `out/pools/full_np8_12_train.json` | `106153d438443519` | yes, `--seed 1` |
+| `out/pools/full_np8_12_holdout.json` | `aba33c81aa04cefb` | yes — **verified**, `--seed 777` |
+| `out/pools/full_np8_12_train.json` | `106153d4384435b1` | yes — **verified**, `--seed 1` |
+| `out/stage1_hacanclone/frozen5000.json` | `0d0fa9e5d7a3f9ce` | **no — archive required** |
 
 **Action before Phase 5:** archive the r6 champions and the Stage-1
 `frozen5000.json` somewhere durable, record the location, and add a check that

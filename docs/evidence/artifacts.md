@@ -10,5 +10,6 @@ aba33c81aa04cefb15857b8ed1d40173f6f3de5e9b6e9633a6855c1d5a4c27e5 *out/pools/full
 0d0fa9e5d7a3f9ce848ef2c52a4a4144183af7ca5c15082850874a18c039ca4a *out/stage1_hacanclone/frozen5000.json
 ```
 
-Pools regenerate from committed code (`examples/generate_pool.rs`, seeds 1 and 777).
+Pools regenerate from committed code (`examples/generate_pool.rs`, seeds 1 and 777) --
+both verified to reproduce bit-for-bit on commit 635d67d.
 Checkpoints do not regenerate and must be archived out of band.
