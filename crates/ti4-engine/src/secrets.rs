@@ -6,7 +6,7 @@
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlayerId, SecretObjectiveId};
-use ti4_model::state::GameState;
+use ti4_model::state::{Feat, GameState};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
@@ -702,6 +702,26 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     fn four_mechs(p: &Position<'_>) -> bool {
         mechs_on_distinct_planets(4)(p)
     }
+    /// Become a Martyr, as a position rather than an event.
+    ///
+    /// The card says "lose control of a planet in a home system". A planet of your own home
+    /// sitting in someone else's hands *is* that loss, and reads the same whether it happened
+    /// this turn or three rounds ago — which is the honest reading, since the card is scored
+    /// while the boot is still on your neck. Written this way so it needs no ledger entry, and
+    /// so it cannot be satisfied by a home planet you never held.
+    fn lost_a_home_planet(p: &Position<'_>) -> bool {
+        let Some(seat) = p.state.player(p.player) else {
+            return false;
+        };
+        seat.home_planets.iter().any(|planet| {
+            p.state.board.values().any(|board| {
+                board
+                    .planet_control
+                    .get(planet)
+                    .is_some_and(|holder| holder != p.player)
+            })
+        })
+    }
     fn nine_ground_forces(p: &Position<'_>) -> bool {
         ground_forces_on_one_planet(9)(p)
     }
@@ -734,17 +754,45 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         "eh" => Some(twelve_influence),
         "hrm" => Some(twelve_resources),
         "mlp" => Some(four_of_a_colour),
+        "bam" => Some(lost_a_home_planet),
         _ => None,
     }
 }
 
-/// Aliases with a registered requirement.
+/// The feat each event-conditioned secret asks for.
+///
+/// Twelve cards are written against something that *happened*, not something that *is*: a war sun
+/// that was destroyed, a combat that was won, a seat that passed last. A `Position` holds the
+/// board and the board does not remember any of it, which is why these had no requirement at all
+/// until the ledger existed. See [`ti4_model::state::Feat`].
+#[must_use]
+pub const fn feat_for(alias: &str) -> Option<Feat> {
+    let feat = match alias.as_bytes() {
+        b"dtgs" => Feat::DestroyedACapitalShip,
+        b"mew" => Feat::BombardedOutTheLastGroundForces,
+        b"ttfd" => Feat::SpaceCannonTookTheLastNonFighters,
+        b"fwp" => Feat::BarrageTookTheLastFighters,
+        b"sar" => Feat::WonAgainstThePointsLeader,
+        b"uf" => Feat::WonBesideASurvivingFlagship,
+        b"baf" => Feat::WonAgainstANoteHolder,
+        b"btv" => Feat::WonInAnAnomaly,
+        b"dts" => Feat::WonInARivalHome,
+        b"dyp" => Feat::HeldThreeShipsAfterASpaceCombat,
+        b"dtd" => Feat::ElectedByAnAgenda,
+        b"pe" => Feat::LastToPass,
+        _ => return None,
+    };
+    Some(feat)
+}
+
+/// Aliases with a registered requirement, whether a position or a feat.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     vec![
-        "ans", "btgk", "csl", "ctr", "dfat", "dhw", "dp", "eap", "eh", "faa", "fc", "fsn", "fwm",
-        "gamf", "hrm", "lsc", "mlp", "mp", "mrm", "mtm", "ose", "otf", "pem", "sai", "sb", "syc",
-        "te",
+        "ans", "baf", "bam", "btgk", "btv", "csl", "ctr", "dfat", "dhw", "dp", "dtd", "dtgs",
+        "dts", "dyp", "eap", "eh", "faa", "fc", "fsn", "fwm", "fwp", "gamf", "hrm", "lsc", "mew",
+        "mlp", "mp", "mrm", "mtm", "ose", "otf", "pe", "pem", "sai", "sar", "sb", "syc", "te",
+        "ttfd", "uf",
     ]
 }
 
@@ -803,6 +851,53 @@ pub fn scoreable_on(
         .filter(|alias| timing(content, alias) == Timing::Status)
         .filter(|alias| !already.contains(&ti4_model::id::ObjectiveId::new(alias.as_str())))
         .filter(|alias| requirement_for(alias).is_some_and(|check| check(&position)))
+        .cloned()
+        .collect()
+}
+
+/// Action- and agenda-timed secrets this player may score now.
+///
+/// The counterpart to [`scoreable_on`], which deliberately answers only for the status phase.
+/// Until this existed nothing anywhere offered a secret with either other timing, so fourteen of
+/// the forty cards in the deck could not be scored at all — twelve because they had no
+/// requirement, and two (`dp`, `dtd`) because even a satisfied requirement was never asked.
+///
+/// A card qualifies on either footing: a feat recorded during the turn now resolving, or a
+/// position that is true right now. `dp` is the second kind — "there are 3 or more laws in play"
+/// is a fact about the table, and it happens to be checked in the agenda phase.
+#[must_use]
+pub fn scoreable_event(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    when: Timing,
+    turn: u32,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<SecretObjectiveId> {
+    if when == Timing::Status {
+        // Status secrets have their own window, and offering them here would score them twice.
+        return Vec::new();
+    }
+    let Some(seat) = state.player(player) else {
+        return Vec::new();
+    };
+    let already = state.scored_by(player);
+    let position = Position {
+        state,
+        content,
+        sources,
+        player,
+        galaxy,
+    };
+    seat.secret_objectives
+        .iter()
+        .filter(|alias| timing(content, alias) == when)
+        .filter(|alias| !already.contains(&ti4_model::id::ObjectiveId::new(alias.as_str())))
+        .filter(|alias| {
+            feat_for(alias.as_str()).is_some_and(|feat| state.did_at_turn(player, feat, turn))
+                || requirement_for(alias).is_some_and(|check| check(&position))
+        })
         .cloned()
         .collect()
 }
@@ -1750,20 +1845,102 @@ mod tests {
                     .is_some(),
                 "{alias} is not a secret the corpus knows"
             );
-            assert!(requirement_for(&SecretObjectiveId::new(alias)).is_some());
+            // Either footing counts: a position the board can answer, or a feat the ledger
+            // records. Twelve of these have only the second, which is why they had no
+            // requirement at all before the ledger existed.
+            assert!(
+                requirement_for(&SecretObjectiveId::new(alias)).is_some()
+                    || feat_for(alias).is_some(),
+                "{alias} is registered but nothing decides it"
+            );
         }
         let _ = put;
     }
 
     #[test]
-    fn the_unimplemented_secrets_are_reported() {
+    fn every_secret_in_the_corpus_is_decidable() {
+        // This asserted the opposite until the feat ledger landed: the deck shipped with 14 of
+        // its 40 cards unscoreable, 12 with no requirement and 2 (`dp`, `dtd`) whose requirement
+        // was never asked because nothing offered a non-status secret. A seat holding one of
+        // those held a dead card, and no amount of play could score it.
         let missing = unimplemented(ContentStore::embedded(), POK);
-        assert!(!missing.is_empty(), "most secrets are still unimplemented");
-        for alias in registered_aliases() {
+        assert!(
+            missing.is_empty(),
+            "these secrets can never be scored: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn an_action_secret_is_offered_only_to_the_seat_whose_feat_it_was() {
+        let mut state = game(&["a", "b"]);
+        state.turn_seq = 7;
+        for seat in &mut state.players {
+            seat.secret_objectives = vec![SecretObjectiveId::new("btv")];
+        }
+        let content = ContentStore::embedded();
+
+        assert!(
+            scoreable_event(&state, content, POK, &player(), Timing::Action, 7, None).is_empty(),
+            "nobody has won anything yet"
+        );
+
+        state.record_feat(&player(), Feat::WonInAnAnomaly);
+
+        assert_eq!(
+            scoreable_event(&state, content, POK, &player(), Timing::Action, 7, None),
+            vec![SecretObjectiveId::new("btv")],
+            "the seat that won the fight may score it"
+        );
+        assert!(
+            scoreable_event(&state, content, POK, &PlayerId::new("b"), Timing::Action, 7, None)
+                .is_empty(),
+            "the other seat holds the same card and did not win the fight"
+        );
+        assert!(
+            scoreable_event(&state, content, POK, &player(), Timing::Action, 8, None).is_empty(),
+            "a fight won on turn 7 does not pay out on turn 8"
+        );
+    }
+
+    #[test]
+    fn a_status_secret_is_never_offered_in_an_event_window() {
+        // The two windows would otherwise both offer it and score it twice.
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("eap")];
+        let content = ContentStore::embedded();
+        for when in [Timing::Action, Timing::Agenda] {
             assert!(
-                !missing.contains(&SecretObjectiveId::new(alias)),
-                "{alias} is registered and must not appear in unimplemented"
+                scoreable_event(&state, content, POK, &player(), when, 0, None).is_empty(),
+                "Establish a Perimeter is a status secret"
             );
         }
+    }
+
+    #[test]
+    fn dictate_policy_needs_three_laws_and_the_agenda_window() {
+        // Registered since the first tranche, and unscoreable the whole time: `scoreable_on`
+        // returns status secrets only, and nothing else ever asked.
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("dp")];
+        let content = ContentStore::embedded();
+
+        assert!(
+            scoreable_event(&state, content, POK, &player(), Timing::Agenda, 0, None).is_empty(),
+            "no laws are in play"
+        );
+        for law in ["regulations", "censure", "articles"] {
+            state.enact_law(law, "for");
+        }
+        assert_eq!(
+            scoreable_event(&state, content, POK, &player(), Timing::Agenda, 0, None),
+            vec![SecretObjectiveId::new("dp")],
+            "three laws is what the card asks for"
+        );
+        assert!(
+            scoreable_on(&state, content, POK, &player(), None).is_empty(),
+            "and the status window still must not offer it"
+        );
     }
 }

@@ -12,7 +12,7 @@ use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::state::{Feat, GameState};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
@@ -267,9 +267,86 @@ pub fn anti_fighter_barrage(
         } else {
             attacker
         };
+        // Fight with Precision asks for the last fighter specifically, and specifically during
+        // this step, so the count is taken either side of the removal rather than after the
+        // combat: by then ordinary combat rounds have taken fighters too, and nothing would say
+        // which step emptied the system.
+        let before = fighters_of(state, content, sources, target, system);
         destroy_fighters(state, content, sources, target, system, hits);
+        if before > 0 && fighters_of(state, content, sources, target, system) == 0 {
+            state.record_feat(&player, Feat::BarrageTookTheLastFighters);
+        }
     }
     resolved
+}
+
+/// Fighters this player has in the space area of a system.
+fn fighters_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_fighter)
+        })
+        .count()
+}
+
+/// Non-fighter ships this player has in the space area of a system.
+pub fn non_fighter_ships_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types.get(unit.type_id.as_str()).is_some_and(|kind| {
+                kind.is_ship() && !kind.is_fighter()
+            })
+        })
+        .count()
+}
+
+/// War suns and flagships this player has in the space area of a system.
+///
+/// The two ships Destroy Their Greatest Ship names. Read by base type rather than by alias so a
+/// faction's upgraded flagship counts as the flagship it is.
+fn capital_ships_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types.get(unit.type_id.as_str()).is_some_and(|kind| {
+                matches!(kind.base_type(), "warsun" | "flagship")
+            })
+        })
+        .count()
 }
 
 /// Remove up to `hits` fighters, and nothing else. Excess hits have no effect (15.2a).
@@ -1315,6 +1392,7 @@ pub fn resolve(
     rng: &mut GameRng,
     system: &SystemId,
 ) -> Result<CombatOutcome, CombatError> {
+    let before = before_combat(state, content, sources, system);
     let mut window = CombatWindow::new(state, content, sources, system);
     let mut ctx = Resolving {
         content,
@@ -1327,9 +1405,185 @@ pub fn resolve(
     // Opening does not roll; settle once so a fight that is already over reports so.
     window.settle(state, &mut ctx);
     window.drive(state, &mut ctx)?;
-    window
+    let outcome = window
         .outcome()
-        .ok_or_else(|| CombatError::Unresolved(system.clone()))
+        .ok_or_else(|| CombatError::Unresolved(system.clone()))?;
+    note_combat_feats(state, content, sources, system, &before, &outcome);
+    Ok(outcome)
+}
+
+/// What a system held before a space combat, for the feats that ask what changed.
+///
+/// Taken before the first die because every fact in it is destroyed by the fight itself: the war
+/// sun that was killed is gone, and the loser's fleet is gone with it. A card that asks "did you
+/// destroy their flagship" cannot be answered from the wreckage.
+#[derive(Debug, Clone, Default)]
+pub struct BeforeCombat {
+    /// The players with ships when the fight opened, in seating order.
+    sides: Vec<PlayerId>,
+    /// War suns and flagships each side had, to see which were destroyed.
+    capitals: std::collections::BTreeMap<PlayerId, usize>,
+    /// Whose promissory notes each side was holding. Betray a Friend asks about the start of the
+    /// tactical action; this is taken at the start of the combat instead, which is the same
+    /// moment for every note that is not played during the fight.
+    notes: std::collections::BTreeMap<PlayerId, std::collections::BTreeSet<PlayerId>>,
+}
+
+/// Snapshot a system before a space combat.
+#[must_use]
+pub fn before_combat(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+) -> BeforeCombat {
+    let sides = combatants(state, content, sources, system);
+    let mut capitals = std::collections::BTreeMap::new();
+    let mut notes = std::collections::BTreeMap::new();
+    for side in &sides {
+        capitals.insert(
+            side.clone(),
+            capital_ships_of(state, content, sources, side, system),
+        );
+        let mut issuers = std::collections::BTreeSet::new();
+        for (note, holder) in &state.promissory_notes {
+            if holder == side
+                && let Some((_, issuer)) = note.split_once(':')
+            {
+                issuers.insert(PlayerId::new(issuer));
+            }
+        }
+        for (owner, holder) in &state.support_holders {
+            if holder == side {
+                issuers.insert(owner.clone());
+            }
+        }
+        notes.insert(side.clone(), issuers);
+    }
+    BeforeCombat {
+        sides,
+        capitals,
+        notes,
+    }
+}
+
+/// Record what a finished space combat did, for the secrets that ask about the event.
+///
+/// Six of the thirteen unimplemented secrets are decided here. None of them can be read off the
+/// board afterwards, which is why they had no requirement: "win a combat in an anomaly" leaves
+/// the same board as losing one somewhere else.
+pub fn note_combat_feats(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    before: &BeforeCombat,
+    outcome: &CombatOutcome,
+) {
+    if outcome.rounds == 0 {
+        // Nobody fought, so nothing was won and nothing was destroyed.
+        return;
+    }
+
+    // Destroy Their Greatest Ship. In a two-sided fight whoever is not the owner did the
+    // destroying, so a drop in one side's count is the other side's feat — including when both
+    // sides lost one and both score.
+    for side in &before.sides {
+        let had = before.capitals.get(side).copied().unwrap_or(0);
+        if had == 0 {
+            continue;
+        }
+        if capital_ships_of(state, content, sources, side, system) < had {
+            for other in &before.sides {
+                if other != side {
+                    state.record_feat(other, Feat::DestroyedACapitalShip);
+                }
+            }
+        }
+    }
+
+    // Demonstrate Your Power asks about the fleet at the end of the combat and says nothing
+    // about winning, so it is offered to whoever is still standing there.
+    for side in &before.sides {
+        if non_fighter_ships_of(state, content, sources, side, system) >= 3 {
+            state.record_feat(side, Feat::HeldThreeShipsAfterASpaceCombat);
+        }
+    }
+
+    let Some(winner) = outcome.winner.clone() else {
+        // A draw wins nothing. Skilled Retreat exists to produce exactly this, and treating the
+        // survivor as the winner would score four cards off a fight nobody won.
+        return;
+    };
+
+    if ti4_content::galaxy::all_systems(content, sources)
+        .get(system.as_str())
+        .is_some_and(ti4_content::galaxy::System::is_anomaly)
+    {
+        state.record_feat(&winner, Feat::WonInAnAnomaly);
+    }
+
+    if state
+        .players
+        .iter()
+        .any(|seat| seat.id != winner && seat.home_system.as_ref() == Some(system))
+    {
+        state.record_feat(&winner, Feat::WonInARivalHome);
+    }
+
+    if capital_ships_of(state, content, sources, &winner, system) > 0
+        && has_surviving_flagship(state, content, sources, &winner, system)
+    {
+        state.record_feat(&winner, Feat::WonBesideASurvivingFlagship);
+    }
+
+    // "The most victory points" includes a tie: nothing in the card breaks one, and the leader
+    // board holding two names does not make either of them not the leader.
+    let most = state
+        .players
+        .iter()
+        .map(|seat| seat.victory_points)
+        .max()
+        .unwrap_or(0);
+    for loser in &before.sides {
+        if loser == &winner {
+            continue;
+        }
+        if state
+            .player(loser)
+            .is_some_and(|seat| seat.victory_points == most)
+        {
+            state.record_feat(&winner, Feat::WonAgainstThePointsLeader);
+        }
+        if before
+            .notes
+            .get(&winner)
+            .is_some_and(|issuers| issuers.contains(loser))
+        {
+            state.record_feat(&winner, Feat::WonAgainstANoteHolder);
+        }
+    }
+}
+
+/// Whether this player still has a flagship in the system.
+fn has_surviving_flagship(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> bool {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .any(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == "flagship")
+        })
 }
 
 fn finished(

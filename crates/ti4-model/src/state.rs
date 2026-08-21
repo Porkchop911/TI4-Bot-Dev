@@ -77,6 +77,49 @@ impl TokenPool {
     pub const ALL: [Self; 3] = [Self::Tactic, Self::Fleet, Self::Strategic];
 }
 
+/// Something a seat *did*, as opposed to something a seat *has*.
+///
+/// Thirteen secret objectives are written against an event rather than a position — "destroy
+/// another player's war sun", "win a combat in an anomaly", "be the last player to pass". No
+/// snapshot of the board can answer any of them: the war sun is gone, the combat left nothing
+/// behind that records who won it, and passing order is not a thing the board holds. Without a
+/// ledger those cards are undecidable, which is why they were unimplemented.
+///
+/// One variant per card, rather than a general event log, because the requirement is the only
+/// consumer and a log would invite a second one with different needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Feat {
+    /// Destroy Their Greatest Ship: destroyed another player's war sun or flagship.
+    DestroyedACapitalShip,
+    /// Make an Example of Their World: bombardment took the last ground forces off a planet.
+    BombardedOutTheLastGroundForces,
+    /// Turn Their Fleets to Dust: space cannon offense took the last non-fighter ships.
+    SpaceCannonTookTheLastNonFighters,
+    /// Fight with Precision: anti-fighter barrage took the last fighters.
+    BarrageTookTheLastFighters,
+    /// Spark a Rebellion: won a combat against the player with the most victory points.
+    WonAgainstThePointsLeader,
+    /// Unveil Flagship: won a space combat beside a flagship that survived it.
+    WonBesideASurvivingFlagship,
+    /// Betray a Friend: won a combat against a player whose promissory note was held at the
+    /// start of the tactical action.
+    WonAgainstANoteHolder,
+    /// Brave the Void: won a combat in an anomaly.
+    WonInAnAnomaly,
+    /// Darken the Skies: won a combat in another player's home system.
+    WonInARivalHome,
+    /// Demonstrate Your Power: held three or more non-fighter ships in the active system when a
+    /// space combat ended.
+    HeldThreeShipsAfterASpaceCombat,
+    /// Become a Martyr: lost control of a planet in a home system.
+    LostAHomePlanet,
+    /// Drive the Debate: elected by an agenda, in person or by a controlled planet.
+    ElectedByAnAgenda,
+    /// Prove Endurance: was the last player to pass in a game round.
+    LastToPass,
+}
+
 // ─── SystemState ───────────────────────────────────────────────────────────────
 
 /// What is in a system's space area, and on its planets.
@@ -339,6 +382,16 @@ pub struct Player {
     /// Technology copied by each Nekro Valefar card: card alias to source technology.
     /// Not compared.
     pub assimilated_technologies: BTreeMap<String, TechnologyId>,
+    /// What this seat has done, each with the [`GameState::turn_seq`] it happened in.
+    ///
+    /// Scoped to the turn rather than kept for the game: every card that reads this is scored in
+    /// the window the event opens, and a fact carried forward would let a combat won in round one
+    /// pay out in round four. Not compared, for the same reason `relic_fragments` is not — it is
+    /// bookkeeping the oracle has no counterpart for.
+    ///
+    /// A `Vec` rather than a `BTreeMap` because it holds at most thirteen entries and an
+    /// enum-keyed map does not survive a JSON round trip.
+    pub feats: Vec<(Feat, u32)>,
 }
 
 /// Mirrors the oracle's `compare=False` on `relic_fragments`, `leaders`, and
@@ -442,6 +495,7 @@ impl Player {
             spec_ops_returning: 0,
             captured_units: Vec::new(),
             assimilated_technologies: BTreeMap::new(),
+            feats: Vec::new(),
         }
     }
 
@@ -1135,6 +1189,49 @@ impl GameState {
             .entry(player.clone())
             .or_default()
             .insert(objective);
+    }
+
+    // -- feats ----------------------------------------------------------------------
+
+    /// Note that this player did something, against the turn it happened in.
+    ///
+    /// Overwrites rather than appends: the cards ask whether it happened, never how often, and an
+    /// unbounded list of the same feat would grow with every shot fired.
+    pub fn record_feat(&mut self, player: &PlayerId, feat: Feat) {
+        let turn = self.turn_seq;
+        if let Some(seat) = self.player_mut(player) {
+            seat.feats.retain(|(held, _)| *held != feat);
+            seat.feats.push((feat, turn));
+        }
+    }
+
+    /// Whether this player did it during the turn now resolving.
+    #[must_use]
+    pub fn did_this_turn(&self, player: &PlayerId, feat: Feat) -> bool {
+        self.did_at_turn(player, feat, self.turn_seq)
+    }
+
+    /// Whether this player did it during a named turn.
+    ///
+    /// The turn is a parameter rather than always `turn_seq` because the window that offers these
+    /// cards is resolved over several steps, and the turn has moved on by the time the last seat
+    /// answers. A window that re-read `turn_seq` would offer the card to the first player and
+    /// find nothing for the rest.
+    #[must_use]
+    pub fn did_at_turn(&self, player: &PlayerId, feat: Feat, turn: u32) -> bool {
+        self.player(player).is_some_and(|seat| {
+            seat.feats
+                .iter()
+                .any(|(held, when)| *held == feat && *when == turn)
+        })
+    }
+
+    /// Whether anyone has an unspent feat from a named turn.
+    #[must_use]
+    pub fn anyone_did_at_turn(&self, turn: u32) -> bool {
+        self.players
+            .iter()
+            .any(|seat| seat.feats.iter().any(|(_, when)| *when == turn))
     }
 
     /// Turn the top facedown public objective faceup (LRR 81.2).

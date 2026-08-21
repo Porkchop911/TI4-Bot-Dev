@@ -9,7 +9,7 @@ use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::state::{Feat, GameState};
 use ti4_model::units::Unit;
 
 use crate::choice::{
@@ -159,11 +159,30 @@ pub fn bombardment(
             hits += roll.hits();
         }
 
+        // Make an Example of Their World asks for the last ground force on a planet and asks for
+        // it during this step. Counted here rather than after the invasion, because ground
+        // combat clears planets too and the empty planet afterwards does not say which step
+        // emptied it.
+        let held = defenders.len();
+        let victims: std::collections::BTreeSet<PlayerId> =
+            defenders.iter().map(|unit| unit.owner.clone()).collect();
+        let mut taken = 0;
         for doomed in defenders.into_iter().take(hits) {
             state
                 .system_mut(system)
                 .remove_from_planet(&planet, std::slice::from_ref(&doomed));
             killed += 1;
+            taken += 1;
+        }
+        if taken == held
+            && victims.len() == 1
+            && state
+                .system_state(system)
+                .on_planet(&planet)
+                .iter()
+                .all(|unit| &unit.owner == invader)
+        {
+            state.record_feat(invader, Feat::BombardedOutTheLastGroundForces);
         }
     }
     killed

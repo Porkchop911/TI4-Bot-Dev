@@ -6,7 +6,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
 use ti4_model::id::{PlayerId, StrategyCardId, SystemId};
-use ti4_model::state::{GameState, Phase};
+use ti4_model::state::{Feat, GameState, Phase};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
@@ -128,6 +128,13 @@ struct AftermathWindow {
     /// A window cannot reach `Game::emit`, and inventing a second event sink would give the
     /// game two logs that could disagree. Draining keeps one.
     log: Vec<String>,
+    /// The system before the fight, for the secrets that ask what the fight destroyed.
+    ///
+    /// Held here rather than recomputed at the end because every fact in it is gone by then.
+    before_combat: crate::combat::BeforeCombat,
+    /// Whether the combat's feats have been recorded, so a `settle` that loops does not record
+    /// them twice.
+    feats_noted: bool,
 }
 
 impl AftermathWindow {
@@ -161,6 +168,12 @@ impl AftermathWindow {
             system,
             player,
         );
+        // Turn Their Fleets to Dust names this step and no other, so the count is taken across
+        // the absorption rather than after the combat: by then the ordinary rounds have taken
+        // ships too, and nothing would say which step emptied the system.
+        let before_cannon =
+            crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system);
+        let gunners: Vec<PlayerId> = cannon.iter().map(|(who, _)| who.clone()).collect();
         for (_, hits) in cannon {
             crate::combat::absorb_hits_seeing(
                 state,
@@ -173,7 +186,16 @@ impl AftermathWindow {
                 hits,
             )?;
         }
+        if before_cannon > 0
+            && crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system)
+                == 0
+        {
+            for gunner in gunners {
+                state.record_feat(&gunner, ti4_model::state::Feat::SpaceCannonTookTheLastNonFighters);
+            }
+        }
 
+        let before_combat = crate::combat::before_combat(state, ctx.content, ctx.sources, system);
         let mut window = crate::combat::CombatWindow::new(state, ctx.content, ctx.sources, system);
         if let Some(galaxy) = galaxy {
             window = window.with_galaxy(galaxy.clone());
@@ -184,6 +206,8 @@ impl AftermathWindow {
             system: system.clone(),
             stage: Aftermath::Fighting(Box::new(window)),
             log: Vec::new(),
+            before_combat,
+            feats_noted: false,
         })
     }
 
@@ -207,6 +231,19 @@ impl AftermathWindow {
                         crate::combat::combatants(state, ctx.content, ctx.sources, &self.system)
                             .first()
                             .is_some_and(|last| last == &self.player);
+                    if let Some(outcome) = window.outcome()
+                        && !self.feats_noted
+                    {
+                        self.feats_noted = true;
+                        crate::combat::note_combat_feats(
+                            state,
+                            ctx.content,
+                            ctx.sources,
+                            &self.system,
+                            &self.before_combat,
+                            &outcome,
+                        );
+                    }
                     if let Some(outcome) = window.outcome()
                         && outcome.rounds > 0
                     {
@@ -389,6 +426,12 @@ pub struct Game<'a> {
     secondary_after_tactical: Option<StrategySecondaryWindow>,
     /// The open 81.1 scoring window.
     scoring: Option<ScoringWindow>,
+    /// The open window for an action- or agenda-timed secret.
+    ///
+    /// Kept apart from `scoring` because the two close differently: the 81.1 window hands off to
+    /// the rest of the status phase, and this one simply ends. Sharing the field would run the
+    /// status steps in the middle of somebody's turn.
+    event_scoring: Option<ScoringWindow>,
     /// The open 81.5 token gain, and the report its remaining steps will extend.
     tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
     /// The open agenda vote, and the agendas still to be put after it.
@@ -456,6 +499,7 @@ impl<'a> Game<'a> {
             secondary: None,
             secondary_after_tactical: None,
             scoring: None,
+            event_scoring: None,
             tokens: None,
             voting: None,
             galaxy: None,
@@ -526,6 +570,9 @@ impl<'a> Game<'a> {
         if self.state.finished || self.blocked.is_some() {
             return None;
         }
+        if let Some(window) = &self.event_scoring {
+            return window.pending_choice(&self.state, self.content, self.sources);
+        }
         if let Some(window) = &self.scoring {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
@@ -560,6 +607,9 @@ impl<'a> Game<'a> {
 
         if self.secondary.is_some() {
             return self.step_secondary();
+        }
+        if self.event_scoring.is_some() {
+            return self.step_event_scoring();
         }
         if self.scoring.is_some() {
             return self.step_scoring();
@@ -758,6 +808,13 @@ impl<'a> Game<'a> {
                         .player_mut(&active)
                         .expect("active player exists")
                         .passed = true;
+                    // Prove Endurance. Recorded the moment the last seat passes, because the
+                    // action phase ends immediately afterwards and the fact is gone by the time
+                    // anything else could look for it. "Last to pass" is decided by there being
+                    // nobody left who has not.
+                    if self.state.players.iter().all(|seat| seat.passed) {
+                        self.state.record_feat(&active, Feat::LastToPass);
+                    }
                     self.emit("PLAYER_PASSED");
                     let mut payload = BTreeMap::new();
                     payload.insert(
@@ -1712,6 +1769,72 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// Open the window for a secret whose event has just happened, if anyone has one.
+    ///
+    /// Returns whether a window opened. Cheap when nothing did: no feat recorded for this turn
+    /// means no card can qualify on one, and only the two agenda-timed cards can qualify on a
+    /// position instead.
+    fn open_event_scoring(&mut self, timing: crate::secrets::Timing, turn: u32) -> bool {
+        if self.event_scoring.is_some() {
+            return false;
+        }
+        if timing == crate::secrets::Timing::Action && !self.state.anyone_did_at_turn(turn) {
+            return false;
+        }
+        let mut window = ScoringWindow::for_event(&self.state.initiative_order(), timing, turn);
+        if let Some(galaxy) = self.galaxy.clone() {
+            window = window.with_galaxy(galaxy);
+        }
+        if window
+            .pending_choice(&self.state, self.content, self.sources)
+            .is_none()
+        {
+            return false;
+        }
+        self.event_scoring = Some(window);
+        true
+    }
+
+    /// Resolve one player's decision in an action- or agenda-timed secret window.
+    fn step_event_scoring(&mut self) -> StepResult {
+        let Some(choice) = self.legal_options() else {
+            self.event_scoring = None;
+            return self.result(false, None);
+        };
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let Some(mut window) = self.event_scoring.take() else {
+            unreachable!("the event window is open");
+        };
+        let outcome = window.resolve(&mut self.state, self.content, self.sources, answer);
+        self.event_scoring = Some(window);
+
+        match outcome {
+            Ok(scored) => {
+                if let Some(alias) = scored {
+                    self.emit(&format!("OBJECTIVE_SCORED:{alias}"));
+                }
+                if self.state.finished {
+                    self.event_scoring = None;
+                    self.emit("GAME_FINISHED");
+                    return self.result(true, None);
+                }
+                self.result(true, None)
+            }
+            Err(error) => self.result(false, Some(error.into())),
+        }
+    }
+
     /// Steps 81.2 to 81.4, then open the 81.5 token gain.
     fn begin_status_bookkeeping(&mut self) -> StepResult {
         self.scoring = None;
@@ -1935,6 +2058,28 @@ impl<'a> Game<'a> {
                 return self.result(false, Some(error));
             }
 
+            // Drive the Debate: "you or a planet you control are elected". The outcome names a
+            // player, a planet, or an outcome like "for" -- so both readings have to be tried,
+            // and an outcome that is neither matches nobody.
+            let elected = PlayerId::new(outcome.clone());
+            if self.state.player(&elected).is_some() {
+                self.state.record_feat(&elected, Feat::ElectedByAnAgenda);
+            } else {
+                let planet = ti4_model::id::PlanetId::new(outcome.clone());
+                let controller = self
+                    .state
+                    .board
+                    .values()
+                    .find_map(|board| board.planet_control.get(&planet).cloned());
+                if let Some(controller) = controller {
+                    self.state.record_feat(&controller, Feat::ElectedByAnAgenda);
+                }
+            }
+            // Agenda-timed secrets get their window here, once the outcome is settled and the
+            // law it may have enacted is on the table -- Dictate Policy counts laws in play, and
+            // asking before 8.20 would miss the one just passed.
+            self.open_event_scoring(crate::secrets::Timing::Agenda, self.state.turn_seq);
+
             // Imperial Rider pays out before the agenda's own effect, and clears the
             // predictions. A prediction left behind would pay again on the next agenda, for a
             // card that was spent on this one.
@@ -2018,6 +2163,13 @@ impl<'a> Game<'a> {
         if self.state.phase == Phase::Action
             && let Some(active) = self.state.active.clone()
         {
+            // Action-timed secrets are offered here rather than at the moment of the event that
+            // satisfied them. This is the one point every kind of turn passes through -- a
+            // tactical action, a component action, a strategic action, a pass -- so a single
+            // window catches all of them, and offering once per turn also enforces the one
+            // objective per action that 61.6 allows. The turn is pinned because `advance_turn`
+            // below moves `turn_seq` on, while the window is answered over later steps.
+            self.open_event_scoring(crate::secrets::Timing::Action, self.state.turn_seq);
             let _ = crate::technology::end_turn(
                 &mut self.state,
                 self.content,

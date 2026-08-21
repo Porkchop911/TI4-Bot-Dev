@@ -1198,6 +1198,14 @@ pub struct ScoringWindow {
     scored: Vec<(PlayerId, ObjectiveId)>,
     /// The map, when the driver has one.
     galaxy: Option<ti4_content::galaxy::Galaxy>,
+    /// Which timing this window is for.
+    ///
+    /// [`crate::secrets::Timing::Status`] is the 81.1 window and offers publics and status
+    /// secrets. The other two offer only the secrets printed for that timing, which nothing in
+    /// this engine offered at all until they had a window of their own.
+    timing: crate::secrets::Timing,
+    /// The turn whose feats this window is settling, pinned when it opened.
+    turn: u32,
 }
 
 impl ScoringWindow {
@@ -1221,7 +1229,21 @@ impl ScoringWindow {
             pending,
             scored: Vec::new(),
             galaxy: None,
+            timing: crate::secrets::Timing::Status,
+            turn: 0,
         }
+    }
+
+    /// Open a window for an action- or agenda-timed secret instead of the status phase.
+    ///
+    /// Separate constructor rather than a parameter on [`Self::new`] so every existing caller
+    /// keeps the 81.1 behaviour it asked for.
+    #[must_use]
+    pub fn for_event(order: &[PlayerId], timing: crate::secrets::Timing, turn: u32) -> Self {
+        let mut window = Self::new(order);
+        window.timing = timing;
+        window.turn = turn;
+        window
     }
 
     #[must_use]
@@ -1266,9 +1288,28 @@ impl ScoringWindow {
             // 61.6: one public and one secret at most per status phase, and the oracle offers
             // both in the same window. A player with no public objective in reach may still
             // have a secret in reach, so this must not stop at the public list.
-            let mut available = scoreable_on(state, content, sources, player, self.galaxy.as_ref());
-            available.extend(
+            let mut available = if self.timing == crate::secrets::Timing::Status {
+                scoreable_on(state, content, sources, player, self.galaxy.as_ref())
+            } else {
+                // Public objectives are a status-phase thing (61.6); an action window offers the
+                // secret that its event satisfied and nothing else.
+                Vec::new()
+            };
+            let secrets = if self.timing == crate::secrets::Timing::Status {
                 crate::secrets::scoreable_on(state, content, sources, player, self.galaxy.as_ref())
+            } else {
+                crate::secrets::scoreable_event(
+                    state,
+                    content,
+                    sources,
+                    player,
+                    self.timing,
+                    self.turn,
+                    self.galaxy.as_ref(),
+                )
+            };
+            available.extend(
+                secrets
                     .into_iter()
                     .map(|secret| ObjectiveId::new(secret.as_str())),
             );
