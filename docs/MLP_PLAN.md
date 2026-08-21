@@ -3,10 +3,15 @@
 Branch: `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`
 (carries the planet-trait fix and the secondary-eligibility gates; 1271 tests green).
 
-Status: **revision 2**, after codex review. Phase 2a is implemented and merged
-(`0d751a8`); everything from Phase 2b onward is still argument, not code. Seven
-points were raised on revision 1 — all seven accepted, all addressed below. The
-two that changed a decision rather than adding detail are flagged inline.
+Status: **revision 4**, after a second codex review. Phase 2a is implemented and
+merged (`0d751a8`); everything from Phase 2b onward is argument, not code.
+
+Review history: revision 2 answered seven points on the plan's design; revision 3
+corrected the faction count and two numbers behind it; **revision 4 answers seven
+further blocking findings and clears five stale contradictions the earlier
+revisions left behind.** The largest of those findings is §12 — this work has been
+running outside the repository's own execution protocol, which it should not have
+been.
 
 ---
 
@@ -77,7 +82,9 @@ p             = softmax(score / temperature)
 - One weight vector per **head**. Schema 4 (what the r6 champions use) has 14
   heads (`learned.rs:82`); schema 5 has 19 (`learned.rs:59`). Routing is
   `decision_head()` at `learned.rs:187`.
-- One `Profile` per faction (`learned.rs:261`), ~29k named weights each.
+- One `Profile` per faction (`learned.rs:261`). Measured on the r6 champions:
+  **40,601 weights and 37,109 distinct names per faction, 41,113 in union across
+  the six.** Revisions 1–3 said "~29k", which was a guess and was low.
 - Features are sparse named strings interned to slots, from a closed list of 13
   prefixes (`features.rs`, ~line 1397). Option words come from the option's
   **id and label only** — never from the prompt.
@@ -125,14 +132,17 @@ should be explicit.
 | D9 | Promotion gate | **Table-wide merit + per-faction regression guard** |
 | D10 | Trunk shape | **2 × 256** to start; width sweep {64, 128, 256, 512} as a follow-up |
 | D11 | Roster | The current **six** (sol, letnev, xxcha, hacan, jolnar, l1z1x) |
-| D12 | GPU | **From the start** — CUDA path stood up before the training code |
+| ~~D12~~ | ~~GPU~~ | **Superseded by D19.** Revision 2 changed the decision and left the row standing |
 | D13 | Horizon | Hold at **4 rounds**; extend when mean VP reaches 6 |
 | D14 | Missing engine coverage | **In scope, done.** 14 (not 13) unreachable secrets implemented in `0d751a8` — see §5.4 |
 | D15 | Value input | **State-only encoder**, option block zeroed; invariance to option order and to the legal set is a tested property — §4.2 |
 | D16 | Distillation target | **Schema 4** (14 heads). The 19-head split is a later controlled migration, not part of this branch — §6.1 |
 | D17 | Count normalisation | **Clipped `progress / threshold`**, plus the threshold as its own feature — §5.1 |
 | D18 | Guard thresholds | **Derived from the r6 paired-panel variance**, not chosen — §6.3 |
-| D19 | GPU | Kept, but **conditional**: the CUDA path ships only if it beats the CPU path on a measured end-to-end gate — §7 Phase 1 |
+| D19 | GPU | **Conditional**, replacing D12: CUDA ships only if it beats CPU on a measured gate — §7.1 |
+| D20 | Determinism | **CPU is authoritative.** All evaluation, panels and archived play run on CPU; CUDA is permitted for the gradient step only — §7.2 |
+| D21 | Feature columns | **Enumerated vocabulary**, ordered by `FeatureKey`, append-only, with a per-family OOV column — §4.5 |
+| D22 | Advantages | Computed once from the rollout-time value, **detached**, frozen across all four PPO epochs — §6.2 |
 
 ### Why shared, when the gate was per-faction
 
@@ -264,22 +274,26 @@ recognise. **Fallback if the value fails to fit** (explained variance stays near
 zero while the policy improves): give the critic its own 2 × 128 trunk. That is
 a contained change and does not touch the policy path.
 
-**Parameter budget** (2 × 256, ~29k feature slots):
+**Parameter budget** (2 × 256, 41,113 measured feature names + headroom → V = 49,152):
 
 | block | params | notes |
 |---|---:|---|
-| input layer | 29k × 256 ≈ 7.4M | shared; sparse gather, ~30 active slots per option |
+| input layer | 49,152 × 256 ≈ 12.6M | shared; sparse gather, ~30 active slots per option |
 | hidden layer | 256 × 256 ≈ 66k | shared |
 | per-faction readout | 256 × 14 heads ≈ 3.6k each | × 33 seats ≈ 118k |
 | identity embedding | 16 × 33 ≈ 0.5k | |
 | value head | 256 | |
-| **total** | **~7.6M** | ~30 MB fp32 — trivial for 24 GB |
+| **total** | **~12.8M** | ~51 MB fp32 — still trivial for 24 GB |
 
 The readout is costed at **14 heads, not 19**: D16 settled on schema 4 for
 distillation and revision 2 left the budget contradicting its own decision.
 
 The input layer dominates the parameter count but not the compute: with ~30
-active slots per option it is a gather of 30 columns, not a 29k-wide matmul.
+active slots per option it is a gather of 30 columns, not a 49k-wide matmul.
+
+It does, however, mean **an unused column costs 256 weights rather than one**. That
+is the fact that rules out the hashing trick in §4.5, and it is why V is enumerated
+rather than generous.
 
 ### 4.3 Cost of per-option scoring
 
@@ -317,10 +331,18 @@ checkpoint-<update>/
 
 `safetensors` rather than a bespoke encoding: it is a flat, checksummable,
 zero-copy format with no code execution on load, and it is readable from both
-Rust and Python without agreeing on anything else. `slots.json` is
-load-bearing — a tensor whose columns are feature slots is meaningless without
-the name-to-column map that produced it, and the interner assigns ids in
-first-seen order, which is not stable across runs.
+Rust and Python without agreeing on anything else. `slots.json` is load-bearing —
+a tensor whose columns are feature slots is meaningless without the name-to-column
+map that produced it.
+
+**Correction.** Revision 2 said "the interner assigns ids in first-seen order,
+which is not stable across runs". That is the opposite of the truth, and
+`intern.rs` rejects the counter design in its own module documentation for exactly
+the reason given: first-seen order depends on which seeds a run happened to play
+first. What exists is `FeatureKey::of(name)` — a **pure FNV-1a hash of the name**,
+stable across processes and releases, with no counter, no lock and no shared
+state. Had the wrong claim survived, §4.5 would have been built to solve a problem
+that does not exist while missing the one that does.
 
 **`manifest.json` carries, and loading verifies:**
 
@@ -336,9 +358,9 @@ first-seen order, which is not stable across runs.
 | `sha256` per tensor file | integrity |
 
 **Device behaviour.** Weights are always stored on CPU in the file and moved at
-load. A checkpoint written from a CUDA run must load and play identically on a
-CPU-only machine, bit-for-bit in f32 — that is a test, not an intention, and it
-is what makes the GPU path revertible.
+load, so a checkpoint written from a CUDA run loads on a CPU-only machine. What
+revision 2 additionally claimed — that it would then *play* bit-for-bit
+identically — is not achievable and is withdrawn; see §7.2.
 
 **Head mapping (D16).** Codex recommends schema 4 for the first distillation and
 that is adopted. The r6 champions are schema-4 (14 heads); distilling them into
@@ -353,6 +375,103 @@ open question.
 written — distillation replaces it, and a converter would be a second, worse
 answer to the same problem. Linear checkpoints stay loadable and playable
 unchanged, because the MLP-vs-linear panels need them.
+
+### 4.5 Feature columns (D21) — the vocabulary problem
+
+The linear model never needed a dense column index: a weight is looked up by
+`FeatureKey` in a map, and a name never seen is simply a name with no weight. An
+MLP needs a contiguous `[V, width]` matrix, so every name must map to a column and
+V must be fixed before the first forward pass. Nothing in the current code does
+this, and revisions 1–3 did not notice.
+
+**Why not the hashing trick.** The standard shortcut — `column = key % V`, no
+vocabulary at all — is wrong here, and the reason is specific to the MLP. In the
+linear model a wasted column costs one weight; in the MLP it costs `width` = 256.
+Sizing V to keep collisions rare is what breaks it:
+
+| V | expected colliding pairs at n = 41,113 | input layer |
+|---:|---:|---:|
+| 2^18 = 262,144 | ~3,200 | 67M |
+| 2^21 = 2,097,152 | ~400 | 537M |
+| 2^24 = 16,777,216 | ~50 | 4.3B |
+
+There is no setting that is both collision-free and affordable. So the vocabulary
+is **enumerated**.
+
+**Construction.** A corpus pass before training: play a fixed set of games with the
+r6 champions, collect every `FeatureKey` emitted, and assign columns by **ascending
+`FeatureKey`**. Because the key is a pure function of the name, that order is a
+function of the name set alone — not of seed order, thread order, or history — so
+two runs over the same corpus produce byte-identical `slots.json`. This is the
+property the counter design would have destroyed, which is why `intern.rs` avoids
+it.
+
+**Sizing.** Measured union is 41,113 names. V = 49,152 (41k + ~20% headroom),
+recorded in the manifest. The corpus pass reports coverage; if a training run
+reaches 90% of V the run is flagged, because appending is cheap but silent
+saturation is not.
+
+**Unseen features at inference.** Not dropped. Each of the feature families gets a
+reserved **OOV column**, and a name whose key is not in the map contributes to its
+family's OOV column instead of vanishing. Dropping silently would make an unknown
+`option:` word indistinguishable from its absence, which is exactly the case where
+the policy should be uncertain rather than confident. The OOV columns are part of V
+and are allocated first, so their indices never move.
+
+**Growth (D21: append-only).** The vocabulary may grow, under one rule: **columns
+are never reordered or reused.** A resume that finds new names appends them, in
+ascending `FeatureKey` within the appended batch, and:
+
+- the input weight matrix gains rows, zero-initialised;
+- **the Adam first and second moments gain matching zero rows**, so a new column
+  starts with no accumulated history rather than inheriting another name's;
+- `slots_sha256` in the manifest changes, and the manifest records `slot_count`
+  before and after, so an append is visible in the checkpoint history;
+- appending is refused if it would exceed V; V is raised by an explicit migration,
+  never implicitly.
+
+Reordering, by contrast, invalidates every weight and every Adam moment at once,
+which is why the order is derived from the key rather than from anything a run
+could vary.
+
+### 4.6 Resumability and atomicity (blocker)
+
+Revision 2 stored model tensors and nothing else, which is enough to *play* a
+checkpoint and not enough to *continue* one. A run interrupted at update 6,000
+would restart with fresh Adam moments and a different data order — not a
+continuation, and not comparable to the run it claims to extend.
+
+**Also stored, alongside the model tensors:**
+
+| group | contents |
+|---|---|
+| optimiser state | Adam `m` and `v` per parameter tensor, and the step counter `t` — `t` matters because Adam's bias correction is a function of it |
+| optimiser config | lr, betas, eps, weight decay, and the schedule's position |
+| training cursor | update number, the seed base and stride, and the next seed block |
+| data identity | feature set (`factual` / `+objective` / `+abilities`), `SourceSet`, map-pool path **and checksum**, horizon, rounds |
+| vocabulary | `slot_count`, `slots_sha256`, V |
+| RNG | the training RNG cursor, so a resumed run draws the same stream |
+
+The pool checksum is the one most easily left out and the most damaging to omit: a
+resume against a regenerated-but-different pool is a silently different experiment.
+
+**Atomic write.** A checkpoint directory is never written in place:
+
+1. write `checkpoint-<n>.tmp/` in the same parent directory, so the rename is on
+   one filesystem;
+2. write every tensor file, then fsync each;
+3. write `manifest.json` **last**, then fsync it and the directory;
+4. rename `checkpoint-<n>.tmp/` to `checkpoint-<n>/`.
+
+**Recovery rule.** A directory without a readable `manifest.json` is incomplete by
+construction, because the manifest is written last. On startup: delete every
+`*.tmp/`, ignore every checkpoint directory lacking a manifest, and resume from the
+highest complete one. A checkpoint whose tensor checksums do not match its manifest
+is a hard error, not a warning — silently resuming from a truncated tensor is the
+failure this whole section exists to prevent.
+
+This is directly in scope: a 10,000-update run is hours long, and r6 was in fact
+resumed mid-flight (`resumed_from` is a field in the existing checkpoints).
 
 ---
 
@@ -414,6 +533,49 @@ step is not the same.
 
 The gap feature is dropped: `1 - progress` is a linear function of what is already
 there, and a layer that wants it can form it.
+
+**Aggregation across objectives of one family.** Two revealed publics of the same
+family would collide into one `objective-progress:<family>` slot. Resolved by
+emitting three things rather than one:
+
+```
+objective-progress:<family>              max over revealed of that family
+objective-progress:<family>:<threshold>  per distinct threshold
+objective-count:<family>                 how many are revealed
+```
+
+The family-only slot is what generalises — Outer Rim at 3 and Control the
+Borderlands at 5 share it — and `max` is the right reduction because the nearest to
+completion is the one that changes what to do next. The threshold-keyed slot keeps
+the two distinguishable when it matters. Both are cheap; only the family-only slot
+would have to carry the whole job if we picked one, and it cannot.
+
+**The six "bespoke" predicates are not bespoke.** Revision 3 listed them as lacking
+a progress representation. Reading them, every one is `count(...) >= k` with the
+threshold inlined:
+
+| objective | count | k |
+|---|---|---:|
+| Conquer the Weak | controlled planets in a rival home system | 1 |
+| Engineer a Marvel | flagships or war suns on the board | 1 |
+| Achieve Supremacy | flagships or war suns in a rival home or on Mecatol | 1 |
+| Intimidate the Council | systems with your ships adjacent to Mecatol | 2 |
+| Push Boundaries | neighbours controlling fewer planets than you | 2 |
+| Rule Distant Lands | *distinct* rivals whose home you hold 2 planets in or beside | 2 |
+
+So they are families with one member each, not a different kind of thing, and the
+same `min(1, count / k)` applies. "Bespoke" described the shape of the code, not
+the shape of the objective — which is the sort of thing that only becomes visible
+on reading it.
+
+**The ten bought objectives** are affordability, not accumulation: `Cost` is
+`Spend { amount, kind }`, `TradeGoods(n)`, `Tokens(n)` or `AllThree(n)`
+(`objectives.rs:827`). Progress is `min(1, available / cost)` against the same
+`can_afford` path that gates the purchase, and for `AllThree` it is the **minimum**
+across the three, because the binding constraint is the one you are shortest on.
+These get their own family token (`objective-progress:cost-<kind>`) rather than
+sharing with the counting families, since "80% of the way to affording it" and
+"80% of the planets" are not the same quantity.
 
 Keying on **family** rather than alias is the point: Outer Rim (`on_the_rim(3)`)
 and Control the Borderlands (`on_the_rim(5)`) share machinery, so learning about
@@ -480,7 +642,7 @@ one-shot markers already on `Player` — plus `ScoringWindow::for_event`, opened
 from `Game::advance_turn` (the single point every kind of turn passes through)
 and from `close_vote` after 8.20.
 
-Evidence: **`docs/evidence/phase2a-secrets.md`** — command, fixed seed block,
+Evidence: **`plans/evidence/M06-021.md`** — command, fixed seed block,
 pool and checkpoint sha256, and raw output, committed. Revision 1 quoted the
 result with none of that, which codex correctly refused to accept as a completed
 gate; the numbers were real but not reproducible from anything in the repo.
@@ -542,13 +704,13 @@ Multi-teacher distillation onto a shared trunk with per-faction readouts is a
 well-trodden setup and is arguably cleaner than six separate distillations: the
 trunk is forced to find the representation common to all six.
 
-**Open — flagged for codex:** the champions are schema 4 (14 heads); the target
-may be schema 5 (19 heads). Schema 4 routes the five later splits into `other`
-(`learned.rs:597`). Distilling 14 teachers into 19 student heads needs an
-explicit mapping, and the five split-out heads (`scoring`, `agenda`,
-`exploration`, `ability`, `transit`) would start from the `other` teacher.
-Given that `scoring` is exactly the head the objective features are meant to
-inform, this matters. Alternative: target schema 4 and defer the split.
+**Settled (D16), not open.** Revision 2 decided schema 4 and revision 3 left this
+paragraph contradicting it. The champions are schema 4 (14 heads); distilling them
+into schema 5's 19 would initialise `scoring`, `agenda`, `exploration`, `ability`
+and `transit` from the `other` teacher (`learned.rs:597`), and `scoring` is exactly
+the head the objective features are meant to inform. **Target is schema 4.** The
+14→19 split is a separate controlled migration with its own before/after panel, and
+is not part of this branch.
 
 Exit criterion for distillation: mean VP within 0.1 of the r6 champions on the
 holdout panel. If it cannot reach that, the architecture cannot represent the
@@ -562,10 +724,45 @@ Existing: clipped surrogate, K=4 epochs, clip 0.2, lr 0.03, entropy 0.01,
 Changes:
 - Optimiser moves to Adam under tch (lr will need retuning — 0.03 is a
   plain-SGD-scale learning rate and is almost certainly wrong for Adam).
-- **Value head (D7):** advantage becomes `return − V(s)` instead of
+- **Value head (D7, D22):** advantage becomes `return − V(s)` instead of
   `return − batch_mean`. Adds a value-loss coefficient to tune; if weighted too
   heavily it destabilises the shared trunk. Start at 0.5 and treat explained
   variance of `V` as the health metric.
+
+  **Detach semantics (D22).** Revision 2 wrote `advantage = return − V(s)` and
+  said nothing about gradient flow, which leaves two real bugs available:
+
+  ```
+  # once, at the end of the rollout, before any epoch:
+  A = (returns - V_rollout).detach()          # V from the behaviour weights
+  A = ((A - A.mean()) / (A.std() + 1e-8))     # normalised once, here
+
+  # then, for each of the K = 4 epochs:
+  actor_loss  = -min(r * A, clip(r, 1-e, 1+e) * A)     # A is a constant
+  critic_loss = mse(V_current(s), returns)             # its own path to the trunk
+  loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
+  ```
+
+  Two properties, both of which have to be stated or they will be got wrong:
+
+  - **Detached.** Without `.detach()` the actor loss back-propagates through the
+    advantage into the critic, so the policy gradient acquires a term that trains
+    `V` to make its own surrogate look better. That is not PPO, and it fails
+    quietly — the run trains, the numbers move, the objective is wrong.
+  - **Frozen across epochs.** `A` is computed once from `V_rollout`, the value
+    under the behaviour weights, and reused unchanged for all four epochs. If it
+    were recomputed per epoch from the current `V`, the objective would change
+    underneath the ratio `r`, and the importance-sampling correction that the clip
+    exists to bound would no longer refer to a fixed target. Normalisation happens
+    at the same moment, for the same reason: re-normalising per epoch reintroduces
+    the drift the freeze removes.
+
+  The critic still trains every epoch — against `returns`, through its own head,
+  which is the path that is *supposed* to update it.
+
+  This matches what the linear trainer already does, where the batch-mean baseline
+  is a constant by construction. The value head is what makes the distinction
+  expressible, and therefore what makes it possible to get wrong.
 - Entropy handling is unchanged in intent but the per-head entropy bonus now
   applies to a shared trunk — worth checking it does not fight the readouts.
 
@@ -601,9 +798,49 @@ Two things fall straight out, and the first is a real defect in revision 1:
 | **aggregate metric** | mean VP per seat across all 6 factions, paired difference |
 | **confidence** | SE of the paired differences over seeds, treating a rotation-set as one unit. Promote on `gain > 2 × SE` **and** `gain > 0.05` absolute — both, since at n=100 a 2σ bar alone admits gains too small to matter |
 | **confirmation rule** | the confirmation panel must independently clear the same bar. Two panels rather than one 200-seed panel because it also catches a candidate that is merely lucky on one block |
-| **regression guard** | per faction: reject if paired VP loss exceeds **0.14** or clearance loss exceeds **0.043** |
-| **multiplicity** | those two numbers are `z = 2.64 × mean SE`, the Bonferroni-corrected two-sided 5% level for **six simultaneous guards**. Uncorrected 2σ guards false-alarm 4.6% each, so **any of six trips 24% of the time under the null** — a quarter of genuinely neutral candidates rejected for nothing. Revision 1 did not account for this at all |
-| **re-derivation** | the SEs are recomputed from this branch's own panels after the first ten boundaries and the guards reset if they have moved; r6's variance is a prior, not a constant |
+| **regression guard** | per faction and metric, reject when the loss is **both** statistically real and practically meaningful — see below |
+| **multiplicity** | **twelve** tests, not six: six factions × two metrics. Revision 3 counted six |
+| **re-derivation** | the SEs are recomputed from this branch's own panels after the first ten boundaries; r6's variance is a prior, not a constant |
+
+**The guard, corrected.** Revision 3 wrote a *fixed* 0.14 VP, obtained by
+multiplying the historical **mean** SE by 2.64. Codex is right that this is not
+valid: the observed SE ranges 0.035–0.072, so a fixed 0.14 is 4.0σ at the quiet end
+and only **1.94σ at the noisy end** — the guard is strictest exactly where the
+evidence is weakest, which is backwards.
+
+```
+reject the candidate if, for any faction f and metric m:
+
+      loss(f, m) > z12 * SE(f, m, this boundary)      # statistically real
+  AND loss(f, m) > floor(m)                           # large enough to act on
+
+  z12   = 2.638      one-sided alpha = 0.05 / 12
+  floor = 0.05 VP, 0.02 clearance
+```
+
+Each boundary uses **its own measured paired SE**, so the guard tracks that
+boundary's noise instead of a remembered average. At the observed range that puts
+the VP guard between 0.092 and 0.190, and clearance between 0.024 and 0.055 —
+which is the spread revision 3's single number was pretending did not exist.
+
+The two conditions are separate on purpose, which revision 3 also conflated:
+
+- **`z12 × SE` is a confidence question** — is this loss distinguishable from
+  noise? At n = 100 paired seeds a 0.06 VP loss can be highly significant.
+- **`floor` is a value question** — is this loss worth rejecting a candidate over?
+  A statistically certain 0.02 VP regression is not.
+
+Requiring both stops the two failure modes the single threshold allowed: rejecting
+on a large loss that is entirely noise, and rejecting on a trivial loss that
+happens to be well measured.
+
+**On the family.** `z12 = 2.638` and revision 3's `2.64` are numerically the same,
+which is a coincidence worth naming rather than glossing: a two-sided test at
+α/6 puts α/12 in each tail, so twelve one-sided guards and six two-sided ones give
+the same critical value. The count was wrong and the number survived. The family is
+twelve guards at a combined 5%; if the merit test is to be corrected into the same
+family the constant changes, and this plan deliberately keeps them separate —
+merit is one pre-specified test at 2σ, guards are twelve at a combined 5%.
 
 Panel cost falls either way: one champion instead of six.
 
@@ -621,11 +858,11 @@ Panel cost falls either way: one champion instead of six.
 | **4** | **Model.** Shared trunk, per-faction readout, value head, per-option scoring, all options of a decision batched into one pass. Inference path only. | An untrained MLP plays legal games end to end; §7.1's gate is re-measured with the real model and the two-tower fallback decided on the number. |
 | **5** | **Distillation.** Six champions → one MLP. | Mean VP within 0.1 of r6 on the holdout panel. |
 | **6** | **PPO.** New gate, value head, Adam. | A run that promotes at least twice without a per-faction regression trip. |
-| **7** | **Evaluate.** Full run to the mean-6-VP bar, with the `--no-objective-features` ablation. | Mean 6 VP at round 4 on holdout, or a documented account of what stopped it. |
+| **7** | **Evaluate.** Full run to the mean-6-VP bar, reported against the `factual` and `factual+objective` feature sets (§1). | Mean 6 VP at round 4 on holdout, or a documented account of what stopped it. |
 
 Phases 0–2 touch no machine learning at all and are worth doing whatever
 happens to the rest of the plan. **Phase 2a is done** — see §5.4 and
-`docs/evidence/phase2a-secrets.md`.
+`plans/evidence/M06-021.md`.
 
 ### 7.1 The GPU gate (D19)
 
@@ -671,6 +908,45 @@ CUDA.
 Recorded with the same evidence discipline as §5.4: command, seeds, pool
 checksum, raw output, committed.
 
+### 7.2 Determinism (D20)
+
+Revision 2 asserted bit-identical play across CPU and CUDA. **That cannot be
+promised.** cuBLAS picks kernels by shape and hardware, reductions run in a
+different order from any CPU BLAS, and fused multiply-add changes rounding — so
+the same weights against the same input give answers that agree to roughly f32
+epsilon and not further. A softmax over near-tied logits then turns a last-bit
+difference into a different *action*, and one different action is a different
+game. Requiring cross-device bit-identity would have been a permanently red test.
+
+The plan takes codex's first option, which is the one that keeps reproducibility
+where it is actually needed:
+
+**CPU is authoritative.** Every rollout, panel, evaluation and archived game runs
+the forward pass on CPU. CUDA is permitted for **the gradient step only**, where
+the output is a weight update rather than a decision, and where a last-bit
+difference perturbs training rather than changing recorded history. Weights move
+to the device for the update and back afterwards; at ~51 MB that is not a cost
+worth optimising.
+
+Three tests, all cheap, none of them cross-device bit-identity:
+
+| test | assertion |
+|---|---|
+| **same-device repeatability** | the same batch, applied twice to the same starting weights on the same device, produces bit-identical updated weights. Requires a pinned seed and torch's deterministic-algorithm mode; a failure here means an atomics-based reduction is in the path and must be replaced |
+| **cross-device semantic agreement** | over a fixed corpus of ~10,000 recorded decisions, CPU and CUDA forward passes agree on the argmax in ≥ 99.9% of decisions, and `max abs` logit difference stays under 1e-4. This is a tolerance gate, not equality |
+| **round-trip** | save on CUDA, load on CPU, and assert the *weights* are bit-identical. Weights are copied, not recomputed, so this one genuinely is exact |
+
+The middle test is also the early warning for the real hazard: if CPU and CUDA
+disagree on materially more than 0.1% of decisions, something is wrong with the
+model or the batching, not with floating point.
+
+One consequence, stated plainly: **the GPU is now confined to the part of the loop
+that was never the bottleneck.** §7.1 already said the engine dominates at ~450
+µs/decision. D20 means CUDA cannot help rollouts at all, only the PPO step. That
+narrows the upside of the whole GPU path considerably, and it is the honest
+position — if the throughput gate then shows no gain, the answer is that there was
+never much to gain, not that the implementation was poor.
+
 ---
 
 ## 8. Risks
@@ -679,7 +955,7 @@ checksum, raw output, committed.
 |---|---|
 | **Attribution** — two changes at once (D1) | Accepted deliberately. Ablation flag is the mitigation; use it. |
 | **Per-option cost** (D3) | Decisions with large option sets could dominate. Phase 4 measures it; two-tower is the fallback. |
-| **Windows + libtorch** (D2, D12) | Real friction: ~2 GB download, `LIBTORCH` env, DLLs on PATH. Phase 1 exists to hit this before anything depends on it. |
+| **Windows + libtorch** (D2, D19) | Real friction: ~2 GB download, `LIBTORCH` env, DLLs on PATH. Phase 1 exists to hit this before anything depends on it. |
 | **Adam lr** | The existing 0.03 will not transfer. Budget a sweep; a bad lr will look like "the MLP doesn't work". |
 | **Value head destabilising the trunk** | Watch explained variance. Falling back to the batch-mean baseline is a one-line change and a legitimate result. |
 | **Shared trunk averages away faction identity** | The per-faction readout and embedding exist for this. If a faction regresses, check whether its readout is doing anything. |
@@ -756,7 +1032,7 @@ so no checkpoint can be regenerated from source. These have to be stored out of
 band, and until they are, every r6 number in this document rests on one machine's
 disk.
 
-**The manifest** (`docs/evidence/artifacts.md`, checksums verified at use):
+**The manifest** (`plans/evidence/MLP-ARTIFACTS.md`, checksums verified at use):
 
 | artifact | sha256 (first 16) | recoverable? |
 |---|---|---|
@@ -773,7 +1049,91 @@ that fails.
 
 ---
 
-## 11. What is explicitly not in this branch
+## 11. Execution protocol conformance
+
+**This work has been running outside the repository's own protocol.** `AGENTS.md`
+defines a required reading order, a package loop, scoped permission declarations,
+`plans/evidence/<package-id>.md`, `plans/EXECUTION_STATE.md`, and an independent
+review tier per package. None of it was followed: the plan went to `docs/`, the
+evidence went to `docs/evidence/`, and `0d751a8` shipped an M06 behaviour change
+with no package specification, no permission declaration, and no review by anyone
+other than its author.
+
+The cause is straightforward and worth recording rather than excusing: `AGENTS.md`
+opens by naming the required reading order, and I did not read it before starting.
+Everything downstream followed from that.
+
+### 11.1 Milestone placement
+
+The work spans three milestones, which is itself a reason it must be packaged
+rather than run as one branch:
+
+| milestone | scope owned here |
+|---|---|
+| **M06 — General rules** | the secret-objective ledger and windows; objective progress exposure |
+| **M09 — Learned policy** | feature families, the slot vocabulary, schema 6, MLP inference |
+| **M10 — Simulation and training** | libtorch, distillation, PPO, the promotion gate |
+
+### 11.2 Package map
+
+Dependency-ordered. IDs continue each milestone's existing numbering (M06 ends at
+020, M09 at 018, M10 at 030). Sizes are held to the standard's one-to-five files
+and 200–500 net lines; where a phase exceeds that it is split.
+
+| ID | Package | Depends | Tier | Phase |
+|---|---|---|---|---|
+| **M06-021** | Feat ledger and the 14 unreachable secrets | — | **C** (legality, hidden information) | 2a — *implemented, retro evidence, review outstanding* |
+| **M06-022** | Objective progress: counting families return counts | M06-021 | B | 2b |
+| **M06-023** | Objective progress: bespoke predicates and bought costs | M06-022 | B | 2b |
+| **M09-019** | Feature vocabulary, dense slot map, OOV columns | M06-023 | **C** (schema) | 3 |
+| **M09-020** | Objective requirement/progress features | M09-019 | B | 3 |
+| **M09-021** | Faction ability decomposition features | M09-019 | B | 3 |
+| **M09-022** | Secret redaction in the feature path | M09-019 | **C** (hidden information) | 3 |
+| **M09-023** | Schema 6 checkpoint: manifest, atomic write, resume | M09-019 | **C** (schema migration) | 4 |
+| **M09-024** | MLP inference: trunk, readout, value head, batched options | M09-023 | **C** (training mathematics) | 4 |
+| **M10-031** | libtorch integration, determinism harness, throughput gate | M09-024 | **D** (claimed performance gate) | 1, 7.1, 7.2 |
+| **M10-032** | Multi-teacher distillation | M10-031 | C | 5 |
+| **M10-033** | PPO with value head and detached advantages | M10-032 | **C** (training mathematics) | 6 |
+| **M10-034** | Promotion gate: table merit, twelve guards | M10-033 | **C** (training mathematics) | 6 |
+
+Phase 0 (profiling) is not a package: it changes nothing and its output is an
+evidence file.
+
+M10-031 is tier D — two independent frontier passes — because it is a claimed
+performance gate, which is exactly what the standard names. That is the right bar:
+§7.1 lets a measurement delete the CUDA path, and a measurement with that authority
+should not be single-sourced.
+
+### 11.3 Retrospective conformance for M06-021
+
+`0d751a8` is already merged, so the loop cannot be run in order. What is owed, and
+is not optional before the branch continues:
+
+1. `plans/evidence/M06-021.md` — commands, results, oracle commit, changed paths,
+   and the protocol deviation recorded as a deviation rather than quietly fixed.
+2. A permission-class declaration. The work was **P1** throughout except the
+   150-game measurement runs, which are **P2** (bounded simulation output) and were
+   not declared.
+3. A **tier C independent review** — it touches scoring legality and hidden
+   information, and the author cannot be its only reviewer.
+4. `plans/EXECUTION_STATE.md` updated to name it and the next ready package.
+
+Items 1, 2 and 4 are done in this revision. **Item 3 is outstanding and blocks
+M06-022**, which is the correct consequence: an unreviewed package does not clear a
+dependency.
+
+### 11.4 Where this document belongs
+
+`docs/MLP_PLAN.md` is not a location the protocol recognises. Milestone plans live
+in `plans/` and are linked from `plans/INDEX.md`. This file stays where it is for
+now — moving it mid-review would break every line reference in the review history —
+and is linked from `EXECUTION_STATE.md` as the design note behind the packages
+above. It becomes package specifications under `plans/` as each is opened; it is
+the argument, and the packages are the work.
+
+---
+
+## 12. What is explicitly not in this branch
 
 - Widening the roster past six (D11) — the architecture supports it; the run
   does not attempt it.

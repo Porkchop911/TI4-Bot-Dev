@@ -1812,3 +1812,59 @@ had already shipped — it is worth re-deriving this rather than trusting it.
   into retained progress. The experiment demonstrated both halves: healthy dynamics AND drift when
   unbanked. Checkpoint `out/run_pure_u5000.json` at u19100 (run_complete false; partial block 5
   discarded by design). Champion state unchanged from u15100 (`out/safepoint_u15100_pre_nobound.json`).
+
+---
+
+### MLP policy branch — M06-021 and the package map (2026-08-21)
+
+- **Branch:** `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`.
+- **Design note:** [`../docs/MLP_PLAN.md`](../docs/MLP_PLAN.md), revision 4. It is the argument
+  behind the packages below, not a milestone plan; it is not linked from `INDEX.md` and does not
+  replace package specifications. Section 11 records the protocol conformance position.
+- **Milestones touched:** M06 (rules), M09 (learned policy), M10 (training).
+
+**Protocol deviation, recorded.** This branch ran outside the `AGENTS.md` package loop:
+`AGENTS.md` was not read before starting, so no package specification, no scoped permission
+declaration, no `plans/evidence/` file, and no independent review preceded the merged commit
+`0d751a8`. Retro-conformance is in [`evidence/M06-021.md`](evidence/M06-021.md). The tier C
+review is still outstanding.
+
+**M06-021 — feat ledger and the fourteen unreachable secrets.** Implemented and merged at
+`0d751a8`. Fourteen of forty secret objectives could not be scored by any sequence of play:
+twelve had no registered requirement, and `dp`/`dtd` had one that nothing offered, because
+`secrets::scoreable_on` returns status-timed secrets only and no code path opened an action- or
+agenda-timed window. Added `Feat` and a turn-scoped ledger on `GameState`, recording at the
+points where the fact still exists (either side of the AFB and bombardment removals, a snapshot
+before the first combat die, the moment the last seat passes, and after 8.20 in `close_vote`),
+plus `ScoringWindow::for_event` opened from `Game::advance_turn`. `cargo test --workspace`:
+**1274 passed, 0 failed** (1271 before). Measured on the r6 champions over 150 holdout games,
+eight of the fourteen now score; the other six are rare inside a four-round horizon.
+
+**Status: implemented, NOT complete.** Tier C review outstanding — the package touches scoring
+legality and hidden information, and the implementer may not be its only reviewer.
+
+**Next ready package:** none. **M06-022 is blocked** by the M06-021 review; an unreviewed
+package does not clear a dependency.
+
+**Package map** (IDs continue each milestone's numbering; M06 ended at 020, M09 at 018, M10 at 030):
+
+| ID | Package | Depends | Tier |
+|---|---|---|---|
+| M06-021 | Feat ledger and the 14 unreachable secrets | — | C — *merged, review outstanding* |
+| M06-022 | Objective progress: counting families return counts | M06-021 | B |
+| M06-023 | Objective progress: bespoke predicates and bought costs | M06-022 | B |
+| M09-019 | Feature vocabulary, dense slot map, OOV columns | M06-023 | C |
+| M09-020 | Objective requirement/progress features | M09-019 | B |
+| M09-021 | Faction ability decomposition features | M09-019 | B |
+| M09-022 | Secret redaction in the feature path | M09-019 | C |
+| M09-023 | Schema 6 checkpoint: manifest, atomic write, resume | M09-019 | C |
+| M09-024 | MLP inference: trunk, readout, value head, batched options | M09-023 | C |
+| M10-031 | libtorch integration, determinism harness, throughput gate | M09-024 | D |
+| M10-032 | Multi-teacher distillation | M10-031 | C |
+| M10-033 | PPO with value head and detached advantages | M10-032 | C |
+| M10-034 | Promotion gate: table merit, twelve guards | M10-033 | C |
+
+**Artifact checksums** for the r6 baseline this branch measures against:
+[`evidence/MLP-ARTIFACTS.md`](evidence/MLP-ARTIFACTS.md). Map pools regenerate from committed
+code and were verified to reproduce bit-for-bit; checkpoints do not regenerate and are not
+archived, which is an open risk.
