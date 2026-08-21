@@ -3,9 +3,10 @@
 Branch: `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`
 (carries the planet-trait fix and the secondary-eligibility gates; 1271 tests green).
 
-Status: **draft for review.** Nothing here is implemented. This document is the
-argument, not the code, and is expected to be revised several times before any
-of it is written.
+Status: **revision 2**, after codex review. Phase 2a is implemented and merged
+(`0d751a8`); everything from Phase 2b onward is still argument, not code. Seven
+points were raised on revision 1 — all seven accepted, all addressed below. The
+two that changed a decision rather than adding detail are flagged inline.
 
 ---
 
@@ -24,10 +25,29 @@ capped by what a dot product can express about "I need four planets of one trait
 and I have two." The two changes are complementary, and the plan accepts the
 attribution cost.
 
-**Mitigation for the attribution cost:** the objective/ability feature families
-go behind an explicit flag from day one, so `--no-objective-features` reproduces
-the pure-architecture ablation without a code change. Any headline result should
-be reported alongside that ablation.
+**Mitigation for the attribution cost:** three independently testable feature
+sets, not one flag.
+
+| set | contents |
+|---|---|
+| `factual` | today's 13 prefixes, unchanged |
+| `factual+objective` | plus §5.1 requirement/progress |
+| `factual+objective+ability` | plus §5.3 faction decomposition |
+
+Revision 1 claimed `--no-objective-features` would "reproduce today's vector
+exactly". Codex is right that this could not hold with ability features enabled
+and the observation path changed — one flag was being asked to gate three
+independent things. Split as above, and **redaction is not one of the switches:
+it is mandatory in every set**, because an agent trained on cards it cannot
+legally see is wrong rather than merely differently-configured.
+
+One thing that makes the split cleaner than codex assumed: **redaction changes
+today's vector not at all.** Verified by grep — no feature in `features.rs`
+derives from any secret or objective; the only match on "objective" in the whole
+file is a comment. So `factual` *is* bit-identical to r6's vector, redaction on
+or off, and it stays a valid baseline. That is a fact about today's extractor,
+not a guarantee: once §5.2 lands, redaction is doing real work and the property
+holds only for the `factual` set. A test pins it.
 
 ### Success criterion
 
@@ -107,7 +127,12 @@ should be explicit.
 | D11 | Roster | The current **six** (sol, letnev, xxcha, hacan, jolnar, l1z1x) |
 | D12 | GPU | **From the start** — CUDA path stood up before the training code |
 | D13 | Horizon | Hold at **4 rounds**; extend when mean VP reaches 6 |
-| D14 | Missing engine coverage | **In scope for this branch.** The 13 unimplemented secrets get implemented here, not deferred |
+| D14 | Missing engine coverage | **In scope, done.** 14 (not 13) unreachable secrets implemented in `0d751a8` — see §5.4 |
+| D15 | Value input | **State-only encoder**, option block zeroed; invariance to option order and to the legal set is a tested property — §4.2 |
+| D16 | Distillation target | **Schema 4** (14 heads). The 19-head split is a later controlled migration, not part of this branch — §6.1 |
+| D17 | Count normalisation | **Clipped `progress / threshold`**, plus the threshold as its own feature — §5.1 |
+| D18 | Guard thresholds | **Derived from the r6 paired-panel variance**, not chosen — §6.3 |
+| D19 | GPU | Kept, but **conditional**: the CUDA path ships only if it beats the CPU path on a measured end-to-end gate — §7 Phase 1 |
 
 ### Why shared, when the gate was per-faction
 
@@ -151,17 +176,70 @@ intervention from r6 update 7500, as a supported operation.
 
 ## 4. Target architecture
 
+### 4.1 The feature vector, split
+
+The input is split into two blocks that never overlap, because the critic needs
+one of them alone:
+
+```
+x_state(s, f) = state_feats(s) ++ ability_feats(f) ++ emb[f]     # no option content
+x_option(o)   = option_feats(o)                                  # no state content
+```
+
+`x_state` is what today's `state-kind:` / `state-option:` prefixes already
+produce, plus the two new faction families. `x_option` is what `option:`,
+`option-faction:`, `kind:` and the payload families produce. The existing
+extractor already emits these as separate name families, so the split is a
+partition of names, not a rewrite.
+
+### 4.2 Policy and value (D7, D15)
+
 ```
 per legal option i, for a decision by faction f on head h:
 
-  x_i = state_feats  ++  option_feats_i  ++  ability_feats(f)  ++  emb[f]
-  z   = relu(W1 · x_i + b1)          # sparse input, EmbeddingBag-style gather
-  z   = relu(W2 · z   + b2)          # trunk: shared across all factions, 2 x 256
-  s_i = w_readout[f, h] · z + b[f, h]
-
+  z_i = trunk( x_state(s, f) ++ x_option(o_i) )
+  s_i = w_readout[f, h] · z_i + b[f, h]
   p   = softmax(s / temperature)
-  V   = w_value · z_state            # value head, state-only trunk pass
+
+once per decision, options absent:
+
+  z_s = trunk( x_state(s, f) ++ 0 )        # option block zeroed, same trunk
+  V   = w_value · z_s + b_value
+
+  trunk(x) = relu(W2 · relu(W1 · x + b1) + b2)      # shared, 2 x 256
 ```
+
+**The value input contains no option content at all.** Revision 1 wrote
+`V = w_value · z_state` without saying where `z_state` came from, which left the
+critic undefined — codex's blocker, and correctly raised. The fix is that `V` is
+computed from a *separate forward pass* whose option block is zeroed, not from
+anything derived from the option set.
+
+This buys the two properties a value must have, and both are cheap to test
+rather than argue:
+
+| property | test |
+|---|---|
+| **Permutation invariance** — `V` unchanged when the legal options are reordered | shuffle `choice.options`, assert `V` bit-identical |
+| **Legal-set invariance** — `V` unchanged when an option is added or removed | drop one legal option, assert `V` bit-identical |
+| **Policy is not accidentally invariant** — the same shuffle *does* permute `p` correspondingly | shuffle, assert `p` permutes with it and its entropy is unchanged |
+
+The third exists because the first two are satisfiable by a bug: a model that
+ignores option features entirely passes both. Testing only invariance would let
+that through.
+
+Cost: **one extra trunk pass per decision**, against N passes for N options. At
+the measured ~8 options per decision that is about +12% of model compute, which
+is itself under 1% of the 450 µs/decision total. Not a consideration.
+
+**Known wrinkle, accepted:** the shared trunk now sees two input distributions —
+one with a populated option block, one with a zeroed one. That is a real
+asymmetry and it is why D7 offered a separate value trunk as the alternative.
+Kept shared because the representation the policy learns is the one the value
+should be reading, and a zeroed block is a distribution the trunk can learn to
+recognise. **Fallback if the value fails to fit** (explained variance stays near
+zero while the policy improves): give the critic its own 2 × 128 trunk. That is
+a contained change and does not touch the policy path.
 
 **Parameter budget** (2 × 256, ~29k feature slots):
 
@@ -177,12 +255,78 @@ per legal option i, for a decision by faction f on head h:
 The input layer dominates the parameter count but not the compute: with ~30
 active slots per option it is a gather of 30 columns, not a 29k-wide matmul.
 
-**Cost concern (open):** D3 runs the trunk once per legal option. Decisions with
-large option sets (movement, production) will dominate. If profiling shows this
-is the bottleneck, the fallback is a two-tower split — state trunk once per
-decision, thin option tower per option, bilinear score — at the price of losing
-free state×option interactions. **Flagged for codex: is per-option worth it, or
-should the two-tower be the default from the start?**
+### 4.3 Cost of per-option scoring
+
+D3 runs the trunk once per legal option, so decisions with large option sets
+(movement, production) dominate. **Codex's ruling: keep per-option initially,
+but batch every option of a decision into one forward pass and keep a CPU path.**
+Batching within a decision is not optional — it is what turns N small matmuls
+into one `[N, d]` matmul, and it is the difference between the per-option model
+being free and being the bottleneck.
+
+The fallback stays a two-tower split — state trunk once per decision, thin
+option tower per option, bilinear score — at the price of losing free
+state×option interactions. Phase 4 measures; it is not decided in advance.
+
+### 4.4 The checkpoint artifact (blocker, revision 1 had none)
+
+Today a checkpoint is a JSON document whose `profiles` field is a map of faction
+to `Profile` — schema, mode, and one named-weight map per head
+(`learned.rs:261`). Nothing in that shape holds a tensor, and revision 1 said
+nothing about what replaces it. Specified here before any model code, because
+the distillation gate and every later comparison read these files.
+
+**Format.** A directory, not a single file, so tensors are not base64 inside
+JSON:
+
+```
+checkpoint-<update>/
+  manifest.json        # schema, shapes, dtypes, provenance, checksums
+  trunk.safetensors    # W1 b1 W2 b2
+  readout.safetensors  # per-faction [heads, width] + bias
+  value.safetensors    # w_value, b_value
+  embedding.safetensors
+  slots.json           # interned feature name -> column index, ordered
+```
+
+`safetensors` rather than a bespoke encoding: it is a flat, checksummable,
+zero-copy format with no code execution on load, and it is readable from both
+Rust and Python without agreeing on anything else. `slots.json` is
+load-bearing — a tensor whose columns are feature slots is meaningless without
+the name-to-column map that produced it, and the interner assigns ids in
+first-seen order, which is not stable across runs.
+
+**`manifest.json` carries, and loading verifies:**
+
+| field | why it is checked |
+|---|---|
+| `schema: 6` | distinct from the linear schemas 2–5 so a wrong loader fails loudly |
+| `trunk: {width, depth, activation}` | a shape mismatch must not be silently broadcast |
+| `dtype: "f32"` | training and inference must agree; f16 is a later decision |
+| `factions: [...]` | readout rows are positional; a reordered roster silently mislabels every faction |
+| `slot_count` and `slots_sha256` | the single most likely silent corruption — same weights, different feature meaning |
+| `heads: [...]` (schema-4 order) | see D16 below |
+| `source`, `git_commit`, `update` | provenance for any number quoted from it |
+| `sha256` per tensor file | integrity |
+
+**Device behaviour.** Weights are always stored on CPU in the file and moved at
+load. A checkpoint written from a CUDA run must load and play identically on a
+CPU-only machine, bit-for-bit in f32 — that is a test, not an intention, and it
+is what makes the GPU path revertible.
+
+**Head mapping (D16).** Codex recommends schema 4 for the first distillation and
+that is adopted. The r6 champions are schema-4 (14 heads); distilling them into
+19 would leave `scoring`, `agenda`, `exploration`, `ability` and `transit`
+initialised from the `other` teacher, which is exactly the head the objective
+features are supposed to inform. **So: schema 4 for this branch**, `heads` in the
+manifest records which, and the 14→19 split becomes a separate controlled
+migration with its own before/after panel. Recorded as a decision rather than an
+open question.
+
+**Migration path.** No conversion of linear checkpoints to MLP checkpoints is
+written — distillation replaces it, and a converter would be a second, worse
+answer to the same problem. Linear checkpoints stay loadable and playable
+unchanged, because the MLP-vs-linear panels need them.
 
 ---
 
@@ -279,13 +423,21 @@ one-shot markers already on `Player` — plus `ScoringWindow::for_event`, opened
 from `Game::advance_turn` (the single point every kind of turn passes through)
 and from `close_vote` after 8.20.
 
+Evidence: **`docs/evidence/phase2a-secrets.md`** — command, fixed seed block,
+pool and checkpoint sha256, and raw output, committed. Revision 1 quoted the
+result with none of that, which codex correctly refused to accept as a completed
+gate; the numbers were real but not reproducible from anything in the repo.
+
 Measured on the r6 champions, 150 games, holdout pool: eight of the fourteen now
 score — Prove Endurance 40% of draws, Drive the Debate 17%, Dictate Policy 16%,
 Betray a Friend 7%, Turn Their Fleets to Dust 6%, Spark a Rebellion 5%, Make an
 Example of Their World 3%, Unveil Flagship 2%. The remaining six are rare events
 inside a four-round horizon rather than engine gaps. Direct scoring effect is
-about **+0.05 VP/seat** (mean 2.92, from 2.89); the value is that fourteen cards
-are now pursuable at all.
+about **+0.05 VP/seat** (mean 2.918, from 2.89) — though the 2.89 came from the
+r6 promotion panel rather than this command, so **the delta is indicative, not a
+paired measurement**, and the pre-fix binary is not archived to make it one.
+Treat 2.918 as the new baseline and the delta as unverified. The value is not the
+delta anyway: it is that fourteen cards are now pursuable at all.
 
 The original finding, kept for the record — 13 of 40 secrets had **no scoring
 predicate anywhere** in `ti4-engine` or `ti4-policy`:
@@ -363,15 +515,40 @@ Changes:
 ### 6.3 Promotion gate (D9)
 
 `promotion.rs` currently promotes per faction (`:212 is_better`, `:231 promote`,
-`:381 apply_promotion`). Replacement:
+`:381 apply_promotion`). Codex is right that revision 1's "2σ plus guessed
+thresholds" was not a specification. Pre-registered here, and the numbers are
+**measured from the r6 panel history rather than chosen** (D18).
 
-- **Merit:** aggregate mean VP and clearance across all seats, same validation +
-  confirmation panel structure, same 2σ significance requirement.
-- **Regression guard:** reject the candidate if any single faction's VP drops
-  more than a threshold (start at 0.30) or clearance more than 0.05, even when
-  the table-wide number improves. This preserves the property that made the old
-  gate useful — catching one faction collapsing behind a strong average.
-- Panel cost falls: one champion instead of six.
+**The variance, from 60 per-faction boundary records across the r6 logs**
+(100 paired seeds each):
+
+| quantity | mean | median | range |
+|---|---|---|---|
+| VP paired SE | 0.0526 | 0.0517 | 0.035 – 0.072 |
+| clearance paired SE | 0.0161 | 0.0161 | 0.009 – 0.021 |
+
+Two things fall straight out, and the first is a real defect in revision 1:
+
+- **The 0.30 VP guard was 5.7σ.** It could not have fired on anything short of a
+  total collapse. It was decorative, and it would have been quietly decorative
+  for the whole run.
+- **The 0.05 clearance guard was 3.1σ** — a defensible bar, but arrived at by
+  guessing, and it happened to land in a reasonable place.
+
+**Pre-registration:**
+
+| element | specification |
+|---|---|
+| **paired unit** | one `(seed, rotation)` pair, candidate and champion on the identical board and seating. Pairing is what makes the SE 0.05 instead of the ~0.9 of unpaired game-to-game VP |
+| **panel** | 100 validation seeds, then 100 disjoint confirmation seeds, × 6 rotations. Fixed blocks, recorded per boundary |
+| **aggregate metric** | mean VP per seat across all 6 factions, paired difference |
+| **confidence** | SE of the paired differences over seeds, treating a rotation-set as one unit. Promote on `gain > 2 × SE` **and** `gain > 0.05` absolute — both, since at n=100 a 2σ bar alone admits gains too small to matter |
+| **confirmation rule** | the confirmation panel must independently clear the same bar. Two panels rather than one 200-seed panel because it also catches a candidate that is merely lucky on one block |
+| **regression guard** | per faction: reject if paired VP loss exceeds **0.14** or clearance loss exceeds **0.043** |
+| **multiplicity** | those two numbers are `z = 2.64 × mean SE`, the Bonferroni-corrected two-sided 5% level for **six simultaneous guards**. Uncorrected 2σ guards false-alarm 4.6% each, so **any of six trips 24% of the time under the null** — a quarter of genuinely neutral candidates rejected for nothing. Revision 1 did not account for this at all |
+| **re-derivation** | the SEs are recomputed from this branch's own panels after the first ten boundaries and the guards reset if they have moved; r6's variance is a prior, not a constant |
+
+Panel cost falls either way: one champion instead of six.
 
 ---
 
@@ -380,17 +557,62 @@ Changes:
 | # | Phase | Exit criterion |
 |---|---|---|
 | **0** | **Profile.** `cargo flamegraph` on one rollout batch. Confirm or refute the ~450 µs/decision split between engine and feature extraction. | The split is a measured number, not an inference. If feature-string `format!` allocation is a large share, fix that first — it makes every later phase cheaper. |
-| **1** | **libtorch on this machine.** tch-rs + CUDA 12.x, RTX 3090, Windows. Smoke test: a 2×256 MLP trains on synthetic data on the GPU. | A green test, and the DLL/PATH setup written down in this document. |
+| **1** | **libtorch, pinned, with a throughput gate.** See §7.1 — a smoke test is not the exit criterion. | The CPU path meets the throughput gate. The CUDA path ships only if it also beats it. |
 | **2a** | ~~**Engine: close the coverage gap.** Implement the missing secrets and the event ledger they need.~~ **Done, `0d751a8`.** | ~~1274 tests green (was 1271). Eight of the fourteen show a non-zero draw-to-score rate; the rest are decidable and rare.~~ |
 | **2b** | **Engine: expose progress.** Refactor `requirement_for` and the secrets families to return counts rather than bools; `satisfied` derives from them. | Tests still green. No feature work yet. |
-| **3** | **Features.** Objective requirement/progress, ability decomposition, secret redaction, all behind flags. | Feature inventory (`examples/feature_inventory.rs`) shows the new families; `--no-objective-features` reproduces today's vector exactly. |
-| **4** | **Model.** Shared trunk, per-faction readout, value head, per-option scoring. Inference path only. | An untrained MLP plays legal games end to end at a measured cost per update. |
+| **3** | **Features.** Objective requirement/progress, ability decomposition, secret redaction. Three independent feature sets per §1; redaction always on. | `feature_inventory.rs` shows the new families in each set; a test asserts the `factual` set is byte-identical to r6's emitted names on a fixed decision corpus. |
+| **4** | **Model.** Shared trunk, per-faction readout, value head, per-option scoring, all options of a decision batched into one pass. Inference path only. | An untrained MLP plays legal games end to end; §7.1's gate is re-measured with the real model and the two-tower fallback decided on the number. |
 | **5** | **Distillation.** Six champions → one MLP. | Mean VP within 0.1 of r6 on the holdout panel. |
 | **6** | **PPO.** New gate, value head, Adam. | A run that promotes at least twice without a per-faction regression trip. |
 | **7** | **Evaluate.** Full run to the mean-6-VP bar, with the `--no-objective-features` ablation. | Mean 6 VP at round 4 on holdout, or a documented account of what stopped it. |
 
 Phases 0–2 touch no machine learning at all and are worth doing whatever
-happens to the rest of the plan. **Phase 2a is done** — see §5.4.
+happens to the rest of the plan. **Phase 2a is done** — see §5.4 and
+`docs/evidence/phase2a-secrets.md`.
+
+### 7.1 The GPU gate (D19)
+
+Revision 1 made Phase 1 a smoke test. Codex is right that this is the wrong exit
+criterion, and the underlying worry is well founded: **a sequential game engine
+calling CUDA once per decision will lose to CPU**, because a 2 × 256 MLP over
+~8 rows is microseconds of arithmetic wrapped in tens of microseconds of launch
+and synchronisation, and the engine is already the dominant cost. Nothing about
+owning a 3090 changes that arithmetic.
+
+So the GPU is no longer assumed. D12 becomes D19: **the CUDA path ships only if
+it wins a measured gate.**
+
+**Pinned before anything is written:** `tch` version, the libtorch build it links
+(cu12x), the CUDA runtime, and the driver. Recorded in this document and in each
+checkpoint manifest, because "it got slower" is unanswerable without them.
+
+**Batching, in two tiers.** Within-decision batching — every legal option of one
+decision as a single `[N, d]` forward pass — is mandatory and is the only tier
+Phase 4 requires. It is also *not enough on its own*: N ≈ 8 leaves the GPU
+almost entirely idle. The tier that would actually use the hardware is
+cross-game batching, a request queue fed by the 96 games in flight, and it is
+deliberately **out of scope for this branch** — it means restructuring the
+rollout loop around a scheduler, and it should not be attempted before the gate
+below says there is anything to win.
+
+**CPU fallback is the default, not the emergency.** `--device cpu|cuda`, CPU
+selected unless asked otherwise, and the bit-identical-load test in §4.4 is what
+keeps that honest.
+
+**The gate.** One representative end-to-end measurement, not a microbenchmark:
+a full update — 16 seeds × 6 rotations, 4 rounds, `full_np8_12_train`, 32
+threads — timed for the current linear policy, the MLP on CPU, and the MLP on
+CUDA.
+
+| result | consequence |
+|---|---|
+| MLP-CPU within ~2× of linear | acceptable; the earlier estimate says 1.6–2.8× at these widths |
+| MLP-CUDA beats MLP-CPU | CUDA becomes the default |
+| MLP-CUDA loses to MLP-CPU | **CPU ships, CUDA is deleted from the branch.** Not kept "for later" — an unused second device path is a source of divergence, and §4.4's load test is the thing that lets it come back cheaply |
+| MLP-CPU worse than ~3× linear | stop and reconsider width or the two-tower fallback before Phase 5 |
+
+Recorded with the same evidence discipline as §5.4: command, seeds, pool
+checksum, raw output, committed.
 
 ---
 
@@ -406,36 +628,87 @@ happens to the rest of the plan. **Phase 2a is done** — see §5.4.
 | **Shared trunk averages away faction identity** | The per-faction readout and embedding exist for this. If a faction regresses, check whether its readout is doing anything. |
 | ~~**Event ledger touches combat**~~ (§5.4) | Landed additive-only; no change to combat resolution itself. 1274 tests green. Risk retired. |
 | **Newly-scoreable secrets shift the reward landscape** | Every prior run's VP numbers become non-comparable the moment Phase 2 lands. Re-baseline r6's champions on the fixed engine before drawing any MLP comparison. |
-| **`out/` is gitignored** (`.gitignore:24`) | Checkpoints, pools and logs are **not** restorable from git. Any r6-comparison depends on files that exist only on this machine. Worth fixing independently. |
+| **`out/` is gitignored** (`.gitignore:24`) | Was listed as worth fixing independently; codex is right that it is a **prerequisite**, since the success and distillation gates both read those files. Addressed in §11. |
 | **Overfitting the 96-game batch** | 7.6M params against 96 games/update is a large ratio. Weight decay, and the holdout pool (`full_np8_12_holdout.json`, zero overlap with train) is the honest measure. |
 
 ---
 
-## 9. Open questions for codex
+## 9. Open questions
 
-1. **Per-option MLP vs two-tower** (§4). Is the free state×option interaction
-   worth running the trunk per option, given movement and production decisions
-   have large option sets?
-2. **Schema 4 or 5** (§6.1). Distil into 14 heads or 19? The `scoring` head is
-   exactly where the objective features should land, which argues for 19 — but
-   it has no dedicated teacher.
+**Closed by codex review (revision 2):**
+
+1. ~~Per-option vs two-tower~~ — per-option, batched across a decision's options,
+   CPU path retained. Two-tower stays the measured fallback (§4.3).
+2. ~~Schema 4 or 5~~ — schema 4 for distillation; the 14→19 split becomes a
+   separate controlled migration (D16, §4.4).
+4. ~~Regression-guard thresholds~~ — derived from the r6 paired-panel variance,
+   not chosen: 0.14 VP / 0.043 clearance, Bonferroni-corrected for six
+   simultaneous guards (D18, §6.3).
+5. ~~Count normalisation~~ — clipped `progress / threshold`, with the threshold
+   emitted as its own feature so the ratio is not asked to carry both (D17).
+6. ~~Event ledger shape~~ — `turn_seq`-scoped, one variant per card, offered once
+   per turn from `advance_turn` (§5.4).
+
+**Still open:**
+
 3. **Ability decomposition completeness** (§5.3). Does it separate all 34
    factions? If not, the identity embedding is doing load-bearing work and the
-   generalisation claim weakens.
-4. **Regression-guard thresholds** (§6.3). 0.30 VP / 0.05 clearance are guesses.
-   What does the r1–r6 boundary history suggest?
-5. **Normalisation of count features** (§5.1). Raw counts, `count/threshold`,
-   or one-hot buckets? Raw counts in a network with no input normalisation is a
-   known way to get a badly conditioned first layer.
-6. ~~**Event ledger shape**~~ (§5.4) — settled: scoped to `turn_seq`, one
-   variant per card, offered once per turn from `advance_turn`. Open sub-question
-   for review: offering once per turn approximates 61.6's one-objective-per-action
-   but is not identical to "one per combat" for a turn containing several fights.
-   Is that worth tightening?
+   generalisation claim weakens. Cheap to settle: decompose all 34 and check for
+   collisions before Phase 3 relies on it.
+7. **One objective per turn, or per combat?** (§5.4). The event window is offered
+   once per turn, which approximates 61.6's one-per-action but is not identical
+   for a turn containing several fights. Tightening means a window per combat and
+   a per-combat feat scope. Currently rare enough not to matter; worth a decision
+   before it is load-bearing.
+8. **Distillation corpus** (§6.1). Decisions sampled from champion self-play — but
+   on which pool, how many, and refreshed as the student drifts, or fixed? A fixed
+   corpus is reproducible; an on-policy one avoids the student being trained only
+   where the teacher goes. Not yet specified.
 
 ---
 
-## 10. What is explicitly not in this branch
+## 10. Artifact manifest (prerequisite, not a nice-to-have)
+
+The success criterion and the distillation gate both depend on files that are
+not in the repo. Codex is right that this makes them a prerequisite rather than
+housekeeping: a baseline nobody else can obtain is not a baseline.
+
+The two kinds of artifact need different answers, and revision 1 conflated them.
+
+**Reproducible — regenerate, do not archive.** The map pools are deterministic
+output of committed code:
+
+```sh
+cargo run --release --example generate_pool -- --seed 1   --count 4000     --min 8 --max 12 --out out/pools/full_np8_12_train.json
+cargo run --release --example generate_pool -- --seed 777 --count 1000     --min 8 --max 12 --out out/pools/full_np8_12_holdout.json
+```
+
+xorshift64* seeded by `--seed`, no clock, no thread order. A regenerated pool
+must match the checksum below; if it does not, the corpus moved and every number
+measured against it needs re-reading.
+
+**Not reproducible — must be archived.** Training is stochastic across threads,
+so no checkpoint can be regenerated from source. These have to be stored out of
+band, and until they are, every r6 number in this document rests on one machine's
+disk.
+
+**The manifest** (`docs/evidence/artifacts.md`, checksums verified at use):
+
+| artifact | sha256 (first 16) | recoverable? |
+|---|---|---|
+| `out/stage2_r6/final10000.json` | `be792a2a207ced25` | **no — archive required** |
+| `out/pools/full_np8_12_holdout.json` | `aba33c81aa04cefb` | yes, `--seed 777` |
+| `out/pools/full_np8_12_train.json` | `106153d438443519` | yes, `--seed 1` |
+
+**Action before Phase 5:** archive the r6 champions and the Stage-1
+`frozen5000.json` somewhere durable, record the location, and add a check that
+refuses to run a comparison against a checkpoint whose checksum is not in the
+manifest. A gate that silently compares against the wrong file is worse than one
+that fails.
+
+---
+
+## 11. What is explicitly not in this branch
 
 - Widening the roster past six (D11) — the architecture supports it; the run
   does not attempt it.

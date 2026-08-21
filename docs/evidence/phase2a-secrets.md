@@ -1,0 +1,150 @@
+# Phase 2a evidence — secret objectives
+
+Generated 2026-08-21T07:55:02Z on commit `334ef83` (`codex/mlp-policy`).
+
+## Inputs (checksums, since `out/` is gitignored)
+
+```
+be792a2a207ced25d589162d875bae4fb1f320c8e5637045486db6a24ce5b55b *out/stage2_r6/final10000.json
+aba33c81aa04cefb15857b8ed1d40173f6f3de5e9b6e9633a6855c1d5a4c27e5 *out/pools/full_np8_12_holdout.json
+```
+
+## Commands
+
+```sh
+cargo build --release --examples   # NOT `--release` alone: that does not build examples
+RAYON_NUM_THREADS=32 ./target/release/examples/objective_report.exe \
+    --checkpoint out/stage2_r6/final10000.json \
+    --rounds 4 --seeds 25 \
+    --map-pool out/pools/full_np8_12_holdout.json
+```
+
+Seeds are the fixed block `98_000_000 .. 98_000_025`, six rotations each = 150 games,
+set in `objective_report.rs`; tile seed offset 20_000_000. No RNG is drawn from the clock.
+
+## Raw output
+
+```
+150 games (900 seats), 4 rounds, pool out/pools/full_np8_12_holdout.json
+checkpoint out/stage2_r6/final10000.json
+
+PUBLIC OBJECTIVES  (revealed = games face up; scored = seats; rate = of the 6 seats per revealed game)
+objective                    pts  revealed   scored per-rev  condition
+Develop Weaponry               1        54        0      0%  Own 2 unit upgrade technologies.
+Engineer a Marvel              1        54       36     11%  Have your flagship or a war sun on the game board.
+Make History                   1        54       17      5%  Have units in 2 systems that contain legendary planets, Mecatol Rex, or anomalies.
+Found Research Outposts        1        54       70     22%  Control 3 planets that have technology specialties.
+Negotiate Trade Routes         1        54      149     46%  Spend 5 trade goods.
+Amass Wealth                   1        48      167     58%  Spend 3 influence, 3 resources, and 3 trade goods.
+Expand Borders                 1        48      119     41%  Control 6 planets in non-home systems.
+Discover Lost Outposts         1        48       74     26%  Control 2 planets that have attachments.
+Erect a Monument               1        48      200     69%  Spend 8 resources.
+Improve Infrastructure         1        36        3      1%  Have structures on 3 planets outside of your home system.
+Push Boundaries                1        36      108     50%  Control more planets than each of 2 of your neighbors.
+Raise a Fleet                  1        36        3      1%  Have 5 or more non-fighter ships in 1 system.
+Explore Deep Space             1        30        0      0%  Have units in 3 systems that do not contain planets.
+Corner the Market              1        24       60     42%  Control 4 planets that each have the same planet trait.
+Diversify Research             1        24       32     22%  Own 2 technologies in each of 2 colors.
+Intimidate Council             1        24        9      6%  Have 1 or more ships in 2 systems that are adjacent to Mecatol Rex's system.
+Lead From the Front            1        24      126     88%  Spend a total of 3 tokens from your tactic and/or strategy pools.
+Sway the Council               1        24      100     69%  Spend 8 influence.
+Populate the Outer Rim         1        18       12     11%  Have units in 3 systems on the edge of the game board other than your home system.
+Build Defenses                 1        12       27     38%  Have 4 or more structures.
+Unify the Colonies             2        24        1      1%  Control 6 planets that each have the same planet trait.
+Become a Legend                2        18        0      0%  Have units in 4 systems that contain legendary planets, Mecatol Rex, or anomalies.
+Form Galactic Brain Trust      2        18        0      0%  Control 5 planets that have technology specialties.
+Control the Borderlands        2        18        0      0%  Have units in 5 systems on the edge of the game board other than your home system.
+Master the Sciences            2        12        0      0%  Own 2 technologies in each of 4 colors.
+Protect the Border             2        12        0      0%  Have structures on 5 planets outside of your home system.
+Achieve Supremacy              2         9        0      0%  Have your flagship or war sun in another player's home system or the Mecatol Rex system.
+Command an Armada              2         8        0      0%  Have 8 or more non-fighter ships in 1 system.
+Subdue the Galaxy              2         7        0      0%  Control 11 planets in non-home systems.
+Reclaim Ancient Monuments      2         6        0      0%  Control 3 planets that have attachments.
+Rule Distant Lands             2         6        0      0%  Control 2 planets that are each in or adjacent to a different, other player's home system.
+Galvanize the People           2         6        0      0%  Spend a total of 6 tokens from your tactic and/or strategy pools.
+Revolutionize Warfare          2         6        0      0%  Own 3 unit upgrade technologies.
+Patrol Vast Territories        2         6        0      0%  Have units in 5 systems that do not contain planets.
+Centralize Galactic Trade      2         -        -       -  Spend 10 trade goods.
+Conquer the Weak               2         -        -       -  Control 1 planet that is in another player's home system.
+Found a Golden Age             2         -        -       -  Spend 16 resources.
+Manipulate Galactic Law        2         -        -       -  Spend 16 influence.
+Construct Massive Cities       2         -        -       -  Have 7 or more structures.
+Hold Vast Reserves             2         -        -       -  Spend 6 influence, 6 resources, and 6 trade goods.
+
+SECRET OBJECTIVES  (drawn = seats that held it; scored = seats that took it)
+objective                      pts   drawn   scored per-draw  condition
+Become the Gatekeeper            1      68        0       0%  Have 1 or more ships in a system that contains an alpha wormhole and 1 or more ships in a system that contains a beta wormhole.
+Demonstrate Your Power           1      64        0       0%  Have 3 or more non-fighter ships in the active system at the end of a space combat.
+Occupy the Seat of the Empire    1      64        1       2%  Control Mecatol Rex and have 3 or more ships in its system.
+Occupy the Fringe                1      64       12      19%  Have 9 or more ground forces on a planet that does not contain 1 of your space docks.
+Seize an Icon                    1      64       12      19%  Control a legendary planet.
+Fight with Precision             1      63        0       0%  Destroy the last of a player's fighters in the active system during the anti-fighter barrage step.
+Establish a Perimeter            1      60        2       3%  Have 4 PDS units on the game board.
+Forge an Alliance                1      59        5       8%  Control 4 cultural planets.
+Betray a Friend                  1      58        4       7%  Win a combat against a player whose promissory note you had in your play area at the start of your tactical action.
+Adapt New Strategies             1      57        0       0%  Own 2 faction technologies. 'Valefar Assimilator' technologies do not count toward this objective.
+Mechanize the Military           1      57        0       0%  Have 1 mech on each of 4 planets.
+Strengthen Bonds                 1      56       49      88%  Have another player's promissory note in your play area.
+Drive the Debate                 1      54        9      17%  You or a planet you control are elected by an agenda.
+Threaten Enemies                 1      52       24      46%  Have 1 or more ships in a system that is adjacent to another player's home system.
+Establish Hegemony               1      51       23      45%  Control planets that have a combined influence value of at least 12.
+Control the Region               1      50        0       0%  Have 1 or more ships in 6 systems.
+Destroy Heretical Works          1      49       21      43%  Purge 2 of your relic fragments of any type.
+Darken the Skies                 1      49        0       0%  Win a combat in another player's home system.
+Master the Laws of Physics       1      47        0       0%  Own 4 technologies of the same color.
+Unveil Flagship                  1      44        1       2%  Win a space combat in a system that contains your flagship. You cannot score this objective if your flagship is destroyed in the combat.
+Form a Spy Network               1      43        0       0%  Discard 5 action cards.
+Learn the Secrets of the Cosmos   1      43        8      19%  Have 1 or more ships in 3 systems that are each adjacent to an anomaly.
+Prove Endurance                  1      43       17      40%  Be the last player to pass during a game round.
+Foster Cohesion                  1      41        5      12%  Be neighbors with all other players.
+Produce en Masse                 1      41        0       0%  Have units with a combined PRODUCTION value of at least 8 in a single system.
+Brave the Void                   1      40        0       0%  Win a combat in an anomaly.
+Cut Supply Lines                 1      39        1       3%  Have 1 or more ships in the same system as another player's space dock.
+Gather a Mighty Fleet            1      38        0       0%  Have 5 dreadnoughts on the game board.
+Spark a Rebellion                1      38        2       5%  Win a combat against a player who has the most victory points.
+Dictate Policy                   1      37        6      16%  There are 3 or more laws in play.
+Destroy Their Greatest Ship      1      36        0       0%  Destroy another player's war sun or flagship.
+Become a Martyr                  1      35        0       0%  Lose control of a planet in a home system.
+Fuel the War Machine             1      35        1       3%  Have 3 space docks on the game board.
+Hoard Raw Materials              1      34       18      53%  Control planets that have a combined resource value of at least 12.
+Make an Example of Their World   1      34        1       3%  Destroy the last of a player's ground forces on a planet during the bombardment step.
+Turn Their Fleets to Dust        1      33        2       6%  Destroy the last of a player's non-fighter ships in the active system during the space cannon offense step.
+Defy Space and Time              1      32        0       0%  Have units in the wormhole nexus.
+Stake Your Claim                 1      31        8      26%  Control a planet in a system that contains a planet controlled by another player.
+Mine Rare Metals                 1      23        5      22%  Control 4 hazardous planets.
+Monopolize Production            1      21        3      14%  Control 4 industrial planets.
+
+IMPERIAL PRIMARY
+  scoring windows opened:        138  (0.92 per game)
+  scored an objective:           123  (89% of windows)
+  declined:                      15  (11%)
+  held Mecatol at that moment:   11  (8% -- these gain the extra point, the rest draw a secret)
+```
+
+## VP re-baseline on the fixed engine
+
+```sh
+RAYON_NUM_THREADS=32 ./target/release/examples/vp_where.exe \
+    --checkpoint out/stage2_r6/final10000.json \
+    --rounds 4 --seeds 25 --map-pool out/pools/full_np8_12_holdout.json
+```
+
+```
+sol  (150 seats)  3.13 VP/seat = 1.89 objectives + 0.92 Support for the Throne + 0.32 other (custodians, agendas)
+letnev  (150 seats)  2.69 VP/seat = 1.57 objectives + 0.95 Support for the Throne + 0.17 other (custodians, agendas)
+xxcha  (150 seats)  2.63 VP/seat = 1.58 objectives + 0.94 Support for the Throne + 0.11 other (custodians, agendas)
+hacan  (150 seats)  3.09 VP/seat = 1.83 objectives + 0.93 Support for the Throne + 0.33 other (custodians, agendas)
+jolnar  (150 seats)  3.26 VP/seat = 1.79 objectives + 0.97 Support for the Throne + 0.50 other (custodians, agendas)
+l1z1x  (150 seats)  2.71 VP/seat = 1.70 objectives + 0.95 Support for the Throne + 0.07 other (custodians, agendas)
+```
+
+Mean across the six: **2.918 VP/seat**. The pre-fix figure of 2.89 came from the r6
+promotion panel rather than this command, so the +0.03 is indicative, not a paired
+measurement. A paired before/after needs the pre-fix binary, which is not archived;
+treat 2.918 as the new baseline and the delta as unverified.
+
+## Caveat
+
+The checkpoint and pool are not in the repo. The pool is reproducible from committed
+code (`examples/generate_pool.rs`, `--seed 777`); the checkpoint is not reproducible and
+must be archived out of band. See the artifact manifest in `docs/MLP_PLAN.md`.
