@@ -1941,3 +1941,23 @@ non-reproducible checkpoints are not durable yet; M09-020 is a hard prerequisite
   M06-022.
 - **Current next action:** commit the accepted M06-021a correction, then create the M06-022 package
   branch and implement its exact counting-family progress specification.
+
+## M06-022 implementation checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-022 — counting-family objective progress.
+- **Branch/base:** `wp/m06-022-counting-objective-progress` / accepted M06-021a commit `5d027e8`.
+- **Status:** accepted after independent Claude Opus 5 Tier-B review. All mapping, legality,
+  determinism, purity, and behavior-preservation checks passed; G1-G3 are resolved.
+- **Implemented:** typed stable family identity and exact raw `have`/`threshold` progress for all
+  24 public and 10 secret aliases; affected legality derives from that same progress; outer-rim
+  counts are unavailable without a map; exact maximum/distinct reductions and immutable queries.
+- **Checks:** engine 822 unit tests plus 5 doctests; workspace exit 0; engine Clippy has no new
+  warning after fixing the package-local boolean simplification; `git diff --check` passes.
+- **Intentional paths:** `crates/ti4-engine/src/objectives.rs`, `secrets.rs`, M06-022 spec/evidence/
+  review ledger, and this execution state. M06-023 and M06-024 specs remain uncommitted preparation.
+- **Next exact action:** commit M06-022, then create the M06-023 package branch and implement its
+  expanded 33-alias remaining-position/exact-bought-cost specification.
+- **Dependency-safe preparation completed while review is pending:** M06-023 now names all ten
+  bought-objective aliases/cost families/targets explicitly; M06-024 has an exact frontier-review
+  specification; M07-019/M07-020 and M08-018/M08-019 now have scoped revalidation/review
+  specifications. None of their source implementation has started or bypassed its dependency.

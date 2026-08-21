@@ -48,6 +48,44 @@ pub struct Position<'a> {
 /// A registered requirement check.
 type Requirement = fn(&Position<'_>) -> bool;
 
+/// Stable identity for an exact counting requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CountFamily {
+    NonHome,
+    OnTheRim,
+    SameTrait,
+    TechSpecialties,
+    UnitUpgrades,
+    Colours { per_colour: usize },
+    Structures,
+    StructuresAway,
+    FleetInOneSystem,
+    PlanetlessSystems,
+    AttachedPlanets,
+    NotableSystems,
+    GroundForcesOnOnePlanet,
+    MechsOnDistinctPlanets,
+    PlanetsOfTrait { trait_name: &'static str },
+    SameColourTechnologies,
+    ShipsInSystems,
+    Units { base_type: &'static str },
+}
+
+/// Exact raw progress toward one counting requirement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequirementProgress {
+    pub family: CountFamily,
+    pub have: usize,
+    pub threshold: usize,
+}
+
+impl RequirementProgress {
+    #[must_use]
+    pub const fn satisfied(&self) -> bool {
+        self.have >= self.threshold
+    }
+}
+
 impl<'a> Position<'a> {
     /// Resolve a player's position once, ready for any number of requirement checks.
     ///
@@ -277,21 +315,18 @@ impl Position<'_> {
     }
 }
 
-/// Have units in `count` edge systems other than your home system.
-fn on_the_rim(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let Some(galaxy) = position.galaxy else {
-            return false;
-        };
-        let edge = edge_systems(galaxy);
-        let home = position.home_system();
+/// Edge systems other than home where this player has units.
+fn on_the_rim_count(position: &Position<'_>) -> Option<usize> {
+    let galaxy = position.galaxy?;
+    let edge = edge_systems(galaxy);
+    let home = position.home_system();
+    Some(
         position
             .systems_holding_units()
             .into_iter()
             .filter(|system| edge.contains(system) && Some(system) != home.as_ref())
-            .count()
-            >= count
-    }
+            .count(),
+    )
 }
 
 /// Have ships in two systems adjacent to Mecatol Rex's.
@@ -376,96 +411,82 @@ fn rule_distant_lands(position: &Position<'_>) -> bool {
         >= 2
 }
 
-/// Control `count` planets in non-home systems.
-fn non_home(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        position
-            .controlled()
-            .iter()
-            .filter(|planet| planet.homeworld_of().is_none())
-            .count()
-            >= count
-    }
+fn non_home_count(position: &Position<'_>) -> usize {
+    position
+        .controlled()
+        .iter()
+        .filter(|planet| planet.homeworld_of().is_none())
+        .count()
 }
 
 /// Control `count` planets that each have the same planet trait.
-fn same_trait(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for planet in position.controlled() {
-            // A dual-trait planet counts toward both of its traits, and `traits` excludes the
-            // non-trait values the field also carries (FACTION, and Thunder's Edge's FAKE,
-            // SPACESTATION, LIGHTNING).
-            for trait_name in planet.traits() {
-                *counts.entry(trait_name).or_default() += 1;
-            }
+fn same_trait_count(position: &Position<'_>) -> usize {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for planet in position.controlled() {
+        // A dual-trait planet counts toward both of its traits.
+        for trait_name in planet.traits() {
+            *counts.entry(trait_name).or_default() += 1;
         }
-        counts.values().any(|n| *n >= count)
     }
+    counts.values().copied().max().unwrap_or(0)
 }
 
 /// Control `count` planets that have technology specialties.
-fn tech_specialties(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        position
-            .controlled()
-            .iter()
-            .filter(|planet| !planet.tech_specialties().is_empty())
-            .count()
-            >= count
-    }
+fn tech_specialties_count(position: &Position<'_>) -> usize {
+    position
+        .controlled()
+        .iter()
+        .filter(|planet| !planet.tech_specialties().is_empty())
+        .count()
 }
 
 /// Own `count` unit-upgrade technologies.
-fn unit_upgrades(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.technology_types("UNITUPGRADE") >= count
+fn unit_upgrades_count(position: &Position<'_>) -> usize {
+    position.technology_types("UNITUPGRADE")
 }
 
 /// Own `per_colour` technologies in each of `colours` colours.
 ///
 /// Unit upgrades have no colour (90.7b), which is why they are counted separately above rather
 /// than being one more entry in this tally.
-fn colours(per_colour: usize, colours: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        COLOURS
-            .iter()
-            .filter(|colour| position.technology_types(colour) >= per_colour)
-            .count()
-            >= colours
-    }
+fn colours_count(position: &Position<'_>, per_colour: usize) -> usize {
+    COLOURS
+        .iter()
+        .filter(|colour| position.technology_types(colour) >= per_colour)
+        .count()
 }
 
 /// The four technology colours. `UNITUPGRADE` and `NONE` are deliberately absent.
 const COLOURS: [&str; 4] = ["BIOTIC", "CYBERNETIC", "PROPULSION", "WARFARE"];
 
 /// Have `count` or more structures.
-fn structure_count(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.structures().len() >= count
+fn structures_count(position: &Position<'_>) -> usize {
+    position.structures().len()
 }
 
 /// Have structures on `planets` planets outside your home system.
-fn structures_away(planets: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let home = position.home_system();
-        position
-            .structures()
-            .into_iter()
-            .filter(|(system, _)| Some(system.as_str()) != home.as_deref())
-            .map(|(_, planet)| planet)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len()
-            >= planets
-    }
+fn structures_away_count(position: &Position<'_>) -> usize {
+    let home = position.home_system();
+    position
+        .structures()
+        .into_iter()
+        .filter(|(system, _)| Some(system.as_str()) != home.as_deref())
+        .map(|(_, planet)| planet)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
 }
 
 /// Have `ships` or more non-fighter ships in a single system.
 ///
 /// One system, not a total: a fleet spread across the board is not an armada, which is the
 /// whole point of the card.
-fn fleet_in_one_system(ships: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let types = ti4_content::units::catalogue(position.content, position.sources);
-        position.state.board.values().any(|system| {
+fn fleet_in_one_system_count(position: &Position<'_>) -> usize {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    position
+        .state
+        .board
+        .values()
+        .map(|system| {
             system
                 .units_of(position.player)
                 .into_iter()
@@ -475,87 +496,179 @@ fn fleet_in_one_system(ships: usize) -> impl Fn(&Position<'_>) -> bool {
                         .is_some_and(|kind| kind.is_ship() && !kind.is_fighter())
                 })
                 .count()
-                >= ships
         })
-    }
+        .max()
+        .unwrap_or(0)
 }
 
 /// Have units in `count` systems that contain no planets.
-fn planetless_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
-        position
-            .state
-            .board
-            .iter()
-            .filter(|(_, board)| !board.units_of(position.player).is_empty())
-            .filter(|(id, _)| {
-                systems
-                    .get(id.as_str())
-                    .is_some_and(|system| system.planets().is_empty())
-            })
-            .count()
-            >= count
-    }
+fn planetless_systems_count(position: &Position<'_>) -> usize {
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    position
+        .state
+        .board
+        .iter()
+        .filter(|(_, board)| !board.units_of(position.player).is_empty())
+        .filter(|(id, _)| {
+            systems
+                .get(id.as_str())
+                .is_some_and(|system| system.planets().is_empty())
+        })
+        .count()
 }
 
 /// Control `count` planets that have an exploration attachment.
-fn attached_planets(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        position
-            .state
-            .controlled_planets(position.player)
-            .into_iter()
-            .filter(|(_, planet)| {
-                position
-                    .state
-                    .planet_attachments
-                    .get(*planet)
-                    .is_some_and(|attached| !attached.is_empty())
-            })
-            .count()
-            >= count
-    }
+fn attached_planets_count(position: &Position<'_>) -> usize {
+    position
+        .state
+        .controlled_planets(position.player)
+        .into_iter()
+        .filter(|(_, planet)| {
+            position
+                .state
+                .planet_attachments
+                .get(*planet)
+                .is_some_and(|attached| !attached.is_empty())
+        })
+        .count()
 }
 
 /// Have units in `count` systems holding a legendary planet, Mecatol Rex, or an anomaly.
 ///
 /// "Notable" is the card's word for places worth contesting, and it is read from the corpus
 /// rather than from a hand-written tile list — a list would go stale the moment the corpus does.
-fn in_notable_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
-        let planets = all_planets(position.content, position.sources);
-        position
-            .state
-            .board
-            .iter()
-            .filter(|(_, board)| !board.units_of(position.player).is_empty())
-            .filter(|(id, _)| {
-                if id.as_str() == crate::seating::MECATOL {
-                    return true;
-                }
-                let Some(system) = systems.get(id.as_str()) else {
-                    return false;
-                };
-                system.is_anomaly()
-                    || system.planets().iter().any(|planet| {
-                        planets
-                            .get(planet)
-                            .is_some_and(ti4_content::galaxy::Planet::is_legendary)
-                    })
-            })
-            .count()
-            >= count
-    }
+fn in_notable_systems_count(position: &Position<'_>) -> usize {
+    let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    let planets = all_planets(position.content, position.sources);
+    position
+        .state
+        .board
+        .iter()
+        .filter(|(_, board)| !board.units_of(position.player).is_empty())
+        .filter(|(id, _)| {
+            if id.as_str() == crate::seating::MECATOL {
+                return true;
+            }
+            let Some(system) = systems.get(id.as_str()) else {
+                return false;
+            };
+            system.is_anomaly()
+                || system.planets().iter().any(|planet| {
+                    planets
+                        .get(planet)
+                        .is_some_and(ti4_content::galaxy::Planet::is_legendary)
+                })
+        })
+        .count()
+}
+
+/// Exact progress for public objectives backed by counting families.
+#[must_use]
+pub fn counting_progress(
+    alias: &ObjectiveId,
+    position: &Position<'_>,
+) -> Option<RequirementProgress> {
+    let (family, have, threshold) = match alias.as_str() {
+        "expand_borders" => (CountFamily::NonHome, non_home_count(position), 6),
+        "subdue" => (CountFamily::NonHome, non_home_count(position), 11),
+        "outer_rim" => (CountFamily::OnTheRim, on_the_rim_count(position)?, 3),
+        "control_borderlands" => (CountFamily::OnTheRim, on_the_rim_count(position)?, 5),
+        "corner" => (CountFamily::SameTrait, same_trait_count(position), 4),
+        "unify_colonies" => (CountFamily::SameTrait, same_trait_count(position), 6),
+        "research_outposts" => (
+            CountFamily::TechSpecialties,
+            tech_specialties_count(position),
+            3,
+        ),
+        "brain_trust" => (
+            CountFamily::TechSpecialties,
+            tech_specialties_count(position),
+            5,
+        ),
+        "develop" => (CountFamily::UnitUpgrades, unit_upgrades_count(position), 2),
+        "revolutionize" => (CountFamily::UnitUpgrades, unit_upgrades_count(position), 3),
+        "diversify" => (
+            CountFamily::Colours { per_colour: 2 },
+            colours_count(position, 2),
+            2,
+        ),
+        "master_science" => (
+            CountFamily::Colours { per_colour: 2 },
+            colours_count(position, 2),
+            4,
+        ),
+        "build_defenses" => (CountFamily::Structures, structures_count(position), 4),
+        "massive_cities" => (CountFamily::Structures, structures_count(position), 7),
+        "infrastructure" => (
+            CountFamily::StructuresAway,
+            structures_away_count(position),
+            3,
+        ),
+        "protect_border" => (
+            CountFamily::StructuresAway,
+            structures_away_count(position),
+            5,
+        ),
+        "raise_fleet" => (
+            CountFamily::FleetInOneSystem,
+            fleet_in_one_system_count(position),
+            5,
+        ),
+        "command_armada" => (
+            CountFamily::FleetInOneSystem,
+            fleet_in_one_system_count(position),
+            8,
+        ),
+        "deep_space" => (
+            CountFamily::PlanetlessSystems,
+            planetless_systems_count(position),
+            3,
+        ),
+        "vast_territories" => (
+            CountFamily::PlanetlessSystems,
+            planetless_systems_count(position),
+            5,
+        ),
+        "ancient_monuments" => (
+            CountFamily::AttachedPlanets,
+            attached_planets_count(position),
+            3,
+        ),
+        "lost_outposts" => (
+            CountFamily::AttachedPlanets,
+            attached_planets_count(position),
+            2,
+        ),
+        "make_history" => (
+            CountFamily::NotableSystems,
+            in_notable_systems_count(position),
+            2,
+        ),
+        "become_legend" => (
+            CountFamily::NotableSystems,
+            in_notable_systems_count(position),
+            4,
+        ),
+        _ => return None,
+    };
+    Some(RequirementProgress {
+        family,
+        have,
+        threshold,
+    })
+}
+
+fn counting_satisfied(alias: &str, position: &Position<'_>) -> bool {
+    counting_progress(&ObjectiveId::new(alias), position)
+        .is_some_and(|progress| progress.satisfied())
 }
 
 /// The registered requirements, by objective alias.
 ///
-/// Three tranches: planet control, technology and structures, and fleets/space. The oracle
-/// registers 32; 22 are covered here, plus the eight bought ones. The rest stay unregistered and
-/// therefore unscoreable, which is the designed behaviour for a coverage gap — see the module
-/// documentation. [`unregistered_objectives`] reports which they are.
+/// Three tranches: planet control, technology and structures, and fleets/space. All 30 position
+/// objectives and ten bought objectives in the accepted Rust corpus are registered. An unknown
+/// objective remains unscoreable, so a coverage gap fails closed; [`unregistered_objectives`]
+/// reports any such revealed alias.
 #[must_use]
 #[allow(
     clippy::too_many_lines,
@@ -565,76 +678,76 @@ pub fn requirement_for(alias: &ObjectiveId) -> Option<Requirement> {
     // Written as a match rather than a lazy map so the set is visible at a glance and adding
     // one is a one-line change with no initialisation order to think about.
     fn expand_borders(p: &Position<'_>) -> bool {
-        non_home(6)(p)
+        counting_satisfied("expand_borders", p)
     }
     fn outer_rim(p: &Position<'_>) -> bool {
-        on_the_rim(3)(p)
+        counting_satisfied("outer_rim", p)
     }
     fn control_borderlands(p: &Position<'_>) -> bool {
-        on_the_rim(5)(p)
+        counting_satisfied("control_borderlands", p)
     }
     fn subdue(p: &Position<'_>) -> bool {
-        non_home(11)(p)
+        counting_satisfied("subdue", p)
     }
     fn corner(p: &Position<'_>) -> bool {
-        same_trait(4)(p)
+        counting_satisfied("corner", p)
     }
     fn unify_colonies(p: &Position<'_>) -> bool {
-        same_trait(6)(p)
+        counting_satisfied("unify_colonies", p)
     }
     fn research_outposts(p: &Position<'_>) -> bool {
-        tech_specialties(3)(p)
+        counting_satisfied("research_outposts", p)
     }
     fn brain_trust(p: &Position<'_>) -> bool {
-        tech_specialties(5)(p)
+        counting_satisfied("brain_trust", p)
     }
     fn develop(p: &Position<'_>) -> bool {
-        unit_upgrades(2)(p)
+        counting_satisfied("develop", p)
     }
     fn revolutionize(p: &Position<'_>) -> bool {
-        unit_upgrades(3)(p)
+        counting_satisfied("revolutionize", p)
     }
     fn diversify(p: &Position<'_>) -> bool {
-        colours(2, 2)(p)
+        counting_satisfied("diversify", p)
     }
     fn master_science(p: &Position<'_>) -> bool {
-        colours(2, 4)(p)
+        counting_satisfied("master_science", p)
     }
     fn build_defenses(p: &Position<'_>) -> bool {
-        structure_count(4)(p)
+        counting_satisfied("build_defenses", p)
     }
     fn massive_cities(p: &Position<'_>) -> bool {
-        structure_count(7)(p)
+        counting_satisfied("massive_cities", p)
     }
     fn infrastructure(p: &Position<'_>) -> bool {
-        structures_away(3)(p)
+        counting_satisfied("infrastructure", p)
     }
     fn protect_border(p: &Position<'_>) -> bool {
-        structures_away(5)(p)
+        counting_satisfied("protect_border", p)
     }
     fn raise_fleet(p: &Position<'_>) -> bool {
-        fleet_in_one_system(5)(p)
+        counting_satisfied("raise_fleet", p)
     }
     fn command_armada(p: &Position<'_>) -> bool {
-        fleet_in_one_system(8)(p)
+        counting_satisfied("command_armada", p)
     }
     fn deep_space(p: &Position<'_>) -> bool {
-        planetless_systems(3)(p)
+        counting_satisfied("deep_space", p)
     }
     fn vast_territories(p: &Position<'_>) -> bool {
-        planetless_systems(5)(p)
+        counting_satisfied("vast_territories", p)
     }
     fn ancient_monuments(p: &Position<'_>) -> bool {
-        attached_planets(3)(p)
+        counting_satisfied("ancient_monuments", p)
     }
     fn lost_outposts(p: &Position<'_>) -> bool {
-        attached_planets(2)(p)
+        counting_satisfied("lost_outposts", p)
     }
     fn make_history(p: &Position<'_>) -> bool {
-        in_notable_systems(2)(p)
+        counting_satisfied("make_history", p)
     }
     fn become_legend(p: &Position<'_>) -> bool {
-        in_notable_systems(4)(p)
+        counting_satisfied("become_legend", p)
     }
 
     match alias.as_str() {
@@ -1465,6 +1578,71 @@ mod tests {
     }
 
     #[test]
+    fn all_public_counting_aliases_have_typed_progress_and_shared_legality() {
+        let player = PlayerId::new("a");
+        let state = game(std::slice::from_ref(&player));
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let position =
+            Position::new(&state, ContentStore::embedded(), POK, &player).with_galaxy(&hub.galaxy);
+        let expected = [
+            ("expand_borders", CountFamily::NonHome, 6),
+            ("subdue", CountFamily::NonHome, 11),
+            ("outer_rim", CountFamily::OnTheRim, 3),
+            ("control_borderlands", CountFamily::OnTheRim, 5),
+            ("corner", CountFamily::SameTrait, 4),
+            ("unify_colonies", CountFamily::SameTrait, 6),
+            ("research_outposts", CountFamily::TechSpecialties, 3),
+            ("brain_trust", CountFamily::TechSpecialties, 5),
+            ("develop", CountFamily::UnitUpgrades, 2),
+            ("revolutionize", CountFamily::UnitUpgrades, 3),
+            ("diversify", CountFamily::Colours { per_colour: 2 }, 2),
+            ("master_science", CountFamily::Colours { per_colour: 2 }, 4),
+            ("build_defenses", CountFamily::Structures, 4),
+            ("massive_cities", CountFamily::Structures, 7),
+            ("infrastructure", CountFamily::StructuresAway, 3),
+            ("protect_border", CountFamily::StructuresAway, 5),
+            ("raise_fleet", CountFamily::FleetInOneSystem, 5),
+            ("command_armada", CountFamily::FleetInOneSystem, 8),
+            ("deep_space", CountFamily::PlanetlessSystems, 3),
+            ("vast_territories", CountFamily::PlanetlessSystems, 5),
+            ("ancient_monuments", CountFamily::AttachedPlanets, 3),
+            ("lost_outposts", CountFamily::AttachedPlanets, 2),
+            ("make_history", CountFamily::NotableSystems, 2),
+            ("become_legend", CountFamily::NotableSystems, 4),
+        ];
+
+        for (alias, family, threshold) in expected {
+            let id = ObjectiveId::new(alias);
+            let progress = counting_progress(&id, &position).expect(alias);
+            assert_eq!(progress.family, family, "{alias}");
+            assert_eq!(progress.threshold, threshold, "{alias}");
+            assert!(progress.threshold > 0, "{alias}");
+            assert_eq!(
+                requirement_for(&id).unwrap()(&position),
+                progress.satisfied(),
+                "{alias} legality must derive from progress"
+            );
+        }
+        assert!(counting_progress(&ObjectiveId::new("unknown"), &position).is_none());
+    }
+
+    #[test]
+    fn map_dependent_counting_progress_is_unavailable_without_a_map_and_read_only() {
+        let player = PlayerId::new("a");
+        let state = game(std::slice::from_ref(&player));
+        let before = state.clone();
+        let position = Position::new(&state, ContentStore::embedded(), POK, &player);
+
+        for alias in ["outer_rim", "control_borderlands"] {
+            assert!(counting_progress(&ObjectiveId::new(alias), &position).is_none());
+        }
+        for alias in ["expand_borders", "corner", "raise_fleet", "make_history"] {
+            let _ = counting_progress(&ObjectiveId::new(alias), &position);
+        }
+        assert_eq!(state, before, "progress queries cannot mutate rules state");
+    }
+
+    #[test]
     fn an_objective_with_no_registered_predicate_is_never_scoreable() {
         // The design the oracle documents: a coverage gap shows up as an objective nobody can
         // take, never as a bot winning on a rule that was never written.
@@ -1692,7 +1870,7 @@ mod tests {
         assert!(!intimidate_council(&position));
         assert!(!push_boundaries(&position));
         assert!(!rule_distant_lands(&position));
-        assert!(!on_the_rim(3)(&position));
+        assert!(on_the_rim_count(&position).is_none());
     }
 
     #[test]
@@ -1728,14 +1906,14 @@ mod tests {
             );
         }
         assert!(
-            on_the_rim(3)(&on_map(&state, &seat, &hub.galaxy)),
+            on_the_rim_count(&on_map(&state, &seat, &hub.galaxy)).is_some_and(|have| have >= 3),
             "three rim systems"
         );
 
         // Declaring one of them home takes it out of the count, leaving two.
         state.player_mut(&seat).unwrap().home_system = Some(SystemId::new(hub.outer[0].clone()));
         assert!(
-            !on_the_rim(3)(&on_map(&state, &seat, &hub.galaxy)),
+            on_the_rim_count(&on_map(&state, &seat, &hub.galaxy)).is_none_or(|have| have < 3),
             "your own home does not populate the rim"
         );
     }
@@ -2049,6 +2227,7 @@ mod tests {
         // card — so this counts per system rather than in total.
         let players = ids(&["a"]);
         let mut state = game(&players);
+        let a = PlayerId::new("a");
         state.revealed_objectives = vec![ObjectiveId::new("raise_fleet")];
         let systems = crate::fixtures::plain_systems(2);
 
@@ -2068,6 +2247,14 @@ mod tests {
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
             "three plus two is not five in one place"
         );
+        let position = Position::new(&state, ContentStore::embedded(), POK, &a);
+        assert_eq!(
+            counting_progress(&ObjectiveId::new("raise_fleet"), &position)
+                .unwrap()
+                .have,
+            3,
+            "progress is the largest fleet, not the board-wide total"
+        );
 
         for _ in 0..2 {
             state
@@ -2081,6 +2268,13 @@ mod tests {
         assert_eq!(
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")),
             vec![ObjectiveId::new("raise_fleet")]
+        );
+        let position = Position::new(&state, ContentStore::embedded(), POK, &a);
+        assert_eq!(
+            counting_progress(&ObjectiveId::new("raise_fleet"), &position)
+                .unwrap()
+                .have,
+            5
         );
     }
 

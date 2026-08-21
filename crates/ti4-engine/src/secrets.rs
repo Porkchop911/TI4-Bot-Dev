@@ -235,18 +235,18 @@ impl Position<'_> {
 }
 
 /// Have `count` units of a base type on the board.
-fn units(count: usize, base_type: &'static str) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.units_on_board(base_type) >= count
+fn units_count(position: &Position<'_>, base_type: &str) -> usize {
+    position.units_on_board(base_type)
 }
 
 /// Have ships in `count` systems.
-fn ships_in_systems(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.systems_with_ships() >= count
+fn ships_in_systems_count(position: &Position<'_>) -> usize {
+    position.systems_with_ships()
 }
 
 /// Control `count` planets of one trait.
-fn planets_of_trait(count: usize, trait_name: &'static str) -> impl Fn(&Position<'_>) -> bool {
-    move |position| position.planets_of_trait(trait_name) >= count
+fn planets_of_trait_count(position: &Position<'_>, trait_name: &str) -> usize {
+    position.planets_of_trait(trait_name)
 }
 
 /// Control planets with a combined value of at least `total`.
@@ -258,12 +258,12 @@ fn combined_value(total: i64, kind: crate::production::Spend) -> impl Fn(&Positi
 ///
 /// The same colour, not four technologies: a spread across four tracks is the opposite of what
 /// this card asks for.
-fn same_colour_technologies(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        crate::technology::COLOURS
-            .iter()
-            .any(|colour| position.technologies_of_colour(colour) >= count)
-    }
+fn same_colour_technologies_count(position: &Position<'_>) -> usize {
+    crate::technology::COLOURS
+        .iter()
+        .map(|colour| position.technologies_of_colour(colour))
+        .max()
+        .unwrap_or(0)
 }
 
 /// Control a legendary planet.
@@ -307,45 +307,45 @@ fn hold_mecatol(ships: usize) -> impl Fn(&Position<'_>) -> bool {
 /// Have `count` mechs, each on a different planet.
 ///
 /// Four mechs on one planet is not four planets, which is the whole shape of the card.
-fn mechs_on_distinct_planets(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let types = ti4_content::units::catalogue(position.content, position.sources);
-        let mut planets = std::collections::BTreeSet::new();
-        for board in position.state.board.values() {
-            for (planet, units) in &board.planet_units {
-                if units.iter().any(|unit| {
-                    &unit.owner == position.player
-                        && types
-                            .get(unit.type_id.as_str())
-                            .is_some_and(|kind| kind.base_type() == "mech")
-                }) {
-                    planets.insert(planet.clone());
-                }
+fn mechs_on_distinct_planets_count(position: &Position<'_>) -> usize {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    let mut planets = std::collections::BTreeSet::new();
+    for board in position.state.board.values() {
+        for (planet, units) in &board.planet_units {
+            if units.iter().any(|unit| {
+                &unit.owner == position.player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == "mech")
+            }) {
+                planets.insert(planet.clone());
             }
         }
-        planets.len() >= count
     }
+    planets.len()
 }
 
 /// Have `count` or more ground forces on one planet.
-fn ground_forces_on_one_planet(count: usize) -> impl Fn(&Position<'_>) -> bool {
-    move |position| {
-        let types = ti4_content::units::catalogue(position.content, position.sources);
-        position.state.board.values().any(|board| {
-            board.planet_units.values().any(|units| {
-                units
-                    .iter()
-                    .filter(|unit| {
-                        &unit.owner == position.player
-                            && types
-                                .get(unit.type_id.as_str())
-                                .is_some_and(ti4_content::units::UnitType::is_ground_force)
-                    })
-                    .count()
-                    >= count
-            })
+fn ground_forces_on_one_planet_count(position: &Position<'_>) -> usize {
+    let types = ti4_content::units::catalogue(position.content, position.sources);
+    position
+        .state
+        .board
+        .values()
+        .flat_map(|board| board.planet_units.values())
+        .map(|units| {
+            units
+                .iter()
+                .filter(|unit| {
+                    &unit.owner == position.player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                })
+                .count()
         })
-    }
+        .max()
+        .unwrap_or(0)
 }
 
 /// The systems where this player has a ship, by id.
@@ -652,6 +652,88 @@ fn pay_for(state: &mut GameState, player: &PlayerId, alias: &SecretObjectiveId) 
     }
 }
 
+/// Exact progress for secret objectives backed by counting families.
+#[must_use]
+pub fn counting_progress(
+    alias: &SecretObjectiveId,
+    position: &Position<'_>,
+) -> Option<crate::objectives::RequirementProgress> {
+    use crate::objectives::{CountFamily, RequirementProgress};
+    let (family, have, threshold) = match alias.as_str() {
+        "eap" => (
+            CountFamily::Units { base_type: "pds" },
+            units_count(position, "pds"),
+            4,
+        ),
+        "fwm" => (
+            CountFamily::Units {
+                base_type: "spacedock",
+            },
+            units_count(position, "spacedock"),
+            3,
+        ),
+        "gamf" => (
+            CountFamily::Units {
+                base_type: "dreadnought",
+            },
+            units_count(position, "dreadnought"),
+            5,
+        ),
+        "ctr" => (
+            CountFamily::ShipsInSystems,
+            ships_in_systems_count(position),
+            6,
+        ),
+        "faa" => (
+            CountFamily::PlanetsOfTrait {
+                trait_name: "cultural",
+            },
+            planets_of_trait_count(position, "cultural"),
+            4,
+        ),
+        "mrm" => (
+            CountFamily::PlanetsOfTrait {
+                trait_name: "hazardous",
+            },
+            planets_of_trait_count(position, "hazardous"),
+            4,
+        ),
+        "mp" => (
+            CountFamily::PlanetsOfTrait {
+                trait_name: "industrial",
+            },
+            planets_of_trait_count(position, "industrial"),
+            4,
+        ),
+        "mlp" => (
+            CountFamily::SameColourTechnologies,
+            same_colour_technologies_count(position),
+            4,
+        ),
+        "mtm" => (
+            CountFamily::MechsOnDistinctPlanets,
+            mechs_on_distinct_planets_count(position),
+            4,
+        ),
+        "otf" => (
+            CountFamily::GroundForcesOnOnePlanet,
+            ground_forces_on_one_planet_count(position),
+            9,
+        ),
+        _ => return None,
+    };
+    Some(RequirementProgress {
+        family,
+        have,
+        threshold,
+    })
+}
+
+fn counting_satisfied(alias: &str, position: &Position<'_>) -> bool {
+    counting_progress(&SecretObjectiveId::new(alias), position)
+        .is_some_and(|progress| progress.satisfied())
+}
+
 /// The registered requirements.
 ///
 /// Two tranches, and unregistered secrets are unscoreable — the same design the objective
@@ -660,28 +742,28 @@ fn pay_for(state: &mut GameState, player: &PlayerId, alias: &SecretObjectiveId) 
 #[must_use]
 pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     fn four_pds(p: &Position<'_>) -> bool {
-        units(4, "pds")(p)
+        counting_satisfied("eap", p)
     }
     // Three, not four: the printed card says "Have 3 space docks on the game board", and
     // taking the count from memory rather than the corpus is how an objective ends up
     // unscoreable in practice while looking implemented.
     fn three_docks(p: &Position<'_>) -> bool {
-        units(3, "spacedock")(p)
+        counting_satisfied("fwm", p)
     }
     fn five_dreadnoughts(p: &Position<'_>) -> bool {
-        units(5, "dreadnought")(p)
+        counting_satisfied("gamf", p)
     }
     fn ships_in_six(p: &Position<'_>) -> bool {
-        ships_in_systems(6)(p)
+        counting_satisfied("ctr", p)
     }
     fn four_cultural(p: &Position<'_>) -> bool {
-        planets_of_trait(4, "cultural")(p)
+        counting_satisfied("faa", p)
     }
     fn four_hazardous(p: &Position<'_>) -> bool {
-        planets_of_trait(4, "hazardous")(p)
+        counting_satisfied("mrm", p)
     }
     fn four_industrial(p: &Position<'_>) -> bool {
-        planets_of_trait(4, "industrial")(p)
+        counting_satisfied("mp", p)
     }
     fn twelve_influence(p: &Position<'_>) -> bool {
         combined_value(12, crate::production::Spend::Influence)(p)
@@ -690,7 +772,7 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         combined_value(12, crate::production::Spend::Resources)(p)
     }
     fn four_of_a_colour(p: &Position<'_>) -> bool {
-        same_colour_technologies(4)(p)
+        counting_satisfied("mlp", p)
     }
 
     fn legendary(p: &Position<'_>) -> bool {
@@ -700,10 +782,10 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         hold_mecatol(3)(p)
     }
     fn four_mechs(p: &Position<'_>) -> bool {
-        mechs_on_distinct_planets(4)(p)
+        counting_satisfied("mtm", p)
     }
     fn nine_ground_forces(p: &Position<'_>) -> bool {
-        ground_forces_on_one_planet(9)(p)
+        counting_satisfied("otf", p)
     }
 
     match alias.as_str() {
@@ -927,6 +1009,78 @@ mod tests {
 
     fn hand(state: &GameState) -> Vec<SecretObjectiveId> {
         state.player(&player()).unwrap().secret_objectives.clone()
+    }
+
+    #[test]
+    fn all_secret_counting_aliases_have_typed_progress_and_shared_legality() {
+        use crate::objectives::CountFamily;
+
+        let state = game(&["a"]);
+        let before = state.clone();
+        let seat = player();
+        let position = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+        let expected = [
+            ("eap", CountFamily::Units { base_type: "pds" }, 4),
+            (
+                "fwm",
+                CountFamily::Units {
+                    base_type: "spacedock",
+                },
+                3,
+            ),
+            (
+                "gamf",
+                CountFamily::Units {
+                    base_type: "dreadnought",
+                },
+                5,
+            ),
+            ("ctr", CountFamily::ShipsInSystems, 6),
+            (
+                "faa",
+                CountFamily::PlanetsOfTrait {
+                    trait_name: "cultural",
+                },
+                4,
+            ),
+            (
+                "mrm",
+                CountFamily::PlanetsOfTrait {
+                    trait_name: "hazardous",
+                },
+                4,
+            ),
+            (
+                "mp",
+                CountFamily::PlanetsOfTrait {
+                    trait_name: "industrial",
+                },
+                4,
+            ),
+            ("mlp", CountFamily::SameColourTechnologies, 4),
+            ("mtm", CountFamily::MechsOnDistinctPlanets, 4),
+            ("otf", CountFamily::GroundForcesOnOnePlanet, 9),
+        ];
+
+        for (alias, family, threshold) in expected {
+            let id = SecretObjectiveId::new(alias);
+            let progress = counting_progress(&id, &position).expect(alias);
+            assert_eq!(progress.family, family, "{alias}");
+            assert_eq!(progress.threshold, threshold, "{alias}");
+            assert_eq!(
+                requirement_for(&id).unwrap()(&position),
+                progress.satisfied(),
+                "{alias} legality must derive from progress"
+            );
+        }
+        assert!(counting_progress(&SecretObjectiveId::new("unknown"), &position).is_none());
+        assert_eq!(state, before, "progress queries cannot mutate rules state");
     }
 
     #[test]
@@ -1659,6 +1813,21 @@ mod tests {
         assert!(
             scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty(),
             "four mechs, one planet"
+        );
+        let seat = player();
+        let position = Position {
+            state: &state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            player: &seat,
+            galaxy: None,
+        };
+        assert_eq!(
+            counting_progress(&SecretObjectiveId::new("mtm"), &position)
+                .unwrap()
+                .have,
+            1,
+            "progress counts distinct occupied planets"
         );
     }
 

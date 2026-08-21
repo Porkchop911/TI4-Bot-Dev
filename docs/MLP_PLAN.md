@@ -595,6 +595,12 @@ fn same_trait_progress(p: &Position) -> usize { ... }
 (`ground_forces_on_one_planet`, `mechs_on_distinct_planets`,
 `planets_of_trait`, `same_colour_technologies`, `ships_in_systems`, `units`).
 
+M06-023 completes the remaining seventeen position-based secrets: exact progress for value sums,
+Mecatol/legendary control, notes/cards/fragments/laws/production, wormholes/faction technology,
+shared systems, and the three galaxy-dependent adjacency/neighbour families. Together with the ten
+counting secrets above and thirteen occurrence secrets from M06-021a, this reconciles all 40 cards.
+Missing galaxy context remains unavailable rather than being emitted as factual zero.
+
 Emitted features, per revealed public and per held secret:
 
 ```

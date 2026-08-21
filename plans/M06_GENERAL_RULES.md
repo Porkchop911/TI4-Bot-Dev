@@ -40,7 +40,7 @@ Python parity is not an acceptance criterion.
 | M06-021a2a | Tactical combat event pauses | 021a1 | FFG LRR 2.0 §61.7, printed combat timings | Pause after space-cannon offense, anti-fighter barrage, and each space-combat occurrence before the next tactical substep; one score per combat; deterministic event-order tests. |
 | M06-021a2b | Remaining emitters and parent integration | 021a2a | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Wire bombardment, control loss, pass, and agenda resolution; separate space/ground, multi-agenda, attribution/redaction, replay, atomicity tests; tier-C review. |
 | M06-022 | Counting-family objective progress | 021a2b | Accepted Rust scoring predicates | Exact counts expose progress while `satisfied` preserves existing legality. |
-| M06-023 | Bespoke and bought-cost progress | 022 | Accepted Rust predicates/payment planner | Count families plus greatest exactly-affordable scaled cost; no heuristic or duplicate-feature summation. |
+| M06-023 | Remaining position and bought-cost progress | 022 | Accepted Rust predicates/payment planner | Six public and seventeen secret position families plus greatest exactly-affordable scaled cost for ten bought objectives; unavailable map state remains distinct. |
 | M06-024 | Reopened frontier critical review | 021a2b–023 | — | Resolve timing, scoring, payment, hidden-information, property, and workspace findings before M09 additions. |
 
 ## Exit gate
