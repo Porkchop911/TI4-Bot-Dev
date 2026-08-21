@@ -120,6 +120,18 @@ pub enum Feat {
     LastToPass,
 }
 
+/// A monotonically allocated occurrence for a secret-objective trigger.
+///
+/// A turn is too broad a scope: one tactical action can contain anti-fighter barrage,
+/// space-cannon offense, space combat, ground combat, bombardment, and control loss.
+/// The engine allocates an occurrence at the concrete rules boundary and records a feat against
+/// that value, so a later event cannot reuse an earlier event's proof.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct FeatOccurrence(pub u64);
+
 // ─── SystemState ───────────────────────────────────────────────────────────────
 
 /// What is in a system's space area, and on its planets.
@@ -382,16 +394,9 @@ pub struct Player {
     /// Technology copied by each Nekro Valefar card: card alias to source technology.
     /// Not compared.
     pub assimilated_technologies: BTreeMap<String, TechnologyId>,
-    /// What this seat has done, each with the [`GameState::turn_seq`] it happened in.
-    ///
-    /// Scoped to the turn rather than kept for the game: every card that reads this is scored in
-    /// the window the event opens, and a fact carried forward would let a combat won in round one
-    /// pay out in round four. Not compared, for the same reason `relic_fragments` is not — it is
-    /// bookkeeping the oracle has no counterpart for.
-    ///
-    /// A `Vec` rather than a `BTreeMap` because it holds at most thirteen entries and an
-    /// enum-keyed map does not survive a JSON round trip.
-    pub feats: Vec<(Feat, u32)>,
+    /// Event-scoped feat evidence for secret-objective timing.
+    #[serde(default)]
+    pub event_feats: Vec<(Feat, FeatOccurrence)>,
 }
 
 /// Mirrors the oracle's `compare=False` on `relic_fragments`, `leaders`, and
@@ -495,7 +500,7 @@ impl Player {
             spec_ops_returning: 0,
             captured_units: Vec::new(),
             assimilated_technologies: BTreeMap::new(),
-            feats: Vec::new(),
+            event_feats: Vec::new(),
         }
     }
 
@@ -733,6 +738,14 @@ pub struct GameState {
     /// increment between Fleet Logistics' first and second actions, because those are
     /// explicitly the same turn.
     pub turn_seq: u32,
+    /// Allocator for typed secret-objective trigger occurrences.
+    ///
+    /// This sequence affects replay-visible event identity and is included in structural equality.
+    #[serde(default)]
+    pub feat_occurrence_seq: u64,
+    /// Combat occurrences a player has already used to score a secret objective.
+    #[serde(default)]
+    pub scored_feat_occurrences: BTreeSet<(PlayerId, FeatOccurrence)>,
     /// Skilled Retreat: the combat round at which a card declared the space combat a draw.
     /// Without it the player who stayed reads as the winner, since the retreating fleet
     /// simply is not there any more — true of an ordinary retreat, and exactly what this
@@ -851,6 +864,8 @@ impl PartialEq for GameState {
             && self.production_seq == other.production_seq
             && self.activation_seq == other.activation_seq
             && self.turn_seq == other.turn_seq
+            && self.feat_occurrence_seq == other.feat_occurrence_seq
+            && self.scored_feat_occurrences == other.scored_feat_occurrences
             && self.combat_draw_round == other.combat_draw_round
             && self.fighters_produced_this_use == other.fighters_produced_this_use
             && self.nonfighter_ships_produced_this_use == other.nonfighter_ships_produced_this_use
@@ -914,6 +929,8 @@ impl GameState {
             production_seq: 0,
             activation_seq: 0,
             turn_seq: 0,
+            feat_occurrence_seq: 0,
+            scored_feat_occurrences: BTreeSet::new(),
             combat_draw_round: None,
             fighters_produced_this_use: 0,
             nonfighter_ships_produced_this_use: 0,
@@ -1193,45 +1210,51 @@ impl GameState {
 
     // -- feats ----------------------------------------------------------------------
 
-    /// Note that this player did something, against the turn it happened in.
+    /// Begin a concrete secret-objective trigger occurrence.
     ///
-    /// Overwrites rather than appends: the cards ask whether it happened, never how often, and an
-    /// unbounded list of the same feat would grow with every shot fired.
-    pub fn record_feat(&mut self, player: &PlayerId, feat: Feat) {
-        let turn = self.turn_seq;
-        if let Some(seat) = self.player_mut(player) {
-            seat.feats.retain(|(held, _)| *held != feat);
-            seat.feats.push((feat, turn));
+    /// # Panics
+    ///
+    /// Panics if the game allocates more than `u64::MAX` occurrences.
+    #[must_use]
+    pub fn begin_feat_occurrence(&mut self) -> FeatOccurrence {
+        self.feat_occurrence_seq = self
+            .feat_occurrence_seq
+            .checked_add(1)
+            .expect("feat occurrence sequence exhausted");
+        FeatOccurrence(self.feat_occurrence_seq)
+    }
+
+    /// Record a feat against one concrete trigger occurrence.
+    pub fn record_event_feat(&mut self, player: &PlayerId, feat: Feat, occurrence: FeatOccurrence) {
+        if let Some(seat) = self.player_mut(player)
+            && !seat.event_feats.contains(&(feat, occurrence))
+        {
+            seat.event_feats.push((feat, occurrence));
+            seat.event_feats.sort_unstable();
         }
     }
 
-    /// Whether this player did it during the turn now resolving.
+    /// Whether this player did a feat in the exact trigger occurrence.
     #[must_use]
-    pub fn did_this_turn(&self, player: &PlayerId, feat: Feat) -> bool {
-        self.did_at_turn(player, feat, self.turn_seq)
+    pub fn did_at_occurrence(
+        &self,
+        player: &PlayerId,
+        feat: Feat,
+        occurrence: FeatOccurrence,
+    ) -> bool {
+        self.player(player)
+            .is_some_and(|seat| seat.event_feats.contains(&(feat, occurrence)))
     }
 
-    /// Whether this player did it during a named turn.
-    ///
-    /// The turn is a parameter rather than always `turn_seq` because the window that offers these
-    /// cards is resolved over several steps, and the turn has moved on by the time the last seat
-    /// answers. A window that re-read `turn_seq` would offer the card to the first player and
-    /// find nothing for the rest.
     #[must_use]
-    pub fn did_at_turn(&self, player: &PlayerId, feat: Feat, turn: u32) -> bool {
-        self.player(player).is_some_and(|seat| {
-            seat.feats
-                .iter()
-                .any(|(held, when)| *held == feat && *when == turn)
-        })
+    pub fn scored_at_occurrence(&self, player: &PlayerId, occurrence: FeatOccurrence) -> bool {
+        self.scored_feat_occurrences
+            .contains(&(player.clone(), occurrence))
     }
 
-    /// Whether anyone has an unspent feat from a named turn.
-    #[must_use]
-    pub fn anyone_did_at_turn(&self, turn: u32) -> bool {
-        self.players
-            .iter()
-            .any(|seat| seat.feats.iter().any(|(_, when)| *when == turn))
+    pub fn record_occurrence_score(&mut self, player: &PlayerId, occurrence: FeatOccurrence) {
+        self.scored_feat_occurrences
+            .insert((player.clone(), occurrence));
     }
 
     /// Turn the top facedown public objective faceup (LRR 81.2).
@@ -1416,6 +1439,27 @@ mod tests {
         assert!(Phase::Agenda.uses_speaker_order());
         assert!(!Phase::Action.uses_speaker_order());
         assert!(!Phase::Status.uses_speaker_order());
+    }
+
+    #[test]
+    fn event_feats_are_scoped_to_one_monotonic_occurrence() {
+        let mut state = game(&["a", "b"]);
+        let first = state.begin_feat_occurrence();
+        let second = state.begin_feat_occurrence();
+        assert_eq!(first, FeatOccurrence(1));
+        assert_eq!(second, FeatOccurrence(2));
+
+        state.record_event_feat(&pid("a"), Feat::WonInAnAnomaly, first);
+        state.record_event_feat(&pid("a"), Feat::WonInAnAnomaly, first);
+
+        assert!(state.did_at_occurrence(&pid("a"), Feat::WonInAnAnomaly, first));
+        assert!(!state.did_at_occurrence(&pid("a"), Feat::WonInAnAnomaly, second));
+        assert!(!state.did_at_occurrence(&pid("b"), Feat::WonInAnAnomaly, first));
+        assert_eq!(
+            state.player(&pid("a")).unwrap().event_feats,
+            vec![(Feat::WonInAnAnomaly, first)],
+            "recording the same event evidence twice is idempotent"
+        );
     }
 
     // -- command tokens --------------------------------------------------------

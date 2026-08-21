@@ -1838,9 +1838,11 @@ position rather than a control-loss occurrence. M06-021a must resolve both findi
 fresh tier C review. The existing 1274-pass workspace result and 150-game report remain historical
 evidence, not acceptance.
 
-**Next ready package after this docs-only review is committed:** M06-021a — event-scoped secret
-timing rules correction. It is P1, tier C, and must receive an exact task specification before code.
-M06-022 and all later work remain dependency-blocked behind it; after M06-024, M07-019/020 and
+**Next ready package after this docs-only review is committed:** M06-021a1 — occurrence model and
+event-scoring semantics, the first child of the event-scoped secret timing correction. It is P1,
+tier C, and must receive an exact task specification before code. M06-021a2 completes emitter
+wiring and the parent review; M06-022 and all later work remain dependency-blocked behind it. After
+M06-024, M07-019/020 and
 M08-018/019 formally reaffirm downstream gates before M09 begins.
 
 **Plan-review decisions now closed:** canonical option-free critic features; shared readout plus
@@ -1853,7 +1855,37 @@ added the actor/critic vectors and returns required of the teacher corpus, forba
 promotion/early stopping in optimizer pilots, fixed the promotion variance audit as diagnostic-only,
 and superseded M00's former behavioral-oracle wording.
 
-**Working tree intentionally dirty for the active docs-only plan review:** `AGENTS.md`,
+## M06-021a1 implementation checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-021a1 — occurrence model and event-scoring semantics.
+  The parent M06-021a was split before code because its model/scoring and emitter/pause-point work
+  exceed the atomic-package limit. Emitter wiring was then split again: M06-021a2a owns tactical
+  combat pauses, followed by M06-021a2b for the remaining emitters and parent review.
+- **Branch/HEAD:** `wp/m06-021a-event-scoped-secret-timing` at `92edea4` before this package's
+  uncommitted scoped implementation.
+- **Implemented and verified:** `FeatOccurrence`, deterministic event-feat recording and exact
+  occurrence matching; `EventScope`; combat one-score cap; action/agenda sequential scoring; and
+  decline closure. The parent is deliberately still unresolved: no production emitter allocates an
+  occurrence yet, so no actual game timing is claimed fixed.
+- **Checks:** five focused tests passed; `cargo test -p ti4-model` (73), `cargo test -p
+  ti4-engine` (806 plus 5 doctests), and `cargo test --workspace` (exit 0; the 30.2-second tool
+  call also ran the scoped formatter) passed.
+  `ti4-model` Clippy passed under `-D warnings`; engine Clippy completed with only the documented
+  pre-existing warnings. `git diff --check` passed. Evidence:
+  [`evidence/M06-021a1.md`](evidence/M06-021a1.md).
+- **Review/commit status:** no independent Tier-C review has occurred and no package commit has
+  been made. The M06-021a2 parent integration review must cover this child and resolve all findings
+  before acceptance.
+- **Intentional working-tree paths:** `crates/ti4-model/src/state.rs`,
+  `crates/ti4-engine/src/secrets.rs`, `crates/ti4-engine/src/objectives.rs`,
+  `plans/M06-021a_EVENT_SCOPED_SECRET_TIMING.md`, `plans/evidence/M06-021a1.md`,
+  `plans/EXECUTION_STATE.md`, `plans/M06_GENERAL_RULES.md`, and `docs/MLP_PLAN.md`.
+- **Next exact action:** implement only M06-021a2a's tactical event pauses. M06-021a2b owns the
+  remaining emitters and the parent Tier-C review. Investigation recorded in
+  [`evidence/M06-021a2a.md`](evidence/M06-021a2a.md): the pause must be an atomic
+  cross-window state-machine change, not an isolated feat-emitter edit.
+
+**Historical docs-only plan-review working tree before commit `92edea4`:** `AGENTS.md`,
 `docs/MLP_PLAN.md`, `plans/MASTER_PLAN.md`, `plans/INDEX.md`, `plans/SCOPED_PERMISSIONS.md`,
 `plans/EXECUTION_STATE.md`, `plans/M00_ORACLE_AND_BASELINE.md`,
 `plans/PI_WORK_PACKAGE_STANDARD.md`,
@@ -1861,7 +1893,7 @@ and superseded M00's former behavioral-oracle wording.
 `plans/M09_LEARNED_POLICY.md`, `plans/M10_SIMULATION_AND_TRAINING.md`,
 `plans/M12_QUALIFICATION.md`, `plans/M13_CUTOVER.md`, `plans/evidence/M06-021.md`, and
 `plans/evidence/MLP-ARTIFACTS.md`. No source code, generated artifact, or historical Python
-repository path is modified. Validation passed: Markdown table and local-link scan; stale-term and
+repository path was modified. Validation passed: Markdown table and local-link scan; stale-term and
 dependency-reference scan; 31-row package-map reconciliation; `git diff --check`; and all four
 baseline artifact hashes/sizes. The read-only historical repository remains at
 `37061c511a4780d4c0719e0342533a498cd4b457` on `codex/fully-learned-policy`, with only its pre-existing
@@ -1870,3 +1902,42 @@ documentation-only.
 
 Baseline hashes remain in [`evidence/MLP-ARTIFACTS.md`](evidence/MLP-ARTIFACTS.md). The two
 non-reproducible checkpoints are not durable yet; M09-020 is a hard prerequisite for corpus capture.
+
+## M06-021a2 integration checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-021a2b accepted. Occurrence semantics, tactical pauses,
+  and all remaining production emitters are implemented. The independent parent Tier-C review is
+  complete; F7-F10 are resolved and the full gates pass.
+- **Branch/HEAD:** `wp/m06-021a-event-scoped-secret-timing` at base `92edea4`, with the complete
+  a1/a2a/a2b integration intentionally uncommitted until review disposition.
+- **Implemented:** persistent one-score-per-combat occurrence; exact space-cannon, barrage,
+  space-combat, bombardment, per-planet ground-combat, home-control-loss, last-pass, and per-agenda
+  occurrences; sequential unlimited non-combat scoring; exact election attribution; failed-secret
+  award guard; removal of the legacy turn feat/event path; resumable stepped and synchronous combat
+  and invasion drivers.
+- **Checks:** focused timing regressions pass; `ti4-model` 73; `ti4-engine` 819 plus 5 doctests;
+  `cargo test --workspace --quiet` exit 0; strict model Clippy passes; engine Clippy passes after
+  fixing its only new warning, retaining only documented pre-existing warnings; `git diff --check`
+  passes with the existing objectives.rs CRLF advisory.
+- **Post-gate audit fixes:** space-cannon scoring now precedes combat opening; agenda scoring now
+  precedes the next reveal; direct combat/invasion wrappers resume across internal pauses; event
+  helpers require concrete occurrences; invalid occurrence scoring is proven atomic; last-pass
+  occurrence replay is deterministic.
+- **Review findings:** the reviewer independently verified F1-F6 and raised F7-F10. F7 now binds
+  Become a Martyr only to its home-loss occurrence; F8 shares rival-home semantics across combat
+  types; F9 shares one tactical-start note snapshot; F10 extracts the ground-round resolver. All
+  fixes pass focused and workspace gates. F11 is informational and non-blocking.
+- **Intentional paths:** `crates/ti4-model/src/state.rs`, `crates/ti4-engine/src/{combat,game,
+  invasion,objectives,secrets}.rs`, `docs/MLP_PLAN.md`, `plans/M06_GENERAL_RULES.md`, the M06-021a
+  package specifications/review ledger/evidence files, and this execution state.
+- **Next exact action:** commit the accepted correction, then begin M06-022 from its exact package
+  specification.
+- **Safe follow-on preparation:** `M06-022_COUNTING_OBJECTIVE_PROGRESS.md` now contains the exact
+  34-alias family/threshold API, scope, invariants, and acceptance-test plan. Its M06-021a
+  dependency is now accepted. No M06-022 source was changed yet.
+- `M06-023_BESPOKE_AND_BOUGHT_PROGRESS.md` is likewise prepared without source changes. It fixes
+  the six distinct-count definitions and the greatest-exactly-affordable `k` contract for all ten
+  costs, including disjoint `AllThree` payment properties; it remains blocked behind accepted
+  M06-022.
+- **Current next action:** commit the accepted M06-021a correction, then create the M06-022 package
+  branch and implement its exact counting-family progress specification.

@@ -12,7 +12,7 @@ use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::{Feat, GameState};
+use ti4_model::state::{Feat, FeatOccurrence, GameState};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
@@ -232,6 +232,29 @@ pub fn anti_fighter_barrage(
     attacker: &PlayerId,
     defender: &PlayerId,
 ) -> Vec<(PlayerId, usize)> {
+    let occurrence = state.begin_feat_occurrence();
+    anti_fighter_barrage_at(
+        state, content, sources, dice, rng, system, attacker, defender, occurrence,
+    )
+    .0
+}
+
+/// Resolve anti-fighter barrage and retain any event-scoped feat it creates.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one parameter per genuinely distinct input"
+)]
+fn anti_fighter_barrage_at(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    attacker: &PlayerId,
+    defender: &PlayerId,
+    occurrence: FeatOccurrence,
+) -> (Vec<(PlayerId, usize)>, Vec<PlayerId>) {
     let types = catalogue(content, sources);
     let mut pending = Vec::new();
     for player in [attacker, defender] {
@@ -261,6 +284,7 @@ pub fn anti_fighter_barrage(
     }
 
     let resolved = pending.clone();
+    let mut feat_players = Vec::new();
     for (player, hits) in pending {
         let target = if &player == attacker {
             defender
@@ -274,10 +298,11 @@ pub fn anti_fighter_barrage(
         let before = fighters_of(state, content, sources, target, system);
         destroy_fighters(state, content, sources, target, system, hits);
         if before > 0 && fighters_of(state, content, sources, target, system) == 0 {
-            state.record_feat(&player, Feat::BarrageTookTheLastFighters);
+            state.record_event_feat(&player, Feat::BarrageTookTheLastFighters, occurrence);
+            feat_players.push(player);
         }
     }
-    resolved
+    (resolved, feat_players)
 }
 
 /// Fighters this player has in the space area of a system.
@@ -317,9 +342,9 @@ pub fn non_fighter_ships_of(
         .iter()
         .filter(|unit| &unit.owner == player)
         .filter(|unit| {
-            types.get(unit.type_id.as_str()).is_some_and(|kind| {
-                kind.is_ship() && !kind.is_fighter()
-            })
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.is_ship() && !kind.is_fighter())
         })
         .count()
 }
@@ -342,9 +367,9 @@ fn capital_ships_of(
         .iter()
         .filter(|unit| &unit.owner == player)
         .filter(|unit| {
-            types.get(unit.type_id.as_str()).is_some_and(|kind| {
-                matches!(kind.base_type(), "warsun" | "flagship")
-            })
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| matches!(kind.base_type(), "warsun" | "flagship"))
         })
         .count()
 }
@@ -786,6 +811,10 @@ enum Stage {
     Rolling {
         round: u32,
     },
+    /// Anti-fighter barrage scored a secret before ordinary space-combat dice.
+    RollingAfterBarrage {
+        round: u32,
+    },
     /// Offering Sustain Damage against the hits at the front of the queue (87.1).
     Sustaining {
         queue: Vec<Pending>,
@@ -820,6 +849,10 @@ pub struct CombatWindow {
     galaxy: Option<ti4_content::galaxy::Galaxy>,
     /// Players who announced a retreat this round and will leave once it ends (78.7).
     pending_retreats: Vec<PlayerId>,
+    /// One identity spans the barrage and resolution of this combat (61.7).
+    combat_occurrence: Option<FeatOccurrence>,
+    /// A timing pause that the game driver has not yet opened a scoring window for.
+    pending_scoring_occurrence: Option<FeatOccurrence>,
 }
 
 impl CombatWindow {
@@ -847,6 +880,8 @@ impl CombatWindow {
                 }),
                 galaxy: None,
                 pending_retreats: Vec::new(),
+                combat_occurrence: None,
+                pending_scoring_occurrence: None,
             };
         };
         Self {
@@ -860,6 +895,8 @@ impl CombatWindow {
             },
             galaxy: None,
             pending_retreats: Vec::new(),
+            combat_occurrence: None,
+            pending_scoring_occurrence: None,
         }
     }
 
@@ -890,6 +927,22 @@ impl CombatWindow {
             Stage::Done(outcome) => Some(outcome.clone()),
             _ => None,
         }
+    }
+
+    #[must_use]
+    pub fn take_scoring_occurrence(&mut self) -> Option<FeatOccurrence> {
+        self.pending_scoring_occurrence.take()
+    }
+
+    #[must_use]
+    pub fn combat_occurrence(&self) -> Option<FeatOccurrence> {
+        self.combat_occurrence
+    }
+
+    fn ensure_combat_occurrence(&mut self, state: &mut GameState) -> FeatOccurrence {
+        *self
+            .combat_occurrence
+            .get_or_insert_with(|| state.begin_feat_occurrence())
     }
 
     fn over(&self, state: &GameState, content: &ContentStore, sources: SourceSet) -> bool {
@@ -956,33 +1009,42 @@ impl CombatWindow {
     }
 
     /// Roll a round and queue both sides' hits, or finish.
-    fn roll_round(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>, round: u32) {
+    fn roll_round(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        round: u32,
+        run_barrage: bool,
+    ) {
         let (content, sources) = (ctx.content, ctx.sources);
-        state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+        if run_barrage {
+            state.combat_round_seq = state.combat_round_seq.saturating_add(1);
 
-        // Announced before anything is rolled, because eight action cards read "at the start of
-        // a combat round" and Morale Boost scopes its bonus to `combat_round_seq`. Emitting after
-        // the round would apply it to the next one.
-        let mut payload = std::collections::BTreeMap::new();
-        payload.insert("system".to_owned(), self.system.to_string().into());
-        payload.insert("round".to_owned(), i64::from(round).into());
-        if round == 1 {
-            let mut opening = payload.clone();
-            opening.insert("player".to_owned(), self.attacker.to_string().into());
-            let _ = ctx.emit(state, "SPACE_COMBAT_STARTED", opening);
+            // Announced before anything is rolled, because eight action cards read "at the start of
+            // a combat round" and Morale Boost scopes its bonus to `combat_round_seq`. Emitting after
+            // the round would apply it to the next one.
+            let mut payload = std::collections::BTreeMap::new();
+            payload.insert("system".to_owned(), self.system.to_string().into());
+            payload.insert("round".to_owned(), i64::from(round).into());
+            if round == 1 {
+                let mut opening = payload.clone();
+                opening.insert("player".to_owned(), self.attacker.to_string().into());
+                let _ = ctx.emit(state, "SPACE_COMBAT_STARTED", opening);
+            }
+            let _ = ctx.emit(state, "COMBAT_ROUND_STARTED", payload);
+
+            // Faction offers made at the round's opening window, before any dice: Letnev pays for
+            // Munitions Reserves here, and `reroll_munitions_misses` reads the marker below.
+            for side in [self.attacker.clone(), self.defender.clone()] {
+                crate::faction_abilities::space_combat_round_started(
+                    state, content, sources, ctx.table, &side,
+                );
+            }
         }
-        let _ = ctx.emit(state, "COMBAT_ROUND_STARTED", payload);
 
-        // Faction offers made at the round's opening window, before any dice: Letnev pays for
-        // Munitions Reserves here, and `reroll_munitions_misses` reads the marker below.
-        for side in [self.attacker.clone(), self.defender.clone()] {
-            crate::faction_abilities::space_combat_round_started(
-                state, content, sources, ctx.table, &side,
-            );
-        }
-
-        if round == 1 {
-            anti_fighter_barrage(
+        if run_barrage && round == 1 {
+            let occurrence = self.ensure_combat_occurrence(state);
+            let (_, feat_players) = anti_fighter_barrage_at(
                 state,
                 content,
                 sources,
@@ -991,7 +1053,13 @@ impl CombatWindow {
                 &self.system,
                 &self.attacker,
                 &self.defender,
+                occurrence,
             );
+            if !feat_players.is_empty() {
+                self.pending_scoring_occurrence = Some(occurrence);
+                self.stage = Stage::RollingAfterBarrage { round };
+                return;
+            }
             if self.over(state, content, sources) {
                 // 78.3a: a barrage can end the fight before any combat die is rolled.
                 self.stage = self.conclude(state, content, sources, round);
@@ -1169,7 +1237,11 @@ impl CombatWindow {
                         self.stage = self.conclude(state, content, sources, round - 1);
                         return;
                     }
-                    self.roll_round(state, ctx, round);
+                    self.roll_round(state, ctx, round, true);
+                    return;
+                }
+                Stage::RollingAfterBarrage { round } => {
+                    self.roll_round(state, ctx, round, false);
                     return;
                 }
                 Stage::Done(_) => return,
@@ -1186,7 +1258,7 @@ impl Window for CombatWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         match &self.stage {
-            Stage::Done(_) | Stage::Rolling { .. } => None,
+            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => None,
             Stage::Announcing { asking, .. } => {
                 if self.retreats(state, content, sources, asking).is_empty() {
                     return None; // 78.4c: nothing to retreat to, so nothing to announce
@@ -1296,7 +1368,7 @@ impl Window for CombatWindow {
         let option = crate::choice::validate(&choice, answer)?;
 
         match self.stage.clone() {
-            Stage::Done(_) | Stage::Rolling { .. } => {}
+            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => {}
             Stage::Announcing {
                 round,
                 asking,
@@ -1404,11 +1476,24 @@ pub fn resolve(
     };
     // Opening does not roll; settle once so a fight that is already over reports so.
     window.settle(state, &mut ctx);
-    window.drive(state, &mut ctx)?;
+    while window.outcome().is_none() {
+        window.drive(state, &mut ctx)?;
+        if window.outcome().is_some() {
+            break;
+        }
+        // The synchronous API has no outer Game scoring window. Preserve the occurrence facts,
+        // consume the pause, and continue the same combat to completion.
+        let _ = window.take_scoring_occurrence();
+        window.settle_open(state, &mut ctx);
+    }
     let outcome = window
         .outcome()
         .ok_or_else(|| CombatError::Unresolved(system.clone()))?;
-    note_combat_feats(state, content, sources, system, &before, &outcome);
+    if let Some(occurrence) = window.combat_occurrence() {
+        let _ = note_combat_event_feats(
+            state, content, sources, system, &before, &outcome, occurrence,
+        );
+    }
     Ok(outcome)
 }
 
@@ -1423,10 +1508,44 @@ pub struct BeforeCombat {
     sides: Vec<PlayerId>,
     /// War suns and flagships each side had, to see which were destroyed.
     capitals: std::collections::BTreeMap<PlayerId, usize>,
-    /// Whose promissory notes each side was holding. Betray a Friend asks about the start of the
-    /// tactical action; this is taken at the start of the combat instead, which is the same
-    /// moment for every note that is not played during the fight.
-    notes: std::collections::BTreeMap<PlayerId, std::collections::BTreeSet<PlayerId>>,
+    /// Whose promissory notes each side held when the tactical action started. Standalone combat
+    /// callers snapshot when their combat opens because they have no enclosing tactical window.
+    notes: NoteHoldings,
+}
+
+/// Promissory-note issuers held by each player at a defined timing boundary.
+pub type NoteHoldings = std::collections::BTreeMap<PlayerId, std::collections::BTreeSet<PlayerId>>;
+
+/// Snapshot note holdings for objectives that name the start of a tactical action.
+#[must_use]
+pub fn note_holdings(state: &GameState) -> NoteHoldings {
+    let mut notes = NoteHoldings::new();
+    for seat in &state.players {
+        let mut issuers = std::collections::BTreeSet::new();
+        for (note, holder) in &state.promissory_notes {
+            if holder == &seat.id
+                && let Some((_, issuer)) = note.split_once(':')
+            {
+                issuers.insert(PlayerId::new(issuer));
+            }
+        }
+        for (owner, holder) in &state.support_holders {
+            if holder == &seat.id {
+                issuers.insert(owner.clone());
+            }
+        }
+        notes.insert(seat.id.clone(), issuers);
+    }
+    notes
+}
+
+/// Whether `system` is another player's home system from `winner`'s perspective.
+#[must_use]
+pub fn is_rival_home_system(state: &GameState, winner: &PlayerId, system: &SystemId) -> bool {
+    state
+        .players
+        .iter()
+        .any(|seat| seat.id != *winner && seat.home_system.as_ref() == Some(system))
 }
 
 /// Snapshot a system before a space combat.
@@ -1437,28 +1556,25 @@ pub fn before_combat(
     sources: SourceSet,
     system: &SystemId,
 ) -> BeforeCombat {
+    before_combat_with_notes(state, content, sources, system, note_holdings(state))
+}
+
+/// Snapshot combat-only facts while retaining note holdings from the tactical-action boundary.
+#[must_use]
+pub fn before_combat_with_notes(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    notes: NoteHoldings,
+) -> BeforeCombat {
     let sides = combatants(state, content, sources, system);
     let mut capitals = std::collections::BTreeMap::new();
-    let mut notes = std::collections::BTreeMap::new();
     for side in &sides {
         capitals.insert(
             side.clone(),
             capital_ships_of(state, content, sources, side, system),
         );
-        let mut issuers = std::collections::BTreeSet::new();
-        for (note, holder) in &state.promissory_notes {
-            if holder == side
-                && let Some((_, issuer)) = note.split_once(':')
-            {
-                issuers.insert(PlayerId::new(issuer));
-            }
-        }
-        for (owner, holder) in &state.support_holders {
-            if holder == side {
-                issuers.insert(owner.clone());
-            }
-        }
-        notes.insert(side.clone(), issuers);
     }
     BeforeCombat {
         sides,
@@ -1480,10 +1596,49 @@ pub fn note_combat_feats(
     before: &BeforeCombat,
     outcome: &CombatOutcome,
 ) {
+    let occurrence = state.begin_feat_occurrence();
+    let _ = note_combat_feats_at(state, content, sources, system, before, outcome, occurrence);
+}
+
+/// Record finished-combat feats against the concrete combat that caused them.
+///
+/// Returns whether the resolution created at least one event feat, so callers can skip opening
+/// an empty scoring window.
+pub fn note_combat_event_feats(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    before: &BeforeCombat,
+    outcome: &CombatOutcome,
+    occurrence: FeatOccurrence,
+) -> bool {
+    note_combat_feats_at(state, content, sources, system, before, outcome, occurrence)
+}
+
+fn record_combat_feat(
+    state: &mut GameState,
+    player: &PlayerId,
+    feat: Feat,
+    occurrence: FeatOccurrence,
+) {
+    state.record_event_feat(player, feat, occurrence);
+}
+
+fn note_combat_feats_at(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    before: &BeforeCombat,
+    outcome: &CombatOutcome,
+    occurrence: FeatOccurrence,
+) -> bool {
     if outcome.rounds == 0 {
         // Nobody fought, so nothing was won and nothing was destroyed.
-        return;
+        return false;
     }
+    let mut noted = false;
 
     // Destroy Their Greatest Ship. In a two-sided fight whoever is not the owner did the
     // destroying, so a drop in one side's count is the other side's feat — including when both
@@ -1496,7 +1651,8 @@ pub fn note_combat_feats(
         if capital_ships_of(state, content, sources, side, system) < had {
             for other in &before.sides {
                 if other != side {
-                    state.record_feat(other, Feat::DestroyedACapitalShip);
+                    record_combat_feat(state, other, Feat::DestroyedACapitalShip, occurrence);
+                    noted = true;
                 }
             }
         }
@@ -1506,35 +1662,45 @@ pub fn note_combat_feats(
     // about winning, so it is offered to whoever is still standing there.
     for side in &before.sides {
         if non_fighter_ships_of(state, content, sources, side, system) >= 3 {
-            state.record_feat(side, Feat::HeldThreeShipsAfterASpaceCombat);
+            record_combat_feat(
+                state,
+                side,
+                Feat::HeldThreeShipsAfterASpaceCombat,
+                occurrence,
+            );
+            noted = true;
         }
     }
 
     let Some(winner) = outcome.winner.clone() else {
         // A draw wins nothing. Skilled Retreat exists to produce exactly this, and treating the
         // survivor as the winner would score four cards off a fight nobody won.
-        return;
+        return noted;
     };
 
     if ti4_content::galaxy::all_systems(content, sources)
         .get(system.as_str())
         .is_some_and(ti4_content::galaxy::System::is_anomaly)
     {
-        state.record_feat(&winner, Feat::WonInAnAnomaly);
+        record_combat_feat(state, &winner, Feat::WonInAnAnomaly, occurrence);
+        noted = true;
     }
 
-    if state
-        .players
-        .iter()
-        .any(|seat| seat.id != winner && seat.home_system.as_ref() == Some(system))
-    {
-        state.record_feat(&winner, Feat::WonInARivalHome);
+    if is_rival_home_system(state, &winner, system) {
+        record_combat_feat(state, &winner, Feat::WonInARivalHome, occurrence);
+        noted = true;
     }
 
     if capital_ships_of(state, content, sources, &winner, system) > 0
         && has_surviving_flagship(state, content, sources, &winner, system)
     {
-        state.record_feat(&winner, Feat::WonBesideASurvivingFlagship);
+        record_combat_feat(
+            state,
+            &winner,
+            Feat::WonBesideASurvivingFlagship,
+            occurrence,
+        );
+        noted = true;
     }
 
     // "The most victory points" includes a tie: nothing in the card breaks one, and the leader
@@ -1553,16 +1719,19 @@ pub fn note_combat_feats(
             .player(loser)
             .is_some_and(|seat| seat.victory_points == most)
         {
-            state.record_feat(&winner, Feat::WonAgainstThePointsLeader);
+            record_combat_feat(state, &winner, Feat::WonAgainstThePointsLeader, occurrence);
+            noted = true;
         }
         if before
             .notes
             .get(&winner)
             .is_some_and(|issuers| issuers.contains(loser))
         {
-            state.record_feat(&winner, Feat::WonAgainstANoteHolder);
+            record_combat_feat(state, &winner, Feat::WonAgainstANoteHolder, occurrence);
+            noted = true;
         }
     }
+    noted
 }
 
 /// Whether this player still has a flagship in the system.
@@ -2551,6 +2720,39 @@ mod tests {
         let (driven_outcome, driven_state) = fight(false);
         assert_eq!(stepped_outcome, driven_outcome);
         assert!(stepped_state.identical(&driven_state));
+    }
+
+    #[test]
+    fn a_driven_combat_continues_after_its_barrage_scoring_pause() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "destroyer", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        put(&mut state, &system, "cruiser", &defender(), 1);
+        let mut table = Table::new();
+        let mut dice = Dice::from_faces([10, 10, 10, 1]);
+        let mut rng = GameRng::new(1);
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .expect("the synchronous wrapper consumes its internal scoring pause");
+
+        assert!(outcome.rounds >= 1);
+        assert!(combatants(&state, ContentStore::embedded(), POK, &system).len() <= 1);
+        assert!(
+            state
+                .player(&attacker())
+                .unwrap()
+                .event_feats
+                .iter()
+                .any(|(feat, _)| *feat == Feat::BarrageTookTheLastFighters)
+        );
     }
 
     #[test]

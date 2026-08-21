@@ -6,7 +6,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
 use ti4_model::id::{PlayerId, StrategyCardId, SystemId};
-use ti4_model::state::{Feat, GameState, Phase};
+use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
@@ -17,7 +17,7 @@ use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::event::{EventSequence, EventSequenceError};
 use crate::movement::{Board, MovementRules};
-use crate::objectives::{ScoringError, ScoringWindow};
+use crate::objectives::{EventScoreLimit, ScoringError, ScoringWindow};
 use crate::phase::{PhaseOutcome, advance_phase, advance_turn, begin_next_round};
 use crate::rng::GameRng;
 use crate::status::{
@@ -135,6 +135,9 @@ struct AftermathWindow {
     /// Whether the combat's feats have been recorded, so a `settle` that loops does not record
     /// them twice.
     feats_noted: bool,
+    /// A scoring pause emitted by a concrete tactical event.
+    pending_event_scoring: Option<(FeatOccurrence, EventScoreLimit)>,
+    notes_at_tactical_start: crate::combat::NoteHoldings,
 }
 
 impl AftermathWindow {
@@ -144,6 +147,7 @@ impl AftermathWindow {
         player: &PlayerId,
         system: &SystemId,
         galaxy: Option<&Galaxy>,
+        notes_at_tactical_start: crate::combat::NoteHoldings,
     ) -> Result<Self, GameError> {
         // Movement may take the only carrier out of a system and strand what it was holding, so
         // capacity is settled before anything shoots.
@@ -186,21 +190,36 @@ impl AftermathWindow {
                 hits,
             )?;
         }
+        let mut pending_event_scoring = None;
         if before_cannon > 0
             && crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system)
                 == 0
         {
+            let occurrence = state.begin_feat_occurrence();
             for gunner in gunners {
-                state.record_feat(&gunner, ti4_model::state::Feat::SpaceCannonTookTheLastNonFighters);
+                state.record_event_feat(
+                    &gunner,
+                    ti4_model::state::Feat::SpaceCannonTookTheLastNonFighters,
+                    occurrence,
+                );
             }
+            pending_event_scoring = Some((occurrence, EventScoreLimit::AnyPerPlayer));
         }
 
-        let before_combat = crate::combat::before_combat(state, ctx.content, ctx.sources, system);
+        let before_combat = crate::combat::before_combat_with_notes(
+            state,
+            ctx.content,
+            ctx.sources,
+            system,
+            notes_at_tactical_start.clone(),
+        );
         let mut window = crate::combat::CombatWindow::new(state, ctx.content, ctx.sources, system);
         if let Some(galaxy) = galaxy {
             window = window.with_galaxy(galaxy.clone());
         }
-        window.settle_open(state, ctx);
+        if pending_event_scoring.is_none() {
+            window.settle_open(state, ctx);
+        }
         Ok(Self {
             player: player.clone(),
             system: system.clone(),
@@ -208,7 +227,13 @@ impl AftermathWindow {
             log: Vec::new(),
             before_combat,
             feats_noted: false,
+            pending_event_scoring,
+            notes_at_tactical_start,
         })
+    }
+
+    fn take_event_scoring(&mut self) -> Option<(FeatOccurrence, EventScoreLimit)> {
+        self.pending_event_scoring.take()
     }
 
     /// Move to the next step once the current one owes nothing.
@@ -218,6 +243,9 @@ impl AftermathWindow {
     )]
     fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         loop {
+            if self.pending_event_scoring.is_some() {
+                return;
+            }
             match &mut self.stage {
                 Aftermath::Fighting(window) => {
                     if window
@@ -225,6 +253,18 @@ impl AftermathWindow {
                         .is_some()
                     {
                         return;
+                    }
+                    if let Some(occurrence) = window.take_scoring_occurrence() {
+                        self.pending_event_scoring =
+                            Some((occurrence, EventScoreLimit::OnePerPlayer));
+                        return;
+                    }
+                    if window.outcome().is_none() {
+                        // A scoring pause can leave the combat at an automatic transition
+                        // (currently the ordinary dice immediately after barrage). Drive that
+                        // transition before deciding whether the aftermath may invade.
+                        window.settle_open(state, ctx);
+                        continue;
                     }
                     // 49: an invasion only happens if the active player still holds the space.
                     let holds =
@@ -235,14 +275,21 @@ impl AftermathWindow {
                         && !self.feats_noted
                     {
                         self.feats_noted = true;
-                        crate::combat::note_combat_feats(
-                            state,
-                            ctx.content,
-                            ctx.sources,
-                            &self.system,
-                            &self.before_combat,
-                            &outcome,
-                        );
+                        if let Some(occurrence) = window.combat_occurrence()
+                            && crate::combat::note_combat_event_feats(
+                                state,
+                                ctx.content,
+                                ctx.sources,
+                                &self.system,
+                                &self.before_combat,
+                                &outcome,
+                                occurrence,
+                            )
+                        {
+                            self.pending_event_scoring =
+                                Some((occurrence, EventScoreLimit::OnePerPlayer));
+                            return;
+                        }
                     }
                     if let Some(outcome) = window.outcome()
                         && outcome.rounds > 0
@@ -277,15 +324,18 @@ impl AftermathWindow {
                             serde_json::Value::String(self.system.to_string()),
                         );
                         let _ = ctx.emit(state, "INVASION_BEGAN", payload);
-                        Aftermath::Invading(Box::new(crate::invasion::InvasionWindow::new(
-                            state,
-                            ctx.content,
-                            ctx.sources,
-                            ctx.dice,
-                            ctx.rng,
-                            &self.player,
-                            &self.system,
-                        )))
+                        Aftermath::Invading(Box::new(
+                            crate::invasion::InvasionWindow::new_with_notes(
+                                state,
+                                ctx.content,
+                                ctx.sources,
+                                ctx.dice,
+                                ctx.rng,
+                                &self.player,
+                                &self.system,
+                                self.notes_at_tactical_start.clone(),
+                            ),
+                        ))
                     } else {
                         Aftermath::Producing(Box::new(crate::production::ProductionWindow::new(
                             state,
@@ -297,10 +347,36 @@ impl AftermathWindow {
                     };
                 }
                 Aftermath::Invading(window) => {
+                    if let Some((occurrence, combat)) = window.take_scoring_occurrence() {
+                        self.pending_event_scoring = Some((
+                            occurrence,
+                            if combat {
+                                EventScoreLimit::OnePerPlayer
+                            } else {
+                                EventScoreLimit::AnyPerPlayer
+                            },
+                        ));
+                        return;
+                    }
+                    window.settle(state, ctx);
+                    if let Some((occurrence, combat)) = window.take_scoring_occurrence() {
+                        self.pending_event_scoring = Some((
+                            occurrence,
+                            if combat {
+                                EventScoreLimit::OnePerPlayer
+                            } else {
+                                EventScoreLimit::AnyPerPlayer
+                            },
+                        ));
+                        return;
+                    }
                     if window
                         .pending_choice(state, ctx.content, ctx.sources)
                         .is_some()
                     {
+                        return;
+                    }
+                    if !window.is_done() {
                         return;
                     }
                     self.log.push("INVASION_RESOLVED".to_owned());
@@ -398,6 +474,7 @@ enum TacticalStage {
 struct TacticalWindow {
     player: PlayerId,
     stage: TacticalStage,
+    notes_at_start: crate::combat::NoteHoldings,
 }
 
 /// The stateful owner of generated choices, their decision log, and observable events.
@@ -436,6 +513,8 @@ pub struct Game<'a> {
     tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
     /// The open agenda vote, and the agendas still to be put after it.
     voting: Option<(Box<VoteWindow>, Vec<String>)>,
+    /// Agendas retained while the just-resolved agenda's scoring occurrence is open.
+    agenda_queue_after_event_scoring: Option<Vec<String>>,
     /// The map, when one has been built. Without it no tactical action is offered.
     galaxy: Option<Galaxy>,
     /// The open tactical action.
@@ -502,6 +581,7 @@ impl<'a> Game<'a> {
             event_scoring: None,
             tokens: None,
             voting: None,
+            agenda_queue_after_event_scoring: None,
             galaxy: None,
             tactical: None,
             aftermath: None,
@@ -813,7 +893,14 @@ impl<'a> Game<'a> {
                     // anything else could look for it. "Last to pass" is decided by there being
                     // nobody left who has not.
                     if self.state.players.iter().all(|seat| seat.passed) {
-                        self.state.record_feat(&active, Feat::LastToPass);
+                        let occurrence = self.state.begin_feat_occurrence();
+                        self.state
+                            .record_event_feat(&active, Feat::LastToPass, occurrence);
+                        self.open_occurrence_event_scoring(
+                            crate::secrets::Timing::Action,
+                            occurrence,
+                            EventScoreLimit::AnyPerPlayer,
+                        );
                     }
                     self.emit("PLAYER_PASSED");
                     let mut payload = BTreeMap::new();
@@ -922,6 +1009,7 @@ impl<'a> Game<'a> {
                     self.tactical = Some(TacticalWindow {
                         player: active,
                         stage: TacticalStage::Activating,
+                        notes_at_start: crate::combat::note_holdings(&self.state),
                     });
                     self.emit("TACTICAL_ACTION_BEGAN");
                     return Ok(());
@@ -949,6 +1037,7 @@ impl<'a> Game<'a> {
                         self.tactical = Some(TacticalWindow {
                             player: active,
                             stage: TacticalStage::Moving,
+                            notes_at_start: crate::combat::note_holdings(&self.state),
                         });
                         self.secondary_after_tactical = Some(window);
                         self.emit("SYSTEM_ACTIVATED");
@@ -1429,11 +1518,14 @@ impl<'a> Game<'a> {
     /// it plain that moving into an enemy system currently has no consequence — the same choice
     /// made for unimplemented agenda effects.
     fn finish_tactical(&mut self) -> StepResult {
-        let player = self.tactical.as_ref().map(|window| window.player.clone());
+        let tactical = self
+            .tactical
+            .as_ref()
+            .map(|window| (window.player.clone(), window.notes_at_start.clone()));
         self.tactical = None;
         let system = self.state.active_system.clone();
 
-        let (Some(player), Some(system)) = (player, system) else {
+        let (Some((player, notes_at_start)), Some(system)) = (tactical, system) else {
             return self.close_tactical();
         };
 
@@ -1457,8 +1549,14 @@ impl<'a> Game<'a> {
                 galaxy: galaxy.as_ref(),
             }),
         };
-        let opened =
-            AftermathWindow::new(&mut self.state, &mut ctx, &player, &system, galaxy.as_ref());
+        let opened = AftermathWindow::new(
+            &mut self.state,
+            &mut ctx,
+            &player,
+            &system,
+            galaxy.as_ref(),
+            notes_at_start,
+        );
         let mut window = match opened {
             Ok(mut window) => {
                 window.settle(&mut self.state, &mut ctx);
@@ -1477,6 +1575,12 @@ impl<'a> Game<'a> {
         self.mirror_timing_log(logged);
         self.events.append(&mut window.log);
 
+        if let Some((occurrence, limit)) = window.take_event_scoring() {
+            self.aftermath = Some(window);
+            self.open_occurrence_event_scoring(crate::secrets::Timing::Action, occurrence, limit);
+            return self.result(false, None);
+        }
+
         if window
             .pending_choice(&self.state, self.content, self.sources)
             .is_none()
@@ -1490,7 +1594,51 @@ impl<'a> Game<'a> {
     /// Resolve one decision of the post-movement sequence.
     fn step_aftermath(&mut self) -> StepResult {
         let Some(choice) = self.legal_options() else {
-            self.aftermath = None;
+            // An event-scoped scoring pause can leave combat in an automatic intermediate
+            // stage. Resume it here rather than mistaking its lack of a player choice for a
+            // completed tactical action.
+            let Some(mut window) = self.aftermath.take() else {
+                return self.close_tactical();
+            };
+            let mut dice = std::mem::take(&mut self.dice);
+            let mut rng = self.rng.clone();
+            let galaxy = self.galaxy.clone();
+            let logged = self.timing.log().len();
+            {
+                let mut ctx = Resolving {
+                    content: self.content,
+                    sources: self.sources,
+                    dice: &mut dice,
+                    rng: &mut rng,
+                    table: &mut self.table,
+                    timing: Some(crate::choice::TimingHandle {
+                        resolver: &mut self.timing,
+                        sequence: &mut self.event_sequence,
+                        galaxy: galaxy.as_ref(),
+                    }),
+                };
+                window.settle(&mut self.state, &mut ctx);
+            }
+            self.dice = dice;
+            self.rng = rng;
+            self.mirror_timing_log(logged);
+            self.events.append(&mut window.log);
+            if let Some((occurrence, limit)) = window.take_event_scoring() {
+                self.aftermath = Some(window);
+                self.open_occurrence_event_scoring(
+                    crate::secrets::Timing::Action,
+                    occurrence,
+                    limit,
+                );
+                return self.result(false, None);
+            }
+            if window
+                .pending_choice(&self.state, self.content, self.sources)
+                .is_some()
+            {
+                self.aftermath = Some(window);
+                return self.result(false, None);
+            }
             return self.close_tactical();
         };
         // Field borrows, not `self`: the table answers while the position stays readable.
@@ -1539,6 +1687,11 @@ impl<'a> Game<'a> {
         if let Err(error) = outcome {
             self.aftermath = Some(window);
             return self.result(false, Some(error.into()));
+        }
+        if let Some((occurrence, limit)) = window.take_event_scoring() {
+            self.aftermath = Some(window);
+            self.open_occurrence_event_scoring(crate::secrets::Timing::Action, occurrence, limit);
+            return self.result(true, None);
         }
         if window
             .pending_choice(&self.state, self.content, self.sources)
@@ -1769,36 +1922,36 @@ impl<'a> Game<'a> {
         }
     }
 
-    /// Open the window for a secret whose event has just happened, if anyone has one.
+    /// Open a scoring window for one exact event occurrence.
     ///
-    /// Returns whether a window opened. Cheap when nothing did: no feat recorded for this turn
-    /// means no card can qualify on one, and only the two agenda-timed cards can qualify on a
-    /// position instead.
-    fn open_event_scoring(&mut self, timing: crate::secrets::Timing, turn: u32) -> bool {
-        if self.event_scoring.is_some() {
-            return false;
-        }
-        if timing == crate::secrets::Timing::Action && !self.state.anyone_did_at_turn(turn) {
-            return false;
-        }
-        let mut window = ScoringWindow::for_event(&self.state.initiative_order(), timing, turn);
+    /// An empty window is intentional: it closes without a choice on the next step, preserving
+    /// the tactical continuation while keeping event detection independent from card holdings.
+    fn open_occurrence_event_scoring(
+        &mut self,
+        timing: crate::secrets::Timing,
+        occurrence: FeatOccurrence,
+        limit: EventScoreLimit,
+    ) {
+        debug_assert!(self.event_scoring.is_none());
+        let mut window = ScoringWindow::for_occurrence(
+            &self.state.initiative_order(),
+            timing,
+            occurrence,
+            limit,
+        );
         if let Some(galaxy) = self.galaxy.clone() {
             window = window.with_galaxy(galaxy);
         }
-        if window
-            .pending_choice(&self.state, self.content, self.sources)
-            .is_none()
-        {
-            return false;
-        }
         self.event_scoring = Some(window);
-        true
     }
 
     /// Resolve one player's decision in an action- or agenda-timed secret window.
     fn step_event_scoring(&mut self) -> StepResult {
         let Some(choice) = self.legal_options() else {
             self.event_scoring = None;
+            if let Some(queue) = self.agenda_queue_after_event_scoring.take() {
+                return self.open_next_vote(queue);
+            }
             return self.result(false, None);
         };
         let answer = match self.table.ask_seeing(
@@ -2062,23 +2215,15 @@ impl<'a> Game<'a> {
             // player, a planet, or an outcome like "for" -- so both readings have to be tried,
             // and an outcome that is neither matches nobody.
             let elected = PlayerId::new(outcome.clone());
-            if self.state.player(&elected).is_some() {
-                self.state.record_feat(&elected, Feat::ElectedByAnAgenda);
+            let elected_player = if self.state.player(&elected).is_some() {
+                Some(elected)
             } else {
                 let planet = ti4_model::id::PlanetId::new(outcome.clone());
-                let controller = self
-                    .state
+                self.state
                     .board
                     .values()
-                    .find_map(|board| board.planet_control.get(&planet).cloned());
-                if let Some(controller) = controller {
-                    self.state.record_feat(&controller, Feat::ElectedByAnAgenda);
-                }
-            }
-            // Agenda-timed secrets get their window here, once the outcome is settled and the
-            // law it may have enacted is on the table -- Dictate Policy counts laws in play, and
-            // asking before 8.20 would miss the one just passed.
-            self.open_event_scoring(crate::secrets::Timing::Agenda, self.state.turn_seq);
+                    .find_map(|board| board.planet_control.get(&planet).cloned())
+            };
 
             // Imperial Rider pays out before the agenda's own effect, and clears the
             // predictions. A prediction left behind would pay again on the next agenda, for a
@@ -2130,8 +2275,28 @@ impl<'a> Game<'a> {
                     self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
                 }
             }
+            // Agenda-timed secrets are offered only after the complete agenda outcome is live:
+            // Dictate Policy therefore sees a law enacted by this agenda.
+            let occurrence = self.state.begin_feat_occurrence();
+            if let Some(elected_player) = elected_player {
+                self.state
+                    .record_event_feat(&elected_player, Feat::ElectedByAnAgenda, occurrence);
+            }
+            // Every resolved agenda is its own agenda-phase occurrence. Objectives such as
+            // Dictate Policy depend on the completed outcome rather than on a player election,
+            // so For/Against and other non-player outcomes must open this window too.
+            self.open_occurrence_event_scoring(
+                crate::secrets::Timing::Agenda,
+                occurrence,
+                EventScoreLimit::AnyPerPlayer,
+            );
         }
-        self.open_next_vote(queue)
+        if self.event_scoring.is_some() {
+            self.agenda_queue_after_event_scoring = Some(queue);
+            self.result(false, None)
+        } else {
+            self.open_next_vote(queue)
+        }
     }
 
     fn step_phase(&mut self) -> StepResult {
@@ -2163,13 +2328,6 @@ impl<'a> Game<'a> {
         if self.state.phase == Phase::Action
             && let Some(active) = self.state.active.clone()
         {
-            // Action-timed secrets are offered here rather than at the moment of the event that
-            // satisfied them. This is the one point every kind of turn passes through -- a
-            // tactical action, a component action, a strategic action, a pass -- so a single
-            // window catches all of them, and offering once per turn also enforces the one
-            // objective per action that 61.6 allows. The turn is pinned because `advance_turn`
-            // below moves `turn_seq` on, while the window is answered over later steps.
-            self.open_event_scoring(crate::secrets::Timing::Action, self.state.turn_seq);
             let _ = crate::technology::end_turn(
                 &mut self.state,
                 self.content,
@@ -2880,6 +3038,239 @@ mod tests {
     }
 
     #[test]
+    fn barrage_scoring_pauses_combat_and_caps_the_whole_combat_occurrence() {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("fwp"),
+            ti4_model::id::SecretObjectiveId::new("dyp"),
+        ];
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 4);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 1);
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 1);
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        // Four destroyers make eight guaranteed barrage hits, then four combat hits; the cruiser
+        // misses in return. The pause must happen between those two roll groups.
+        game.dice = Dice::from_faces([10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 1]);
+
+        let mut saw_barrage_window = false;
+        for _ in 0..20 {
+            if game
+                .legal_options()
+                .is_some_and(|choice| choice.ids().contains(&"fwp"))
+            {
+                saw_barrage_window = true;
+                assert!(
+                    game.aftermath.is_some(),
+                    "the tactical continuation is retained"
+                );
+                assert!(
+                    game.event_scoring.is_some(),
+                    "the exact barrage opens scoring"
+                );
+                assert!(
+                    !game.dice.history().is_empty()
+                        && game
+                            .dice
+                            .history()
+                            .iter()
+                            .all(|roll| roll.reason == "anti-fighter barrage"),
+                    "ordinary combat has not rolled yet"
+                );
+                assert_eq!(
+                    game.step().error,
+                    None,
+                    "Fight with Precision scores cleanly"
+                );
+                break;
+            }
+            assert_eq!(game.step().error, None, "the tactical action remains legal");
+        }
+        assert!(
+            saw_barrage_window,
+            "the barrage event reached its scoring pause"
+        );
+
+        for _ in 0..40 {
+            assert!(
+                !game
+                    .legal_options()
+                    .is_some_and(|choice| choice.ids().contains(&"dyp")),
+                "one combat occurrence never offers a second secret"
+            );
+            assert_eq!(game.step().error, None, "the paused combat resumes cleanly");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "SPACE_COMBAT_RESOLVED"),
+            "events: {:?}, rolls: {:?}",
+            game.events,
+            game.dice.history()
+        );
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+        );
+        assert!(
+            game.state
+                .scored_by(&a)
+                .iter()
+                .any(|alias| alias.as_str() == "fwp")
+        );
+        assert!(
+            game.state
+                .player(&a)
+                .unwrap()
+                .secret_objectives
+                .iter()
+                .any(|alias| alias.as_str() == "dyp"),
+            "the later combat secret remains unscored"
+        );
+    }
+
+    #[test]
+    fn space_cannon_opens_an_unlimited_occurrence_scoring_window() {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&b).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("ttfd")];
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &a, 1);
+        crate::fixtures::put(&mut state, &ids[0], "pds", &b, 1);
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &b, 1);
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([10]);
+
+        for _ in 0..10 {
+            if game
+                .legal_options()
+                .is_some_and(|choice| choice.ids().contains(&"ttfd"))
+            {
+                assert!(
+                    game.aftermath.is_some(),
+                    "the tactical continuation is retained"
+                );
+                assert!(
+                    game.event_scoring.is_some(),
+                    "space cannon opened the event window"
+                );
+                assert!(
+                    game.state
+                        .player(&b)
+                        .unwrap()
+                        .event_feats
+                        .iter()
+                        .any(|(feat, _)| *feat == Feat::SpaceCannonTookTheLastNonFighters)
+                );
+                assert!(
+                    game.dice
+                        .history()
+                        .iter()
+                        .all(|roll| roll.reason.contains("space cannon")),
+                    "combat and barrage remain paused until cannon scoring closes: {:?}",
+                    game.dice.history()
+                );
+                return;
+            }
+            assert_eq!(game.step().error, None, "the cannon sequence remains legal");
+        }
+        panic!("the space-cannon occurrence never offered Turn Their Fleets to Dust");
+    }
+
+    #[test]
+    fn the_last_pass_opens_its_own_action_occurrence_before_status() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None)
+            .expect("fixture starts");
+        state.phase = Phase::Action;
+        state.active = Some(b.clone());
+        state.player_mut(&a).unwrap().passed = true;
+        state.player_mut(&b).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("pe")];
+        let table = Table::with_default(Box::new(Scripted::new([
+            "pass".to_owned(),
+            "pe".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+
+        assert_eq!(game.step().error, None, "the final pass resolves");
+        let choice = game
+            .legal_options()
+            .expect("the last-pass scoring pause remains open");
+        assert!(choice.ids().contains(&"pe"));
+        let occurrence = FeatOccurrence(game.state.feat_occurrence_seq);
+        assert!(
+            game.state
+                .did_at_occurrence(&b, Feat::LastToPass, occurrence)
+        );
+        assert!(
+            !game
+                .state
+                .did_at_occurrence(&a, Feat::LastToPass, occurrence)
+        );
+
+        assert_eq!(game.step().error, None, "Prove Endurance scores");
+        assert!(
+            game.state
+                .scored_by(&b)
+                .iter()
+                .any(|alias| alias.as_str() == "pe")
+        );
+    }
+
+    #[test]
+    fn a_last_pass_occurrence_replays_with_identical_state_and_choices() {
+        let run = || {
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            let mut state =
+                start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+            state.phase = Phase::Action;
+            state.active = Some(b.clone());
+            state.player_mut(&a).unwrap().passed = true;
+            state.player_mut(&b).unwrap().secret_objectives =
+                vec![ti4_model::id::SecretObjectiveId::new("pe")];
+            let table = Table::with_default(Box::new(Scripted::new([
+                "pass".to_owned(),
+                "pe".to_owned(),
+            ])));
+            let mut game = Game::with_table(state, ContentStore::embedded(), table);
+            assert_eq!(game.step().error, None);
+            assert_eq!(game.step().error, None);
+            (game.state, game.table.log)
+        };
+
+        let (left_state, left_log) = run();
+        let (right_state, right_log) = run();
+        assert!(left_state.identical(&right_state));
+        assert_eq!(left_log, right_log);
+    }
+
+    #[test]
     fn a_carrier_is_asked_what_to_load_before_it_sails() {
         // LRR 95: the hold is filled before the ship moves, so a carrier produces an extra
         // decision that a destroyer does not.
@@ -2957,6 +3348,7 @@ mod tests {
 
         // FirstOption always takes the first offered option: vote "for", then exhaust the
         // first planet, then decline further planets.
+        let occurrence_before = state.feat_occurrence_seq;
         let mut game = Game::new(state, ContentStore::embedded());
         let mut guard = 0;
         while game.state.phase == Phase::Agenda && guard < 60 {
@@ -2980,6 +3372,10 @@ mod tests {
             game.state.laws.get(&law).map(String::as_str),
             Some("for"),
             "8.20: a passed law stays in play"
+        );
+        assert!(
+            game.state.feat_occurrence_seq > occurrence_before,
+            "a resolved For/Against agenda receives an occurrence even without an elected player"
         );
     }
 
@@ -3030,10 +3426,28 @@ mod tests {
             .map(ToOwned::to_owned)
             .collect();
 
+        let occurrence_before = state.feat_occurrence_seq;
         let mut game = Game::with_seeded_random(state, ContentStore::embedded(), 11);
         let mut guard = 0;
+        let mut checked_between_agendas = false;
         while game.state.phase == Phase::Agenda && guard < 200 {
             assert_eq!(game.step().error, None, "no agenda step should refuse");
+            if !checked_between_agendas
+                && game
+                    .events
+                    .iter()
+                    .filter(|event| event.starts_with("AGENDA_RESOLVED:"))
+                    .count()
+                    == 1
+            {
+                assert!(game.event_scoring.is_some());
+                assert!(
+                    game.voting.is_none(),
+                    "the next agenda is not revealed early"
+                );
+                assert!(game.agenda_queue_after_event_scoring.is_some());
+                checked_between_agendas = true;
+            }
             guard += 1;
         }
 
@@ -3045,6 +3459,21 @@ mod tests {
                 .iter()
                 .all(|record| record.offered.contains(&record.chosen)),
             "every recorded decision was one the engine offered"
+        );
+        let resolved = game
+            .events
+            .iter()
+            .filter(|event| event.starts_with("AGENDA_RESOLVED:"))
+            .count();
+        assert!(resolved >= 1, "the fixture resolves at least one agenda");
+        assert!(
+            checked_between_agendas,
+            "the fixture crossed an agenda boundary"
+        );
+        assert_eq!(
+            game.state.feat_occurrence_seq - occurrence_before,
+            u64::try_from(resolved).unwrap(),
+            "each resolved agenda receives one distinct occurrence"
         );
     }
 

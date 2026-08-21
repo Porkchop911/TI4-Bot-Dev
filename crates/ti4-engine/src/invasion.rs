@@ -9,7 +9,7 @@ use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
-use ti4_model::state::{Feat, GameState};
+use ti4_model::state::{Feat, FeatOccurrence, GameState};
 use ti4_model::units::Unit;
 
 use crate::choice::{
@@ -60,8 +60,13 @@ pub fn custodians_removable(
     if state.custodians_removed || system.as_str() != crate::seating::MECATOL {
         return false;
     }
-    crate::production::available(state, content, sources, player, crate::production::Spend::Influence)
-        >= CUSTODIANS_COST
+    crate::production::available(
+        state,
+        content,
+        sources,
+        player,
+        crate::production::Spend::Influence,
+    ) >= CUSTODIANS_COST
 }
 
 /// 15.1f: Planetary Shield makes a planet immune to bombardment entirely.
@@ -114,6 +119,27 @@ pub fn bombardment(
     system: &SystemId,
     invader: &PlayerId,
 ) -> usize {
+    let occurrence = state.begin_feat_occurrence();
+    bombardment_at(
+        state, content, sources, dice, rng, system, invader, occurrence,
+    )
+    .0
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one parameter per distinct invasion input"
+)]
+fn bombardment_at(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    invader: &PlayerId,
+    occurrence: FeatOccurrence,
+) -> (usize, bool) {
     let types = catalogue(content, sources);
     let planets: Vec<PlanetId> = state
         .system_state(system)
@@ -123,6 +149,7 @@ pub fn bombardment(
         .collect();
 
     let mut killed = 0;
+    let mut noted = false;
     for planet in planets {
         if !bombardable(state, content, sources, system, &planet, invader) {
             continue;
@@ -182,10 +209,11 @@ pub fn bombardment(
                 .iter()
                 .all(|unit| &unit.owner == invader)
         {
-            state.record_feat(invader, Feat::BombardedOutTheLastGroundForces);
+            state.record_event_feat(invader, Feat::BombardedOutTheLastGroundForces, occurrence);
+            noted = true;
         }
     }
-    killed
+    (killed, noted)
 }
 
 /// Ground forces this player has in the system's space area, available to land.
@@ -577,6 +605,19 @@ enum Stage {
         index: usize,
         defender: PlayerId,
     },
+    /// A combat ended and any scoring window must close before the next planet/control step.
+    Advancing {
+        planets: Vec<PlanetId>,
+        index: usize,
+    },
+    /// A planet changed hands and its former controller's scoring window must close before
+    /// gain-control effects and exploration continue.
+    FinalizingControl {
+        planets: Vec<PlanetId>,
+        index: usize,
+        planet: PlanetId,
+        previous: Option<PlayerId>,
+    },
     Done,
 }
 
@@ -591,6 +632,9 @@ pub struct InvasionWindow {
     system: SystemId,
     stage: Stage,
     report: InvasionReport,
+    pending_scoring_occurrences: std::collections::VecDeque<(FeatOccurrence, bool)>,
+    current_ground_occurrence: Option<FeatOccurrence>,
+    notes_at_tactical_start: crate::combat::NoteHoldings,
 }
 
 impl InvasionWindow {
@@ -605,7 +649,26 @@ impl InvasionWindow {
         invader: &PlayerId,
         system: &SystemId,
     ) -> Self {
-        let kills = bombardment(state, content, sources, dice, rng, system, invader);
+        let notes = crate::combat::note_holdings(state);
+        Self::new_with_notes(state, content, sources, dice, rng, invader, system, notes)
+    }
+
+    /// Open an invasion with note holdings captured at the start of its tactical action.
+    #[must_use]
+    pub fn new_with_notes(
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        dice: &mut Dice,
+        rng: &mut GameRng,
+        invader: &PlayerId,
+        system: &SystemId,
+        notes_at_tactical_start: crate::combat::NoteHoldings,
+    ) -> Self {
+        let occurrence = state.begin_feat_occurrence();
+        let (kills, noted) = bombardment_at(
+            state, content, sources, dice, rng, system, invader, occurrence,
+        );
         Self {
             invader: invader.clone(),
             system: system.clone(),
@@ -614,7 +677,66 @@ impl InvasionWindow {
                 bombardment_kills: kills,
                 ..InvasionReport::default()
             },
+            pending_scoring_occurrences: noted.then_some((occurrence, false)).into_iter().collect(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start,
         }
+    }
+
+    #[must_use]
+    pub fn take_scoring_occurrence(&mut self) -> Option<(FeatOccurrence, bool)> {
+        self.pending_scoring_occurrences.pop_front()
+    }
+
+    pub fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        loop {
+            match self.stage.clone() {
+                Stage::Advancing { planets, index } => {
+                    self.advance_fighting(state, ctx, &planets, index);
+                    return;
+                }
+                Stage::FinalizingControl {
+                    planets,
+                    index,
+                    planet,
+                    previous,
+                } => {
+                    self.finish_control_gain(state, ctx, &planet, previous.as_ref());
+                    self.advance_control(state, ctx, &planets, index);
+                    return;
+                }
+                Stage::Custodians
+                    if !custodians_removable(
+                        state,
+                        ctx.content,
+                        ctx.sources,
+                        &self.invader,
+                        &self.system,
+                    ) =>
+                {
+                    self.stage = Stage::Committing;
+                }
+                Stage::Committing
+                    if self
+                        .landing_options(state, ctx.content, ctx.sources)
+                        .is_empty() =>
+                {
+                    let planets = self.report.committed.clone();
+                    if planets.is_empty() {
+                        self.stage = Stage::Done;
+                    } else {
+                        self.advance_fighting(state, ctx, &planets, 0);
+                    }
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn is_done(&self) -> bool {
+        matches!(self.stage, Stage::Done)
     }
 
     /// What the invasion did.
@@ -656,6 +778,107 @@ impl InvasionWindow {
         ))
     }
 
+    fn finish_committing(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        let planets = self.report.committed.clone();
+        if planets.is_empty() {
+            self.stage = Stage::Done;
+        } else {
+            self.advance_fighting(state, ctx, &planets, 0);
+        }
+    }
+
+    fn resolve_ground_round(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planets: Vec<PlanetId>,
+        index: usize,
+        defender: PlayerId,
+    ) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        // 42.2: hits are simultaneous, so both sides roll before either loses anything.
+        let planet = planets[index].clone();
+        let attacker_hits = roll_ground(
+            state,
+            content,
+            sources,
+            ctx.dice,
+            ctx.rng,
+            &self.invader,
+            &self.system,
+            &planet,
+        );
+        let defender_hits = roll_ground(
+            state,
+            content,
+            sources,
+            ctx.dice,
+            ctx.rng,
+            &defender,
+            &self.system,
+            &planet,
+        );
+        state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+        remove_ground(state, &self.system, &planet, &defender, attacker_hits);
+        remove_ground(state, &self.system, &planet, &self.invader, defender_hits);
+
+        let invader_survives = !state
+            .system_state(&self.system)
+            .on_planet_of(&planet, &self.invader)
+            .is_empty();
+        let defender_survives = !state
+            .system_state(&self.system)
+            .on_planet_of(&planet, &defender)
+            .is_empty();
+        if invader_survives && defender_survives {
+            self.stage = Stage::Fighting {
+                planets,
+                index,
+                defender,
+            };
+            return;
+        }
+
+        let winner = if invader_survives {
+            self.invader.clone()
+        } else {
+            defender.clone()
+        };
+        let loser = if winner == self.invader {
+            defender
+        } else {
+            self.invader.clone()
+        };
+        let noted = self
+            .current_ground_occurrence
+            .take()
+            .is_some_and(|occurrence| {
+                let noted = note_ground_combat_win_feats(
+                    state,
+                    content,
+                    sources,
+                    &self.system,
+                    &winner,
+                    &loser,
+                    &self.notes_at_tactical_start,
+                    occurrence,
+                );
+                if noted {
+                    self.pending_scoring_occurrences
+                        .push_back((occurrence, true));
+                }
+                noted
+            });
+        if noted {
+            self.stage = Stage::Advancing {
+                planets,
+                index: index + 1,
+            };
+        } else {
+            self.advance_fighting(state, ctx, &planets, index + 1);
+        }
+    }
+
     /// Who is defending `planet`, if anyone.
     fn defender_on(&self, state: &GameState, planet: &PlanetId) -> Option<PlayerId> {
         state
@@ -674,7 +897,6 @@ impl InvasionWindow {
         planets: &[PlanetId],
         mut index: usize,
     ) {
-        let (content, sources) = (ctx.content, ctx.sources);
         while index < planets.len() {
             let planet = &planets[index];
             let contested = self.defender_on(state, planet).filter(|_| {
@@ -684,6 +906,7 @@ impl InvasionWindow {
                     .is_empty()
             });
             if let Some(defender) = contested {
+                self.current_ground_occurrence = Some(state.begin_feat_occurrence());
                 self.stage = Stage::Fighting {
                     planets: planets.to_vec(),
                     index,
@@ -693,71 +916,115 @@ impl InvasionWindow {
             }
             index += 1;
         }
-        let taken_before = self.report.captured.len();
-        self.report.captured = establish_control(
-            state,
-            content,
-            sources,
-            &self.system,
-            &self.invader,
-            &self.report.committed,
-        );
-        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
-        // anything else looks at what is standing on it.
-        for (planet, _) in self.report.captured.clone().iter().skip(taken_before) {
-            crate::faction_abilities::control_gained(
-                state,
-                content,
-                sources,
-                &self.invader,
-                &self.system,
-                planet,
-            );
-        }
+        let committed = self.report.committed.clone();
+        self.advance_control(state, ctx, &committed, 0);
+    }
 
-        // Two printed windows read "when you gain control of a planet", so a capture is
-        // announced before the exploration that follows it.
-        for (planet, _) in self.report.captured.iter().skip(taken_before) {
-            let mut payload = std::collections::BTreeMap::new();
-            payload.insert("player".to_owned(), self.invader.to_string().into());
-            payload.insert("planet".to_owned(), planet.to_string().into());
-            payload.insert("system".to_owned(), self.system.to_string().into());
-            let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
-
-            // Technology AFTER windows resolve before exploration, matching the oracle's typed
-            // event ordering.  Integrated Economy is the first such effect.
-            let _ = crate::technology::control_gained(
+    /// Establish and finish control one planet at a time so a control-loss occurrence is not
+    /// delayed past later captures, gain-control effects, or exploration.
+    fn advance_control(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planets: &[PlanetId],
+        mut index: usize,
+    ) {
+        while index < planets.len() {
+            let planet = planets[index].clone();
+            let Some((planet, previous)) = establish_control(
                 state,
                 ctx.content,
                 ctx.sources,
-                None,
-                ctx.table,
-                &self.invader,
                 &self.system,
-                planet,
-            );
+                &self.invader,
+                std::slice::from_ref(&planet),
+            )
+            .into_iter()
+            .next() else {
+                index += 1;
+                continue;
+            };
+            self.report
+                .captured
+                .push((planet.clone(), previous.clone()));
+
+            let lost_home = previous.as_ref().is_some_and(|holder| {
+                state
+                    .player(holder)
+                    .and_then(|seat| seat.home_system.as_ref())
+                    == Some(&self.system)
+            });
+            if lost_home {
+                let holder = previous.as_ref().expect("lost home has a former holder");
+                let occurrence = state.begin_feat_occurrence();
+                state.record_event_feat(holder, Feat::LostAHomePlanet, occurrence);
+                self.pending_scoring_occurrences
+                    .push_back((occurrence, false));
+                self.stage = Stage::FinalizingControl {
+                    planets: planets.to_vec(),
+                    index: index + 1,
+                    planet,
+                    previous,
+                };
+                return;
+            }
+
+            self.finish_control_gain(state, ctx, &planet, previous.as_ref());
+            index += 1;
         }
+        self.stage = Stage::Done;
+    }
+
+    fn finish_control_gain(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planet: &PlanetId,
+        previous: Option<&PlayerId>,
+    ) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
+        // anything else looks at what is standing on it.
+        crate::faction_abilities::control_gained(
+            state,
+            content,
+            sources,
+            &self.invader,
+            &self.system,
+            planet,
+        );
+
+        // Two printed windows read "when you gain control of a planet", so a capture is
+        // announced before the exploration that follows it.
+        let mut payload = std::collections::BTreeMap::new();
+        payload.insert("player".to_owned(), self.invader.to_string().into());
+        payload.insert("planet".to_owned(), planet.to_string().into());
+        payload.insert("system".to_owned(), self.system.to_string().into());
+        let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
+
+        // Technology AFTER windows resolve before exploration. Integrated Economy is the first.
+        let _ = crate::technology::control_gained(
+            state,
+            ctx.content,
+            ctx.sources,
+            None,
+            ctx.table,
+            &self.invader,
+            &self.system,
+            planet,
+        );
 
         // 35.1: a planet nobody controlled is explored; one taken off another player is not.
         // Only this frame knows which, which is why `captured` carries the previous holder — a
         // caller told merely that control changed would explore every conquest and draw cards
         // the rules do not give.
-        for (planet, previous) in self.report.captured.clone() {
-            if previous.is_some() {
-                continue;
-            }
-            let Some(deck) = crate::exploration::trait_of(content, sources, &planet) else {
-                continue;
-            };
-            // With the table, so an exploration card that asks a question reaches the player
-            // whose planet it is rather than being answered by a default.
-            if let Some(outcome) =
-                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(&planet))
-            {
-                self.report.explored.push((planet, outcome));
-            }
+        if previous.is_none()
+            && let Some(deck) = crate::exploration::trait_of(content, sources, planet)
+            && let Some(outcome) =
+                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
+        {
+            self.report.explored.push((planet.clone(), outcome));
         }
-        self.stage = Stage::Done;
     }
 }
 
@@ -769,7 +1036,7 @@ impl Window for InvasionWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         match &self.stage {
-            Stage::Done => None,
+            Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => None,
             Stage::Custodians => {
                 // Falls through rather than returning None: the driver stops the moment a window
                 // has no choice, so a stage that is merely inapplicable would end the invasion
@@ -829,7 +1096,7 @@ impl Window for InvasionWindow {
         let option = crate::choice::validate(&choice, answer)?;
 
         match self.stage.clone() {
-            Stage::Done => {}
+            Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => {}
             Stage::Custodians
                 if !custodians_removable(state, content, sources, &self.invader, &self.system) =>
             {
@@ -851,8 +1118,8 @@ impl Window for InvasionWindow {
                     )? {
                         state.custodians_removed = true;
                         if let Some(seat) = state.player_mut(&self.invader) {
-                            seat.victory_points = (seat.victory_points + 1)
-                                .min(crate::objectives::VICTORY_TARGET);
+                            seat.victory_points =
+                                (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
                         }
                         self.report.custodians_removed = true;
                     }
@@ -861,12 +1128,7 @@ impl Window for InvasionWindow {
             }
             Stage::Committing => {
                 if option.is_decline() {
-                    let planets = self.report.committed.clone();
-                    if planets.is_empty() {
-                        self.stage = Stage::Done; // 49.2c: straight on to Production
-                    } else {
-                        self.advance_fighting(state, ctx, &planets, 0);
-                    }
+                    self.finish_committing(state, ctx);
                 } else if let Some(rest) = option.id.strip_prefix("commit|") {
                     let mut parts = rest.splitn(2, '|');
                     let (Some(index), Some(planet)) = (
@@ -897,49 +1159,7 @@ impl Window for InvasionWindow {
                 index,
                 defender,
             } => {
-                // 42.2: hits are simultaneous, so both sides roll before either loses anything.
-                let planet = planets[index].clone();
-                let attacker_hits = roll_ground(
-                    state,
-                    content,
-                    sources,
-                    ctx.dice,
-                    ctx.rng,
-                    &self.invader,
-                    &self.system,
-                    &planet,
-                );
-                let defender_hits = roll_ground(
-                    state,
-                    content,
-                    sources,
-                    ctx.dice,
-                    ctx.rng,
-                    &defender,
-                    &self.system,
-                    &planet,
-                );
-                state.combat_round_seq = state.combat_round_seq.saturating_add(1);
-                remove_ground(state, &self.system, &planet, &defender, attacker_hits);
-                remove_ground(state, &self.system, &planet, &self.invader, defender_hits);
-
-                let still_contested = !state
-                    .system_state(&self.system)
-                    .on_planet_of(&planet, &self.invader)
-                    .is_empty()
-                    && !state
-                        .system_state(&self.system)
-                        .on_planet_of(&planet, &defender)
-                        .is_empty();
-                if still_contested {
-                    self.stage = Stage::Fighting {
-                        planets,
-                        index,
-                        defender,
-                    };
-                } else {
-                    self.advance_fighting(state, ctx, &planets, index + 1);
-                }
+                self.resolve_ground_round(state, ctx, planets, index, defender);
             }
         }
 
@@ -947,15 +1167,55 @@ impl Window for InvasionWindow {
         if matches!(self.stage, Stage::Committing)
             && self.landing_options(state, content, sources).is_empty()
         {
-            let planets = self.report.committed.clone();
-            if planets.is_empty() {
-                self.stage = Stage::Done;
-            } else {
-                self.advance_fighting(state, ctx, &planets, 0);
-            }
+            self.finish_committing(state, ctx);
         }
         Ok(())
     }
+}
+
+fn note_ground_combat_win_feats(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    winner: &PlayerId,
+    loser: &PlayerId,
+    notes_at_tactical_start: &crate::combat::NoteHoldings,
+    occurrence: FeatOccurrence,
+) -> bool {
+    let mut noted = false;
+    if ti4_content::galaxy::all_systems(content, sources)
+        .get(system.as_str())
+        .is_some_and(ti4_content::galaxy::System::is_anomaly)
+    {
+        state.record_event_feat(winner, Feat::WonInAnAnomaly, occurrence);
+        noted = true;
+    }
+    if crate::combat::is_rival_home_system(state, winner, system) {
+        state.record_event_feat(winner, Feat::WonInARivalHome, occurrence);
+        noted = true;
+    }
+    let most = state
+        .players
+        .iter()
+        .map(|seat| seat.victory_points)
+        .max()
+        .unwrap_or(0);
+    if state
+        .player(loser)
+        .is_some_and(|seat| seat.victory_points == most)
+    {
+        state.record_event_feat(winner, Feat::WonAgainstThePointsLeader, occurrence);
+        noted = true;
+    }
+    let holds_note = notes_at_tactical_start
+        .get(winner)
+        .is_some_and(|issuers| issuers.contains(loser));
+    if holds_note {
+        state.record_event_feat(winner, Feat::WonAgainstANoteHolder, occurrence);
+        noted = true;
+    }
+    noted
 }
 
 /// Remove `hits` of a player's ground forces from a planet, weakest-first.
@@ -1011,7 +1271,13 @@ pub fn resolve(
         table,
         timing: None,
     };
-    window.drive(state, &mut ctx)?;
+    while !window.is_done() {
+        window.drive(state, &mut ctx)?;
+        // The synchronous API cannot present secret-objective choices. It still records each
+        // exact occurrence, then consumes the pause and completes the invasion.
+        while window.take_scoring_occurrence().is_some() {}
+        window.settle(state, &mut ctx);
+    }
     Ok(window.into_report())
 }
 
@@ -1141,6 +1407,95 @@ mod tests {
     }
 
     #[test]
+    fn separate_bombardments_record_separate_noncombat_occurrences() {
+        let (mut state, system, planet) = arena();
+        in_space(&mut state, &system, "dreadnought", &invader(), 1);
+        let mut dice = Dice::from_faces([10, 10]);
+        let mut rng = GameRng::new(1);
+
+        for _ in 0..2 {
+            on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
+            assert_eq!(
+                bombardment(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut dice,
+                    &mut rng,
+                    &system,
+                    &invader(),
+                ),
+                1
+            );
+        }
+
+        let occurrences: Vec<_> = state
+            .player(&invader())
+            .unwrap()
+            .event_feats
+            .iter()
+            .filter_map(|(feat, occurrence)| {
+                (*feat == Feat::BombardedOutTheLastGroundForces).then_some(*occurrence)
+            })
+            .collect();
+        assert_eq!(occurrences.len(), 2);
+        assert_ne!(occurrences[0], occurrences[1]);
+    }
+
+    #[test]
+    fn ground_combat_in_any_rivals_home_records_darkening_the_skies() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let mut state = start_game(
+            ContentStore::embedded(),
+            &[a.clone(), b.clone(), c.clone()],
+            POK,
+            None,
+        )
+        .unwrap();
+        let (_, system, _) = arena();
+        state.player_mut(&b).unwrap().home_system = Some(system.clone());
+        let occurrence = state.begin_feat_occurrence();
+        let notes = crate::combat::note_holdings(&state);
+
+        assert!(note_ground_combat_win_feats(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            &a,
+            &c,
+            &notes,
+            occurrence,
+        ));
+        assert!(state.did_at_occurrence(&a, Feat::WonInARivalHome, occurrence));
+    }
+
+    #[test]
+    fn ground_combat_uses_note_holdings_from_tactical_action_start() {
+        let (mut state, system, _) = arena();
+        state
+            .promissory_notes
+            .insert("test:b".to_owned(), invader());
+        let notes = crate::combat::note_holdings(&state);
+        state.promissory_notes.clear();
+        let occurrence = state.begin_feat_occurrence();
+
+        assert!(note_ground_combat_win_feats(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            &invader(),
+            &holder(),
+            &notes,
+            occurrence,
+        ));
+        assert!(state.did_at_occurrence(&invader(), Feat::WonAgainstANoteHolder, occurrence));
+    }
+
+    #[test]
     fn an_undefended_planet_is_not_bombarded() {
         let (mut state, system, _) = arena();
         in_space(&mut state, &system, "dreadnought", &invader(), 4);
@@ -1212,6 +1567,58 @@ mod tests {
     }
 
     #[test]
+    fn losing_a_home_planet_records_a_separate_occurrence_for_its_previous_holder() {
+        let (mut state, system, planet) = arena();
+        state.player_mut(&holder()).unwrap().home_system = Some(system.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), holder());
+        on_planet(&mut state, &system, &planet, "infantry", &invader(), 1);
+        let mut window = InvasionWindow {
+            invader: invader(),
+            system: system.clone(),
+            stage: Stage::Done,
+            report: InvasionReport {
+                committed: vec![planet.clone()],
+                ..InvasionReport::default()
+            },
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
+        };
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        window.advance_fighting(&mut state, &mut ctx, std::slice::from_ref(&planet), 0);
+
+        let (occurrence, combat) = window
+            .take_scoring_occurrence()
+            .expect("the control loss creates a scoring occurrence");
+        assert!(!combat, "control loss is not a combat occurrence");
+        assert!(state.did_at_occurrence(&holder(), Feat::LostAHomePlanet, occurrence));
+        assert!(!state.did_at_occurrence(&invader(), Feat::LostAHomePlanet, occurrence));
+        assert!(
+            matches!(window.stage, Stage::FinalizingControl { .. }),
+            "gain-control effects wait until the loss-scoring pause closes"
+        );
+
+        window.settle(&mut state, &mut ctx);
+        assert!(
+            window.is_done(),
+            "the retained invasion resumes after scoring"
+        );
+    }
+
+    #[test]
     fn taking_an_unowned_planet_explores_it_and_taking_one_off_a_rival_does_not() {
         // 35.1. A caller told merely that control changed would explore every conquest and
         // draw cards the rules do not give.
@@ -1237,6 +1644,9 @@ mod tests {
                     committed: vec![planet.clone()],
                     ..InvasionReport::default()
                 },
+                pending_scoring_occurrences: std::collections::VecDeque::new(),
+                current_ground_occurrence: None,
+                notes_at_tactical_start: crate::combat::note_holdings(&state),
             };
             let mut dice = Dice::new();
             let mut rng = GameRng::new(1);
@@ -1337,6 +1747,84 @@ mod tests {
         assert!(
             !both,
             "a ground combat does not end with both sides standing"
+        );
+    }
+
+    #[test]
+    fn each_defended_planet_gets_a_distinct_ground_combat_occurrence() {
+        let mut state =
+            start_game(ContentStore::embedded(), &[invader(), holder()], POK, None).unwrap();
+        state.player_mut(&holder()).unwrap().victory_points = 1;
+        let planets = ti4_content::galaxy::all_planets(ContentStore::embedded(), POK);
+        let (system, pair) = planets
+            .iter()
+            .filter_map(|(id, record)| {
+                record
+                    .system_id()
+                    .map(|system| (SystemId::new(system), PlanetId::new(*id)))
+            })
+            .fold(
+                std::collections::BTreeMap::<SystemId, Vec<PlanetId>>::new(),
+                |mut grouped, (system, planet)| {
+                    grouped.entry(system).or_default().push(planet);
+                    grouped
+                },
+            )
+            .into_iter()
+            .find_map(|(system, planets)| {
+                (planets.len() >= 2).then(|| (system, planets[..2].to_vec()))
+            })
+            .expect("the corpus has a two-planet system");
+        for planet in &pair {
+            on_planet(&mut state, &system, planet, "infantry", &invader(), 1);
+            on_planet(&mut state, &system, planet, "infantry", &holder(), 1);
+        }
+        let mut window = InvasionWindow {
+            invader: invader(),
+            system,
+            stage: Stage::Done,
+            report: InvasionReport {
+                committed: pair.clone(),
+                ..InvasionReport::default()
+            },
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
+        };
+        let mut dice = Dice::from_faces([10, 1, 10, 1]);
+        let mut rng = GameRng::new(1);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        window.advance_fighting(&mut state, &mut ctx, &pair, 0);
+        let first_answer = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap()
+            .options[0]
+            .clone();
+        window.resolve(&mut state, &mut ctx, first_answer).unwrap();
+        let (first, first_is_combat) = window.take_scoring_occurrence().unwrap();
+        assert!(first_is_combat);
+
+        window.settle(&mut state, &mut ctx);
+        let second_answer = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap()
+            .options[0]
+            .clone();
+        window.resolve(&mut state, &mut ctx, second_answer).unwrap();
+        let (second, second_is_combat) = window.take_scoring_occurrence().unwrap();
+        assert!(second_is_combat);
+        assert_ne!(
+            first, second,
+            "rule 61.7 caps each ground combat separately"
         );
     }
 
@@ -1605,8 +2093,7 @@ mod tests {
         // codebase was inside a test, so the agenda phase -- gated on the token by 8.1 -- never
         // ran in a simulated game, and every law and agenda victory point was unreachable.
         let content = ContentStore::embedded();
-        let mut state =
-            start_game(content, &[invader(), holder()], POK, None).unwrap();
+        let mut state = start_game(content, &[invader(), holder()], POK, None).unwrap();
         let mecatol = SystemId::new(crate::seating::MECATOL);
         assert!(!state.custodians_removed);
 
@@ -1626,19 +2113,34 @@ mod tests {
             influence >= CUSTODIANS_COST,
             "a starting seat should be able to afford the token, had {influence}"
         );
-        assert!(custodians_removable(&state, content, POK, &invader(), &mecatol));
+        assert!(custodians_removable(
+            &state,
+            content,
+            POK,
+            &invader(),
+            &mecatol
+        ));
 
-        let before = state.player(&invader()).map_or(0, |seat| seat.victory_points);
+        let before = state
+            .player(&invader())
+            .map_or(0, |seat| seat.victory_points);
         let mut window = InvasionWindow {
             invader: invader(),
             system: mecatol.clone(),
             stage: Stage::Custodians,
             report: InvasionReport::default(),
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
         };
         let choice = window
             .pending_choice(&state, content, POK)
             .expect("the custodians ask is offered on Mecatol");
-        assert!(choice.prompt.contains("custodians"), "got {}", choice.prompt);
+        assert!(
+            choice.prompt.contains("custodians"),
+            "got {}",
+            choice.prompt
+        );
 
         let mut dice = Dice::new();
         let mut rng = GameRng::new(1);
@@ -1661,7 +2163,9 @@ mod tests {
 
         assert!(state.custodians_removed, "the token comes off");
         assert_eq!(
-            state.player(&invader()).map_or(0, |seat| seat.victory_points),
+            state
+                .player(&invader())
+                .map_or(0, |seat| seat.victory_points),
             before + 1,
             "27.3 pays a victory point"
         );
@@ -1672,7 +2176,10 @@ mod tests {
             &invader(),
             crate::production::Spend::Influence,
         );
-        assert!(after <= influence - CUSTODIANS_COST, "six influence was spent");
+        assert!(
+            after <= influence - CUSTODIANS_COST,
+            "six influence was spent"
+        );
     }
 
     #[test]

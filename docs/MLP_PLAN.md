@@ -1299,10 +1299,14 @@ and 200–500 net lines; where a phase exceeds that it is split.
 | ID | Package | Depends | Permission | Tier | Phase |
 |---|---|---|---|---|---|
 | **M06-021** | Existing feat ledger and 14 secret paths | M06-020 | P1 + prior P2 measurements | **C** — *implemented; review complete with critical finding* | 0 |
-| **M06-021a** | Event-scoped secret timing rules correction | M06-021 finding | P1 | **C** | 0 |
-| **M06-022** | Counting-family objective progress | M06-021a | P1 | B | 0 |
+| **M06-021a** | Event-scoped secret timing rules correction (parent; split below) | M06-021 finding | P1 | **C** | 0 |
+| **M06-021a1** | Occurrence model and event-scoring semantics | M06-021 finding | P1 | **C** | 0 |
+| **M06-021a2** | Exact event-emitter wiring and integration (parent; split below) | M06-021a1 | P1 | **C** | 0 |
+| **M06-021a2a** | Tactical combat event pauses | M06-021a1 | P1 | **C** | 0 |
+| **M06-021a2b** | Remaining emitters and parent integration | M06-021a2a | P1 | **C** | 0 |
+| **M06-022** | Counting-family objective progress | M06-021a2b | P1 | B | 0 |
 | **M06-023** | Bespoke and exact bought-cost progress | M06-022 | P1 | **C** (payments) | 0 |
-| **M06-024** | Reopened M06 exit review | M06-021a–023 | P1 | **C** | 0 |
+| **M06-024** | Reopened M06 exit review | M06-021a2b–023 | P1 | **C** | 0 |
 | **M07-019** | Post-M06 faction/TE integration revalidation | M06-024, M07-018 | P1 | B | 1 |
 | **M07-020** | Reopened M07 exit review | M07-019 | P1 | **C** | 1 |
 | **M08-018** | Post-M07 authored-bot legality/redaction revalidation | M07-020, M08-017 | P1 | B | 1 |
@@ -1352,9 +1356,9 @@ is not optional before the branch continues:
    information, and the author cannot be its only reviewer.
 4. `plans/EXECUTION_STATE.md` updated to name it and the next ready package.
 
-All four retrospective items now exist. The independent review found the critical
-event-scope mismatch in §5.4, so it is **resolved as a review activity but not as a
-finding**. M06-021a must fix and re-review the behavior; M06-022 remains blocked.
+All four retrospective items now exist. M06-021a fixed the critical event-scope mismatch in §5.4,
+passed its independent Tier-C review, resolved every actionable finding, and reran the full gates.
+M06-022 is now dependency-ready.
 
 Python parity is no longer an acceptance criterion. The historical repository is
 still read-only and its tracked pinned commit remains available through `git show`,

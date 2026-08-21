@@ -6,7 +6,7 @@
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlayerId, SecretObjectiveId};
-use ti4_model::state::{Feat, GameState};
+use ti4_model::state::{Feat, FeatOccurrence, GameState};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
@@ -702,26 +702,6 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
     fn four_mechs(p: &Position<'_>) -> bool {
         mechs_on_distinct_planets(4)(p)
     }
-    /// Become a Martyr, as a position rather than an event.
-    ///
-    /// The card says "lose control of a planet in a home system". A planet of your own home
-    /// sitting in someone else's hands *is* that loss, and reads the same whether it happened
-    /// this turn or three rounds ago — which is the honest reading, since the card is scored
-    /// while the boot is still on your neck. Written this way so it needs no ledger entry, and
-    /// so it cannot be satisfied by a home planet you never held.
-    fn lost_a_home_planet(p: &Position<'_>) -> bool {
-        let Some(seat) = p.state.player(p.player) else {
-            return false;
-        };
-        seat.home_planets.iter().any(|planet| {
-            p.state.board.values().any(|board| {
-                board
-                    .planet_control
-                    .get(planet)
-                    .is_some_and(|holder| holder != p.player)
-            })
-        })
-    }
     fn nine_ground_forces(p: &Position<'_>) -> bool {
         ground_forces_on_one_planet(9)(p)
     }
@@ -754,7 +734,6 @@ pub fn requirement_for(alias: &SecretObjectiveId) -> Option<Requirement> {
         "eh" => Some(twelve_influence),
         "hrm" => Some(twelve_resources),
         "mlp" => Some(four_of_a_colour),
-        "bam" => Some(lost_a_home_planet),
         _ => None,
     }
 }
@@ -780,6 +759,7 @@ pub const fn feat_for(alias: &str) -> Option<Feat> {
         b"dyp" => Feat::HeldThreeShipsAfterASpaceCombat,
         b"dtd" => Feat::ElectedByAnAgenda,
         b"pe" => Feat::LastToPass,
+        b"bam" => Feat::LostAHomePlanet,
         _ => return None,
     };
     Some(feat)
@@ -862,9 +842,9 @@ pub fn scoreable_on(
 /// the forty cards in the deck could not be scored at all — twelve because they had no
 /// requirement, and two (`dp`, `dtd`) because even a satisfied requirement was never asked.
 ///
-/// A card qualifies on either footing: a feat recorded during the turn now resolving, or a
-/// position that is true right now. `dp` is the second kind — "there are 3 or more laws in play"
-/// is a fact about the table, and it happens to be checked in the agenda phase.
+/// A card qualifies on either footing: a feat recorded for this exact event scope, or a position
+/// that is true right now. `dp` is the second kind — "there are 3 or more laws in play" is a fact
+/// about the table, and it happens to be checked in the agenda phase.
 #[must_use]
 pub fn scoreable_event(
     state: &GameState,
@@ -872,7 +852,7 @@ pub fn scoreable_event(
     sources: SourceSet,
     player: &PlayerId,
     when: Timing,
-    turn: u32,
+    occurrence: FeatOccurrence,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
 ) -> Vec<SecretObjectiveId> {
     if when == Timing::Status {
@@ -895,7 +875,8 @@ pub fn scoreable_event(
         .filter(|alias| timing(content, alias) == when)
         .filter(|alias| !already.contains(&ti4_model::id::ObjectiveId::new(alias.as_str())))
         .filter(|alias| {
-            feat_for(alias.as_str()).is_some_and(|feat| state.did_at_turn(player, feat, turn))
+            feat_for(alias.as_str())
+                .is_some_and(|feat| state.did_at_occurrence(player, feat, occurrence))
                 || requirement_for(alias).is_some_and(|check| check(&position))
         })
         .cloned()
@@ -1880,25 +1861,117 @@ mod tests {
         let content = ContentStore::embedded();
 
         assert!(
-            scoreable_event(&state, content, POK, &player(), Timing::Action, 7, None).is_empty(),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &player(),
+                Timing::Action,
+                FeatOccurrence(7),
+                None,
+            )
+            .is_empty(),
             "nobody has won anything yet"
         );
 
-        state.record_feat(&player(), Feat::WonInAnAnomaly);
+        state.record_event_feat(&player(), Feat::WonInAnAnomaly, FeatOccurrence(7));
 
         assert_eq!(
-            scoreable_event(&state, content, POK, &player(), Timing::Action, 7, None),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &player(),
+                Timing::Action,
+                FeatOccurrence(7),
+                None,
+            ),
             vec![SecretObjectiveId::new("btv")],
             "the seat that won the fight may score it"
         );
         assert!(
-            scoreable_event(&state, content, POK, &PlayerId::new("b"), Timing::Action, 7, None)
-                .is_empty(),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &PlayerId::new("b"),
+                Timing::Action,
+                FeatOccurrence(7),
+                None
+            )
+            .is_empty(),
             "the other seat holds the same card and did not win the fight"
         );
         assert!(
-            scoreable_event(&state, content, POK, &player(), Timing::Action, 8, None).is_empty(),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &player(),
+                Timing::Action,
+                FeatOccurrence(8),
+                None,
+            )
+            .is_empty(),
             "a fight won on turn 7 does not pay out on turn 8"
+        );
+    }
+
+    #[test]
+    fn an_occurrence_scopes_a_feat_to_that_event_and_its_owner() {
+        let mut state = game(&["a", "b"]);
+        let a = player();
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().secret_objectives = vec![SecretObjectiveId::new("btv")];
+        state.player_mut(&b).unwrap().secret_objectives = vec![SecretObjectiveId::new("btv")];
+        let content = ContentStore::embedded();
+
+        let combat = state.begin_feat_occurrence();
+        state.record_event_feat(&a, Feat::WonInAnAnomaly, combat);
+        let later = state.begin_feat_occurrence();
+
+        assert_eq!(
+            scoreable_event(&state, content, POK, &a, Timing::Action, combat, None,),
+            vec![SecretObjectiveId::new("btv")],
+        );
+        assert!(
+            scoreable_event(&state, content, POK, &b, Timing::Action, combat, None,).is_empty(),
+            "another seat cannot read or claim the triggering feat"
+        );
+        assert!(
+            scoreable_event(&state, content, POK, &a, Timing::Action, later, None,).is_empty(),
+            "a feat from one occurrence cannot manufacture a later scoring window"
+        );
+    }
+
+    #[test]
+    fn become_a_martyr_is_offered_only_for_the_home_loss_occurrence() {
+        let mut state = game(&["a", "b"]);
+        let a = player();
+        let b = PlayerId::new("b");
+        let (home, planet) = a_placed_planet();
+        {
+            let seat = state.player_mut(&a).unwrap();
+            seat.home_system = Some(home.clone());
+            seat.home_planets.push(planet.clone());
+            seat.secret_objectives = vec![SecretObjectiveId::new("bam")];
+        }
+        state.system_mut(&home).set_control(planet, b);
+
+        let loss = state.begin_feat_occurrence();
+        state.record_event_feat(&a, Feat::LostAHomePlanet, loss);
+        let later = state.begin_feat_occurrence();
+        let content = ContentStore::embedded();
+
+        assert_eq!(feat_for("bam"), Some(Feat::LostAHomePlanet));
+        assert!(requirement_for(&SecretObjectiveId::new("bam")).is_none());
+        assert_eq!(
+            scoreable_event(&state, content, POK, &a, Timing::Action, loss, None),
+            vec![SecretObjectiveId::new("bam")],
+        );
+        assert!(
+            scoreable_event(&state, content, POK, &a, Timing::Action, later, None).is_empty(),
+            "the unchanged lost-home position must not leak into a later occurrence"
         );
     }
 
@@ -1911,7 +1984,16 @@ mod tests {
         let content = ContentStore::embedded();
         for when in [Timing::Action, Timing::Agenda] {
             assert!(
-                scoreable_event(&state, content, POK, &player(), when, 0, None).is_empty(),
+                scoreable_event(
+                    &state,
+                    content,
+                    POK,
+                    &player(),
+                    when,
+                    FeatOccurrence(0),
+                    None,
+                )
+                .is_empty(),
                 "Establish a Perimeter is a status secret"
             );
         }
@@ -1922,19 +2004,35 @@ mod tests {
         // Registered since the first tranche, and unscoreable the whole time: `scoreable_on`
         // returns status secrets only, and nothing else ever asked.
         let mut state = game(&["a"]);
-        state.player_mut(&player()).unwrap().secret_objectives =
-            vec![SecretObjectiveId::new("dp")];
+        state.player_mut(&player()).unwrap().secret_objectives = vec![SecretObjectiveId::new("dp")];
         let content = ContentStore::embedded();
 
         assert!(
-            scoreable_event(&state, content, POK, &player(), Timing::Agenda, 0, None).is_empty(),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &player(),
+                Timing::Agenda,
+                FeatOccurrence(0),
+                None,
+            )
+            .is_empty(),
             "no laws are in play"
         );
         for law in ["regulations", "censure", "articles"] {
             state.enact_law(law, "for");
         }
         assert_eq!(
-            scoreable_event(&state, content, POK, &player(), Timing::Agenda, 0, None),
+            scoreable_event(
+                &state,
+                content,
+                POK,
+                &player(),
+                Timing::Agenda,
+                FeatOccurrence(0),
+                None,
+            ),
             vec![SecretObjectiveId::new("dp")],
             "three laws is what the card asks for"
         );

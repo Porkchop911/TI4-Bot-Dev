@@ -34,10 +34,14 @@ Python parity is not an acceptance criterion.
 | M06-019 | Payment/parser fuzzing | 001–016 | — | Malformed content and generated payments never panic or partially mutate state. |
 | M06-020 | Frontier critical review | 001–019 | — | Review payments, hidden information, scoring, victory, laws, and coverage claims. |
 | M06-021 | Feat ledger and fourteen secret paths (implemented; finding open) | 020 | FFG LRR 2.0 §61.7, printed timings | Historical merged implementation and evidence; not accepted until 021a. |
-| M06-021a | Event-scoped secret timing correction | 021 finding | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Per-occurrence windows at combat end and the relevant AFB, space-cannon, bombardment, control-loss, pass, and agenda-resolution steps; one objective per combat, every eligible non-combat action/agenda objective; separate space/ground, multi-agenda, attribution/redaction tests; tier C review. |
-| M06-022 | Counting-family objective progress | 021a | Accepted Rust scoring predicates | Exact counts expose progress while `satisfied` preserves existing legality. |
+| M06-021a | Event-scoped secret timing correction (accepted; split below) | 021 finding | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Parent acceptance criterion preserved across M06-021a1/a2a/a2b; accepted after a2b and its resolved tier-C review. |
+| M06-021a1 | Occurrence model and event-scoring semantics | 021 finding | FFG LRR 2.0 §61.7, printed secret timings | Typed occurrence IDs/scopes, feat matching, combat one-score cap, non-combat sequential scoring, and deterministic unit tests; no emitter wiring. |
+| M06-021a2 | Exact event-emitter wiring and integration (parent; split below) | 021a1 | FFG LRR 2.0 §61.7, printed secret timings | Parent acceptance criterion preserved across M06-021a2a/a2b. |
+| M06-021a2a | Tactical combat event pauses | 021a1 | FFG LRR 2.0 §61.7, printed combat timings | Pause after space-cannon offense, anti-fighter barrage, and each space-combat occurrence before the next tactical substep; one score per combat; deterministic event-order tests. |
+| M06-021a2b | Remaining emitters and parent integration | 021a2a | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Wire bombardment, control loss, pass, and agenda resolution; separate space/ground, multi-agenda, attribution/redaction, replay, atomicity tests; tier-C review. |
+| M06-022 | Counting-family objective progress | 021a2b | Accepted Rust scoring predicates | Exact counts expose progress while `satisfied` preserves existing legality. |
 | M06-023 | Bespoke and bought-cost progress | 022 | Accepted Rust predicates/payment planner | Count families plus greatest exactly-affordable scaled cost; no heuristic or duplicate-feature summation. |
-| M06-024 | Reopened frontier critical review | 021a–023 | — | Resolve timing, scoring, payment, hidden-information, property, and workspace findings before M09 additions. |
+| M06-024 | Reopened frontier critical review | 021a2b–023 | — | Resolve timing, scoring, payment, hidden-information, property, and workspace findings before M09 additions. |
 
 ## Exit gate
 

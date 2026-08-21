@@ -1187,6 +1187,16 @@ fn first_in_initiative(
 /// The choice kind for scoring an objective at status step 81.1.
 pub const SCORE_KIND: &str = "score";
 
+/// How many secrets one player may score while this event window is open.
+///
+/// Rule 61.7 limits a player to one objective during or after each combat, but
+/// permits any number during an action turn or agenda phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventScoreLimit {
+    OnePerPlayer,
+    AnyPerPlayer,
+}
+
 /// The ordered 81.1 window: in initiative order, each player may score one public objective.
 ///
 /// Players with nothing scoreable are skipped rather than asked. The oracle offers them their
@@ -1204,8 +1214,10 @@ pub struct ScoringWindow {
     /// secrets. The other two offer only the secrets printed for that timing, which nothing in
     /// this engine offered at all until they had a window of their own.
     timing: crate::secrets::Timing,
-    /// The turn whose feats this window is settling, pinned when it opened.
-    turn: u32,
+    /// The exact event whose feats this window is settling, pinned when it opened.
+    event_occurrence: Option<ti4_model::state::FeatOccurrence>,
+    /// Whether one score exhausts the player's permission in this window.
+    event_score_limit: EventScoreLimit,
 }
 
 impl ScoringWindow {
@@ -1230,19 +1242,23 @@ impl ScoringWindow {
             scored: Vec::new(),
             galaxy: None,
             timing: crate::secrets::Timing::Status,
-            turn: 0,
+            event_occurrence: None,
+            event_score_limit: EventScoreLimit::OnePerPlayer,
         }
     }
 
-    /// Open a window for an action- or agenda-timed secret instead of the status phase.
-    ///
-    /// Separate constructor rather than a parameter on [`Self::new`] so every existing caller
-    /// keeps the 81.1 behaviour it asked for.
+    /// Open an occurrence-scoped action- or agenda-timed secret window.
     #[must_use]
-    pub fn for_event(order: &[PlayerId], timing: crate::secrets::Timing, turn: u32) -> Self {
+    pub fn for_occurrence(
+        order: &[PlayerId],
+        timing: crate::secrets::Timing,
+        occurrence: ti4_model::state::FeatOccurrence,
+        event_score_limit: EventScoreLimit,
+    ) -> Self {
         let mut window = Self::new(order);
         window.timing = timing;
-        window.turn = turn;
+        window.event_occurrence = Some(occurrence);
+        window.event_score_limit = event_score_limit;
         window
     }
 
@@ -1304,9 +1320,19 @@ impl ScoringWindow {
                     sources,
                     player,
                     self.timing,
-                    self.turn,
+                    self.event_occurrence
+                        .expect("non-status scoring windows have an occurrence"),
                     self.galaxy.as_ref(),
                 )
+            };
+            let secrets = if self.event_score_limit == EventScoreLimit::OnePerPlayer
+                && self
+                    .event_occurrence
+                    .is_some_and(|occurrence| state.scored_at_occurrence(player, occurrence))
+            {
+                Vec::new()
+            } else {
+                secrets
             };
             available.extend(
                 secrets
@@ -1340,22 +1366,45 @@ impl ScoringWindow {
             .next_askable(state, content, sources)
             .ok_or(ScoringError::Complete)?;
 
-        // Everyone ahead of this player had nothing to score and is now past.
-        let keep = self.pending.len() - offset - 1;
-        self.pending.truncate(keep);
-
+        // Everyone ahead of this player had nothing to score and is now past. An unlimited
+        // action/agenda window keeps a scorer in place after a score so their next eligible
+        // secret is offered immediately; declining always closes their opportunity.
+        let keep = if option.is_decline() || self.event_score_limit == EventScoreLimit::OnePerPlayer
+        {
+            self.pending.len() - offset - 1
+        } else {
+            self.pending.len() - offset
+        };
         if option.is_decline() {
+            self.pending.truncate(keep);
             return Ok(None);
         }
         let alias = ObjectiveId::new(option.id);
         // A secret leaves its owner's hand when scored (61.18), which a public award does not
         // do — so which module owns the card decides which path it takes.
         let secret = ti4_model::id::SecretObjectiveId::new(alias.as_str());
-        if crate::secrets::award(state, content, &player, &secret).is_none() {
+        if content
+            .get(ContentType::SecretObjectives, secret.as_str())
+            .is_some()
+        {
+            if crate::secrets::award(state, content, &player, &secret).is_none() {
+                // A selected secret may become unawardable only through a stale/invalidated
+                // window (for example a future costed action secret). It is never a public
+                // objective, and keeping this player pending would re-offer the broken choice.
+                self.pending.truncate(self.pending.len() - offset - 1);
+                return Err(ScoringError::SecretAwardFailed(secret));
+            }
+        } else {
             award(state, content, sources, &player, &alias)?;
         }
+        self.pending.truncate(keep);
         if winner(state).is_some() {
             state.finished = true;
+        }
+        if self.event_score_limit == EventScoreLimit::OnePerPlayer
+            && let Some(occurrence) = self.event_occurrence
+        {
+            state.record_occurrence_score(&player, occurrence);
         }
         self.scored.push((player, alias.clone()));
         Ok(Some(alias))
@@ -1367,6 +1416,8 @@ impl ScoringWindow {
 pub enum ScoringError {
     #[error("the scoring window is complete")]
     Complete,
+    #[error("secret objective {0} could not be awarded")]
+    SecretAwardFailed(ti4_model::id::SecretObjectiveId),
     #[error(transparent)]
     Score(#[from] ScoreError),
     #[error(transparent)]
@@ -2197,6 +2248,200 @@ mod tests {
             "it left the hand"
         );
         assert!(state.player(&PlayerId::new("a")).unwrap().victory_points > 0);
+    }
+
+    #[test]
+    fn a_combat_occurrence_allows_one_secret_per_player() {
+        let a = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&a));
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("btv"),
+            ti4_model::id::SecretObjectiveId::new("dtgs"),
+        ];
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, ti4_model::state::Feat::WonInAnAnomaly, occurrence);
+        state.record_event_feat(
+            &a,
+            ti4_model::state::Feat::DestroyedACapitalShip,
+            occurrence,
+        );
+
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Action,
+            occurrence,
+            EventScoreLimit::OnePerPlayer,
+        );
+        let first = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("both combat secrets are eligible before the cap is used");
+        window
+            .resolve(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                first.option("btv").unwrap().clone(),
+            )
+            .unwrap();
+        assert!(
+            window
+                .pending_choice(&state, ContentStore::embedded(), POK)
+                .is_none(),
+            "the occurrence cap applies after the first secret"
+        );
+    }
+
+    #[test]
+    fn a_second_window_cannot_reuse_a_combat_occurrence() {
+        let a = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&a));
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("btv"),
+            ti4_model::id::SecretObjectiveId::new("dtgs"),
+        ];
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, ti4_model::state::Feat::WonInAnAnomaly, occurrence);
+        state.record_event_feat(
+            &a,
+            ti4_model::state::Feat::DestroyedACapitalShip,
+            occurrence,
+        );
+        let mut first = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Action,
+            occurrence,
+            EventScoreLimit::OnePerPlayer,
+        );
+        let choice = first
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap();
+        first
+            .resolve(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                choice.option("btv").unwrap().clone(),
+            )
+            .unwrap();
+        let second = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Action,
+            occurrence,
+            EventScoreLimit::OnePerPlayer,
+        );
+        assert!(
+            second
+                .pending_choice(&state, ContentStore::embedded(), POK)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn an_illegal_occurrence_score_is_atomic() {
+        let a = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&a));
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("btv")];
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, ti4_model::state::Feat::WonInAnAnomaly, occurrence);
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Action,
+            occurrence,
+            EventScoreLimit::OnePerPlayer,
+        );
+        let before_state = state.clone();
+        let before_window = window.clone();
+
+        let result = window.resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            ChoiceOption::labelled("invented", SCORE_KIND, "not offered"),
+        );
+
+        assert!(matches!(result, Err(ScoringError::IllegalChoice(_))));
+        assert!(state.identical(&before_state));
+        assert_eq!(window, before_window);
+    }
+
+    #[test]
+    fn an_agenda_occurrence_offers_each_eligible_secret_sequentially() {
+        let a = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&a));
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("dp"),
+            ti4_model::id::SecretObjectiveId::new("dtd"),
+        ];
+        for law in ["regulations", "censure", "articles"] {
+            state.enact_law(law, "for");
+        }
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, ti4_model::state::Feat::ElectedByAnAgenda, occurrence);
+
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Agenda,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+        let first = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("both agenda secrets are eligible");
+        window
+            .resolve(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                first.option("dp").unwrap().clone(),
+            )
+            .unwrap();
+        let second = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the same player is offered their remaining agenda secret");
+        assert!(second.ids().contains(&"dtd"));
+    }
+
+    #[test]
+    fn declining_an_unlimited_event_window_ends_that_players_sequence() {
+        let a = PlayerId::new("a");
+        let mut state = game(std::slice::from_ref(&a));
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("dp"),
+            ti4_model::id::SecretObjectiveId::new("dtd"),
+        ];
+        for law in ["regulations", "censure", "articles"] {
+            state.enact_law(law, "for");
+        }
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, ti4_model::state::Feat::ElectedByAnAgenda, occurrence);
+
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            crate::secrets::Timing::Agenda,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+        window
+            .resolve(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                ChoiceOption::decline(),
+            )
+            .unwrap();
+
+        assert!(
+            window
+                .pending_choice(&state, ContentStore::embedded(), POK)
+                .is_none(),
+            "a decline closes this player's otherwise unlimited sequence"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().secret_objectives.len(),
+            2,
+            "declining is not a scoring mutation"
+        );
     }
 
     #[test]
