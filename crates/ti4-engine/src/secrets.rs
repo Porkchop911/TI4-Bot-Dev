@@ -547,20 +547,19 @@ fn rival_note_issuers_count(position: &Position<'_>) -> usize {
             issuers.insert(format!("player:{owner}"));
         }
     }
+    // The card counts notes "in your play area": faceup only, never hand-held. The issuer is
+    // the faction name embedded in the note key itself — uniform across generic `<color>` and
+    // faction records, where a record lookup by alias would miss every generic note (its corpus
+    // id carries the `<color>_` prefix) even though its owner is right there in the key.
     let faction = position
         .state
         .player(position.player)
         .map(|seat| seat.faction.as_str());
     for (note, holder) in &position.state.promissory_notes {
         if holder == position.player
-            && let Some(issuer) = position
-                .content
-                .get(
-                    ContentType::PromissoryNotes,
-                    crate::promissory::alias_of(note),
-                )
-                .and_then(|record| record.text("faction"))
-            && Some(issuer) != faction
+            && position.state.promissory_faceup.contains(note)
+            && let Some(issuer) = crate::promissory::owner_of(note)
+            && faction.is_none_or(|own| own != issuer.as_str())
         {
             let issuer_key = position
                 .state
@@ -1819,23 +1818,14 @@ mod tests {
     #[test]
     fn rival_note_progress_deduplicates_note_kinds_from_one_issuer() {
         let content = ContentStore::embedded();
-        let (note, issuer) = content
-            .from_sources(ContentType::PromissoryNotes, POK)
-            .find_map(|record| {
-                record
-                    .text("alias")
-                    .zip(record.text("faction"))
-                    .map(|(alias, faction)| (alias.to_owned(), faction.to_owned()))
-            })
-            .expect("the corpus has a faction promissory note");
         let mut state = game(&["a", "b"]);
         let owner = PlayerId::new("b");
         let seat = player();
-        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new(issuer);
+        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new("empyrean");
+        // Two play-area note kinds from the same seated issuer, plus its Support: one bond.
+        crate::promissory::take(&mut state, content, &seat, "blood_pact:empyrean");
+        crate::promissory::take(&mut state, content, &seat, "dark_pact:empyrean");
         state.support_holders.insert(owner.clone(), seat.clone());
-        let real_note =
-            crate::promissory::note_id(&note, state.player(&owner).unwrap().faction.as_str());
-        state.promissory_notes.insert(real_note, seat.clone());
         let position = Position {
             state: &state,
             content,
@@ -1849,7 +1839,64 @@ mod tests {
                 .unwrap()
                 .have,
             1,
-            "two note kinds from the same seated issuer are one rival issuer"
+            "three note kinds from the same seated issuer are one rival issuer"
+        );
+    }
+
+    #[test]
+    fn strengthening_bonds_counts_only_play_area_notes() {
+        let content = ContentStore::embedded();
+
+        // A hand-held rival note is not a bond: Argent's Strike Wing Ambuscade is not a
+        // play-area card, so receipt leaves it in hand.
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "sb");
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("argent");
+        crate::promissory::take(&mut state, content, &player(), "ambuscade:argent");
+        assert!(!can_score(&state, "sb"), "a note in hand is not a bond");
+
+        // The same receipt for a play-area card — the Titans' Terraform — is a bond.
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "sb");
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("titans");
+        crate::promissory::take(&mut state, content, &player(), "terraform:titans");
+        assert!(can_score(&state, "sb"), "a play-area note is a bond");
+
+        // A generic Alliance counts too: its owner sits in the note key, not in a record lookup.
+        let mut state = game(&["a", "b"]);
+        holding(&mut state, "sb");
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("hacan");
+        crate::promissory::take(&mut state, content, &player(), "an:hacan");
+        assert!(
+            can_score(&state, "sb"),
+            "a faceup Alliance is another player's note"
+        );
+
+        // Two play-area notes from two different seated issuers are two bonds.
+        let mut state = game(&["a", "b", "c"]);
+        holding(&mut state, "sb");
+        state.player_mut(&PlayerId::new("b")).unwrap().faction =
+            ti4_model::id::FactionId::new("titans");
+        state.player_mut(&PlayerId::new("c")).unwrap().faction =
+            ti4_model::id::FactionId::new("empyrean");
+        crate::promissory::take(&mut state, content, &player(), "terraform:titans");
+        crate::promissory::take(&mut state, content, &player(), "blood_pact:empyrean");
+        let position = Position {
+            state: &state,
+            content,
+            sources: POK,
+            player: &player(),
+            galaxy: None,
+        };
+        assert_eq!(
+            remaining_position_progress(&SecretObjectiveId::new("sb"), &position)
+                .unwrap()
+                .have,
+            2,
+            "each distinct seated issuer counts once"
         );
     }
 

@@ -1517,16 +1517,29 @@ pub struct BeforeCombat {
 pub type NoteHoldings = std::collections::BTreeMap<PlayerId, std::collections::BTreeSet<PlayerId>>;
 
 /// Snapshot note holdings for objectives that name the start of a tactical action.
+///
+/// Betray a Friend counts only notes in the holder's **play area** (faceup), not hand-held
+/// notes: "'In your play area' is not the same as 'in your hand'." Support for the Throne is
+/// play-area by construction, which is why it lives in `support_holders` and needs no filter.
 #[must_use]
 pub fn note_holdings(state: &GameState) -> NoteHoldings {
     let mut notes = NoteHoldings::new();
     for seat in &state.players {
         let mut issuers = std::collections::BTreeSet::new();
         for (note, holder) in &state.promissory_notes {
+            // The key is note_id(alias, owner_faction): the suffix names the issuer's faction,
+            // so the issuer is that faction's seat. A PlayerId built from the faction name
+            // matches no seat and could never fire; an unseated owner resolves to nothing.
+            // Unlike rival_note_issuers_count there is deliberately no own-faction guard: baf
+            // tests notes[winner].contains(loser) with winner != loser, and a seat can never hold
+            // its own faction's note — deal keeps each seat's own notes in hand (never face-up),
+            // and factions are unique per seat, so no transfer can deliver one.
             if holder == &seat.id
-                && let Some((_, issuer)) = note.split_once(':')
+                && state.promissory_faceup.contains(note)
+                && let Some(owner_faction) = crate::promissory::owner_of(note)
+                && let Some(issuer_seat) = crate::promissory::seat_of(state, &owner_faction)
             {
-                issuers.insert(PlayerId::new(issuer));
+                issuers.insert(issuer_seat);
             }
         }
         for (owner, holder) in &state.support_holders {
@@ -2788,6 +2801,125 @@ mod tests {
         assert!(
             combatants(&state, ContentStore::embedded(), POK, &system).is_empty(),
             "both fleets were destroyed in the same round"
+        );
+    }
+
+    #[test]
+    fn note_holdings_resolves_production_note_keys_to_seated_issuers() {
+        // The production key is note_id(alias, owner_faction): "terraform:titans" is the
+        // Titans' copy of Terraform. The issuer is the seat playing that faction — a PlayerId
+        // built from the faction name matches no seat and can never fire.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let content = ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("titans");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+
+        // A hand-held note never counts: the card says "in your play area", and Ceasefire is not
+        // a play-area card. With only a held note, b has no issuers at all.
+        crate::promissory::take(&mut state, content, &b, "cf:titans");
+        let notes = note_holdings(&state);
+        assert!(
+            notes
+                .get(&b)
+                .is_none_or(std::collections::BTreeSet::is_empty),
+            "a held Ceasefire is not in the play area"
+        );
+
+        // b receives a's Terraform: the corpus marks it playArea, so receipt puts it faceup in
+        // b's play area — and the issuer must resolve to a's seat.
+        crate::promissory::take(&mut state, content, &b, "terraform:titans");
+        let notes = note_holdings(&state);
+        assert_eq!(
+            notes.get(&b),
+            Some(&std::collections::BTreeSet::from([a.clone()])),
+            "the seated Titans player is the issuer of a's note"
+        );
+
+        // A play-area note whose owner faction is not seated resolves to no issuer rather than a
+        // phantom id.
+        crate::promissory::take(&mut state, content, &b, "blood_pact:empyrean");
+        let notes = note_holdings(&state);
+        assert_eq!(
+            notes.get(&b),
+            Some(&std::collections::BTreeSet::from([a.clone()]))
+        );
+    }
+
+    #[test]
+    fn space_combat_against_a_seated_note_issuer_records_betray_a_friend() {
+        // Betray a Friend: "Win a combat against a player whose promissory note you had in your
+        // play area at the start of your tactical action." The winner holds the loser's note,
+        // faceup in its play area.
+        let hub = crate::fixtures::plain_hub();
+        let system = SystemId::new(hub.centre.clone());
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let content = ContentStore::embedded();
+        let a = PlayerId::new("a"); // titans: the issuer, and the loser
+        let b = PlayerId::new("b"); // hacan: holds a's note, and wins
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("titans");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        crate::fixtures::put(&mut state, &system, "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+        crate::promissory::take(&mut state, content, &b, "terraform:titans");
+
+        let before = before_combat_with_notes(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            note_holdings(&state),
+        );
+        let occurrence = state.begin_feat_occurrence();
+        let outcome = CombatOutcome {
+            winner: Some(b.clone()),
+            rounds: 1,
+        };
+
+        assert!(note_combat_event_feats(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            &before,
+            &outcome,
+            occurrence
+        ));
+        assert!(state.did_at_occurrence(&b, Feat::WonAgainstANoteHolder, occurrence));
+    }
+
+    #[test]
+    fn a_note_received_after_the_snapshot_does_not_count_for_betray_a_friend() {
+        // The card names the tactical action's start: a note that reaches the play area after
+        // the snapshot is not one "you had" then.
+        let hub = crate::fixtures::plain_hub();
+        let system = SystemId::new(hub.centre.clone());
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let content = ContentStore::embedded();
+        let a = PlayerId::new("a"); // titans: the issuer, and the loser
+        let b = PlayerId::new("b"); // hacan: wins
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("titans");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        crate::fixtures::put(&mut state, &system, "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+
+        let before = before_combat_with_notes(&state, content, POK, &system, note_holdings(&state));
+        // The note arrives only after the snapshot.
+        crate::promissory::take(&mut state, content, &b, "terraform:titans");
+        assert!(state.promissory_faceup.contains("terraform:titans"));
+
+        let occurrence = state.begin_feat_occurrence();
+        let outcome = CombatOutcome {
+            winner: Some(b.clone()),
+            rounds: 1,
+        };
+        note_combat_event_feats(
+            &mut state, content, POK, &system, &before, &outcome, occurrence,
+        );
+        assert!(
+            !state.did_at_occurrence(&b, Feat::WonAgainstANoteHolder, occurrence),
+            "the snapshot predates the receipt"
         );
     }
 }

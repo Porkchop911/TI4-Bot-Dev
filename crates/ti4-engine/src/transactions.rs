@@ -351,7 +351,7 @@ fn take(state: &mut GameState, player: &PlayerId, terms: &Terms) {
 }
 
 /// Give a player what they are receiving.
-fn give(state: &mut GameState, player: &PlayerId, terms: &Terms) {
+fn give(state: &mut GameState, content: &ContentStore, player: &PlayerId, terms: &Terms) {
     let Some(seat) = state.player_mut(player) else {
         return;
     };
@@ -371,7 +371,7 @@ fn give(state: &mut GameState, player: &PlayerId, terms: &Terms) {
         if note.starts_with(crate::promissory::SUPPORT_PREFIX) {
             crate::promissory::receive(state, player, &note);
         } else {
-            crate::promissory::take(state, player, &note);
+            crate::promissory::take(state, content, player, &note);
         }
     }
 }
@@ -393,8 +393,8 @@ pub fn resolve(
     // is about to receive.
     take(state, &offer.proposer, &offer.given);
     take(state, &offer.partner, &offer.received);
-    give(state, &offer.partner, &offer.given);
-    give(state, &offer.proposer, &offer.received);
+    give(state, content, &offer.partner, &offer.given);
+    give(state, content, &offer.proposer, &offer.received);
     Ok(())
 }
 
@@ -1617,7 +1617,12 @@ mod tests {
             ti4_model::content_types::POK,
         );
         let note = "cf:hacan".to_owned();
-        crate::promissory::take(&mut state, &b(), &note);
+        crate::promissory::take(
+            &mut state,
+            ti4_content::ContentStore::embedded(),
+            &b(),
+            &note,
+        );
 
         let offer = Offer {
             proposer: a(),

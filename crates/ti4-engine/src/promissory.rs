@@ -13,7 +13,7 @@
 //! makes that true, and it is why parting with one is priced below what receiving it is worth.
 
 use ti4_content::ContentStore;
-use ti4_model::content_types::SourceSet;
+use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
@@ -25,11 +25,36 @@ pub const SUPPORT_PREFIX: &str = "support:";
 /// Support is handled separately — it is the one whose position scores a point.
 pub const GENERIC: &[&str] = &["cf", "ps", "ta", "an"];
 
-/// Notes that live faceup in a play area rather than in hand (69.3).
+/// Generic corpus records are keyed with this prefix in place of an owner faction.
+const GENERIC_PREFIX: &str = "<color>_";
+
+/// Whether a note lives faceup in a play area rather than in hand (69.3).
 ///
-/// Trade Convoys sits there while it does its work, which is also what makes the card active;
-/// neither card may be offered again from the table while it is out of hand.
-pub const FACEUP: &[&str] = &["an", "convoys"];
+/// Read from the accepted corpus's `playArea` field instead of a hard-coded alias list:
+/// a faction record applies only to its own owner, and a generic `<color>` record applies
+/// to every owner faction. Unknown aliases are held in hand.
+pub fn is_play_area(content: &ContentStore, note: &str) -> bool {
+    let Some(owner) = owner_of(note) else {
+        return false;
+    };
+    let alias = alias_of(note);
+    let record = content
+        .get(ContentType::PromissoryNotes, alias)
+        .or_else(|| {
+            content.get(
+                ContentType::PromissoryNotes,
+                &format!("{GENERIC_PREFIX}{alias}"),
+            )
+        });
+    match (record, record.and_then(|r| r.text("faction"))) {
+        // A faction record binds to its owner: `convoys` is a play-area note for Hacan's copy
+        // and nothing else.
+        (Some(record), Some(faction)) => record.flag("playArea") && faction == owner,
+        // A generic `<color>` record applies to every owner faction.
+        (Some(record), None) => record.flag("playArea"),
+        (None, _) => false,
+    }
+}
 
 /// This owner's Support for the Throne, by the faction name that owns it.
 #[must_use]
@@ -115,11 +140,11 @@ pub fn deal(state: &mut GameState, content: &ContentStore, sources: SourceSet) {
 }
 
 /// Give a note to a holder, faceup if that is where the card lives (69.3).
-pub fn take(state: &mut GameState, holder: &PlayerId, note: &str) {
+pub fn take(state: &mut GameState, content: &ContentStore, holder: &PlayerId, note: &str) {
     state
         .promissory_notes
         .insert(note.to_owned(), holder.clone());
-    if FACEUP.contains(&alias_of(note)) {
+    if is_play_area(content, note) {
         state.promissory_faceup.insert(note.to_owned());
     }
 }
@@ -504,7 +529,7 @@ mod tests {
         let mut state = game_hacan_jolnar();
         let content = ContentStore::embedded();
 
-        take(&mut state, &b(), "cf:hacan");
+        take(&mut state, content, &b(), "cf:hacan");
 
         assert_eq!(holder_of(&state, "cf", &a()), Some(b()));
         assert!(
@@ -525,7 +550,7 @@ mod tests {
     fn a_note_is_a_loan_and_goes_home() {
         let mut state = game_hacan_jolnar();
         let content = ContentStore::embedded();
-        take(&mut state, &b(), "cf:hacan");
+        take(&mut state, content, &b(), "cf:hacan");
 
         give_back(&mut state, "cf:hacan");
 
@@ -545,7 +570,7 @@ mod tests {
         let mut state = game_hacan_jolnar();
         let content = ContentStore::embedded();
 
-        take(&mut state, &b(), "an:hacan");
+        take(&mut state, content, &b(), "an:hacan");
         assert!(state.promissory_faceup.contains("an:hacan"));
         assert!(
             !available_notes(&state, content, &b())
@@ -554,16 +579,18 @@ mod tests {
             "out of hand while it sits faceup"
         );
 
-        take(&mut state, &a(), "convoys:jolnar"); // as if traded over to a
-        assert!(state.promissory_faceup.contains("convoys:jolnar"));
+        // Trade Convoys is Hacan's card: lent to b, it sits faceup in b's play area. (A key like
+        // `convoys:jolnar` cannot exist — Jolnar owns no such note.)
+        take(&mut state, content, &b(), "convoys:hacan");
+        assert!(state.promissory_faceup.contains("convoys:hacan"));
         assert!(
-            !available_notes(&state, content, &a())
+            !available_notes(&state, content, &b())
                 .iter()
-                .any(|n| n == "convoys:jolnar"),
+                .any(|n| n == "convoys:hacan"),
             "convoys does its work where it sits"
         );
 
-        take(&mut state, &b(), "cf:hacan");
+        take(&mut state, content, &b(), "cf:hacan");
         assert!(
             !state.promissory_faceup.contains("cf:hacan"),
             "Ceasefire is held"
@@ -606,8 +633,9 @@ mod tests {
     #[test]
     fn a_ceasefire_denies_a_move_only_where_its_holder_stands() {
         let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
         let (system, _) = crate::fixtures::a_placed_planet();
-        take(&mut state, &b(), "cf:hacan");
+        take(&mut state, content, &b(), "cf:hacan");
 
         assert!(
             !denies_movement_into(&state, &a(), &system),
@@ -630,8 +658,9 @@ mod tests {
         // A note is a loan. Left in the play area it would deny every future move into that
         // system for the rest of the game.
         let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
         let (system, _) = crate::fixtures::a_placed_planet();
-        take(&mut state, &b(), "cf:hacan");
+        take(&mut state, content, &b(), "cf:hacan");
         crate::fixtures::put(&mut state, &system, "cruiser", &b(), 1);
 
         assert!(use_ceasefire(&mut state, &a()));
@@ -646,16 +675,18 @@ mod tests {
 
     #[test]
     fn trade_convoys_reach_the_whole_table_only_when_faceup() {
+        // Trade Convoys is Hacan's card: the ability follows the note to whoever holds it faceup.
         let mut state = game_hacan_jolnar();
+        let content = ContentStore::embedded();
 
         assert!(
             !reaches_anyone(&state, &b()),
             "a note in hand is not in play"
         );
 
-        take(&mut state, &a(), "convoys:jolnar"); // lent to a: faceup from then on
-        assert!(reaches_anyone(&state, &a()));
-        assert!(!reaches_anyone(&state, &b()), "and only for its holder");
+        take(&mut state, content, &b(), "convoys:hacan"); // lent to b: faceup from then on
+        assert!(reaches_anyone(&state, &b()));
+        assert!(!reaches_anyone(&state, &a()), "and only for its holder");
     }
 
     #[test]
@@ -694,7 +725,7 @@ mod tests {
         deal(&mut state, content, POK);
         let (system, planet) = crate::fixtures::a_placed_planet();
         state.system_mut(&system).set_control(planet.clone(), b());
-        take(&mut state, &b(), "ms:sol");
+        take(&mut state, content, &b(), "ms:sol");
 
         assert!(turn_started(&mut state, content, POK, &a()));
 
@@ -743,6 +774,75 @@ mod tests {
         assert!(!receive(&mut state, &a(), &support("hacan")));
 
         assert_eq!(state.player(&a()).unwrap().victory_points, before);
+    }
+
+    #[test]
+    fn play_area_membership_comes_from_the_corpus() {
+        // Table-driven over the accepted corpus's `playArea` field: a faction record binds to
+        // its owner and no other, a generic `<color>` record applies under every owner faction,
+        // and unknown aliases are held in hand.
+        // `is_play_area` resolves by identity without source scope (a note that exists in a
+        // game always matches its own corpus record), so the table covers every record.
+        let content = ContentStore::embedded();
+        let mut play_area_records = 0usize;
+        for record in content.records(ContentType::PromissoryNotes) {
+            let alias = record.text("alias").expect("every note has an alias");
+            if let Some(faction) = record.text("faction") {
+                assert_eq!(
+                    is_play_area(content, &note_id(alias, faction)),
+                    record.flag("playArea"),
+                    "{alias}:{faction}"
+                );
+                let other = if faction == "hacan" {
+                    "jolnar"
+                } else {
+                    "hacan"
+                };
+                assert!(
+                    !is_play_area(content, &note_id(alias, other)),
+                    "{alias} binds to its owner {faction}, not {other}"
+                );
+            } else {
+                let bare = alias
+                    .strip_prefix(GENERIC_PREFIX)
+                    .expect("a record without a faction is generic and prefixed");
+                assert_eq!(
+                    is_play_area(content, &note_id(bare, "hacan")),
+                    record.flag("playArea"),
+                    "{bare}:hacan"
+                );
+            }
+            if record.flag("playArea") {
+                play_area_records += 1;
+            }
+        }
+        // Pins the corpus inventory: eleven play-area notes (two generic, nine faction).
+        assert_eq!(play_area_records, 11);
+
+        assert!(!is_play_area(content, "nonsense:hacan"), "unknown alias");
+        assert!(!is_play_area(content, "nonsense"), "malformed key");
+    }
+
+    #[test]
+    fn receipt_puts_play_area_notes_faceup_and_the_rest_in_hand() {
+        let content = ContentStore::embedded();
+        let mut state = game_hacan_jolnar();
+
+        // Trade Convoys is Hacan's play-area card: receipt puts it faceup in the recipient's
+        // play area.
+        take(&mut state, content, &b(), "convoys:hacan");
+        assert!(state.promissory_faceup.contains("convoys:hacan"));
+
+        // Jolnar's note is not a play-area card: it stays held in hand.
+        take(&mut state, content, &a(), "ra:jolnar");
+        assert!(!state.promissory_faceup.contains("ra:jolnar"));
+
+        // Giving the note back takes it out of the play area with it.
+        give_back(&mut state, "convoys:hacan");
+        assert!(
+            !state.promissory_faceup.contains("convoys:hacan"),
+            "the play area is where a lent note lives, not its home"
+        );
     }
 
     #[test]

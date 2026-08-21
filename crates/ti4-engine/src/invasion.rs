@@ -1475,9 +1475,16 @@ mod tests {
     #[test]
     fn ground_combat_uses_note_holdings_from_tactical_action_start() {
         let (mut state, system, _) = arena();
-        state
-            .promissory_notes
-            .insert("test:b".to_owned(), invader());
+        // Production-format key: the suffix is the owner's faction name, resolved to that
+        // faction's seat. holder b plays Hacan and owns the Trade Convoys note; receipt puts it
+        // faceup in the invader's play area (the corpus marks convoys playArea).
+        state.player_mut(&holder()).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        crate::promissory::take(
+            &mut state,
+            ContentStore::embedded(),
+            &invader(),
+            "convoys:hacan",
+        );
         let notes = crate::combat::note_holdings(&state);
         state.promissory_notes.clear();
         let occurrence = state.begin_feat_occurrence();
@@ -1493,6 +1500,34 @@ mod tests {
             occurrence,
         ));
         assert!(state.did_at_occurrence(&invader(), Feat::WonAgainstANoteHolder, occurrence));
+    }
+
+    #[test]
+    fn ground_combat_resolves_production_note_keys_to_seated_issuers() {
+        // Betray a Friend on the ground path: the winner holds the loser's note faceup in its
+        // play area, and the production key "terraform:titans" must resolve to the Titans' seat —
+        // not to a PlayerId built from the faction name.
+        let (mut state, system, _) = arena();
+        let content = ContentStore::embedded();
+        let a = invader(); // titans: the issuer, and the loser
+        let b = holder(); // hacan: holds a's note, and wins
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("titans");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        crate::promissory::take(&mut state, content, &b, "terraform:titans");
+        let notes = crate::combat::note_holdings(&state);
+        let occurrence = state.begin_feat_occurrence();
+
+        assert!(note_ground_combat_win_feats(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            &b,
+            &a,
+            &notes,
+            occurrence,
+        ));
+        assert!(state.did_at_occurrence(&b, Feat::WonAgainstANoteHolder, occurrence));
     }
 
     #[test]

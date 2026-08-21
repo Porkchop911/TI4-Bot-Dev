@@ -1988,3 +1988,107 @@ non-reproducible checkpoints are not durable yet; M09-020 is a hard prerequisite
 - **Next exact action:** rerun the final workspace/Clippy gates, commit only M06-023 scoped paths,
   create the M06-024 review branch, and begin its exact committed-frontier campaign. The related
   pre-existing Betray-a-Friend note-owner emitter defect is a named blocking M06-024 input.
+
+## M06-024 reopened-frontier review checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-024 — reopened M06 exit review over `92edea4..bfcdb73`.
+- **Branch/base:** `wp/m06-024-reopened-frontier-review` from accepted M06-023 commit `bfcdb73`.
+- **Status:** implementation work complete; **independent frontier adjudication pending** (Tier-C
+  requires a reviewer distinct from any implementer of the reviewed code). Not accepted, not
+  committed.
+- **F1 (carried blocking finding): resolved.** `combat.rs::note_holdings` built note issuers with
+  `PlayerId::new(faction_name)`, so faction-note Betray-a-Friend issuers could never match; both
+  space and ground emitters share that snapshot. Fix resolves through
+  `promissory::owner_of` + `promissory::seat_of`; unseated owners yield no issuer. Four regression
+  tests (two unit, one per combat path) verified red-before/green-after. Defect-class sweep found
+  no other occurrence (`laws.rs::repeal` stores player ids — correct).
+- **F2 (new blocking finding): escalated to M06-025.** baf and sb print a play-area restriction the
+  engine does not enforce; face-up model hard-codes `an`/`convoys` while the accepted corpus marks
+  eleven notes `playArea: true` (eight faction notes uncovered, incl. Terraform). Spec written at
+  `plans/M06-025_PLAY_AREA_NOTE_SCORING.md`. **Blocks the M06 exit gate until accepted.**
+- **Checks:** nine named focused tests from M06-021a/022/023 pass; exhaustive payment campaigns
+  (`bought_progress_is_maximal_across_bounded_small_states`, `token_progress_is_exact_across_all_
+  small_pool_splits`) pass; engine 835 + 5 doctests; workspace 18 suites / 1,308 passed / 0 failed,
+  deterministic across two runs (timing stripped); ti4-model Clippy clean; engine Clippy shows only
+  the three documented pre-existing warnings (one package-introduced redundant-closure warning was
+  fixed); both touched source files rustfmt-clean under edition 2024 with hunks confined to
+  `note_holdings` and test modules; workspace-wide `cargo fmt --all --check` drift proven
+  pre-existing at base `bfcdb73`; `git diff --check` clean.
+- **Intentional active-package paths:** `crates/ti4-engine/src/combat.rs`,
+  `crates/ti4-engine/src/invasion.rs`, `plans/M06-024_REOPENED_FRONTIER_REVIEW.md`,
+  `plans/M06-024_OPEN_REVIEW_ITEMS.md`, `plans/evidence/M06-024.md`, and this execution state.
+- **Preserved dependency-safe preparation:** M06-025 spec (new), M07-019/020, M08-018/019 specs
+  remain untracked; no source implementation started for any of them.
+- **Next exact action:** obtain the independent frontier review of `plans/M06-024_OPEN_REVIEW_ITEMS.md`
+  (recheck F1 fix + four regression tests, confirm F2 escalation is correctly scoped). If accepted:
+  commit only M06-024 scoped paths on this branch, then start M06-025 from the accepted head. The
+  M06 exit gate stays closed until M06-025 is also accepted.
+
+## M06-025 play-area note scoring checkpoint (2026-08-21)
+
+- **Active milestone/package:** M06 / M06-025 — play-area note scoring for baf and sb (F2 fix).
+- **Branch/base:** `wp/m06-025-play-area-note-scoring` from accepted head `bfcdb73`; the verified
+  M06-024 F1 fix is carried in the working tree and commits first at closure.
+- **Status:** **accepted** by independent Tier-C review (Claude Opus 5,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md`; reviewer implemented none of the code under review).
+  Findings: L1 recorded in evidence with a standing re-check condition for any future roster
+  widening; L2 recorded in M06-023 evidence (the 91% sb figure was counting hand-held notes);
+  L3 resolved by comment at `combat.rs::note_holdings`. Committed together with M06-024 — see
+  closure record below.
+- **M06-024 adjudication landed the same day** (Claude Opus 5, recorded in
+  `plans/M06-024_OPEN_REVIEW_ITEMS.md`): F1 accept; F2 confirmed and correctly escalated to this
+  package; M06-024 not acceptable until M06-025 lands plus J1's instrumentation run.
+- **J1 (adjudicator's required action) resolved.** New probe
+  `crates/ti4-training/examples/feat_activation_probe.rs` (declared writable in the M06-024 ledger)
+  ran one 150-game panel (25 seeds × 6 rotations, r6 champions at
+  `out/stage2_r6/final10000.json`, holdout map pool): BarrageTookTheLastFighters recorded **21**
+  times / fwp scored **0**; WonAgainstANoteHolder recorded **313** / baf scored **11** (same count
+  the adjudicator measured independently — baf is live end-to-end); LostAHomePlanet recorded **48**
+  / bam scored **0**. Zero feat+card co-occurrence at game end for fwp/bam is statistically
+  consistent with rare alignment (expected overlap ≈1.4 and ≈1.8; P(0)≈23%/15%); the full scoring
+  loops are proven by unit tests (`game.rs::barrage_scoring_pauses_combat_and_caps_the_whole_
+combat_occurrence`, secrets/invasion occurrence tests). None of the three mechanisms is
+  unreachable. Residual mid-game-hand uncertainty recorded with its closing method; supersedes and
+  closes F11 from the M06-021a ledger. Mean VP per seat on this post-M06-025 run: **2.958**
+  (adjudicator's pre-M06-025 J2 baseline was 2.935).
+- **Implementation:** content-driven face-up model `promissory::is_play_area` over the corpus
+  `playArea` field (generic `<color>` records apply under every owner; faction records bind to
+  their owner); baf filter in `combat.rs::note_holdings`; sb filter in
+  `secrets.rs::rival_note_issuers_count` plus K1 fix (issuer from the note key via `owner_of`,
+  which the old record-by-alias lookup missed for every generic note). Scope extension declared:
+  `transactions.rs` signature threading only. Four new tests; two existing tests rebuilt on
+  production-valid keys.
+- **Red-first:** with only the two filter lines removed, both decision-boundary tests fail
+  (`note_holdings_resolves_production_note_keys_to_seated_issuers`,
+  `strengthening_bonds_counts_only_play_area_notes`); restored → green. The combat test was
+  strengthened mid-verification because its first draft was insensitive to the mutant (BTreeSet
+  dedup hid a same-issuer hand-held note).
+- **Checks:** eight focused tests pass individually; engine **839 + 5 doctests**; workspace
+  **18 suites / 1,312 passed / 0 failed**, deterministic across two runs (timing stripped);
+  Clippy: zero warnings in any touched file (only the three documented pre-existing engine
+  warnings elsewhere); all six touched Rust files rustfmt-clean under edition 2024; `git diff
+  --check` clean. Probe example clippy/fmt clean, output deterministic across runs.
+- **Intentional active-package paths:** `crates/ti4-engine/src/{promissory,combat,secrets,
+  invasion,transactions}.rs`, `crates/ti4-training/examples/feat_activation_probe.rs` (J1,
+  belongs to M06-024 acceptance), `plans/M06-025_PLAY_AREA_NOTE_SCORING.md`,
+  `plans/evidence/M06-025.md`, plus the M06-024 paths above and this execution state.
+- **Behavior change recorded:** baf/sb now count play-area notes only; downstream VP/clearance
+  numbers non-comparable until re-baselined (see `plans/evidence/M06-025.md`).
+- **M06 closure (same day):** with M06-025 accepted, F2 clears. M06-024's adjudication conditions
+  are all met (F1 accept; J1 run recorded; independence limitation recorded), so M06-024 is
+  acceptable too (`plans/M06-024_OPEN_REVIEW_ITEMS.md` §Final acceptance). Both packages commit as
+  one closure commit on this branch — a per-package split was impossible: both fixes live in the
+  same if-chain in `combat.rs::note_holdings`, and M06-024's rebuilt invasion test depends on
+  M06-025's `take()` signature, so no intermediate state compiles. The commit message attributes
+  each package explicitly.
+- **M06 exit gate: CLOSED.** Closure record in `plans/M06_GENERAL_RULES.md` (exit gate section):
+  final verification engine 839 + 5 doctests; workspace 18 suites / 1,312 passed / 0 failed,
+  deterministic across two runs; exhaustive payment campaigns pass; Clippy clean on all touched
+  files; rustfmt and `git diff --check` clean. Independence limitation carried into the closure
+  record per the adjudicator's instruction. Known-difference ledger: baf/sb play-area semantics
+  change downstream VP/clearance comparability (re-baseline before citing old numbers); eight
+  faction play-area notes untestable under D11's roster until a future package widens it.
+- **Next exact action:** M07-019 — post-M06 faction/TE integration revalidation (spec prepared at
+  `plans/M07-019_POST_M06_REVALIDATION.md`; dependencies met: M06-024 accepted, M07-018 part of
+  the accepted M07 baseline). Create its package branch from this closure commit and follow the
+  standard package loop.

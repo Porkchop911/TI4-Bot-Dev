@@ -41,10 +41,42 @@ Python parity is not an acceptance criterion.
 | M06-021a2b | Remaining emitters and parent integration | 021a2a | FFG LRR 2.0 §61.7, printed action/agenda secret timings | Wire bombardment, control loss, pass, and agenda resolution; separate space/ground, multi-agenda, attribution/redaction, replay, atomicity tests; tier-C review. |
 | M06-022 | Counting-family objective progress | 021a2b | Accepted Rust scoring predicates | Exact counts expose progress while `satisfied` preserves existing legality. |
 | M06-023 | Remaining position and bought-cost progress | 022 | Accepted Rust predicates/payment planner | Six public and seventeen secret position families plus greatest exactly-affordable scaled cost for ten bought objectives; unavailable map state remains distinct. |
-| M06-024 | Reopened frontier critical review | 021a2b–023 | — | Resolve timing, scoring, payment, hidden-information, property, and workspace findings before M09 additions. |
+| M06-024 | Reopened frontier critical review (accepted) | 021a2b–023 | — | F1 issuer-resolution fix with four red-first regression tests; F2 escalated to M06-025; J1 instrumentation run recorded; independence limitation recorded. |
+| M06-025 | Play-area note scoring for baf and sb (accepted) | 024, 021a, 023 | Printed card text; corpus `playArea` field | Content-driven face-up model over the eleven play-area notes; baf/sb count play-area notes only with M06-021a timing and M06-023 deduplication preserved; K1 issuer-from-key fix. |
 
 ## Exit gate
 
 All applicable non-faction rules tests pass, registry coverage matches the accepted Rust scope,
 event-scoped objective timing satisfies the named official rules, and payment/scoring operations are
 atomic under property and mutation testing. M06-024 has no unresolved finding.
+
+### Closure record (2026-08-21)
+
+**M06 is closed.** Both reopened packages are accepted by independent Tier-C review (Claude Opus 5,
+distinct from all implementers of the reviewed code):
+
+- M06-024: `plans/M06-024_OPEN_REVIEW_ITEMS.md` — F1 accept (red-before-green-after reproduced
+  independently), F2 confirmed and escalated, J1 resolved by one instrumented 150-game run
+  (`crates/ti4-training/examples/feat_activation_probe.rs`: baf live end-to-end at 313 records / 11
+  scores; fwp 21 and bam 48 records with zero scores consistent with rare alignment, full scoring
+  loops proven by unit tests), independence limitation recorded.
+- M06-025: `plans/M06-025_OPEN_REVIEW_ITEMS.md` — accept. L1 (eight faction play-area notes cannot
+  fire under D11's six-faction roster; standing re-check condition for any future roster widening)
+  and L2 (M06-023's measured sb gain of 91% was counting hand-held notes the card excludes) recorded
+  in evidence; L3 resolved by comment.
+- Final verification: engine 839 + 5 doctests; workspace 18 suites / 1,312 passed / 0 failed,
+  deterministic across two runs; exhaustive payment campaigns pass; Clippy clean on all touched
+  files (three documented pre-existing warnings elsewhere); rustfmt and `git diff --check` clean.
+- **Independence limitation (carried per adjudicator's instruction):** the same frontier reviewer
+  reviewed M06-021a…024 at package level and then adjudicated this exit; F2 was found by the
+  implementer, not the reviewer. No second ever-independent adjudicator was available in this
+  session; recorded here rather than left implicit.
+- **Known-difference ledger:** baf/sb now count play-area notes only — downstream VP/clearance
+  numbers are non-comparable until re-baselined (pre-M06-025 baseline mean VP per seat 2.935;
+  post-M06-025 probe run 2.958 on the same protocol). The eight faction play-area notes outside
+  D11's roster are untestable until a future package widens it (standing condition in
+  `plans/evidence/M06-025.md`).
+- No command run by any M06 package wrote to the historical Python reference.
+
+**Next ready package:** M07-019 (post-M06 faction/TE integration revalidation; dependencies
+M06-024 accepted and M07-018 part of the accepted M07 baseline).
