@@ -261,10 +261,34 @@ faction technologies. Must be complete enough that two factions are never
 identical under decomposition — **flagged for codex: verify this holds across
 all 34 before relying on it.**
 
-### 5.4 Missing engine coverage (D14)
+### 5.4 Missing engine coverage (D14) — **done, commit `0d751a8`**
 
-13 of 40 secrets have **no scoring predicate anywhere** in `ti4-engine` or
-`ti4-policy`:
+The count was 14, not 13. Twelve secrets had no scoring predicate, and two more
+(`dp` Dictate Policy, `dtd` Drive the Debate) had or would have had one but were
+never asked: `scoreable_on` returns status-timed secrets only, and no code path
+anywhere offered an action- or agenda-timed secret. `Timing::Action` and
+`Timing::Agenda` were read from the corpus, stored, and never consulted.
+
+The twelve could not have a predicate in the shape `secrets.rs` was built for.
+`Requirement` is `fn(&Position) -> bool` and a `Position` is the board; "destroy
+another player's war sun" is not a fact about the board, because by the time
+anything could ask, the war sun is gone and what remains looks identical to a
+board where it never existed. Resolved with a **feat ledger** —
+`GameState::record_feat`, scoped to `turn_seq`, in the same shape as the
+one-shot markers already on `Player` — plus `ScoringWindow::for_event`, opened
+from `Game::advance_turn` (the single point every kind of turn passes through)
+and from `close_vote` after 8.20.
+
+Measured on the r6 champions, 150 games, holdout pool: eight of the fourteen now
+score — Prove Endurance 40% of draws, Drive the Debate 17%, Dictate Policy 16%,
+Betray a Friend 7%, Turn Their Fleets to Dust 6%, Spark a Rebellion 5%, Make an
+Example of Their World 3%, Unveil Flagship 2%. The remaining six are rare events
+inside a four-round horizon rather than engine gaps. Direct scoring effect is
+about **+0.05 VP/seat** (mean 2.92, from 2.89); the value is that fourteen cards
+are now pursuable at all.
+
+The original finding, kept for the record — 13 of 40 secrets had **no scoring
+predicate anywhere** in `ti4-engine` or `ti4-policy`:
 
 ```
 dtgs  Destroy Their Greatest Ship     bam   Become a Martyr
@@ -357,7 +381,8 @@ Changes:
 |---|---|---|
 | **0** | **Profile.** `cargo flamegraph` on one rollout batch. Confirm or refute the ~450 µs/decision split between engine and feature extraction. | The split is a measured number, not an inference. If feature-string `format!` allocation is a large share, fix that first — it makes every later phase cheaper. |
 | **1** | **libtorch on this machine.** tch-rs + CUDA 12.x, RTX 3090, Windows. Smoke test: a 2×256 MLP trains on synthetic data on the GPU. | A green test, and the DLL/PATH setup written down in this document. |
-| **2** | **Engine: close the coverage gap and expose progress.** Implement the 13 missing secrets, including the event ledger the event-conditioned ones need. Refactor `requirement_for` and the secrets families to return counts; `satisfied` derives from them. | 1271 existing tests still green, plus new tests per newly-scoreable secret. `objective_report.rs` shows a non-zero draw-to-score rate for each. No feature work yet. |
+| **2a** | ~~**Engine: close the coverage gap.** Implement the missing secrets and the event ledger they need.~~ **Done, `0d751a8`.** | ~~1274 tests green (was 1271). Eight of the fourteen show a non-zero draw-to-score rate; the rest are decidable and rare.~~ |
+| **2b** | **Engine: expose progress.** Refactor `requirement_for` and the secrets families to return counts rather than bools; `satisfied` derives from them. | Tests still green. No feature work yet. |
 | **3** | **Features.** Objective requirement/progress, ability decomposition, secret redaction, all behind flags. | Feature inventory (`examples/feature_inventory.rs`) shows the new families; `--no-objective-features` reproduces today's vector exactly. |
 | **4** | **Model.** Shared trunk, per-faction readout, value head, per-option scoring. Inference path only. | An untrained MLP plays legal games end to end at a measured cost per update. |
 | **5** | **Distillation.** Six champions → one MLP. | Mean VP within 0.1 of r6 on the holdout panel. |
@@ -365,7 +390,7 @@ Changes:
 | **7** | **Evaluate.** Full run to the mean-6-VP bar, with the `--no-objective-features` ablation. | Mean 6 VP at round 4 on holdout, or a documented account of what stopped it. |
 
 Phases 0–2 touch no machine learning at all and are worth doing whatever
-happens to the rest of the plan. **Phase 2 is being done first** — see D14.
+happens to the rest of the plan. **Phase 2a is done** — see §5.4.
 
 ---
 
@@ -379,7 +404,7 @@ happens to the rest of the plan. **Phase 2 is being done first** — see D14.
 | **Adam lr** | The existing 0.03 will not transfer. Budget a sweep; a bad lr will look like "the MLP doesn't work". |
 | **Value head destabilising the trunk** | Watch explained variance. Falling back to the batch-mean baseline is a one-line change and a legitimate result. |
 | **Shared trunk averages away faction identity** | The per-faction readout and embedding exist for this. If a faction regresses, check whether its readout is doing anything. |
-| **Event ledger touches combat** (§5.4) | The riskiest engine change in the plan: combat resolution is load-bearing for 1271 tests. Additive-only writes, no behaviour change to resolution itself. |
+| ~~**Event ledger touches combat**~~ (§5.4) | Landed additive-only; no change to combat resolution itself. 1274 tests green. Risk retired. |
 | **Newly-scoreable secrets shift the reward landscape** | Every prior run's VP numbers become non-comparable the moment Phase 2 lands. Re-baseline r6's champions on the fixed engine before drawing any MLP comparison. |
 | **`out/` is gitignored** (`.gitignore:24`) | Checkpoints, pools and logs are **not** restorable from git. Any r6-comparison depends on files that exist only on this machine. Worth fixing independently. |
 | **Overfitting the 96-game batch** | 7.6M params against 96 games/update is a large ratio. Weight decay, and the holdout pool (`full_np8_12_holdout.json`, zero overlap with train) is the honest measure. |
@@ -402,9 +427,11 @@ happens to the rest of the plan. **Phase 2 is being done first** — see D14.
 5. **Normalisation of count features** (§5.1). Raw counts, `count/threshold`,
    or one-hot buckets? Raw counts in a network with no input normalisation is a
    known way to get a badly conditioned first layer.
-6. **Event ledger shape** (§5.4). Per-round or per-game? Cleared when? Several
-   secrets say "during a single combat", which needs finer granularity than a
-   game-long tally.
+6. ~~**Event ledger shape**~~ (§5.4) — settled: scoped to `turn_seq`, one
+   variant per card, offered once per turn from `advance_turn`. Open sub-question
+   for review: offering once per turn approximates 61.6's one-objective-per-action
+   but is not identical to "one per combat" for a turn containing several fights.
+   Is that worth tightening?
 
 ---
 
