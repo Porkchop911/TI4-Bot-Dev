@@ -446,6 +446,10 @@ impl PartialEq for Player {
             && self.technology_units_returning == other.technology_units_returning
             && self.spec_ops_returning == other.spec_ops_returning
             && self.captured_units == other.captured_units
+            // Event-scoped feat evidence gates secret-scoring eligibility, so it is part of the
+            // canonical projection (M07-021): a direct-vs-stepped divergence in feat evidence must
+            // fail state equality even when no objective has scored yet.
+            && self.event_feats == other.event_feats
     }
 }
 
@@ -1459,6 +1463,21 @@ mod tests {
             state.player(&pid("a")).unwrap().event_feats,
             vec![(Feat::WonInAnAnomaly, first)],
             "recording the same event evidence twice is idempotent"
+        );
+    }
+
+    #[test]
+    fn event_feats_participate_in_state_equality() {
+        // The direct-vs-stepped equivalence invariant compares whole states; feat evidence gates
+        // secret-scoring eligibility, so it must be part of the projection (M07-021).
+        let mut base = game(&["a", "b"]);
+        let occurrence = base.begin_feat_occurrence();
+        let mut diverged = base.clone();
+        diverged.record_event_feat(&pid("a"), Feat::WonInAnAnomaly, occurrence);
+
+        assert_ne!(
+            base, diverged,
+            "feat evidence is part of the canonical projection"
         );
     }
 

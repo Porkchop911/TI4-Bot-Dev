@@ -2696,6 +2696,11 @@ mod tests {
             let mut dice = Dice::new();
             let mut rng = GameRng::new(17);
             if stepped {
+                // The Game driver and the synchronous resolve() both snapshot before the first
+                // die and record combat feats at completion; mirror that bookkeeping so both
+                // sides of this comparison do the same work (M07-021).
+                let before =
+                    crate::combat::before_combat(&state, ContentStore::embedded(), POK, &system);
                 let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
                 let mut inner = Table::new();
                 let mut ctx = crate::choice::Resolving {
@@ -2713,7 +2718,19 @@ mod tests {
                     let answer = table.ask(&choice).unwrap();
                     window.resolve(&mut state, &mut ctx, answer).unwrap();
                 }
-                (window.outcome().unwrap(), state)
+                let outcome = window.outcome().expect("the fight resolved");
+                if let Some(occurrence) = window.combat_occurrence() {
+                    crate::combat::note_combat_event_feats(
+                        &mut state,
+                        ContentStore::embedded(),
+                        POK,
+                        &system,
+                        &before,
+                        &outcome,
+                        occurrence,
+                    );
+                }
+                (outcome, state)
             } else {
                 let outcome = resolve(
                     &mut state,

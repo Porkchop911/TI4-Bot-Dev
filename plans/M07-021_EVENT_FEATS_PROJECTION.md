@@ -1,10 +1,16 @@
 # M07-021 — `event_feats` state-equality projection (child of M07-019 review M2)
 
-## Preparation status
+## Status
 
-Dependency-safe preparation only. Begin after M07-019 is accepted and committed; **must complete
-before the M07-020 exit review** so the milestone's equivalence invariant holds on the field M06
-introduced.
+**Accepted 2026-08-22** (independent Tier B, Claude Opus 5 — see
+`plans/M07-021_OPEN_REVIEW_ITEMS.md`; scope extension into `combat.rs` approved; N1/N2 resolved in
+its Resolution section). Dependency met: M07-019 accepted and committed at `c034549`. Branch:
+`wp/m07-021-event-feats-projection` from `c034549`. **Must complete before the M07-020 exit
+review** so the milestone's equivalence invariant holds on the field M06 introduced. Option A
+implemented (comparison added); red-first evidence, the diagnosed test-harness completion, and the
+scope-extension declaration are in `plans/evidence/M07-021.md`. Coverage limit per review N1:
+the invariant holds on `event_feats` for fights that do not pause — follow-up scoped as M07-022,
+a dependency of M07-020.
 
 | Field | Value |
 |---|---|
@@ -38,7 +44,7 @@ record the choice and rationale in evidence.
 
 ```text
 Writable paths:
-  crates/ti4-model/src/state.rs        (the PartialEq impl / marker)
+  crates/ti4-model/src/state.rs        (the PartialEq impl / marker + focused test)
   plans/M07-021_EVENT_FEATS_PROJECTION.md
   plans/evidence/M07-021.md
   plans/EXECUTION_STATE.md
@@ -48,6 +54,13 @@ Network/process needs: bounded Cargo test/lint commands only
 Generated artifacts: Cargo target output only
 External-state effects/destructive actions: none
 ```
+
+**Scope extension declared during implementation:** `crates/ti4-engine/src/combat.rs` (test module
+only). The projection change exposed that `a_stepped_combat_matches_the_driven_one`'s stepped
+harness omitted the post-combat feat bookkeeping both real drivers perform, so it could not pass
+without completing that harness. The edit is test-only (+17/−1), changes no assertion (the
+`identical()` comparison stands as written), and touches no engine behavior. Declared per the
+M06-025 precedent; reviewer to adjudicate.
 
 ## Required checks
 

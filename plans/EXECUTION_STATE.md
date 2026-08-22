@@ -2143,3 +2143,57 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit the scoped paths on `wp/m07-019-post-m06-revalidation` (game.rs,
   evidence, spec, review items + resolution, milestone-plan row, this file); then M07-021
   (`event_feats` projection) before M07-020's exit review.
+
+## Checkpoint — M07-021 accepted, review resolutions applied, commit pending (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-021 (`event_feats` state-equality projection; child of
+  M07-019 review finding M2 / F-M07-019-3).
+- **Branch and HEAD:** `wp/m07-021-event-feats-projection` from `c034549`; no package commit yet —
+  independent Tier B review is in (accept), resolutions applied; the scoped commit follows.
+- **Working tree (active-package paths):** `crates/ti4-model/src/state.rs` (+4 compared-field line
+  with rationale, +1 focused test), `crates/ti4-engine/src/combat.rs` (test module only: completed
+  the stepped harness of `a_stepped_combat_matches_the_driven_one`, +17/−1),
+  `plans/evidence/M07-021.md` (new, incl. N1 coverage limit + N2 disposition),
+  `plans/M07-021_EVENT_FEATS_PROJECTION.md` (accepted status + scope-extension declaration),
+  `plans/M07-021_OPEN_REVIEW_ITEMS.md` (review + resolution, new),
+  `plans/M07_FACTIONS_AND_TE.md` (M07-022 row; M07-020 now depends on 019/021/022),
+  `plans/M07-022_STEPPED_EQUIVALENCE_ACROSS_PAUSES.md` (new prep spec, commits with its parent per
+  the M06-025 precedent), and this file. Pre-existing unrelated changes preserved untouched:
+  `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md` and the
+  untracked M07-020 / M08-018 / M08-019 prep specs.
+- **What was done:** Option A implemented — `Player::PartialEq` now compares `event_feats`, closing
+  the projection gap where two states differing only in feat evidence compared equal. Red-first:
+  the focused test failed before the one-line fix (states compared equal) and passes after.
+- **Exposed dependence diagnosed, not fixture-regenerated:** the change turned
+  `a_stepped_combat_matches_the_driven_one` red because its stepped harness omitted the post-combat
+  feat bookkeeping both real drivers perform (`before_combat` snapshot +
+  `note_combat_event_feats` at completion — game.rs:279–286, combat.rs:1489–1495); in that fixture
+  the driven side recorded `HeldThreeShipsAfterASpaceCombat`. The harness now mirrors both drivers;
+  no assertion changed. This is exactly the detection-latency scenario M2 predicted.
+- **Scope extension declared:** `crates/ti4-engine/src/combat.rs` (test module only) was outside
+  the original writable declaration; required because the failing harness lives there and no
+  in-scope path can make the comparison faithful otherwise. Declared in the spec per the M06-025
+  precedent; reviewer to adjudicate.
+- **Tests last run and exact results:** focused test red-before/green-after; model **74 / 0** (was
+  73, +1 new test); engine **843 / 0** (unchanged count); workspace **1,317 / 0**, identical across
+  two runs (deterministic).
+- **Checks:** Clippy zero warnings in ti4-model and no new warnings in combat.rs (only the three
+  documented pre-existing engine warnings remain crate-wide); both touched Rust files rustfmt-clean
+  under edition 2024; `git diff --check` clean.
+- **Decisions:** Option A over B — no concrete contract breaks (full workspace green), and the
+  field was never in the oracle-exclusion list nor marked `// Not compared.`. Behavior change is
+  strictly stricter equality: equivalence/replay comparisons catch more, never fewer; no scoring,
+  replay-hash projection, choice ID, or registry changed.
+- **Independent Tier B review (Claude Opus 5): ACCEPT.** Scope extension into `combat.rs`
+  approved as a genuine test-only completion (reviewer verified both production consumers already
+  perform the bookkeeping; red-first and the exposed dependence reproduced independently).
+- **Review resolutions applied:** N1 — coverage limit recorded in evidence (the invariant holds on
+  `event_feats` for fights that do not pause; earlier wording retracted as overstatement) and
+  follow-up scoped as **M07-022** before the exit review, now a dependency of M07-020. N2 —
+  disposition recorded: helper factoring adopted into M07-022; Game-level re-pointing deferred to
+  M07-020's scope decision (including the deliberate `before_combat_with_notes` vs `before_combat`
+  snapshot difference).
+- **Open review findings or blockers:** none open from Tier B. M07-022 is ready to schedule.
+- **Next exact action:** commit the scoped paths on `wp/m07-021-event-feats-projection` (state.rs,
+  combat.rs, evidence, both specs, review items + resolution, milestone-plan rows, this file); then
+  M07-022 (stepped equivalence across pauses) before M07-020's exit review.

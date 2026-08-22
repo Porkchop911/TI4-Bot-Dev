@@ -9,9 +9,9 @@ rules and versioned Rust specifications.
 
 Rows 001–018 retain the historical comparison evidence under which they were
 executed. Python parity is no longer an acceptance criterion. Rows 019–020
-revalidate the accepted Rust scope after M06's event-window correction. Row
-021 closes a state-equality projection gap found during the M07-019 review
-and must complete before row 020.
+revalidate the accepted Rust scope after M06's event-window correction.
+Rows 021–022 close gaps found during the M07-019/M07-021 reviews and must
+complete before row 020.
 
 | ID | Package | Depends | Historical source / normative context | Deliverable and acceptance test |
 |---|---|---|---|---|
@@ -34,8 +34,9 @@ and must complete before row 020.
 | M07-017 | Faction differential suite | 002–016 | all faction/TE tests | Choices, events, state, and coverage match selected oracle cases. |
 | M07-018 | Frontier coverage review | 001–017 | — | Verify no corpus-only record is falsely called implemented and no branch behavior is omitted. |
 | M07-019 | Post-M06 faction/TE integration revalidation | M06-024,M07-018 | Accepted Rust faction/TE scope; FFG objective timing | Run faction integration/scoped-effect/full-workspace gates with nested secret windows; fix only demonstrated regressions. |
-| M07-020 | Reopened frontier exit review | 019, 021 | — | Resolve timing/effect-scope/coverage findings and reaffirm the accepted faction/TE scope. |
+| M07-020 | Reopened frontier exit review | 019, 021, 022 | — | Resolve timing/effect-scope/coverage findings and reaffirm the accepted faction/TE scope. |
 | M07-021 | `event_feats` state-equality projection (child of M07-019 review M2) | 019 | `ti4-model` `Player::PartialEq`; M06 occurrence model | Include `Player.event_feats` in state equality (or record an explicit exclusion with reason); the direct-vs-stepped equivalence invariant must be able to fail on feat evidence. Prep spec: `plans/M07-021_EVENT_FEATS_PROJECTION.md`. Must complete before 020. |
+| M07-022 | Stepped-vs-driven equivalence across scoring pauses (child of M07-021 review N1) | 021 | `combat.rs` synchronous API loop; M06 pause path | The stepped harness consumes scoring pauses exactly as `resolve()` does; a pausing-fixture comparison verifies equivalence across the M06 pause path; completion bookkeeping factored into one shared helper. Prep spec: `plans/M07-022_STEPPED_EQUIVALENCE_ACROSS_PAUSES.md`. Must complete before 020. |
 
 ## Exit gate
 
