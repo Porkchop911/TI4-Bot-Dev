@@ -2197,3 +2197,52 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit the scoped paths on `wp/m07-021-event-feats-projection` (state.rs,
   combat.rs, evidence, both specs, review items + resolution, milestone-plan rows, this file); then
   M07-022 (stepped equivalence across pauses) before M07-020's exit review.
+- **M07-021 committed as `5241f2d`** on `wp/m07-021-event-feats-projection` (8 files, +473/−10).
+
+## Checkpoint — M07-022 accepted, review resolutions applied, commit pending (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-022 (stepped-vs-driven equivalence across scoring pauses;
+  child of the M07-021 review finding N1; dependency of the M07-020 exit review).
+- **Branch and HEAD:** `wp/m07-022-stepped-equivalence-across-pauses` from `5241f2d`; no package
+  commit yet — independent Tier B review is in (accept), resolutions applied; the scoped commit
+  follows.
+- **Working tree (active-package paths):** `crates/ti4-engine/src/combat.rs` only (+1 new test with
+  an explicit both-sides feat assertion; +1 production helper `complete_window` with a
+  behavior-preserving refactor of `resolve()`'s tail; +1 shared stepped harness `stepped_fight`
+  with pause consumption, replacing the two inline stepped branches; P1 backtick fix in the
+  harness doc comment), `plans/evidence/M07-022.md` (new, incl. pasted Clippy output per P1,
+  P2 coverage limit, P3 note), `plans/M07-022_STEPPED_EQUIVALENCE_ACROSS_PAUSES.md` (accepted
+  status), `plans/M07-022_OPEN_REVIEW_ITEMS.md` (review + resolution, new),
+  `plans/M07_FACTIONS_AND_TE.md` (M07-023 row; M07-020 now depends on 019/021/022/023),
+  `plans/M07-023_POST_PAUSE_CHOICE_COMPOSITION.md` (new prep spec, commits with its parent per the
+  M06-025 precedent), and this file. Pre-existing unrelated changes preserved untouched:
+  `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md` and the untracked M07-020 / M08-018 / M08-019 prep specs.
+- **Red-first:** new test written first against the current (M07-021) harness shape — FAILED with a
+  panic at `.expect("the fight resolved")` (combat.rs:2791), reproducing reviewer N1's probe
+  exactly; green after pause consumption was added.
+- **N2 factorization landed:** `complete_window` is now the single completion-bookkeeping path for
+  both `resolve()` and the stepped harness — a third copy is structurally impossible. The Game
+  driver keeps its own inline bookkeeping (a noted occurrence pauses there before the fight is
+  over); documented in the helper's doc comment.
+- **Verification:** engine **844 + 5 doctests** (+1 = new test; `resolve()` refactor changed no
+  behavior); workspace **1,318 / 0 identical across two runs**; Clippy — no new warnings (only the
+  two documented pre-existing engine warnings remain); combat.rs rustfmt-clean under edition 2024;
+  `git diff --check` clean.
+- **Independent Tier B review (Claude Opus 5): ACCEPT.** Reviewer reproduced the red-first claim
+  exactly (probe: pause branch → `break` reproduces the panic; reverted), verified the
+  `complete_window` refactor line-for-line behavior-preserving, and confirmed the chain closes:
+  `GameState::identical` opens with `self == other`, so M07-021's `Player::PartialEq` addition does
+  feed these tests' assertions.
+- **Review resolutions applied:** P1 (required) — backticks added at the site; evidence now pastes
+  the tool's actual Clippy output (three pre-existing warnings, zero new); post-fix re-verification
+  recorded (engine 844 + 5 doctests; workspace 1,318 / 0). P2 — successor scoped as **M07-023**
+  before the exit review (pause→choice composition: pausing fixture that continues into a casualty
+  assignment), now a dependency of M07-020; evidence framing corrected to "across a scoring pause
+  with no choice after it". P3 — recorded: sharing `complete_window` removed the last independent
+  check on its content; green equivalence must not be cited as validating bookkeeping content
+  (`a_driven_combat_continues_after_its_barrage_scoring_pause` does that).
+- **Open review findings or blockers:** none open from Tier B. M07-023 is ready to schedule.
+- **Next exact action:** commit the scoped paths on `wp/m07-022-stepped-equivalence-across-pauses`
+  (combat.rs, evidence, both specs, review items + resolution, milestone-plan rows, this file);
+  then M07-023 (pause→choice composition) before M07-020's exit review.

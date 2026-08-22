@@ -1486,15 +1486,29 @@ pub fn resolve(
         let _ = window.take_scoring_occurrence();
         window.settle_open(state, &mut ctx);
     }
-    let outcome = window
-        .outcome()
-        .ok_or_else(|| CombatError::Unresolved(system.clone()))?;
+    complete_window(state, content, sources, system, &before, &window)
+        .ok_or_else(|| CombatError::Unresolved(system.clone()))
+}
+
+/// Complete a driven combat window: return its outcome and record event feats at completion.
+/// Both the synchronous API and the stepped test harness call this so they cannot drift apart
+/// (M07-022). The Game driver keeps its own inline bookkeeping, because there a noted occurrence
+/// pauses for scoring before the fight is over.
+fn complete_window(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    before: &BeforeCombat,
+    window: &CombatWindow,
+) -> Option<CombatOutcome> {
+    let outcome = window.outcome()?;
     if let Some(occurrence) = window.combat_occurrence() {
-        let _ = note_combat_event_feats(
-            state, content, sources, system, &before, &outcome, occurrence,
+        note_combat_event_feats(
+            state, content, sources, system, before, &outcome, occurrence,
         );
     }
-    Ok(outcome)
+    Some(outcome)
 }
 
 /// What a system held before a space combat, for the feats that ask what changed.
@@ -2684,6 +2698,50 @@ mod tests {
         assert!(left.len() <= 1);
     }
 
+    /// Drive a combat window by hand — `settle` / `pending_choice` / `resolve` — consuming scoring
+    /// pauses exactly as the synchronous API does (M07-022). Completion bookkeeping goes through
+    /// the same `complete_window` that `resolve()` calls, so this replica cannot drift from it.
+    fn stepped_fight(
+        state: &mut GameState,
+        system: &SystemId,
+        table: &mut Table,
+        dice: &mut Dice,
+        rng: &mut GameRng,
+    ) -> CombatOutcome {
+        let content = ContentStore::embedded();
+        // The Game driver and the synchronous resolve() both snapshot before the first die
+        // (M07-021).
+        let before = crate::combat::before_combat(state, content, POK, system);
+        let mut window = CombatWindow::new(state, content, POK, system);
+        // The context keeps its own table (the original harness shape): one long-lived context
+        // borrows it for the whole loop, so asking must go through a separate table. Neither is
+        // asserted on in these tests; resolve() uses one table because Window::drive asks through
+        // ctx.table internally.
+        let mut inner = Table::new();
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice,
+            rng,
+            table: &mut inner,
+            timing: None,
+        };
+        window.settle(state, &mut ctx);
+        while window.outcome().is_none() {
+            if let Some(choice) = window.pending_choice(state, content, POK) {
+                let answer = table.ask(&choice).unwrap();
+                window.resolve(state, &mut ctx, answer).unwrap();
+            } else {
+                // Mirror the synchronous API: consume scoring pauses and drive automatic
+                // transitions.
+                let _ = window.take_scoring_occurrence();
+                window.settle_open(state, &mut ctx);
+            }
+        }
+        crate::combat::complete_window(state, content, POK, system, &before, &window)
+            .expect("the fight resolved")
+    }
+
     #[test]
     fn a_stepped_combat_matches_the_driven_one() {
         // Stepping and driving are the same fight: Window::drive is only a loop over the
@@ -2696,41 +2754,10 @@ mod tests {
             let mut dice = Dice::new();
             let mut rng = GameRng::new(17);
             if stepped {
-                // The Game driver and the synchronous resolve() both snapshot before the first
-                // die and record combat feats at completion; mirror that bookkeeping so both
-                // sides of this comparison do the same work (M07-021).
-                let before =
-                    crate::combat::before_combat(&state, ContentStore::embedded(), POK, &system);
-                let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
-                let mut inner = Table::new();
-                let mut ctx = crate::choice::Resolving {
-                    content: ContentStore::embedded(),
-                    sources: POK,
-                    dice: &mut dice,
-                    rng: &mut rng,
-                    table: &mut inner,
-                    timing: None,
-                };
-                window.settle(&mut state, &mut ctx);
-                while let Some(choice) =
-                    window.pending_choice(&state, ContentStore::embedded(), POK)
-                {
-                    let answer = table.ask(&choice).unwrap();
-                    window.resolve(&mut state, &mut ctx, answer).unwrap();
-                }
-                let outcome = window.outcome().expect("the fight resolved");
-                if let Some(occurrence) = window.combat_occurrence() {
-                    crate::combat::note_combat_event_feats(
-                        &mut state,
-                        ContentStore::embedded(),
-                        POK,
-                        &system,
-                        &before,
-                        &outcome,
-                        occurrence,
-                    );
-                }
-                (outcome, state)
+                (
+                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng),
+                    state,
+                )
             } else {
                 let outcome = resolve(
                     &mut state,
@@ -2749,6 +2776,58 @@ mod tests {
         let (stepped_outcome, stepped_state) = fight(true);
         let (driven_outcome, driven_state) = fight(false);
         assert_eq!(stepped_outcome, driven_outcome);
+        assert!(stepped_state.identical(&driven_state));
+    }
+
+    #[test]
+    fn a_stepped_combat_matches_the_driven_one_across_a_barrage_pause() {
+        // The same fight stepped by hand and driven synchronously must end identically even when
+        // the round-1 barrage fires a feat and pauses for scoring (M07-022): the stepped side must
+        // consume the pause exactly as resolve() does, or it stalls with the fight unresolved.
+        let fight = |stepped: bool| {
+            let (mut state, system) = arena();
+            put(&mut state, &system, "destroyer", &attacker(), 1);
+            put(&mut state, &system, "fighter", &defender(), 1);
+            put(&mut state, &system, "cruiser", &defender(), 1);
+            let mut table = Table::new();
+            let mut dice = Dice::from_faces([10, 10, 10, 1]);
+            let mut rng = GameRng::new(1);
+            if stepped {
+                (
+                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng),
+                    state,
+                )
+            } else {
+                let outcome = resolve(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut table,
+                    &mut dice,
+                    &mut rng,
+                    &system,
+                )
+                .unwrap();
+                (outcome, state)
+            }
+        };
+
+        let (stepped_outcome, stepped_state) = fight(true);
+        let (driven_outcome, driven_state) = fight(false);
+        assert_eq!(stepped_outcome, driven_outcome);
+        // The barrage feat must be recorded on both sides — identity alone would also pass if
+        // neither side had fired it.
+        for state in [&stepped_state, &driven_state] {
+            assert!(
+                state
+                    .player(&attacker())
+                    .unwrap()
+                    .event_feats
+                    .iter()
+                    .any(|(feat, _)| *feat == Feat::BarrageTookTheLastFighters),
+                "the round-1 barrage feat must be recorded on both sides"
+            );
+        }
         assert!(stepped_state.identical(&driven_state));
     }
 

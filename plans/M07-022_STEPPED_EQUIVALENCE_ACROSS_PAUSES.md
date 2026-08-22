@@ -1,10 +1,19 @@
 # M07-022 — Stepped-vs-driven equivalence across scoring pauses (child of M07-021 review N1)
 
-## Preparation status
+## Status
 
-Dependency-safe preparation only. Begin after M07-021 is accepted and committed; **must complete
-before the M07-020 exit review** (it is now a dependency of it), because the milestone's
-equivalence invariant currently holds on `event_feats` only for fights that do not pause.
+**Accepted 2026-08-22** (independent Tier B, Claude Opus 5 — see
+`plans/M07-022_OPEN_REVIEW_ITEMS.md`; P1 corrected at the site with pasted Clippy output; P2 scoped
+as successor M07-023 before the exit review; P3 recorded). Dependency met: M07-021 accepted and
+committed at `5241f2d`. Branch: `wp/m07-022-stepped-equivalence-across-pauses` from `5241f2d`.
+**Must complete before the M07-020 exit review** (it is a dependency of it), because the
+milestone's equivalence invariant held on `event_feats` only for fights that do not pause. All
+three deliverables implemented in `crates/ti4-engine/src/combat.rs`: pause consumption in the
+shared stepped harness, the pausing-fixture comparison with an explicit both-sides feat assertion,
+and the N2 completion-bookkeeping factorization (`complete_window` called by both `resolve()` and
+the harness). Red-first evidence and verification are in `plans/evidence/M07-022.md`. Coverage
+limit per review P2: equivalence is verified across a scoring pause **with no choice after it** —
+successor scoped as M07-023, now also a dependency of M07-020.
 
 | Field | Value |
 |---|---|
