@@ -3200,6 +3200,594 @@ mod tests {
         panic!("the space-cannon occurrence never offered Turn Their Fleets to Dust");
     }
 
+    // -- M07-019: nested-window revalidation ---------------------------------------------------
+    //
+    // The M06 event-scoped secret windows pause tactical resolution mid-combat and mid-invasion.
+    // These tests pin the integration boundary: faction/TE effects in flight when a window
+    // opened must resume on exactly the retained frame, and sequence-scoped markers must expire
+    // by their identity rather than because of the pause.
+
+    /// Activates one system, pays Munitions Reserves in round one, declines it in round two,
+    /// declines the fwp window, and takes every other offered option (casualty assignments
+    /// included).
+    struct MunitionsDriver {
+        target: String,
+        paid: bool,
+    }
+
+    impl crate::choice::Decider for MunitionsDriver {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            let ids = choice.ids();
+            if ids.contains(&TACTICAL_ACTION_ID) {
+                return Ok(choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == TACTICAL_ACTION_ID)
+                    .cloned()
+                    .expect("the action names itself"));
+            }
+            if let Some(option) = choice.options.iter().find(|o| o.id == self.target) {
+                return Ok(option.clone());
+            }
+            if ids.contains(&"done_moving") {
+                return Ok(choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == "done_moving")
+                    .cloned()
+                    .expect("movement always offers done"));
+            }
+            if ids.contains(&"munitions") {
+                let pay = !self.paid;
+                self.paid = true;
+                return Ok(choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == (if pay { "munitions" } else { "decline" }))
+                    .cloned()
+                    .expect("the offer names its own options"));
+            }
+            if ids.contains(&"fwp") {
+                return Ok(choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == "decline")
+                    .cloned()
+                    .expect("a scoring window always offers decline"));
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or(crate::choice::IllegalChoice::NotOffered {
+                    player: choice.player.clone(),
+                    chosen: String::new(),
+                    offered: ids.into_iter().map(str::to_owned).collect(),
+                })
+        }
+    }
+
+    #[test]
+    fn munitions_reserves_survive_the_barrage_scoring_pause() {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&a).unwrap().trade_goods = 4;
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("fwp")];
+        state.player_mut(&b).unwrap().secret_objectives.clear();
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 2);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 1);
+        // Eight cruisers: the barrage takes the fighter, and even a fully successful munitions
+        // reroll (two hits) cannot wipe b out, so the fight is guaranteed to reach round two.
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 8);
+
+        let table = Table::with_default(Box::new(MunitionsDriver {
+            target: ids[0].to_string(),
+            paid: false,
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        // The barrage's four anti-fighter dice all hit; every ordinary roll after that is a
+        // miss for both sides. Rerolls draw from the seeded stream rather than this preload,
+        // so round one's munitions reroll may land anywhere — which is exactly why b keeps
+        // eight cruisers: the test must hold whatever the reroll does.
+        let mut faces = vec![10u32; 4];
+        faces.extend(std::iter::repeat_n(1, 600));
+        game.dice = Dice::from_faces(faces);
+
+        let mut saw_pause = false;
+        for _ in 0..30 {
+            if game
+                .legal_options()
+                .is_some_and(|choice| choice.ids().contains(&"fwp"))
+            {
+                saw_pause = true;
+                assert!(
+                    game.aftermath.is_some(),
+                    "the tactical continuation is retained"
+                );
+                assert!(
+                    game.event_scoring.is_some(),
+                    "the barrage opened the event window"
+                );
+                let seat = game.state.player(&a).unwrap();
+                assert_eq!(
+                    seat.munitions_round,
+                    Some(1),
+                    "the paid marker survives the pause"
+                );
+                assert_eq!(seat.trade_goods, 2, "the cost was paid before the pause");
+                assert_eq!(game.step().error, None, "declining closes the window");
+                break;
+            }
+            assert_eq!(game.step().error, None, "the sequence remains legal");
+        }
+        assert!(saw_pause, "the barrage never reached its scoring pause");
+
+        // Fifty rounds of mutual misses; each round costs a few steps (offer, auto-advance), so
+        // allow plenty.
+        for _ in 0..600 {
+            assert_eq!(game.step().error, None, "the paused combat resumes cleanly");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "SPACE_COMBAT_RESOLVED"),
+            "events: {:?}, rolls: {:?}",
+            game.events,
+            game.dice.history()
+        );
+
+        // The marker was honored exactly once — in the round it was paid for — and expired by
+        // identity when the next round opened, not because of the pause.
+        let rerolls = game
+            .dice
+            .history()
+            .iter()
+            .filter(|roll| roll.reason.starts_with("munitions:"))
+            .count();
+        assert_eq!(rerolls, 1, "rolls: {:?}", game.dice.history());
+
+        // The round-2 offer appeared and was declined rather than inherited.
+        let payments = game
+            .table
+            .log
+            .records
+            .iter()
+            .filter(|r| r.chosen == "munitions")
+            .count();
+        assert_eq!(payments, 1, "log: {:?}", game.table.log);
+        let paid_at = game
+            .table
+            .log
+            .records
+            .iter()
+            .position(|r| r.chosen == "munitions")
+            .expect("the round-1 payment is logged");
+        assert!(
+            game.table.log.records[paid_at + 1..]
+                .iter()
+                .any(|r| r.chosen == "decline" && r.offered.contains(&"munitions".to_owned())),
+            "round 2 re-offered the ability: {:?}",
+            game.table.log
+        );
+    }
+
+    /// Commits the invader's ground forces to one planet and nothing else; ground-combat
+    /// prompts (fight, casualty assignments) take their first option.
+    struct CommitTo(ti4_model::id::PlanetId);
+
+    impl crate::choice::Decider for CommitTo {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            let wanted = format!("commit|0|{}", self.0.as_str());
+            if let Some(option) = choice.options.iter().find(|o| o.id == wanted) {
+                return Ok(option.clone());
+            }
+            if let Some(done) = choice.options.iter().find(|o| o.id == "done_committing") {
+                return Ok(done.clone());
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or(crate::choice::IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one fixture plus one assertion per pause-stage transition"
+    )]
+    fn the_home_loss_pause_holds_the_invasion_at_finalizing_control() {
+        // The home-loss scoring pause holds the invasion at FinalizingControl: occurrences
+        // queue in Game-level order, control transfers before the pause, capture happens
+        // exactly once, and the window resumes to done after the second settle.
+        //
+        // Under current engine behavior (finding F-M07-019-1) b's structures count as ground
+        // defenders, so they are destroyed in the fight and `standing` at the pause is a's own
+        // infantry — the conversion assertions below are vacuous today. They become load-
+        // bearing when that finding is fixed: the planet then falls without resistance,
+        // `standing` holds b's three structures at the pause, and after the resume they must be
+        // converted one-for-one to a's l1z1x variants; the fix package must also strengthen the
+        // ownership assertion to check for the l1z1x_ variants (M07-019 review M1c). Assimilate's
+        // conversion itself is covered by the direct `control_gained` tests in faction_abilities.rs.
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = {
+            let players = [PlayerId::new("a"), PlayerId::new("b")];
+            let state = start_game(content, &players, POK, None).unwrap();
+            let planets = ti4_content::galaxy::all_planets(content, POK);
+            let (id, p) = planets
+                .iter()
+                .find(|(_, p)| {
+                    p.system_id().is_some()
+                        && !p.is_placed_during_play()
+                        && p.system_id() != Some(crate::seating::MECATOL)
+                })
+                .expect("the corpus has a placed planet outside Mecatol Rex");
+            (
+                state,
+                SystemId::new(p.system_id().unwrap()),
+                ti4_model::id::PlanetId::new(*id),
+            )
+        };
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("l1z1x");
+        state.player_mut(&b).unwrap().home_system = Some(system.clone());
+        state.player_mut(&b).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("bam")];
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
+        for kind in ["pds", "pds", "spacedock"] {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(Unit::new(ti4_model::id::UnitTypeId::new(kind), b.clone()));
+        }
+        for _ in 0..3 {
+            state.system_mut(&system).units.push(Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                a.clone(),
+            ));
+        }
+
+        let mut dice = Dice::new();
+        let mut rng = crate::rng::GameRng::new(1);
+        let mut table = Table::with_default(Box::new(CommitTo(planet.clone())));
+        let mut window = crate::invasion::InvasionWindow::new(
+            &mut state, content, POK, &mut dice, &mut rng, &a, &system,
+        );
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        // Commit the ground forces and fight through to control. The sequence mirrors what a
+        // Game-level driver sees: the ground-combat win queues its scoring occurrence first;
+        // only once that window closes does the invasion settle forward — establishing control
+        // and queueing the home-loss occurrence, which pauses it at FinalizingControl before
+        // any gain-control effect may run.
+        crate::choice::Window::drive(&mut window, &mut state, &mut ctx).unwrap();
+
+        let (ground_occ, ground_is_combat) = window
+            .take_scoring_occurrence()
+            .expect("the ground-combat win creates a scoring occurrence");
+        assert!(ground_is_combat, "the combat win is a combat occurrence");
+        assert!(state.did_at_occurrence(&a, Feat::WonInARivalHome, ground_occ));
+
+        // The first window closes; the invasion settles forward to control.
+        window.settle(&mut state, &mut ctx);
+        let (occurrence, combat) = window
+            .take_scoring_occurrence()
+            .expect("the control loss creates a scoring occurrence");
+        assert!(!combat, "control loss is not a combat occurrence");
+        assert!(state.did_at_occurrence(&b, Feat::LostAHomePlanet, occurrence));
+
+        let has_l1z1x = |units: &[Unit]| {
+            units
+                .iter()
+                .any(|unit| unit.type_id.as_str().starts_with("l1z1x_"))
+        };
+        let standing = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap();
+        assert!(
+            !has_l1z1x(&standing),
+            "no conversion has run before the window closes: {standing:?}"
+        );
+        // Control itself already changed hands before the pause (establish_control runs first);
+        // what waits is the gain-control effect.
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&a)
+        );
+
+        window.settle(&mut state, &mut ctx);
+        assert!(
+            window.is_done(),
+            "the retained invasion resumes after scoring"
+        );
+        let report = window.into_report();
+        assert_eq!(report.captured, vec![(planet.clone(), Some(b.clone()))]);
+
+        // Whatever stood on the planet at the pause must be either gone or converted — never
+        // duplicated, never left rival-owned, and nothing created out of nothing. Vacuous under
+        // current behavior (see F-M07-019-1); load-bearing once structures stop triggering
+        // ground combat.
+        let after = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            after.len(),
+            standing.len(),
+            "no unit is duplicated or lost: {after:?}"
+        );
+        assert!(
+            after.iter().all(|unit| unit.owner == a),
+            "nothing is left rival-owned after the resume: {after:?}"
+        );
+    }
+
+    #[test]
+    fn flank_speed_expires_at_the_activation_boundary_across_a_scoring_pause() {
+        // Flank Speed scopes its +1 to the tactical action it is played in. A scoring pause
+        // inside that action must not advance the activation identity early, and the bonus must
+        // expire exactly when the next activation begins.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().action_cards = vec![ti4_model::id::ActionCardId::new("fs1")];
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("fwp")];
+        state.player_mut(&b).unwrap().secret_objectives.clear();
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 2);
+        // b's only ship is a fighter: the anti-fighter barrage takes it, so the fight ends
+        // right after its scoring pause — no rounds, no casualty choices to script around.
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 1);
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            // The after-activation window asks for the guarded slot; with exactly one playable
+            // card in hand, playing it is not a further choice — the slot plays it directly.
+            "reaction:generic:SYSTEM_ACTIVATED:after".to_owned(),
+            "done_moving".to_owned(),
+            "decline".to_owned(), // the barrage's fwp window
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        // Four anti-fighter dice (two per destroyer), all hits. The fight is already over by
+        // then, but the round still rolls: a's two destroyers roll once more against nothing.
+        game.dice = Dice::from_faces([10, 10, 10, 10, 1, 1]);
+
+        let mut saw_pause = false;
+        for _ in 0..30 {
+            if game
+                .legal_options()
+                .is_some_and(|choice| choice.ids().contains(&"fwp"))
+            {
+                saw_pause = true;
+                let activation = game.state.activation_seq;
+                assert_eq!(
+                    game.state.player(&a).unwrap().move_bonus_activation,
+                    Some(activation),
+                    "the bonus is still scoped to this activation during the pause"
+                );
+                let content = ContentStore::embedded();
+                let types = ti4_content::units::catalogue(content, POK);
+                let destroyer = types.get("destroyer").expect("the corpus has a destroyer");
+                assert_eq!(
+                    crate::tactical::effective_move_value_with_gravity(
+                        &game.state,
+                        destroyer,
+                        &a,
+                        &ids[0],
+                        false
+                    ),
+                    3,
+                    "base 2 plus the live Flank Speed bonus"
+                );
+                let paused_at = game.state.activation_seq;
+                assert_eq!(paused_at, 1, "one activation has happened so far");
+                assert_eq!(game.step().error, None, "declining closes the window");
+                break;
+            }
+            assert_eq!(game.step().error, None, "the sequence remains legal");
+        }
+        assert!(saw_pause, "the barrage never reached its scoring pause");
+
+        for _ in 0..40 {
+            assert_eq!(game.step().error, None, "the paused combat resumes cleanly");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        // The pause neither advanced the activation identity nor cleared the marker: it still
+        // names this action's activation, and simply stops matching once the next one begins.
+        assert_eq!(
+            game.state.activation_seq, 1,
+            "the pause did not advance the sequence"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().move_bonus_activation,
+            Some(1),
+            "the marker is not cleared early; it simply stops matching"
+        );
+        assert_eq!(crate::action_cards::move_bonus(&game.state, &a, 1), 1);
+        assert_eq!(
+            crate::action_cards::move_bonus(&game.state, &a, 2),
+            0,
+            "expired by identity at the next activation"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one fixture plus one assertion per pause-stage transition"
+    )]
+    fn te_breakthrough_survives_the_combat_scoring_pause() {
+        // A Thunder's Edge expedition grants a persistent breakthrough. The tactical action that
+        // follows can pause mid-combat on an event-scoped secret; the TE state and its effect
+        // must be intact when it resumes.
+        use ti4_model::content_types::FULL;
+        let content = ContentStore::embedded();
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(content, &players, FULL, None).unwrap();
+        let ids: Vec<String> = ti4_content::galaxy::all_systems(content, FULL)
+            .iter()
+            .filter(|(_, system)| !system.is_anomaly() && !system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned())
+            .take(7)
+            .collect();
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let galaxy = ti4_content::galaxy::Galaxy::build(content, &refs, FULL, 1).unwrap();
+        let ids: Vec<SystemId> = ids.into_iter().map(SystemId::new).collect();
+
+        state.phase = Phase::Action;
+        state.active = Some(PlayerId::new("a"));
+        let a = PlayerId::new("a");
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&a).unwrap().trade_goods = 3;
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("fwp")];
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives
+            .clear();
+
+        // The expedition: spend 3 trade goods for the trade_goods slice; the first slice grants
+        // Letnev's breakthrough.
+        let option = crate::thunders_edge::available_actions(&state, content, FULL, &a)
+            .into_iter()
+            .find(|option| option.id == "component|expedition|trade_goods")
+            .expect("the trade_goods slice is offered");
+        let mut setup_table = Table::new();
+        assert!(
+            crate::thunders_edge::perform(
+                &mut state,
+                content,
+                FULL,
+                None,
+                &mut setup_table,
+                &a,
+                &option
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            state.player(&a).unwrap().breakthrough,
+            Some(ti4_model::id::BreakthroughId::new("letnevbt"))
+        );
+
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 2);
+        // One more destroyer in the neighbouring system: moving it establishes letnevbt's
+        // Gravleash origin anchor before combat starts.
+        crate::fixtures::put(&mut state, &ids[1], "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &PlayerId::new("b"), 1);
+        // Four cruisers: the barrage takes the fighter, and round one's four hits wipe a's
+        // three destroyers so the fight ends in exactly one round.
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &PlayerId::new("b"), 4);
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+            "done_moving".to_owned(),
+            "decline".to_owned(), // the barrage's fwp window
+        ])));
+        let mut game = Game::with_table(state, content, table)
+            .with_galaxy(galaxy)
+            .with_sources(FULL);
+        // Six anti-fighter dice (three destroyers after the move), all hits; round one: a
+        // misses with three dice while b's four cruisers all hit and end the fight.
+        game.dice = Dice::from_faces([10, 10, 10, 10, 10, 10, 1, 1, 1, 7, 7, 7, 7]);
+
+        let mut saw_pause = false;
+        for _ in 0..30 {
+            if game
+                .legal_options()
+                .is_some_and(|choice| choice.ids().contains(&"fwp"))
+            {
+                saw_pause = true;
+                assert_eq!(
+                    game.state.expedition_slices.get("trade_goods"),
+                    Some(&a),
+                    "the claimed slice survives the pause"
+                );
+                assert_eq!(
+                    game.state.player(&a).unwrap().breakthrough,
+                    Some(ti4_model::id::BreakthroughId::new("letnevbt")),
+                    "the breakthrough is intact during the pause"
+                );
+                assert_eq!(
+                    game.state.gravleash_move_values.get(&ids[1]),
+                    Some(&2),
+                    "the Gravleash anchor established by the move survives the pause"
+                );
+                assert_eq!(game.step().error, None, "declining closes the window");
+                break;
+            }
+            assert_eq!(game.step().error, None, "the sequence remains legal");
+        }
+        assert!(saw_pause, "the barrage never reached its scoring pause");
+
+        for _ in 0..40 {
+            assert_eq!(game.step().error, None, "the paused combat resumes cleanly");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        let seat = game.state.player(&a).unwrap();
+        assert_eq!(
+            seat.breakthrough,
+            Some(ti4_model::id::BreakthroughId::new("letnevbt")),
+            "the breakthrough is intact after the pause"
+        );
+        assert_eq!(game.state.expedition_slices.get("trade_goods"), Some(&a));
+        // The anchor outlives the tactical action: it is per-origin state, not per-action.
+        assert_eq!(game.state.gravleash_move_values.get(&ids[1]), Some(&2));
+    }
+
     #[test]
     fn the_last_pass_opens_its_own_action_occurrence_before_status() {
         let a = PlayerId::new("a");

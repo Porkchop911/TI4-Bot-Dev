@@ -2092,3 +2092,54 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   `plans/M07-019_POST_M06_REVALIDATION.md`; dependencies met: M06-024 accepted, M07-018 part of
   the accepted M07 baseline). Create its package branch from this closure commit and follow the
   standard package loop.
+
+## Checkpoint — M07-019 accepted, corrections applied, commit pending (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-019 (post-M06 faction/TE integration revalidation).
+- **Branch and HEAD:** `wp/m07-019-post-m06-revalidation` from closure commit `b721a9a`; no package
+  commit yet — independent Tier B review is in, all corrections applied; the scoped commit follows.
+- **Working tree (active-package paths):** `crates/ti4-engine/src/game.rs` (+588/−0, test module
+  only), `plans/evidence/M07-019.md` (new), `plans/M07-019_POST_M06_REVALIDATION.md` (spec,
+  untracked→accepted status), `plans/M07-019_OPEN_REVIEW_ITEMS.md` (review + resolution, new),
+  `plans/M07_FACTIONS_AND_TE.md` (M07-021 row added to the work-package table), and this file.
+  Pre-existing unrelated changes preserved untouched: `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md` (operator-directed toolchain note, pre-dating this package)
+  and the untracked M07-020 / M08-018 / M08-019 prep specs.
+- **What was done:** four nested-window regression tests in `game.rs` pinning faction/TE effects
+  across M06 event-scoped scoring pauses: (1) Munitions Reserves marker survives the fwp barrage
+  pause, round-2 offer declined rather than inherited; (2) home-loss pause holds the invasion at
+  FinalizingControl — occurrences in Game-level order, control transferred pre-pause, exactly-once
+  capture (conversion assertions documented as vacuous until F-M07-019-1 is fixed); (3) Flank Speed
+  expires by activation-sequence identity across the pause; (4) TE breakthrough + slice + Gravleash
+  anchor survive the combat scoring pause. No demonstrated M06 regression required a source fix.
+- **Independent Tier B review (Claude Opus 5, `plans/M07-019_OPEN_REVIEW_ITEMS.md`): ACCEPT** with
+  one required correction (M1) — all applied and recorded in its Resolution section: M1(a) evidence
+  corrected (conversion assertions vacuous under current behavior), M1(b) test renamed to
+  `the_home_loss_pause_holds_the_invasion_at_finalizing_control`, M1(c) Assimilate-after-pause
+  coverage added as a required deliverable of the F-M07-019-1 fix package. Reviewer independently
+  mutation-confirmed tests 1 and 3 as load-bearing across the pause; confirmed both findings.
+- **Findings (recorded, not fixed):** F-M07-019-1 structures count as ground defenders in
+  `invasion.rs::defender_on` (official LRR: planet falls without resistance absent enemy ground
+  forces; pre-dates M06; changes invasion legality/timing semantics → frontier adjudication required
+  before any fix package). F-M07-019-2 phantom round rolls after a total-wipe fwp pause (dice-stream
+  position only — reviewer confirmed round identity/events/ability offers cannot diverge because they
+  live inside the `if run_barrage` block; minor, known-difference ledger entry warranted). F-M07-019-3
+  (review M2) `Player.event_feats` missing from state equality → **scoped as child package M07-021**
+  (prep spec written; milestone-plan row added with hard ordering: must complete before M07-020).
+- **Tests last run and exact results:** four tests pass individually under final names; engine
+  **843 + 5 doctests**; workspace **1,316 / 0** (post-correction run; the pre-correction determinism
+  pair stands for the unchanged test bodies); replay suite 4/4 and registry suite 8/8 at first pass.
+- **Checks:** Clippy zero warnings in added code (two new too-many-lines sites from the reviewer's
+  first pass resolved with targeted `#[allow]` + reason per M3; only the three documented pre-
+  existing crate-wide warnings remain); game.rs rustfmt-clean under edition 2024; `git diff --check`
+  clean.
+- **Decisions:** test-only package — findings escalated rather than fixed because their fix paths
+  (`invasion.rs`, `combat.rs`, `ti4-model`) are outside this package's writable declarations;
+  M3 resolved with local lint allows (codebase precedent) rather than splitting tests; M2 scoped as
+  child rather than deferred silently. Redaction invariant holds by construction (M4 informational:
+  no leak today, nothing pins the judgement — recorded).
+- **Open review findings or blockers:** none open from Tier B. F-M07-019-1 awaits frontier
+  adjudication before its fix package is scoped; M07-021 is ready to schedule.
+- **Next exact action:** commit the scoped paths on `wp/m07-019-post-m06-revalidation` (game.rs,
+  evidence, spec, review items + resolution, milestone-plan row, this file); then M07-021
+  (`event_feats` projection) before M07-020's exit review.

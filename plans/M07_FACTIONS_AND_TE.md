@@ -9,7 +9,9 @@ rules and versioned Rust specifications.
 
 Rows 001–018 retain the historical comparison evidence under which they were
 executed. Python parity is no longer an acceptance criterion. Rows 019–020
-revalidate the accepted Rust scope after M06's event-window correction.
+revalidate the accepted Rust scope after M06's event-window correction. Row
+021 closes a state-equality projection gap found during the M07-019 review
+and must complete before row 020.
 
 | ID | Package | Depends | Historical source / normative context | Deliverable and acceptance test |
 |---|---|---|---|---|
@@ -32,7 +34,8 @@ revalidate the accepted Rust scope after M06's event-window correction.
 | M07-017 | Faction differential suite | 002–016 | all faction/TE tests | Choices, events, state, and coverage match selected oracle cases. |
 | M07-018 | Frontier coverage review | 001–017 | — | Verify no corpus-only record is falsely called implemented and no branch behavior is omitted. |
 | M07-019 | Post-M06 faction/TE integration revalidation | M06-024,M07-018 | Accepted Rust faction/TE scope; FFG objective timing | Run faction integration/scoped-effect/full-workspace gates with nested secret windows; fix only demonstrated regressions. |
-| M07-020 | Reopened frontier exit review | 019 | — | Resolve timing/effect-scope/coverage findings and reaffirm the accepted faction/TE scope. |
+| M07-020 | Reopened frontier exit review | 019, 021 | — | Resolve timing/effect-scope/coverage findings and reaffirm the accepted faction/TE scope. |
+| M07-021 | `event_feats` state-equality projection (child of M07-019 review M2) | 019 | `ti4-model` `Player::PartialEq`; M06 occurrence model | Include `Player.event_feats` in state equality (or record an explicit exclusion with reason); the direct-vs-stepped equivalence invariant must be able to fail on feat evidence. Prep spec: `plans/M07-021_EVENT_FEATS_PROJECTION.md`. Must complete before 020. |
 
 ## Exit gate
 
