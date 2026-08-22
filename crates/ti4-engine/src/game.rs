@@ -3417,18 +3417,17 @@ mod tests {
         reason = "one fixture plus one assertion per pause-stage transition"
     )]
     fn the_home_loss_pause_holds_the_invasion_at_finalizing_control() {
-        // The home-loss scoring pause holds the invasion at FinalizingControl: occurrences
-        // queue in Game-level order, control transfers before the pause, capture happens
-        // exactly once, and the window resumes to done after the second settle.
+        // The home-loss scoring pause holds the invasion at FinalizingControl: control
+        // transfers before the pause, capture happens exactly once, and the window resumes to
+        // done after the settle that follows the scoring window.
         //
-        // Under current engine behavior (finding F-M07-019-1) b's structures count as ground
-        // defenders, so they are destroyed in the fight and `standing` at the pause is a's own
-        // infantry — the conversion assertions below are vacuous today. They become load-
-        // bearing when that finding is fixed: the planet then falls without resistance,
-        // `standing` holds b's three structures at the pause, and after the resume they must be
-        // converted one-for-one to a's l1z1x variants; the fix package must also strengthen the
-        // ownership assertion to check for the l1z1x_ variants (M07-019 review M1c). Assimilate's
-        // conversion itself is covered by the direct `control_gained` tests in faction_abilities.rs.
+        // LRR 49 (KD-2): b's planet holds only structures, which are not ground forces, so it
+        // falls without resistance — no fight is offered at all. At the pause the three rival
+        // structures still stand unconverted; after the resume, Assimilate converts them
+        // one-for-one to a's own (L1Z1X has no structure variants of its own, so they come back
+        // as generic pds/spacedock owned by a), and nothing is left rival-owned. Assimilate's
+        // conversion itself is covered by the direct `control_gained` tests in
+        // faction_abilities.rs.
         let content = ContentStore::embedded();
         let (mut state, system, planet) = {
             let players = [PlayerId::new("a"), PlayerId::new("b")];
@@ -3487,40 +3486,40 @@ mod tests {
             timing: None,
         };
 
-        // Commit the ground forces and fight through to control. The sequence mirrors what a
-        // Game-level driver sees: the ground-combat win queues its scoring occurrence first;
-        // only once that window closes does the invasion settle forward — establishing control
-        // and queueing the home-loss occurrence, which pauses it at FinalizingControl before
-        // any gain-control effect may run.
+        // Commit the ground forces and take control. The sequence mirrors what a Game-level
+        // driver sees: with no rival ground forces on the planet there is no fight, so the
+        // invasion settles straight to control — establishing it and queueing the home-loss
+        // occurrence, which pauses at FinalizingControl before any gain-control effect may run.
         crate::choice::Window::drive(&mut window, &mut state, &mut ctx).unwrap();
 
-        let (ground_occ, ground_is_combat) = window
-            .take_scoring_occurrence()
-            .expect("the ground-combat win creates a scoring occurrence");
-        assert!(ground_is_combat, "the combat win is a combat occurrence");
-        assert!(state.did_at_occurrence(&a, Feat::WonInARivalHome, ground_occ));
-
-        // The first window closes; the invasion settles forward to control.
-        window.settle(&mut state, &mut ctx);
         let (occurrence, combat) = window
             .take_scoring_occurrence()
             .expect("the control loss creates a scoring occurrence");
         assert!(!combat, "control loss is not a combat occurrence");
         assert!(state.did_at_occurrence(&b, Feat::LostAHomePlanet, occurrence));
 
-        let has_l1z1x = |units: &[Unit]| {
-            units
-                .iter()
-                .any(|unit| unit.type_id.as_str().starts_with("l1z1x_"))
-        };
         let standing = state
             .system_state(&system)
             .planet_units
             .get(&planet)
             .cloned()
             .unwrap();
-        assert!(
-            !has_l1z1x(&standing),
+        // The planet fell without resistance: at the pause b's three structures still stand,
+        // unconverted — Assimilate runs only when the window closes.
+        assert_eq!(
+            standing.len(),
+            6,
+            "a's infantry plus b's intact structures: {standing:?}"
+        );
+        let rival_structures = standing
+            .iter()
+            .filter(|unit| {
+                unit.owner == b
+                    && (unit.type_id.as_str() == "pds" || unit.type_id.as_str() == "spacedock")
+            })
+            .count();
+        assert_eq!(
+            rival_structures, 3,
             "no conversion has run before the window closes: {standing:?}"
         );
         // Control itself already changed hands before the pause (establish_control runs first);
@@ -3538,10 +3537,9 @@ mod tests {
         let report = window.into_report();
         assert_eq!(report.captured, vec![(planet.clone(), Some(b.clone()))]);
 
-        // Whatever stood on the planet at the pause must be either gone or converted — never
-        // duplicated, never left rival-owned, and nothing created out of nothing. Vacuous under
-        // current behavior (see F-M07-019-1); load-bearing once structures stop triggering
-        // ground combat.
+        // Assimilate converted the structures one-for-one — L1Z1X has no structure variants of
+        // its own, so they come back as generic pds/spacedock owned by a. Nothing is duplicated,
+        // lost, or left rival-owned.
         let after = state
             .system_state(&system)
             .planet_units
@@ -3556,6 +3554,22 @@ mod tests {
         assert!(
             after.iter().all(|unit| unit.owner == a),
             "nothing is left rival-owned after the resume: {after:?}"
+        );
+        let count = |units: &[Unit], id: &str| {
+            units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == id)
+                .count()
+        };
+        assert_eq!(
+            count(&after, "pds"),
+            2,
+            "one-for-one PDS conversion: {after:?}"
+        );
+        assert_eq!(
+            count(&after, "spacedock"),
+            1,
+            "one-for-one spacedock conversion: {after:?}"
         );
     }
 

@@ -2,16 +2,26 @@
 
 ## Preparation status
 
-Dependency-safe specification only. Scoped by the M07-020 frontier adjudication of finding
-F-M07-019-1 (see `plans/M07-020_OPEN_REVIEW_ITEMS.md`, R1, and `plans/evidence/M07-020.md`).
-Begin only after M08-017 is accepted; **must complete before M08-018** so that the post-M07 bot
-revalidation — and every downstream baseline built on it — runs against corrected behavior.
+**Accepted 2026-08-22.** Independent Tier-C frontier review (`plans/M08-020_OPEN_REVIEW_ITEMS.md`):
+accept with T1 required before commit — resolved by recording KD-5 and scoping child package
+M08-022 (ti4-content is outside this package's writable paths); T2 evidence correction applied;
+T3 recorded. Note: item 4's "l1z1x_ variants" wording was corpus-corrected during implementation —
+L1Z1X has no structure variants, so the load-bearing assertion is one-for-one base-type count
+preservation plus invader ownership (see evidence, Design decisions; the reviewer confirmed this
+was the right call). Evidence: `plans/evidence/M08-020.md`.
+
+**Started 2026-08-22.** Base commit `734de3f` (M08-017 closure). Branch
+`wp/m08-020-ground-combat-structure-legality`. Scoped by the M07-020 frontier adjudication of
+finding F-M07-019-1 (see `plans/M07-020_OPEN_REVIEW_ITEMS.md`, R1, and `plans/evidence/
+M07-020.md`). Dependencies met: M07-020 accepted, M08-017 closed. **Must complete before
+M08-018** so that the post-M07 bot revalidation — and every downstream baseline built on it,
+including M08-021's distribution baseline — runs against corrected behavior.
 
 | Field | Value |
 |---|---|
 | Milestone | M08 — Authored bots |
-| Depends | accepted M07-020 (adjudication), M08-017 |
-| Blocks | M08-018 (hard ordering) |
+| Depends | accepted M07-020 (adjudication), M08-017 ✅ |
+| Blocks | M08-018, M08-021 (hard ordering) |
 | Permission class | P1 |
 | Review tier | C — legality/timing semantics of invasions (frontier model per AGENTS.md) |
 

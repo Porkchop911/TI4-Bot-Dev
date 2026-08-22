@@ -24,22 +24,6 @@ the F2 finding of the M06-024 reopened review.
   under D11's six-faction roster. Any future package that widens the roster must re-verify baf/sb
   activation for those notes before citing their scoring behavior.
 
-### KD-2 — structures count as ground defenders (accepted at M07 closure, 2026-08-22)
-
-`invasion.rs::defender_on` counts any rival unit on a planet — including PDS and Space Dock,
-which roll no dice — as a ground defender. Official LRR rule 49: a planet with no enemy *ground
-forces* falls without resistance. Source: F-M07-019-1 (`plans/evidence/M07-019.md`), adjudicated
-at M07-020 (R1, option 2 — accepted as a recorded known difference).
-
-- **Blast radius (adjudicated):** bounded. Structures roll no dice, so the invader takes no
-  casualties from them and always wins the spurious fight; final control outcome unchanged. The
-  observable differences are which step destroys structures (combat vs control transfer) plus the
-  dice and choices the spurious fight consumes. L1Z1X Assimilate's structure conversion is
-  unreachable through `InvasionWindow` until fixed.
-- **Fix:** scoped as **M08-020** (`plans/M08-020_GROUND_COMBAT_STRUCTURE_LEGALITY.md`) with hard
-  ordering before M08-018, so bot revalidation and all downstream baselines run against corrected
-  behavior. This entry leaves the ledger when M08-020 is accepted and committed.
-
 ### KD-3 — phantom dice consumption after a total-wipe fwp scoring pause (accepted at M07 closure)
 
 When round-1 Anti-Fighter Barrage both records `BarrageTookTheLastFighters` and destroys one side's
@@ -66,6 +50,24 @@ M07-020 campaign (F-M07-020-2).
   it would change how bots choose before improving anything. It is pinned by a naming test
   (`the_gaps_this_view_still_has_are_named`), so redacting it later is a deliberate act, not an
   accident. Any package that closes this gap must re-baseline bot behavior and say so in evidence.
+
+### KD-5 — `is_ground_force()` misses Hel-Titan I (recorded at M08-020 acceptance, review T1)
+
+`UnitType::is_ground_force()` hardcodes `titans_pds2` instead of reading the corpus's own
+`isGroundForce` flag; `titans_pds` (Hel-Titan I — rolls a die at 7, flagged in the corpus) is not
+classified as a ground force. Before M08-020 this was benign (any rival unit contested a planet);
+after it, a Hel-Titan-I-only planet falls without resistance and the unit can never be assigned a
+combat casualty. Source: T1 (`plans/M08-020_OPEN_REVIEW_ITEMS.md`).
+
+- **Dormancy:** Titans is not in D11's six-faction roster, so no affected unit can exist on a
+  board today — structurally blocked, like M06-025's L1. It fires the moment the roster widens.
+- **Fix constraint (carried into the fix):** a bare flag read would also drop the two unflagged
+  Naaz space mechs (`naaz_mech_space`, `absol_naaz_mech_space`) that the base-type match catches;
+  the predicate switch must be preceded by an explicit recorded decision on them (union semantics
+  recommended — see spec).
+- **Fix:** scoped as **M08-022** (`plans/M08-022_TITANS_PDS_GROUND_FORCE_PREDICATE.md`),
+  hard-ordered before any D11 roster widening; does not block M08-018/021. This entry leaves the
+  ledger when M08-022 is accepted and committed.
 
 ## Mechanism limitations (engine-internal)
 

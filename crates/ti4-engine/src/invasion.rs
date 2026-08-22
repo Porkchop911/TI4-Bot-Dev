@@ -412,11 +412,19 @@ fn absorb_ground(
     planet: &PlanetId,
     hits: usize,
 ) -> Result<(), IllegalChoice> {
+    let types = catalogue(content, sources);
     for _ in 0..hits {
+        // LRR 42: only ground forces take hits in a ground combat; structures survive the
+        // fight and die when control changes hands instead (KD-2).
         let present: Vec<Unit> = state
             .system_state(system)
             .on_planet_of(planet, player)
             .into_iter()
+            .filter(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ground_force)
+            })
             .cloned()
             .collect();
         if present.is_empty() {
@@ -473,27 +481,20 @@ pub fn ground_combat(
     planet: &PlanetId,
     invader: &PlayerId,
 ) -> Result<Option<PlayerId>, IllegalChoice> {
-    let defender = state
-        .system_state(system)
-        .on_planet(planet)
-        .iter()
-        .find(|unit| &unit.owner != invader)
-        .map(|unit| unit.owner.clone());
+    // LRR 42: only rival ground forces make this a fight; structures do not (KD-2).
+    let defender = ground_force_owners(state, content, sources, system, planet)
+        .into_iter()
+        .find(|owner| owner != invader);
     let Some(defender) = defender else {
         return Ok(Some(invader.clone()));
     };
 
     for _ in 1..=MAX_ROUNDS {
         state.combat_round_seq = state.combat_round_seq.saturating_add(1);
-        let attacking = !state
-            .system_state(system)
-            .on_planet_of(planet, invader)
-            .is_empty();
-        let defending = !state
-            .system_state(system)
-            .on_planet_of(planet, &defender)
-            .is_empty();
-        if !attacking || !defending {
+        // 42.3: the fight ends when one side has no ground forces left — structures never
+        // fight (KD-2).
+        let owners = ground_force_owners(state, content, sources, system, planet);
+        if !owners.contains(invader) || !owners.contains(&defender) {
             break;
         }
 
@@ -619,6 +620,33 @@ enum Stage {
         previous: Option<PlayerId>,
     },
     Done,
+}
+
+/// LRR 49/42: who has ground forces on `planet`.
+///
+/// Only ground forces make a planet contested and can be casualties of a ground combat.
+/// Structures roll no dice; a planet holding only rival structures falls without resistance,
+/// and its structures are destroyed when control changes hands (KD-2). The Titans' PDS is the
+/// one structure that is also a ground force, so it fights like infantry here.
+fn ground_force_owners(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    planet: &PlanetId,
+) -> std::collections::BTreeSet<PlayerId> {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .on_planet(planet)
+        .iter()
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_ground_force)
+        })
+        .map(|unit| unit.owner.clone())
+        .collect()
 }
 
 /// An invasion, resolvable one decision at a time (LRR 49).
@@ -819,17 +847,30 @@ impl InvasionWindow {
             &planet,
         );
         state.combat_round_seq = state.combat_round_seq.saturating_add(1);
-        remove_ground(state, &self.system, &planet, &defender, attacker_hits);
-        remove_ground(state, &self.system, &planet, &self.invader, defender_hits);
+        remove_ground(
+            state,
+            content,
+            sources,
+            &self.system,
+            &planet,
+            &defender,
+            attacker_hits,
+        );
+        remove_ground(
+            state,
+            content,
+            sources,
+            &self.system,
+            &planet,
+            &self.invader,
+            defender_hits,
+        );
 
-        let invader_survives = !state
-            .system_state(&self.system)
-            .on_planet_of(&planet, &self.invader)
-            .is_empty();
-        let defender_survives = !state
-            .system_state(&self.system)
-            .on_planet_of(&planet, &defender)
-            .is_empty();
+        // 42.3: the fight ends when one side has no ground forces left on the planet — not
+        // when its last structure falls, because structures never fight (KD-2).
+        let owners = ground_force_owners(state, content, sources, &self.system, &planet);
+        let invader_survives = owners.contains(&self.invader);
+        let defender_survives = owners.contains(&defender);
         if invader_survives && defender_survives {
             self.stage = Stage::Fighting {
                 planets,
@@ -879,16 +920,6 @@ impl InvasionWindow {
         }
     }
 
-    /// Who is defending `planet`, if anyone.
-    fn defender_on(&self, state: &GameState, planet: &PlanetId) -> Option<PlayerId> {
-        state
-            .system_state(&self.system)
-            .on_planet(planet)
-            .iter()
-            .find(|unit| unit.owner != self.invader)
-            .map(|unit| unit.owner.clone())
-    }
-
     /// Move to the next planet that still needs a fight, or finish and take control.
     fn advance_fighting(
         &mut self,
@@ -899,13 +930,16 @@ impl InvasionWindow {
     ) {
         while index < planets.len() {
             let planet = &planets[index];
-            let contested = self.defender_on(state, planet).filter(|_| {
-                !state
-                    .system_state(&self.system)
-                    .on_planet_of(planet, &self.invader)
-                    .is_empty()
-            });
-            if let Some(defender) = contested {
+            // LRR 49/42: a fight happens only where the invader landed ground forces and rival
+            // ground forces stand. Structures roll no dice and are not ground forces (KD-2): a
+            // structure-only planet falls without resistance, and its structures die when
+            // control changes hands instead of in a combat that never should have happened.
+            let owners = ground_force_owners(state, ctx.content, ctx.sources, &self.system, planet);
+            if !owners.contains(&self.invader) {
+                index += 1;
+                continue;
+            }
+            if let Some(defender) = owners.iter().find(|owner| **owner != self.invader).cloned() {
                 self.current_ground_occurrence = Some(state.begin_feat_occurrence());
                 self.stage = Stage::Fighting {
                     planets: planets.to_vec(),
@@ -994,6 +1028,31 @@ impl InvasionWindow {
             planet,
         );
 
+        // LRR 49: the rival structures left on a captured planet are destroyed as control
+        // changes hands — whatever Assimilate did not convert above. No rival ground force can
+        // stand here: the invader holds the planet only because every one of them is dead.
+        let types = catalogue(content, sources);
+        let standing = state
+            .system_state(&self.system)
+            .planet_units
+            .get(planet)
+            .cloned()
+            .unwrap_or_default();
+        let doomed: Vec<Unit> = standing
+            .into_iter()
+            .filter(|unit| {
+                unit.owner != self.invader
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::is_structure)
+            })
+            .collect();
+        if !doomed.is_empty() {
+            state
+                .system_mut(&self.system)
+                .remove_from_planet(planet, &doomed);
+        }
+
         // Two printed windows read "when you gain control of a planet", so a capture is
         // announced before the exploration that follows it.
         let mut payload = std::collections::BTreeMap::new();
@@ -1066,8 +1125,11 @@ impl Window for InvasionWindow {
                 // One casualty decision at a time; the roll itself happens on resolve.
                 let planet = planets.get(*index)?;
                 let _ = defender;
-                let board = state.system_state(&self.system);
-                if board.on_planet_of(planet, &self.invader).is_empty() {
+                // Unreachable in practice — resolve_ground_round leaves the stage the moment a
+                // side has no ground forces left — but guard on the same predicate as the fight.
+                if !ground_force_owners(state, content, sources, &self.system, planet)
+                    .contains(&self.invader)
+                {
                     return None;
                 }
                 Some(Choice::new(
@@ -1224,17 +1286,31 @@ fn note_ground_combat_win_feats(
 /// asking would be a decision between identical options.
 fn remove_ground(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     system: &SystemId,
     planet: &PlanetId,
     player: &PlayerId,
     hits: usize,
 ) {
+    let types = catalogue(content, sources);
     for _ in 0..hits {
-        let doomed = state
+        // LRR 42: only ground forces take hits in a ground combat; structures survive the
+        // fight and die when control changes hands instead (KD-2).
+        let present: Vec<Unit> = state
             .system_state(system)
             .on_planet_of(planet, player)
-            .first()
-            .map(|unit| (*unit).clone());
+            .into_iter()
+            .cloned()
+            .collect();
+        let doomed = present
+            .iter()
+            .find(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ground_force)
+            })
+            .cloned();
         let Some(doomed) = doomed else {
             return; // 15.2a
         };
@@ -1886,9 +1962,229 @@ mod tests {
         assert_eq!(dice.count(), 0, "nobody to fight");
     }
 
+    /// Like [`arena`], but never on Mecatol Rex, where the custodians token would change the
+    /// commit flow.
+    fn arena_off_mecatol() -> (GameState, SystemId, PlanetId) {
+        let state =
+            start_game(ContentStore::embedded(), &[invader(), holder()], POK, None).unwrap();
+        let planets = ti4_content::galaxy::all_planets(ContentStore::embedded(), POK);
+        let (id, p) = planets
+            .iter()
+            .find(|(_, p)| {
+                p.system_id().is_some()
+                    && !p.is_placed_during_play()
+                    && p.system_id() != Some(crate::seating::MECATOL)
+            })
+            .expect("the corpus has a placed planet outside Mecatol Rex");
+        (
+            state,
+            SystemId::new(p.system_id().unwrap()),
+            PlanetId::new(*id),
+        )
+    }
+
+    /// Commits every ground force to one planet, records every prompt it sees, and answers any
+    /// other prompt with its first option — enough to run a pre-fix engine through the spurious
+    /// fight without panicking.
+    struct CommitAndRecord {
+        planet: PlanetId,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    }
+
+    impl crate::choice::Decider for CommitAndRecord {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            self.seen.borrow_mut().push(choice.prompt.clone());
+            let wanted = format!("commit|0|{}", self.planet.as_str());
+            if let Some(option) = choice.options.iter().find(|o| o.id == wanted) {
+                return Ok(option.clone());
+            }
+            if let Some(done) = choice.options.iter().find(|o| o.id == "done_committing") {
+                return Ok(done.clone());
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or(crate::choice::IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    #[test]
+    fn a_structure_only_planet_falls_without_resistance() {
+        // LRR 49 (KD-2): structures are not ground forces, so a planet holding only rival
+        // structures is uncontested — it falls without resistance and its structures are
+        // destroyed when control changes hands. No fight prompt may ever be offered.
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        state.player_mut(&invader()).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), holder());
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "spacedock", &holder(), 1);
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(CommitAndRecord {
+            planet: planet.clone(),
+            seen: seen.clone(),
+        }));
+        // Pre-fix, the spurious fight consumes exactly these two faces in round one.
+        let mut dice = Dice::from_faces([10u32, 8]);
+        let mut rng = GameRng::new(7);
+        let mut window = InvasionWindow::new(
+            &mut state,
+            content,
+            POK,
+            &mut dice,
+            &mut rng,
+            &invader(),
+            &system,
+        );
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        while !window.is_done() {
+            crate::choice::Window::drive(&mut window, &mut state, &mut ctx).unwrap();
+            while window.take_scoring_occurrence().is_some() {}
+            window.settle(&mut state, &mut ctx);
+        }
+        let report = window.into_report();
+
+        assert!(
+            seen.borrow().iter().all(|prompt| !prompt.contains("fight")),
+            "no ground combat may be offered on a structure-only planet: {:?}",
+            seen.borrow()
+        );
+        assert!(
+            dice.rolled("ground combat").is_empty(),
+            "the spurious fight consumes no dice once it stops happening"
+        );
+        assert_eq!(report.captured, vec![(planet.clone(), Some(holder()))]);
+        let units = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            units.len(),
+            2,
+            "only the invader's ground forces remain: {units:?}"
+        );
+        assert!(
+            units
+                .iter()
+                .all(|unit| unit.owner == invader() && unit.type_id.as_str() == "infantry"),
+            "the rival structures are destroyed when control changes hands: {units:?}"
+        );
+    }
+
+    #[test]
+    fn structures_survive_a_legitimate_ground_fight_and_die_when_control_changes() {
+        // LRR 42 (KD-2): in a real ground combat only ground forces fight and take hits. The
+        // rival PDS must still stand when the last rival infantry dies; it is destroyed later,
+        // when control changes hands — not by a combat hit that could never target it.
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        state.player_mut(&invader()).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        // The combat win must be a rival-home win so its occurrence pauses the invasion at a
+        // point where the fight is over but control has not yet transferred.
+        state.player_mut(&holder()).unwrap().home_system = Some(system.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), holder());
+        // The PDS is stored first, so a pre-fix casualty pool (any unit) kills it on the
+        // first hit.
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(CommitAndRecord {
+            planet: planet.clone(),
+            seen: seen.clone(),
+        }));
+        // Round one only: the invader's two infantry hit (10, 8), the rival infantry misses
+        // (1). Both pre-fix and post-fix the fight ends after this round.
+        let mut dice = Dice::from_faces([10u32, 8, 1]);
+        let mut rng = GameRng::new(7);
+        let mut window = InvasionWindow::new(
+            &mut state,
+            content,
+            POK,
+            &mut dice,
+            &mut rng,
+            &invader(),
+            &system,
+        );
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        // Commit and fight to the combat-win pause: the win occurrence is queued before
+        // control transfers, so this is the moment to inspect what the fight itself destroyed.
+        crate::choice::Window::drive(&mut window, &mut state, &mut ctx).unwrap();
+        let (occurrence, is_combat) = window
+            .take_scoring_occurrence()
+            .expect("the combat win queues a scoring occurrence");
+        assert!(is_combat, "the pause holds the ground-combat win");
+        assert!(state.did_at_occurrence(&invader(), Feat::WonInARivalHome, occurrence));
+
+        let mid: Vec<Unit> = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            mid.iter()
+                .any(|unit| unit.type_id.as_str() == "pds" && unit.owner == holder()),
+            "the PDS survived the ground combat itself: {mid:?}"
+        );
+
+        while !window.is_done() {
+            while window.take_scoring_occurrence().is_some() {}
+            window.settle(&mut state, &mut ctx);
+        }
+        let report = window.into_report();
+
+        assert_eq!(report.captured, vec![(planet.clone(), Some(holder()))]);
+        let units = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            units
+                .iter()
+                .all(|unit| unit.owner == invader() && unit.type_id.as_str() == "infantry"),
+            "the PDS dies when control changes hands, not in the fight: {units:?}"
+        );
+    }
+
     #[test]
     fn an_invasion_with_no_troops_commits_nothing() {
         // 49.2c: straight on to Production.
+
         let (mut state, system, _) = arena();
         let (mut table, mut dice, mut rng) = kit();
 

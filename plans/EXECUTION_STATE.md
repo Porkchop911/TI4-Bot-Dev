@@ -2498,3 +2498,71 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   (both depend on M08-020); M08-019 last (deps M08-018 + M08-021).
 - **Next exact action:** commit this checkpoint's paths; then begin **M08-020** (ground-combat
   structure legality, Tier C frontier review per its spec).
+
+## Checkpoint — M08-020 implementation complete; Tier C frontier review pending (2026-08-22)
+
+- **Active milestone/package:** M08 / M08-020 (ground-combat structure legality, F-M07-019-1 fix).
+  Implementation complete on all six spec items; independent Tier C frontier review pending.
+- **Branch and HEAD:** `wp/m08-020-ground-combat-structure-legality`, base commit `734de3f`
+  (M08-017 closure); no package commit yet — held for review per protocol.
+- **What changed under crates/ (2 files, +392/−82):** `invasion.rs` — new
+  `ground_force_owners` helper; ground-force-only fight trigger (`defender_on` deleted);
+  ground-force-only casualty pools in both removal paths (`remove_ground`, `absorb_ground`);
+  ground-force-based fight termination (window + standalone `ground_combat`); rival-structure
+  destruction at control transfer in `finish_control_gain` after Assimilate. `game.rs` — test
+  module only: re-pointed `the_home_loss_pause_holds_the_invasion_at_finalizing_control` to the
+  corrected flow with load-bearing one-for-one conversion assertions (M1c, corpus-corrected:
+  L1Z1X has no structure variants, so base-type counts + ownership, not l1z1x_ prefixes).
+- **New tests:** `a_structure_only_planet_falls_without_resistance` (no fight prompt, no ground-
+  combat dice consumed, structures destroyed on capture) and
+  `structures_survive_a_legitimate_ground_fight_and_die_when_control_changes` (PDS survives the
+  fight at the combat-win pause; dies at control transfer). Both verified red-first against
+  temporarily reverted pre-fix semantics, then restored.
+- **Verification:** engine 847/0 + 5 doctests (+2 vs M08-017); workspace 1,321/0 identical ×2;
+  replay 4/4 (no golden fixture encodes spurious ground combat); Clippy zero new warnings (two
+  pre-existing: choice.rs:568, game.rs:1260 — pasted in evidence); touched files rustfmt-clean
+  (an accidental whole-crate reformat was reverted; pre-existing fmt debt in untouched files left
+  alone); `git diff --check` clean for package paths.
+- **Findings:** F-M08-020-1 (informational, deferred) — bombardment targets structures and counts
+  them in BombardedOutTheLastGroundForces; different rule step (49.1), out of scope by design;
+  revisit if M08-018/021 show it matters. KD-2 status line added to KNOWN_DIFFERENCES.md (entry
+  leaves the ledger on acceptance + commit).
+- **Working tree (active-package paths):** `crates/ti4-engine/src/invasion.rs`,
+  `crates/ti4-engine/src/game.rs` (test module), `plans/M08-020_GROUND_COMBAT_STRUCTURE_
+  LEGALITY.md` (status + M1c correction note), `plans/evidence/M08-020.md` (new),
+  `plans/KNOWN_DIFFERENCES.md` (KD-2 status line), this file. Pre-existing unrelated changes
+  preserved untouched: `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md`.
+- **Open review findings or blockers:** none in-package; awaiting the independent Tier C frontier
+  reviewer (legality/timing semantics per AGENTS.md).
+- **Next exact action:** obtain the independent Tier C frontier review of this package. On
+  acceptance: commit the scoped paths, remove KD-2 from `plans/KNOWN_DIFFERENCES.md`, then begin
+  M08-018 (post-M07 bot revalidation — first baseline on corrected behavior).
+
+## Checkpoint — M08-020 accepted; committed (2026-08-22)
+
+- **Review:** independent Tier-C frontier review (`plans/M08-020_OPEN_REVIEW_ITEMS.md`, Claude
+  Opus 5): **accept with one required correction (T1)** + T2 (evidence) + T3 (informational).
+  Reviewer independence limitation recorded per M06-024 precedent (independent of implementer but
+  authored the underlying finding chain — F-M07-019-1, M1c, R1).
+- **T1 resolved by scoping:** `is_ground_force()` misses `titans_pds` (Hel-Titan I) via a
+  hardcoded id; dormant under D11's roster, live on any widening. Recorded as **KD-5** in
+  `plans/KNOWN_DIFFERENCES.md`; fix scoped as **M08-022** (`plans/M08-022_TITANS_PDS_GROUND_
+  FORCE_PREDICATE.md`, new prep spec) with the Naaz space-mech decision carried into its spec and
+  hard ordering against D11 roster widening (not before M08-018/021). Milestone-plan row added.
+  No code change in this package — ti4-content is outside its writable paths.
+- **T2 applied:** evidence "corpus-verified" claim corrected at its site (four records checked;
+  the falsifying record named and pointed to T1/KD-5). **T3 recorded** in evidence findings ledger
+  (defender-selection shape change, deterministic by BTreeSet ordering).
+- **KD-2 removed from `plans/KNOWN_DIFFERENCES.md`** per its exit condition (accepted + committed);
+  full history remains in the M07-019/M07-020/M08-020 evidence files.
+- **Commit:** package commit on `wp/m08-020-ground-combat-structure-legality` — scoped paths only:
+  `crates/ti4-engine/src/invasion.rs`, `crates/ti4-engine/src/game.rs` (test module), spec,
+  evidence, review items (+ resolution), milestone plan (M08-022 row), M08-022 prep spec,
+  KNOWN_DIFFERENCES.md (KD-2 out, KD-5 in), this file. Pre-existing operator edits untouched.
+- **Milestone state:** M08-017 ✅ closed; M08-020 ✅ accepted/committed; ready — **M08-018**
+  (post-M07 bot revalidation: deps M07-020 ✅, M08-017 ✅, M08-020 ✅) and M08-021 (deps 017+020
+  ✅; blocks 019). M08-022 ready any time but hard-ordered only against D11 widening.
+- **Next exact action:** begin **M08-018** — first bot baseline computed on corrected invasion
+  behavior (KD-2 discharged); its numbers must not be compared against pre-M08-020 baselines
+  without the comparability note in `plans/evidence/M08-020.md`.
