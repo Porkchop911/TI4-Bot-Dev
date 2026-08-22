@@ -79,6 +79,12 @@ what the implementation provides.
 - **Proof case:** `Player.event_feats` was added during M06; neither redaction implementation
   covers it and `leaks()` stayed silent. No actual leak today because `event_feats` holds
   table-public occurrence ids (M07-019 review M4).
+- **Bounding note (M08-017 frontier review, 2026-08-22):** the M08-017 gate probed the policy
+  layer past the two mirrored fields: `event_feats` and `scored_feat_occurrences` appear nowhere
+  in `ti4-policy`, and `promissory_notes` appears only as the *named* `UNREDACTED` gap (KD-4) and
+  its test. Nothing on the bot side consumes an unredacted field, so ML-1 is a **latent leak with
+  no reader** — a risk, not a live hazard. Any package that gives the policy layer access to such
+  a field must close this entry first.
 - **Deferral, in writing:** making the check field-complete is a separate, larger question — no
   package scoped at M07 closure. **Condition for any future package that adds a private field to
   `Player`:** it must extend both redaction implementations (`choice.rs::redacted_for`,

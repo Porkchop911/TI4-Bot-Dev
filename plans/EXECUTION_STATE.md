@@ -2379,4 +2379,90 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   closed, all M07-020 campaign findings resolved.
 - **Next exact action:** commit the scoped paths on `wp/m07-020-reopened-frontier-review`; then
   begin M08 with **M08-017** (frontier information/review gate over rows 001–016), and keep the
-  hard ordering **M08-020 before M08-018**.
+  hard ordering **M08-020 before M08-018**. (Done: committed `3c7ddd2`; M08-017 started below.)
+
+## Checkpoint — M08-017 campaign complete, Tier C review pending (2026-08-22)
+
+- **Active milestone/package:** M08 / M08-017 (frontier information/review gate, re-execution).
+  Campaign complete; independent Tier C frontier adjudication pending at
+  `plans/M08-017_OPEN_REVIEW_ITEMS.md`.
+- **Branch and HEAD:** `wp/m08-017-frontier-information-gate` from `3c7ddd2`; no commit yet (no
+  self-acceptance).
+- **Why a re-execution:** the historical M08-017 record (and all 16 row evidence files) was
+  committed in `3180f0e` (2026-08-11) as hollow checklists — that commit's diff is evidence-only,
+  zero code; its message claims "M08 COMPLETE" while its own note admits stubbing. The real
+  `ti4-policy` code was built across the 46 commits after it. This gate re-ran on current-tree
+  evidence.
+- **Campaign results:** Part 1 hidden information PASS (policy view 6/6, engine choice/redaction
+  38/38; raw path structurally blind — zero private-field access in bot/scoring/valuation; seen
+  path inside the typed `Observed` seam; ML-1 + KD-4 carried). Part 2 parameter leakage PASS
+  (named deterministic components; all six `ScoredBot` fields live — no dead knobs; harvesting
+  trap structurally avoided per `progress.rs` doc). Part 3 determinism PASS (`ChaCha8Rng`
+  seeded from u64, BTreeMap ordering, no wall clock/hash iteration; choice-level pin
+  `the_same_seed_makes_the_same_choices` + game-level pins `the_same_seed_plays_the_same_game` /
+  `different_seeds_play_different_games` all pass — gap check found existing coverage, so the
+  permitted test-module scope extension was not used). Part 4 statistical acceptance FAIL: M08-015
+  suite and M08-016 benchmark do not exist anywhere (grep/find/Cargo.toml proof pasted in
+  evidence) — exit-gate clause "paired-seed behavior remains within approved statistical bounds"
+  unmet as written.
+- **Reconciliation tally:** 7 rows delivered (001–004, 005, 006, 011), 2 partial (007 schedule
+  omitted + documented in code; 012 no Serialize), 7 absent (008, 009-as-M08, 010, 013, 014, 015,
+  016).
+- **Findings:** F-M08-017-1 BLOCKING scope decision (options a/b/c for the adjudicator: re-scope
+  exit gate with recorded deferrals / spawn implementation packages before M08-019 / hybrid);
+  F-M08-017-2 integrity finding recorded (hollow historical evidence committed before code
+  existed; history not rewritten, superseded going forward); F-M08-017-3 informational (row 009's
+  content lives on the M09 track — `progress.rs` is M09-011/012).
+- **Working tree (active-package paths):** `plans/evidence/M08-017.md` (rewritten as a real gate
+  record quoting what it supersedes), `plans/M08-017_FRONTIER_INFORMATION_GATE.md` (new spec,
+  untracked → committed with the package), this file. No source file under `crates/` was touched.
+  Pre-existing unrelated changes preserved untouched: `AGENTS.md`,
+  `plans/PI_WORK_PACKAGE_STANDARD.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`; untracked M08-019
+  prep spec.
+- **Open review findings or blockers:** F-M08-017-1 pending frontier adjudication. No code
+  blocker; the gate's four areas are all verified (three PASS, one FAIL-by-absence).
+- **Next exact action:** on acceptance of the Tier C adjudication and a recorded disposition for
+  F-M08-017-1: apply it (scope-ledger/exit-gate edits get their own declared writable paths at
+  that point), commit the scoped paths, then proceed per the hard ordering — M08-020 before
+  M08-018.
+
+## Checkpoint — M08-017 accepted; F-M08-017-1 open for operator decision (2026-08-22)
+
+- **Active milestone/package:** M08 / M08-017. Independent Tier C frontier adjudication arrived:
+  **Accept** (Claude Opus 5 — genuinely independent here: no prior involvement with M08, unlike
+  the M06-024/M07-020 adjudications). Provenance finding confirmed and strengthened ("17 files,
+  640 insertions, zero `.rs` files"); all 16 row verdicts spot-checked; Parts 1–4 reproduced.
+- **Branch and HEAD:** `wp/m08-017-frontier-information-gate` from `3c7ddd2`; package commit
+  follows this checkpoint.
+- **S1 (MEDIUM) applied:** Part 4's under-scoped search corrected at its site; the fossil — dead
+  `criterion` dependency in ti4-sim's [dependencies] (workspace root entry orphaned with it),
+  nothing importing it, no [[bench]] target anywhere — recorded in evidence and **removed from
+  both manifests** (scope extension declared in the spec before the edit). Verified: workspace
+  check clean, criterion gone from Cargo.lock, ti4-sim 27/27.
+- **S2 (LOW) applied:** F-M08-017-3 extended to name row 010's identical misattribution shape
+  (`learned::Profile` is M09-track); row 010 verdict carries the parenthetical.
+- **ML-1 bounding note applied** in `plans/KNOWN_DIFFERENCES.md`: nothing on the bot side consumes
+  an unredacted field — ML-1 is a latent leak with no reader (declared writable for that entry
+  only).
+- **F-M08-017-1: OPEN, operator decision.** The reviewer declined to make the scope call alone and
+  escalated with a complete recommendation (option c hybrid): cancel 008/010/013 (corrected
+  rationale; withdrawn "heuristics constraint" justification recorded); no action on 009;
+  defer-or-do 012; waive 014 with reason; **require 015 before M08-019 closes** (authored bot is
+  the comparison baseline every cross-time VP measurement depends on, incl. MLP Phase 8 ablation);
+  waive 016 with reason. When the decision lands: record in `plans/KNOWN_DIFFERENCES.md` + M08
+  scope ledger with reasoning; only then may M08-019 proceed.
+- **Process note recorded:** re-execute gates rather than trusting their records — apply to the
+  other milestones signed off in the same period (future milestone audits / M12 qualification).
+- **Working tree (active-package paths):** `plans/evidence/M08-017.md` (gate record + S1 fossil +
+  resolutions), `plans/M08-017_FRONTIER_INFORMATION_GATE.md` (spec, accepted status + declared
+  scope extensions; untracked → committed with the package), `plans/M08-017_OPEN_REVIEW_ITEMS.md`
+  (adjudication + resolution; new), `crates/ti4-sim/Cargo.toml` (−1 line), `Cargo.toml` (−1
+  line), `Cargo.lock` (criterion tree removed by re-resolution), `plans/KNOWN_DIFFERENCES.md`
+  (ML-1 note), this file. Pre-existing unrelated changes preserved untouched: `AGENTS.md`,
+  `plans/PI_WORK_PACKAGE_STANDARD.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`; untracked M08-019
+  prep spec.
+- **Open review findings or blockers:** none in-package. F-M08-017-1 awaits the operator; it is
+  recorded, not blocked on — but M08-019 must not start before its disposition is recorded.
+- **Next exact action:** commit the scoped paths; then present F-M08-017-1's options to the
+  operator (reviewer recommendation: option c hybrid). On decision: record it, then proceed per
+  the hard ordering — M08-020 before M08-018.

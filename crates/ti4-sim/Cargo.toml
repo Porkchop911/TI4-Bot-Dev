@@ -19,7 +19,6 @@ tracing.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
-criterion.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
