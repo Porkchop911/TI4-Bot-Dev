@@ -29,8 +29,9 @@ after the M06/M07 event-window correction.
 | M08-015 | Behavioral distribution suite | 010–014 | sim baselines | Paired seeds compare action mix, VP pace, completion, faction differentiation. |
 | M08-016 | Bot performance benchmark | 014 | benchmark tool | Per-decision and game costs recorded; regression budget enforced. |
 | M08-017 | Frontier information/review gate | 001–016 | — | Review hidden information, parameter leakage, determinism, and statistical acceptance. |
-| M08-018 | Post-M07 bot observation/legality revalidation | M07-020,M08-017 | Accepted Rust bot contracts | New nested scoring choices remain legal, deterministic and redacted for every authored bot; full affected suites pass. |
+| M08-018 | Post-M07 bot observation/legality revalidation | M07-020,M08-017,M08-020 | Accepted Rust bot contracts | New nested scoring choices remain legal, deterministic and redacted for every authored bot; full affected suites pass. |
 | M08-019 | Reopened frontier exit review | 018 | — | Resolve hidden-information, legality, determinism and downstream-regression findings before M09. |
+| M08-020 | Ground-combat structure legality (F-M07-019-1 fix) | M07-020,M08-017; blocks 018 | LRR 49; M07-019 evidence, M07-020 adjudication | Structure-only planets fall without resistance (no spurious ground combat); structures die on control transfer; Assimilate-after-pause coverage load-bearing. Hard ordering before 018 so revalidation and all downstream baselines run against corrected behavior. |
 
 ## Exit gate
 

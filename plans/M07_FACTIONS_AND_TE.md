@@ -44,3 +44,47 @@ complete before row 020.
 The supported faction slice and current TE subsystems meet the accepted Rust specifications and
 named official rules; unimplemented content remains visible and accurately counted; M07-020 has no
 unresolved finding.
+
+### Closure record (2026-08-22)
+
+**M07 is closed.** The reopened frontier exit review (M07-020) is accepted by independent Tier-C
+review (Claude Opus 5), and every package in the milestone's committed range `b721a9a..8ba6edc`
+carries its own accepted review:
+
+- M07-019 (`c034549`): four nested-window regression tests at Game level; findings F-M07-019-1/-2
+  raised, F-M07-019-3 scoped as child. Accepted with corrections M1–M3.
+- M07-021 (`5241f2d`): `event_feats` added to state equality (Option A), red-first; exposed
+  stepped-harness dependence completed test-only. Accepted; N1/N2 dispositions recorded.
+- M07-022 (`7f357b6`): stepped harness consumes scoring pauses exactly as `resolve()` does;
+  pausing-fixture equivalence verified; completion bookkeeping factored into one shared helper
+  (the range's only production hunk, behavior-preserving). Accepted with P1–P3.
+- M07-023 (`8ba6edc`): pause→choice resumption pinned at the synchronous API level with log-based
+  non-vacuity; Q1/Q2 hardening applied (pause ordering asserted `Some(0)`; inner-table emptiness
+  guard). Accepted. Per its reviewer's instruction the M07-019→023 chain ends here.
+- M07-020: five-part campaign (six nested-window paths traced and pinned; marker expiry verified
+  against monotonic counters with atomic set sites; redaction boundary rechecked at the typed seam;
+  registries reconciled; gates reproduced — engine 845 + 5 doctests, workspace 1,319/0 ×2,
+  replay 4/4, Clippy zero new in frontier). **R1 (blocking) resolved by decision:** F-M07-019-1
+  (structures count as ground defenders against LRR 49) accepted as known difference KD-2 with the
+  fix scoped as M08-020, hard-ordered before M08-018 so all downstream baselines run against
+  corrected behavior exactly once. R2–R4 (documentation) resolved in-package.
+- **Independence limitation (carried per the M06-024 precedent):** the same frontier reviewer is
+  independent of the implementer but not a fresh perspective on this range — it reviewed every
+  package in the frontier as Tier-B reviewer and formed the M07-019 findings that R1 concerns.
+  Recorded in `plans/M07-020_OPEN_REVIEW_ITEMS.md` rather than left implicit.
+- **Known-differences ledger:** `plans/KNOWN_DIFFERENCES.md` created at this gate (R3). Entries:
+  KD-1 baf/sb play-area note semantics (M06 closure; VP/clearance comparability break
+  2.935 → 2.958); KD-2 structures as ground defenders (this gate; fix M08-020); KD-3 phantom dice
+  consumption after a total-wipe fwp pause (dice-stream position only, no state/event divergence);
+  KD-4 promissory-note holdings visible in redacted views (named gap since M08-001). Mechanism
+  limitations: ML-1 `leaks()` is a two-field mirror, not field-complete (M06's `event_feats` is
+  the proof case; deferral written with its condition); ML-2 inert reserved Seat fields.
+- **Scope reaffirmed:** implemented/partial/unimplemented registries reconciled — registered ⊆
+  corpus pinned by test, gaps reported rather than ignored (`unimplemented`, `unmapped_windows`),
+  six documented blocked abilities. No corpus-only behavior was silently promoted in the M07
+  range; the committed diff under `crates/` is 3 files, +816/−24 (test modules plus the accepted
+  `complete_window` refactor and one `event_feats` equality line).
+- No command run by any M07 package wrote to the historical Python reference.
+
+**Next ready package:** M08 — begin with M08-017 (frontier information/review gate over rows
+001–016), then **M08-020 before M08-018** per the hard ordering recorded above.

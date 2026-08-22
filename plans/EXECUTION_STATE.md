@@ -2293,3 +2293,90 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   (combat.rs, evidence, spec, review items + resolution, this file); then M07-020 — all four
   dependencies (M07-019, M07-021, M07-022, M07-023) met, opening the milestone's reopened frontier
   exit review.
+
+## Checkpoint — M07-020 campaign complete, independent Tier C frontier review pending (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-020 (reopened M07 frontier exit review; the milestone's
+  final gate).
+- **Branch and HEAD:** `wp/m07-020-reopened-frontier-review` from `8ba6edc`; no package commit yet —
+  awaits independent Tier C frontier adjudication of the exact committed frontier.
+- **Review frontier (exact):** `b721a9a..8ba6edc` = four commits: M07-019 (`c034549`), M07-021
+  (`5241f2d`), M07-022 (`7f357b6`), M07-023 (`8ba6edc`). Committed diff under `crates/`: 3 files,
+  +816/−24 — game.rs (+588 test module only), combat.rs (one behavior-preserving production hunk:
+  the accepted `complete_window` refactor of `resolve()`'s tail; rest test module), state.rs
+  (+19: one `event_feats` PartialEq line + focused test). No other production behavior changed.
+- **Working tree (active-package paths):** `plans/evidence/M07-020.md` (new — full five-part
+  campaign record with pasted gate outputs), `plans/M07-020_REOPENED_FRONTIER_REVIEW.md` (status →
+  campaign complete, review pending; was untracked prep, to be committed with the package), and
+  this file. Pre-existing
+  unrelated changes preserved untouched: `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md`; untracked M08-018 / M08-019 prep specs.
+- **Campaign results (all in evidence):** six nested-window paths traced with code refs and
+  pinning tests; marker expiry verified (identity checks against monotonic `combat_round_seq` /
+  `activation_seq`; atomic set sites; decline/error set nothing); redaction boundary rechecked at
+  the typed `Decider::choose_seeing` seam (guards-the-guard `leaks()` test intact); registries
+  reconciled (registered ⊆ corpus pinned; unimplemented/unmapped reported, not ignored);
+  occurrence-scoped 61.7 cap reaffirmed end-to-end against M06-021a's adjudication (occurrence-
+  membership enforcement: `record_occurrence_score` + exclusion at offer time).
+- **Gates reproduced:** focused M07 tests all green; engine **845 + 5 doctests**; workspace
+  **1,319 / 0 identical ×2**; replay **4/4**; Clippy — zero new warnings in the five frontier
+  files (only pre-existing `game.rs:1260 apply_tactical`); all five frontier files rustfmt-clean;
+  `git diff --check` clean.
+- **Findings:** F-M07-020-1 (informational) — `ground_roll_suppressed_round` /
+  `sustained_damage_round` are inert reserved Seat fields with no read/write sites; recorded for
+  registry completeness. F-M07-020-2 (informational, reaffirmed) — promissory-note redaction gap,
+  documented/named/test-pinned since M08-001; carried to the milestone known-differences ledger.
+  **No actionable findings; no source edits made; no child packages spawned.**
+- **Open review findings or blockers:** none from the campaign. Independent Tier C frontier
+  adjudication pending at `plans/M07-020_OPEN_REVIEW_ITEMS.md` (reviewer must be distinct from the
+  M07 implementers).
+- **Next exact action:** on acceptance, commit the scoped paths (evidence, spec, this file) and
+  write the M07 exit-gate closure record in `plans/M07_FACTIONS_AND_TE.md`; then M08-018 may
+  begin per the definition of done.
+
+## Checkpoint — M07-020 accepted; M07 CLOSED (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-020 — **accepted and closed.** Milestone exit gate is
+  closed with the full closure record in `plans/M07_FACTIONS_AND_TE.md`.
+- **Branch and HEAD:** `wp/m07-020-reopened-frontier-review` from `8ba6edc`; package commit follows
+  this checkpoint (documentation-only resolutions; no source file under `crates/` was touched).
+- **Independent Tier C frontier review (Claude Opus 5): one blocking + three documentation
+  findings, all resolved in-package.** Independence limitation recorded per the M06-024 precedent
+  (reviewer independent of implementer but not a fresh perspective on this range — it formed the
+  M07-019 findings that R1 concerns).
+- **R1 (BLOCKING) — DECIDED option 2:** F-M07-019-1 (structures count as ground defenders against
+  LRR 49; escalated by M07-019 to this gate and previously unanswered) accepted as known difference
+  **KD-2**; fix scoped as **M08-020** (`plans/M08-020_GROUND_COMBAT_STRUCTURE_LEGALITY.md`), hard-
+  ordered before M08-018 (milestone row added to `plans/M08_AUTHORED_BOTS.md`; M08-018 dependency
+  line updated). Rationale: option 3 unavailable (deviation real, LRR verified in M07-019);
+  option 1 would invalidate the four accepted packages' baselines silently at the exit gate;
+  option 2 before 018 keeps every downstream baseline comparable exactly once. Assimilate-after-
+  pause coverage (M07-019 review M1c) written into M08-020 as required behavior item 4.
+- **R2 — corrected:** the false guards-the-guard claim in Campaign 3 replaced with an accurate
+  description (`leaks()` is a two-field hand-written mirror; M06's `event_feats` is the proof case
+  where it demonstrably did not fire); field-completeness deferred in writing as **ML-1**.
+- **R3 — destination created:** `plans/KNOWN_DIFFERENCES.md` now exists — KD-1 (M06-closure baf/sb
+  comparability break, previously carried to a nonexistent document), KD-2, KD-3 (F-M07-019-2,
+  dice-stream position only), KD-4 (promissory-note redaction gap), ML-1, ML-2. M12 answerability
+  stated in the header.
+- **R4 — carries folded in:** new "Carries from M07-019" section in the evidence: F-M07-019-2 →
+  KD-3; F-M07-019-3 closed by M07-021 (`5241f2d`); Assimilate coverage rides with M08-020.
+- **Working tree (active-package paths):** `plans/evidence/M07-020.md` (campaign + adjudication +
+  carries + resolutions), `plans/KNOWN_DIFFERENCES.md` (new), `plans/M07-020_REOPENED_FRONTIER_
+  REVIEW.md` (accepted status; was untracked prep, committed with the package), `plans/M07-020_
+  OPEN_REVIEW_ITEMS.md` (adjudication + resolution; new), `plans/M08_AUTHORED_BOTS.md` (M08-020
+  row), `plans/M08-018_POST_M07_BOT_REVALIDATION.md` (dependency line), `plans/M08-020_GROUND_
+  COMBAT_STRUCTURE_LEGALITY.md` (new prep spec, committed as a direct deliverable of the accepted
+  review per the M07-021/022/023 pattern), `plans/M07_FACTIONS_AND_TE.md` (closure record), and
+  this file. Pre-existing unrelated changes preserved untouched: `AGENTS.md`,
+  `plans/PI_WORK_PACKAGE_STANDARD.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`; untracked M08-019
+  prep spec.
+- **Verification:** documentation-only resolutions — no re-run required; the reproduced gate
+  numbers stand (engine 845 + 5 doctests; workspace 1,319/0 ×2; replay 4/4; Clippy zero new in
+  frontier). `git diff --check` clean.
+- **Open review findings or blockers:** none. M07 has no unresolved finding: F-M07-019-1 decided
+  (KD-2 + scoped fix), F-M07-019-2 recorded (KD-3 with scope and re-run condition), F-M07-019-3
+  closed, all M07-020 campaign findings resolved.
+- **Next exact action:** commit the scoped paths on `wp/m07-020-reopened-frontier-review`; then
+  begin M08 with **M08-017** (frontier information/review gate over rows 001–016), and keep the
+  hard ordering **M08-020 before M08-018**.
