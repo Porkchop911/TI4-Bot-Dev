@@ -2246,3 +2246,50 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit the scoped paths on `wp/m07-022-stepped-equivalence-across-pauses`
   (combat.rs, evidence, both specs, review items + resolution, milestone-plan rows, this file);
   then M07-023 (pause→choice composition) before M07-020's exit review.
+- **M07-022 committed as `7f357b6`** on `wp/m07-022-stepped-equivalence-across-pauses`
+  (7 files, +568/−46).
+
+## Checkpoint — M07-023 accepted, review resolutions applied, commit pending (2026-08-22)
+
+- **Active milestone/package:** M07 / M07-023 (stepped equivalence across pause→choice resumption;
+  child of the M07-022 review finding P2; dependency of the M07-020 exit review).
+- **Branch and HEAD:** `wp/m07-023-post-pause-choice-composition` from `7f357b6`; no package commit
+  yet — independent Tier B review is in (accept), resolutions applied; the scoped commit follows.
+- **Working tree (active-package paths):** `crates/ti4-engine/src/combat.rs` (**test module only**,
+  +104/−15: one new test `a_stepped_combat_matches_the_driven_one_across_a_pause_and_assignment`
+  — pausing fixture that continues into a casualty-assignment choice at the retained frame, with
+  log-based non-vacuity assertions; plus Q1/Q2 hardening in `stepped_fight`: it now returns
+  `(CombatOutcome, Option<usize>)` measuring asks-before-first-pause and asserts its context table
+  stayed unasked), `plans/evidence/M07-023.md` (new, incl. review resolutions + pasted Clippy
+  output), `plans/M07-023_POST_PAUSE_CHOICE_COMPOSITION.md` (accepted status),
+  `plans/M07-023_OPEN_REVIEW_ITEMS.md` (review + resolution, new), and this file. Pre-existing
+  unrelated changes preserved untouched: `AGENTS.md`, `plans/PI_WORK_PACKAGE_STANDARD.md`,
+  `plans/M06-025_OPEN_REVIEW_ITEMS.md` and the untracked M07-020 / M08-018 / M08-019 prep specs.
+- **Non-vacuity probe (deliverable 2b):** with `stepped_fight`'s no-choice branch replaced by
+  `break` (pre-M07-022 shape), the new test FAILED at `.expect("the fight resolved")`
+  (combat.rs:2739) — proving the fixture really pauses; M07-022's pausing test failed under the
+  same probe, and the non-pausing test stayed green. Probe reverted; all three re-run green.
+- **Verification:** engine **845 + 5 doctests** (+1 = new test); workspace **1,319 / 0 identical
+  across two runs**; Clippy — pasted output in evidence (three pre-existing warnings, zero new);
+  combat.rs rustfmt-clean (no changes needed to this package's additions); `git diff --check`
+  clean.
+- **Independent Tier B review (Claude Opus 5): ACCEPT.** Reviewer measured the composition
+  directly (instrumented branch order: PAUSE-BRANCH then CHOICE "assign a hit"), reproduced the
+  non-vacuity probe exactly, and confirmed the Clippy claim is correct for the first time in this
+  chain — pasting tool output worked.
+- **Review resolutions applied (inside this package, per disposition — no M07-024 spawned):**
+  Q1 — pause ordering now asserted: `stepped_fight` returns asks-before-first-pause and the test
+  asserts `Some(0)` (fixture pauses; no choice may precede the barrage). Q2 — log-comparison
+  integrity guarded: `stepped_fight` asserts its context table stayed unasked; the stale "neither
+  is asserted on" comment corrected at the site.
+- **Post-resolution re-verification:** all three equivalence tests ok; engine **845 + 5 doctests**
+  (count unchanged); workspace **1,319 / 0 identical ×2**; Clippy — same pasted output as the
+  review's own run (three pre-existing warnings, zero new); combat.rs rustfmt-clean;
+  `git diff --check` clean.
+- **Open review findings or blockers:** none open from Tier B. The M07-019→023 chain is closed per
+  the reviewer's instruction; remaining harness-fidelity questions go to M07-020's known-limits
+  ledger for one-time adjudication.
+- **Next exact action:** commit the scoped paths on `wp/m07-023-post-pause-choice-composition`
+  (combat.rs, evidence, spec, review items + resolution, this file); then M07-020 — all four
+  dependencies (M07-019, M07-021, M07-022, M07-023) met, opening the milestone's reopened frontier
+  exit review.

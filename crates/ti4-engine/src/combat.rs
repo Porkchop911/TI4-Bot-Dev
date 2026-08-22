@@ -2701,22 +2701,25 @@ mod tests {
     /// Drive a combat window by hand — `settle` / `pending_choice` / `resolve` — consuming scoring
     /// pauses exactly as the synchronous API does (M07-022). Completion bookkeeping goes through
     /// the same `complete_window` that `resolve()` calls, so this replica cannot drift from it.
+    /// Returns the outcome and how many choices had been asked when the first scoring pause was
+    /// consumed (`None` if no pause was ever consumed) — the ordering pin for M07-023's review Q1.
     fn stepped_fight(
         state: &mut GameState,
         system: &SystemId,
         table: &mut Table,
         dice: &mut Dice,
         rng: &mut GameRng,
-    ) -> CombatOutcome {
+    ) -> (CombatOutcome, Option<usize>) {
         let content = ContentStore::embedded();
         // The Game driver and the synchronous resolve() both snapshot before the first die
         // (M07-021).
         let before = crate::combat::before_combat(state, content, POK, system);
         let mut window = CombatWindow::new(state, content, POK, system);
         // The context keeps its own table (the original harness shape): one long-lived context
-        // borrows it for the whole loop, so asking must go through a separate table. Neither is
-        // asserted on in these tests; resolve() uses one table because Window::drive asks through
-        // ctx.table internally.
+        // borrows it for the whole loop, so asking must go through a separate table. resolve()
+        // uses one table because Window::drive asks through ctx.table internally; here the ask
+        // table is what tests assert on via its log, and the final assertion below keeps that
+        // comparison honest (M07-023 review Q2).
         let mut inner = Table::new();
         let mut ctx = crate::choice::Resolving {
             content,
@@ -2726,6 +2729,9 @@ mod tests {
             table: &mut inner,
             timing: None,
         };
+        // How many choices had been asked when the first scoring pause was consumed (M07-023
+        // review Q1): tests use this to assert that a choice came after the pause.
+        let mut asks_before_pause: Option<usize> = None;
         window.settle(state, &mut ctx);
         while window.outcome().is_none() {
             if let Some(choice) = window.pending_choice(state, content, POK) {
@@ -2734,12 +2740,24 @@ mod tests {
             } else {
                 // Mirror the synchronous API: consume scoring pauses and drive automatic
                 // transitions.
-                let _ = window.take_scoring_occurrence();
+                let occurrence = window.take_scoring_occurrence();
+                if asks_before_pause.is_none() && occurrence.is_some() {
+                    asks_before_pause = Some(table.log.records.len());
+                }
                 window.settle_open(state, &mut ctx);
             }
         }
-        crate::combat::complete_window(state, content, POK, system, &before, &window)
-            .expect("the fight resolved")
+        let outcome = crate::combat::complete_window(state, content, POK, system, &before, &window)
+            .expect("the fight resolved");
+        // The log-equality assertions in the tests compare against the ask table only; if a
+        // future fixture ever routes an internal ask through the context's table (e.g. faction
+        // combat-round offers), fail informatively instead of comparing split logs (Q2).
+        assert!(
+            ctx.table.log.records.is_empty(),
+            "the harness's context table must stay unasked: log assertions compare against the \
+             ask table only"
+        );
+        (outcome, asks_before_pause)
     }
 
     #[test]
@@ -2754,10 +2772,9 @@ mod tests {
             let mut dice = Dice::new();
             let mut rng = GameRng::new(17);
             if stepped {
-                (
-                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng),
-                    state,
-                )
+                let (outcome, _asks_before_pause) =
+                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng);
+                (outcome, state)
             } else {
                 let outcome = resolve(
                     &mut state,
@@ -2793,10 +2810,9 @@ mod tests {
             let mut dice = Dice::from_faces([10, 10, 10, 1]);
             let mut rng = GameRng::new(1);
             if stepped {
-                (
-                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng),
-                    state,
-                )
+                let (outcome, _asks_before_pause) =
+                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng);
+                (outcome, state)
             } else {
                 let outcome = resolve(
                     &mut state,
@@ -2828,6 +2844,79 @@ mod tests {
                 "the round-1 barrage feat must be recorded on both sides"
             );
         }
+        assert!(stepped_state.identical(&driven_state));
+    }
+
+    #[test]
+    fn a_stepped_combat_matches_the_driven_one_across_a_pause_and_assignment() {
+        // The composition M07-022's review P2 left open: the fight pauses for scoring, resumes,
+        // and then reaches a choice at the retained frame — the stepped driver must answer it.
+        // No choice can arise before the round-1 barrage pause in this fixture (the barrage
+        // stage offers none), so any recorded ask is necessarily after the pause.
+        let fight = |stepped: bool| {
+            let (mut state, system) = arena();
+            put(&mut state, &system, "destroyer", &attacker(), 1);
+            put(&mut state, &system, "fighter", &defender(), 1);
+            put(&mut state, &system, "cruiser", &defender(), 2);
+            let mut table = Table::new();
+            // Round-1 AFB [10, 10] kills the fighter and pauses; round 1 then leaves one hit to
+            // absorb across two cruisers (the assignment choice); round 2 ends the fight.
+            let mut dice = Dice::from_faces([10, 10, 10, 1, 1, 10, 1]);
+            let mut rng = GameRng::new(1);
+            if stepped {
+                let (outcome, asks_before_pause) =
+                    stepped_fight(&mut state, &system, &mut table, &mut dice, &mut rng);
+                (outcome, state, table.log.clone(), asks_before_pause)
+            } else {
+                let outcome = resolve(
+                    &mut state,
+                    ContentStore::embedded(),
+                    POK,
+                    &mut table,
+                    &mut dice,
+                    &mut rng,
+                    &system,
+                )
+                .unwrap();
+                (outcome, state, table.log.clone(), None)
+            }
+        };
+
+        let (stepped_outcome, stepped_state, stepped_log, stepped_asks_before_pause) = fight(true);
+        let (driven_outcome, driven_state, driven_log, _driven_asks_before_pause) = fight(false);
+        assert_eq!(stepped_outcome, driven_outcome);
+        // The barrage feat must be recorded on both sides — identity alone would also pass if
+        // neither side had fired it.
+        for state in [&stepped_state, &driven_state] {
+            assert!(
+                state
+                    .player(&attacker())
+                    .unwrap()
+                    .event_feats
+                    .iter()
+                    .any(|(feat, _)| *feat == Feat::BarrageTookTheLastFighters),
+                "the round-1 barrage feat must be recorded on both sides"
+            );
+        }
+        // M07-023 review Q1: the ordering this test is named for must be asserted, not argued —
+        // the pause was consumed with zero choices asked before it, so every recorded ask (the
+        // assignment included) came after the pause.
+        assert_eq!(
+            stepped_asks_before_pause,
+            Some(0),
+            "the fixture must pause, and no choice may be asked before the barrage pause"
+        );
+        // The composition P2 names: a choice at the retained frame after the pause. Both sides
+        // must have been asked to assign the hit, and their decision sequences must match.
+        for log in [&stepped_log, &driven_log] {
+            assert!(
+                log.records
+                    .iter()
+                    .any(|r| r.prompt == "assign a hit" && r.player == defender()),
+                "the driver must resume into the casualty-assignment choice after the pause"
+            );
+        }
+        assert_eq!(stepped_log, driven_log);
         assert!(stepped_state.identical(&driven_state));
     }
 

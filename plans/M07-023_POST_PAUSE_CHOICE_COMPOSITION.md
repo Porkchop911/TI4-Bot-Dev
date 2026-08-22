@@ -2,10 +2,18 @@
 
 ## Status
 
-Dependency-safe preparation only. Begin after M07-022 is accepted and committed; **must complete
-before the M07-020 exit review** (it is now a dependency of it), because the equivalence invariant
-is currently verified across a scoring pause that decides nothing — no test composes a pause with a
-choice at the retained frame.
+**Accepted 2026-08-22** (independent Tier B, Claude Opus 5 — see
+`plans/M07-023_OPEN_REVIEW_ITEMS.md`; Q1 and Q2 applied inside this package per the reviewer's
+disposition: pause-ordering now asserted via `asks_before_pause == Some(0)`, log-comparison
+integrity guarded by an inner-table emptiness assertion). Dependency met: M07-022 accepted and
+committed at `7f357b6`. Branch: `wp/m07-023-post-pause-choice-composition` from `7f357b6`.
+**Must complete before the M07-020 exit review** (it is a dependency of it). All deliverables
+implemented in the `combat.rs` test module (`a_stepped_combat_matches_the_driven_one_across_a_
+pause_and_assignment`, no production code): a pausing fixture that continues into a
+casualty-assignment choice at the retained frame, with log-based non-vacuity assertions (both
+sides' decision logs contain the post-pause "assign a hit" record; full-sequence log equality) and
+probe evidence that the fixture really pauses. Evidence: `plans/evidence/M07-023.md`. Per the
+reviewer's instruction this chain ends here — M07-020 proceeds next.
 
 | Field | Value |
 |---|---|
