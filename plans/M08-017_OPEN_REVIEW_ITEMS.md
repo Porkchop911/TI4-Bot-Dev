@@ -199,12 +199,17 @@ in-package one.
   consumes an unredacted field (`event_feats`, `scored_feat_occurrences` appear nowhere in
   `ti4-policy`; `promissory_notes` only as the named KD-4 gap), so ML-1 is a latent leak with no
   reader. Declared writable for that entry only.
-- **S3 / F-M08-017-1 — OPEN, escalated to the operator.** The recommendation (option c hybrid) is
-  recorded in full above and stands as the standing proposal: cancel 008/010/013 with the
-  corrected rationale; no action on 009; defer-or-do 012; waive 014 with reason; require 015
-  before M08-019 closes; waive 016 with reason. When the operator's decision lands it will be
-  recorded in `plans/KNOWN_DIFFERENCES.md` and the M08 scope ledger with its reasoning, per the
-  reviewer's instruction — only then may M08-019 proceed on a gate that means what it says.
+- **S3 / F-M08-017-1 — DECIDED (operator, 2026-08-22): the recommendation was adopted as-is.**
+  Option c hybrid: cancel 008/010/013 with the corrected rationale; no action on 009; defer 012
+  (implementer's discretion exercised — deferred, added with its first consumer); waive 014 with
+  reason; **require 015 before M08-019 closes → scoped as M08-021**
+  (`plans/M08-021_BEHAVIORAL_DISTRIBUTION_SUITE.md`), hard-ordered after M08-020 (the baseline
+  must not bake KD-2 in) and before M08-019; waive 016 with reason. Recorded per the reviewer's
+  instruction in `plans/KNOWN_DIFFERENCES.md` (SD-1) and the M08 scope ledger
+  (`plans/M08_AUTHORED_BOTS.md`, Scope dispositions), with the full reasoning above standing as
+  written — including the withdrawn justification, which does not appear in either record. With
+  this decision F-M08-017-1 is closed; M08-019 may proceed once its dependencies (M08-018,
+  M08-021) are accepted.
 - **Process note — recorded.** Re-execute gates rather than trusting their records; apply
   deliberately to the other milestones signed off in the same period. Noted for future milestone
   audits / M12 qualification; not an action of this package.

@@ -96,3 +96,27 @@ what the implementation provides.
 in `PartialEq` but have no read or write site anywhere in the engine (F-M07-020-1). No leak risk;
 recorded so a future package implementing the abilities they names must add set site, identity-
 checked read site, and tests together.
+
+## Scope dispositions (answerability at M12)
+
+### SD-1 — M08 rows 008/010/013 cancelled; 014 and 016 waived; 015 required as M08-021 (operator decision, 2026-08-22)
+
+F-M08-017-1 disposition: the operator adopted the M08-017 frontier review's recommendation
+(option c hybrid) **as-is**. Full rationale table in `plans/M08_AUTHORED_BOTS.md` (Scope
+dispositions); reasoning and the withdrawn-justification record in
+`plans/M08-017_OPEN_REVIEW_ITEMS.md` §S3. Summary for M12 answerability:
+
+- **Cancelled:** 008 tactical plans, 010 faction profiles, 013 experimental capabilities — no
+  consumer in MLP Phases 2–8; inherited oracle-port scope. The "heuristics constraint"
+  justification was withdrawn as wrong (the authored bot is architecturally isolated from
+  training) and must not be cited for these cancellations.
+- **Waived with reason:** 014 differential choices (determinism pins + the 112 behavioral tests
+  cover the practical regression risk); 016 benchmark (M00-012's protocol and the MLP plan's D19
+  CPU/CUDA gates define the throughput measurements that matter; the dead `criterion` dependency
+  was removed per S1).
+- **Required:** 015 as **M08-021** before M08-019 closes — the authored bot is the comparison
+  baseline every cross-time VP measurement depends on, including the MLP Phase 8 ablation.
+- **Deferred:** 012 serialization (no consumer; added with its first consumer).
+- **No action:** 009 (misattributed to M08; content is M09-track `progress.rs`).
+
+This entry leaves the ledger only if a committed package reopens one of these rows.

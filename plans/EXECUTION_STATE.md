@@ -2465,4 +2465,36 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   recorded, not blocked on — but M08-019 must not start before its disposition is recorded.
 - **Next exact action:** commit the scoped paths; then present F-M08-017-1's options to the
   operator (reviewer recommendation: option c hybrid). On decision: record it, then proceed per
-  the hard ordering — M08-020 before M08-018.
+  the hard ordering — M08-020 before M08-018. (Done: committed `d69fcb1`; decision recorded below.)
+
+## Checkpoint — F-M08-017-1 decided; M08-017 CLOSED (2026-08-22)
+
+- **Active milestone/package:** M08 / M08-017 — **closed.** No open finding remains.
+- **Branch and HEAD:** `wp/m08-017-frontier-information-gate`; package commit `d69fcb1` (gate
+  record + S1/S2/ML-1); this decision-recording commit follows it on the same branch.
+- **Operator decision: adopted the reviewer's recommendation as-is — option (c) hybrid.**
+  Cancelled: 008 tactical plans, 010 faction profiles, 013 experimental capabilities (no consumer
+  in MLP Phases 2–8; inherited oracle-port scope; withdrawn "heuristics constraint" justification
+  not part of the record). No action: 009 (misattributed — M09-track `progress.rs`). Deferred:
+  012 serialization (implementer's discretion exercised — added with its first consumer).
+  Waived with reason: 014 differential choices, 016 benchmark. **Required: 015 → scoped as
+  M08-021** (`plans/M08-021_BEHAVIORAL_DISTRIBUTION_SUITE.md`), hard-ordered after M08-020 (the
+  baseline must not bake KD-2 in) and before M08-019.
+- **Recorded per the reviewer's instruction:** `plans/KNOWN_DIFFERENCES.md` (new SD-1 entry)
+  and the M08 scope ledger (`plans/M08_AUTHORED_BOTS.md`, new Scope dispositions section; header
+  note corrected to point at the re-execution record). M08-021 row added to the milestone plan;
+  M08-019's dependency updated to include M08-021 (milestone plan + prep spec).
+- **Working tree (this commit's paths):** `plans/M08_AUTHORED_BOTS.md`,
+  `plans/KNOWN_DIFFERENCES.md`, `plans/evidence/M08-017.md`,
+  `plans/M08-017_FRONTIER_INFORMATION_GATE.md` (closed status),
+  `plans/M08-017_OPEN_REVIEW_ITEMS.md` (S3 → decided),
+  `plans/M08-021_BEHAVIORAL_DISTRIBUTION_SUITE.md` (new prep spec, committed as a direct
+  deliverable of the accepted review per the M07-021/022/023 pattern),
+  `plans/M08-019_REOPENED_FRONTIER_REVIEW.md` (dependency line; untracked → tracked with this
+  commit since its gate now depends on a committed package), this file. No source file under
+  `crates/` touched by this commit.
+- **Open review findings or blockers:** none in M08-017. Milestone state: M08-017 closed;
+  ready packages — **M08-020** (deps M07-020 ✅, M08-017 ✅) and, after it, M08-018 + M08-021
+  (both depend on M08-020); M08-019 last (deps M08-018 + M08-021).
+- **Next exact action:** commit this checkpoint's paths; then begin **M08-020** (ground-combat
+  structure legality, Tier C frontier review per its spec).

@@ -2,8 +2,9 @@
 
 ## Status
 
-**Accepted 2026-08-22; F-M08-017-1 open pending operator decision.** Base commit
-`3c7ddd2` (M07 closure). Branch `wp/m08-017-frontier-information-gate`.
+**Closed 2026-08-22 — accepted, all findings resolved including the operator's disposition of
+F-M08-017-1.** Base commit `3c7ddd2` (M07 closure). Branch
+`wp/m08-017-frontier-information-gate`.
 
 Result: Parts 1–3 PASS on current-tree evidence (hidden information, parameter leakage,
 determinism — all clean; game-level determinism pins already existed, so no scope extension was
@@ -17,11 +18,11 @@ insertions, zero `.rs` files"); all 16 row verdicts spot-checked; Parts 1–4 re
 (MEDIUM — Part 4's search under-scoped; dead `criterion` dependency in the normal build graph)
 and S2 (LOW — row 010 carries row 009's misattribution shape) applied in-package, with a declared
 scope extension for the two-line manifest fix. ML-1 bounding note added to the ledger.
-**F-M08-017-1 stays open pending an operator decision**: the reviewer declined to make the scope
-call alone and escalated it with a complete recommendation (option c hybrid — cancel 008/010/013
-with corrected rationale, no action on 009, defer-or-do 012, waive 014, **require 015 before
-M08-019 closes**, waive 016). When the decision lands it is recorded in `plans/KNOWN_DIFFERENCES.md`
-and the M08 scope ledger with its reasoning. See `plans/M08-017_OPEN_REVIEW_ITEMS.md`.
+**F-M08-017-1 resolved by operator decision (2026-08-22): the reviewer's recommendation
+(option c hybrid) was adopted as-is** — cancel 008/010/013 with corrected rationale, no action on
+009, defer 012, waive 014, **require 015 before M08-019 closes → scoped as M08-021**, waive 016.
+Recorded in `plans/KNOWN_DIFFERENCES.md` (SD-1) and the M08 scope ledger
+(`plans/M08_AUTHORED_BOTS.md`, Scope dispositions). See `plans/M08-017_OPEN_REVIEW_ITEMS.md`.
 
 This package **re-executes** the gate. The historical record at
 `plans/evidence/M08-017.md` (committed 2026-08-11 in `3180f0e`) is a hollow checklist: no
