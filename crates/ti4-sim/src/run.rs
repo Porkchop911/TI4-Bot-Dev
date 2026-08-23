@@ -194,6 +194,107 @@ pub fn play_with(
     };
 
     let mut game = Game::with_table(state, content, seats.table(players, seed)).with_galaxy(galaxy);
+    reduce(&mut game, seed, horizon, started)
+}
+
+/// Play one game with learned-policy seats on a map-pool board.
+///
+/// Every seat is answered by the [`LearnedBot`] of its faction's champion profile. The per-seat
+/// streams follow the same discipline as [`Seats::Scored`]: independent stream per seat, derived
+/// from the game seed, so choices are not correlated by seating order alone. The board comes from
+/// `pool` (the tile seed is the game seed itself — no offset), which keeps a baseline panel on the
+/// same board process the policy was trained against rather than on content-derived boards.
+#[must_use]
+pub fn play_learned(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    pool: &crate::maps::MapPool,
+    champions: &std::collections::BTreeMap<String, std::sync::Arc<ti4_policy::learned::Profile>>,
+) -> GameResult {
+    use ti4_policy::inference::LearnedBot;
+
+    let started = Instant::now();
+    let table = Table::seated(content, players, sources);
+    let mut state = match start_game_seeded(content, players, sources, None, seed) {
+        Ok(state) => state,
+        Err(error) => return failed(seed, players, started, format!("setup: {error}")),
+    };
+
+    for (player, faction) in &table.factions {
+        if let Some(seat) = state.player_mut(player) {
+            seat.faction = faction.clone();
+        }
+    }
+
+    // Home systems in assignment order: the pool places them into its home slots.
+    let mut homes: Vec<String> = Vec::with_capacity(table.factions.len());
+    for faction in table.factions.values() {
+        match ti4_content::factions::get(content, faction.as_str())
+            .and_then(|record| record.home_system())
+            .map(str::to_owned)
+        {
+            Some(home) => homes.push(home),
+            None => {
+                return failed(
+                    seed,
+                    players,
+                    started,
+                    format!("faction {} has no home system", faction.as_str()),
+                );
+            }
+        }
+    }
+    let borrowed: Vec<&str> = homes.iter().map(String::as_str).collect();
+    let galaxy = match pool.galaxy(content, sources, seed, &borrowed) {
+        Ok(galaxy) => galaxy,
+        Err(error) => return failed(seed, players, started, format!("pool: {error}")),
+    };
+
+    for (player, faction) in &table.factions {
+        if let Err(error) =
+            ti4_engine::seating::deploy(&mut state, content, player, faction, sources)
+        {
+            return failed(seed, players, started, format!("deploy: {error}"));
+        }
+    }
+
+    let mut deciders = ti4_engine::choice::Table::with_default(Box::new(
+        ti4_engine::choice::SeededRandom::new(seed),
+    ));
+    for (index, player) in players.iter().enumerate() {
+        let offset = u64::try_from(index).unwrap_or(0);
+        let faction = &table.factions[player];
+        match champions.get(faction.as_str()) {
+            Some(profile) => deciders.seat(
+                player.clone(),
+                Box::new(LearnedBot::from_shared(
+                    profile.clone(),
+                    seed.wrapping_mul(1_000_003).wrapping_add(offset),
+                )),
+            ),
+            None => {
+                return failed(
+                    seed,
+                    players,
+                    started,
+                    format!("no champion profile for faction {}", faction.as_str()),
+                );
+            }
+        }
+    }
+
+    let mut game = Game::with_table(state, content, deciders).with_galaxy(galaxy);
+    reduce(&mut game, seed, horizon, started)
+}
+
+/// Run the game to its bound and reduce it to a [`GameResult`].
+///
+/// Kept as one function so every seat variant — random, scored, learned — reports through the
+/// same code path.
+fn reduce(game: &mut Game, seed: u64, horizon: Horizon, started: Instant) -> GameResult {
     let outcome = game
         .run(horizon.rounds, horizon.steps)
         .err()

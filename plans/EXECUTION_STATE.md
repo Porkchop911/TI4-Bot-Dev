@@ -3011,3 +3011,24 @@ Files to read first after compaction:
   only the recorded pre-existing `features.rs:690/752` drift. R1–R3 changed plans/evidence only.
 - **Next exact action:** commit the scoped R3 resolution/acceptance records, then begin M09-019
   from this accepted frontier.
+
+## M09-019a checkpoint (2026-08-23) — pending independent Tier-D review
+
+- **Active milestone/package:** M09 / M09-019a (r6 validation re-baseline; child of the split
+  recorded in `plans/M09-019_POST_RULES_BASELINE_PROFILE.md`). Branch
+  `wp/m09-019-post-rules-baseline-profile` from base `9a83223`.
+- **Delivered:** `play_learned` learned seats on pooled boards (run.rs, + behavior-preserving
+  `reduce` extraction); fail-closed panel runner (`baseline.rs`: checksum verification per §10,
+  champion load+validate, pre-game artifact checks); real-artifact example with before/after
+  non-overwrite proof.
+- **Baseline numbers:** r6 champions × seeds 919_001..=919_030 × validation pool (seed-777
+  holdout) × 4-round horizon on the corrected engine: 30/30 error-free, 0 completed, mean VP per
+  seat p1 2.700 / p2 2.467 / p3 2.167 / p4 2.600 / p5 2.600 / p6 2.533, 33,825 decisions. Panel
+  output byte-identical across three runs; input checksums unchanged (pool `aba33c81…`, checkpoint
+  `be792a2a…` — both match §10 manifest prefixes).
+- **Gates:** ti4-sim 35/0 · workspace **1,339/0** (+3 new tests) · clippy clean in ti4-sim (two
+  pre-existing engine warnings only) · fmt clean · diff-check clean. Cargo.lock: +1 line (sha2).
+- **Observations:** O-M09-019a-1/2/3 in `plans/M09-019_OPEN_REVIEW_ITEMS.md` (wall-clock omitted
+  by design; zero completions is a measurement; no committed real-artifact test — M09-020's home).
+- **Next exact action:** independent Tier-D frontier review of the M09-019a commit (first of the
+  two required by the row); then M09-019b (bounded profile with raw samples + feature inventory).
