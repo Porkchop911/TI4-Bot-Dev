@@ -65,3 +65,22 @@ Re-run: `cargo test -p ti4-content`, `cargo test --workspace` ×2 (compare per-t
 Sister pending package on a disjoint branch: **M08-019** resolution commit `9a8f5fd` (branch
 `wp/m08-019-reopened-frontier-review`) — Tier C recheck of the F-M08-019-1 Option A fix + M08-021
 v2 re-baseline. Disjoint file sets; reviewable and mergeable independently, in either order.
+
+---
+
+## Independent Tier B verdict — Codex frontier review, 2026-08-23
+
+**Accept. No actionable findings.** The reviewer independently checked the implementation and all
+125 embedded unit records. FFG LRR 2.0 rule 43 states that every infantry and mech unit is a ground
+force, so union semantics are the correct resolution for the two Naaz space mechs: their conditional
+ship status does not remove their mech/ground-force status. The new predicate changes exactly one
+record relative to the prior implementation, `titans_pds`; no currently rostered faction is
+reclassified and the escalation clause does not trigger.
+
+Reproduced gates: `ti4-content` **129/0**; workspace **1,335/0 twice**, with identical sorted
+per-test result sets; `cargo clippy -p ti4-content --all-targets` has no warning in the touched
+crate; touched-file rustfmt and `git diff --check` clean. Wider formatting drift in `galaxy.rs` and
+workspace warnings in untouched crates are pre-existing and outside this package.
+
+**Disposition: Accept.** T1/KD-5 is fixed; M08-022 is closed and D11 roster widening is no longer
+blocked by this package.

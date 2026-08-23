@@ -2766,3 +2766,13 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit scoped paths (units.rs + spec + evidence + this file) so the
   Claude review loop can pick up both pending packages; on acceptance of each, remove KD-5 /
   write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`.
+
+## M08-022 independent acceptance (2026-08-23)
+
+- **Reviewer/disposition:** Codex frontier review, independent of the Qwen implementer —
+  **Accept, no actionable findings.** FFG LRR 2.0 rule 43 independently confirms all mechs are
+  ground forces, validating union semantics for the Naaz space mechs.
+- **Reproduced gates:** ti4-content **129/0**; workspace **1,335/0 twice**, identical sorted test
+  result sets; no touched-crate Clippy warning; touched-file rustfmt and diff checks clean.
+- **Closure:** KD-5 removed; **M08-022 ✅ accepted**. D11 roster widening is no longer blocked by
+  M08-022. M08-019 remains separate and unresolved on its own branch.
