@@ -7,11 +7,13 @@ accepted/committed (`45fe569`), M08-021
 closed with independent review fully resolved (`f110907`, `e5afb02`, close-out `476e0c4`).
 Base commit `476e0c4`; branch `wp/m08-019-reopened-frontier-review`.
 
-**Correction round complete (2026-08-23), pending fresh independent Tier-C recheck.** C1
+**Fresh Tier-C recheck verdict: changes required (2026-08-23).** C1
 (invasion landing-option order from the system record's own `planets` array, red-first verified),
 C2 (`annexable` threads active content/sources; ordering test moved to in-scope system 58), and
 C3 (full 30-seed perturbation rerun: **0/30 seeds diverge**) are resolved; the M08-021 baseline was
-rederived once as v3 per the verdict's disposition. See Part 4 of
+rederived once as v3 per the verdict's disposition. C1/C2 are accepted, but C3 ran only an
+all-categories-at-once reversal rather than the required 28×30 per-category matrix, and the
+baseline protocol is mislabeled POK although `run_with` uses DEFAULT/FULL. See Parts 4–5 of
 `plans/M08-019_OPEN_REVIEW_ITEMS.md` and `plans/evidence/M08-019.md`.
 
 **Exact committed frontier under review:** `3c7ddd2..476e0c4` (seven commits: M08-017 ×2,

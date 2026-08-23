@@ -2820,3 +2820,19 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit the correction round (scoped paths only) so the review loop can
   pick it up; on independent acceptance: write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`,
   update this file, close M08-019.
+
+## M08-019 fresh Tier-C verdict on `5b8de2a` (2026-08-23)
+
+- **Reviewer/disposition:** Codex frontier — **changes required; do not close M08-019**.
+- **C1/C2 accepted:** invasion and Peace Accords option-order tests each **1/0**; active content
+  and source threading is correct.
+- **E1 MEDIUM/required:** C3 ran one corpus with every category reversed across 30 seeds, not the
+  required 28 individually reversed categories × 30 seeds. Run the 840-game perturbation matrix
+  and report results per content category.
+- **E2 MEDIUM/required:** M08-021 baseline docs say POK, while `run_with` uses `DEFAULT == FULL`.
+  Correct the baseline protocol record to DEFAULT/FULL (the architecture's simulator scope), or
+  deliberately change the harness and rederive the affected baselines.
+- **Reproduced:** ti4-sim **32/0** including v3 integrity; focused C1/C2 tests **1/0** each;
+  Clippy/rustfmt/diff clean in touched files.
+- **Next exact action:** resolve E1 and E2 only, then request another Tier-C recheck. No C1/C2
+  source change or additional re-baseline is required unless E1 discovers another defect.

@@ -443,3 +443,58 @@ M08-021 set (`812_001..=812_030`), recorded in `plans/evidence/M08-019.md`.
 
 **Status: corrections complete; requesting a fresh independent Tier-C recheck.** The v3 baseline is
 interim until that review accepts it.
+
+---
+
+# Part 5 — fresh Tier-C recheck of `5b8de2a` (Codex frontier review, 2026-08-23)
+
+## Verdict
+
+**Changes required; do not close M08-019.** C1 and C2 are correctly implemented, their focused
+tests pass, and the v3 bounds reproduce. C3 is not the campaign required by the prior verdict, and
+the baseline protocol still names the wrong content scope.
+
+### E1 — MEDIUM, required: C3 reversed all categories together instead of testing each category
+
+The prior verdict required the **28-category perturbation campaign across 30 seeds**. Part 1 made
+the intended matrix explicit: 28 individually reversed category corpora × 30 seeds. The correction
+evidence instead describes one embedded corpus and one corpus with **every category reversed**, for
+only 60 games total. That proves the aggregate all-category perturbation is stable on 30 seeds; it
+does not prove that each category is independently order-insensitive. Interactions or cancellations
+between simultaneously perturbed categories remain possible.
+
+The statement that the category count changed from 28 to 42–43 because the new harness exercises
+more subsystems is also a category error: 42–43 is the number of event labels compared per game,
+not the number of content categories perturbed.
+
+**Required:** run 28 individually reversed category stores over all 30 fixed seeds (840 perturbed
+games, plus a reusable embedded baseline), report the per-category divergence counts, and retain
+the timing-free field comparison. No further behavior re-baseline is needed unless that campaign
+exposes another code defect.
+
+### E2 — MEDIUM, required evidence correction: the baseline is FULL-scope, not POK-scope
+
+`behavior.rs` and `plans/evidence/M08-021.md` call protocol v1 “POK scope,” but
+`behavior::play_batch` calls `run_with`, and `run_with` unconditionally passes `DEFAULT` to
+`play_with`; `DEFAULT == FULL`. All v1/v2/v3 bounds were therefore generated under FULL.
+
+The project architecture explicitly assigns `DEFAULT`/FULL to simulator runtime paths, and the
+M08-021 accepted specification requires the exact content scope to be recorded without mandating
+POK. The least disruptive correct resolution is documentation/evidence repair: change the protocol
+claims to DEFAULT/FULL everywhere they describe these baselines. If POK was actually intended,
+the harness API and every baseline must instead be changed and re-reviewed; do not relabel FULL
+measurements as POK.
+
+## What passed
+
+- `commit_options_follow_the_system_record_planet_order`: **1/0** — C1 accepted.
+- `peace_accords_candidates_follow_the_system_record_planet_order`: **1/0** — C2 accepted.
+- ti4-sim including the v3 integrity gate: **32/0**.
+- Engine/sim Clippy: no warning in correction-touched files; only recorded pre-existing engine
+  warnings. Touched-file rustfmt and diff checks clean.
+
+## Disposition
+
+**Blocked on E1; E2 is required before the same recheck closes.** C1/C2 need no further source
+change. Complete the per-category 30-seed matrix, correct the FULL-scope protocol record, and
+request another Tier-C recheck.
