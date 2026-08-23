@@ -2848,3 +2848,20 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Gates:** ti4-sim **32/0** · clippy/rustfmt clean on touched files · diff-check clean.
 - **Next exact action:** commit the E1/E2 round (scoped paths only); on independent acceptance:
   write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`, update this file, close M08-019.
+
+## M08-019 final Tier-C acceptance / M08 exit closure (2026-08-23)
+
+- **Reviewed tip:** `29baf78` on `wp/m08-019-reopened-frontier-review`.
+- **Verdict:** **accepted; no unresolved M08-019 findings.** E1's 28×30 matrix covers the
+  canonical `ALL_CONTENT_TYPES` set exactly and reports 0/30 divergences for every category. E2's
+  DEFAULT/FULL scope correction matches the runtime path and does not change or relabel bounds.
+- **Independent gates:** `cargo test -p ti4-sim` **32/0**; `cargo clippy -p ti4-sim
+  --all-targets` has no correction-touched warning (two recorded pre-existing engine warnings);
+  targeted rustfmt clean; `git diff de86321..29baf78 --check` clean.
+- **Milestone:** M08 exit gate closed. M08-018 and M08-021 remain accepted; C1/C2/C3 and E1/E2
+  are resolved. M09 is the next milestone, subject to its own dependency order.
+- **Working tree before verdict commit:** only these scoped review/closure records plus the three
+  preserved unrelated operator edits (`AGENTS.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`,
+  `plans/PI_WORK_PACKAGE_STANDARD.md`).
+- **Next exact action:** commit the scoped M08-019 verdict/closure files, then begin the first
+  dependency-ready M09 package in a fresh package context.

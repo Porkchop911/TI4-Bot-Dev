@@ -545,3 +545,26 @@ exposes a defect — per the verdict's disposition.
 - **Gates:** ti4-sim **32/0** · clippy/rustfmt clean on touched files · `git diff --check` clean.
 
 **Status: E1/E2 corrections complete; requesting another fresh independent Tier-C recheck.**
+
+---
+
+# Part 7 — final independent Tier-C recheck (Codex frontier, 2026-08-23)
+
+## Verdict
+
+**Accepted. M08-019 has no unresolved finding.**
+
+- **E1 accepted:** the correction records the required 28 individually reversed canonical
+  content categories, each across all 30 fixed seeds (840 perturbed games), with timing excluded
+  from the field comparison. The category list matches `ALL_CONTENT_TYPES` exactly and reports
+  **0/30 divergences for every category**; the earlier all-categories reversal remains a distinct
+  aggregate check.
+- **E2 accepted:** `behavior.rs` and the M08-021 evidence now accurately identify the simulator
+  content scope as `DEFAULT` (= FULL). This is a documentation correction only; the bounds were
+  generated under FULL and were not relabeled or rederived.
+- **Independent reproduction:** `cargo test -p ti4-sim` **32/0**; `cargo clippy -p ti4-sim
+  --all-targets` adds no warning in the correction-touched file (only the two recorded pre-existing
+  `ti4-engine` warnings); targeted rustfmt and `git diff de86321..29baf78 --check` clean.
+
+All earlier C1/C2/C3 findings and E1/E2 evidence findings are resolved. No further correction or
+behavior re-baseline is required for M08-019.

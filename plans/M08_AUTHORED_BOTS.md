@@ -62,3 +62,8 @@ withdrawal is recorded in the review file.
 
 Authored bots select only legal actions from authorized observations, explanations reconcile, and
 paired-seed behavior remains within approved statistical bounds; M08-019 has no unresolved finding.
+
+**Closed 2026-08-23.** M08-018 and M08-021 are accepted; M08-019's final independent Tier-C
+recheck accepted C1/C2/C3 and E1/E2 at reviewed tip `29baf78`. The legal-choice, authorized-view,
+explanation, deterministic-ordering, and paired-seed statistical gates are satisfied with no open
+M08-019 finding. M09 may proceed subject to its own package dependencies.

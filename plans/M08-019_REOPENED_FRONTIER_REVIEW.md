@@ -2,6 +2,12 @@
 
 ## Preparation status
 
+**Final Tier-C verdict: accepted (2026-08-23, reviewed tip `29baf78`).** E1's required 28×30
+per-category matrix covers `ALL_CONTENT_TYPES` exactly and reports zero divergences; E2 correctly
+repairs the baseline scope record to DEFAULT/FULL. Independent ti4-sim, Clippy, rustfmt, and diff
+gates pass. M08-019 is closed with no unresolved finding; see Part 7 of
+`plans/M08-019_OPEN_REVIEW_ITEMS.md`.
+
 **Tier-C recheck verdict: changes required (2026-08-23).** Dependencies met: M08-018
 accepted/committed (`45fe569`), M08-021
 closed with independent review fully resolved (`f110907`, `e5afb02`, close-out `476e0c4`).
