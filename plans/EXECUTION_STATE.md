@@ -2865,3 +2865,89 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   `plans/PI_WORK_PACKAGE_STANDARD.md`).
 - **Next exact action:** commit the scoped M08-019 verdict/closure files, then begin the first
   dependency-ready M09 package in a fresh package context.
+
+## Milestone boundary: M08 CLOSED → M09 starts (handover, 2026-08-23)
+
+```text
+Objective:
+  M08 exit gate closed with full closure record; begin M09 at its first dependency-ready
+  package. M09 goal: load supported learned-policy schemas 2–5 and implement schema-6 CPU MLP
+  inference with factual, redacted features and no authored-heuristic leakage.
+
+Normative source versions (and historical Python commit if used):
+  docs/MLP_PLAN.md revision 5 + accepted Rust schemas are normative for M09 rows 019 onward;
+  rows 001–018 retain their historical source labels (Python reference D:\Projects\ti4-engine,
+  branch codex/fully-learned-policy @ 37061c5, read-only) as compatibility context.
+
+Active milestone/package:
+  M09 / next package is M09-018 re-execution (frontier schema/math review over rows 001–017 on
+  current-tree evidence). Corrected from an earlier note that said M09-001: the fresh session's
+  reading-order pass found that rows 001–017 were already implemented in this branch's history
+  (commits e347cc0, 83a02da et al.) with hollow evidence records — the same pattern M08-017 found.
+  MLP_PLAN rev 5 §11.2 confirms "M09 at 018" as existing numbering and makes M09-018 a hard
+  dependency of rows 019–030, so the gate must be re-executed before any row 019+ work.
+
+Status and completed acceptance criteria:
+  All M08 rows closed/accepted/cancelled with recorded dispositions. M08-019 final Tier-C verdict:
+  accepted, no unresolved finding (reviewed tip 29baf78; closure commit aa15a39). Exit-gate
+  closure record in plans/M08_AUTHORED_BOTS.md ("Closed 2026-08-23").
+
+Current branch and HEAD:
+  wp/m08-019-reopened-frontier-review @ aa15a39 (M08 frontier). codex/mlp-policy @ 92edea4 is an
+  ancestor of this tip; all M06–M08 implementation lives on the wp/* chain, never merged back.
+
+Working-tree state:
+  Clean except three preserved operator edits: AGENTS.md, plans/M06-025_OPEN_REVIEW_ITEMS.md,
+  plans/PI_WORK_PACKAGE_STANDARD.md — not part of any package commit; leave untouched.
+
+Tests last run and exact results:
+  Reviewer-reproduced at acceptance: cargo test -p ti4-sim 32/0 (doc tests 0/0); clippy no
+  correction-touched warnings (two recorded pre-existing engine warnings at choice.rs:568,
+  game.rs:1260); targeted rustfmt clean; git diff de86321..29baf78 --check clean. Implementer's
+  last full workspace run this milestone: 1,336/0 twice, timing-free per-test lists identical.
+
+Compatibility evidence:
+  plans/evidence/M08-019.md (five campaigns + E1/E2 round + final acceptance), M08-021.md
+  (v1/v2/v3 baselines, FULL scope), M08-017/018/020/022 evidence files. No Python parity claimed;
+  official rules and accepted Rust specifications govern.
+
+Decisions made and rationale:
+  F-M08-019-1 resolved by Option A (canonical choice-option ordering) + C1/C2 corrections; v3
+  behavioral baseline rederived once under the versioned process; E1 per-category matrix
+  (28×30, 0/28 diverge); E2 scope doc repaired to DEFAULT/FULL without relabeling any measurement.
+
+Open review findings or blockers:
+  None for M08. M09 rows 019–030 were formally blocked on M08-019 acceptance — now unblocked, but
+  their in-milestone dependency order still applies (M09-001 first; row 018 review gates 019+).
+
+Next exact action/command:
+  (Superseded by the correction above.) Execute M09-018 re-execution per
+  plans/M09-018_FRONTIER_SCHEMA_MATH_REVIEW.md on branch wp/m09-018-frontier-schema-math-review.
+
+Files to read first after compaction:
+  plans/EXECUTION_STATE.md (this file), plans/M09_LEARNED_POLICY.md, docs/MLP_PLAN.md,
+  plans/evidence/M08-019.md (final acceptance section).
+```
+
+## M09-018 re-execution checkpoint (2026-08-23) — pending independent Tier C review
+
+- **Active milestone/package:** M09 / M09-018 (frontier schema/math review over rows 001–017,
+  re-executed on current-tree evidence). Branch `wp/m09-018-frontier-schema-math-review` from base
+  `aa15a39`.
+- **Why re-execution:** the historical M09-018 record (and its siblings for rows 001–017) are hollow
+  checklists — no commands, results, or reviewer identity — and predate the M06–M08 rework. MLP_PLAN
+  rev 5 §11.2 makes M09-018 a hard dependency of rows 019–030.
+- **Campaign result:** Parts 1/3/5 PASS (hashing: 48/48 golden rows independently re-derived, 0
+  mismatches; softmax max-shifted + pinned-RNG sampling verified by tests; all real checkpoints —
+  stage-1/stage-2 envelopes, six factions each, all schema 4 — load/validate/score through the
+  current Profile API). Part 2: no policy-schema migration code exists (F-M09-018-1 MEDIUM for 3→4;
+  F-M09-018-2 LOW for 4→5, mitigated by documented `resolved_head` fallback; no local artifact
+  affected). Part 4: feature purity holds structurally (full literal scan) but row 014's instrumented
+  isolation test is absent (F-M09-018-3 MEDIUM). Reconciliation: **8 full / 6 partial / 3 absent**.
+- **Gates:** `cargo test -p ti4-policy` **119/0** · `cargo test -p ti4-training` **104/0** ·
+  `git diff --check` clean · no source files touched. Observations O1 (pre-existing rustfmt drift at
+  features.rs:690/752) and O2 (pre-existing warning at choice.rs:563) recorded, not fixed here.
+- **Findings:** F-M09-018-1…6 in `plans/M09-018_OPEN_REVIEW_ITEMS.md` with dispositions; 1/2/3 need
+  child packages or operator scope decisions before M09-030; none blocks M09-019's start.
+- **Next exact action:** independent Tier C frontier adjudication of the committed campaign; on
+  acceptance, M09-019 (post-rules baseline/profile) becomes dependency-ready.
