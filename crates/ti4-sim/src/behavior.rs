@@ -629,8 +629,8 @@ mod tests {
         let v_ci = faction_differentiation_ci(&varied);
         // Pinned under protocol v1 (BOOTSTRAP_DRAWS/BOOTSTRAP_SEED): any change to the metric,
         // the resample index stream, or the percentile rule fails here loudly.
-        assert_eq!(v_value, 1.0897247358851685);
-        assert_eq!(v_ci, (0.9354143466934853, 1.5343293866268306));
+        assert_eq!(v_value, 1.089_724_735_885_168_5);
+        assert_eq!(v_ci, (0.935_414_346_693_485_3, 1.534_329_386_626_830_6));
         assert_ne!(
             v_ci,
             (v_value, v_value),

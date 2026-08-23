@@ -443,3 +443,20 @@ statistic. Pinned protocol-v1 constants: value `1.0897247358851685`, CI `(0.9354
 1.5343293866268306)` — any change to the metric, resample index stream, or percentile rule fails
 loudly. Verification: ti4-sim **32/0** (includes the full gate test); clippy zero new warnings;
 rustfmt clean; `git diff --check` clean.
+
+## Part 5 — independent X1 verification (Codex frontier review, 2026-08-23)
+
+**Accept after one required lint correction, now resolved.** The varied four-row fixture makes
+the interval non-degenerate, all six per-seat means are distinct, and swapping seats 0/1 is a
+genuine relabeling. The pinned point estimate and interval independently guard the metric and
+protocol; the relabeling assertions then exercise the property X1 said the constant fixture could
+not test.
+
+**X2 — LOW, resolved.** The initial X1 commit claimed a clean Clippy gate, but
+`cargo clippy -p ti4-sim --all-targets` reported three new `unreadable_literal` warnings on the
+pinned constants. Digit separators were added without changing their values. Reproduction after
+the correction: focused guard **1/0**; ti4-sim had already passed **32/0** on the reviewed commit;
+Clippy reports no warning in `ti4-sim` (only the two documented pre-existing `ti4-engine`
+warnings); `behavior.rs` rustfmt check and `git diff --check` are clean.
+
+**Disposition: Accept.** X1 and X2 are closed; no open M08-021 review item remains.

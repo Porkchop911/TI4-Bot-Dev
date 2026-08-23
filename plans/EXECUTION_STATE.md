@@ -2744,3 +2744,8 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   (0.9354143466934853, 1.5343293866268306)). Test-only change in `behavior.rs`; ti4-sim **32/0**
   including the full gate test; clippy/rustfmt/diff --check clean. Resolution recorded in
   `plans/M08-021_OPEN_REVIEW_ITEMS.md`. Pending independent review alongside M08-019 and M08-022.
+
+- **Independent review complete:** Codex frontier review accepted the varied fixture after X2
+  (LOW) was resolved by adding digit separators to three pinned floating-point constants. Focused
+  guard **1/0**; reviewed sim suite **32/0**; exact Clippy command has no `ti4-sim` warnings;
+  touched-file rustfmt and `git diff --check` clean. **M08-021 has no open review item.**
