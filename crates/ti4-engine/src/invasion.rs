@@ -249,9 +249,27 @@ fn landable_planets(
     sources: SourceSet,
     system: &SystemId,
 ) -> Vec<PlanetId> {
-    ti4_content::galaxy::planets_in(content, system.as_str(), sources)
+    // F-M08-019-1 (C1): iterate the active system record's own `planets` array — canonical
+    // order. Membership is identical to `galaxy::planets_in` for every system in this corpus;
+    // only the file layout of planets.json differs, and choice-option order must not follow it.
+    let Some(record) = content.get(
+        ti4_model::content_types::ContentType::Systems,
+        system.as_str(),
+    ) else {
+        return Vec::new();
+    };
+    record
+        .strings("planets")
         .into_iter()
-        .map(|planet| PlanetId::new(planet.id()))
+        .filter_map(|name| {
+            // Scope filter mirrors planets_in: a planet outside the active source set is not on
+            // this board. (Every system's planets come from one source, so this either keeps or
+            // drops the whole array — never a subset.)
+            content
+                .get(ti4_model::content_types::ContentType::Planets, name)
+                .filter(|planet| planet.in_sources(sources))
+                .map(|_| PlanetId::new(name))
+        })
         .filter(|planet| planet.as_str() != "mr" || state.custodians_removed)
         .collect()
 }
@@ -2294,17 +2312,26 @@ mod tests {
                 .filter_map(|(_, planet)| planet.system_id())
                 .collect();
         for system in &systems {
-            let planets: Vec<PlanetId> = ti4_content::galaxy::planets_in(content, system, POK)
-                .iter()
-                .map(|planet| PlanetId::new(planet.id()))
-                .collect();
-            if planets.len() >= 2 {
-                return (
-                    state,
-                    SystemId::new(*system),
-                    planets[0].clone(),
-                    planets[1].clone(),
-                );
+            // F-M08-019-1 (C1): pa/pb follow the system record's own `planets` array
+            // (canonical order), so option-order assertions track the oracle rather than the
+            // planets.json layout. System 09 is selected: record [maaluuk, druua] vs file
+            // order [druaa, maaluuk].
+            if let Some(record) =
+                content.get(ti4_model::content_types::ContentType::Systems, system)
+            {
+                let planets: Vec<PlanetId> = record
+                    .strings("planets")
+                    .into_iter()
+                    .map(PlanetId::new)
+                    .collect();
+                if planets.len() >= 2 {
+                    return (
+                        state,
+                        SystemId::new(*system),
+                        planets[0].clone(),
+                        planets[1].clone(),
+                    );
+                }
             }
         }
         panic!("the corpus has no two-planet system")
@@ -2357,6 +2384,53 @@ mod tests {
             ]
         );
         assert_eq!(asks[1].0, format!("commit ground forces in {system}"));
+    }
+
+    #[test]
+    fn commit_options_follow_the_system_record_planet_order() {
+        // F-M08-019-1 (C1): landing options must follow the system record's own `planets`
+        // array, not the file layout of planets.json. System 09 prints [maaluuk, druua]; in
+        // file order druaa precedes maaluuk — under the old code the option ids came out
+        // swapped. Verified RED before the fix.
+        let mut state =
+            start_game(ContentStore::embedded(), &[invader(), holder()], POK, None).unwrap();
+        let system = SystemId::new("09");
+        in_space(&mut state, &system, "infantry", &invader(), 1);
+        let (recorder, seen) = CommitRecording::new(&["done_committing".to_owned()]);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        let asks = seen.borrow();
+        assert_eq!(asks.len(), 1);
+        assert_eq!(
+            asks[0].1,
+            vec![
+                (
+                    "commit|0|maaluuk".to_owned(),
+                    "commit".to_owned(),
+                    "land infantry on maaluuk".to_owned()
+                ),
+                (
+                    "commit|0|druaa".to_owned(),
+                    "commit".to_owned(),
+                    "land infantry on druaa".to_owned()
+                ),
+                (
+                    "done_committing".to_owned(),
+                    "decline".to_owned(),
+                    "commit no more ground forces".to_owned()
+                )
+            ]
+        );
     }
 
     #[test]

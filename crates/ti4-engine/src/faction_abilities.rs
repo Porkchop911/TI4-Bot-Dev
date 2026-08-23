@@ -465,6 +465,8 @@ pub fn perform_component(
 #[must_use]
 pub fn annexable(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     galaxy: &ti4_content::galaxy::Galaxy,
     player: &PlayerId,
 ) -> Vec<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> {
@@ -484,13 +486,17 @@ pub fn annexable(
     // F-M08-019-1: iterate each system's planets in the order of the system record's own
     // `planets` array (the oracle's order), not the file layout of planets.json. The two
     // sources agree on membership for every system in this corpus; only their orders differ.
-    let store = ti4_content::ContentStore::embedded();
+    // C2: resolve those records through the *active* content domain and source scope — a fresh
+    // embedded store would ignore perturbed live stores and alternate scopes entirely. The
+    // scope check is a no-op for reachable systems (they exist in the active galaxy by
+    // construction) but keeps the function honest about its domain.
     let mut found = Vec::new();
     for system in reachable {
         let id = ti4_model::id::SystemId::new(&system);
         let board = state.system_state(&id);
-        let Some(system_record) =
-            store.get(ti4_model::content_types::ContentType::Systems, &system)
+        let Some(system_record) = content
+            .get(ContentType::Systems, &system)
+            .filter(|record| record.in_sources(sources))
         else {
             continue;
         };
@@ -528,7 +534,13 @@ pub fn strategy_resolved(
     let Some(galaxy) = context.galaxy else {
         return; // "in or next to" needs the map
     };
-    let candidates = annexable(context.state, galaxy, player);
+    let candidates = annexable(
+        context.state,
+        context.content,
+        context.sources,
+        galaxy,
+        player,
+    );
     if candidates.is_empty() {
         return;
     }
@@ -1181,13 +1193,13 @@ mod tests {
         };
         state.system_mut(&mine).set_control(held, player.clone());
 
-        let open = annexable(&state, &hub.galaxy, &player);
+        let open = annexable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
         assert!(!open.is_empty(), "a neighbouring empty planet is annexable");
 
         // Put a unit of this player's own on the first candidate: it stops being empty.
         let (system, planet) = open[0].clone();
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, 1);
-        let after = annexable(&state, &hub.galaxy, &player);
+        let after = annexable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
         assert!(
             !after.contains(&(system, planet)),
             "your own troops make it not empty either"
@@ -1226,33 +1238,33 @@ mod tests {
     #[test]
     fn peace_accords_candidates_follow_the_system_record_planet_order() {
         // F-M08-019-1: candidate order must follow the system record's own `planets` array,
-        // not the file layout of planets.json. System 110 prints
-        // [horizon, elnath, luthieniv]; in planets.json file order elnath precedes horizon.
+        // not the file layout of planets.json. System 58 prints [valk, ylir, avar]; in
+        // planets.json file order avar precedes valk — so with ylir controlled, the two empty
+        // candidates swap relative order between the old and new code.
+        //
+        // C2 re-point: the original fixture used system 110, which is a Thunder's Edge system
+        // outside POK scope. That only worked because the pre-C2 `annexable` resolved records
+        // from a fresh embedded store with no source scope — an impossible production scenario.
+        // System 58 (pok) exercises the same property inside the active domain.
         let Some(xxcha) = faction_with("peace_accords") else {
             return;
         };
         let hub = crate::fixtures::plain_hub();
         let (mut state, player) = seated(&xxcha);
-        let system = ti4_model::id::SystemId::new("110");
-        let held = ti4_model::id::PlanetId::new("luthieniv");
+        let system = ti4_model::id::SystemId::new("58");
+        let held = ti4_model::id::PlanetId::new("ylir");
         state.system_mut(&system).set_control(held, player.clone());
 
-        let open = annexable(&state, &hub.galaxy, &player);
-        let horizon = (system.clone(), ti4_model::id::PlanetId::new("horizon"));
-        let elnath = (system.clone(), ti4_model::id::PlanetId::new("elnath"));
-        assert!(open.contains(&horizon), "horizon is empty and unowned");
-        assert!(open.contains(&elnath), "elnath is empty and unowned");
-        let i_horizon = open
-            .iter()
-            .position(|c| *c == horizon)
-            .expect("checked above");
-        let i_elnath = open
-            .iter()
-            .position(|c| *c == elnath)
-            .expect("checked above");
+        let open = annexable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
+        let valk = (system.clone(), ti4_model::id::PlanetId::new("valk"));
+        let avar = (system.clone(), ti4_model::id::PlanetId::new("avar"));
+        assert!(open.contains(&valk), "valk is empty and unowned");
+        assert!(open.contains(&avar), "avar is empty and unowned");
+        let i_valk = open.iter().position(|c| *c == valk).expect("checked above");
+        let i_avar = open.iter().position(|c| *c == avar).expect("checked above");
         assert!(
-            i_horizon < i_elnath,
-            "the system record puts horizon before elnath; planets.json file order would not"
+            i_valk < i_avar,
+            "the system record puts valk before avar; planets.json file order would not"
         );
     }
 

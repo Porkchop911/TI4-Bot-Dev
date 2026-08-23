@@ -385,3 +385,61 @@ reorders, never filters.
   the old and new code). Both verified RED before the fix, GREEN after.
 - **Re-baseline (M08-021 v2):** recorded in `plans/evidence/M08-021.md` with old/new bounds side
   by side; semantic cause: canonical choice-option ordering changes bot sampling on tied scores.
+
+---
+
+# Part 4 — correction round for C1/C2/C3 (implementer, 2026-08-23)
+
+## Finding-specific writable paths (declared before source edits, per spec)
+
+```text
+crates/ti4-engine/src/invasion.rs          (C1: landable_planets from the active system record's
+                                             `planets` array + red-first option-order test in its
+                                             test module)
+crates/ti4-engine/src/faction_abilities.rs (C2: annexable() threads content/sources through;
+                                             production caller + test call sites updated)
+crates/ti4-sim/src/behavior.rs             (baseline_bounds v3 — the single versioned
+                                             rederivation required by the verdict's disposition:
+                                             "rederive the baseline once" after C1+C2 land)
+plans/M08-019_OPEN_REVIEW_ITEMS.md, plans/evidence/M08-019.md,
+plans/evidence/M08-021.md (v3 re-baseline, old/new side by side),
+plans/EXECUTION_STATE.md
+```
+
+No other path. C3 is evidence-only: the 28-category perturbation rerun over the full 30-seed
+M08-021 set (`812_001..=812_030`), recorded in `plans/evidence/M08-019.md`.
+
+## Scope notes carried into implementation
+
+- **C1 membership invariant:** system-record `planets` arrays and `tileId` membership agree on all
+  231 systems (measured); no system mixes planet sources, so the per-planet scope filter keeps the
+  result set identical for every active source scope — only order changes. The custodians filter
+  (`mr` while the token sits) is preserved verbatim.
+- **C2 domain:** `strategy_resolved`'s `TimingContext` already carries both `content` and
+  `sources`; tests pass `(ContentStore::embedded(), POK)` matching their fixtures. The scope check
+  on system records is a no-op for reachable systems (they exist in the active galaxy by
+  construction) but makes the function honest about its domain under perturbed live stores.
+- **Re-baseline:** one v3 rederivation after C1+C2 land together, per the verdict's disposition;
+  the v2 baseline is interim and is not treated as final.
+
+## Resolution record (correction round)
+
+- **C1 — resolved.** `landable_planets` derives landing planets from the active system record's
+  own `planets` array (per-planet scope filter mirroring `planets_in`; custodians filter
+  preserved). Red-first test `commit_options_follow_the_system_record_planet_order` verified RED
+  against the old implementation, GREEN after. `two_planet_arena()` re-pointed to canonical order;
+  single-planet `arena()` untouched (asserts no order).
+- **C2 — resolved.** `annexable` threads `(content, sources)` through and resolves system records
+  with an explicit scope check; the embedded-store bypass is gone. Production caller passes the
+  TimingContext's domain; tests pass `(embedded, POK)`. The ordering test moved from out-of-scope
+  system 110 to in-scope system 58 (same red-first property inside the active domain).
+- **C3 — resolved.** Full 30-seed perturbation rerun: **0/30 seeds diverge** across all comparable
+  categories (42–43 event labels + seven scalar fields; `seconds` excluded by design). Protocol and
+  result in `plans/evidence/M08-019.md`.
+- **Re-baseline — done once, as directed.** M08-021 v3 recorded with old/new side by side in
+  `plans/evidence/M08-021.md`; gate integrity check bit-verifies the transcription.
+- **Gates:** engine 850/0 + 5/0 · policy 119/0 · sim 32/0 (v3 gate) · workspace 1,336/0 twice,
+  timing-free identical · clippy/rustfmt clean on touched files.
+
+**Status: corrections complete; requesting a fresh independent Tier-C recheck.** The v3 baseline is
+interim until that review accepts it.

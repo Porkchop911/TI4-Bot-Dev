@@ -4,7 +4,7 @@
 //! (SD-1, `plans/M08_AUTHORED_BOTS.md`). Determinism pins catch *run-to-run* drift; this suite
 //! catches *version-to-version* behavioral drift: it plays a fixed seed set twice, asserts
 //! per-seed identity before any comparison, and checks ten behavioral metrics against bounds
-//! recorded from the current baseline (v2 — see [`baseline_bounds`]).
+//! recorded from the current baseline (v3 — see [`baseline_bounds`]).
 //!
 //! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster, POK
 //! scope, [`Seats::Scored`] (one authored bot per seat), [`Horizon::default()`] — 50 rounds /
@@ -379,51 +379,54 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
-    // v2 — recorded 2026-08-23 on branch wp/m08-019-reopened-frontier-review after the
-    // F-M08-019-1 fix (canonical choice-option ordering: researchable() sorted, annexable()
-    // system-record order). Option reordering changes bot sampling on tied scores; every
-    // metric moved modestly and no behavior gate regressed. v1 values (base `45fe569`) are
-    // preserved side by side in plans/evidence/M08-021.md.
+    // v3 — recorded 2026-08-23 on branch wp/m08-019-reopened-frontier-review after the
+    // Tier-C correction round completed F-M08-019-1: C1 canonicalized invasion landing-option
+    // order (landable_planets from the system record's `planets` array) and C2 threaded the
+    // active content/sources through annexable. The single versioned rederivation required by
+    // the verdict's disposition — v2 was interim because the missing invasion fix would change
+    // option ordering again. Option reordering changes bot sampling on tied scores; one seed
+    // flipped its ending (ObjectivesExhausted → VictoryPoints) and every metric moved modestly.
+    // v1 (base `45fe569`) and v2 values are preserved side by side in plans/evidence/M08-021.md.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.394_444_444_444_444_54, 0.459_259_259_259_259_37),
+        (0.383_333_333_333_333_5, 0.448_765_432_098_765_46),
     );
-    // Degenerate on purpose: all thirty v1 and v2 games ended cleanly, so the bound is the
+    // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.666_619_966_346_411, 2.064_650_590_576_990_3),
+        (1.608_870_963_060_335_5, 1.922_138_631_083_791),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.395_655_418_105_885_67, 0.862_686_730_546_916_6),
+        (0.306_362_570_643_605_3, 0.763_378_617_450_244_5),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.028_169_398_244_965_834, 0.029_828_149_658_605_703),
+        (0.027_887_127_382_587_116, 0.029_379_724_541_312_928),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.047_319_302_656_773_61, 0.048_634_824_579_240_75),
+        (0.047_428_583_456_618_63, 0.048_660_660_227_172_75),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.067_192_046_173_363_65, 0.071_844_041_412_796_25),
+        (0.067_420_702_892_928_33, 0.072_385_601_009_851_66),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.007_775_183_130_052_392, 0.008_915_739_991_949_41),
+        (0.008_142_061_219_023_835, 0.009_275_008_762_437_54),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.093_432_387_850_588_2, 0.095_997_412_334_190_43),
+        (0.093_517_207_031_071_19, 0.095_809_575_282_834_01),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.046_090_558_665_786_714, 0.047_381_288_724_976_565),
+        (0.046_066_967_306_267_2, 0.047_168_934_633_599_81),
     );
     bounds
 }

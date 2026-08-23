@@ -2796,3 +2796,27 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   **1/0**. These do not cover C1/C2. Clippy adds no warning in the submitted touched files.
 - **Next exact action:** implement C1+C2 together, run C3, rederive the behavior baseline once,
   rerun affected/workspace gates, then request a fresh independent Tier-C review.
+
+## M08-019 correction round complete (2026-08-23) — pending fresh Tier-C recheck
+
+- **C1 resolved:** `landable_planets` now iterates the active system record's own `planets` array
+  (per-planet scope filter mirroring `planets_in`; custodians filter preserved). Red-first test
+  verified RED→GREEN. `two_planet_arena()` re-pointed to canonical order; single-planet `arena()`
+  untouched.
+- **C2 resolved:** `annexable(state, content, sources, galaxy, player)` threads the active domain;
+  embedded-store bypass removed. Ordering test moved from out-of-scope system 110 (latent bug:
+  pre-C2 code could annex planets of systems that cannot exist in a POK game) to in-scope system
+  58 with the same red-first property.
+- **C3 resolved:** full 30-seed perturbation rerun (reversed category arrays, M08-021 harness):
+  **0/30 seeds diverge** across all comparable categories — corpus-layout independent engine-wide.
+- **v3 re-baseline done once** per the verdict's disposition; old/new side by side in
+  `plans/evidence/M08-021.md`; gate integrity check bit-verifies transcription.
+- **Gates:** ti4-engine **850/0 + 5/0** · ti4-policy **119/0** (nested-window campaign intact) ·
+  ti4-sim **32/0** (v3 gate) · workspace **1,336/0 twice**, timing-free identical · clippy/rustfmt
+  clean on touched files.
+- **Observation recorded:** M08-021 docs say "POK scope" but `run_with` uses `DEFAULT`=FULL; all
+  three baselines are FULL-scope and mutually consistent — doc fix left for reviewer/operator
+  disposition (accepted package's file, out of this round's declared paths).
+- **Next exact action:** commit the correction round (scoped paths only) so the review loop can
+  pick it up; on independent acceptance: write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`,
+  update this file, close M08-019.
