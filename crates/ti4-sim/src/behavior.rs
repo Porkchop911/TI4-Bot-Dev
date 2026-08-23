@@ -561,11 +561,13 @@ mod tests {
     /// statistic (the degenerate interval equals the point estimate), and relabeling leaves it
     /// bit-identical because the resample index stream is unchanged and every intermediate value
     /// in this fixture is exactly representable (small integers — exactness by construction, so
-    /// strict comparison is the right assertion).
+    /// strict comparison is the right assertion). The varied-fixture half pins measured protocol-v1
+    /// constants: the bootstrap is deterministic under a fixed seed, so bit-exact equality is the
+    /// correct regression check there too.
     #[test]
     #[allow(
         clippy::float_cmp,
-        reason = "exact by construction: small-integer fixture keeps every intermediate value representable"
+        reason = "exact by construction (small-integer fixture) or pinned deterministic protocol-v1 constants"
     )]
     fn faction_differentiation_moves_on_spread_not_relabeling() {
         // Three games; seat 5 is clearly the weakest.
@@ -609,6 +611,45 @@ mod tests {
             faction_differentiation_ci(&relabeled),
             ci,
             "the resample index stream is permutation-invariant"
+        );
+
+        // X1: the permutation-invariance assertion must run where it can actually fail — on a
+        // varied fixture whose CI is non-degenerate. (Constant rows make every resampling rule
+        // return the same statistic, so the invariance claim was untestable there.) All six
+        // per-seat means are distinct here, and seats 0/1 differ (4.25 vs 3.5), so the swap is a
+        // genuine relabeling: each bootstrap draw sees a different seat arrangement that must
+        // still yield an identical statistic.
+        let varied: [[f64; 6]; 4] = [
+            [5.0, 4.0, 3.0, 2.0, 1.0, 0.0],
+            [5.0, 3.0, 2.0, 1.0, 0.0, 4.0],
+            [4.0, 5.0, 1.0, 0.0, 3.0, 2.0],
+            [3.0, 2.0, 4.0, 5.0, 0.0, 1.0],
+        ];
+        let v_value = faction_differentiation(&varied);
+        let v_ci = faction_differentiation_ci(&varied);
+        // Pinned under protocol v1 (BOOTSTRAP_DRAWS/BOOTSTRAP_SEED): any change to the metric,
+        // the resample index stream, or the percentile rule fails here loudly.
+        assert_eq!(v_value, 1.0897247358851685);
+        assert_eq!(v_ci, (0.9354143466934853, 1.5343293866268306));
+        assert_ne!(
+            v_ci,
+            (v_value, v_value),
+            "the varied fixture must give a non-degenerate CI"
+        );
+
+        let mut swapped = varied;
+        for row in &mut swapped {
+            row.swap(0, 1);
+        }
+        assert_eq!(
+            faction_differentiation(&swapped),
+            v_value,
+            "a consistent seat relabeling must leave the point estimate untouched"
+        );
+        assert_eq!(
+            faction_differentiation_ci(&swapped),
+            v_ci,
+            "a consistent seat relabeling must leave a non-degenerate CI bit-identical"
         );
     }
 

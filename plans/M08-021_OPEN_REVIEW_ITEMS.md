@@ -431,3 +431,15 @@ because it is the same shape as W1 one level down: an assertion named for a prop
 cannot exercise. The exposure is small — the gate's protocol recomputation would still catch a
 broken `faction_differentiation_ci` through a bound mismatch — so this is about the guard meaning
 what it says, not about a live hole.
+
+**Resolution (2026-08-23, implementer).** Applied in `wp/m08-021-x1-varied-ci-fixture` from
+`476e0c4`. The constant fixture keeps the degenerate-CI assertion (correct as written); a new
+varied four-row fixture carries the permutation-invariance assertions. Design note beyond the
+recommendation: the implementer's first varied candidate had seats 0/1 with *equal* per-seat
+means, which would have made the swap undetectable — the same vacuity one level down. The
+committed fixture has all six per-seat means distinct (4.25, 3.5, 2.5, 2.0, 1.75, 1.0), so each
+bootstrap draw sees a genuinely different seat arrangement that must still yield an identical
+statistic. Pinned protocol-v1 constants: value `1.0897247358851685`, CI `(0.9354143466934853,
+1.5343293866268306)` — any change to the metric, resample index stream, or percentile rule fails
+loudly. Verification: ti4-sim **32/0** (includes the full gate test); clippy zero new warnings;
+rustfmt clean; `git diff --check` clean.

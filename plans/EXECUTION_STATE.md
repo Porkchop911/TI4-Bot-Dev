@@ -2734,3 +2734,13 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
   committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
   bootstrap methodology per the recorded independence limitation.
+
+## M08-021 X1 follow-up (2026-08-23)
+
+- **Branch:** `wp/m08-021-x1-varied-ci-fixture` from `476e0c4` — resolves the Part 4 addendum
+  finding X1 (LOW, non-blocking): the W1 guard test's CI permutation-invariance assertion was
+  vacuous on constant rows. Now runs on a varied four-row fixture with all six per-seat means
+  distinct; pinned protocol-v1 constants (value 1.0897247358851685, CI
+  (0.9354143466934853, 1.5343293866268306)). Test-only change in `behavior.rs`; ti4-sim **32/0**
+  including the full gate test; clippy/rustfmt/diff --check clean. Resolution recorded in
+  `plans/M08-021_OPEN_REVIEW_ITEMS.md`. Pending independent review alongside M08-019 and M08-022.
