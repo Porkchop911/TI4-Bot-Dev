@@ -11,10 +11,10 @@ Base commit `476e0c4`; branch `wp/m08-019-reopened-frontier-review`.
 (invasion landing-option order from the system record's own `planets` array, red-first verified),
 C2 (`annexable` threads active content/sources; ordering test moved to in-scope system 58), and
 C3 (full 30-seed perturbation rerun: **0/30 seeds diverge**) are resolved; the M08-021 baseline was
-rederived once as v3 per the verdict's disposition. C1/C2 are accepted, but C3 ran only an
-all-categories-at-once reversal rather than the required 28×30 per-category matrix, and the
-baseline protocol is mislabeled POK although `run_with` uses DEFAULT/FULL. See Parts 4–5 of
-`plans/M08-019_OPEN_REVIEW_ITEMS.md` and `plans/evidence/M08-019.md`.
+rederived once as v3 per the verdict's disposition. C1/C2 are accepted; E1 (the required 28×30
+per-category matrix) is now executed — **0/28 categories diverge on any seed** — and E2 (baseline
+scope mislabeled POK although `run_with` uses DEFAULT/FULL) is resolved by documentation repair.
+See Parts 4–6 of `plans/M08-019_OPEN_REVIEW_ITEMS.md` and `plans/evidence/M08-019.md`.
 
 **Exact committed frontier under review:** `3c7ddd2..476e0c4` (seven commits: M08-017 ×2,
 M08-020, M08-018, M08-021 ×3). Under `crates/`: `invasion.rs` (+390 — the only production

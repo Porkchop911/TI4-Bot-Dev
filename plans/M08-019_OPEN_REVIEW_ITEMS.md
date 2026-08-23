@@ -498,3 +498,50 @@ measurements as POK.
 **Blocked on E1; E2 is required before the same recheck closes.** C1/C2 need no further source
 change. Complete the per-category 30-seed matrix, correct the FULL-scope protocol record, and
 request another Tier-C recheck.
+
+---
+
+# Part 6 — E1/E2 correction round (implementer, 2026-08-23)
+
+## Finding-specific writable paths (declared before source edits, per spec)
+
+```text
+crates/ti4-sim/src/behavior.rs             (E2: module-doc scope claim POK → DEFAULT/FULL; no
+                                             numeric or behavioral change)
+plans/evidence/M08-021.md                  (E2: protocol v1 record POK → DEFAULT/FULL, with a
+                                             note that all three baselines were always FULL-scope)
+plans/evidence/M08-019.md                  (E1 per-category matrix results; E2 resolution note)
+plans/M08-019_OPEN_REVIEW_ITEMS.md, plans/EXECUTION_STATE.md,
+plans/M08-019_REOPENED_FRONTIER_REVIEW.md  (status lines only)
+```
+
+No other path. E1 is evidence-only: the temporary probe binary lives in `crates/ti4-sim/examples/`
+and is deleted before commit, as with C3. No source change and no re-baseline unless the matrix
+exposes a defect — per the verdict's disposition.
+
+## Scope notes carried into implementation
+
+- **E1 protocol:** 28 individually reversed category corpora (each corpus reverses exactly one of
+  the 28 content categories; all others keep original file order) × the full 30-seed M08-021 set =
+  840 perturbed games, compared field-wise against one reusable embedded baseline (30 games),
+  `seconds` excluded. Per-category divergence counts reported in evidence. The prior C3 run
+  (all categories reversed together) is retained as the aggregate check it actually was; this
+  matrix adds the per-category independence claim.
+- **E2 resolution:** documentation repair only — the architecture assigns DEFAULT/FULL to simulator
+  runtime paths, and all v1/v2/v3 bounds were generated under FULL. The protocol record is
+  corrected to say so; no measurement is relabeled in either direction.
+
+## E1/E2 resolution record (correction round 2)
+
+- **E1 — resolved.** Full per-category matrix executed: 28 individually reversed category
+  corpora × the full 30-seed M08-021 set = 840 perturbed games against one reusable embedded
+  baseline, field-wise comparison with `seconds` excluded. **Result: 0/28 categories show any
+  divergence across all 30 seeds** — every category is independently order-insensitive (per-category
+  counts in `plans/evidence/M08-019.md`). Combined with C3's aggregate check, both individual and
+  joint perturbation surfaces are covered. No new defect; no re-baseline needed.
+- **E2 — resolved.** Documentation repair only: `behavior.rs` module doc and the M08-021 evidence
+  protocol v1 now state DEFAULT (= FULL) content scope with a correction note. No measurement
+  relabeled in either direction; all three baselines remain valid as generated under FULL.
+- **Gates:** ti4-sim **32/0** · clippy/rustfmt clean on touched files · `git diff --check` clean.
+
+**Status: E1/E2 corrections complete; requesting another fresh independent Tier-C recheck.**

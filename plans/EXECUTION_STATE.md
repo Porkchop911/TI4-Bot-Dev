@@ -2836,3 +2836,15 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   Clippy/rustfmt/diff clean in touched files.
 - **Next exact action:** resolve E1 and E2 only, then request another Tier-C recheck. No C1/C2
   source change or additional re-baseline is required unless E1 discovers another defect.
+
+## M08-019 E1/E2 correction round complete (2026-08-23) — pending fresh Tier-C recheck
+
+- **E1 resolved:** per-category perturbation matrix executed as required — 28 individually
+  reversed category corpora × full 30-seed set = 840 perturbed games vs one reusable embedded
+  baseline, field-wise (`seconds` excluded). **0/28 categories diverge on any seed.** Per-category
+  counts in `plans/evidence/M08-019.md`. No new defect; no re-baseline.
+- **E2 resolved:** documentation repair only — `behavior.rs` module doc and M08-021 evidence
+  protocol v1 now state DEFAULT (= FULL) scope with a correction note; no measurement relabeled.
+- **Gates:** ti4-sim **32/0** · clippy/rustfmt clean on touched files · diff-check clean.
+- **Next exact action:** commit the E1/E2 round (scoped paths only); on independent acceptance:
+  write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`, update this file, close M08-019.

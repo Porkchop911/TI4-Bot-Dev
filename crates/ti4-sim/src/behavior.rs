@@ -6,9 +6,11 @@
 //! per-seed identity before any comparison, and checks ten behavioral metrics against bounds
 //! recorded from the current baseline (v3 — see [`baseline_bounds`]).
 //!
-//! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster, POK
-//! scope, [`Seats::Scored`] (one authored bot per seat), [`Horizon::default()`] — 50 rounds /
-//! 2M steps; v1 games end by objective exhaustion in about nine rounds.
+//! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster,
+//! `DEFAULT` (= FULL) content scope — the simulator runtime's assigned scope (an earlier draft
+//! of this record mislabeled it POK; corrected 2026-08-23 under M08-019 E2), [`Seats::Scored`]
+//! (one authored bot per seat), [`Horizon::default()`] — 50 rounds / 2M steps; v1 games end by
+//! objective exhaustion in about nine rounds.
 //!
 //! Metrics: VP pace (mean victory points per round), completion (clean endings), score spread
 //! (per-game standard deviation of the six final scores — within-game dispersion, invariant to
