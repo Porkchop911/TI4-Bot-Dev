@@ -92,7 +92,7 @@ material.** After the change:
 So the package fixes the general case and, for exactly one unit, replaces a correct-by-accident
 outcome with an incorrect one.
 
-**Reachability.** Titans is not in D11's roster (sol, letnev, xxcha, hacan, jolnal, l1z1x), so this
+**Reachability.** Titans is not in D11's roster (sol, letnev, xxcha, hacan, jolnar, l1z1x), so this
 cannot fire in play today — structurally blocked, like M06-025's L1, not merely rare. It fires the
 moment the roster widens, which D11 plans.
 

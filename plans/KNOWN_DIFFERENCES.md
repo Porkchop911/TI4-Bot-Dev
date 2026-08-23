@@ -99,6 +99,32 @@ in `PartialEq` but have no read or write site anywhere in the engine (F-M07-020-
 recorded so a future package implementing the abilities they names must add set site, identity-
 checked read site, and tests together.
 
+### ML-3 — content aliases are unique within a category, not across them (recorded at M08-018 acceptance, review U2)
+
+Identifier strings in the corpus are **not globally unique**: the same string can be an `alias` or
+`id` in two different content files. Verified counts (M08-018 re-scan, 2026-08-22):
+
+- Singular `alias` field only: **6** collisions — `crisis` [action_cards, agendas], `nm`
+  [colors, technologies], `obsidian` [factions, relics], `sar` [secret_objectives, technologies],
+  `te` [secret_objectives, strategy_card_sets], `vpw` [colors, technologies].
+- All four identifier fields (`id`, `alias`, `aliases`, `aliasList`), excluding the planets/systems
+  name pairing: **23** collisions (e.g. `galvanize` [abilities id, public_objectives alias],
+  `mirage` [explores id, tokens id/aliasList]).
+- Intra-file duplicates: none in any file with an `alias` field.
+- Public and secret objective aliases do **not** intersect (40 vs 40, empty intersection) — the
+  fact that makes M08-018's scoring-window redaction invariant sound.
+
+The M08-018 reviewer's count of "27" was not reproducible under any definition tried; its four
+cited examples are real collisions. The counts above are the reproducible record.
+
+**Consequence for any code that resolves an identifier:** a lookup is only well-defined together
+with its `ContentType` (or equivalent category). A check that asks "is this string a secret?"
+without also knowing *what kind of choice offered it* will false-positive on cross-category
+collisions — exactly the first-draft failure M08-018's campaign hit with `sar` (a research choice
+offering the WARFARE technology, flagged as an unowned secret). See
+`plans/evidence/M08-018.md` for the incident and the corrected invariant.
+
+
 ## Scope dispositions (answerability at M12)
 
 ### SD-1 — M08 rows 008/010/013 cancelled; 014 and 016 waived; 015 required as M08-021 (operator decision, 2026-08-22)

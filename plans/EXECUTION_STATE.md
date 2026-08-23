@@ -2566,3 +2566,45 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** begin **M08-018** — first bot baseline computed on corrected invasion
   behavior (KD-2 discharged); its numbers must not be compared against pre-M08-020 baselines
   without the comparability note in `plans/evidence/M08-020.md`.
+
+## Checkpoint — M08-018 accepted; committed (2026-08-22)
+
+- **Branch:** `wp/m08-018-post-m07-bot-revalidation` from base commit `00d6562`.
+- **What was done:** six new tests in the test module of `crates/ti4-policy/src/bot.rs` —
+  unlimited action-window re-offer; one-per-player combat cap (cold/argmax bot); agenda window;
+  no-eligible-secret skip; retained combat pause scored by a ScoredBot holding `fwp` (seed 51,
+  natural dice stream — `Dice::from_faces` is engine-test-only); full-game campaign (10 seeds ×
+  3 rotations × 2 runs = 60 six-player games, ~86 s) asserting legality, replay determinism,
+  redaction at the bot boundary, and non-vacuity. **No production code changed** — the
+  revalidation found no regression requiring a fix (engine suite count unchanged: 847 + 5).
+- **Key diagnosis (reviewer verified):** first-draft campaign invariant flagged "p3 offered
+  secret sar it does not own"; probe showed `sar` is both a WARFARE technology and the *Spark a
+  Rebellion* secret — alias spaces collide across content categories. Invariant corrected to
+  scoring-window records only (public/secret objective aliases verified collision-free). Engine
+  was correct all along; recorded in evidence so the scope is never "fixed" back.
+- **Review:** independent Tier B (`plans/M08-018_OPEN_REVIEW_ITEMS.md`, Claude Opus 5):
+  **Accept** — sar diagnosis and invariant scope verified as sound rather than convenient
+  (reviewer independently checked the empty public∩secret intersection). U1 (LOW) resolved
+  in-package: structural argument recorded + new explanation-layer guard test
+  `scoring_explanations_name_no_secret_the_seat_does_not_own` with non-vacuity probe (inverted
+  assertion found `btv` in real explain() output, pasted in evidence). U2 (LOW) resolved as
+  **ML-3** in `plans/KNOWN_DIFFERENCES.md` — alias uniqueness is per-category, not global; counts
+  re-scanned for this package (6 on singular `alias`; 23 across all identifier fields excl.
+  planets/systems); reviewer's "27" recorded as not reproducible under any definition tried,
+  its four cited examples confirmed real. U3 (suite 0.12 s → ~86 s) closed by operator, no
+  action — cost is dev-loop only, never training.
+- **Verification:** policy **119/0** (+7); engine **847 + 5 doctests** unchanged; workspace
+  **1328/0 identical ×2**; Clippy zero warnings in ti4-policy (five first-draft + two doc_markdown
+  warnings fixed in-package, incl. handling `deploy`'s Result); bot.rs rustfmt-clean under edition
+  2024 (features.rs:690/752 debt verified pre-existing at base via stash-check — untouched);
+  `git diff --check crates/` clean. Scratch probes (`examples/probe_seed.rs`, `probe_leak.rs`)
+  created, used once, deleted; no scratch remains.
+- **Commit:** scoped paths only — `crates/ti4-policy/src/bot.rs` (test module), spec (accepted),
+  evidence (new), review items (+ resolution, new), KNOWN_DIFFERENCES.md (ML-3), this file, plus
+  the reviewer's one-word typo correction in `plans/M08-020_OPEN_REVIEW_ITEMS.md`
+  (`jolnal` → `jolnar`, attributed in the commit message). Pre-existing operator edits untouched.
+- **Milestone state:** M08-017 ✅; M08-020 ✅; **M08-018 ✅ accepted/committed.** Ready —
+  **M08-021** (behavioral distribution suite; deps 017+020 ✅) which blocks M08-019's exit
+  review. M08-022 ready any time but hard-ordered only against D11 roster widening.
+- **Next exact action:** begin **M08-021** — the authored bot is the comparison baseline every
+  cross-time VP measurement depends on (SD-1: required before M08-019 closes).

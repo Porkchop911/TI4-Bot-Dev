@@ -2,8 +2,19 @@
 
 ## Preparation status
 
-Dependency-safe specification only. Do not begin until M07-020, M08-017, and M08-020 are
-accepted.
+**Accepted 2026-08-22** (independent Tier B, Claude Opus 5 — `plans/M08-018_OPEN_REVIEW_ITEMS.md`;
+U1 resolved in-package with the explanation-layer guard test + structural argument, U2 recorded as
+ML-3 in `plans/KNOWN_DIFFERENCES.md`, U3 closed by operator). Dependencies verified
+complete: M07-020 (M07 exit gate closed), M08-017 (`d69fcb1` + `734de3f`), M08-020 (`00d6562`).
+Base commit `00d6562`; branch `wp/m08-018-post-m07-bot-revalidation`. This is the first bot
+baseline computed on corrected invasion behavior — its numbers must not be compared against
+pre-M08-020 baselines without the comparability note in `plans/evidence/M08-020.md`.
+
+Six new tests added to the test module of `crates/ti4-policy/src/bot.rs`; **no production code
+changed** (the revalidation found no regression requiring a fix). Evidence:
+`plans/evidence/M08-018.md`. Reviewer must verify the sar alias-collision diagnosis in the
+evidence "Findings" section — the campaign's redaction invariant is scoped to scoring-window
+records for that reason, and an all-records check would be wrong.
 
 | Field | Value |
 |---|---|

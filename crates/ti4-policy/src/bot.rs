@@ -1801,4 +1801,513 @@ mod tests {
         bot.choose(&options).unwrap();
         assert!(bot.decisions.is_empty());
     }
+
+    // ── M08-018: nested scoring-window revalidation ────────────────────────────────
+    //
+    // Since occurrence-scoped secret scoring, one event can keep asking the same player:
+    // unlimited action/agenda windows re-offer after each score, and combat pauses mid-fight
+    // to open a OnePerPlayer window before resuming. These tests prove the bot answers every
+    // nested offer legally, with no stale state and no duplicate decisions.
+
+    use ti4_engine::choice::{Resolving, Table, Window};
+    use ti4_engine::objectives::{EventScoreLimit, ScoringWindow};
+    use ti4_engine::secrets::Timing;
+    use ti4_model::state::{Feat, GameState};
+
+    fn content() -> &'static ContentStore {
+        ContentStore::embedded()
+    }
+
+    /// A state where "a" holds the two action-timing secrets that both fire on one occurrence.
+    fn two_action_secrets_in_one_occurrence() -> (GameState, ti4_model::state::FeatOccurrence) {
+        let a = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("btv"),
+            ti4_model::id::SecretObjectiveId::new("dtgs"),
+        ];
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, Feat::WonInAnAnomaly, occurrence);
+        state.record_event_feat(&a, Feat::DestroyedACapitalShip, occurrence);
+        (state, occurrence)
+    }
+
+    /// Drive a scoring window against the bot until it closes. Returns the offers in order.
+    fn drive_scoring_window(
+        window: &mut ScoringWindow,
+        state: &mut GameState,
+        bot: &mut ScoredBot,
+    ) -> Vec<Choice> {
+        let mut offered = Vec::new();
+        while let Some(choice) = window.pending_choice(state, content(), POK) {
+            let answer = bot
+                .choose_seeing(&choice, &Observed::new(state, content(), POK, None))
+                .unwrap();
+            window.resolve(state, content(), POK, answer).unwrap();
+            offered.push(choice);
+        }
+        offered
+    }
+
+    #[test]
+    fn an_unlimited_action_window_re_offers_the_scorer_until_nothing_is_left() {
+        // 61.7: any number of secrets during an action turn. The window keeps the scorer in
+        // place after each score, so the bot is asked again with a fresh offer — no cached
+        // options from the first ask survive into the second.
+        let (mut state, occurrence) = two_action_secrets_in_one_occurrence();
+        let a = PlayerId::new("a");
+        let mut bot = ScoredBot::new(7).remembering();
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            Timing::Action,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+
+        let offers = drive_scoring_window(&mut window, &mut state, &mut bot);
+
+        assert_eq!(offers.len(), 2, "each eligible secret gets its own offer");
+        for (index, choice) in offers.iter().enumerate() {
+            assert_eq!(
+                choice.player, a,
+                "the unlimited window re-offers the same scorer"
+            );
+            assert_ne!(
+                bot.decisions[index].chosen, "decline",
+                "a victory point is never declined"
+            );
+        }
+        let seat = state.player(&a).unwrap();
+        assert!(
+            seat.secret_objectives.is_empty(),
+            "scored secrets leave the hand (61.18)"
+        );
+    }
+
+    #[test]
+    fn a_one_per_player_combat_window_offers_the_scorer_exactly_once() {
+        // 61.7: one secret per combat occurrence. The cap — not eligibility — closes the window
+        // after the first score, and the bot is never re-offered for that occurrence.
+        let (mut state, occurrence) = two_action_secrets_in_one_occurrence();
+        let a = PlayerId::new("a");
+        // Cold on purpose: the argmax path through the nested window, not just sampling.
+        let mut bot = ScoredBot::new(7).remembering().at_temperature(0.0);
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            Timing::Action,
+            occurrence,
+            EventScoreLimit::OnePerPlayer,
+        );
+
+        let offers = drive_scoring_window(&mut window, &mut state, &mut bot);
+
+        assert_eq!(
+            offers.len(),
+            1,
+            "the occurrence cap applies after the first secret"
+        );
+        assert_ne!(bot.decisions[0].chosen, "decline");
+        let seat = state.player(&a).unwrap();
+        assert_eq!(
+            seat.secret_objectives.len(),
+            1,
+            "the second secret stays in hand"
+        );
+        assert!(
+            state.scored_at_occurrence(&a, occurrence),
+            "the cap is recorded on the state"
+        );
+    }
+
+    #[test]
+    fn an_agenda_window_scores_every_eligible_secret_and_closes() {
+        // The agenda phase allows any number of secrets (61.7): one feat-based (dtd) and one
+        // requirement-based (dp, three laws passed), both eligible on the same occurrence.
+        let a = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&a).unwrap().secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("dtd"),
+            ti4_model::id::SecretObjectiveId::new("dp"),
+        ];
+        for law in ["alpha", "beta", "gamma"] {
+            state.laws.insert(law.to_string(), a.to_string());
+        }
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, Feat::ElectedByAnAgenda, occurrence);
+
+        let mut bot = ScoredBot::new(7).remembering();
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            Timing::Agenda,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+
+        let offers = drive_scoring_window(&mut window, &mut state, &mut bot);
+
+        assert_eq!(
+            offers.len(),
+            2,
+            "both agenda secrets are eligible on the same occurrence"
+        );
+        for decision in &bot.decisions {
+            assert_ne!(decision.chosen, "decline");
+        }
+        let seat = state.player(&a).unwrap();
+        assert!(seat.secret_objectives.is_empty());
+    }
+
+    #[test]
+    fn a_player_with_no_eligible_secret_is_skipped_not_asked() {
+        // A window with nothing to offer skips its player rather than asking a one-answer
+        // question; the bot is never consulted and records no decision.
+        let a = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("ans")]; // status timing only
+        let occurrence = state.begin_feat_occurrence();
+        state.record_event_feat(&a, Feat::WonInAnAnomaly, occurrence);
+
+        let bot = ScoredBot::new(7).remembering();
+        let window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            Timing::Action,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+
+        assert!(window.pending_choice(&state, content(), POK).is_none());
+        assert!(bot.decisions.is_empty());
+    }
+
+    /// U1 (M08-018 review): the explanation layer must not name a secret the seat does not own.
+    /// `Decision::explain()` prints every option id and component name, so if someone later names
+    /// a component after what it scores — `format!("objective:{alias}")` is the tempting shape —
+    /// `explain()` starts printing aliases. Today this holds structurally: component names are
+    /// static
+    /// literals, and scoring choices offer only the seat's own hand plus public objectives (whose
+    /// aliases never collide with secret ones). Nothing pinned that; this test converts the argument
+    /// into a guard — every token in `explain()` that resolves as a secret objective must be one
+    /// seat owns (still holds or has scored).
+    #[test]
+    fn scoring_explanations_name_no_secret_the_seat_does_not_own() {
+        let (mut state, occurrence) = two_action_secrets_in_one_occurrence();
+        let a = PlayerId::new("a");
+        let mut bot = ScoredBot::new(7).remembering();
+        let mut window = ScoringWindow::for_occurrence(
+            std::slice::from_ref(&a),
+            Timing::Action,
+            occurrence,
+            EventScoreLimit::AnyPerPlayer,
+        );
+
+        drive_scoring_window(&mut window, &mut state, &mut bot);
+
+        // Everything the seat may legitimately see: what it still holds plus what it scored.
+        let owned = {
+            let seat = state.player(&a).unwrap();
+            let mut set: std::collections::BTreeSet<String> = seat
+                .secret_objectives
+                .iter()
+                .map(|alias| alias.as_str().to_string())
+                .collect();
+            for objective in state.scored_by(&a) {
+                if content()
+                    .get(ContentType::SecretObjectives, objective.as_str())
+                    .is_some()
+                {
+                    set.insert(objective.to_string());
+                }
+            }
+            set
+        };
+
+        assert!(
+            !bot.decisions.is_empty(),
+            "the guard needs decisions to inspect"
+        );
+        for decision in &bot.decisions {
+            let text = decision.explain();
+            for token in text.split(|c: char| !c.is_ascii_alphanumeric()) {
+                if content()
+                    .get(ContentType::SecretObjectives, token)
+                    .is_some()
+                {
+                    assert!(
+                        owned.contains(token),
+                        "explain() names the secret {token} the seat does not own:\n{text}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_bot_answers_a_retained_combat_window_after_its_scoring_pause() {
+        // M07-022's pausing fixture, on a natural seed: round-1 AFB kills the fighter and fires
+        // BarrageTookTheLastFighters on the attacker (seed 51 was probed for exactly this —
+        // `Dice::from_faces` is engine-test-only, so the pause must come from the seeded stream).
+        // The pause opens a OnePerPlayer scoring window; the bot must answer it mid-fight through
+        // the table (validated) and then finish the retained combat legally.
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = ti4_engine::setup::start_game(content(), &players, POK, None).unwrap();
+        let system = SystemId::new("18");
+        ti4_engine::fixtures::put(&mut state, &system, "destroyer", &players[0], 1);
+        ti4_engine::fixtures::put(&mut state, &system, "fighter", &players[1], 1);
+        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &players[1], 1);
+        // The attacker holds the secret the barrage feat unlocks.
+        state.player_mut(&players[0]).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("fwp")];
+
+        let mut ask_table = Table::new();
+        for (index, player) in players.iter().enumerate() {
+            ask_table.seat(player.clone(), Box::new(ScoredBot::new(100 + index as u64)));
+        }
+        // The context keeps its own table (the M07-023 harness shape): one long-lived context
+        // borrows it for the whole loop, so window-level asks go through a separate table.
+        let mut inner = Table::new();
+        let mut dice = ti4_engine::dice::Dice::new();
+        let mut rng = ti4_engine::rng::GameRng::new(51);
+
+        let mut window = ti4_engine::combat::CombatWindow::new(&state, content(), POK, &system);
+        let mut ctx = Resolving {
+            content: content(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        window.settle_open(&mut state, &mut ctx);
+
+        let mut paused = false;
+        for _ in 0..10_000 {
+            if window.outcome().is_some() {
+                break;
+            }
+            if let Some(choice) = window.pending_choice(&state, content(), POK) {
+                let answer = ask_table
+                    .ask_seeing(&choice, &Observed::new(&state, content(), POK, None))
+                    .unwrap();
+                window.resolve(&mut state, &mut ctx, answer).unwrap();
+            } else if let Some(occurrence) = window.take_scoring_occurrence() {
+                paused = true;
+                // Exactly what Game does: service the occurrence's scoring window first.
+                let mut scoring = ScoringWindow::for_occurrence(
+                    &state.initiative_order(),
+                    Timing::Action,
+                    occurrence,
+                    EventScoreLimit::OnePerPlayer,
+                );
+                while let Some(choice) = scoring.pending_choice(&state, content(), POK) {
+                    let answer = ask_table
+                        .ask_seeing(&choice, &Observed::new(&state, content(), POK, None))
+                        .unwrap();
+                    scoring.resolve(&mut state, content(), POK, answer).unwrap();
+                }
+            } else {
+                window.settle_open(&mut state, &mut ctx);
+            }
+        }
+
+        assert!(
+            window.outcome().is_some(),
+            "the retained combat must finish"
+        );
+        assert!(paused, "seed 51 must actually pause for scoring");
+        // The harness's context table must stay unasked: under POK these seats have no nested
+        // ability offers, so any ask there would mean the fixture changed shape (M07-023 Q2).
+        assert!(
+            inner.log.records.is_empty(),
+            "the context table must stay unasked"
+        );
+        let attacker = state.player(&players[0]).unwrap();
+        assert!(
+            attacker
+                .event_feats
+                .iter()
+                .any(|(feat, _)| *feat == Feat::BarrageTookTheLastFighters),
+            "the barrage feat fired"
+        );
+        assert!(
+            attacker.secret_objectives.is_empty(),
+            "the bot scored the paused secret"
+        );
+        assert!(attacker.victory_points > 0);
+    }
+
+    // ── M08-018: full-game legality and determinism across nested windows ───────────
+
+    /// The campaign's seed range, kept clear of other suites' fixtures.
+    const CAMPAIGN_SEED_BASE: u64 = 7_777;
+    const CAMPAIGN_SEEDS: u64 = 10;
+    const CAMPAIGN_ROTATIONS: usize = 3;
+
+    /// What the campaign extracts from one run: the replay record and each seat's own secret
+    /// aliases (what it still holds or has scored).
+    type CampaignOutcome = (
+        Vec<ti4_engine::choice::DecisionRecord>,
+        BTreeMap<String, Vec<String>>,
+    );
+
+    /// Seat a six-player game on the roster with one scored bot per seat (the sim's accepted
+    /// wiring), play it to the horizon, and return [`CampaignOutcome`].
+    fn scored_game(seed: u64, rotation: usize) -> Result<CampaignOutcome, String> {
+        let content = ContentStore::embedded();
+        let players: Vec<PlayerId> = ["p1", "p2", "p3", "p4", "p5", "p6"]
+            .iter()
+            .map(|name| PlayerId::new(*name))
+            .collect();
+        // Rotate the roster assignment so different factions sit at each seat.
+        let base = ti4_engine::seating::seat_in_scope(&players);
+        let mut faction_list: Vec<ti4_model::id::FactionId> = base.values().cloned().collect();
+        let width = faction_list.len();
+        faction_list.rotate_left(rotation % width);
+        let factions: BTreeMap<PlayerId, ti4_model::id::FactionId> = players
+            .iter()
+            .zip(faction_list)
+            .map(|(player, faction)| (player.clone(), faction))
+            .collect();
+
+        let mut state = ti4_engine::setup::start_game_seeded(content, &players, POK, None, seed)
+            .map_err(|error| error.to_string())?;
+        for (player, faction) in &factions {
+            state.player_mut(player).unwrap().faction = faction.clone();
+        }
+        let filler: Vec<String> = ti4_engine::seating::neutral_systems(content, 30, POK)
+            .into_iter()
+            .map(|system| system.to_string())
+            .collect();
+        let borrowed: Vec<&str> = filler.iter().map(String::as_str).collect();
+        let galaxy = ti4_engine::seating::build_board(content, &factions, &borrowed, POK)
+            .map_err(|error| error.to_string())?;
+        for (player, faction) in &factions {
+            ti4_engine::seating::deploy(&mut state, content, player, faction, POK)
+                .map_err(|error| error.to_string())?;
+        }
+
+        let mut table = Table::new();
+        for (index, player) in players.iter().enumerate() {
+            let offset = u64::try_from(index).unwrap_or(0);
+            table.seat(
+                player.clone(),
+                Box::new(ScoredBot::new(
+                    seed.wrapping_mul(1_000_003).wrapping_add(offset),
+                )),
+            );
+        }
+
+        let mut game =
+            ti4_engine::game::Game::with_table(state, content, table).with_galaxy(galaxy);
+        game.run(5, 2_000_000).map_err(|error| error.to_string())?;
+        let records = game.table.log.records.clone();
+
+        // Which secret aliases each seat may have been offered: everything it still holds or has
+        // scored. A secret never changes hands except by scoring (61.18), so this is exact.
+        let allowed: BTreeMap<String, Vec<String>> = game
+            .state
+            .players
+            .iter()
+            .map(|seat| {
+                let mut secrets: std::collections::BTreeSet<String> = seat
+                    .secret_objectives
+                    .iter()
+                    .map(|alias| alias.as_str().to_string())
+                    .collect();
+                for objective in game.state.scored_by(&seat.id) {
+                    if content
+                        .get(ContentType::SecretObjectives, objective.as_str())
+                        .is_some()
+                    {
+                        secrets.insert(objective.to_string());
+                    }
+                }
+                (seat.id.to_string(), secrets.into_iter().collect())
+            })
+            .collect();
+        Ok((records, allowed))
+    }
+
+    #[test]
+    fn scored_games_stay_legal_and_deterministic_across_nested_windows() {
+        // Every seat plays the authored bot through five rounds of real play: action-phase
+        // scoring windows re-offer their scorer, combat pauses mid-fight for a OnePerPlayer
+        // window, agendas vote and score. The table validates every answer, so an illegal choice
+        // fails the run; two runs of one seed must replay identically.
+        let content = ContentStore::embedded();
+        let seat_names: std::collections::BTreeSet<String> = ["p1", "p2", "p3", "p4", "p5", "p6"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+
+        let mut total_offers = 0;
+        let mut re_offers = 0;
+        for rotation in 0..CAMPAIGN_ROTATIONS {
+            for offset in 0..CAMPAIGN_SEEDS {
+                let seed = CAMPAIGN_SEED_BASE + offset;
+                let (first, allowed) = scored_game(seed, rotation)
+                    .unwrap_or_else(|error| panic!("seed {seed} rotation {rotation}: {error}"));
+                let (second, _) = scored_game(seed, rotation)
+                    .expect("the second run of the same seed must also complete");
+
+                assert_eq!(first.len(), second.len(), "seed {seed} rotation {rotation}");
+                assert_eq!(
+                    first, second,
+                    "seed {seed} rotation {rotation}: identical replay record"
+                );
+
+                for record in &first {
+                    // Every answer came from a seated bot.
+                    assert!(seat_names.contains(&record.player.to_string()));
+                    // Secrets are offered only in scoring windows (the window offers the seat's
+                    // own hand, nothing else). Alias spaces collide across categories — `sar` is
+                    // both a secret and a warfare technology — so this check inspects scoring
+                    // records only; within one there is no public/secret alias collision.
+                    if record.prompt != "score an objective" {
+                        continue;
+                    }
+                    let allowed = &allowed[&record.player.to_string()];
+                    for offered in &record.offered {
+                        if offered == "decline" {
+                            continue;
+                        }
+                        let is_secret = content
+                            .get(ContentType::SecretObjectives, offered)
+                            .is_some();
+                        assert!(
+                            !is_secret || allowed.contains(offered),
+                            "bot {} was offered the secret {offered} it does not own",
+                            record.player
+                        );
+                    }
+                }
+
+                // Non-vacuity: the campaign must actually exercise the nested structure — a
+                // scorer re-offered by an unlimited window is two consecutive score offers to
+                // the same seat.
+                total_offers += first
+                    .iter()
+                    .filter(|record| record.prompt == "score an objective")
+                    .count();
+                for pair in first.iter().zip(first.iter().skip(1)) {
+                    let (a, b) = pair;
+                    if a.prompt == "score an objective"
+                        && b.prompt == "score an objective"
+                        && a.player == b.player
+                    {
+                        re_offers += 1;
+                    }
+                }
+            }
+        }
+
+        assert!(
+            total_offers > 0,
+            "the campaign must actually score objectives"
+        );
+        assert!(
+            re_offers > 0,
+            "the campaign must actually re-offer a scorer mid-window"
+        );
+    }
 }
