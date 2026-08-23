@@ -2970,3 +2970,19 @@ Files to read first after compaction:
   `plans/PI_WORK_PACKAGE_STANDARD.md` remain untouched.
 - **Next exact action:** correct R1/R2 in the M09-018 spec/evidence/ledger and request a fresh
   independent Tier-C recheck.
+
+## M09-018 R1/R2 correction round (2026-08-23) — pending fresh Tier-C recheck
+
+- **Verdict on `bd89568`:** changes required (R1: schema-2 import gap missing from findings;
+  R2: F-M09-018-1 understated the affected families). Records-only corrections per disposition.
+- **R1 resolved:** F-M09-018-7 added (MEDIUM) — persisted oracle schema-2 shape is a flat
+  `learned.weights` map + single temperature; Rust's `Learned { heads }` cannot deserialize it and
+  no importer exists. Part 5 relabeled **PARTIAL (gap)** for the schema-2–5 objective. Child-package
+  disposition before M09-030; dependency-safe for rows 019–023.
+- **R2 resolved:** F-M09-018-1 corrected in ledger + evidence — all four successor families
+  (`trade`, `tokens`, `production`, `payment`) fall back to `other` on a schema-3 profile, not only
+  production/payment.
+- Both claims re-verified against pinned `37061c5` (oracle `blank_profile`) and the current tree
+  before editing. No Rust source change; no gates affected (plans-only diff).
+- **Next exact action:** fresh independent Tier-C recheck of the correction commit; on acceptance,
+  M09-019 becomes dependency-ready.

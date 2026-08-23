@@ -14,21 +14,24 @@ against. Spec: `plans/M09-018_FRONTIER_SCHEMA_MATH_REVIEW.md`.
 | 2 | Migrations | **GAP** — no schema 3→4 or 4→5 migration code exists anywhere in the workspace; runtime `resolved_head`/`head()` fallback verified consistent with all three carried head sets (every required set contains `other`, so post-validation resolution always succeeds) |
 | 3 | Softmax stability / inference numerics | **PASS** — max-shifted softmax, temperature guarded at load (`validate`) and inference (`max(1e-6)`), non-finite total falls back to uniform rather than NaN, pinned ChaCha8Rng sampling with determinism + empirical-odds tests |
 | 4 | Feature purity | **HOLDS structurally; deliverable absent** — zero authored constants on the feature/scoring path (full literal scan); legality-only sampling pinned by test; but row 014's *instrumented* isolation test does not exist |
-| 5 | Compatibility / artifact import | **PASS** — all real branch checkpoints (stage-1 + stage-2 envelopes, six factions each) deserialize into `Profile`, pass `validate(Some(faction))`, and score non-zero through the current explicit path; fingerprints (schema=4, mode, faction, 14 heads) round-trip. All 90 surviving nested profiles are schema 4 |
+| 5 | Compatibility / artifact import | **PARTIAL (gap)** — all real branch checkpoints (stage-1 + stage-2 envelopes, six factions each; every one schema 4) deserialize into `Profile`, pass `validate(Some(faction))`, and score non-zero through the current explicit path. But the persisted oracle schema-2 shape cannot deserialize into `Profile` at all and no importer exists (F-M09-018-7), so this is not a schema-2–5 PASS; schemas 3/5 untested (no local artifacts) |
 
 Gates: `cargo test -p ti4-policy` **119/0** · `cargo test -p ti4-training` **104/0** ·
 `git diff --check` clean · no source files touched by this package.
 
 ## Findings
 
-### F-M09-018-1 — schema 3→4 economy migration absent (row 008) — MEDIUM
+### F-M09-018-1 — schema 3→4 economy migration absent (row 008) — MEDIUM *(corrected per R2)*
 
-No code in the workspace migrates a schema-3 profile's `economy` head into the schema-4
-`production`/`payment` split. A schema-3 checkpoint would validate (all 11 required heads present)
-but score production/payment decisions from the `other` fallback, silently ignoring its economy
-weights. **No local artifact is affected** — every surviving profile is schema 4 — but the
-milestone goal ("load supported learned-policy schemas 2–5") and exit gate ("existing supported
-profiles execute in Rust") name it.
+No code in the workspace migrates a schema-3 profile's single `economy` head into its successor
+heads. Schema 3 carries one `economy` head; current `decision_head` requests **all four** successor
+families — `trade`, `tokens`, `production`, and `payment` — none of which is in `SCHEMA3_HEADS`, so
+`resolved_head` sends every one of them to the `other` fallback. A schema-3 checkpoint would
+therefore validate (all 11 required heads present) but score trade, token, production, *and*
+payment decisions from `other`, silently ignoring its trained economy weights for all four families.
+**No local artifact is affected** — every surviving profile is schema 4 — but the milestone goal
+("load supported learned-policy schemas 2–5") and exit gate ("existing supported profiles execute in
+Rust") name it.
 
 - **Disposition:** scoped child package before M09-030 (exit review). Not blocking for rows
   019–023, which profile and extend the schema-4/5 surface only.
@@ -79,6 +82,20 @@ No real artifact is affected (all surviving profiles are schema 4 explicit).
 (48) and head-routing (46) corpora are adequate by comparison.
 
 - **Disposition:** expand when M09-021–023 add their feature families; no standalone action.
+
+### F-M09-018-7 — schema-2 flat-vector import path absent (added per R1) — MEDIUM
+
+The persisted oracle schema-2 shape at pinned `37061c5` stores one **flat** `learned.weights`
+mapping plus a single `learned.temperature` (`blank_profile`: `{"weights": {"h0000": 0.0, …},
+"temperature": 1.0}`). Rust's `Learned` deserializes `heads: BTreeMap<String, Head>` instead, so a
+legacy schema-2 profile **cannot deserialize into the current `Profile` at all** — serde fails on
+the `learned` object before `validate()` can refuse it gracefully — and no importer or migration
+exists in the workspace (`learned.rs` assigns that job to M09-015, which was never built). Part 5
+exercised only schema-4 artifacts; its verdict is therefore partial for the stated schema-2–5
+compatibility objective, not a PASS.
+
+- **Disposition:** scoped child package before M09-030 (exit review); dependency-safe — rows
+  019–023 are schema-4/5-only work and do not need it. Blocks the M09 exit gate if left unresolved.
 
 ## Observations (not findings of this package)
 

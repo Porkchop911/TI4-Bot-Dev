@@ -9,6 +9,12 @@ four schema-3 economy successors affected by fallback (`trade` and `tokens`). Se
 verdict in `plans/M09-018_OPEN_REVIEW_ITEMS.md`. Correct the records and request a fresh recheck;
 no Rust source change is required for this review round.
 
+**R1/R2 corrected (records only, 2026-08-23); requesting a fresh independent Tier-C recheck.**
+F-M09-018-7 added for the schema-2 flat-vector import gap and Part 5 relabeled PARTIAL (gap);
+F-M09-018-1 corrected to name all four successor decision families (`trade`, `tokens`,
+`production`, `payment`). Both claims re-verified against pinned `37061c5` and the current tree
+before editing. See the R1/R2 resolution sections in the ledger and evidence.
+
 **Campaign complete 2026-08-23; pending independent Tier C frontier review.** Base commit `aa15a39`
 (M08 closure). Branch `wp/m09-018-frontier-schema-math-review`.
 
