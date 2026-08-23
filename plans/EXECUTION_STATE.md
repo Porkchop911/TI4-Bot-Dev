@@ -2670,3 +2670,57 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
   committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
   bootstrap methodology per the recorded independence limitation.
+
+## Checkpoint — M08-021 independent-review resolutions; re-committed (2026-08-23)
+
+- **Branch:** `wp/m08-021-behavioral-distribution-suite`, HEAD `f110907` (the commit above).
+  Working tree: this package's resolution changes only; pre-existing operator edits untouched.
+- **Why a second pass:** the independent Tier B review by Claude Opus 5 (`plans/M08-021_OPEN_REVIEW_ITEMS.md`
+  Part 1) had been delivered before `f110907` but was overwritten when this package's self-review
+  (Part 2) was written to the same path and committed as accepted — a process failure: an
+  implementer must not overwrite an independent review record. The ledger now preserves both parts
+  verbatim, plus Part 3 (independent verification of these resolutions).
+- **V1 (MEDIUM, required) — resolved.** Mutant A's original diagnosis was wrong: the activation
+  base is added uniformly to every `activate` option, so a uniform additive shift cannot reorder
+  options within one kind. Measured: Mutant A is a complete no-op on this tree (bit-identical
+  per-seed and batch outputs; gate green). The derived "sensitivity note" (suite does not catch
+  within-class ranking) deleted — refuted by **Mutant D**, a pure sign flip at
+  `valuation.rs:228` (`prize − 0.6·defenders − 0.4·garrison` → plus): six of ten metrics out of
+  bounds; gate's first failure is exactly the reviewer's recorded diagnostic (`share_INVASION_RESOLVED
+  = 0.024130` outside `[0.027953, 0.029422]`). Evidence mutation section now records all three
+  mutants with measured results; Mutant B re-measured on the full ten-metric set (nine of ten out
+  of bounds).
+- **V2 — closed by R1** (integrity check recomputes every bound from current data under named
+  protocol constants, asserts bit-equality).
+- **V3 (MEDIUM) — resolved.** `faction_spread` renamed `score_spread` (within-game dispersion,
+  documented as such); new gated metric `faction_differentiation` = population SD of the six
+  per-faction mean VPs — baseline 0.502_370_921_939_035_7, CI [0.334_673_232_929_534_16,
+  0.880_393_430_571_010_5], reproducing the reviewer's independent measurement (0.502371) exactly.
+  CI via seed-level resampling through the same percentile protocol (`percentile_interval`
+  factored out of `bootstrap_ci`, behavior-preserving). Non-vacuity: narrowing its bound to
+  [0, 0.1] fails the gate with the exact metric diagnostic; revert green.
+- **V4 (MEDIUM) — resolved.** Gate pins key sets exactly (`metrics.len() == bounds.len()` + every
+  metric name present in bounds); integrity loop iterates over bounds and panics on any entry
+  with no metric behind it. Non-vacuity: deleting one bound entry fails the gate at the length
+  assertion (10 vs 9); revert green.
+- **Part 3 — independent verification of these resolutions (Claude Opus 5): accepted**, with two
+  findings, both resolved: W1 (LOW) — my V3 fix's example claimed a permutation-sensitivity the
+  metric does not have (a consistent relabeling permutes the six means; both metrics invariant);
+  corrected at both sites to "moves on a change in the *spread* of faction strengths". W2
+  (INFORMATIONAL) — temporary probe `crates/ti4-sim/examples/resolve_probe.rs` deleted before
+  commit.
+- **Verification:** behavior tests 4/0 (~13 s); ti4-sim 31/0; workspace **1,332/0 identical ×2**;
+  clippy -p ti4-sim --all-targets zero warnings (four new warnings from the resolution pass —
+  `&mut Vec` → slice parameter and missing `# Panics` fixed properly; the two resample-index
+  casts in the new CI function carry the same reasoned allows as `bootstrap_ci`); behavior.rs
+  rustfmt-clean; `git diff --check crates/` clean. All temporary bot/valuation edits reverted byte-identical (`git diff crates/ti4-policy/`
+  empty).
+- **Commit:** scoped paths only — `crates/ti4-sim/src/behavior.rs`, spec (status block), evidence
+  (corrections + resolutions), review items (Part 3 preserved; no implementer edits to Parts 1–2),
+  this file. Pre-existing operator edits untouched.
+- **Milestone state:** M08-017 ✅; M08-020 ✅; M08-018 ✅; **M08-021 ✅ accepted/committed with
+  independent review fully resolved.** All hard dependencies of M08-019's exit review are closed.
+  M08-022 remains ready any time (hard-ordered only against D11 roster widening).
+- **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
+  committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
+  bootstrap methodology per the recorded independence limitation.

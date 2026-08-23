@@ -2,13 +2,28 @@
 
 ## Preparation status
 
-**Accepted 2026-08-23.** Operator-directed Tier B review
-(`plans/M08-021_OPEN_REVIEW_ITEMS.md`): accept with R1 required before commit — resolved
-in-package (bounds re-derived at full double precision, named BOOTSTRAP_DRAWS/BOOTSTRAP_SEED,
-in-gate protocol-integrity check verified non-vacuous by a one-digit mutation). R2–R5 recorded.
-**Independence limitation:** no frontier peer was connected to this session's broker, so the
-implementing agent performed the review pass at operator direction (M06-024 precedent); a
-cross-model check on the bootstrap methodology specifically remains available as a frontier
+**Accepted 2026-08-23.** Full ledger at `plans/M08-021_OPEN_REVIEW_ITEMS.md` (three parts):
+
+- **Part 1 — independent Tier B review (Claude Opus 5):** accept with V1 required; V2 closed by
+  the implementer's R1. V1 (Mutant A is a no-op — uniform additive shift cannot reorder options
+  within one kind; the derived "sensitivity note" deleted and refuted by Mutant D, a pure
+  sign-flip in `valuation.rs` that moves six of ten metrics out of bounds with the reviewer's
+  exact gate diagnostic), V3 (`faction_spread` renamed `score_spread`; new gated metric
+  `faction_differentiation` = SD of the six per-faction mean VPs, baseline 0.502_370… matching
+  the reviewer's independent measurement; seed-level bootstrap CI through the same percentile
+  protocol), and V4 (gate pins metric/bounds key sets exactly) all resolved in-package with
+  non-vacuity probes.
+- **Part 2 — implementer's self-review at operator direction** (no frontier peer was connected;
+  M06-024 precedent): R1–R5 as recorded. Process failure acknowledged: this pass initially
+  overwrote Part 1; the ledger now preserves both verbatim.
+- **Part 3 — independent verification of the resolutions (Claude Opus 5):** accepted, with W1
+  (the V3 fix's example claimed a permutation-sensitivity the metric does not have — corrected at
+  both sites: the metric moves on a change in the *spread* of faction strengths; consistent
+  relabeling is invisible to both metrics) and W2 (temporary probe deleted before commit), both
+  resolved.
+
+**Independence limitation:** Part 1/Part 3 are genuinely independent model reviews; Part 2's
+cross-model gap on the bootstrap methodology specifically remains available as a frontier
 escalation before M08-019's exit review. Evidence: plans/evidence/M08-021.md.
 
 **Implementation complete 2026-08-23.** Base commit `45fe569`

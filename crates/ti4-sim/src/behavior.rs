@@ -3,17 +3,19 @@
 //! The authored bot is the comparison baseline every cross-time VP measurement depends on
 //! (SD-1, `plans/M08_AUTHORED_BOTS.md`). Determinism pins catch *run-to-run* drift; this suite
 //! catches *version-to-version* behavioral drift: it plays a fixed seed set twice, asserts
-//! per-seed identity before any comparison, and checks nine behavioral metrics against bounds
+//! per-seed identity before any comparison, and checks ten behavioral metrics against bounds
 //! recorded from the v1 baseline.
 //!
 //! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster, POK
 //! scope, [`Seats::Scored`] (one authored bot per seat), [`Horizon::default()`] — 50 rounds /
 //! 2M steps; v1 games end by objective exhaustion in about nine rounds.
 //!
-//! Metrics: VP pace (mean victory points per round), completion (clean endings), faction
-//! spread (per-game standard deviation of final VPs across the six seated factions), and an
-//! action mix — the share of each tactical event label in a game's event stream, averaged over
-//! seeds. The labels are signatures of the bot's tactical choices; their census is recorded in
+//! Metrics: VP pace (mean victory points per round), completion (clean endings), score spread
+//! (per-game standard deviation of the six final scores — within-game dispersion, invariant to
+//! which seat scored what), faction differentiation (standard deviation of the six per-faction
+//! mean VPs across the seed set — the spec's "spread across the seated factions"), and an action
+//! mix: the share of each tactical event label in a game's event stream, averaged over seeds.
+//! The labels are signatures of the bot's tactical choices; their census is recorded in
 //! `plans/evidence/M08-021.md`.
 //!
 //! Bounds: 95% bootstrap confidence intervals (2000 resamples per metric, deterministic
@@ -81,8 +83,10 @@ pub struct SeedMetrics {
     pub vp_pace: f64,
     /// 1.0 for a clean ending (no error, not horizon-cut), else 0.0.
     pub completed: f64,
-    /// Population standard deviation of the seats' final VPs — the game's faction spread.
-    pub faction_spread: f64,
+    /// Within-game dispersion: population standard deviation of the six final scores. Invariant
+    /// to which seat scored what — for across-faction differentiation see
+    /// [`faction_differentiation`].
+    pub score_spread: f64,
     /// Each action label's share of the game's event stream.
     pub label_shares: BTreeMap<&'static str, f64>,
 }
@@ -126,8 +130,8 @@ pub fn per_seed(result: &GameResult) -> SeedMetrics {
         0.0
     };
 
-    // Population standard deviation: the spread of one game's six final scores.
-    let faction_spread = if vps.is_empty() {
+    // Within-game dispersion (population standard deviation of the six final scores).
+    let score_spread = if vps.is_empty() {
         0.0
     } else {
         let variance = vps
@@ -157,7 +161,7 @@ pub fn per_seed(result: &GameResult) -> SeedMetrics {
     SeedMetrics {
         vp_pace,
         completed,
-        faction_spread,
+        score_spread,
         label_shares,
     }
 }
@@ -178,8 +182,13 @@ pub fn batch_metrics(batch: &Batch) -> BTreeMap<String, f64> {
         seeds.iter().map(|seed| seed.completed).sum::<f64>() / n,
     );
     metrics.insert(
-        "faction_spread".to_owned(),
-        seeds.iter().map(|seed| seed.faction_spread).sum::<f64>() / n,
+        "score_spread".to_owned(),
+        seeds.iter().map(|seed| seed.score_spread).sum::<f64>() / n,
+    );
+    // Across-faction differentiation: the spec's quantity — SD of the six per-faction mean VPs.
+    metrics.insert(
+        "faction_differentiation".to_owned(),
+        faction_differentiation(&per_seed_seat_vps(batch)),
     );
     for label in ACTION_LABELS {
         metrics.insert(
@@ -240,10 +249,121 @@ pub fn bootstrap_ci(values: &[f64], draws: u32, seed: u64) -> (f64, f64) {
         }
         stats.push(sum / count_as_f64(n));
     }
+    percentile_interval(&mut stats, draws)
+}
+
+/// Central 95% percentile interval over `stats` produced by `draws` resamples: the 2.5th and
+/// 97.5th order statistics (symmetric indices — 50 of 2000 strictly below, 50 above).
+fn percentile_interval(stats: &mut [f64], draws: u32) -> (f64, f64) {
     stats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     let low_index = (draws * 25) / 1000;
     let high_index = draws - 1 - (draws * 25) / 1000;
     (stats[low_index as usize], stats[high_index as usize])
+}
+
+/// Per-seed VP vector in seat order (`p1`..`p6`). `Table::seated` is seed-independent, so each
+/// seat holds the same faction in every game — per-seat means are per-faction means.
+#[must_use]
+pub fn per_seed_seat_vps(batch: &Batch) -> Vec<[f64; 6]> {
+    let players = players();
+    batch
+        .results
+        .iter()
+        .map(|result| {
+            let mut vps = [0.0; 6];
+            for (seat, player) in vps.iter_mut().zip(&players) {
+                *seat = f64::from(
+                    result
+                        .victory_points
+                        .get(&player.to_string())
+                        .copied()
+                        .unwrap_or(0),
+                );
+            }
+            vps
+        })
+        .collect()
+}
+
+/// Across-faction differentiation (spec deliverable 2): population standard deviation of the six
+/// per-faction mean VPs over `vps`. It moves when the *spread* of faction strengths changes — a
+/// weak faction becoming competitive, or a strong one falling back. A consistent relabeling of
+/// which seat holds which strength permutes the six means and leaves this value (and
+/// [`SeedMetrics::score_spread`]) untouched; both metrics are blind to that permutation by
+/// construction.
+#[must_use]
+pub fn faction_differentiation(vps: &[[f64; 6]]) -> f64 {
+    if vps.is_empty() {
+        return 0.0;
+    }
+    let n = count_as_f64(vps.len());
+    let mut means = [0.0; 6];
+    for seat in 0..6 {
+        means[seat] = vps.iter().map(|row| row[seat]).sum::<f64>() / n;
+    }
+    population_sd(&means)
+}
+
+/// Population standard deviation of six values.
+fn population_sd(values: &[f64; 6]) -> f64 {
+    let center = values.iter().sum::<f64>() / count_as_f64(6);
+    let variance = values
+        .iter()
+        .map(|value| (value - center) * (value - center))
+        .sum::<f64>()
+        / count_as_f64(6);
+    variance.sqrt()
+}
+
+/// 95% CI for [`faction_differentiation`] under protocol v1: resample seeds with replacement,
+/// recompute the statistic on the resampled rows. The resampling unit is the seed — the
+/// statistic has no per-seed scalar form, so it cannot go through [`bootstrap_ci`].
+///
+/// # Panics
+/// If `vps` is empty (no games to resample).
+#[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "resampled counts are far below 2^53"
+)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "draws lie in [0, 1), so the resample index is bounded by n"
+)]
+pub fn faction_differentiation_ci(vps: &[[f64; 6]]) -> (f64, f64) {
+    assert!(!vps.is_empty(), "no games to resample");
+    let n = vps.len();
+    let mut state = BOOTSTRAP_SEED;
+    let mut stats = Vec::with_capacity(BOOTSTRAP_DRAWS as usize);
+    for _ in 0..BOOTSTRAP_DRAWS {
+        let mut row_sums = [0.0; 6];
+        for _ in 0..n {
+            let index = (splitmix64(&mut state) * count_as_f64(n)) as usize % n;
+            for seat in 0..6 {
+                row_sums[seat] += vps[index][seat];
+            }
+        }
+        let mut means = [0.0; 6];
+        for seat in 0..6 {
+            means[seat] = row_sums[seat] / count_as_f64(n);
+        }
+        stats.push(population_sd(&means));
+    }
+    percentile_interval(&mut stats, BOOTSTRAP_DRAWS)
+}
+
+/// Recompute the recorded bound for `name` from `batch` under protocol v1 — `None` if `name`
+/// names no gated metric. The gate's integrity check uses this to pin both key sets and values:
+/// a bounds entry with no metric behind it fails the gate, not just narrows it.
+#[must_use]
+pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
+    if name == "faction_differentiation" {
+        return Some(faction_differentiation_ci(&per_seed_seat_vps(batch)));
+    }
+    per_seed_values(batch)
+        .get(name)
+        .map(|values| bootstrap_ci(values, BOOTSTRAP_DRAWS, BOOTSTRAP_SEED))
 }
 
 /// Bootstrap protocol v1: `draws` resamples per metric under this fixed seed. Changing either
@@ -270,8 +390,13 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     // invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
-        "faction_spread".to_owned(),
+        "score_spread".to_owned(),
         (1.634_042_583_873_113_4, 2.044_676_086_523_666_4),
+    );
+    // V3: the spec's across-faction quantity — recorded from the same baseline run.
+    bounds.insert(
+        "faction_differentiation".to_owned(),
+        (0.334_673_232_929_534_16, 0.880_393_430_571_010_5),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
@@ -314,8 +439,8 @@ pub fn per_seed_values(batch: &Batch) -> BTreeMap<String, Vec<f64>> {
         seeds.iter().map(|seed| seed.completed).collect(),
     );
     values.insert(
-        "faction_spread".to_owned(),
-        seeds.iter().map(|seed| seed.faction_spread).collect(),
+        "score_spread".to_owned(),
+        seeds.iter().map(|seed| seed.score_spread).collect(),
     );
     for label in ACTION_LABELS {
         values.insert(
@@ -358,8 +483,21 @@ mod tests {
 
         // The behavioral gate: current tree inside the recorded bounds.
         let metrics = batch_metrics(&first);
+        let bounds = baseline_bounds();
+
+        // Key sets must match exactly (review V4): a metric computed but never compared, or a
+        // bound with no metric behind it, would silently narrow the gate while every test stays
+        // green.
+        assert_eq!(metrics.len(), bounds.len());
+        for name in metrics.keys() {
+            assert!(
+                bounds.contains_key(name),
+                "metric {name} has no recorded bound"
+            );
+        }
+
         for (name, value) in &metrics {
-            let (lo, hi) = baseline_bounds()[name];
+            let (lo, hi) = bounds[name];
             assert!(
                 *value >= lo && *value <= hi,
                 "metric {name} = {value:.6} is outside the recorded bounds [{lo:.6}, {hi:.6}] — \
@@ -371,14 +509,14 @@ mod tests {
         // bootstrap protocol produces from this tree's baseline data. A transcription error in
         // either the values or the parameters would fail here — the bounds check above alone
         // could not catch one, because every v1 metric sits well inside its interval.
-        let per_seed = per_seed_values(&first);
-        for (name, (lo, hi)) in baseline_bounds() {
-            let (re_lo, re_hi) = bootstrap_ci(&per_seed[&name], BOOTSTRAP_DRAWS, BOOTSTRAP_SEED);
+        for (name, (lo, hi)) in &bounds {
+            let recomputed = recompute_bound(&first, name)
+                .unwrap_or_else(|| panic!("recorded bound for {name} has no metric behind it"));
             assert_eq!(
-                (lo, hi),
-                (re_lo, re_hi),
+                (*lo, *hi),
+                recomputed,
                 "recorded bound for {name} does not match the protocol recomputation: \
-                 recorded ({lo:?}, {hi:?}), recomputed ({re_lo:?}, {re_hi:?})"
+                 recorded ({lo:?}, {hi:?}), recomputed ({recomputed:?})"
             );
         }
     }
@@ -444,7 +582,7 @@ mod tests {
         let seed = per_seed(&result);
         assert_eq!(seed.vp_pace, 0.0);
         assert_eq!(seed.completed, 0.0);
-        assert_eq!(seed.faction_spread, 0.0);
+        assert_eq!(seed.score_spread, 0.0);
         for share in seed.label_shares.values() {
             assert_eq!(*share, 0.0);
         }
