@@ -2718,9 +2718,19 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Commit:** scoped paths only — `crates/ti4-sim/src/behavior.rs`, spec (status block), evidence
   (corrections + resolutions), review items (Part 3 preserved; no implementer edits to Parts 1–2),
   this file. Pre-existing operator edits untouched.
-- **Milestone state:** M08-017 ✅; M08-020 ✅; M08-018 ✅; **M08-021 ✅ accepted/committed with
-  independent review fully resolved.** All hard dependencies of M08-019's exit review are closed.
-  M08-022 remains ready any time (hard-ordered only against D11 roster widening).
+- **Close-out addendum (2026-08-23):** the independent reviewer's Part 4 close-out arrived after
+  `e5afb02` — W2 closed; W1 "closed on wording, open on the guard" (the recommended unit test for
+  `faction_differentiation` was not added). Resolved in-package: new test
+  `faction_differentiation_moves_on_spread_not_relabeling` (synthetic rows: relabeling invariance,
+  spread sensitivity, degenerate-CI and CI-permutation-invariance assertions — exact by
+  construction on a small-integer fixture). Verification: behavior tests **5/0**; workspace
+  **1,333/0 identical ×2** (+1 = the new test); clippy zero warnings in ti4-sim (one targeted
+  `float_cmp` allow with an exactness reason, matching the module's established pattern);
+  rustfmt clean; `git diff --check` clean. Part 4 committed with the guard test.
+- **Milestone state:** M08-017 ✅; M08-020 ✅; M08-018 ✅; **M08-021 ✅ closed — independent
+  review fully resolved, no open item remains (Part 4: "No open blocking item").** All hard
+  dependencies of M08-019's exit review are closed. M08-022 remains ready any time (hard-ordered
+  only against D11 roster widening).
 - **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
   committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
   bootstrap methodology per the recorded independence limitation.

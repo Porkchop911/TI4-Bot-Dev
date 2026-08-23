@@ -554,6 +554,64 @@ mod tests {
         );
     }
 
+    /// Review W1 guard (M08-021 close-out): `faction_differentiation` moves when the *spread* of
+    /// faction strengths changes and is invariant under consistent relabeling — a permutation of
+    /// which seat holds which strength permutes the six per-faction means without changing their
+    /// standard deviation. The CI inherits both properties: constant rows resample to a single
+    /// statistic (the degenerate interval equals the point estimate), and relabeling leaves it
+    /// bit-identical because the resample index stream is unchanged and every intermediate value
+    /// in this fixture is exactly representable (small integers — exactness by construction, so
+    /// strict comparison is the right assertion).
+    #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "exact by construction: small-integer fixture keeps every intermediate value representable"
+    )]
+    fn faction_differentiation_moves_on_spread_not_relabeling() {
+        // Three games; seat 5 is clearly the weakest.
+        let base: [[f64; 6]; 3] = [
+            [5.0, 4.0, 4.0, 4.0, 3.0, 2.0],
+            [5.0, 4.0, 4.0, 4.0, 3.0, 2.0],
+            [5.0, 4.0, 4.0, 4.0, 3.0, 2.0],
+        ];
+        let value = faction_differentiation(&base);
+
+        // Consistent relabeling: swap seats 0 and 1 in every game.
+        let mut relabeled = base;
+        for row in &mut relabeled {
+            row.swap(0, 1);
+        }
+        assert_eq!(
+            faction_differentiation(&relabeled),
+            value,
+            "a consistent permutation of seat strengths must leave the metric untouched"
+        );
+
+        // A change in the spread: strengthen the weakest faction by +1.3.
+        let mut narrowed = base;
+        for row in &mut narrowed {
+            row[5] += 1.3;
+        }
+        assert_ne!(
+            faction_differentiation(&narrowed),
+            value,
+            "a change in the spread of faction strengths must move the metric"
+        );
+
+        // The CI inherits both properties.
+        let ci = faction_differentiation_ci(&base);
+        assert_eq!(
+            ci,
+            (value, value),
+            "constant rows give the degenerate CI at the point"
+        );
+        assert_eq!(
+            faction_differentiation_ci(&relabeled),
+            ci,
+            "the resample index stream is permutation-invariant"
+        );
+    }
+
     /// A failed game contributes zero pace and no completion — not a panic. The zeros are
     /// exact by construction: the zero path assigns literal `0.0` without arithmetic, so
     /// strict comparison is the right assertion.

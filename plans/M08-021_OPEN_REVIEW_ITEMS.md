@@ -371,3 +371,63 @@ removed before the commit rather than travelling with it.
 **Accept the resolutions.** V1, V3 and V4 are closed. W1 is a two-line wording correction; W2 is a
 file deletion. The V3 fix in particular went past what I asked for and got the harder part — the
 resampling unit — right without being told.
+
+---
+
+# Part 4 — close-out (Claude Opus 5, 2026-08-23)
+
+Resolutions committed as `e5afb02`. **W2 closed** — `examples/resolve_probe.rs` removed.
+
+**W1 closed on wording, open on the guard.** The correction is accurate at both sites; I checked it
+against what I measured rather than taking it. The doc comment now reads *"A consistent relabeling
+of which seat holds which strength permutes the six means and leaves this value (and
+`score_spread`) untouched; both metrics are blind to that permutation by construction"* — which is
+exactly right, and the evidence matches.
+
+The unit test recommended alongside it was not added: `cargo test -p ti4-sim --lib` is still **31**,
+and `faction_differentiation` and `faction_differentiation_ci` have no test of their own. That half
+of the recommendation was the load-bearing half. This metric's description has now been wrong twice
+and corrected twice, both times by measurement from outside the package; three assertions over
+synthetic rows would make the third time fail loudly instead of needing a reviewer to catch it.
+
+Recorded, not pressed — it was a recommendation, not a required action, and nothing downstream
+blocks on it. Worth picking up if `faction_differentiation` is ever cited as evidence about a
+faction, rather than only as a gate input.
+
+**M08-021 closes here from my side.** V1–V4 raised, V2 closed by the implementer's own R1, V1/V3/V4
+resolved and verified, W1/W2 resolved. No open blocking item.
+
+## Addendum to Part 4 — the W1 guard landed; its CI half is vacuous
+
+The recommended guard was added after all:
+`faction_differentiation_moves_on_spread_not_relabeling`. The point-estimate half is sound — it
+pins both properties (relabeling leaves the value exactly equal; a spread change moves it) and its
+comment matches what it checks, which is the thing that had gone wrong twice.
+
+**X1 — LOW · the two CI assertions cannot fail under the chosen fixture.** The fixture is three
+*identical* rows, so `faction_differentiation_ci` is degenerate on it: every resample of constant
+rows yields the same statistic no matter which indices are drawn. `assert_eq!(ci, (value, value))`
+and the follow-up labelled *"the resample index stream is permutation-invariant"* therefore hold
+for **any** resampling rule, including a broken one. The index stream in
+`faction_differentiation_ci` is `(splitmix64(&mut state) * n) as usize % n` — data-independent by
+construction — so the property being claimed is genuinely true; it is just not what this fixture
+tests.
+
+Measured on four varied rows:
+
+```
+constant fixture CI          = (0.942809042, 0.942809042)   degenerate
+varied rows CI               = (0.698460609, 2.028015587)   non-degenerate
+varied rows, seats 0/1 swapped = (0.698460609, 2.028015587)  identical — invariance holds
+```
+
+**Recommended action.** Keep the constant fixture for the degenerate-CI assertion (that one is
+*about* constant rows and is correct as written), and run the permutation-invariance assertion on a
+varied fixture, where the interval is non-degenerate and the assertion can actually fail. The
+numbers above are ready to use.
+
+Not blocking, and not a child package — it is one fixture inside a test this package owns. Raised
+because it is the same shape as W1 one level down: an assertion named for a property its fixture
+cannot exercise. The exposure is small — the gate's protocol recomputation would still catch a
+broken `faction_differentiation_ci` through a bound mismatch — so this is about the guard meaning
+what it says, not about a live hole.
