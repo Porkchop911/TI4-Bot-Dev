@@ -94,3 +94,46 @@ No real artifact is affected (all surviving profiles are schema 4 explicit).
 Tier C frontier adjudication.** Findings F-M09-018-1/2/3 require child packages or operator scope
 decisions before M09-030; none blocks the start of M09-019, whose dependency is this gate's
 acceptance.
+
+---
+
+## Independent Tier-C verdict on `bd89568` (Codex frontier, 2026-08-23)
+
+**Changes required; do not accept M09-018 yet.** The hashing and numerical-stability conclusions
+are supported, and the recorded executable gates reproduce. Two material gaps remain in the
+campaign record:
+
+### R1 — MEDIUM: schema-2 import incompatibility is missing from the findings
+
+The persisted schema-2 format at pinned `37061c5` stores one flat `learned.weights` mapping and
+one `learned.temperature`. Rust deserializes `Learned { heads: ... }` instead, and
+`learned.rs` explicitly says importing an oracle schema-2 checkpoint requires a migration owned by
+M09-015. No such importer or migration exists in the workspace. A legacy schema-2 profile therefore
+does not merely lack a committed test: it cannot deserialize into the current `Profile` shape.
+
+Part 5 tests only schema-4 artifacts, so its area verdict cannot be **PASS** for the stated
+schema-2–5 compatibility objective. Add a distinct finding for the absent schema-2 flat-vector
+migration/import path, change Part 5 to a partial/gap verdict, and give the finding a dependency-safe
+child-package disposition before M09-030. It need not block schema-4-only M09-019 work once the
+record is corrected, but it does block the M09 exit gate if left unresolved.
+
+### R2 — MEDIUM: F-M09-018-1 understates the schema-3 routing failure
+
+Schema 3 carries one `economy` head. Current `decision_head` requests all four successor heads —
+`trade`, `tokens`, `production`, and `payment` — and `resolved_head` sends every absent one to
+`other`. F-M09-018-1 names only production/payment, but trade and token decisions also ignore the
+trained economy weights. Correct the finding, evidence, and summary everywhere they characterize
+the affected decision families. The existing disposition (a migration child package before the
+exit review, non-blocking for schema-4-only rows 019–023) remains reasonable.
+
+### Reproduced gates
+
+- `cargo test -p ti4-policy` — **119 passed, 0 failed**; doc tests 0/0.
+- `cargo test -p ti4-training` — **104 passed, 0 failed**; doc tests 0/0.
+- `cargo clippy -p ti4-policy --all-targets` — no warning in `ti4-policy`; only the two recorded
+  pre-existing `ti4-engine` warnings.
+- `cargo fmt -p ti4-policy --check` — reproduces only O1 at `features.rs:690/752`.
+- `git diff aa15a39..bd89568 --check` — clean.
+
+F-M09-018-2 through F-M09-018-6 are otherwise fairly characterized. After R1/R2 are corrected,
+request a fresh Tier-C recheck; no Rust source change is required by this verdict.

@@ -2951,3 +2951,22 @@ Files to read first after compaction:
   child packages or operator scope decisions before M09-030; none blocks M09-019's start.
 - **Next exact action:** independent Tier C frontier adjudication of the committed campaign; on
   acceptance, M09-019 (post-rules baseline/profile) becomes dependency-ready.
+
+## M09-018 independent Tier-C verdict on `bd89568` (2026-08-23)
+
+- **Verdict:** **changes required; M09-018 not accepted.** Hashing, inference numerics, and the
+  executable gates reproduce, but the compatibility evidence has two required corrections.
+- **R1:** add the missing schema-2 finding. The persisted schema-2 shape is flat
+  `learned.weights`/`temperature`; Rust requires `learned.heads`, and the migration promised by
+  M09-015 is absent. Part 5 exercised only schema 4 and cannot remain a schema-2–5 PASS.
+- **R2:** correct F-M09-018-1: schema-3 fallback ignores `economy` weights for all four successor
+  decision families (`trade`, `tokens`, `production`, `payment`), not only production/payment.
+- **Independent gates:** policy **119/0**; training **104/0**; policy Clippy has no local warning;
+  rustfmt reproduces only the recorded pre-existing `features.rs:690/752` drift; diff-check clean.
+- **Disposition:** evidence/ledger correction only for this round; no Rust source change required.
+  Give schema-2 import a child-package disposition before M09-030. Once R1/R2 are corrected, request
+  a fresh Tier-C recheck; M09-019 remains blocked on M09-018 acceptance until then.
+- **Preserved unrelated edits:** `AGENTS.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`, and
+  `plans/PI_WORK_PACKAGE_STANDARD.md` remain untouched.
+- **Next exact action:** correct R1/R2 in the M09-018 spec/evidence/ledger and request a fresh
+  independent Tier-C recheck.

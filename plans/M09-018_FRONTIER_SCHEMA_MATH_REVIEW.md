@@ -2,6 +2,13 @@
 
 ## Status
 
+**Independent Tier-C verdict: changes required (2026-08-23, reviewed tip `bd89568`).** The
+schema-2 flat-vector import/migration gap is absent from the finding ledger and Part 5 cannot be a
+schema-2–5 compatibility PASS when only schema 4 was exercised. F-M09-018-1 also omits two of the
+four schema-3 economy successors affected by fallback (`trade` and `tokens`). See the independent
+verdict in `plans/M09-018_OPEN_REVIEW_ITEMS.md`. Correct the records and request a fresh recheck;
+no Rust source change is required for this review round.
+
 **Campaign complete 2026-08-23; pending independent Tier C frontier review.** Base commit `aa15a39`
 (M08 closure). Branch `wp/m09-018-frontier-schema-math-review`.
 
