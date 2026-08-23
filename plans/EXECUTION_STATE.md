@@ -2608,3 +2608,65 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
   review. M08-022 ready any time but hard-ordered only against D11 roster widening.
 - **Next exact action:** begin **M08-021** — the authored bot is the comparison baseline every
   cross-time VP measurement depends on (SD-1: required before M08-019 closes).
+
+## Checkpoint — M08-021 accepted; committed (2026-08-23)
+
+- **Branch:** `wp/m08-021-behavioral-distribution-suite` from base commit `45fe569`
+  (M08-018 accepted). Working tree: this package's changes only; pre-existing operator edits
+  untouched.
+- **What was done:** additive module `crates/ti4-sim/src/behavior.rs` (+ registration in
+  lib.rs) — the behavioral distribution suite for the authored bot (F-M08-017-1 requirement,
+  hard-ordered before M08-019 closes). Fixed 30-seed set `812_001..=812_030`; protocol v1 =
+  seats p1..p6 stable roster, POK scope, Seats::Scored, Horizon::default(). Nine metrics:
+  vp_pace, completion (strict integrity invariant), faction_spread, and six action-mix label
+  shares. Bounds = 95% bootstrap CIs (2000 resamples, deterministic splitmix64) over the v1
+  baseline's per-seed values, embedded as constants with re-baseline discipline in module docs.
+  Gate test plays the seed set twice, asserts per-seed identity before any comparison, then
+  checks all nine metrics against recorded bounds. **No other file under crates/ changed** —
+  run.rs / play() / GameResult untouched (spec non-goals held).
+- **v1 baseline (recorded on this tree):** vp_pace 0.440123 [0.411, 0.469]; completion 1.0
+  [1.0, 1.0] degenerate-on-purpose (all 30 games clean: 27 ObjectivesExhausted + 3
+  VictoryPoints); faction_spread 1.8350 [1.634, 2.045]; label shares SYSTEM_ACTIVATED 9.5%,
+  SHIP_MOVED 6.8%, PRODUCTION_RESOLVED 4.8%, TACTICAL_ACTION_BEGAN 4.7%, INVASION_RESOLVED
+  2.9%, SPACE_COMBAT_RESOLVED 0.9%. Per-faction mean VP: letnev 4.467, jolnar 4.200, xxcha
+  4.167, l1z1x 4.133, sol 3.900, hacan 2.900 (spread is real — recorded for the differentiation
+  question; no action taken here). Full raw values in evidence.
+- **Mutation check:** pass-score mutant (0.5 → 100.0) moved **eight of nine** metrics out of
+  bounds with zero CI overlap (gate failed on faction_spread first); revert restored green.
+  Activation-base mutant (6.0 → −10.0) moved none — system_value keeps activation positive, so
+  it re-ranked within the class without changing frequency; recorded as a sensitivity note
+  (suite resolves at action-frequency/pace/spread level, which is what baseline comparability
+  needs). Both mutants reverted byte-identical (`git diff crates/ti4-policy/` empty).
+- **Verification:** behavior tests 4/0 (gate ~13 s — two 30-game batches on parallel workers);
+  ti4-sim **31/0** (+4 over M08-018's 27); workspace **1,332/0 identical ×2**; clippy -p
+  ti4-sim --all-targets zero warnings (first draft introduced 30 pedantic warnings — all fixed
+  properly: centralized count-cast helper, exactness-reasoned allows for splitmix64's top-53-bits
+  cast and bootstrap index bounds, underscored literals, copied(), strict-by-construction test
+  zeros with targeted allow); behavior.rs + lib.rs rustfmt-clean; `git diff --check crates/`
+  clean. Temporary baseline probe example created, used once, deleted.
+- **Review:** operator-directed Tier B (`plans/M08-021_OPEN_REVIEW_ITEMS.md`): **accept with R1
+  required before commit — resolved in-package.** R1: bounds were embedded at display precision
+  ({:.9}) with nothing tying them to the bootstrap protocol; a consistently-inside transcription
+  error would have passed every test. Fixed by full-double re-derivation, named
+  BOOTSTRAP_DRAWS/BOOTSTRAP_SEED constants, and an in-gate protocol-integrity check (recompute
+  CIs from current data, assert bit-equality) — verified non-vacuous: one-digit mutation of an
+  embedded constant failed the gate with the exact diagnostic; revert restored green. R2 (shared
+  RNG stream across metrics' bootstraps — harmless for independent bound checks), R3 (~13 s gate,
+  dev-loop only), R4 (no seed-range collision; seating stable — verified), R5 (degenerate
+  completion bound is intentional strict-invariant semantics) recorded.
+- **Independence limitation:** no frontier peer was connected to this session's broker, so the
+  implementing agent performed the review pass at operator direction (M06-024 precedent). A
+  cross-model check on the bootstrap methodology specifically remains available as a frontier
+  escalation before M08-019's exit review; nothing in this package blocks on it.
+- **Post-resolution verification:** behavior tests 4/0 (~13 s); ti4-sim **31/0**; workspace
+  **1,332/0 identical ×2**; clippy -p ti4-sim --all-targets zero warnings; rustfmt clean;
+  `git diff --check crates/` clean. Temporary re-derivation probe created, used once, deleted.
+- **Commit:** scoped paths only — `crates/ti4-sim/src/behavior.rs` (new),
+  `crates/ti4-sim/src/lib.rs` (+2), spec (accepted), evidence (new), review items (new), this
+  file. Pre-existing operator edits untouched.
+- **Milestone state:** M08-017 ✅; M08-020 ✅; M08-018 ✅; **M08-021 ✅ accepted/committed.**
+  All hard dependencies of M08-019's exit review are now closed — the reopened frontier review
+  may proceed. M08-022 remains ready any time (hard-ordered only against D11 roster widening).
+- **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
+  committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
+  bootstrap methodology per the recorded independence limitation.

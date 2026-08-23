@@ -2,6 +2,24 @@
 
 ## Preparation status
 
+**Accepted 2026-08-23.** Operator-directed Tier B review
+(`plans/M08-021_OPEN_REVIEW_ITEMS.md`): accept with R1 required before commit — resolved
+in-package (bounds re-derived at full double precision, named BOOTSTRAP_DRAWS/BOOTSTRAP_SEED,
+in-gate protocol-integrity check verified non-vacuous by a one-digit mutation). R2–R5 recorded.
+**Independence limitation:** no frontier peer was connected to this session's broker, so the
+implementing agent performed the review pass at operator direction (M06-024 precedent); a
+cross-model check on the bootstrap methodology specifically remains available as a frontier
+escalation before M08-019's exit review. Evidence: plans/evidence/M08-021.md.
+
+**Implementation complete 2026-08-23.** Base commit `45fe569`
+(M08-018 accepted). Branch `wp/m08-021-behavioral-distribution-suite`. Additive module
+crates/ti4-sim/src/behavior.rs (registered in lib.rs; no other file under crates/ changed).
+v1 baseline recorded on the corrected ground-combat tree per the hard ordering. Gate test plays
+the 30-seed set twice, asserts per-seed identity before comparison, then checks nine metrics
+against recorded bootstrap bounds. Mutation check: pass-score mutant moved eight of nine metrics
+out of bounds with zero CI overlap; an activation-base mutant moved none (ranking-only change —
+sensitivity note recorded). Workspace 1,332/0 identical ×2; clippy -p ti4-sim clean.
+
 Dependency-safe specification only. Scoped by the operator's disposition of F-M08-017-1
 (2026-08-22, adopting the M08-017 frontier review's recommendation as-is): **this suite is
 required before M08-019 closes.** Begin only after M08-017 and M08-020 are accepted — the

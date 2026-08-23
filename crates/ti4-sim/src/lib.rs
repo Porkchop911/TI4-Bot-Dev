@@ -4,6 +4,7 @@
 //! the report suites remain stubs and are named as such rather than left to look finished.
 
 pub mod batch;
+pub mod behavior;
 pub mod benchmark;
 pub mod maps;
 pub mod replay;
@@ -12,6 +13,7 @@ pub mod rotation;
 pub mod run;
 
 pub use batch::*;
+pub use behavior::*;
 pub use benchmark::*;
 pub use maps::*;
 pub use replay::*;
