@@ -32,6 +32,9 @@ use crate::run::{Horizon, play_learned};
 /// `full_np8_12_holdout.json`, logical role **validation** despite its filename).
 pub const VALIDATION_POOL_SHA_PREFIX: &str = "aba33c81aa04cefb";
 
+/// The expected sha256 prefix of the completed r6 checkpoint (MLP plan §10 artifact manifest).
+pub const R6_CHECKPOINT_SHA_PREFIX: &str = "be792a2a207ced25";
+
 /// Why a baseline panel cannot run.
 #[derive(Debug, thiserror::Error)]
 pub enum BaselineError {
@@ -41,10 +44,16 @@ pub enum BaselineError {
     Json(#[from] serde_json::Error),
     #[error("pool checksum mismatch: expected prefix {expected}, found {found}")]
     ChecksumMismatch { expected: String, found: String },
+    #[error("checkpoint checksum mismatch: expected prefix {expected}, found {found}")]
+    CheckpointChecksumMismatch { expected: String, found: String },
     #[error("champion profile for faction {faction} failed validation: {reason}")]
     InvalidProfile { faction: String, reason: String },
     #[error("map pool: {0}")]
     Pool(#[from] MapPoolError),
+    #[error("baseline panel requires at least one seed")]
+    EmptyPanel,
+    #[error("baseline panel games failed: {details}")]
+    GameFailures { details: String },
 }
 
 /// The r6 champion profiles loaded from a stage-2 checkpoint envelope.
@@ -67,9 +76,18 @@ impl Champions {
     ///
     /// # Errors
     /// I/O, JSON, or any profile that fails [`Profile::validate`] for its own faction.
-    pub fn load_checkpoint_accepted(path: &Path) -> Result<Self, BaselineError> {
+    pub fn load_checkpoint_accepted(
+        path: &Path,
+        expected_sha_prefix: &str,
+    ) -> Result<Self, BaselineError> {
         let bytes = fs::read(path)?;
         let source_sha256 = hex(&Sha256::digest(&bytes));
+        if !source_sha256.starts_with(expected_sha_prefix) {
+            return Err(BaselineError::CheckpointChecksumMismatch {
+                expected: expected_sha_prefix.to_owned(),
+                found: source_sha256,
+            });
+        }
         let envelope: Envelope = serde_json::from_slice(&bytes)?;
         let mut profiles = BTreeMap::new();
         for (faction, profile) in envelope.accepted {
@@ -173,7 +191,8 @@ impl PanelReport {
 ///
 /// Validates artifact role and checksum before starting (MLP plan §10): the pool is verified
 /// against `pool_sha_prefix` and every champion profile is validated for its own faction before
-/// any game is played.
+/// any game is played. The checkpoint checksum is verified against `checkpoint_sha_prefix` from
+/// the same byte buffer that is deserialized.
 ///
 /// # Errors
 /// Checksum mismatch, unreadable/unparseable artifacts, invalid profiles, or a map-pool error.
@@ -186,9 +205,13 @@ pub fn run_panel(
     checkpoint_path: &Path,
     horizon: Horizon,
     pool_sha_prefix: &str,
+    checkpoint_sha_prefix: &str,
 ) -> Result<PanelReport, BaselineError> {
+    if seeds.is_empty() {
+        return Err(BaselineError::EmptyPanel);
+    }
     let pool_sha256 = verify_checksum(pool_path, pool_sha_prefix)?;
-    let champions = Champions::load_checkpoint_accepted(checkpoint_path)?;
+    let champions = Champions::load_checkpoint_accepted(checkpoint_path, checkpoint_sha_prefix)?;
     let pool = MapPool::load(pool_path)?;
 
     let mut games = Vec::with_capacity(seeds.len());
@@ -202,6 +225,19 @@ pub fn run_panel(
             &pool,
             &champions.profiles,
         ));
+    }
+    let failures: Vec<String> = games
+        .iter()
+        .filter_map(|game| {
+            game.error
+                .as_ref()
+                .map(|reason| format!("seed {}: {reason}", game.seed))
+        })
+        .collect();
+    if !failures.is_empty() {
+        return Err(BaselineError::GameFailures {
+            details: failures.join("; "),
+        });
     }
     Ok(PanelReport {
         pool_sha256,
@@ -341,7 +377,8 @@ mod tests {
         let bytes = serde_json::to_vec(&envelope).unwrap();
         fs::write(&path, &bytes).unwrap();
 
-        let champions = Champions::load_checkpoint_accepted(&path).unwrap();
+        let digest = hex(&Sha256::digest(&bytes));
+        let champions = Champions::load_checkpoint_accepted(&path, &digest).unwrap();
         assert_eq!(champions.profiles.len(), 2);
         assert!(champions.profiles.contains_key("sol"));
         assert!(champions.profiles.contains_key("hacan"));
@@ -355,8 +392,20 @@ mod tests {
         });
         fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
         assert!(matches!(
-            Champions::load_checkpoint_accepted(&path),
+            Champions::load_checkpoint_accepted(
+                &path,
+                &hex(&Sha256::digest(serde_json::to_vec(&bad).unwrap()))
+            ),
             Err(BaselineError::InvalidProfile { .. })
+        ));
+
+        // A structurally valid checkpoint with the wrong manifest identity is refused before
+        // deserialization can make it look like the requested champion.
+        let valid = serde_json::json!({ "accepted": { "sol": test_profile("sol") } });
+        fs::write(&path, serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(matches!(
+            Champions::load_checkpoint_accepted(&path, "ffffffffffffffff"),
+            Err(BaselineError::CheckpointChecksumMismatch { .. })
         ));
     }
 
@@ -390,5 +439,66 @@ mod tests {
 
         // Every seat scored through its own profile: six seats, all present in the result.
         assert_eq!(first.victory_points.len(), 6);
+    }
+
+    #[test]
+    fn panel_rejects_empty_and_failed_runs() {
+        let missing = Path::new("does-not-need-to-exist-for-an-empty-panel");
+        assert!(matches!(
+            run_panel(
+                ContentStore::embedded(),
+                &players(),
+                DEFAULT,
+                &[],
+                missing,
+                missing,
+                Horizon {
+                    rounds: 1,
+                    steps: 1
+                },
+                "unused",
+                "unused",
+            ),
+            Err(BaselineError::EmptyPanel)
+        ));
+
+        let dir = std::env::temp_dir().join("ti4-sim-baseline-panel-failure-test");
+        fs::create_dir_all(&dir).unwrap();
+        let pool_path = dir.join("pool.json");
+        let checkpoint_path = dir.join("checkpoint.json");
+        let pool_bytes = synthetic_pool_json(ContentStore::embedded()).into_bytes();
+        fs::write(&pool_path, &pool_bytes).unwrap();
+
+        // Five valid profiles: the sixth seat deterministically fails with its seed and reason.
+        let accepted = IN_SCOPE_FACTIONS[..5]
+            .iter()
+            .map(|faction| ((*faction).to_owned(), test_profile(faction)))
+            .collect::<BTreeMap<_, _>>();
+        let checkpoint_bytes = serde_json::to_vec(&serde_json::json!({
+            "accepted": accepted,
+        }))
+        .unwrap();
+        fs::write(&checkpoint_path, &checkpoint_bytes).unwrap();
+
+        let result = run_panel(
+            ContentStore::embedded(),
+            &players(),
+            DEFAULT,
+            &[919_001],
+            &pool_path,
+            &checkpoint_path,
+            Horizon {
+                rounds: 1,
+                steps: 20_000,
+            },
+            &hex(&Sha256::digest(&pool_bytes)),
+            &hex(&Sha256::digest(&checkpoint_bytes)),
+        );
+        let Err(error) = result else {
+            panic!("a failed game must reject the panel");
+        };
+        let message = error.to_string();
+        assert!(message.contains("seed 919001"), "{message}");
+        assert!(message.contains("no champion profile"), "{message}");
     }
 }

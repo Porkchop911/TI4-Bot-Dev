@@ -8,6 +8,11 @@ is not enforced and failed games still allow `run_panel`/the example to return s
 baseline. Resolve F-M09-019a-1/2 in `plans/M09-019_OPEN_REVIEW_ITEMS.md` and request a fresh pass-1
 recheck before M09-019b.
 
+**Pass-1 findings resolved (2026-08-23); fresh Tier-D recheck pending.** The exact checkpoint bytes
+are now manifest-verified before deserialization; empty panels and any failed game are rejected
+with seed/reason detail before output can be written. Focused **4/0**, ti4-sim **36/0**, lint/format
+clean, and the real panel remains byte-identical. See the correction round in the ledger/evidence.
+
 **M09-019a complete 2026-08-23, pending independent Tier-D frontier review (first of two).**
 Base commit `9a83223` (M09-018 accepted). Branch `wp/m09-019-post-rules-baseline-profile`. Split
 into M09-019a and M09-019b **before implementation** per AGENTS.md; the parent acceptance

@@ -3048,3 +3048,16 @@ Files to read first after compaction:
   Baseline tests **3/0**, ti4-sim **35/0**, Clippy/rustfmt/diff clean in scoped files.
 - **Next exact action:** resolve both findings, rerun focused/full sim and the real panel, update
   evidence, and request a fresh Tier-D pass-1 recheck. Do not begin M09-019b on this branch first.
+
+## M09-019a Tier-D pass-1 corrections complete (2026-08-23)
+
+- **F-M09-019a-1 resolved:** exact checkpoint bytes are checked against manifest prefix
+  `be792a2a207ced25` and then deserialized from the same buffer; wrong valid content is refused.
+- **F-M09-019a-2 resolved:** empty panels and any `GameResult.error` now fail the panel before the
+  example writes evidence; error detail retains every failing seed/reason. Focused missing-champion
+  test verifies seed 919001 and the reason survive.
+- **Gates:** baseline **4/0**; ti4-sim **36/0**; ti4-sim Clippy/rustfmt clean aside from two known
+  engine warnings; diff-check clean. Real release panel and hashes remain byte-identical
+  (`panel.json` `c9478867…`, checkpoint `be792a2a…`, pool `aba33c81…`).
+- **Next exact action:** commit the scoped correction and request a fresh independent Tier-D pass-1
+  recheck. M09-019b remains pending until M09-019a acceptance.

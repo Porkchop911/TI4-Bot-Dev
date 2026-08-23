@@ -87,3 +87,24 @@ The measured numbers need not be discarded: the independently inspected inputs w
 ones and this run had zero failures. Fix both gates, rerun the focused/full sim checks and real
 panel, update evidence, then request a fresh Tier-D pass-1 recheck. M09-019b should not begin on
 this branch until M09-019a is accepted.
+
+---
+
+## F-M09-019a-1/2 correction round (implementer, 2026-08-23)
+
+- **F-M09-019a-1 resolved:** `R6_CHECKPOINT_SHA_PREFIX` pins the §10 manifest identity.
+  `Champions::load_checkpoint_accepted` now hashes one byte buffer, checks the prefix, and
+  deserializes that same buffer, avoiding a verify-then-reread gap. A valid profile envelope with
+  the wrong expected prefix is refused by a focused test.
+- **F-M09-019a-2 resolved:** `run_panel` refuses an empty seed list and converts any collected
+  `GameResult.error` into `BaselineError::GameFailures`, retaining every failing seed and reason.
+  The example cannot reach its output write on either error. A focused test supplies only five of
+  six required champions and verifies the returned error names seed 919001 and the missing-profile
+  reason.
+- **Reruns:** focused baseline **4/0**; ti4-sim **36/0**; ti4-sim Clippy/rustfmt clean (only the two
+  recorded pre-existing engine warnings); diff-check clean. The release panel remains 30 games,
+  0 failed, 0 completed, 33,825 decisions with identical VP means and output sha256 `c9478867…`;
+  checkpoint and pool hashes remain manifest-identical.
+
+**Status: both Tier-D pass-1 findings resolved; requesting a fresh independent Tier-D recheck.**
+M09-019b remains pending until that acceptance.

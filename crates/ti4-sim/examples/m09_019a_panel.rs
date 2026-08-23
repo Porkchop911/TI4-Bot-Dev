@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use ti4_content::ContentStore;
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::PlayerId;
-use ti4_sim::baseline::{VALIDATION_POOL_SHA_PREFIX, run_panel};
+use ti4_sim::baseline::{R6_CHECKPOINT_SHA_PREFIX, VALIDATION_POOL_SHA_PREFIX, run_panel};
 use ti4_sim::run::Horizon;
 
 const POOL: &str = "out/pools/full_np8_12_holdout.json";
@@ -64,6 +64,7 @@ fn main() -> Result<(), String> {
         checkpoint_path,
         horizon,
         VALIDATION_POOL_SHA_PREFIX,
+        R6_CHECKPOINT_SHA_PREFIX,
     )
     .map_err(|error| error.to_string())?;
 
