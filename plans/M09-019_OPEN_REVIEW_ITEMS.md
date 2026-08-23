@@ -33,3 +33,57 @@ committed test can verify them without depending on gitignored local data.
 
 M09-019a: implementation complete, **pending independent Tier-D frontier review** (first of two).
 No findings yet; observations above are recorded for the reviewer's disposition.
+
+---
+
+## M09-019a independent Tier-D review 1 on `7ccae2e` (Codex frontier, 2026-08-23)
+
+**Verdict: changes required; M09-019a is not accepted.** The recorded baseline independently
+reproduces byte-for-byte on the named artifacts, but the panel command does not implement the
+fail-closed contract it claims.
+
+### F-M09-019a-1 — HIGH: checkpoint manifest checksum is never enforced
+
+`run_panel` verifies only `pool_sha_prefix`; `Champions::load_checkpoint_accepted` computes and
+reports the checkpoint digest but compares it to nothing. The example likewise hashes the
+checkpoint only for before/after equality. Any parseable envelope with faction-valid profiles can
+replace `final10000.json`, run successfully, and be reported as the r6 baseline even though MLP
+plan §10 requires every panel command to validate artifact role/checksum before starting.
+
+**Required:** add the manifest checkpoint prefix (`be792a2a207ced25`) to the fail-closed input
+contract and verify it against the exact bytes deserialized before any game runs. Add a focused
+test proving a valid-but-wrong checkpoint is rejected. Avoid a verify-then-reread gap: checksum and
+deserialization should be derived from the same byte buffer.
+
+### F-M09-019a-2 — HIGH: failed games still produce a successful baseline command
+
+`play_learned` represents missing champions, deployment faults, and engine failures as
+`GameResult.error`; `run_panel` unconditionally wraps the collected games in `Ok(PanelReport)`.
+The example then writes `panel.json`, prints the failed count, and returns `Ok(())` regardless of
+that count. A panel with 30 failed games therefore exits successfully and can look like evidence,
+contrary to the repository rule that a worker/game failure must never become apparent success.
+
+**Required:** make the acceptance path fail closed when any game has `error` (with failing seeds
+and reasons preserved), before writing/reporting an accepted baseline. Add a focused test using a
+missing required champion or another deterministic failure and assert the panel returns an error;
+retain the per-game failure detail in the error/evidence path. An empty seed panel should likewise
+be refused rather than accepted as a zero-game baseline.
+
+### What passed independently
+
+- Named artifacts match the manifest exactly: checkpoint
+  `be792a2a207ced25d589162d875bae4fb1f320c8e5637045486db6a24ce5b55b`; validation pool
+  `aba33c81aa04cefb15857b8ed1d40173f6f3de5e9b6e9633a6855c1d5a4c27e5`.
+- `cargo test -p ti4-sim --lib baseline` — **3/0**.
+- `cargo test -p ti4-sim` — **35/0**, doc tests 0/0.
+- `cargo clippy -p ti4-sim --all-targets` — no ti4-sim warning; only the two recorded pre-existing
+  engine warnings. `cargo fmt -p ti4-sim --check` and commit diff-check clean.
+- Independent `cargo run --release -p ti4-sim --example m09_019a_panel` reproduced 30 games,
+  0 failed, 0 completed, 33,825 decisions, the six quoted VP means, and output sha256
+  `c94788677d73de9ee5359f0954a258ba2dea4875938a0161bc5f0b3f9f06cd4e`; both input hashes were
+  unchanged afterward.
+
+The measured numbers need not be discarded: the independently inspected inputs were the intended
+ones and this run had zero failures. Fix both gates, rerun the focused/full sim checks and real
+panel, update evidence, then request a fresh Tier-D pass-1 recheck. M09-019b should not begin on
+this branch until M09-019a is accepted.

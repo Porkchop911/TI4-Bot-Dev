@@ -3032,3 +3032,19 @@ Files to read first after compaction:
   by design; zero completions is a measurement; no committed real-artifact test — M09-020's home).
 - **Next exact action:** independent Tier-D frontier review of the M09-019a commit (first of the
   two required by the row); then M09-019b (bounded profile with raw samples + feature inventory).
+
+## M09-019a Tier-D review 1 on `7ccae2e` (2026-08-23)
+
+- **Verdict:** **changes required; M09-019a not accepted.** The correct artifacts and baseline
+  output independently reproduce, but two fail-closed defects remain.
+- **F-M09-019a-1 HIGH:** the validation pool checksum is enforced; the r6 checkpoint checksum is
+  only reported, never compared to its manifest prefix. A different valid envelope can be measured
+  as r6. Verify the exact bytes deserialized and add a wrong-valid-checkpoint rejection test.
+- **F-M09-019a-2 HIGH:** games with `GameResult.error` are collected into an `Ok(PanelReport)`;
+  the example writes output and exits zero. Reject any failed game (preserving seed/reason) and an
+  empty panel before publishing an accepted baseline; add focused failure tests.
+- **Independent evidence:** named input hashes match; release panel reproduced 30/0 failed/0
+  completed/33,825 decisions and all VP means; output sha256 `c9478867…`; inputs unchanged.
+  Baseline tests **3/0**, ti4-sim **35/0**, Clippy/rustfmt/diff clean in scoped files.
+- **Next exact action:** resolve both findings, rerun focused/full sim and the real panel, update
+  evidence, and request a fresh Tier-D pass-1 recheck. Do not begin M09-019b on this branch first.
