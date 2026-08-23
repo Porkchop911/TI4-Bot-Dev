@@ -2734,3 +2734,35 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
   committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
   bootstrap methodology per the recorded independence limitation.
+
+## M08-022 checkpoint (2026-08-23)
+
+- **Branch:** `wp/m08-022-titans-pds-ground-force-predicate` from `476e0c4` — deliberately
+  independent of the pending M08-019 resolution commit (`9a8f5fd`, on its own branch) so both
+  packages review and merge independently. Disjoint file sets (units.rs vs technology/faction_abilities/bot/behavior).
+- **Package:** ground-force predicate vs corpus flag (M08-020 review finding T1 / KD-5).
+  `is_ground_force()` hardcoded `id == "titans_pds2"`; the corpus flags `titans_pds` (Hel-Titan I)
+  as a ground force, which the old predicate missed — material since M08-020's ground-force-only
+  invasion semantics.
+- **Decision recorded:** union semantics — `flag("isGroundForce") || base_type ∈ {infantry, mech}`.
+  Verified against corpus: the two Naaz space mechs are unflagged mechs that fight on planets;
+  a bare flag() would have dropped them. Union preserves every current classification and adds
+  exactly `titans_pds`.
+- **Red-first:** both new/extended tests verified RED pre-fix (126 passed, 2 failed), GREEN post-fix
+  (129/0). Tests: extended `the_titans_pds_is_a_ground_force_despite_being_a_structure` (both
+  records vs corpus); new sweep `the_ground_force_predicate_agrees_with_the_recorded_decision_table`
+  (all **125** embedded unit records — strict superset of the reviewer's 46-record comparison);
+  new `only_the_hel_titan_i_changes_classification` (roster-safety proof: no unit except
+  Hel-Titan I changes classification, so no roster-reachable unit is reclassified → escalation
+  clause not triggered).
+- **Gates:** ti4-content **129/0**; workspace **1,335/0 identical ×2** (per-test lists
+  byte-identical; +2 = new tests); clippy -p ti4-content --all-targets zero warnings; rustfmt
+  clean on units.rs; `git diff --check` clean. Exact outputs pasted in evidence.
+- **KD-5:** stays in the ledger until independent acceptance (spec: removal "on acceptance and
+  commit").
+- **Milestone state:** M08-017 ✅ · M08-020 ✅ · M08-018 ✅ · M08-021 ✅ · **M08-019 resolved in-package
+  (Option A), pending independent Tier C recheck** (`9a8f5fd`) · **M08-022 implemented, pending
+  independent Tier B review**. D11 roster widening remains hard-blocked on M08-022 acceptance.
+- **Next exact action:** commit scoped paths (units.rs + spec + evidence + this file) so the
+  Claude review loop can pick up both pending packages; on acceptance of each, remove KD-5 /
+  write M08 exit-gate closure in `plans/M08_AUTHORED_BOTS.md`.

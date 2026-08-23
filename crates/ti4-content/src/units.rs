@@ -104,8 +104,17 @@ impl<'a> UnitType<'a> {
     /// Ground forces are infantry and mechs — plus the Titans' PDS, which is a ground
     /// force that also happens to be a structure.
     #[must_use]
+    /// A ground force fights in ground combat (LRR 49/42). Union semantics, decided in
+    /// M08-022: the corpus `isGroundForce` flag OR a standard infantry/mech base type. The
+    /// flag marks "ground force beyond the standard infantry/mech" — it deliberately omits
+    /// the two Naaz space mechs, which are mechs that fight on planets (their ability adds
+    /// ship status in space; it does not remove ground status), so the union keeps them.
+    /// This classifies exactly one unit differently from the pre-M08-022 predicate:
+    /// `titans_pds` (Hel-Titan I) becomes a ground force, fixing M08-020's
+    /// ground-force-only invasion semantics for it. Pinned by
+    /// `only_the_hel_titan_i_changes_classification`.
     pub fn is_ground_force(&self) -> bool {
-        matches!(self.base_type(), "infantry" | "mech") || self.id() == "titans_pds2"
+        self.record.flag("isGroundForce") || matches!(self.base_type(), "infantry" | "mech")
     }
 
     #[must_use]
@@ -408,11 +417,65 @@ mod tests {
 
     #[test]
     fn the_titans_pds_is_a_ground_force_despite_being_a_structure() {
-        let pds = unit("titans_pds2");
-        assert!(pds.is_ground_force());
-        assert!(pds.is_structure());
-        // It is a structure, so it does not eat capacity even though it is a ground force.
-        assert!(!pds.consumes_capacity());
+        // Both Titans PDS records, checked against the corpus rather than a hand-built id:
+        // each is flagged `isGroundForce` and must classify as one (M08-022).
+        for id in ["titans_pds", "titans_pds2"] {
+            let pds = unit(id);
+            assert!(
+                pds.record.flag("isGroundForce"),
+                "{id} is flagged in the corpus"
+            );
+            assert!(
+                pds.is_ground_force(),
+                "{id} must classify as a ground force"
+            );
+            assert!(pds.is_structure());
+            // It is a structure, so it does not eat capacity even though it is a ground force.
+            assert!(!pds.consumes_capacity());
+        }
+    }
+
+    #[test]
+    fn the_ground_force_predicate_agrees_with_the_recorded_decision_table() {
+        // M08-022 decision: union semantics — the corpus `isGroundForce` flag OR a standard
+        // infantry/mech base type. The two Naaz space mechs are deliberately not flagged (the
+        // flag marks "ground force beyond the standard infantry/mech"), but they are mechs and
+        // fight on planets, so the union keeps them classified. This sweep makes the decision
+        // table an executable invariant: any future corpus edit that breaks the agreement fails
+        // loudly here.
+        let content = ContentStore::embedded();
+        for record in content.records(ContentType::Units) {
+            let unit = UnitType::new(record);
+            let expected =
+                record.flag("isGroundForce") || matches!(unit.base_type(), "infantry" | "mech");
+            assert_eq!(
+                unit.is_ground_force(),
+                expected,
+                "{} ({}) disagrees with the recorded decision table",
+                unit.id(),
+                unit.name().unwrap_or("<unnamed>")
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_hel_titan_i_changes_classification() {
+        // M08-022: the fix must add exactly one classification and change nothing else — no
+        // roster-reachable unit may be reclassified by this predicate change.
+        let content = ContentStore::embedded();
+        for record in content.records(ContentType::Units) {
+            let unit = UnitType::new(record);
+            let before =
+                matches!(unit.base_type(), "infantry" | "mech") || unit.id() == "titans_pds2";
+            if unit.is_ground_force() != before {
+                assert_eq!(
+                    unit.id(),
+                    "titans_pds",
+                    "{} was reclassified by the M08-022 fix",
+                    unit.id()
+                );
+            }
+        }
     }
 
     #[test]

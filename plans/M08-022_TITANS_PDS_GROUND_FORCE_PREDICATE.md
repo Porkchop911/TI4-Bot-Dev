@@ -2,6 +2,11 @@
 
 ## Preparation status
 
+**Started 2026-08-23.** Branch `wp/m08-022-titans-pds-ground-force-predicate` from `476e0c4`
+(M08-021 close-out — the accepted line tip; deliberately independent of the pending M08-019
+resolution commit so both packages review and merge independently). Dependencies met: M08-020
+accepted (`00d6562`). D11 roster widening is not in flight on this branch.
+
 **Dependency-safe specification only.** Scoped by the independent Tier-C frontier review of
 M08-020, finding **T1** (`plans/M08-020_OPEN_REVIEW_ITEMS.md`). Begin any time after M08-020 is
 accepted; **hard-ordered before any D11 roster widening** (the moment Titans can be seated, this
