@@ -164,8 +164,68 @@ found reads its content from somewhere the experiment could not reach.
 
 ---
 
-# Part 2 — implementer's campaign record, verbatim
+# Part 2 — independent Tier-C recheck of `9a8f5fd` (Codex frontier review, 2026-08-23)
 
+## Verdict
+
+**Changes required; do not close M08-019.** This review independently reproduced the code-path
+analysis in Part 1. The technology-order fix is correct and its focused test passes. The submitted
+planet-order resolution is incomplete and the evidence currently overstates what was fixed.
+
+This verdict does not rely on Python parity. The accepted M08-019 Rust specification requires
+identical choices/explanations/replay under perturbed content insertion order. The live invasion
+path still derives choice-option order from `planets.json` record layout, so that accepted Rust
+criterion remains unmet regardless of historical Python behavior.
+
+### C1 — HIGH, blocking: live invasion choice ordering remains corpus-layout-dependent
+
+`crates/ti4-engine/src/invasion.rs::landable_planets` still calls
+`galaxy::planets_in(content, system, sources)`, which preserves the live store's `planets.json`
+record order. Its result feeds `commit_options`, making that order observable in every affected
+ground-commitment choice. Commit `9a8f5fd` does not touch `invasion.rs`; therefore it cannot resolve
+the measured live-store perturbation or satisfy the package's insertion-order gate.
+
+**Required:** derive landing planets from the active system record's `planets` array (preserving
+the custodians filter), add a red-first invasion option-order test, and include the resulting
+ordering change in the single versioned behavior re-baseline.
+
+### C2 — MEDIUM, required: `annexable` still bypasses active content and sources
+
+The new implementation still constructs `ContentStore::embedded()` inside `annexable` and its
+signature still accepts neither `content` nor `sources`. The production caller already has both in
+its context. Consequently the new test proves ordering only for embedded content and cannot cover
+the package's perturbed live store; alternate source scopes can resolve a different domain.
+
+**Required:** thread the active `ContentStore` and `SourceSet` through `annexable` and every call
+site/test, then resolve system records through that domain.
+
+### C3 — MEDIUM, required evidence correction: the 28-category conclusion is one-seed evidence
+
+The category bisect is recorded from seed `813_001`, while the summary generalizes its result to
+the engine. A category unused by that game is indistinguishable from an order-independent one.
+
+**Required:** run the 28-category perturbation campaign across the existing 30-seed M08-021 set,
+or explicitly narrow every conclusion to the single exercised seed. Because M08-019 is an exit
+gate intended to support later milestones, the 30-seed rerun is the accepted resolution.
+
+## Reproduced checks
+
+- `researchable_offers_options_in_canonical_sorted_order`: **1/0**.
+- `peace_accords_candidates_follow_the_system_record_planet_order`: **1/0**, but it exercises
+  embedded content and therefore does not close C2.
+- M08-021 v2 behavior gate: **1/0**.
+- Engine Clippy: no new warning in the submitted touched files; reported warnings are the known
+  pre-existing sites in `choice.rs`, `game.rs`, and `strategy.rs`.
+
+## Disposition
+
+**Blocked on C1. C2 and C3 are also required before re-review.** The existing v2 baseline must not
+be treated as final because the missing invasion fix will change option ordering again. After all
+three corrections land together, rederive the baseline once and request a fresh Tier-C recheck.
+
+---
+
+# Part 3 — implementer's campaign record, verbatim
 
 Campaign-driven findings recorded by the implementing agent during the exit-review campaign.
 Adjudication belongs to the independent Tier C reviewer; where a fix would change public

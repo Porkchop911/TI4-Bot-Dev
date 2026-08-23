@@ -2781,3 +2781,18 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** commit the Option A resolution (scoped paths only) so the Claude
   review loop can pick it up; on independent acceptance: write M08 exit-gate closure in
   `plans/M08_AUTHORED_BOTS.md`, update this file, close M08-019.
+
+## M08-019 independent Tier-C verdict on `9a8f5fd` (2026-08-23)
+
+- **Reviewer/disposition:** Codex frontier review — **changes required; do not close M08-019**.
+- **C1 HIGH/blocking:** `invasion.rs::landable_planets` still feeds ground-commit options from
+  live `planets.json` order; `9a8f5fd` does not touch invasion and therefore does not resolve the
+  measured insertion-order dependency.
+- **C2 MEDIUM/required:** `annexable` still constructs `ContentStore::embedded()` and ignores the
+  active source scope. Thread content/sources through it and its callers/tests.
+- **C3 MEDIUM/required:** rerun the 28-category perturbation over the existing 30-seed set; the
+  current engine-wide claim is based on one seed.
+- **Reproduced:** technology-order test **1/0**; Peace Accords order test **1/0**; v2 behavior gate
+  **1/0**. These do not cover C1/C2. Clippy adds no warning in the submitted touched files.
+- **Next exact action:** implement C1+C2 together, run C3, rederive the behavior baseline once,
+  rerun affected/workspace gates, then request a fresh independent Tier-C review.

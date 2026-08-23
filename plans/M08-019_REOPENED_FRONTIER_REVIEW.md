@@ -2,9 +2,14 @@
 
 ## Preparation status
 
-**Started 2026-08-23.** Dependencies met: M08-018 accepted/committed (`45fe569`), M08-021
+**Tier-C recheck verdict: changes required (2026-08-23).** Dependencies met: M08-018
+accepted/committed (`45fe569`), M08-021
 closed with independent review fully resolved (`f110907`, `e5afb02`, close-out `476e0c4`).
 Base commit `476e0c4`; branch `wp/m08-019-reopened-frontier-review`.
+
+Commit `9a8f5fd` remains blocked: invasion landing-option order is still content-layout-dependent,
+`annexable` still bypasses active content/sources, and the category bisect requires the 30-seed
+rerun. See Part 2 of `plans/M08-019_OPEN_REVIEW_ITEMS.md`.
 
 **Exact committed frontier under review:** `3c7ddd2..476e0c4` (seven commits: M08-017 ×2,
 M08-020, M08-018, M08-021 ×3). Under `crates/`: `invasion.rs` (+390 — the only production
