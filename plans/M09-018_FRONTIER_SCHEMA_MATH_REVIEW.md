@@ -15,6 +15,12 @@ F-M09-018-1 corrected to name all four successor decision families (`trade`, `to
 `production`, `payment`). Both claims re-verified against pinned `37061c5` and the current tree
 before editing. See the R1/R2 resolution sections in the ledger and evidence.
 
+**Fresh Tier-C recheck: changes required (2026-08-23, reviewed tip `b81ede2`).** R1/R2's technical
+corrections are sound, but this file's active result paragraph below still calls Part 5 PASS and
+the ledger's current status omits F-M09-018-7 from the required pre-exit child work. Correct those
+stale status claims and request another recheck; no source or test change is required. See R3 in
+`plans/M09-018_OPEN_REVIEW_ITEMS.md`.
+
 **Campaign complete 2026-08-23; pending independent Tier C frontier review.** Base commit `aa15a39`
 (M08 closure). Branch `wp/m09-018-frontier-schema-math-review`.
 

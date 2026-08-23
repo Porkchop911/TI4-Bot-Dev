@@ -154,3 +154,24 @@ exit review, non-blocking for schema-4-only rows 019–023) remains reasonable.
 
 F-M09-018-2 through F-M09-018-6 are otherwise fairly characterized. After R1/R2 are corrected,
 request a fresh Tier-C recheck; no Rust source change is required by this verdict.
+
+---
+
+## Fresh independent Tier-C recheck on `b81ede2` (Codex frontier, 2026-08-23)
+
+**Changes required; do not accept M09-018 yet.** R1 and R2 are technically correct in the newly
+edited Part 5, finding, and resolution sections, but the active package records still contradict
+those corrections.
+
+### R3 — LOW, required records correction: stale PASS/status claims remain
+
+- `plans/M09-018_FRONTIER_SCHEMA_MATH_REVIEW.md` still says **“Result: Parts 1/3/5 PASS”** in its
+  active status summary, even though R1 correctly changed Part 5 to **PARTIAL (gap)**.
+- This ledger's `## Status` still says only F-M09-018-1/2/3 require child packages or decisions
+  before M09-030, omitting newly added F-M09-018-7, which its own disposition says blocks the M09
+  exit gate if unresolved.
+
+Correct both current-status statements and search the active M09-018 records for any other
+non-historical schema-2–5/Part-5 PASS claim. Chronological text inside the earlier campaign and
+review records may remain as history when a later section clearly supersedes it. No Rust source
+change or gate rerun is required; `git diff 0886108..b81ede2 --check` is clean.

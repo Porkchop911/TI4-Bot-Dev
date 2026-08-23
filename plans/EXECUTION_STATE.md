@@ -2986,3 +2986,16 @@ Files to read first after compaction:
   before editing. No Rust source change; no gates affected (plans-only diff).
 - **Next exact action:** fresh independent Tier-C recheck of the correction commit; on acceptance,
   M09-019 becomes dependency-ready.
+
+## M09-018 fresh Tier-C recheck on `b81ede2` (2026-08-23)
+
+- **Verdict:** **changes required; M09-018 remains unaccepted.** R1/R2 are technically resolved,
+  but two active status statements were not reconciled with the corrections.
+- **R3:** the M09-018 spec still says “Parts 1/3/5 PASS” although Part 5 is now PARTIAL (gap), and
+  the ledger status lists only findings 1/2/3 as pre-exit child work although F-M09-018-7 also
+  blocks the M09 exit gate if unresolved.
+- **Gate:** plans-only correction diff; `git diff 0886108..b81ede2 --check` clean. Prior policy
+  119/0, training 104/0, and Clippy results remain applicable; no source or test change occurred.
+- **Next exact action:** correct the two stale status claims, search active M09-018 records for
+  equivalent non-historical wording, and request another independent Tier-C recheck. M09-019
+  remains blocked on M09-018 acceptance.
