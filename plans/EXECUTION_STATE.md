@@ -2999,3 +2999,15 @@ Files to read first after compaction:
 - **Next exact action:** correct the two stale status claims, search active M09-018 records for
   equivalent non-historical wording, and request another independent Tier-C recheck. M09-019
   remains blocked on M09-018 acceptance.
+
+## M09-018 R3 resolution / final Tier-C acceptance (2026-08-23)
+
+- **R3 resolved:** active spec result corrected to Parts 1/3 PASS and Part 5 PARTIAL (gap); active
+  ledger status corrected to name F-M09-018-1/2/3/7 as required pre-exit work. Equivalent remaining
+  matches are chronological superseded records, not current status.
+- **Final verdict:** **M09-018 accepted.** Its seven findings accurately bound the current tree.
+  F-M09-018-1/2/3/7 remain mandatory before M09-030, but none blocks schema-4-only M09-019.
+- **Gates carried forward:** policy **119/0**, training **104/0**, policy Clippy clean; rustfmt has
+  only the recorded pre-existing `features.rs:690/752` drift. R1–R3 changed plans/evidence only.
+- **Next exact action:** commit the scoped R3 resolution/acceptance records, then begin M09-019
+  from this accepted frontier.

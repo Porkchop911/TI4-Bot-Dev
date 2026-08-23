@@ -24,14 +24,16 @@ stale status claims and request another recheck; no source or test change is req
 **Campaign complete 2026-08-23; pending independent Tier C frontier review.** Base commit `aa15a39`
 (M08 closure). Branch `wp/m09-018-frontier-schema-math-review`.
 
-Result: Parts 1/3/5 PASS on current-tree evidence (hashing bit-compatible with the oracle —
-48/48 golden rows re-derived independently, 0 mismatches; softmax max-shifted and pinned by tests;
-all real checkpoints load/validate/score through the current API). Part 2 finds **no migration code
+Result: Parts 1/3 PASS and Part 5 PARTIAL (gap) on current-tree evidence (hashing bit-compatible
+with the oracle — 48/48 golden rows re-derived independently, 0 mismatches; softmax max-shifted and
+pinned by tests; all surviving real checkpoints, which are schema 4, load/validate/score through
+the current API; the schema-2 flat-vector import path is absent). Part 2 finds **no migration code
 exists** for schemas 3→4 or 4→5 (F-M09-018-1 MEDIUM, F-M09-018-2 LOW — no local artifact affected,
 all 90 surviving profiles are schema 4). Part 4: feature purity holds structurally but row 014's
 instrumented test is absent (F-M09-018-3 MEDIUM). Reconciliation tally: **8 full / 6 partial /
-3 absent**. Six findings recorded in `plans/M09-018_OPEN_REVIEW_ITEMS.md`; none blocks the start of
-M09-019, whose dependency is this gate's acceptance.
+3 absent**. Seven findings are recorded in `plans/M09-018_OPEN_REVIEW_ITEMS.md`; none blocks the
+schema-4-only start of M09-019 after this gate's acceptance, while findings 1/2/3/7 remain required
+pre-exit work.
 
 This package **re-executes** the gate. The historical record at `plans/evidence/M09-018.md` is a
 hollow checklist — permission class "P1: Write evidence file", no commands, no test results, no

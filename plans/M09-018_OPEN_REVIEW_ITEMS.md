@@ -107,10 +107,9 @@ compatibility objective, not a PASS.
 
 ## Status
 
-**Corrections complete for this package's scope (review + records only). Requesting independent
-Tier C frontier adjudication.** Findings F-M09-018-1/2/3 require child packages or operator scope
-decisions before M09-030; none blocks the start of M09-019, whose dependency is this gate's
-acceptance.
+**Corrections complete for this package's scope (review + records only).** Findings
+F-M09-018-1/2/3/7 require child packages or operator scope decisions before M09-030; none blocks
+the schema-4-only start of M09-019 after this gate's acceptance.
 
 ---
 
@@ -175,3 +174,17 @@ Correct both current-status statements and search the active M09-018 records for
 non-historical schema-2–5/Part-5 PASS claim. Chronological text inside the earlier campaign and
 review records may remain as history when a later section clearly supersedes it. No Rust source
 change or gate rerun is required; `git diff 0886108..b81ede2 --check` is clean.
+
+---
+
+## R3 resolution and final Tier-C verdict (Codex frontier, 2026-08-23)
+
+R3 is resolved mechanically with the review trail preserved: the active package result now says
+Parts 1/3 PASS and Part 5 PARTIAL (gap), and the active ledger status lists findings 1/2/3/7 as
+required pre-exit work. A search found no equivalent stale claim outside chronological records that
+are explicitly superseded by later sections.
+
+**Final verdict: accepted.** M09-018 accurately records the current implementation and its seven
+findings. None blocks the schema-4-only M09-019 package; F-M09-018-1/2/3/7 remain mandatory before
+M09-030 can close the milestone. No Rust source changed, so the independently reproduced policy
+119/0, training 104/0, Clippy, and known rustfmt results remain applicable.
