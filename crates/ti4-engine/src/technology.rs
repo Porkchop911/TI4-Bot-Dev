@@ -789,6 +789,10 @@ pub fn can_research(
 }
 
 /// Everything this player could research now, in a stable order.
+///
+/// The order is canonical (sorted by technology id), not the file layout of
+/// `technologies.json` — choice option order must not follow corpus extraction order
+/// (F-M08-019-1; the oracle sorted here too).
 #[must_use]
 pub fn researchable(
     state: &GameState,
@@ -797,14 +801,16 @@ pub fn researchable(
     player: &PlayerId,
 ) -> Vec<TechnologyId> {
     let active = active_aliases(content);
-    content
+    let mut open: Vec<TechnologyId> = content
         .records(ContentType::Technologies)
         .iter()
         .filter_map(|record| record.text("alias"))
         .map(TechnologyId::new)
         .filter(|alias| active.contains(alias))
         .filter(|alias| can_research(state, content, sources, player, alias))
-        .collect()
+        .collect();
+    open.sort();
+    open
 }
 
 /// Gain a technology outright (90.5), without checking prerequisites.
@@ -1304,5 +1310,20 @@ mod tests {
         for alias in &open {
             assert!(prerequisites(ContentStore::embedded(), alias).is_empty());
         }
+    }
+
+    #[test]
+    fn researchable_offers_options_in_canonical_sorted_order() {
+        // F-M08-019-1: option order must not follow the file layout of technologies.json —
+        // the oracle sorted, and "a stable order" means a canonical one.
+        let state = game(&["a"]);
+        let open = researchable(&state, ContentStore::embedded(), POK, &player());
+        assert!(open.len() >= 2, "several technologies need nothing");
+        let mut sorted = open.clone();
+        sorted.sort();
+        assert_eq!(
+            open, sorted,
+            "research options must be in canonical (sorted) order"
+        );
     }
 }

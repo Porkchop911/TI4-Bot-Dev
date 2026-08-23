@@ -4,7 +4,7 @@
 //! (SD-1, `plans/M08_AUTHORED_BOTS.md`). Determinism pins catch *run-to-run* drift; this suite
 //! catches *version-to-version* behavioral drift: it plays a fixed seed set twice, asserts
 //! per-seed identity before any comparison, and checks ten behavioral metrics against bounds
-//! recorded from the v1 baseline.
+//! recorded from the current baseline (v2 — see [`baseline_bounds`]).
 //!
 //! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster, POK
 //! scope, [`Seats::Scored`] (one authored bot per seat), [`Horizon::default()`] — 50 rounds /
@@ -19,9 +19,10 @@
 //! `plans/evidence/M08-021.md`.
 //!
 //! Bounds: 95% bootstrap confidence intervals (2000 resamples per metric, deterministic
-//! splitmix64) over the v1 baseline's per-seed values. A degenerate bound (`lo == hi`) is legal
-//! only when the baseline's per-seed values were constant — for `completion` in v1 that is the
-//! point: every game must end cleanly, so any error or horizon cutoff fails the gate.
+//! splitmix64) over the current baseline's per-seed values. A degenerate bound (`lo == hi`) is
+//! legal only when the baseline's per-seed values were constant — for `completion` in v1 and v2
+//! that is the point: every game must end cleanly, so any error or horizon cutoff fails the
+//! gate.
 //! **Re-baseline discipline:** the bounds in [`baseline_bounds`] may change only through a
 //! versioned process — record old and new values side by side in `plans/evidence/M08-021.md`,
 //! state the semantic cause (which package changed what), and get review approval. An
@@ -372,55 +373,57 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The v1 baseline bounds: metric name → (lo, hi). Recorded from the baseline run on base
-/// commit `45fe569` (M08-018 accepted) at full double precision — protocol and raw values in
+/// The current baseline bounds (v2): metric name → (lo, hi). Recorded at full double
+/// precision under protocol v1 — raw values and the v1→v2 old/new comparison in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
-    // v1 — recorded from the baseline run on base commit `45fe569` (M08-018 accepted);
-    // protocol and raw values in plans/evidence/M08-021.md. See evidence for old/new on any
-    // change.
+    // v2 — recorded 2026-08-23 on branch wp/m08-019-reopened-frontier-review after the
+    // F-M08-019-1 fix (canonical choice-option ordering: researchable() sorted, annexable()
+    // system-record order). Option reordering changes bot sampling on tied scores; every
+    // metric moved modestly and no behavior gate regressed. v1 values (base `45fe569`) are
+    // preserved side by side in plans/evidence/M08-021.md.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.411_111_111_111_111_15, 0.469_135_802_469_135_8),
+        (0.394_444_444_444_444_54, 0.459_259_259_259_259_37),
     );
-    // Degenerate on purpose: all thirty v1 games ended cleanly, so the bound is the strict
-    // invariant "every game ends cleanly", not a statistical interval.
+    // Degenerate on purpose: all thirty v1 and v2 games ended cleanly, so the bound is the
+    // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.634_042_583_873_113_4, 2.044_676_086_523_666_4),
+        (1.666_619_966_346_411, 2.064_650_590_576_990_3),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.334_673_232_929_534_16, 0.880_393_430_571_010_5),
+        (0.395_655_418_105_885_67, 0.862_686_730_546_916_6),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027_952_532_118_662_436, 0.029_422_121_687_696_957),
+        (0.028_169_398_244_965_834, 0.029_828_149_658_605_703),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.047_407_605_040_550_88, 0.048_807_624_240_894_555),
+        (0.047_319_302_656_773_61, 0.048_634_824_579_240_75),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.065_105_865_261_551_09, 0.071_169_816_301_633_69),
+        (0.067_192_046_173_363_65, 0.071_844_041_412_796_25),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.008_473_320_456_996_652, 0.009_681_739_713_301_187),
+        (0.007_775_183_130_052_392, 0.008_915_739_991_949_41),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.093_771_845_987_674_55, 0.096_330_443_822_693_22),
+        (0.093_432_387_850_588_2, 0.095_997_412_334_190_43),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.046_330_998_454_871_854, 0.047_546_641_062_058_526),
+        (0.046_090_558_665_786_714, 0.047_381_288_724_976_565),
     );
     bounds
 }

@@ -2734,3 +2734,50 @@ combat_occurrence`, secrets/invasion occurrence tests). None of the three mechan
 - **Next exact action:** begin **M08-019**'s reopened frontier exit review (Tier C) over the
   committed M08 frontier — or, if the operator wants it first, a frontier escalation of the
   bootstrap methodology per the recorded independence limitation.
+
+## M08-019 campaign checkpoint (2026-08-23)
+
+- **Branch:** `wp/m08-019-reopened-frontier-review` from `476e0c4`. Frontier under review:
+  `3c7ddd2..476e0c4` (seven commits: M08-017 ×2, M08-020, M08-018, M08-021 ×3). Only production
+  behavior change in the frontier: `invasion.rs` (+390, ground-combat structure legality).
+- **Campaign status:** Parts 1–5 executed by the implementer; independent Tier C review pending.
+  - Part 1 (choice traces): covered by M08-018's ~45 focused tests in `bot.rs::tests` (in
+    frontier); re-run: ti4-policy **119/0**.
+  - Part 2 (redaction probes): current via M08-017 re-execution (`d69fcb1`, in frontier);
+    no later frontier commit touched a redaction surface.
+  - Part 3 (determinism / perturbed insertion order): **executed this campaign.** In-process
+    determinism verified; loader fidelity verified; corpus-layout independence **fails** —
+    exactly two file-order dependencies found: `researchable()` iterates technologies.json file
+    order where the oracle sorted (`technology.rs:793`), and Xxcha's `annexable()` iterates
+    planets in planets.json file order where the oracle used the system record's own `planets`
+    array (13/231 systems differ). Both feed choice option ordering → bot sampling on ties.
+    Recorded as **F-M08-019-1** with options A/B. Operator disposition 2026-08-23 adopted
+    Option A; fix implemented in-package under declared finding-specific scope.
+  - Part 4 (scope reconciliation): cancelled rows 008/010/013 have no code added; row 009
+    (`progress.rs`) zero diff; row 012 no Serialize added; row 014 no fixtures; row 016 dead dep
+    already removed. No opt-in flags anywhere in the frontier.
+  - Part 5 (gate reproduction): done pre-fix and re-done post-fix. Post-fix: ti4-policy **119/0**
+    (extended nested-window campaign, 144 s); ti4-engine **854/0** (+2 red-first tests);
+    workspace **1,335/0 identical ×2** (per-test result lists byte-identical); clippy zero
+    warnings in any touched file; rustfmt clean on all four touched files; `git diff --check`
+    clean. Pre-fix baseline: policy 119/0 · engine 852/0 · workspace 1,333/0 identical ×2.
+- **F-M08-019-1 resolution (Option A):** `researchable()` now sorted by TechnologyId; `annexable()`
+  iterates the system record's own `planets` array. Red-first tests verified RED→GREEN
+  (`researchable_offers_options_in_canonical_sorted_order`,
+  `peace_accords_candidates_follow_the_system_record_planet_order`). M08-018 nested-window test:
+  non-vacuity clause failed post-fix because a mid-window re-offer is rare (exactly one in all
+  thirty pre-fix games; zero post-fix) — engine-level window pins still pass, so this is
+  rare-event sampling, not regression; campaign extended with six verified seeds
+  (`NESTED_WINDOW_SEEDS`), now covering 48 games. M08-021 re-baselined to **v2** (old/new side by
+  side in `plans/evidence/M08-021.md`; gate integrity check bit-verifies the transcription).
+- **Working tree:** plans/ changes for M08-019 + the Option A fix (`technology.rs`,
+  `faction_abilities.rs` production hunks; `bot.rs` test module only; `behavior.rs` v2 bounds)
+  plus the pre-existing operator edits — all preserved untouched. No other Rust changes;
+  temporary probes and scratch corpora deleted.
+- **Methodology note recorded:** `GameResult.seconds` is wall time — whole-struct `==` between
+  runs always diverges; equivalence checks must exclude it. The first perturbation run made this
+  mistake and falsely reported all 28 categories load-bearing; corrected comparison found exactly
+  two.
+- **Next exact action:** commit the Option A resolution (scoped paths only) so the Claude
+  review loop can pick it up; on independent acceptance: write M08 exit-gate closure in
+  `plans/M08_AUTHORED_BOTS.md`, update this file, close M08-019.

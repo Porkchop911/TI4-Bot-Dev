@@ -2143,6 +2143,12 @@ mod tests {
     const CAMPAIGN_SEEDS: u64 = 10;
     const CAMPAIGN_ROTATIONS: usize = 3;
 
+    /// Seeds verified (M08-019, under the canonical choice-option ordering) to produce at
+    /// least one mid-window scorer re-offer in real play. The event is rare (~3% of games),
+    /// so the base ten-seed set alone no longer guarantees it — without these, the
+    /// non-vacuity clause below could fail on a tree where the mechanism works fine.
+    const NESTED_WINDOW_SEEDS: [u64; 6] = [7_796, 7_801, 7_818, 7_820, 7_849, 7_857];
+
     /// What the campaign extracts from one run: the replay record and each seat's own secret
     /// aliases (what it still holds or has scored).
     type CampaignOutcome = (
@@ -2242,9 +2248,12 @@ mod tests {
 
         let mut total_offers = 0;
         let mut re_offers = 0;
+        let mut seeds: Vec<u64> = (0..CAMPAIGN_SEEDS)
+            .map(|offset| CAMPAIGN_SEED_BASE + offset)
+            .collect();
+        seeds.extend(NESTED_WINDOW_SEEDS.iter().copied());
         for rotation in 0..CAMPAIGN_ROTATIONS {
-            for offset in 0..CAMPAIGN_SEEDS {
-                let seed = CAMPAIGN_SEED_BASE + offset;
+            for seed in seeds.iter().copied() {
                 let (first, allowed) = scored_game(seed, rotation)
                     .unwrap_or_else(|error| panic!("seed {seed} rotation {rotation}: {error}"));
                 let (second, _) = scored_game(seed, rotation)

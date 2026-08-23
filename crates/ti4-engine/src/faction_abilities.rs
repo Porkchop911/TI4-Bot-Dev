@@ -481,16 +481,21 @@ pub fn annexable(
         reachable.extend(galaxy.adjacent(system).into_iter().map(ToOwned::to_owned));
     }
 
+    // F-M08-019-1: iterate each system's planets in the order of the system record's own
+    // `planets` array (the oracle's order), not the file layout of planets.json. The two
+    // sources agree on membership for every system in this corpus; only their orders differ.
+    let store = ti4_content::ContentStore::embedded();
     let mut found = Vec::new();
     for system in reachable {
         let id = ti4_model::id::SystemId::new(&system);
         let board = state.system_state(&id);
-        for planet in ti4_content::galaxy::planets_in(
-            ti4_content::ContentStore::embedded(),
-            &system,
-            ti4_model::content_types::POK,
-        ) {
-            let planet = ti4_model::id::PlanetId::new(planet.id());
+        let Some(system_record) =
+            store.get(ti4_model::content_types::ContentType::Systems, &system)
+        else {
+            continue;
+        };
+        for planet_id in system_record.strings("planets") {
+            let planet = ti4_model::id::PlanetId::new(planet_id);
             if planet.as_str() == "mr" || board.planet_control.contains_key(&planet) {
                 continue; // somebody holds it
             }
@@ -1216,6 +1221,39 @@ mod tests {
         let record = table.log.records.last().expect("Peace Accords was offered");
         assert_eq!(record.prompt, "Peace Accords: annex a planet");
         assert!(record.offered.iter().any(|id| id == "decline"));
+    }
+
+    #[test]
+    fn peace_accords_candidates_follow_the_system_record_planet_order() {
+        // F-M08-019-1: candidate order must follow the system record's own `planets` array,
+        // not the file layout of planets.json. System 110 prints
+        // [horizon, elnath, luthieniv]; in planets.json file order elnath precedes horizon.
+        let Some(xxcha) = faction_with("peace_accords") else {
+            return;
+        };
+        let hub = crate::fixtures::plain_hub();
+        let (mut state, player) = seated(&xxcha);
+        let system = ti4_model::id::SystemId::new("110");
+        let held = ti4_model::id::PlanetId::new("luthieniv");
+        state.system_mut(&system).set_control(held, player.clone());
+
+        let open = annexable(&state, &hub.galaxy, &player);
+        let horizon = (system.clone(), ti4_model::id::PlanetId::new("horizon"));
+        let elnath = (system.clone(), ti4_model::id::PlanetId::new("elnath"));
+        assert!(open.contains(&horizon), "horizon is empty and unowned");
+        assert!(open.contains(&elnath), "elnath is empty and unowned");
+        let i_horizon = open
+            .iter()
+            .position(|c| *c == horizon)
+            .expect("checked above");
+        let i_elnath = open
+            .iter()
+            .position(|c| *c == elnath)
+            .expect("checked above");
+        assert!(
+            i_horizon < i_elnath,
+            "the system record puts horizon before elnath; planets.json file order would not"
+        );
     }
 
     #[test]

@@ -2,7 +2,17 @@
 
 ## Preparation status
 
-Dependency-safe review specification only. Begin only after M08-018 **and M08-021** are accepted
+**Started 2026-08-23.** Dependencies met: M08-018 accepted/committed (`45fe569`), M08-021
+closed with independent review fully resolved (`f110907`, `e5afb02`, close-out `476e0c4`).
+Base commit `476e0c4`; branch `wp/m08-019-reopened-frontier-review`.
+
+**Exact committed frontier under review:** `3c7ddd2..476e0c4` (seven commits: M08-017 ×2,
+M08-020, M08-018, M08-021 ×3). Under `crates/`: `invasion.rs` (+390 — the only production
+behavior change: ground-combat structure legality), `game.rs` (+84 test module re-pointing),
+`bot.rs` (+509 test module only), `ti4-sim/src/behavior.rs` (new measurement module) +
+registration, and one dead dependency line dropped from `ti4-sim/Cargo.toml`.
+
+Dependency-safe review specification. Begin only after M08-018 **and M08-021** are accepted
 and committed (the behavioral-distribution suite is required before this gate closes per the
 operator's disposition of F-M08-017-1).
 
@@ -12,6 +22,17 @@ operator's disposition of F-M08-017-1).
 | Depends | accepted M08-018 and M08-021 (hard ordering: the exit gate's "paired-seed behavior remains within approved statistical bounds" clause must be met on real evidence before this review) |
 | Permission class | P1 |
 | Review tier | C — hidden information, legality, and determinism |
+
+## Campaign progress (implementer-driven, 2026-08-23)
+
+| Part | Status |
+|---|---|
+| Choice traces (action/agenda/combat/decline/empty) | Covered by M08-018's ~45 focused tests in `bot.rs` (committed `45fe569`, inside frontier); re-run in gate reproduction. |
+| Redaction probes (opponent secrets, private eligibility, note-holder, payment plan) | Re-executed on current tree by M08-017 (`d69fcb1`, inside frontier); evidence `plans/evidence/M08-017.md`. |
+| Determinism / perturbed insertion order | **Executed this campaign.** In-process determinism verified; loader fidelity verified; corpus-layout independence **fails** — exactly two file-order dependencies found and characterized: **F-M08-019-1**. Operator disposition adopted Option A; fix implemented in-package (canonical `researchable()` order + system-record `annexable()` order), red-first tests, M08-021 re-baselined to v2. Pending independent Tier C recheck. |
+| Scope reconciliation (bot/guide/capability; off-by-default unchanged) | Done — cancelled rows 008/010/013 have no code added; `progress.rs` zero diff; no Serialize/fixtures/opt-in flags anywhere in the frontier. |
+| Gate reproduction (focused/policy/engine/workspace ×2/clippy/fmt/diff --check) | Done pre-fix and re-done post-fix: policy 119/0 · engine 854/0 · workspace 1,335/0 identical ×2 · clippy/rustfmt clean on all touched files · `diff --check` clean. |
+| F-M08-019-1 resolution | Implemented (Option A) + M08-021 v2 re-baseline; **pending independent Tier C recheck** before M08 closes. |
 
 ## Objective and required campaign
 
