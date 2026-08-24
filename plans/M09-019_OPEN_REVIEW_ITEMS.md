@@ -212,3 +212,37 @@ Format the new test and report the scoped/pre-existing distinction accurately.
   `out/profiles/review-624d91c-original/` before the reviewer rerun. The rerun at exact commit
   `624d91c` passed all semantic gates and reproduced input hashes, but all variance thresholds
   failed and the runner overwrote the primary report paths, independently confirming F1/F3.
+
+---
+
+## F-M09-019b-1..7 correction round (implementer, 2026-08-24)
+
+- **F1 resolved in code:** a failed first 30-sample run triggers a fresh complete warmup/idle/30
+  repeat. Both runs are retained separately. If the repeat passes both are `unstable`; if it also
+  fails both are `rejected_variance`. A focused disposition test distinguishes those outcomes.
+- **F2 resolved in code:** the approved pool byte buffer is passed directly to
+  `MapPool::from_reader`; pool and checkpoint receive after-hashes; all reports remain in memory
+  until every workload and integrity gate passes; publication renames one fully written campaign
+  directory. A write-failure test proves no temporary or final partial campaign survives.
+- **F3 resolved in code:** the campaign rejects build-source dirtiness under `crates/`, root
+  Cargo.toml, or Cargo.lock and records exact HEAD. Final measurements remain intentionally
+  pending until this correction is committed.
+- **F4 resolved:** report stdev and variance thresholds use sample variance divided by n−1. The
+  `[1,2,3] => 1.0` test distinguishes it from population stdev `sqrt(2/3)`.
+- **F5 resolved in code:** retained warmup durations/units, processor group, actual affinity mask,
+  and explicit `TI4_BENCHMARK_NO_COMPETING_PROCESSES=1` operator assertion are reported.
+  Equality and canonical sha256 omit only `captured_at_utc`, with a focused invariance test.
+- **F6 resolved:** both 19-entry and 14-entry head lists, the exact 13 legacy families, the exact
+  22 fixed explicit families, and bounded `*-unit` grammar are pinned. Debug-time checks guard the
+  two explicit emitters. This finding-specific production-code scope extension changes no release
+  feature name/value; it makes the claimed closed grammar executable.
+- **F7 resolved:** the package-owned assertion is rustfmt-clean. A scoped check now reports only
+  the two pre-existing `features.rs` drifts at 690/752.
+
+Pre-campaign gates: profiler **7/0**, inventory pin **1/0**, workspace **1,348/0**; touched-package
+Clippy has no warning (only the two documented pre-existing engine warnings); profile.rs rustfmt
+clean; feature.rs rustfmt output contains only the two pre-existing hunks; diff-check clean.
+
+**Status:** implementation corrections are ready to commit. F1/F3 and the final numerical record
+are not evidentially closed until the release campaign is run from that clean correction commit.
+Afterward, a fresh independent Tier-D pass-2 recheck is still required.

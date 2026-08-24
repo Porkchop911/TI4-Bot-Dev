@@ -88,12 +88,10 @@ temperature.
 ### Statistics and variance (predeclared)
 
 Computed over **all 30 raw samples per workload**, no outliers discarded (M00-012b): min, max,
-mean, median, standard deviation, p50, p95, p99. The math reuses the accepted M00-012 protocol
-module `ti4_sim::benchmark` (`Statistics::over`, nearest-rank percentiles: rank = ceil(q·n/100),
-1-based — p50 → 15th of 30, p95 → 29th, p99 → 30th). Note: that module computes the variance over
-all samples (population convention); at n=30 it differs from the n−1 sample stdev by a factor of
-sqrt(29/30) ≈ 0.983 and cannot flip the 5% threshold except in a pathological borderline case.
-The evidence records which convention produced each number.
+mean, median, **sample standard deviation (n−1)**, p50, p95, p99. Mean and nearest-rank
+percentiles reuse `ti4_sim::benchmark::Statistics::over` (rank = ceil(q·n/100), 1-based — p50 →
+15th of 30, p95 → 29th, p99 → 30th); the profiler computes sample stdev explicitly because the
+shared helper uses the population convention.
 
 Variance thresholds are predeclared from M00-012e for the applicable workload classes (single-core
 game; policy scoring): **stdev/mean ≤ 5%** and **(p95 − p50)/median ≤ 10%**. Disposition is fixed
@@ -105,17 +103,22 @@ this is a baseline re-measurement on one implementation.
 
 ### Report schema
 
-One JSON report per workload under gitignored `out/profiles/`, UTF-8, schema version `1.0.0`
+One JSON report per retained run in a uniquely named, atomically published campaign directory
+under gitignored `out/profiles/`, UTF-8, schema version `1.0.0`
 (M00-012d fields): `benchmark_id`, `implementation: "rust"`, `oracle_commit: null`, `rust_commit`
 (HEAD at run time), host block from the accepted protocol reader `benchmark::Host::observed()`
 (`os`, `cpu` = PROCESSOR_IDENTIFIER with fallback, `logical_processors`, affinity inherited and
 unchanged; full host fingerprint referenced to the M00-001 environment record in evidence),
 workload block (`fixture_id`, seed(s), `workers: 1`, `semantic_gate: pass|fail`),
-`warmup_iterations: 10`, raw `samples_ns[30]`, `statistics_ns { count, mean, median, stdev, min,
+`warmup_iterations: 10`, retained `warmup_samples_ns[10]` and warmup units, raw
+`samples_ns[30]`, `statistics_ns { count, mean, median, stdev, min,
 max, p50, p95, p99 }`, `variance { stdev_pct, p95_minus_p50_pct, accepted }` (accepted per the
-predeclared 5%/10% thresholds above), `captured_at_utc` (audit metadata, excluded from
-hash/equality). The sha256 of each report file and the full statistics summary are committed in
-evidence; raw samples stay in `out/`.
+predeclared 5%/10% thresholds above), explicit final variance disposition, processor group,
+actual process affinity, operator no-competitor assertion, and `captured_at_utc` (audit metadata,
+excluded from canonical hash/equality). Reports are accumulated in memory and the complete
+directory is renamed into place only after every semantic and input-integrity gate. The canonical
+sha256 of each report and the full statistics summary are committed in evidence; raw samples stay
+in `out/`.
 
 ### Runner
 
@@ -149,7 +152,8 @@ inventory table and this test are updated in the same package — that is the di
 
 - `crates/ti4-sim/src/profile.rs` (new timing module)
 - `crates/ti4-sim/src/lib.rs` (+2 registration lines)
-- `crates/ti4-policy/src/features.rs` (**test module only**)
+- `crates/ti4-policy/src/features.rs` (inventory pin plus debug-only closed-family enforcement;
+  no release feature value/name change)
 - `plans/M09-019b_BOUNDED_PROFILE_FEATURE_INVENTORY.md` (this file)
 - `plans/evidence/M09-019.md` (append 019b section; historical text preserved)
 - `plans/EXECUTION_STATE.md`

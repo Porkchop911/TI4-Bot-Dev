@@ -3128,3 +3128,23 @@ into the M09-019 chain (or vice versa) is a milestone-integration decision, not 
 - **Next exact action:** resolve F1–F7, commit code/evidence, run the final campaign from that clean
   exact commit with both variance runs retained and correctly classified, then request a fresh
   independent Tier-D pass-2 recheck. M09-019 and M09-019b remain open.
+
+## M09-019b Tier-D correction implementation (2026-08-24) — pre-campaign
+
+- F1–F7 implemented: mandatory retained repeat/final disposition; unified verified-input and
+  atomic-publication boundary; clean source identity; sample stdev; warmup/processor-group/actual
+  affinity/operator audit; timestamp-excluded canonical hash/equality; complete head/family pin;
+  package-owned formatting fixed.
+- Finding-specific scope extension: debug-only closed-family assertions in the explicit feature
+  emitters. No release feature value/name changes.
+- Gates: profile **7/0**; inventory **1/0**; workspace **1,348/0**; no touched-package Clippy
+  warnings; profile rustfmt clean; only two recorded pre-existing feature.rs format hunks;
+  diff-check clean.
+- Intentionally dirty package paths: `crates/ti4-sim/src/profile.rs`,
+  `crates/ti4-policy/src/features.rs`, `plans/M09-019b_BOUNDED_PROFILE_FEATURE_INVENTORY.md`,
+  `plans/M09-019_OPEN_REVIEW_ITEMS.md`, `plans/evidence/M09-019.md`, and this file. Unrelated user
+  edits remain in `AGENTS.md`, `plans/M06-025_OPEN_REVIEW_ITEMS.md`, and
+  `plans/PI_WORK_PACKAGE_STANDARD.md` and must not be staged.
+- **Next exact action:** commit only the M09-019b correction paths; verify build-source status is
+  clean; assert no known competing benchmark process; run the env-gated release campaign; append
+  exact retained-run statistics/hashes; request fresh independent Tier-D pass-2 recheck.

@@ -776,7 +776,12 @@ fn add_parts(features: &mut FeatureVector, parts: &[&str], value: f64) {
     }
     let key = FeatureKey::of_parts(parts);
     if first_sighting(key) {
-        record(key, &parts.concat());
+        let name = parts.concat();
+        debug_assert!(
+            explicit_family_is_known(&name),
+            "explicit feature family escaped the closed inventory: {name}"
+        );
+        record(key, &name);
     }
     features.push(key, value);
 }
@@ -801,6 +806,10 @@ fn add_named(features: &mut FeatureVector, name: std::fmt::Arguments<'_>, value:
         scratch.clear();
         // Writing into a String is infallible; the Result exists for the general Write contract.
         let _ = std::fmt::Write::write_fmt(&mut *scratch, name);
+        debug_assert!(
+            explicit_family_is_known(&scratch),
+            "explicit feature family escaped the closed inventory: {scratch}"
+        );
         features.push(register(&scratch), value);
     });
 }
@@ -1410,6 +1419,38 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
     "state-option:",
 ];
 
+/// Closed grammar of fixed explicit feature families. Structured unit families additionally use
+/// `<canonical-kind>-unit:`; that bounded suffix rule is checked by [`explicit_family_is_known`].
+const EXPLICIT_FIXED_FAMILIES: [&str; 22] = [
+    "kind",
+    "option",
+    "prompt-kind",
+    "prompt-option",
+    "payload-bool",
+    "payload-number",
+    "payload-number-kind",
+    "payload",
+    "payload-count",
+    "state-kind",
+    "state-option",
+    "pay",
+    "card",
+    "route",
+    "target",
+    "production",
+    "placement",
+    "origin",
+    "option-system",
+    "destination",
+    "invasion",
+    "landing",
+];
+
+fn explicit_family_is_known(name: &str) -> bool {
+    let family = name.split_once(':').map_or(name, |(family, _)| family);
+    EXPLICIT_FIXED_FAMILIES.contains(&family) || family.ends_with("-unit")
+}
+
 /// Structured tactical feature parity status (M09-010 repair).
 ///
 /// [`explicit_option_features`] now emits the oracle's role-specific system, planet, unit and route
@@ -1829,6 +1870,10 @@ mod tests {
     /// this test encodes its structural facts so rows 021–023 (which add or change families) can
     /// land only by breaking one of these assertions and updating the inventory in the same
     /// package. That is the diff mechanism the row requires.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one contiguous audit pin makes the paired head/family inventories reviewable"
+    )]
     #[test]
     fn m09_019b_feature_inventory_is_pinned() {
         // 1. The legacy family vocabulary: exactly the thirteen declared closed-list prefixes.
@@ -1851,7 +1896,32 @@ mod tests {
             ]
         );
 
-        // 2. The schema-4 head vocabulary (the r6 champion's): exactly the fourteen declared heads.
+        // 2. Both accepted head vocabularies: schema 5's complete nineteen-head list and the
+        //    schema-4 r6 champion's fourteen-head subset.
+        assert_eq!(
+            crate::learned::DECISION_HEADS,
+            [
+                "strategy",
+                "secondary",
+                "turn",
+                "activation",
+                "movement",
+                "cargo",
+                "landing",
+                "trade",
+                "tokens",
+                "production",
+                "payment",
+                "development",
+                "combat",
+                "scoring",
+                "agenda",
+                "exploration",
+                "ability",
+                "transit",
+                "other",
+            ]
+        );
         assert_eq!(
             crate::learned::STAGE1_DECISION_HEADS,
             [
@@ -1872,7 +1942,37 @@ mod tests {
             ]
         );
 
-        // 3. The inventory fixture: one option carrying every payload shape and a multi-token
+        // 3. The explicit vocabulary is closed: fixed factual families plus bounded
+        //    `<canonical-kind>-unit` structured families.
+        assert_eq!(
+            EXPLICIT_FIXED_FAMILIES,
+            [
+                "kind",
+                "option",
+                "prompt-kind",
+                "prompt-option",
+                "payload-bool",
+                "payload-number",
+                "payload-number-kind",
+                "payload",
+                "payload-count",
+                "state-kind",
+                "state-option",
+                "pay",
+                "card",
+                "route",
+                "target",
+                "production",
+                "placement",
+                "origin",
+                "option-system",
+                "destination",
+                "invasion",
+                "landing",
+            ]
+        );
+
+        // 4. The inventory fixture: one option carrying every payload shape and a multi-token
         //    prompt, so all thirteen legacy families are exercised by names actually emitted —
         //    each table row is real rather than aspirational.
         let state = oracle_seat();
@@ -1888,7 +1988,9 @@ mod tests {
         let named = option_feature_names(&seen, &asked, &option, &player);
         for (name, _) in &named {
             assert!(
-                FEATURE_PREFIXES.iter().any(|prefix| name.starts_with(prefix)),
+                FEATURE_PREFIXES
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix)),
                 "{name} escapes the pinned legacy families"
             );
         }
@@ -1899,12 +2001,16 @@ mod tests {
             );
         }
 
-        // 4. The explicit path on the same fixture: factual names with the legacy memorisation
+        // 5. The explicit path on the same fixture: factual names with the legacy memorisation
         //    channels removed. A single option with a composite id gives StateCross::None, so no
         //    seat-fact cross and no kind family; prompt-kind is the explicit-only family.
         let explicit = explicit_option_features(&seen, &asked, &option, &player);
         assert_eq!(state_cross(&asked), StateCross::None);
         for name in names_of(&explicit) {
+            assert!(
+                explicit_family_is_known(&name),
+                "{name}: explicit family escapes the closed grammar"
+            );
             assert!(
                 !name.starts_with("kind-faction:") && !name.starts_with("option-faction:"),
                 "{name}: faction crosses are a legacy-only channel"

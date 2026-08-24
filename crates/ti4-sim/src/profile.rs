@@ -15,9 +15,10 @@
 //! - Single worker; no power-plan, priority, or affinity change by the runner (M00-012c).
 //! - Variance thresholds fixed in advance from M00-012e for the single-core game / policy
 //!   scoring classes: stdev/mean ≤ 5% and (p95 − p50)/median ≤ 10%. A failed threshold triggers
-//!   one fresh repeat run; both reports are then retained and the result marked `unstable`.
-//! - One M00-012d schema report per workload, raw samples included, written to gitignored
-//!   `out/profiles/`; sha256 + summary committed in evidence.
+//!   one fresh repeat run. Both reports are retained and classified `unstable` if either passes,
+//!   or `rejected_variance` if both fail.
+//! - One M00-012d schema report per retained run, raw samples included, atomically published as
+//!   one complete campaign under gitignored `out/profiles/`; canonical sha256 + summary committed.
 //!
 //! # The semantic gate is the honest part
 //!
@@ -37,6 +38,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -111,7 +113,7 @@ const MIN_FIXTURE_OPTIONS: usize = 3;
 /// `units_per_sample` / `total_units` / `nanos_per_unit`, so the raw samples carry their
 /// normaliser (W1: resolved choices; W2/W3: options) and a per-unit figure is recomputable from
 /// the report alone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileReport {
     /// Schema version, fixed by the protocol.
     pub schema_version: String,
@@ -124,12 +126,22 @@ pub struct ProfileReport {
     pub oracle_commit: Option<String>,
     /// The Rust commit at run time, when it could be read.
     pub rust_commit: Option<String>,
+    /// One-based retained run number (run 2 exists only after run 1 fails variance).
+    pub run_index: usize,
+    /// Final M00-012e disposition shared by all retained runs for this workload.
+    pub variance_disposition: VarianceDisposition,
     /// Where it ran (the accepted protocol reader; changes nothing about the host).
     pub host: Host,
+    /// Windows/process audit facts required by M00-012c.
+    pub audit: AuditBlock,
     /// What it ran.
     pub workload: WorkloadBlock,
     /// Warmup iterations completed before timing began.
     pub warmup_iterations: usize,
+    /// Warmup durations retained locally but excluded from timed statistics.
+    pub warmup_samples_ns: Vec<u128>,
+    /// Work units completed by each retained warmup.
+    pub warmup_units_per_sample: Vec<usize>,
     /// Every timed sample in nanoseconds, undiscarded.
     pub samples_ns: Vec<u128>,
     /// The unit of work each sample did (W1: resolved choices; W2/W3: options extracted/scored).
@@ -146,6 +158,43 @@ pub struct ProfileReport {
     pub captured_at_utc: String,
 }
 
+impl PartialEq for ProfileReport {
+    fn eq(&self, other: &Self) -> bool {
+        self.schema_version == other.schema_version
+            && self.benchmark_id == other.benchmark_id
+            && self.implementation == other.implementation
+            && self.oracle_commit == other.oracle_commit
+            && self.rust_commit == other.rust_commit
+            && self.run_index == other.run_index
+            && self.variance_disposition == other.variance_disposition
+            && self.host == other.host
+            && self.audit == other.audit
+            && self.workload == other.workload
+            && self.warmup_iterations == other.warmup_iterations
+            && self.warmup_samples_ns == other.warmup_samples_ns
+            && self.warmup_units_per_sample == other.warmup_units_per_sample
+            && self.samples_ns == other.samples_ns
+            && self.units_per_sample == other.units_per_sample
+            && self.total_units == other.total_units
+            && self.nanos_per_unit == other.nanos_per_unit
+            && self.statistics_ns == other.statistics_ns
+            && self.variance == other.variance
+        // `captured_at_utc` is audit metadata excluded by M00-012d.
+    }
+}
+
+/// M00-012e disposition after the optional retained repeat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VarianceDisposition {
+    /// Run 1 passed both thresholds; no repeat was required.
+    Accepted,
+    /// Exactly one of the two retained runs passed; no performance gate may use it.
+    Unstable,
+    /// Both retained runs failed.
+    RejectedVariance,
+}
+
 /// What a workload ran (M00-012d `workload` block).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkloadBlock {
@@ -159,7 +208,68 @@ pub struct WorkloadBlock {
     pub semantic_gate: SemanticGate,
 }
 
-/// Summary statistics in the M00-012d field names (computed by [`Statistics::over`]).
+/// Audit facts that make a run comparable under M00-012c.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditBlock {
+    /// Windows processor group used by the process.
+    pub processor_group: String,
+    /// Actual process affinity mask at capture time.
+    pub process_affinity: String,
+    /// Explicit operator assertion; the runner never guesses this from process names.
+    pub no_known_competing_benchmark_process: bool,
+}
+
+impl AuditBlock {
+    fn observed() -> Result<Self, ProfileError> {
+        if std::env::var("TI4_BENCHMARK_NO_COMPETING_PROCESSES").as_deref() != Ok("1") {
+            return Err(ProfileError::MissingOperatorAssertion);
+        }
+        let logical = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        let processor_group = match std::env::var("TI4_BENCHMARK_PROCESSOR_GROUP") {
+            Ok(group) if !group.trim().is_empty() => group,
+            _ if logical <= 64 => "0".to_owned(),
+            _ => return Err(ProfileError::MissingProcessorGroup),
+        };
+        let process_id = std::process::id().to_string();
+        let command =
+            format!("(Get-Process -Id {process_id}).ProcessorAffinity.ToInt64().ToString('X')");
+        let output = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &command])
+            .output()
+            .map_err(ProfileError::Io)?;
+        if !output.status.success() {
+            return Err(ProfileError::Workload(
+                "could not observe current process affinity".to_owned(),
+            ));
+        }
+        let process_affinity = String::from_utf8(output.stdout)
+            .map_err(|error| ProfileError::Workload(format!("affinity output: {error}")))?
+            .trim()
+            .to_owned();
+        if process_affinity.is_empty() {
+            return Err(ProfileError::Workload(
+                "current process affinity was empty".to_owned(),
+            ));
+        }
+        Ok(Self {
+            processor_group,
+            process_affinity,
+            no_known_competing_benchmark_process: true,
+        })
+    }
+
+    #[cfg(test)]
+    fn fixture() -> Self {
+        Self {
+            processor_group: "test".to_owned(),
+            process_affinity: "test".to_owned(),
+            no_known_competing_benchmark_process: true,
+        }
+    }
+}
+
+/// Summary statistics in the M00-012d field names. Percentiles/mean come from
+/// [`Statistics::over`]; stdev uses the protocol's sample (n - 1) convention.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct StatisticsNs {
     /// How many samples.
@@ -168,7 +278,7 @@ pub struct StatisticsNs {
     pub mean: f64,
     /// Median, also p50.
     pub median: f64,
-    /// Standard deviation (the protocol module's convention — variance over all samples).
+    /// Sample standard deviation (variance divided by n - 1).
     pub stdev: f64,
     /// Fastest sample.
     pub min: u128,
@@ -204,8 +314,11 @@ impl ProfileReport {
         benchmark_id: &str,
         fixture_id: String,
         seed: u64,
+        run_index: usize,
+        warmups: &[(u128, usize)],
         samples: &[(u128, usize)],
         rust_commit: Option<String>,
+        audit: AuditBlock,
     ) -> Self {
         let protocol_samples: Vec<Sample> = samples
             .iter()
@@ -220,6 +333,9 @@ impl ProfileReport {
             })
             .collect();
         let statistics = Statistics::over(&protocol_samples);
+        let sample_stdev = sample_stdev_nanos(samples);
+        let warmup_samples_ns = warmups.iter().map(|(nanos, _)| *nanos).collect();
+        let warmup_units_per_sample = warmups.iter().map(|(_, units)| *units).collect();
         let samples_ns: Vec<u128> = samples.iter().map(|(nanos, _)| *nanos).collect();
         let units_per_sample: Vec<usize> = samples.iter().map(|(_, units)| *units).collect();
         let total_units: usize = units_per_sample.iter().sum();
@@ -231,7 +347,7 @@ impl ProfileReport {
             SemanticGate::Pass
         };
         let stdev_pct = if statistics.mean_nanos > 0.0 {
-            statistics.stdev_nanos / statistics.mean_nanos * 100.0
+            sample_stdev / statistics.mean_nanos * 100.0
         } else {
             f64::INFINITY
         };
@@ -246,7 +362,10 @@ impl ProfileReport {
             implementation: "rust".to_owned(),
             oracle_commit: None,
             rust_commit,
+            run_index,
+            variance_disposition: VarianceDisposition::RejectedVariance,
             host: Host::observed(),
+            audit,
             workload: WorkloadBlock {
                 fixture_id,
                 seed,
@@ -254,6 +373,8 @@ impl ProfileReport {
                 semantic_gate: gate,
             },
             warmup_iterations: WARMUP_ITERATIONS,
+            warmup_samples_ns,
+            warmup_units_per_sample,
             samples_ns,
             units_per_sample,
             total_units,
@@ -266,7 +387,7 @@ impl ProfileReport {
                 count: statistics.samples,
                 mean: statistics.mean_nanos,
                 median: statistics.median_nanos,
-                stdev: statistics.stdev_nanos,
+                stdev: sample_stdev,
                 min: statistics.min_nanos,
                 max: statistics.max_nanos,
                 p50: statistics.median_nanos,
@@ -281,7 +402,50 @@ impl ProfileReport {
             captured_at_utc: Utc::now().to_rfc3339(),
         }
     }
+
+    /// Canonical report hash required by M00-012d. Audit time is deliberately excluded.
+    ///
+    /// # Panics
+    /// Panics only if this serializable report unexpectedly cannot be converted to JSON.
+    #[must_use]
+    pub fn canonical_sha256(&self) -> String {
+        let mut value = serde_json::to_value(self).expect("report serializes");
+        value
+            .as_object_mut()
+            .expect("report is an object")
+            .remove("captured_at_utc");
+        hex(Sha256::digest(
+            serde_json::to_vec(&value).expect("canonical report serializes"),
+        ))
+    }
 }
+
+/// Sample standard deviation (n - 1), as required by M00-012b.
+fn sample_stdev_nanos(samples: &[(u128, usize)]) -> f64 {
+    if samples.len() < 2 {
+        return 0.0;
+    }
+    let values: Vec<f64> = samples
+        .iter()
+        .map(|(nanos, _)| as_float_u128(*nanos))
+        .collect();
+    let mean = values.iter().sum::<f64>() / as_float(values.len());
+    let squared = values
+        .iter()
+        .map(|value| (value - mean).powi(2))
+        .sum::<f64>();
+    (squared / as_float(values.len() - 1)).sqrt()
+}
+
+fn repeated_variance_disposition(second_accepted: bool) -> VarianceDisposition {
+    if second_accepted {
+        VarianceDisposition::Unstable
+    } else {
+        VarianceDisposition::RejectedVariance
+    }
+}
+
+type RetainedSamples = Vec<(u128, usize)>;
 
 /// Nanoseconds as a float (exact below 2^53 ≈ 104 days).
 #[expect(
@@ -555,6 +719,12 @@ pub enum ProfileError {
     Workload(String),
     #[error("input artifact changed during the campaign: {details} (refusing to report)")]
     InputOverwritten { details: String },
+    #[error("source paths are dirty; commit the profiler before measuring: {details}")]
+    DirtySourceTree { details: String },
+    #[error("set TI4_BENCHMARK_NO_COMPETING_PROCESSES=1 only after checking the host")]
+    MissingOperatorAssertion,
+    #[error("set TI4_BENCHMARK_PROCESSOR_GROUP on a multi-group Windows host")]
+    MissingProcessorGroup,
 }
 
 /// The inputs' identity before and after the campaign — the non-overwrite proof.
@@ -565,7 +735,9 @@ pub struct InputProof {
     /// sha256 of the pool file after the campaign (must equal `pool_before`).
     pub pool_after: [u8; 32],
     /// sha256 of the checkpoint envelope as loaded (verified against its manifest prefix).
-    pub checkpoint: String,
+    pub checkpoint_before: String,
+    /// sha256 of the checkpoint envelope after the campaign.
+    pub checkpoint_after: String,
 }
 
 /// The repository root, resolved from the crate's manifest location so the campaign works no
@@ -585,17 +757,21 @@ pub fn repo_root() -> PathBuf {
         .expect("workspace layout: crates/ti4-sim")
 }
 
-/// Run all three workloads end to end and write one M00-012d report per workload into
-/// `root/out/profiles`.
+/// Run all three workloads end to end and atomically publish every retained M00-012d report in
+/// one campaign directory under `root/out/profiles`.
 ///
 /// # Errors
 /// [`ProfileError`] on any checksum mismatch, semantic-gate failure in a warmup or timed sample,
 /// or detected input mutation. A failed **timed** sample aborts the whole campaign (M00-012b) —
 /// there is no partial report.
-pub fn run_campaign(root: &Path) -> Result<(Vec<ProfileReport>, InputProof), ProfileError> {
+pub fn run_campaign(
+    root: &Path,
+) -> Result<(Vec<ProfileReport>, InputProof, PathBuf), ProfileError> {
     let pool_path = root.join(POOL_PATH);
     let checkpoint_path = root.join(CHECKPOINT_PATH);
     let out_dir = root.join(REPORT_DIR);
+    let rust_commit = clean_source_commit(root)?;
+    let audit = AuditBlock::observed()?;
 
     let pool_bytes = fs::read(&pool_path)?;
     let pool_sha = Sha256::digest(&pool_bytes);
@@ -605,7 +781,7 @@ pub fn run_campaign(root: &Path) -> Result<(Vec<ProfileReport>, InputProof), Pro
             found: hex(pool_sha),
         });
     }
-    let pool = MapPool::load(&pool_path)
+    let pool = MapPool::from_reader(Cursor::new(&pool_bytes))
         .map_err(|error| ProfileError::Workload(format!("pool load: {error}")))?;
 
     // The champions are loaded through the fail-closed panel loader: checksum + per-faction
@@ -617,51 +793,44 @@ pub fn run_campaign(root: &Path) -> Result<(Vec<ProfileReport>, InputProof), Pro
     // The project's runtime scope (DEFAULT = FULL). `SourceSet::default()` is the *empty* set —
     // an EnumSet default, not a scope — and would fail setup with no strategy card set.
     let sources = DEFAULT;
-    let rust_commit = current_commit();
-
-    fs::create_dir_all(&out_dir)?;
-
     // W2/W3 share one fixture position, found once before any timing begins.
     let fixture = capture_fixture(content, sources, &pool).map_err(ProfileError::Workload)?;
 
     let mut reports = Vec::new();
 
     // W1 — engine: fresh game per iteration on its own manifest seed.
-    reports.push(run_workload(
-        &out_dir,
+    reports.extend(run_workload_with_repeat(
         "m09_019b_w1_engine",
         "holdout-pool random seats, one complete game per sample".to_owned(),
         W1_SEED_BASE,
-        "W1 warmup failed its semantic gate (a sample did not complete)",
         rust_commit.clone(),
+        audit.clone(),
         |i| w1_sample(content, sources, &pool, W1_SEED_BASE + i as u64),
     )?);
 
     // W2 — feature extraction at the shared fixture position.
-    reports.push(run_workload(
-        &out_dir,
+    reports.extend(run_workload_with_repeat(
         "m09_019b_w2_feature",
         format!(
             "fixture production choice at step {} of seed {W2W3_FIXTURE_SEED}; whole-choice explicit extraction",
             fixture.step_index
         ),
         W2W3_FIXTURE_SEED,
-        "W2 warmup failed its semantic gate (position mismatch or empty extraction)",
         rust_commit.clone(),
+        audit.clone(),
         |_i| w2_sample(content, sources, &pool, &fixture),
     )?);
 
     // W3 — model scoring at the shared fixture position.
-    reports.push(run_workload(
-        &out_dir,
+    reports.extend(run_workload_with_repeat(
         "m09_019b_w3_model",
         format!(
             "fixture production choice at step {} of seed {W2W3_FIXTURE_SEED}; head + per-option score + softmax",
             fixture.step_index
         ),
         W2W3_FIXTURE_SEED,
-        "W3 warmup failed its semantic gate (position mismatch or non-closed softmax)",
         rust_commit.clone(),
+        audit,
         |_i| w3_sample(content, sources, &pool, &fixture, &champions),
     )?);
 
@@ -677,28 +846,47 @@ pub fn run_campaign(root: &Path) -> Result<(Vec<ProfileReport>, InputProof), Pro
         });
     }
 
+    let checkpoint_after = hex(Sha256::digest(&fs::read(&checkpoint_path)?));
+    if checkpoint_after != champions.source_sha256 {
+        return Err(ProfileError::InputOverwritten {
+            details: format!(
+                "checkpoint sha256 changed from {} to {checkpoint_after}",
+                champions.source_sha256
+            ),
+        });
+    }
+
+    // Publish only after every workload, variance disposition, and input-integrity gate passed.
+    let published_dir = publish_reports(&out_dir, &reports, rust_commit.as_deref())?;
+
     Ok((
         reports,
         InputProof {
             pool_before: pool_sha.into(),
             pool_after: pool_after.into(),
-            checkpoint: champions.source_sha256.clone(),
+            checkpoint_before: champions.source_sha256.clone(),
+            checkpoint_after,
         },
+        published_dir,
     ))
 }
 
 /// Run one workload's 10 warmups (each must pass), the five-second idle, and 30 timed samples.
-/// Returns `(warmup_all_passed, timed_samples)`; a failed **timed** sample aborts with an error —
-/// M00-012b invalidates the whole run on any failure, so there is no such thing as a partial set.
-fn sample_workload<F>(mut workload: F) -> Result<(bool, Vec<(u128, usize)>), ProfileError>
+/// Returns the retained warmups and timed samples. Any semantic failure aborts the run.
+fn sample_workload<F>(
+    benchmark_id: &str,
+    workload: &mut F,
+) -> Result<(RetainedSamples, RetainedSamples), ProfileError>
 where
     F: FnMut(usize) -> Option<(u128, usize)>,
 {
-    let mut warmup_ok = true;
+    let mut warmups = Vec::with_capacity(WARMUP_ITERATIONS);
     for i in 0..WARMUP_ITERATIONS {
-        if workload(i).is_none() {
-            warmup_ok = false;
-        }
+        warmups.push(workload(i).ok_or_else(|| {
+            ProfileError::Workload(format!(
+                "{benchmark_id} warmup {i} failed its semantic gate; the run is invalid (M00-012a)"
+            ))
+        })?);
     }
 
     std::thread::sleep(IDLE_BEFORE_TIMING);
@@ -709,59 +897,137 @@ where
             Some(sample) => samples.push(sample),
             None => {
                 return Err(ProfileError::Workload(format!(
-                    "timed sample {} failed its semantic gate; the run is invalid (M00-012b)",
+                    "{benchmark_id} timed sample {} failed its semantic gate; the run is invalid (M00-012b)",
                     WARMUP_ITERATIONS + i
                 )));
             }
         }
     }
-    Ok((warmup_ok, samples))
+    Ok((warmups, samples))
 }
 
-/// Write one report as pretty JSON under `out_dir/<benchmark_id>.json`.
-fn write_report(out_dir: &Path, report: &ProfileReport) -> Result<(), ProfileError> {
-    let path = out_dir.join(format!("{}.json", report.benchmark_id));
-    fs::write(
-        path,
-        serde_json::to_string_pretty(report).expect("report serializes"),
-    )?;
-    Ok(())
-}
-
-/// Run one workload end to end — warmups + timed samples — then assemble and write its report.
-/// A failed **timed** sample propagates as an error (M00-012b: no partial reports); a failed
-/// warmup is reported through `gate_failure` so the caller's message names the workload.
-fn run_workload<F>(
-    out_dir: &Path,
+/// Run one workload and its mandatory repeat when run 1 fails variance.
+fn run_workload_with_repeat<F>(
     benchmark_id: &str,
     fixture_id: String,
     seed: u64,
-    gate_failure: &'static str,
     rust_commit: Option<String>,
-    workload: F,
-) -> Result<ProfileReport, ProfileError>
+    audit: AuditBlock,
+    mut workload: F,
+) -> Result<Vec<ProfileReport>, ProfileError>
 where
     F: FnMut(usize) -> Option<(u128, usize)>,
 {
-    let (warmup_ok, samples) = sample_workload(workload)?;
-    if !warmup_ok {
-        return Err(ProfileError::Workload(gate_failure.to_owned()));
+    let (warmups, samples) = sample_workload(benchmark_id, &mut workload)?;
+    let first = ProfileReport::assemble(
+        benchmark_id,
+        fixture_id.clone(),
+        seed,
+        1,
+        &warmups,
+        &samples,
+        rust_commit.clone(),
+        audit.clone(),
+    );
+    if first.variance.accepted {
+        let mut first = first;
+        first.variance_disposition = VarianceDisposition::Accepted;
+        return Ok(vec![first]);
     }
-    let report = ProfileReport::assemble(benchmark_id, fixture_id, seed, &samples, rust_commit);
-    write_report(out_dir, &report)?;
-    Ok(report)
+
+    let (repeat_warmups, repeat_samples) = sample_workload(benchmark_id, &mut workload)?;
+    let second = ProfileReport::assemble(
+        benchmark_id,
+        fixture_id,
+        seed,
+        2,
+        &repeat_warmups,
+        &repeat_samples,
+        rust_commit,
+        audit,
+    );
+    let disposition = repeated_variance_disposition(second.variance.accepted);
+    let mut first = first;
+    let mut second = second;
+    first.variance_disposition = disposition;
+    second.variance_disposition = disposition;
+    Ok(vec![first, second])
 }
 
-/// The current HEAD, when git can answer; audit metadata only.
-fn current_commit() -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+/// Require the build-affecting source surface to be clean and return its exact HEAD.
+fn clean_source_commit(root: &Path) -> Result<Option<String>, ProfileError> {
+    let status = std::process::Command::new("git")
+        .args([
+            "-C",
+            &root.display().to_string(),
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            "crates",
+            "Cargo.toml",
+            "Cargo.lock",
+        ])
+        .output()?;
+    if !status.status.success() {
+        return Err(ProfileError::Workload("git status failed".to_owned()));
     }
-    Some(String::from_utf8(output.stdout).ok()?.trim().to_owned())
+    let dirty = String::from_utf8(status.stdout)
+        .map_err(|error| ProfileError::Workload(format!("git status output: {error}")))?;
+    if !dirty.trim().is_empty() {
+        return Err(ProfileError::DirtySourceTree {
+            details: dirty.trim().to_owned(),
+        });
+    }
+    let output = std::process::Command::new("git")
+        .args(["-C", &root.display().to_string(), "rev-parse", "HEAD"])
+        .output()?;
+    if !output.status.success() {
+        return Err(ProfileError::Workload("git rev-parse failed".to_owned()));
+    }
+    Ok(Some(
+        String::from_utf8(output.stdout)
+            .map_err(|error| ProfileError::Workload(format!("git rev-parse output: {error}")))?
+            .trim()
+            .to_owned(),
+    ))
+}
+
+/// Publish a complete campaign by renaming one fully written temporary directory.
+fn publish_reports(
+    base: &Path,
+    reports: &[ProfileReport],
+    rust_commit: Option<&str>,
+) -> Result<PathBuf, ProfileError> {
+    fs::create_dir_all(base)?;
+    let stamp = Utc::now().format("%Y%m%dT%H%M%S%.fZ");
+    let commit = rust_commit.unwrap_or("unknown");
+    let prefix = &commit[..commit.len().min(12)];
+    let final_dir = base.join(format!("campaign-{prefix}-{stamp}"));
+    let temp_dir = base.join(format!(
+        ".campaign-{prefix}-{stamp}-{}.tmp",
+        std::process::id()
+    ));
+    fs::create_dir(&temp_dir)?;
+    let write_result = (|| {
+        for report in reports {
+            let path = temp_dir.join(format!(
+                "{}.run{}.json",
+                report.benchmark_id, report.run_index
+            ));
+            fs::write(
+                path,
+                serde_json::to_string_pretty(report).expect("report serializes") + "\n",
+            )?;
+        }
+        Ok::<(), std::io::Error>(())
+    })();
+    if let Err(error) = write_result {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(ProfileError::Io(error));
+    }
+    fs::rename(&temp_dir, &final_dir)?;
+    Ok(final_dir)
 }
 
 /// sha256 as lowercase hex.
@@ -791,25 +1057,30 @@ mod tests {
             return;
         }
         let root = repo_root();
-        let (reports, proof) = run_campaign(&root).expect("campaign failed");
+        let (reports, proof, published_dir) = run_campaign(&root).expect("campaign failed");
         for report in &reports {
             println!(
-                "{}: mean={:.0} ns median={:.0} ns stdev%={:.2} spread%={:.2} accepted={} gate={:?} units/sample≈{}",
+                "{} run{}: mean={:.0} ns median={:.0} ns stdev%={:.2} spread%={:.2} accepted={} disposition={:?} gate={:?} units/sample≈{} canonical_sha256={}",
                 report.benchmark_id,
+                report.run_index,
                 report.statistics_ns.mean,
                 report.statistics_ns.median,
                 report.variance.stdev_pct,
                 report.variance.p95_minus_p50_pct,
                 report.variance.accepted,
+                report.variance_disposition,
                 report.workload.semantic_gate,
                 report.total_units / TIMED_SAMPLES,
+                report.canonical_sha256(),
             );
         }
         println!(
-            "non-overwrite: pool before={} after={} checkpoint={}",
+            "non-overwrite: pool before={} after={} checkpoint before={} after={}; published={}",
             hex(proof.pool_before),
             hex(proof.pool_after),
-            proof.checkpoint
+            proof.checkpoint_before,
+            proof.checkpoint_after,
+            published_dir.display(),
         );
     }
 
@@ -821,14 +1092,32 @@ mod tests {
     fn variance_verdict_uses_the_predeclared_thresholds() {
         // Zero spread passes (the protocol says "at most").
         let flat = [(100u128, 4usize); TIMED_SAMPLES];
-        let at = ProfileReport::assemble("t", "f".into(), 1, &flat, None);
+        let at = ProfileReport::assemble(
+            "t",
+            "f".into(),
+            1,
+            1,
+            &flat[..WARMUP_ITERATIONS],
+            &flat,
+            None,
+            AuditBlock::fixture(),
+        );
         assert!(at.variance.accepted, "zero spread must pass");
 
         // A set whose stdev/mean far exceeds 5% must be rejected: 29 samples at 100 ns and one
-        // at 400 ns give mean = 110, population stdev ≈ 53.9 → ~48.9%.
+        // at 400 ns give mean = 110 and a sample stdev far beyond the 5% threshold.
         let mut samples = vec![(100u128, 4usize); TIMED_SAMPLES - 1];
         samples.push((400, 4));
-        let wide = ProfileReport::assemble("t", "f".into(), 1, &samples, None);
+        let wide = ProfileReport::assemble(
+            "t",
+            "f".into(),
+            1,
+            1,
+            &flat[..WARMUP_ITERATIONS],
+            &samples,
+            None,
+            AuditBlock::fixture(),
+        );
         assert!(
             !wide.variance.accepted,
             "a ~49% stdev/mean must fail the 5% threshold"
@@ -836,9 +1125,30 @@ mod tests {
         assert!(wide.variance.stdev_pct > MAX_STDEV_PCT);
 
         // The fields are computed as declared on a passing set.
-        let tight = ProfileReport::assemble("t", "f".into(), 1, &flat, None);
+        let tight = ProfileReport::assemble(
+            "t",
+            "f".into(),
+            1,
+            1,
+            &flat[..WARMUP_ITERATIONS],
+            &flat,
+            None,
+            AuditBlock::fixture(),
+        );
         assert_eq!(tight.variance.stdev_pct, 0.0);
         assert_eq!(tight.variance.p95_minus_p50_pct, 0.0);
+
+        // [1, 2, 3] has sample stdev 1.0; population stdev would be sqrt(2/3).
+        let distinguishing = [(1u128, 1usize), (2, 1), (3, 1)];
+        assert!((sample_stdev_nanos(&distinguishing) - 1.0).abs() < f64::EPSILON);
+        assert_eq!(
+            repeated_variance_disposition(true),
+            VarianceDisposition::Unstable
+        );
+        assert_eq!(
+            repeated_variance_disposition(false),
+            VarianceDisposition::RejectedVariance
+        );
     }
 
     #[expect(
@@ -854,8 +1164,11 @@ mod tests {
             "m09_019b_test",
             "fixture".into(),
             42,
+            1,
+            &samples[..WARMUP_ITERATIONS],
             &samples,
             Some("abc".into()),
+            AuditBlock::fixture(),
         );
         assert_eq!(report.schema_version, "1.0.0");
         assert_eq!(report.implementation, "rust");
@@ -863,6 +1176,7 @@ mod tests {
         assert_eq!(report.rust_commit.as_deref(), Some("abc"));
         assert_eq!(report.workload.workers, 1);
         assert_eq!(report.warmup_iterations, WARMUP_ITERATIONS);
+        assert_eq!(report.warmup_samples_ns.len(), WARMUP_ITERATIONS);
         let expected_ns: Vec<u128> = samples.iter().map(|(nanos, _)| *nanos).collect();
         assert_eq!(report.samples_ns, expected_ns);
         assert_eq!(report.units_per_sample, vec![5; TIMED_SAMPLES]);
@@ -883,15 +1197,63 @@ mod tests {
         let json = serde_json::to_string(&report).expect("serializes");
         let back: ProfileReport = serde_json::from_str(&json).expect("deserializes");
         assert_eq!(back, report);
+        let canonical = report.canonical_sha256();
+        let mut different_time = report.clone();
+        different_time.captured_at_utc = "different audit time".to_owned();
+        assert_eq!(different_time, report);
+        assert_eq!(different_time.canonical_sha256(), canonical);
     }
 
     #[test]
     fn empty_sample_set_fails_closed() {
         let none: &[(u128, usize)] = &[];
-        let report = ProfileReport::assemble("t", "f".into(), 1, none, None);
+        let report = ProfileReport::assemble(
+            "t",
+            "f".into(),
+            1,
+            1,
+            none,
+            none,
+            None,
+            AuditBlock::fixture(),
+        );
         assert_eq!(report.workload.semantic_gate, SemanticGate::Fail);
         assert!(!report.variance.accepted);
         assert_eq!(report.total_units, 0);
+    }
+
+    #[test]
+    fn report_publication_leaves_no_partial_campaign_on_write_failure() {
+        let suffix = Utc::now()
+            .timestamp_nanos_opt()
+            .expect("timestamp in range");
+        let base = std::env::temp_dir().join(format!(
+            "ti4-m09-019b-publish-test-{}-{suffix}",
+            std::process::id()
+        ));
+        let samples = [(100u128, 1usize); TIMED_SAMPLES];
+        let mut first = ProfileReport::assemble(
+            "valid",
+            "fixture".into(),
+            1,
+            1,
+            &samples[..WARMUP_ITERATIONS],
+            &samples,
+            Some("abc".into()),
+            AuditBlock::fixture(),
+        );
+        first.variance_disposition = VarianceDisposition::Accepted;
+        let mut invalid = first.clone();
+        invalid.benchmark_id = "missing/child".to_owned();
+
+        let result = publish_reports(&base, &[first, invalid], Some("abc"));
+        assert!(matches!(result, Err(ProfileError::Io(_))));
+        assert_eq!(
+            fs::read_dir(&base).expect("base exists").count(),
+            0,
+            "neither a final nor temporary campaign may survive a failed write"
+        );
+        fs::remove_dir(&base).expect("remove exact empty test directory");
     }
 
     /// Diagnostic (env-gated): how does each W1 seed's game end under the safety bounds?
