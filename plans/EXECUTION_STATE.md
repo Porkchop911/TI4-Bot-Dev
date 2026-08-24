@@ -3075,3 +3075,33 @@ Files to read first after compaction:
   gap assigned to M09-020 and does not block this child.
 - **Next ready package:** M09-019b (bounded profile + raw samples + feature inventory), followed by
   the row's required Tier-D pass 2. M09-020 independently remains changes-required on its branch.
+
+## M09-019b implementation complete (2026-08-24) — pending Tier-D pass 2
+
+- Branch `wp/m09-019-post-rules-baseline-profile`, base `22a7fa7` (M09-019a accepted).
+- Built: `crates/ti4-sim/src/profile.rs` (new; M00 protocol, three workloads, fail-closed gates,
+  raw-sample reports + non-overwrite proof, env-gated campaign test) registered in lib.rs (+2);
+  pinning test `m09_019b_feature_inventory_is_pinned` in features.rs (test module only).
+- In-package design correction (recorded with diagnostic data before measurement): W1 plays one
+  **complete** game per sample — all 40 manifest seeds complete at round 9 by objective-deck
+  exhaustion (`w1_ending_diagnostic`), so a fixed step budget was the wrong shape. Scope constant
+  corrected to `content_types::DEFAULT` (= FULL); `SourceSet::default()` is the empty EnumSet.
+- Campaign executed in both builds (release primary): all semantic gates Pass; variance verdicts
+  honestly **unstable** on this host for all three workloads (absolute jitter floor ±10–20 µs;
+  W1 between-board variance). Release: W1 ≈46.7 ms/game, 44.5 µs/decision (≈1,049 decisions);
+  W2 ≈61.3 µs/extraction (11 options); W3 ≈7.9 µs/scoring. Fixture at step 710 of seed 919_601.
+- Gates: workspace **1347/0**; clippy clean on touched crates apart from two recorded pre-existing
+  ti4-engine warnings; fmt clean. Non-overwrite proof holds (pool `aba33c81…` unchanged).
+- Evidence: `plans/evidence/M09-019.md` M09-019b section (exact outputs pasted, statistics tables,
+  feature inventory table, variance analysis with the paired-measurement consequence for rows
+  021–023). Spec status updated.
+- **Next:** independent Tier-D frontier review (pass 2 of row 019) over this commit; then M09-019
+  parent acceptance requires both passes resolved.
+
+## Cross-branch note: M09-020 accepted at `cd82f9a` (2026-08-24)
+
+M09-020 (durable baselines + sealed data roles) was fully closed on its own branch
+`wp/m09-020-durable-baselines-sealed-roles`: F-M09-020-1/2 and R1 all resolved, narrow independent
+Tier-C recheck accepted at `cd82f9a`. The "remains changes-required" line above is superseded. Its
+fixtures (`fixtures/mlp-baselines/`) and role-enforcement module live on that branch; merging it
+into the M09-019 chain (or vice versa) is a milestone-integration decision, not part of 019b.

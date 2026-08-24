@@ -1823,6 +1823,110 @@ mod tests {
         }
     }
 
+    /// M09-019b feature inventory pin.
+    ///
+    /// The evidence table in `plans/evidence/M09-019.md` catalogues the current feature families;
+    /// this test encodes its structural facts so rows 021–023 (which add or change families) can
+    /// land only by breaking one of these assertions and updating the inventory in the same
+    /// package. That is the diff mechanism the row requires.
+    #[test]
+    fn m09_019b_feature_inventory_is_pinned() {
+        // 1. The legacy family vocabulary: exactly the thirteen declared closed-list prefixes.
+        assert_eq!(
+            FEATURE_PREFIXES,
+            [
+                "kind:",
+                "kind-faction:",
+                "option:",
+                "option-faction:",
+                "prompt-option:",
+                "prompt-bigram:",
+                "payload-bool:",
+                "payload-number:",
+                "payload-number-kind:",
+                "payload:",
+                "payload-count:",
+                "state-kind:",
+                "state-option:",
+            ]
+        );
+
+        // 2. The schema-4 head vocabulary (the r6 champion's): exactly the fourteen declared heads.
+        assert_eq!(
+            crate::learned::STAGE1_DECISION_HEADS,
+            [
+                "strategy",
+                "secondary",
+                "turn",
+                "activation",
+                "movement",
+                "cargo",
+                "landing",
+                "trade",
+                "tokens",
+                "production",
+                "payment",
+                "development",
+                "combat",
+                "other",
+            ]
+        );
+
+        // 3. The inventory fixture: one option carrying every payload shape and a multi-token
+        //    prompt, so all thirteen legacy families are exercised by names actually emitted —
+        //    each table row is real rather than aspirational.
+        let state = oracle_seat();
+        let seen = Observed::new(&state, ti4_content::ContentStore::embedded(), POK, None);
+        let player = PlayerId::new("a");
+        let option = ChoiceOption::labelled("produce|carrier", "produce", "produce carrier for 3")
+            .with("ready", true)
+            .with("cost", 3)
+            .with("cargo", "archonren")
+            .with("list", serde_json::json!(["alpha", "beta"]));
+        let asked = Choice::new(player.clone(), "produce a unit now", vec![option.clone()]);
+
+        let named = option_feature_names(&seen, &asked, &option, &player);
+        for (name, _) in &named {
+            assert!(
+                FEATURE_PREFIXES.iter().any(|prefix| name.starts_with(prefix)),
+                "{name} escapes the pinned legacy families"
+            );
+        }
+        for prefix in FEATURE_PREFIXES {
+            assert!(
+                named.iter().any(|(name, _)| name.starts_with(prefix)),
+                "family {prefix:?} is not exercised by the inventory fixture — its table row is unverifiable"
+            );
+        }
+
+        // 4. The explicit path on the same fixture: factual names with the legacy memorisation
+        //    channels removed. A single option with a composite id gives StateCross::None, so no
+        //    seat-fact cross and no kind family; prompt-kind is the explicit-only family.
+        let explicit = explicit_option_features(&seen, &asked, &option, &player);
+        assert_eq!(state_cross(&asked), StateCross::None);
+        for name in names_of(&explicit) {
+            assert!(
+                !name.starts_with("kind-faction:") && !name.starts_with("option-faction:"),
+                "{name}: faction crosses are a legacy-only channel"
+            );
+            if let Some(token) = name.strip_prefix("option:") {
+                assert!(
+                    token.chars().any(|character| !character.is_ascii_digit()),
+                    "{name}: bare numeric identities must not reach the explicit path"
+                );
+            }
+            assert!(
+                !name.starts_with("state-kind:") && !name.starts_with("state-option:"),
+                "{name}: StateCross::None emits no seat-fact cross"
+            );
+        }
+        let names = names_of(&explicit);
+        assert!(
+            names.iter().any(|name| name.starts_with("prompt-kind:")),
+            "the explicit-only prompt-kind family is missing from the fixture output"
+        );
+    }
+
     #[test]
     fn the_names_and_the_buckets_describe_the_same_decision() {
         // If naming and hashing could drift apart, the check above would be inspecting something
