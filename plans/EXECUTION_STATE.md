@@ -3420,3 +3420,21 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   plans files — all within the package's original declarations; no extension needed.
 - **Status:** correction round complete on `wp/m09-021-objective-policy-features`; pending fresh
   independent Tier-C recheck of the corrected commit. M09-021 remains open until that verdict.
+
+## M09-021 fresh independent Tier-C recheck of `870a8f5` (2026-08-24) — changes required
+
+- **F-M09-021-2 accepted resolved:** bare objective facts survive `StateCross::None`; focused,
+  legacy-subvector, and inventory-pin tests pass.
+- **F-M09-021-3 accepted resolved:** the evidence no longer mixes per-game and per-decision units;
+  post-correction measurements retain their variance-rejected disposition.
+- **F-M09-021-1 remains HIGH:** `held_secret_progress_for_choice(&Choice)` is not a typed private
+  capability because `Choice` is public and freely constructible. A caller with public `Observed`
+  can construct an opponent-owned choice and retrieve that opponent's secret aliases/progress. The
+  rewritten engine test positively demonstrates this cross-seat request through `seen_a` and
+  `choice_b`; its later A-only assertion does not prevent it.
+- Independent checks: engine accessor **1/0**; policy `StateCross::None` **1/0**;
+  opponent-feature isolation **1/0**; legacy-subvector pin **1/0**; inventory pin **1/0**;
+  `git diff --check` clean.
+- **Status:** M09-021 remains open; M09-024 remains dependency-blocked. Next exact action is a
+  genuine acting-seat/private-view boundary, a negative cross-seat test, affected gates, and a
+  narrow independent Tier-C recheck.

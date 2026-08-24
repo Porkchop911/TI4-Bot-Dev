@@ -124,3 +124,49 @@ and variance dispositions are preserved unchanged.
 
 Pending: fresh independent Tier-C recheck of the corrected commit. M09-021 remains open until then;
 no dependent package may start on the basis of this branch's pre-correction commits.
+
+## Fresh independent Tier-C recheck of `870a8f5` (2026-08-24)
+
+**Verdict: changes required; M09-021 remains open.** F-M09-021-2 and F-M09-021-3 are resolved,
+but F-M09-021-1 is not.
+
+### F-M09-021-1 — still open (HIGH): `Choice` is forgeable, not a private-view capability
+
+`held_secret_progress_for_choice(choice)` still exposes named secret progress through the public
+`Observed` type. `Choice` has public fields, a public constructor, and `Serialize`/`Deserialize`;
+therefore deriving the requested seat from `choice.player` does not authenticate the acting seat or
+make another seat unrequestable. Any caller holding a public `Observed` can construct a `Choice`
+whose `player` is an opponent and retrieve that opponent's secret aliases and progress.
+
+The rewritten engine test demonstrates the leak rather than a negative boundary: one `seen_a`
+value is passed a freely constructed `choice_b`, and the test asserts that B's secret alias `mlp`
+is returned. The later assertion only proves that `choice_a` returns A's cards; it does not prevent
+the preceding cross-seat request. The production extractor's use of an engine-generated choice is
+still caller convention, not the typed hidden-information boundary required by `AGENTS.md`.
+
+**Required:** move held-secret progress behind an unforgeable acting-seat/private-view capability,
+or an equivalent API whose construction validates and binds the viewer. A public `Observed` value
+must be unable to retrieve another seat's aliases even when supplied caller-constructed data. Add a
+negative test that attempts the cross-seat request and proves it cannot be expressed or is rejected.
+
+### Resolved findings
+
+- **F-M09-021-2 resolved:** bare objective facts survive on every option under
+  `StateCross::None`; the focused test is non-vacuous and the legacy subvector/inventory pins pass.
+- **F-M09-021-3 resolved:** the invalid per-game/per-decision comparison is removed. The updated
+  evidence reports only dimensionally valid component costs and preserves variance rejection.
+
+### Independent checks
+
+- `cargo test -p ti4-engine objective_progress_accessors_are_seat_scoped_and_source_complete` —
+  **1 passed, 0 failed** (but the test positively demonstrates the forgeable cross-seat request).
+- `cargo test -p ti4-policy bare_objective_facts_survive_state_cross_none` — **1/0**.
+- `cargo test -p ti4-policy opponent_secrets_never_enter_any_seat_features` — **1/0**.
+- `cargo test -p ti4-policy the_legacy_subvector_is_pinned_against_the_recorded_baseline` — **1/0**.
+- `cargo test -p ti4-policy m09_019b_feature_inventory_is_pinned` — **1/0**.
+- `git diff --check` — clean; only the three unrelated pre-existing user edits were present before
+  this review record.
+
+**Next exact action:** replace the forgeable `Choice` binding with a genuine typed/private-view
+boundary, add the cross-seat negative test, rerun the affected gates, and request another narrow
+independent Tier-C recheck. M09-021 and dependent M09-024 remain blocked until acceptance.
