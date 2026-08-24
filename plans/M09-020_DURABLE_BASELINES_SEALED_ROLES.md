@@ -99,3 +99,12 @@ assigns security boundaries to frontier review.
 - Role enforcement wired at both entry points; hermetic fail-closed tests pass (final refused,
   train/validation accepted, unknown bytes refused).
 - Full workspace suite green; clippy/fmt clean for scoped files; evidence with exact outputs.
+
+## Independent Tier-C review (2026-08-24)
+
+**Changes required on `52c17fb`.** The fixture cap, hashes, byte-reproducible sealing, zero final
+pool overlap, scoped tests/lints/formatting, and `.gitignore` mechanism were independently
+confirmed. Two findings remain in `plans/M09-020_OPEN_REVIEW_ITEMS.md`: F-M09-020-1 (HIGH) requires
+the role check and `MapPool` parse to consume the same immutable bytes at both live entry points;
+F-M09-020-2 (MEDIUM) requires accurate license provenance for the locked Rust zstd chain versus
+the bundled upstream native library. M09-020 remains open until both are corrected and rechecked.

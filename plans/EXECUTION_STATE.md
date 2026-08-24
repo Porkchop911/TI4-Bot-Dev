@@ -3061,3 +3061,99 @@ Files to read first after compaction:
   (`panel.json` `c9478867…`, checkpoint `be792a2a…`, pool `aba33c81…`).
 - **Next exact action:** commit the scoped correction and request a fresh independent Tier-D pass-1
   recheck. M09-019b remains pending until M09-019a acceptance.
+
+## M09-020 complete, committed `52c17fb` (2026-08-23) — pending independent Tier-C review
+
+- **Deliverables:** (1) sealed final pool `out/pools/full_np8_12_final.json` (seed 20260822, 1000
+  boards, sha `693253ec…a653245`) with zero canonical board-hash overlap vs train and validation,
+  re-verified at evidence time; corpus-has-not-moved proven by bit-for-bit regeneration of both
+  pre-existing pools (holdout `aba33c81…`, train `106153d4…`). (2) durable fixtures
+  `fixtures/mlp-baselines/{final10000,frozen5000}.zst` + `manifest.json` — zstd crate 0.13.3 level
+  19 single-threaded, combined 5,104,654 bytes ≤ 50 MiB cap, byte-reproducible (re-seal run
+  succeeded against existing fixtures; committed fixture-integrity test decompresses and verifies
+  raw shas). (3) durable five-artifact manifest `plans/evidence/MLP-ARTIFACTS.md` (replaces the
+  four-checksum placeholder whose hashes all match). (4) fail-closed role enforcement:
+  `ti4_sim::artifacts` module wired at both live corpus entry points (`baseline::run_panel`,
+  `stage2_training.rs --map-pool`); end-to-end negative proof: final pool rejected by the real
+  training command with exit 1 before any rollout; positive proofs: validation pool passes and the
+  M09-019a panel still produces identical numbers.
+- **Scope extension S1 (declared in evidence):** `.gitignore` three-line negation block for
+  `fixtures/mlp-baselines/` following the existing `legacy_entropy/bounded-v1` convention —
+  required because `fixtures/*` blocked the spec's own committed-fixture acceptance criterion.
+- **Gates:** ti4-sim **43/0** (6 artifacts + 5 baseline tests) · workspace **1,347/0** · clippy
+  clean in ti4-sim (two pre-existing engine warnings only) · fmt clean in ti4-sim; the lines added
+  to `stage2_training.rs` are fmt-conformant (remaining ~30-file rustfmt drift in ti4-training is
+  pre-existing, out of scope — O-M09-020-3).
+- **Ledger:** O-M09-020-1..4 in `plans/M09-020_OPEN_REVIEW_ITEMS.md` (diagnostic examples unwired
+  by spec; `is_known_checkpoint` call site arrives with M10-038; pre-existing fmt drift;
+  .gitignore mechanism needs reviewer confirmation).
+- **Next exact action:** independent Tier-C frontier review of commit `52c17fb`. On acceptance,
+  M09-020 closes and the next dependency-ready row is M09-019b (still blocked on M09-019a's fresh
+  Tier-D pass-1 recheck of `1a06ca9`).
+
+## Handover — compaction checkpoint 2026-08-23 (M09-020 committed, pre-review)
+
+```
+Objective:
+Close M09-020 (durable baselines + sealed data roles) and persist state for independent Tier-C
+review; keep M09-019a's pending recheck tracked.
+Normative source versions (and historical Python commit if used):
+MLP plan revision 5 §10 (`docs/MLP_PLAN.md`); milestone row in `plans/M09_LEARNED_POLICY.md`
+(M09-020). No Python reference used by this package.
+Active milestone/package:
+M09 / M09-020 (committed, pending independent Tier-C frontier review).
+Status and completed acceptance criteria:
+All four deliverables complete: sealed final pool (zero overlap + corpus-has-not-moved proven);
+zstd fixtures ≤50 MiB with manifest, byte-reproducible; five-artifact durable manifest;
+fail-closed role enforcement at both live entry points with hermetic + end-to-end proofs.
+Current branch and HEAD:
+wp/m09-020-durable-baselines-sealed-roles @ 52c17fb (base 1a06ca9).
+Working-tree state:
+Only the three preserved operator edits remain modified: AGENTS.md,
+plans/M06-025_OPEN_REVIEW_ITEMS.md, plans/PI_WORK_PACKAGE_STANDARD.md — untouched by this
+package; plus this uncommitted handover append to plans/EXECUTION_STATE.md.
+Tests last run and exact results:
+cargo test --workspace → 1347 passed / 0 failed. cargo test -p ti4-sim → 43/0 (artifacts 6/0,
+baseline 5/0). clippy -p ti4-sim --all-targets → only two pre-existing ti4-engine warnings.
+cargo fmt -p ti4-sim --check → clean. Real panel re-run with role gating: identical numbers
+(p1 2.700 / p2 2.467 / p3 2.167 / p4 2.600 / p5 2.600 / p6 2.533), pool sha aba33c81…, checkpoint
+sha be792a2a…. Negative proof: stage2_training --map-pool out/pools/full_np8_12_final.json →
+"artifact role Final is not allowed here (allowed roles: [Train, Validation])", exit 1.
+Compatibility evidence:
+plans/evidence/M09-020.md (verbatim outputs), plans/evidence/MLP-ARTIFACTS.md (five artifacts
+with roles/checksums/recipes), fixtures/mlp-baselines/manifest.json (schema ti4-mlp-baselines-v1).
+Decisions made and rationale:
+.gitignore negation block (S1) follows the legacy_entropy convention — minimal change satisfying
+the spec's committed-fixture criterion. MLP-ARTIFACTS.md overwrite is deliverable 3 of the spec
+(placeholder → full manifest; all four old checksums verified identical). Pre-existing
+ti4-training rustfmt drift left untouched (protocol: no unrelated cleanup); only this package's
+added lines made conformant.
+Open review findings or blockers:
+None blocking. Pending: independent Tier-C review of 52c17fb (O-M09-020-4 asks reviewer to confirm
+the .gitignore mechanism). M09-019a still awaits its fresh Tier-D pass-1 recheck of 1a06ca9;
+M09-019b blocked on that acceptance.
+Next exact action/command:
+Independent Tier-C frontier review of commit 52c17fb (spec: plans/M09-020_DURABLE_BASELINES_SEALED_ROLES.md,
+evidence: plans/evidence/M09-020.md, ledger: plans/M09-020_OPEN_REVIEW_ITEMS.md). In parallel the
+external review loop may pick up M09-019a's Tier-D pass-1 recheck of 1a06ca9.
+Files to read first after compaction:
+plans/EXECUTION_STATE.md (this section), plans/M09-020_DURABLE_BASELINES_SEALED_ROLES.md,
+plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/MLP-ARTIFACTS.md.
+```
+
+## M09-020 Tier-C review of `52c17fb` (2026-08-24) — changes required
+
+- **F-M09-020-1 HIGH:** pool role verification and `MapPool::load` reopen the path separately at
+  both live consumers, so the bytes parsed are not cryptographically bound to the role-approved
+  bytes. Unify the boundary over one immutable buffer and test it.
+- **F-M09-020-2 MEDIUM:** the generated manifest's `zstd is BSD-3-Clause` note misdescribes the
+  locked Rust dependency chain (`zstd` MIT; `zstd-safe` MIT OR Apache-2.0; `zstd-sys`
+  MIT/Apache-2.0). Correct the generator and regenerated manifest, distinguishing upstream native
+  zstd if relevant.
+- **O-M09-020-4 ACCEPTED:** `git check-ignore` proves the negation exposes only
+  `fixtures/mlp-baselines/**`; unrelated fixture siblings remain ignored. No force-add is needed.
+- **Independent gates:** artifacts 6/0; ti4-sim 43/0; Clippy only two pre-existing engine warnings;
+  scoped rustfmt/diff clean; deterministic reseal unchanged, 5,104,654 bytes combined.
+- **Next exact action:** implement both findings on the M09-020 branch and request a Tier-C recheck.
+  Separately, perform M09-019a's fresh Tier-D pass-1 recheck of `1a06ca9`; M09-019b remains blocked
+  until that acceptance.
