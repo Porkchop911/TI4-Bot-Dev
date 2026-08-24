@@ -396,9 +396,10 @@ pub trait Window {
 ///
 /// **Only public facts are reachable through this type.** The state is held privately and every
 /// accessor answers something any player at the table may read: the board, who controls what, how
-/// many cards somebody holds. A hand's *contents* are reachable only through
-/// [`Observed::redacted_for`], which copies and redacts - named so that reading private
-/// information is a deliberate act with a visible cost, rather than a field access.
+/// many cards somebody holds. A hand's *contents* are not reachable here at all: they live on the
+/// engine-bound [`SeatObservation`] ([`SeatObservation::held_secret_progress`],
+/// [`SeatObservation::held_state`]), which answers for its bound seat only — there is no method
+/// on this type that takes a caller-chosen seat and returns private data.
 ///
 /// The Rust counterpart of the oracle's `views.GameView`, differently shaped for the reason it
 /// exists at all: the oracle hands a bot a facade over a live game, and Rust cannot hand a decider
@@ -559,8 +560,6 @@ impl<'a> Observed<'a> {
         self.state.revealed_objectives.as_slice()
     }
 
-    /// What a player has already scored, which is public once scored (61.18).
-    #[must_use]
     /// The initiative number printed on a strategy card.
     ///
     /// Public: it is printed on the card, and it decides the whole action phase's turn order.
@@ -582,6 +581,8 @@ impl<'a> Observed<'a> {
             .unwrap_or(0)
     }
 
+    /// What a player has already scored, which is public once scored (61.18).
+    #[must_use]
     pub fn scored_by(&self, player: &PlayerId) -> BTreeSet<ObjectiveId> {
         self.state.scored_by(player)
     }
@@ -688,81 +689,186 @@ impl<'a> Observed<'a> {
             })
             .collect()
     }
+}
 
-    /// Exact progress for the secrets held by the seat this choice belongs to — and only that
-    /// seat's.
-    ///
-    /// The acting seat is derived from [`Choice::player`]; there is no parameter through which an
-    /// opponent could be requested, so a public [`Observed`] value cannot name another seat's
-    /// cards. That is the hidden-information boundary enforced by signature rather than caller
-    /// convention: in live play the only choices that exist are those asked of their owners, so
-    /// extracting for one can read nothing but its own secrets. (The former `player`-argument
-    /// form was removed in M09-021's F-M09-021-1 correction because it let one public view
-    /// request any seat.)
-    ///
-    /// Occurrence-based secrets have no position progress representation and are omitted rather
-    /// than zero-filled.
-    #[must_use]
-    pub fn held_secret_progress_for_choice(
-        &self,
-        choice: &Choice,
-    ) -> Vec<crate::objectives::CardProgress> {
-        let player = &choice.player;
-        let Some(seat) = self.state.players.iter().find(|seat| &seat.id == player) else {
-            return Vec::new();
-        };
-        let position = crate::secrets::Position {
-            state: self.state,
-            content: self.content,
-            sources: self.sources,
-            player,
-            galaxy: self.galaxy,
-        };
-        seat.secret_objectives
-            .iter()
-            .filter_map(|alias| {
-                crate::secrets::counting_progress(alias, &position)
-                    .or_else(|| crate::secrets::remaining_position_progress(alias, &position))
-                    .map(|progress| {
-                        // Counts are small integers; the cast is exact.
-                        #[expect(clippy::cast_precision_loss, reason = "small integer counts")]
-                        let (have, threshold) = (progress.have as f64, progress.threshold as f64);
-                        crate::objectives::CardProgress {
-                            alias: alias.as_str().to_owned(),
-                            family_token: crate::objectives::family_token(&progress.family),
-                            have,
-                            threshold,
-                            satisfied: progress.satisfied(),
-                            stage: None,
-                        }
-                    })
-            })
-            .collect()
+/// Replace every seat's private holdings with markers except `keep`'s.
+fn redact_others(view: &mut GameState, keep: &PlayerId) {
+    for seat in &mut view.players {
+        if &seat.id != keep {
+            seat.action_cards = seat
+                .action_cards
+                .iter()
+                .map(|_| ti4_model::id::ActionCardId::new(HIDDEN))
+                .collect();
+            seat.secret_objectives = seat
+                .secret_objectives
+                .iter()
+                .map(|_| ti4_model::id::SecretObjectiveId::new(HIDDEN))
+                .collect();
+        }
+    }
+}
+
+/// A private observation bound to exactly one acting seat — the capability that carries held-
+/// secret progress across the engine/policy boundary (M09-021, F-M09-021-1).
+///
+/// **There is no public constructor.** The only values of this type are produced inside
+/// [`Table::ask_seeing`] — where the engine already authenticates the acting seat, because the
+/// decider it hands the choice to was looked up by `choice.player` — and inside
+/// [`ask_private`], which performs the identical binding for tests and offline drivers. A caller
+/// holding a public [`Observed`] value cannot bind one to any seat it chooses: there is no API
+/// that takes caller-controlled identity data and produces this type.
+///
+/// The bound view answers only for its own seat. [`SeatObservation::held_secret_progress`] takes
+/// no arguments, so even holding a valid capability there is no call that names another seat's
+/// cards. Everything else on the position stays reachable through the deref to [`Observed`],
+/// which exposes public facts only.
+pub struct SeatObservation<'a> {
+    observed: &'a Observed<'a>,
+    acting_seat: PlayerId,
+}
+
+impl<'a> SeatObservation<'a> {
+    /// Engine-internal binding. The seat is authenticated by the caller's context (the table's
+    /// per-seat decider lookup, or an explicit ask), never by data a policy-side caller supplies.
+    pub(crate) fn bind(observed: &'a Observed<'a>, acting_seat: PlayerId) -> Self {
+        Self {
+            observed,
+            acting_seat,
+        }
     }
 
-    /// A full state with every other player's private holdings replaced by markers.
-    ///
-    /// Copies. That is the point: reading private information should cost something visible, so
-    /// nobody reaches for it to answer a question the public accessors already answer.
+    /// The public position this view is bound to. Public facts only — see [`Observed`].
     #[must_use]
-    pub fn redacted_for(&self, viewer: &PlayerId) -> GameState {
-        let mut view = self.state.clone();
-        for seat in &mut view.players {
-            if &seat.id != viewer {
-                seat.action_cards = seat
-                    .action_cards
-                    .iter()
-                    .map(|_| ti4_model::id::ActionCardId::new(HIDDEN))
-                    .collect();
-                seat.secret_objectives = seat
-                    .secret_objectives
-                    .iter()
-                    .map(|_| ti4_model::id::SecretObjectiveId::new(HIDDEN))
-                    .collect();
-            }
-        }
+    pub const fn observed(&self) -> &'a Observed<'a> {
+        self.observed
+    }
+
+    /// The seat this private observation is bound to. Named `bound_seat` rather than `seat`
+    /// so it does not shadow the deref'd public accessor [`Observed::seat`] that takes a
+    /// player argument.
+    #[must_use]
+    pub const fn bound_seat(&self) -> &PlayerId {
+        &self.acting_seat
+    }
+
+    /// A full state with every other player's private holdings replaced by markers — for the
+    /// bound seat only.
+    ///
+    /// No arguments, so even holding a valid capability there is no call that names another
+    /// seat (the former `Observed::redacted_for(viewer)` took an arbitrary viewer and was removed
+    /// in F-M09-021-1 round 2). Copies: reading private information should cost something visible.
+    #[must_use]
+    pub fn held_state(&self) -> GameState {
+        let mut view = self.observed.state.clone();
+        redact_others(&mut view, &self.acting_seat);
         view
     }
+
+    /// Exact progress for the secrets the bound seat holds — and only that seat's.
+    ///
+    /// No arguments: the acting seat is fixed at binding time, so an opponent cannot be
+    /// requested through this value. Occurrence-based secrets have no position progress
+    /// representation and are omitted rather than zero-filled.
+    #[must_use]
+    pub fn held_secret_progress(&self) -> Vec<crate::objectives::CardProgress> {
+        held_secret_records(
+            self.observed.state,
+            self.observed.content,
+            self.observed.sources,
+            self.observed.galaxy,
+            &self.acting_seat,
+        )
+    }
+}
+
+impl<'a> std::ops::Deref for SeatObservation<'a> {
+    type Target = Observed<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        self.observed
+    }
+}
+
+/// Held-secret progress for `viewer`, computed from the complete game state.
+///
+/// For **offline analysis and training contexts**, which hold the full state by design — there is
+/// no hidden information to protect, because every seat's cards are already readable fields of
+/// that state. Live play never calls this: the engine's ask path binds a [`SeatObservation`] to
+/// the choice's owner instead, so a decision's feature path sees only its own seat's secrets,
+/// enforced by the type rather than by caller convention.
+#[must_use]
+pub fn held_secret_progress(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    viewer: &PlayerId,
+) -> Vec<crate::objectives::CardProgress> {
+    held_secret_records(state, content, sources, galaxy, viewer)
+}
+
+/// The shared computation behind [`SeatObservation::held_secret_progress`] and the offline free
+/// function above. Same module, so it may read `Observed`'s private fields.
+fn held_secret_records(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    player: &PlayerId,
+) -> Vec<crate::objectives::CardProgress> {
+    let Some(seat) = state.players.iter().find(|seat| &seat.id == player) else {
+        return Vec::new();
+    };
+    let position = crate::secrets::Position {
+        state,
+        content,
+        sources,
+        player,
+        galaxy,
+    };
+    seat.secret_objectives
+        .iter()
+        .filter_map(|alias| {
+            crate::secrets::counting_progress(alias, &position)
+                .or_else(|| crate::secrets::remaining_position_progress(alias, &position))
+                .map(|progress| {
+                    // Counts are small integers; the cast is exact.
+                    #[expect(clippy::cast_precision_loss, reason = "small integer counts")]
+                    let (have, threshold) = (progress.have as f64, progress.threshold as f64);
+                    crate::objectives::CardProgress {
+                        alias: alias.as_str().to_owned(),
+                        family_token: crate::objectives::family_token(&progress.family),
+                        have,
+                        threshold,
+                        satisfied: progress.satisfied(),
+                        stage: None,
+                    }
+                })
+        })
+        .collect()
+}
+
+/// Drive one ask through the same private-observation binding as [`Table::ask_seeing`], without
+/// a table (no log).
+///
+/// For tests and offline drivers. The binding is identical to live play — the decider answers for
+/// the choice's owner and sees only that seat's secrets, because the [`SeatObservation`] is bound
+/// here inside engine code and never escapes to caller code. Live play additionally authenticates
+/// the decider against its seat through the table's per-seat map; a caller of this function
+/// chooses which decider answers for which owner, which is exactly what an offline context with
+/// full state access may do.
+///
+/// # Errors
+/// [`IllegalChoice`] if the answer was not on offer — the same validation as the table path.
+pub fn ask_private(
+    choice: &Choice,
+    seen: &Observed<'_>,
+    decider: &mut dyn Decider,
+) -> Result<ChoiceOption, IllegalChoice> {
+    let seat_view = SeatObservation::bind(seen, choice.player.clone());
+    let answer = decider.choose_seeing(choice, &seat_view)?;
+    validate(choice, answer)
 }
 
 /// Stands in for a card whose identity is private.
@@ -821,7 +927,12 @@ pub trait Decider {
     /// wanted option was not offered.
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice>;
 
-    /// Answer a choice with the public position in hand.
+    /// Answer a choice with the position in hand.
+    ///
+    /// The view is a [`SeatObservation`] bound to this choice's owner by the engine: public facts
+    /// come through its deref to [`Observed`], and held-secret progress is reachable only for the
+    /// bound seat — there is no argument an opponent could be requested with. A decider that does
+    /// not read secrets simply ignores the binding.
     ///
     /// Defaulted to [`Decider::choose`], so a scripted test or a random smoke run needs to know
     /// nothing about the board, and a scorer overrides only this one. The engine calls this at
@@ -833,7 +944,7 @@ pub trait Decider {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         let _ = seen;
         self.choose(choice)
@@ -1085,7 +1196,11 @@ impl Table {
             .deciders
             .get_mut(&choice.player)
             .unwrap_or(&mut self.default);
-        let answer = decider.choose_seeing(choice, seen)?;
+        // The private observation is bound here, inside the engine: the decider was just looked
+        // up by `choice.player`, so the view it receives answers for exactly that seat. Policy-
+        // side code never sees a constructor for this type.
+        let seat_view = SeatObservation::bind(seen, choice.player.clone());
+        let answer = decider.choose_seeing(choice, &seat_view)?;
         self.settle(choice, answer)
     }
 
@@ -1550,9 +1665,11 @@ mod tests {
 
     #[test]
     fn reading_a_hand_costs_a_copy_and_returns_markers() {
+        // The public form is the bound capability: no viewer argument exists to point at an
+        // opponent (F-M09-021-1).
         let state = watched();
         let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
-        let view = seen.redacted_for(&pid("a"));
+        let view = SeatObservation::bind(&seen, pid("a")).held_state();
 
         let rival = view.player(&pid("b")).unwrap();
         assert_eq!(rival.action_cards.len(), 2, "the count is public");
@@ -1574,7 +1691,7 @@ mod tests {
     fn you_can_read_your_own_hand() {
         let state = watched();
         let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
-        let view = seen.redacted_for(&pid("b"));
+        let view = SeatObservation::bind(&seen, pid("b")).held_state();
 
         assert_eq!(
             view.player(&pid("b")).unwrap().action_cards[0].as_str(),
@@ -1647,7 +1764,7 @@ mod tests {
         let mut blind = FirstOption;
         assert_eq!(
             blind.choose(&asked).unwrap(),
-            blind.choose_seeing(&asked, &seen).unwrap()
+            ask_private(&asked, &seen, &mut blind).unwrap()
         );
     }
 
@@ -1685,9 +1802,13 @@ mod tests {
     }
 
     #[test]
-    fn objective_progress_accessors_are_seat_scoped_and_source_complete() {
-        // The policy's objective facts read exactly these two accessors, so the seat scoping and
-        // source completeness are pinned here at the engine boundary.
+    fn held_secret_progress_is_bound_to_the_private_view_not_the_observed() {
+        // F-M09-021-1: named secret progress lives on `SeatObservation`, a capability with no
+        // public constructor. One public `Observed` value, two engine-bound views — each answers
+        // for exactly its own bound seat, and there is no method on either type that takes an
+        // arbitrary seat (the former `held_secret_progress(player)` / `_for_choice(choice)`
+        // signatures are gone; `Choice` is freely constructible, so binding to it authenticated
+        // nothing).
         let content = ContentStore::embedded();
         let mut state = crate::fixtures::game(&["a", "b"]);
         state.revealed_objectives = vec![ObjectiveId::new("outer_rim")];
@@ -1697,46 +1818,108 @@ mod tests {
             vec![ti4_model::id::SecretObjectiveId::new("mlp")];
 
         let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
-        let seen_a = Observed::new(&state, content, POK, Some(&hub.galaxy));
-        let seen_b = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
 
-        // Publics: both seats see the same revealed card.
-        for seen in [&seen_a, &seen_b] {
-            let cards = seen.revealed_objective_progress(&pid("a"));
+        // Publics: the public view still answers for any seat — revealed cards are public.
+        for seat in [&pid("a"), &pid("b")] {
+            let cards = seen.revealed_objective_progress(seat);
             assert_eq!(cards.len(), 1);
             assert_eq!(cards[0].alias, "outer_rim");
         }
 
-        // Secrets: the API is bound to the choice's own owner — there is no seat argument an
-        // opponent could be requested through. Each seat's decision sees exactly its own cards.
-        let choice_a = Choice::new(
-            pid("a"),
-            "decide",
-            vec![ChoiceOption::labelled("x", "kind", "x")],
-        );
-        let choice_b = Choice::new(
-            pid("b"),
-            "decide",
-            vec![ChoiceOption::labelled("y", "kind", "y")],
-        );
+        // Secrets: engine-bound views (as `Table::ask_seeing` produces them) answer for their own
+        // bound seat only.
+        let view_a = SeatObservation::bind(&seen, pid("a"));
+        let view_b = SeatObservation::bind(&seen, pid("b"));
 
-        // One public `Observed` value answers for whichever seat owns the choice it is given —
-        // and only that seat. There is no signature left to request an arbitrary seat.
-        let a_cards = seen_a.held_secret_progress_for_choice(&choice_a);
+        let a_cards = view_a.held_secret_progress();
         assert_eq!(a_cards.len(), 1);
         assert_eq!(a_cards[0].alias, "otf");
 
-        let b_cards = seen_a.held_secret_progress_for_choice(&choice_b);
+        let b_cards = view_b.held_secret_progress();
         assert_eq!(b_cards.len(), 1);
         assert_eq!(b_cards[0].alias, "mlp");
 
-        // Negative boundary: answering through a's choice never names b's card. The old API
-        // (`held_secret_progress(player)`) let one public `Observed` value request any seat;
-        // that signature no longer exists — the owner is derived from the choice itself, so an
-        // opponent's cards are unrequestable through a public observation.
+        // Negative boundary: neither bound view names the other seat's card. `held_secret_
+        // progress()` takes no arguments — even holding both views, there is no call that could
+        // ask for an opponent, and a public `Observed` value has no secret-data method at all.
         assert!(
             !a_cards.iter().any(|card| card.alias == "mlp"),
             "an opponent's secret alias reached the acting seat's view"
         );
+        assert!(
+            !b_cards.iter().any(|card| card.alias == "otf"),
+            "an opponent's secret alias reached the acting seat's view"
+        );
+
+        // The full-state form obeys the same binding: each view shows its own cards and hides
+        // the other seat's. (The former `Observed::redacted_for(viewer)` took a caller-chosen
+        // viewer and was removed in F-M09-021-1 round 2; this no-argument method cannot be
+        // pointed at an opponent.)
+        let state_a = view_a.held_state();
+        let state_b = view_b.held_state();
+        assert_eq!(
+            state_a.player(&pid("a")).unwrap().secret_objectives,
+            vec![ti4_model::id::SecretObjectiveId::new("otf")]
+        );
+        assert_eq!(
+            state_a.player(&pid("b")).unwrap().secret_objectives,
+            vec![ti4_model::id::SecretObjectiveId::new(HIDDEN)],
+            "a's view must hide b's cards"
+        );
+        assert_eq!(
+            state_b.player(&pid("b")).unwrap().secret_objectives,
+            vec![ti4_model::id::SecretObjectiveId::new("mlp")]
+        );
+        assert_eq!(
+            state_b.player(&pid("a")).unwrap().secret_objectives,
+            vec![ti4_model::id::SecretObjectiveId::new(HIDDEN)],
+            "b's view must hide a's cards"
+        );
+    }
+
+    #[test]
+    fn ask_private_binds_the_view_to_the_choice_owner() {
+        // The offline/test seam performs the identical binding: the decider sees only its own
+        // seat's secrets, and the answer goes through the same validation as the table path.
+        struct Seeing;
+        impl Decider for Seeing {
+            fn choose(&mut self, _choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::decline())
+            }
+            fn choose_seeing(
+                &mut self,
+                choice: &Choice,
+                seen: &SeatObservation<'_>,
+            ) -> Result<ChoiceOption, IllegalChoice> {
+                // The decider can read the bound seat's own secrets — and nothing else exists to
+                // call for another seat's.
+                let cards = seen.held_secret_progress();
+                assert_eq!(cards.len(), 1);
+                assert_eq!(
+                    cards[0].alias, "otf",
+                    "the view is bound to the choice owner"
+                );
+                Ok(choice.options[0].clone())
+            }
+        }
+
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&pid("a")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("otf")];
+        state.player_mut(&pid("b")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("mlp")];
+
+        let seen = Observed::new(&state, content, POK, None);
+        let choice = Choice::new(
+            pid("a"),
+            "decide",
+            vec![ChoiceOption::labelled("x", "kind", "x")],
+        );
+
+        let mut decider = Seeing;
+        let answer = ask_private(&choice, &seen, &mut decider).unwrap();
+        assert_eq!(answer.id, "x");
     }
 }

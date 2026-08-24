@@ -3438,3 +3438,35 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** M09-021 remains open; M09-024 remains dependency-blocked. Next exact action is a
   genuine acting-seat/private-view boundary, a negative cross-seat test, affected gates, and a
   narrow independent Tier-C recheck.
+
+## M09-021 F-M09-021-1 round 2 — typed private-view boundary (implementer, 2026-08-24)
+
+- **Design:** `SeatObservation<'a>` in `ti4_engine::choice` — private fields, no public
+  constructor; values exist only where engine ask paths bind them (`Table::ask_seeing` + window
+  sibling), after the decider lookup by `choice.player`. Argumentless `held_secret_progress()` and
+  `held_state()` answer for the bound seat only; deref to `Observed` keeps public-fact call sites.
+- **Removed from public surface:** `Observed::held_secret_progress_for_choice` (round-1 fix) and —
+  discovered during round 2, same hole class — `Observed::redacted_for(viewer)` (arbitrary viewer →
+  that seat's unredacted secrets). No method on `Observed` now returns named private data with any
+  caller-controlled identity argument.
+- **Live path:** `Decider::choose_seeing(&SeatObservation<'_>)`; learned bot passes
+  `seen.held_secret_progress()` explicitly into feature extraction (`consider` /
+  `explicit_choice_features` / `explicit_option_features` take `held_secrets: &[CardProgress]`).
+- **Offline path:** documented free function `ti4_engine::choice::held_secret_progress(state,
+  content, sources, galaxy, viewer)`; every call site names its records. `ask_private(choice, seen,
+  decider)` is the public test/offline seam (binds internally, shared validation).
+- **Tests:** new engine boundary tests (two bound views from one public Observed — own cards only,
+  records and full-state form with marker assertions; offline-seam binding through validation);
+  two redaction tests rewritten against `held_state()`; policy-level cross-seat isolation test kept.
+- **Gates:** workspace **1367/0** (net +1 new engine test); clippy introduces no new warnings in any
+  touched file (pre-existing: game.rs:1260, strategy.rs:589, ti4-training example pedantic set,
+  seat_advantage unused import from b3895d2); rustfmt clean on all touched files; pre-existing fmt
+  drift in action_cards/exploration/strategy left untouched.
+- **Writable paths used:** original declarations (choice.rs, features.rs) + declared extensions
+  (bot.rs, inference.rs, faction_abilities.rs, profile.rs, nine training examples) + round-2
+  addendum (redaction boundary: choice.rs + three of those same examples; `bound_seat` rename; two-line
+  dangling-doc cleanup in choice.rs). All declared before or contemporaneously with edits as recorded
+  in the ledger.
+- **Status:** correction complete on `wp/m09-021-objective-policy-features`; pending fresh
+  independent Tier-C recheck of this commit (confirming both the capability boundary and the
+  redaction-boundary extension). M09-021 remains open; M09-024 remains dependency-blocked.

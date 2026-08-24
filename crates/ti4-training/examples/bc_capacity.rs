@@ -53,7 +53,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_engine::opening::DEFAULT_REQUIREMENT;
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
@@ -105,7 +105,7 @@ impl Decider for Teacher {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         let picked = self.inner.choose_seeing(choice, seen)?;
         // A single-option decision decides nothing and would count as a free hit.
@@ -114,7 +114,12 @@ impl Decider for Teacher {
         {
             self.log.borrow_mut().push(Sample {
                 head: decision_head(choice).to_owned(),
-                options: explicit_choice_features(seen, choice, &choice.player),
+                options: explicit_choice_features(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    &seen.held_secret_progress(),
+                ),
                 chosen,
             });
         }

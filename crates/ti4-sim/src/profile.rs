@@ -639,8 +639,16 @@ fn w2_sample(
         return None; // this is not the position the run was asked for.
     }
     let seen = Observed::new(&game.state, content, sources, None);
+    // Offline measurement context: held-secret records computed explicitly on the full state.
+    let held = ti4_engine::choice::held_secret_progress(
+        &game.state,
+        content,
+        sources,
+        None,
+        &choice.player,
+    );
     let started = Instant::now();
-    let vectors = explicit_choice_features(&seen, &choice, &choice.player);
+    let vectors = explicit_choice_features(&seen, &choice, &choice.player, &held);
     let elapsed = started.elapsed().as_nanos();
     if vectors.iter().all(FeatureVector::is_empty) {
         return None; // an empty extraction is not the work that was asked for.
@@ -682,7 +690,14 @@ fn w3_sample(
 
     // Feature vectors are the input to this workload, not part of its timed region.
     let seen = Observed::new(&game.state, content, sources, None);
-    let vectors = explicit_choice_features(&seen, &choice, &choice.player);
+    let held = ti4_engine::choice::held_secret_progress(
+        &game.state,
+        content,
+        sources,
+        None,
+        &choice.player,
+    );
+    let vectors = explicit_choice_features(&seen, &choice, &choice.player, &held);
 
     let started = Instant::now();
     let head = profile.resolved_head(decision_head(&choice));

@@ -170,3 +170,100 @@ negative test that attempts the cross-seat request and proves it cannot be expre
 **Next exact action:** replace the forgeable `Choice` binding with a genuine typed/private-view
 boundary, add the cross-seat negative test, rerun the affected gates, and request another narrow
 independent Tier-C recheck. M09-021 and dependent M09-024 remain blocked until acceptance.
+
+## F-M09-021-1 round 2 — design and writable-path declarations (implementer, 2026-08-24)
+
+The recheck is correct: `Choice` has public fields, a public constructor and serde derives, so
+deriving the acting seat from it authenticates nothing. A public method on `Observed` that takes
+any caller-controlled identity data (a seat argument or a choice) can always be pointed at an
+opponent. The only design that survives is one where **the binding happens inside engine code and
+the bound value has no public constructor**.
+
+### Design
+
+1. New public type in `choice.rs`: `SeatObservation<'a>` — "private observation". Private fields,
+   **no public constructor**; the sole production path is `pub(crate) fn bind(observed, seat)`,
+   called from inside `Table::ask_seeing` where the engine already authenticates the acting seat
+   (the decider lookup is keyed by `choice.player`). Methods: `observed()`, `seat()`, and
+   `held_secret_progress()` — no arguments; it answers for the bound seat only. `Deref`s to
+   `Observed` so every public-fact call site keeps working unchanged.
+2. `Observed::held_secret_progress_for_choice` is removed. No method on `Observed` returns named
+   secret data with any argument — criterion 2 of the finding holds by type surface.
+3. `Decider::choose_seeing` now takes `&SeatObservation<'_>`. Live play flows: engine ask path →
+   bound capability → decider → `LearnedBot::consider(seen.observed(), choice, &seen.held_secret_
+   progress())`. A decision's feature path can structurally see only its own seat's secrets.
+4. Offline/training/diagnostic contexts (which hold the complete state by design and where hidden
+   information does not exist) use an explicit-records API: `explicit_choice_features` /
+   `explicit_option_features` take `held_secrets: &[CardProgress]` as a parameter, computed via a
+   documented free function `ti4_engine::choice::held_secret_progress(state, content, sources,
+   galaxy, viewer)`. Every direct call site names the records it uses — visible cost rather than
+   hidden convention (the `redacted_for` philosophy).
+5. New public free function `ask_private(choice, seen, decider)` for tests/offline drivers: binds
+   internally exactly as the table does and validates the answer; the capability never escapes to
+   caller code. Live play additionally authenticates the decider against its seat via the table's
+   per-seat map, which `ask_private` documents as the difference.
+
+### Negative boundary (what becomes inexpressible)
+
+- No public constructor for `SeatObservation`: policy-side code cannot bind a view to any seat it
+  chooses; the only values that exist are produced by engine ask paths.
+- `held_secret_progress()` takes no seat argument: even holding a bound view, there is no call
+  that names another seat's cards.
+- Engine test: one public `Observed`, two engine-bound views (A and B) — each returns exactly its
+  own cards; plus an explicit assertion that the removed arbitrary-seat API cannot be expressed
+  (documented by the type surface, asserted at runtime for both bindings).
+
+### Finding-specific writable-path declarations (before editing)
+
+Within the original package list: `crates/ti4-engine/src/choice.rs`, `crates/ti4-policy/src/
+features.rs`. Declared extensions (all signature lines and call-site re-pointing only, no semantic
+change beyond routing held-secret records through the bound capability / explicit parameter):
+
+- `crates/ti4-policy/src/bot.rs` — `ScoredBot::choose_seeing` signature; test call sites moved to
+  `ask_private`.
+- `crates/ti4-policy/src/inference.rs` — `LearnedBot::choose_seeing` signature; `consider` gains
+  the explicit `held_secrets` parameter; test call sites updated.
+- `crates/ti4-engine/src/faction_abilities.rs` — one test-decider signature line.
+- `crates/ti4-sim/src/profile.rs` — two `explicit_choice_features` call sites gain the records
+  argument (computed from the fixture's full state).
+- `crates/ti4-training/examples/{bc_capacity,conflict,military_support,objective_report,
+  revealed_objectives,separability,single_game_trace,tech_owned,vp_where}.rs` — wrapper-decider
+  signature lines; `single_game_trace` and the two feature-extracting examples gain the records
+  argument.
+
+Non-goals: no changes to scoring semantics, legality, replay, or the legacy hashed extractor; no
+new dependencies; no retraining.
+
+### Round 2 addendum — redaction boundary, rename, incidental cleanup (implementer, 2026-08-24)
+
+Discovered **during** round-2 implementation, after the declarations above: `Observed::redacted_
+for(viewer)` had the identical hole to F-M09-021-1 — a public method taking an arbitrary viewer and
+returning that viewer's unredacted secret cards, reachable from live decision code via deref. The
+affected paths (`choice.rs` plus the three training examples) were already declared writable above;
+the specific change is declared here for reviewer confirmation:
+
+- `Observed::redacted_for` **removed** (it had no production callers — only tests and the three
+  offline examples, all of which pass their own seat).
+- New argumentless `SeatObservation::held_state()`: full-state clone with every non-bound seat's
+  private holdings replaced by markers. Same visible-cost philosophy (a copy), bound-seat only.
+- Private helper `redact_others(view, keep)` shared by the new method.
+- `military_support.rs`, `objective_report.rs`, `vp_where.rs`: `seen.redacted_for(&self.x)` →
+  `seen.held_state()`.
+- Engine tests `reading_a_hand_costs_a_copy_and_returns_markers` and `you_can_read_your_own_hand`
+  rewritten against the public bound form; new held-state assertions added to the boundary test.
+
+Also:
+
+- The capability's seat accessor is named **`bound_seat()`** (not `seat()`) because an inherent
+  `seat()` would shadow the deref'd public `Observed::seat(player)` and break existing call sites.
+- Incidental cleanup in `choice.rs`: a dangling doc line + `#[must_use]` left between methods by an
+  earlier refactor of `scored_by` (source of a pre-existing "unused attribute" warning) was moved to
+  where it belongs, on `scored_by`. Two lines; no behavior change.
+
+**Verification:** workspace suite green (engine 854/0, policy 126/0, sim 52/0, training 104/0 +
+others); clippy introduces no new warnings in any touched file; rustfmt clean on all touched files.
+Exact outputs pasted in `plans/evidence/M09-021.md` (round-2 section).
+
+**Request:** fresh independent Tier-C recheck of this commit, confirming (a) the capability boundary
+closes F-M09-021-1 as specified, and (b) the redaction-boundary extension is accepted as part of the
+same finding. M09-021 remains open until acceptance; dependent M09-024 stays blocked.

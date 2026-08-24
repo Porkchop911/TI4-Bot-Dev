@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use serde_json::{Value, json};
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::FeatureVector;
@@ -60,9 +60,13 @@ impl Decider for TraceBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
-        let (features, probabilities) = self.inner.consider(seen, choice);
+        let (features, probabilities) = self.inner.consider(
+            seen.observed(),
+            choice,
+            &seen.held_secret_progress(),
+        );
         // Raw scores from the same public primitives `consider` uses internally.
         let requested_head = decision_head(choice);
         let resolved_head = self.inner.profile().resolved_head(requested_head);

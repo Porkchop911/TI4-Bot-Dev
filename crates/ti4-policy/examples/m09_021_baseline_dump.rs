@@ -78,9 +78,14 @@ fn main() {
         ],
     );
 
+    // Offline context with full state: the held-secret records are computed explicitly and
+    // passed to the feature path — the same data live play receives bound to its SeatObservation.
+    let held =
+        ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), &player);
     let mut dump = Vec::new();
     for (choice_index, choice) in [choice_0, choice_1].into_iter().enumerate() {
-        let vectors = ti4_policy::features::explicit_choice_features(&seen, &choice, &player);
+        let vectors =
+            ti4_policy::features::explicit_choice_features(&seen, &choice, &player, &held);
         assert_eq!(vectors.len(), choice.options.len());
         for (option_index, vector) in vectors.into_iter().enumerate() {
             let mut features = BTreeMap::new();

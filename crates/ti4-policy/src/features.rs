@@ -403,11 +403,12 @@ pub fn explicit_option_features(
     choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
 ) -> FeatureVector {
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, choice),
+        objective_facts: objective_facts(seen, player, held_secrets),
     };
     explicit_option_features_with(
         seen,
@@ -433,22 +434,29 @@ struct ChoiceContext<'a> {
 /// Objective progress facts for the acting seat, computed once per choice.
 ///
 /// Built from the engine's scoring sources of truth through [`Observed::revealed_objective_
-/// progress`] and [`Observed::held_secret_progress_for_choice`], aggregated per MLP plan section
-/// 5.1: clipped `min(1, have / threshold)` ratios, **max applied before any vector is
+/// progress`] and the caller-supplied held-secret records (see below), aggregated per MLP plan
+/// section 5.1: clipped `min(1, have / threshold)` ratios, **max applied before any vector is
 /// constructed** (never relying on the additive merge), threshold-keyed slots, need markers,
 /// family counts, and stage counts over revealed publics. The gap feature is deliberately absent:
 /// it is linear in what is already there.
 ///
-/// The acting seat comes from the choice itself — the secret boundary is enforced by the engine
-/// accessor's signature (F-M09-021-1), not by this caller passing the right id. Emission uses two
-/// disjoint namespaces: the bare section 5.1 names on every option under every crossing mode (the
-/// nonlinear MLP input contract, where an option-invariant fact can interact with option facts),
-/// and crossed copies under `state-kind:`/`state-option:` for linear-schema delivery.
+/// The held-secret records are supplied by the caller rather than read from the observation:
+/// live play receives them from the engine-bound [`ti4_engine::choice::SeatObservation`] (the
+/// acting seat's own cards, bound at ask time — F-M09-021-1), and offline contexts compute them
+/// via `ti4_engine::choice::held_secret_progress` on their full state. Every call site therefore
+/// names the secret data its extraction is allowed to use.
+///
+/// Emission uses two disjoint namespaces: the bare section 5.1 names on every option under every
+/// crossing mode (the nonlinear MLP input contract, where an option-invariant fact can interact
+/// with option facts), and crossed copies under `state-kind:`/`state-option:` for linear-schema
+/// delivery.
 #[must_use]
-fn objective_facts(seen: &Observed<'_>, choice: &Choice) -> Vec<(String, f64)> {
-    let player = &choice.player;
+fn objective_facts(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+) -> Vec<(String, f64)> {
     let publics = seen.revealed_objective_progress(player);
-    let secrets = seen.held_secret_progress_for_choice(choice);
 
     // Stage counts over revealed publics only; secrets have no printed stage.
     let mut stage_counts = [0usize; 3];
@@ -464,7 +472,7 @@ fn objective_facts(seen: &Observed<'_>, choice: &Choice) -> Vec<(String, f64)> {
     let mut pair_max: BTreeMap<(String, String), f64> = BTreeMap::new();
     let mut family_count: BTreeMap<String, usize> = BTreeMap::new();
 
-    for card in publics.iter().chain(&secrets) {
+    for card in publics.iter().chain(held_secrets) {
         // The engine guarantees threshold > 0 (bought_progress rejects targets of zero or less;
         // counting thresholds are registered constants), so the ratio is well-defined.
         debug_assert!(
@@ -493,7 +501,7 @@ fn objective_facts(seen: &Observed<'_>, choice: &Choice) -> Vec<(String, f64)> {
 
     let mut facts: Vec<(String, f64)> = Vec::new();
     // met flags in stable card order; unsatisfied cards emit nothing (the zero-skip convention).
-    for card in publics.iter().chain(&secrets) {
+    for card in publics.iter().chain(held_secrets) {
         if card.satisfied {
             facts.push((format!("objective-met:{}", card.alias), 1.0));
         }
@@ -578,13 +586,14 @@ pub fn explicit_choice_features(
     seen: &Observed<'_>,
     choice: &Choice,
     player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
 ) -> Vec<FeatureVector> {
     // All three are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, choice),
+        objective_facts: objective_facts(seen, player, held_secrets),
     };
     let cross = state_cross(choice);
     choice
@@ -1600,6 +1609,16 @@ mod tests {
     use ti4_model::id::FactionId;
     use ti4_model::state::GameState;
 
+    /// Held-secret records for seat "a" on this full state — the offline form of what live play
+    /// receives bound to its `SeatObservation`. Same position inputs as the test's `Observed`.
+    fn held(
+        state: &GameState,
+        content: &ti4_content::ContentStore,
+        galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    ) -> Vec<ti4_engine::objectives::CardProgress> {
+        ti4_engine::choice::held_secret_progress(state, content, POK, galaxy, &PlayerId::new("a"))
+    }
+
     const DIMENSIONS: usize = 512;
 
     #[derive(Deserialize)]
@@ -1679,7 +1698,13 @@ mod tests {
         let option = ChoiceOption::labelled(target, "activate", format!("activate {target}"));
         let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
-        let features = explicit_option_features(&seen, &choice, &option, &player);
+        let features = explicit_option_features(
+            &seen,
+            &choice,
+            &option,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
 
         assert_eq!(value_of(&features, "target:reachable"), Some(1.0));
         assert!(value_of(&features, "target:planet-count").is_some_and(|count| count > 0.0));
@@ -1707,7 +1732,13 @@ mod tests {
         let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
 
-        let features = explicit_option_features(&seen, &choice, &option, &player);
+        let features = explicit_option_features(
+            &seen,
+            &choice,
+            &option,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
 
         assert_eq!(value_of(&features, "target:reachable"), Some(1.0));
     }
@@ -1750,7 +1781,13 @@ mod tests {
             .find(|option| option.kind == "move")
             .unwrap();
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
-        let movement = explicit_option_features(&seen, &move_choice, move_option, &player);
+        let movement = explicit_option_features(
+            &seen,
+            &move_choice,
+            move_option,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         assert_eq!(value_of(&movement, "route:adjacent"), Some(1.0));
         assert_eq!(value_of(&movement, "move-unit:capacity"), Some(4.0));
         assert!(value_of(&movement, "origin:own-ships").is_some());
@@ -1773,7 +1810,13 @@ mod tests {
                 ChoiceOption::new("done_committing", "decline"),
             ],
         );
-        let landing = explicit_option_features(&seen, &landing_choice, &land, &player);
+        let landing = explicit_option_features(
+            &seen,
+            &landing_choice,
+            &land,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         assert!(
             value_of(&landing, "landing:resources").is_some()
                 || value_of(&landing, "landing:influence").is_some()
@@ -2139,7 +2182,13 @@ mod tests {
         // 5. The explicit path on the same fixture: factual names with the legacy memorisation
         //    channels removed. A single option with a composite id gives StateCross::None, so no
         //    seat-fact cross and no kind family; prompt-kind is the explicit-only family.
-        let explicit = explicit_option_features(&seen, &asked, &option, &player);
+        let explicit = explicit_option_features(
+            &seen,
+            &asked,
+            &option,
+            &player,
+            &held(&state, ti4_content::ContentStore::embedded(), None),
+        );
         assert_eq!(state_cross(&asked), StateCross::None);
         for name in names_of(&explicit) {
             assert!(
@@ -2205,7 +2254,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
-            objective_facts: objective_facts(&seen, &choice),
+            objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -2220,7 +2269,12 @@ mod tests {
                 )
             })
             .collect();
-        let kept = explicit_choice_features(&seen, &choice, &player);
+        let kept = explicit_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
 
         let dropped: Vec<_> = full[0]
             .keys()
@@ -2270,7 +2324,12 @@ mod tests {
         assert!(uniform_kind(&choice), "a secondary is a single-kind choice");
         assert_eq!(state_cross(&choice), StateCross::ByOption);
 
-        let vectors = explicit_choice_features(&seen, &choice, &player);
+        let vectors = explicit_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         let named = |index: usize| -> Vec<String> {
             vectors[index]
                 .keys()
@@ -2319,7 +2378,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
-            objective_facts: objective_facts(&seen, &choice),
+            objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
         };
         let full = explicit_option_features_with(
             &seen,
@@ -2330,7 +2389,12 @@ mod tests {
             StateCross::ByKind,
         );
         assert_eq!(
-            explicit_choice_features(&seen, &choice, &player)[0],
+            explicit_choice_features(
+                &seen,
+                &choice,
+                &player,
+                &held(&state, content, Some(&galaxy)),
+            )[0],
             full,
             "a mixed-kind choice loses nothing"
         );
@@ -2428,7 +2492,12 @@ mod tests {
         let player = PlayerId::new("a");
 
         for (entry_index, choice) in m09_021_choices(&player).into_iter().enumerate() {
-            let vectors = explicit_choice_features(&seen, &choice, &player);
+            let vectors = explicit_choice_features(
+                &seen,
+                &choice,
+                &player,
+                &held(&state, content, Some(&galaxy)),
+            );
             for (option_index, vector) in vectors.into_iter().enumerate() {
                 let entry = &baseline[entry_index * 2 + option_index];
                 assert_eq!(entry["choice"].as_u64(), Some(entry_index as u64));
@@ -2488,7 +2557,10 @@ mod tests {
         // the choice's owner (F-M09-021-1), so a choice for this seat is what authorises it.
         let choices = m09_021_choices(&player);
         let publics = ti4_engine::choice::Observed::revealed_objective_progress(&seen, &player);
-        let secrets = seen.held_secret_progress_for_choice(&choices[0]);
+        // Offline form of the live binding: this test holds the full state and names seat "a's"
+        // records explicitly.
+        let secrets =
+            ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), &player);
         assert!(!publics.is_empty(), "the fixture reveals four publics");
         assert_eq!(secrets.len(), 2, "seat a holds two counting secrets");
 
@@ -2530,8 +2602,10 @@ mod tests {
         }
 
         // The facts as the extractor emits them, read back through one option of each crossing mode.
-        let kind_vectors = explicit_choice_features(&seen, &choices[0], &player);
-        let option_vectors = explicit_choice_features(&seen, &choices[1], &player);
+        let held_records =
+            ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), &player);
+        let kind_vectors = explicit_choice_features(&seen, &choices[0], &player, &held_records);
+        let option_vectors = explicit_choice_features(&seen, &choices[1], &player, &held_records);
         let by_kind_vector = &kind_vectors[0];
         let by_option_vector = &option_vectors[0];
 
@@ -2654,7 +2728,12 @@ mod tests {
             "activate a system or pass",
             vec![ChoiceOption::labelled("no", "decline", "pass")],
         );
-        let vectors = explicit_choice_features(&seen, &choice, &player);
+        let vectors = explicit_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         let vector = &vectors[0];
         let facts: BTreeMap<String, f64> = vector
             .iter()
@@ -2713,9 +2792,10 @@ mod tests {
         }
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
 
-        // The accessor boundary: each seat's records are exactly its own cards, and the API is
-        // bound to the choice's owner (F-M09-021-1) — there is no signature left that could
-        // request an opponent's cards.
+        // The secret boundary (F-M09-021-1): records are named explicitly per seat — live play
+        // receives them bound to the choice's owner by the engine, offline contexts compute them
+        // on their full state. Either way there is no call that takes a public `Observed` plus
+        // caller-controlled identity data and returns another seat's cards.
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
         let choice_for = |seat: &PlayerId| {
@@ -2726,7 +2806,7 @@ mod tests {
             )
         };
         let aliases_of = |seat: &PlayerId| -> Vec<String> {
-            seen.held_secret_progress_for_choice(&choice_for(seat))
+            ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), seat)
                 .into_iter()
                 .map(|card| card.alias)
                 .collect()
@@ -2735,10 +2815,21 @@ mod tests {
         assert_eq!(aliases_of(&b), vec!["eap".to_owned()]);
 
         let names_for = |seat: &PlayerId| -> Vec<String> {
-            explicit_choice_features(&seen, &choice_for(seat), seat)[0]
-                .iter()
-                .map(|(key, _)| crate::intern::name_of(*key))
-                .collect()
+            explicit_choice_features(
+                &seen,
+                &choice_for(seat),
+                seat,
+                &ti4_engine::choice::held_secret_progress(
+                    &state,
+                    content,
+                    POK,
+                    Some(&galaxy),
+                    seat,
+                ),
+            )[0]
+            .iter()
+            .map(|(key, _)| crate::intern::name_of(*key))
+            .collect()
         };
 
         let names_a = names_for(&a);
@@ -2796,7 +2887,7 @@ mod tests {
             "the fixture must be a None choice"
         );
 
-        let expected = objective_facts(&seen, &choice);
+        let expected = objective_facts(&seen, &player, &held(&state, content, Some(&galaxy)));
         // Non-vacuity: all four fact classes are present in this position.
         for class in [
             "objective-need:",
@@ -2821,7 +2912,12 @@ mod tests {
                 .collect()
         };
 
-        let vectors = explicit_choice_features(&seen, &choice, &player);
+        let vectors = explicit_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         assert_eq!(vectors.len(), 2);
         for vector in &vectors {
             // Every fact the extractor computes survives on this option under its bare name.
@@ -2852,7 +2948,12 @@ mod tests {
                 ChoiceOption::labelled("produce|fighter@18", "production", "build a fighter"),
             ],
         );
-        let reversed_vectors = explicit_choice_features(&seen, &reversed, &player);
+        let reversed_vectors = explicit_choice_features(
+            &seen,
+            &reversed,
+            &player,
+            &held(&state, content, Some(&galaxy)),
+        );
         for vector in vectors.iter().chain(reversed_vectors.iter()) {
             assert_eq!(bare_of(vector).len(), expected.len());
         }
@@ -2870,7 +2971,12 @@ mod tests {
             choices
                 .iter()
                 .map(|choice| {
-                    let vectors = explicit_choice_features(&seen, choice, &player);
+                    let vectors = explicit_choice_features(
+                        &seen,
+                        choice,
+                        &player,
+                        &held(&state, content, Some(&galaxy)),
+                    );
                     vectors[0]
                         .keys()
                         .map(|key| crate::intern::name_of(*key))

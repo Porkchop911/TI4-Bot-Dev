@@ -28,7 +28,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed, SeatObservation};
 use ti4_model::id::PlayerId;
 
 use crate::features::{FeatureVector, explicit_choice_features, option_features};
@@ -189,6 +189,10 @@ impl LearnedBot {
 
     /// Score every legal option, and say what each one's chance is.
     ///
+    /// `held_secrets` names the held-secret records this scoring may use — live play passes the
+    /// bound seat's own cards from its [`SeatObservation`], offline contexts compute them on their
+    /// full state. The feature path never reads secrets through caller-controlled identity data.
+    ///
     /// Returned together because a trainer needs both: the scores to check a fit, and the
     /// probabilities the sample was actually drawn from.
     #[must_use]
@@ -196,6 +200,7 @@ impl LearnedBot {
         &self,
         seen: &Observed<'_>,
         choice: &Choice,
+        held_secrets: &[ti4_engine::objectives::CardProgress],
     ) -> (BTreeMap<String, FeatureVector>, BTreeMap<String, f64>) {
         // The head decides which weights read the features, so the same fact means different
         // things to different decisions. One shared vector would have every head's update land on
@@ -209,7 +214,12 @@ impl LearnedBot {
                 .options
                 .iter()
                 .map(|option| option.id.clone())
-                .zip(explicit_choice_features(seen, choice, &choice.player))
+                .zip(explicit_choice_features(
+                    seen,
+                    choice,
+                    &choice.player,
+                    held_secrets,
+                ))
                 .collect()
         } else {
             choice
@@ -257,7 +267,7 @@ impl Decider for LearnedBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         if choice.options.is_empty() {
             return Err(IllegalChoice::NoOptions {
@@ -265,7 +275,9 @@ impl Decider for LearnedBot {
                 prompt: choice.prompt.clone(),
             });
         }
-        let (legal, chances) = self.consider(seen, choice);
+        // The view is bound to this choice's owner by the engine; its held-secret progress is
+        // exactly that seat's own cards, and nothing else exists to request another seat's.
+        let (legal, chances) = self.consider(seen.observed(), choice, &seen.held_secret_progress());
 
         // Every legal option, in the order the engine offered them. No shortlist: a filtered
         // option is one the policy can never learn to want.
@@ -298,12 +310,25 @@ mod tests {
     use super::*;
     use crate::learned::{DEFAULT_DIMENSIONS, blank_profile, bucket};
     use ti4_content::ContentStore;
+    use ti4_engine::choice::ask_private;
     use ti4_model::content_types::POK;
     use ti4_model::id::PlayerId;
     use ti4_model::state::GameState;
 
     fn table() -> GameState {
         ti4_engine::fixtures::game(&["a", "b"])
+    }
+
+    /// Held-secret records for seat "a" on this full state — the offline form of what live play
+    /// receives bound to its [`SeatObservation`].
+    fn held(state: &GameState) -> Vec<ti4_engine::objectives::CardProgress> {
+        ti4_engine::choice::held_secret_progress(
+            state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &PlayerId::new("a"),
+        )
     }
 
     fn asked(kinds: &[(&str, &str)]) -> Choice {
@@ -326,7 +351,7 @@ mod tests {
         let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
 
         let bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
-        let (_, chances) = bot.consider(&seen, &choice);
+        let (_, chances) = bot.consider(&seen, &choice, &held(&state));
         for chance in chances.values() {
             assert!((chance - 1.0 / 3.0).abs() < 1e-9, "{chance}");
         }
@@ -348,7 +373,7 @@ mod tests {
             .insert(slot, 5.0 * sign);
 
         let bot = LearnedBot::new(profile, 1);
-        let (_, chances) = bot.consider(&seen, &choice);
+        let (_, chances) = bot.consider(&seen, &choice, &held(&state));
         assert!(chances["18"] > chances["26"], "{chances:?}");
     }
 
@@ -370,7 +395,7 @@ mod tests {
             .insert(slot, 20.0 * sign);
 
         let bot = LearnedBot::new(profile, 1);
-        let (legal, chances) = bot.consider(&seen, &choice);
+        let (legal, chances) = bot.consider(&seen, &choice, &held(&state));
         assert_eq!(legal.len(), 3, "every option was scored");
         assert_eq!(chances.len(), 3);
         for (id, chance) in &chances {
@@ -436,7 +461,9 @@ mod tests {
                 .unwrap()
                 .weights
                 .insert(slot.clone(), weight * sign);
-            LearnedBot::new(profile, 7).consider(&seen, &choice).1["18"]
+            LearnedBot::new(profile, 7)
+                .consider(&seen, &choice, &held(&state))
+                .1["18"]
         };
         let weight = [0.05, 0.1, 0.2, 0.4, 0.8]
             .into_iter()
@@ -450,11 +477,11 @@ mod tests {
             .weights
             .insert(slot, weight * sign);
         let mut bot = LearnedBot::new(profile, 7);
-        let expected = bot.consider(&seen, &choice).1["18"];
+        let expected = bot.consider(&seen, &choice, &held(&state)).1["18"];
 
         let mut favoured = 0;
         for _ in 0..400 {
-            if bot.choose_seeing(&choice, &seen).unwrap().id == "18" {
+            if ask_private(&choice, &seen, &mut bot).unwrap().id == "18" {
                 favoured += 1;
             }
         }
@@ -475,7 +502,7 @@ mod tests {
         let played = |seed| {
             let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), seed);
             (0..30)
-                .map(|_| bot.choose_seeing(&choice, &seen).unwrap().id)
+                .map(|_| ask_private(&choice, &seen, &mut bot).unwrap().id)
                 .collect::<Vec<String>>()
         };
         assert_eq!(played(4), played(4));
@@ -489,7 +516,7 @@ mod tests {
         let choice = asked(&[("18", "activate"), ("26", "activate")]);
 
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2).recording();
-        let taken = bot.choose_seeing(&choice, &seen).unwrap();
+        let taken = ask_private(&choice, &seen, &mut bot).unwrap();
 
         let recorded = bot.trajectory();
         let steps = recorded.borrow();
@@ -521,7 +548,7 @@ mod tests {
         let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let choice = asked(&[("18", "activate")]);
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2);
-        bot.choose_seeing(&choice, &seen).unwrap();
+        ask_private(&choice, &seen, &mut bot).unwrap();
         assert!(bot.trajectory().borrow().is_empty());
     }
 
@@ -533,7 +560,7 @@ mod tests {
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 3);
 
         for _ in 0..200 {
-            let answer = bot.choose_seeing(&choice, &seen).unwrap();
+            let answer = ask_private(&choice, &seen, &mut bot).unwrap();
             assert!(choice.ids().contains(&answer.id.as_str()));
         }
     }
@@ -544,7 +571,7 @@ mod tests {
         let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let nothing = Choice::new(PlayerId::new("a"), "pick", Vec::new());
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
-        assert!(bot.choose_seeing(&nothing, &seen).is_err());
+        assert!(ask_private(&nothing, &seen, &mut bot).is_err());
         assert!(bot.choose(&nothing).is_err());
     }
 }

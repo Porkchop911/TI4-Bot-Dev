@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::LearnedBot;
@@ -58,7 +58,7 @@ impl Decider for WatchBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         // Heads are counted here rather than from the rollout trajectory: play_with_deciders
         // supplies no trajectory handles (rollout.rs:659), so seat.trajectory is empty on this

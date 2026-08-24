@@ -38,7 +38,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_engine::opening::DEFAULT_REQUIREMENT;
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
@@ -110,10 +110,15 @@ impl Decider for Watcher {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         if choice.options.len() > 1 {
-            let vectors = explicit_choice_features(seen, choice, &choice.player);
+            let vectors = explicit_choice_features(
+                seen.observed(),
+                choice,
+                &choice.player,
+                &seen.held_secret_progress(),
+            );
             // Group identical vectors. Option counts are tiny, so the quadratic pass is fine and
             // avoids needing a hash of a whole vector.
             let mut group = vec![usize::MAX; vectors.len()];

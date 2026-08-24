@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::LearnedBot;
@@ -51,7 +51,7 @@ impl Decider for SeeBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         let imperial = choice.prompt == IMPERIAL_PROMPT;
         let mecatol = imperial
@@ -67,7 +67,7 @@ impl Decider for SeeBot {
             for id in seen.scored_by(&self.player) {
                 tally.scored.insert(id.to_string());
             }
-            let state = seen.redacted_for(&self.player);
+            let state = seen.held_state();
             if let Some(seat) = state.player(&self.player) {
                 for secret in &seat.secret_objectives {
                     tally.held.insert(secret.to_string());

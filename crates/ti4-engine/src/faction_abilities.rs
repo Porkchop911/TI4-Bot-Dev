@@ -1331,7 +1331,7 @@ mod tests {
             fn choose_seeing(
                 &mut self,
                 _choice: &crate::choice::Choice,
-                _seen: &crate::choice::Observed<'_>,
+                _seen: &crate::choice::SeatObservation<'_>,
             ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
                 Ok(crate::choice::ChoiceOption::decline())
             }

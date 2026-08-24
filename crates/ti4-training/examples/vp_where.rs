@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::inference::LearnedBot;
@@ -38,7 +38,7 @@ impl Decider for ScoreBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         let scored: BTreeSet<String> = seen
             .scored_by(&self.player)
@@ -57,7 +57,7 @@ impl Decider for ScoreBot {
         let mut slot = self.owned.borrow_mut();
         if points != slot.1 {
             slot.2 = seen
-                .redacted_for(&self.player)
+                .held_state()
                 .support_holders
                 .values()
                 .filter(|holder| *holder == &self.player)

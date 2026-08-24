@@ -29,7 +29,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed};
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Observed, SeatObservation};
 use ti4_engine::production::Spend;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::SystemId;
@@ -970,8 +970,11 @@ impl Decider for ScoredBot {
     fn choose_seeing(
         &mut self,
         choice: &Choice,
-        seen: &Observed<'_>,
+        seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
+        // `seen` derefs to the public position for the scorers below; held-secret progress is
+        // not read here — ScoredBot scores publics only (M09-021's objective facts live in the
+        // learned path).
         if choice.options.is_empty() {
             return Err(IllegalChoice::NoOptions {
                 player: choice.player.clone(),
@@ -1018,7 +1021,7 @@ pub fn unscored_kinds() -> Vec<&'static str> {
 mod tests {
     use super::*;
     use ti4_content::ContentStore;
-    use ti4_engine::choice::Observed;
+    use ti4_engine::choice::{Observed, ask_private};
     use ti4_model::content_types::POK;
     use ti4_model::id::PlayerId;
 
@@ -1100,7 +1103,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&offered, &watched(&state, &hub.galaxy))
+            ask_private(&offered, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             target.to_string()
@@ -1129,8 +1132,7 @@ mod tests {
             ],
         );
         let mut bot = ScoredBot::new(4).remembering();
-        bot.choose_seeing(&offered, &watched(&state, &hub.galaxy))
-            .unwrap();
+        ask_private(&offered, &watched(&state, &hub.galaxy), &mut bot).unwrap();
 
         assert_eq!(
             bot.decisions[0].considered,
@@ -1156,7 +1158,7 @@ mod tests {
         );
         let mut bot = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            bot.choose_seeing(&advancing, &watched(&state, &hub.galaxy))
+            ask_private(&advancing, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .kind,
             "move",
@@ -1167,7 +1169,7 @@ mod tests {
         secure_system(&mut state, &target, &player);
         let mut idle = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            idle.choose_seeing(&advancing, &watched(&state, &hub.galaxy))
+            ask_private(&advancing, &watched(&state, &hub.galaxy), &mut idle)
                 .unwrap()
                 .id,
             "decline",
@@ -1194,8 +1196,7 @@ mod tests {
         );
         let mut loader = ScoredBot::new(4).at_temperature(0.01).remembering();
         assert_eq!(
-            loader
-                .choose_seeing(&cargo, &watched(&state, &hub.galaxy))
+            ask_private(&cargo, &watched(&state, &hub.galaxy), &mut loader,)
                 .unwrap()
                 .id,
             "load|0"
@@ -1218,8 +1219,7 @@ mod tests {
         );
         let mut invader = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            invader
-                .choose_seeing(&landing, &watched(&state, &hub.galaxy))
+            ask_private(&landing, &watched(&state, &hub.galaxy), &mut invader,)
                 .unwrap()
                 .kind,
             "commit",
@@ -1229,7 +1229,7 @@ mod tests {
         ti4_engine::fixtures::put_on_planet(&mut state, &target, &planet, "infantry", &player, 2);
         let mut held = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            held.choose_seeing(&landing, &watched(&state, &hub.galaxy))
+            ask_private(&landing, &watched(&state, &hub.galaxy), &mut held,)
                 .unwrap()
                 .id,
             "decline",
@@ -1266,8 +1266,7 @@ mod tests {
 
         let mut seeing = ScoredBot::new(4).at_temperature(0.01).remembering();
         assert_eq!(
-            seeing
-                .choose_seeing(&production, &watched(&state, &hub.galaxy))
+            ask_private(&production, &watched(&state, &hub.galaxy), &mut seeing,)
                 .unwrap()
                 .id,
             "produce|carrier",
@@ -1449,7 +1448,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "small",
@@ -1489,7 +1488,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "large"
@@ -1527,7 +1526,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&bills, &watched(&state, &hub.galaxy))
+            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "overpay",
@@ -1575,7 +1574,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&research, &watched(&state, &hub.galaxy))
+            ask_private(&research, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "nm",
@@ -1605,7 +1604,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&research, &watched(&state, &hub.galaxy))
+            ask_private(&research, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "gd",
@@ -1646,7 +1645,7 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            bot.choose_seeing(&pools, &watched(&state, &hub.galaxy))
+            ask_private(&pools, &watched(&state, &hub.galaxy), &mut bot)
                 .unwrap()
                 .id,
             "strategic_tokens"
@@ -1840,9 +1839,8 @@ mod tests {
     ) -> Vec<Choice> {
         let mut offered = Vec::new();
         while let Some(choice) = window.pending_choice(state, content(), POK) {
-            let answer = bot
-                .choose_seeing(&choice, &Observed::new(state, content(), POK, None))
-                .unwrap();
+            let answer =
+                ask_private(&choice, &Observed::new(state, content(), POK, None), bot).unwrap();
             window.resolve(state, content(), POK, answer).unwrap();
             offered.push(choice);
         }

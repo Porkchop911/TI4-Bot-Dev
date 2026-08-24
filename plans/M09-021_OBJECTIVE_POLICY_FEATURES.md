@@ -2,12 +2,18 @@
 
 ## Status
 
-**Correction round applied; pending fresh independent Tier-C recheck.** Initial implementation on
+**Round-2 correction applied; pending fresh independent Tier-C recheck.** Initial implementation on
 branch `wp/m09-021-objective-policy-features` from integration point `432f20a`; the independent
-Tier-C review of `51ca544` returned *changes required* (F-M09-021-1/2/3, all HIGH). All three are
-corrected in-package on this branch: F1 replaced the arbitrary-seat accessor with a choice-bound
-one; F2 added the bare §5.1 namespace emitted on every option under every crossing mode; F3 removed
-the dimensionally invalid performance claim from the evidence.
+Tier-C review of `51ca544` returned *changes required* (F-M09-021-1/2/3, all HIGH). F2 and F3 were
+corrected in round 1 (bare §5.1 namespace on every option under every crossing mode; dimensionally
+invalid performance claim removed) and accepted as resolved by the recheck of `870a8f5`. F-M09-021-
+1 remained HIGH: the choice-bound accessor was still forgeable, because `Choice` is public. Round 2
+replaces caller convention with a type-level binding — `SeatObservation` (no public constructor,
+built only inside engine ask paths), argumentless bound-seat secret accessors, removal of every
+public `Observed` method that returns named private data for a caller-chosen seat (including
+`redacted_for`, which had the identical hole and was closed in the same round), an explicit-
+records API for offline contexts, and negative boundary tests. See the "Information boundary"
+section below and `plans/M09-021_OPEN_REVIEW_ITEMS.md` (round 2 + addendum).
 
 ## Normative sources
 
@@ -129,16 +135,32 @@ consumed, not modified.
    the full non-objective vector of a fixed fixture choice before the change and asserts it
    byte-for-byte after.
 
-### Information boundary (corrected per F-M09-021-1)
+### Information boundary (corrected per F-M09-021-1, round 2)
 
-Held-secret facts use only the acting seat's own cards, enforced **by signature**: the engine
-accessor is `held_secret_progress_for_choice(choice)` — the acting seat is derived from the
-choice's owner and there is no parameter through which an opponent could be requested (the former
-`player`-argument form was removed). A public `Observed` value therefore cannot name another
-seat's cards. Opponent secret aliases never enter any feature name; opponent redaction counts are
-M09-023's scope. Focused tests: the engine boundary test asserts owner-binding plus a negative
-opponent-absence assertion, and the policy-level test asserts that for two seats in one position,
-no seat's features contain an alias held by the other.
+Held-secret facts use only the acting seat's own cards, enforced **by type surface**:
+
+- `SeatObservation<'a>` (`ti4_engine::choice`) is a private observation bound to exactly one seat.
+  It has **no public constructor**: values exist only where engine ask paths bind them (the decider
+  was just looked up by `choice.player`). Its secret accessors — `held_secret_progress()` and
+  `held_state()` — take no arguments, so even holding a valid capability there is no call that
+  names another seat. It derefs to `Observed` for public facts.
+- No method on the public `Observed` returns named private data with any caller-controlled identity
+  argument (the former `held_secret_progress(player)`, `held_secret_progress_for_choice(choice)`,
+  and `redacted_for(viewer)` are all gone; `seat(player)` returns counts only).
+- Live play: `Decider::choose_seeing` takes `&SeatObservation<'_>`; the learned path passes
+  `seen.held_secret_progress()` explicitly into feature extraction.
+- Offline/training/diagnostic contexts (which hold full state by design) compute records via the
+documented free function `ti4_engine::choice::held_secret_progress(state, content, sources,
+galaxy, viewer)` and pass them as an explicit `held_secrets` parameter — every call site names
+the secret data its extraction uses.
+- `ask_private(choice, seen, decider)` is the public test/offline seam: it performs the identical
+engine binding internally; the capability never escapes to caller code.
+
+Opponent secret aliases never enter any feature name; opponent redaction counts are M09-023's scope.
+Focused tests: the engine boundary test binds two views from one public `Observed` and asserts each
+answers for its own seat only (records **and** full-state form, with marker assertions); a second
+test drives the offline seam through shared validation; the policy-level test asserts that for two
+seats in one position, no seat's features contain an alias held by the other.
 
 ### Zero-threshold safety
 
