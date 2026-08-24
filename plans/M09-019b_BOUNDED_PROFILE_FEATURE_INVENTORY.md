@@ -196,8 +196,8 @@ accepted until both are resolved.
 
 ## Status
 
-**Tier-D pass 2 review of `624d91c`: changes required (2026-08-24).** Semantic gates and tests pass,
-but the campaign omits the mandatory same-build variance repeat/disposition, does not bind all
-consumed/published evidence to the final integrity checks, and reports measurements from an
-uncommitted source tree. Additional M00 schema/statistics/host gaps, an incomplete inventory pin,
-and a new rustfmt delta are recorded as F-M09-019b-1..7 in the row ledger. Row 019 is not accepted.
+**Tier-D pass-2 corrections complete; fresh recheck pending (2026-08-24).** F-M09-019b-1..7 are
+implemented and the final six-report release campaign was generated from clean exact commit
+`c2fb515`. All semantic/integrity gates pass; both retained runs fail variance for each workload,
+so W1/W2/W3 are correctly `rejected_variance`. Exact statistics/hashes are in the evidence file.
+Row 019 is not accepted until a fresh independent Tier-D pass-2 recheck accepts this correction.

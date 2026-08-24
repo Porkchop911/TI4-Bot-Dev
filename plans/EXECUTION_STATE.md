@@ -3148,3 +3148,21 @@ into the M09-019 chain (or vice versa) is a milestone-integration decision, not 
 - **Next exact action:** commit only the M09-019b correction paths; verify build-source status is
   clean; assert no known competing benchmark process; run the env-gated release campaign; append
   exact retained-run statistics/hashes; request fresh independent Tier-D pass-2 recheck.
+
+## M09-019b corrected release campaign at `c2fb515` (2026-08-24)
+
+- Build-source status clean; no known competing benchmark/simulation process; operator assertion
+  set explicitly. Host audit: processor group `0`, actual affinity `FFFFFFFF`, 32 logical CPUs.
+- Release campaign **1/0**, 39.54 s; every semantic gate Pass; 10 warmups + 30 samples retained per
+  run. Published ignored directory
+  `out/profiles/campaign-c2fb51557162-20260824T121205.714237400Z` only after final integrity checks.
+- W1 r1/r2 variance 9.5738/14.6121% and 10.1595/13.8074%; W2 19.1495/70.8561% and
+  10.0880/33.9318%; W3 11.8816/18.4211% and 10.0411/26.3158%. Both runs fail for every workload;
+  all final dispositions **rejected_variance**.
+- Pool before/after `aba33c81…`; checkpoint before/after `be792a2a…`; all six reports identify full
+  commit `c2fb515571620075399305d9e18b1407c884e51e`. Canonical/full hashes and complete stats are in
+  `plans/evidence/M09-019.md`.
+- F-M09-019b-1..7 implementer-resolved. **M09-019b and parent row remain open pending fresh
+  independent Tier-D pass-2 recheck.**
+- **Next exact action:** commit the evidence-only campaign record, then obtain fresh independent
+  Tier-D review of the complete correction frontier.

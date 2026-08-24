@@ -246,3 +246,15 @@ clean; feature.rs rustfmt output contains only the two pre-existing hunks; diff-
 **Status:** implementation corrections are ready to commit. F1/F3 and the final numerical record
 are not evidentially closed until the release campaign is run from that clean correction commit.
 Afterward, a fresh independent Tier-D pass-2 recheck is still required.
+
+### Clean-commit campaign closure
+
+The final release campaign ran from clean build source at exact `c2fb515571620075399305d9e18b1407c884e51e`.
+All six reports retain 10 warmups + 30 samples, carry processor group `0`, actual affinity
+`FFFFFFFF`, and the explicit no-competitor assertion. Every semantic gate passed. Both runs failed
+variance for W1, W2, and W3, so all three final dispositions are `rejected_variance`. Pool and
+checkpoint before/after hashes are identical. The six canonical and full-file hashes plus complete
+statistics are recorded in `plans/evidence/M09-019.md`.
+
+**Implementer disposition:** F1–F7 resolved; pending fresh independent Tier-D pass-2 recheck. No
+finding is self-accepted.
