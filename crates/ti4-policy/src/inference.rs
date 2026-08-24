@@ -481,7 +481,17 @@ mod tests {
 
         let mut favoured = 0;
         for _ in 0..400 {
-            if ask_private(&choice, &seen, &mut bot).unwrap().id == "18" {
+            if ask_private(
+                &choice,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut bot,
+            )
+            .unwrap()
+            .id == "18"
+            {
                 favoured += 1;
             }
         }
@@ -496,13 +506,23 @@ mod tests {
     #[test]
     fn the_same_seed_plays_the_same_game() {
         let state = table();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
 
         let played = |seed| {
             let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), seed);
             (0..30)
-                .map(|_| ask_private(&choice, &seen, &mut bot).unwrap().id)
+                .map(|_| {
+                    ask_private(
+                        &choice,
+                        &state,
+                        ContentStore::embedded(),
+                        POK,
+                        None,
+                        &mut bot,
+                    )
+                    .unwrap()
+                    .id
+                })
                 .collect::<Vec<String>>()
         };
         assert_eq!(played(4), played(4));
@@ -516,7 +536,15 @@ mod tests {
         let choice = asked(&[("18", "activate"), ("26", "activate")]);
 
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2).recording();
-        let taken = ask_private(&choice, &seen, &mut bot).unwrap();
+        let taken = ask_private(
+            &choice,
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut bot,
+        )
+        .unwrap();
 
         let recorded = bot.trajectory();
         let steps = recorded.borrow();
@@ -545,22 +573,36 @@ mod tests {
     #[test]
     fn a_bot_that_is_not_recording_keeps_nothing() {
         let state = table();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let choice = asked(&[("18", "activate")]);
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 2);
-        ask_private(&choice, &seen, &mut bot).unwrap();
+        ask_private(
+            &choice,
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut bot,
+        )
+        .unwrap();
         assert!(bot.trajectory().borrow().is_empty());
     }
 
     #[test]
     fn it_only_ever_answers_with_an_option_it_was_offered() {
         let state = table();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 3);
 
         for _ in 0..200 {
-            let answer = ask_private(&choice, &seen, &mut bot).unwrap();
+            let answer = ask_private(
+                &choice,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut bot,
+            )
+            .unwrap();
             assert!(choice.ids().contains(&answer.id.as_str()));
         }
     }
@@ -568,10 +610,19 @@ mod tests {
     #[test]
     fn an_empty_choice_is_refused_rather_than_answered() {
         let state = table();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let nothing = Choice::new(PlayerId::new("a"), "pick", Vec::new());
         let mut bot = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
-        assert!(ask_private(&nothing, &seen, &mut bot).is_err());
+        assert!(
+            ask_private(
+                &nothing,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut bot
+            )
+            .is_err()
+        );
         assert!(bot.choose(&nothing).is_err());
     }
 }

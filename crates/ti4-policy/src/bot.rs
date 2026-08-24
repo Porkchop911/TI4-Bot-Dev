@@ -1053,13 +1053,6 @@ mod tests {
         (ti4_engine::fixtures::game(&["a", "b"]), hub)
     }
 
-    fn watched<'a>(
-        state: &'a ti4_model::state::GameState,
-        galaxy: &'a ti4_content::galaxy::Galaxy,
-    ) -> Observed<'a> {
-        Observed::new(state, ContentStore::embedded(), POK, Some(galaxy))
-    }
-
     fn secure_system(
         state: &mut ti4_model::state::GameState,
         system: &ti4_model::id::SystemId,
@@ -1103,9 +1096,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&offered, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &offered,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             target.to_string()
         );
         assert_eq!(
@@ -1132,7 +1132,15 @@ mod tests {
             ],
         );
         let mut bot = ScoredBot::new(4).remembering();
-        ask_private(&offered, &watched(&state, &hub.galaxy), &mut bot).unwrap();
+        ask_private(
+            &offered,
+            &state,
+            ContentStore::embedded(),
+            POK,
+            Some(&hub.galaxy),
+            &mut bot,
+        )
+        .unwrap();
 
         assert_eq!(
             bot.decisions[0].considered,
@@ -1158,9 +1166,16 @@ mod tests {
         );
         let mut bot = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            ask_private(&advancing, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .kind,
+            ask_private(
+                &advancing,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .kind,
             "move",
             "a carrier establishes a position at an unclaimed prize"
         );
@@ -1169,9 +1184,16 @@ mod tests {
         secure_system(&mut state, &target, &player);
         let mut idle = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            ask_private(&advancing, &watched(&state, &hub.galaxy), &mut idle)
-                .unwrap()
-                .id,
+            ask_private(
+                &advancing,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut idle
+            )
+            .unwrap()
+            .id,
             "decline",
             "an idle carrier joining an already-secured system loses to finishing movement"
         );
@@ -1196,9 +1218,16 @@ mod tests {
         );
         let mut loader = ScoredBot::new(4).at_temperature(0.01).remembering();
         assert_eq!(
-            ask_private(&cargo, &watched(&state, &hub.galaxy), &mut loader,)
-                .unwrap()
-                .id,
+            ask_private(
+                &cargo,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut loader,
+            )
+            .unwrap()
+            .id,
             "load|0"
         );
         assert!(
@@ -1219,9 +1248,16 @@ mod tests {
         );
         let mut invader = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            ask_private(&landing, &watched(&state, &hub.galaxy), &mut invader,)
-                .unwrap()
-                .kind,
+            ask_private(
+                &landing,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut invader,
+            )
+            .unwrap()
+            .kind,
             "commit",
             "an uncontrolled planet is worth committing the first ground force"
         );
@@ -1229,9 +1265,16 @@ mod tests {
         ti4_engine::fixtures::put_on_planet(&mut state, &target, &planet, "infantry", &player, 2);
         let mut held = ScoredBot::new(4).at_temperature(0.01);
         assert_eq!(
-            ask_private(&landing, &watched(&state, &hub.galaxy), &mut held,)
-                .unwrap()
-                .id,
+            ask_private(
+                &landing,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut held,
+            )
+            .unwrap()
+            .id,
             "decline",
             "a superior friendly garrison does not need another troop"
         );
@@ -1266,9 +1309,16 @@ mod tests {
 
         let mut seeing = ScoredBot::new(4).at_temperature(0.01).remembering();
         assert_eq!(
-            ask_private(&production, &watched(&state, &hub.galaxy), &mut seeing,)
-                .unwrap()
-                .id,
+            ask_private(
+                &production,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut seeing,
+            )
+            .unwrap()
+            .id,
             "produce|carrier",
             "publicly stranded troops make lift the better production"
         );
@@ -1448,9 +1498,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &bills,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "small",
             "the public Monument reserve outvalues settling an unrelated bill in one card"
         );
@@ -1488,9 +1545,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &bills,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "large"
         );
         assert!(
@@ -1526,9 +1590,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&bills, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &bills,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "overpay",
             "a revealed Trade Routes threshold protects the final public trade good"
         );
@@ -1574,9 +1645,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&research, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &research,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "nm",
             "a second propulsion card loses to starting the visible biotic path"
         );
@@ -1604,9 +1682,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&research, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &research,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "gd",
             "the public pair objective makes the second propulsion technology the next step"
         );
@@ -1645,9 +1730,16 @@ mod tests {
         let mut bot = ScoredBot::new(4).at_temperature(0.01).remembering();
 
         assert_eq!(
-            ask_private(&pools, &watched(&state, &hub.galaxy), &mut bot)
-                .unwrap()
-                .id,
+            ask_private(
+                &pools,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                Some(&hub.galaxy),
+                &mut bot
+            )
+            .unwrap()
+            .id,
             "strategic_tokens"
         );
         assert!(
@@ -1839,8 +1931,7 @@ mod tests {
     ) -> Vec<Choice> {
         let mut offered = Vec::new();
         while let Some(choice) = window.pending_choice(state, content(), POK) {
-            let answer =
-                ask_private(&choice, &Observed::new(state, content(), POK, None), bot).unwrap();
+            let answer = ask_private(&choice, state, content(), POK, None, bot).unwrap();
             window.resolve(state, content(), POK, answer).unwrap();
             offered.push(choice);
         }

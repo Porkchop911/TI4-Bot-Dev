@@ -321,3 +321,48 @@ because its caller must already possess `&GameState`.
 **Next exact action:** eliminate or authority-gate public `ask_private`, add the recursive/forged-seat
 negative regression, rerun affected gates, and request another narrow Tier-C recheck. M09-021 and
 M09-024 remain blocked.
+
+## F-M09-021-1 round 3 — authority-gated `ask_private` (implementer, 2026-08-24)
+
+The recheck is correct: public `ask_private(choice, seen, decider)` minted a `SeatObservation`
+from the caller-controlled `choice.player`, and the caller-supplied decider received that minted
+capability — so code holding only a bound/public observation could forge an opponent choice and
+read the opponent's secrets through its own decider. The "never escapes to caller code" claim was
+wrong: the decider *is* caller code.
+
+### Correction (reviewer option 2: gate by full-state possession)
+
+- `ask_private` no longer accepts `&Observed`. New signature:
+  `ask_private(choice, state: &GameState, content: &ContentStore, sources: SourceSet,
+  galaxy: Option<&Galaxy>, decider)` — it constructs the observation internally from raw state.
+  A live policy-side caller holds neither `&GameState` nor any way to extract one (all
+  `Observed`/`SeatObservation` fields are private), so the minting seam is inexpressible with
+  bound/public assets alone. This matches the model already accepted for the public full-state
+  `held_secret_progress(...)` helper: possession of complete state *is* the offline authority,
+  where hidden information does not exist because every seat's cards are readable fields.
+- All 23 test/offline call sites (engine ×2, policy bot tests ×15, policy inference tests ×6)
+  pass their full fixture state explicitly — visible cost at every site. The now-dead `watched`
+  test helper in bot.rs was removed with its last use.
+- New engine regression `a_bound_view_cannot_mint_an_opponent_capability`: an attacker holding
+  exactly {one bound view for seat a, its deref'd public `Observed`, a forged opponent-owned
+  `Choice`} is walked through every reachable call and returns no opponent data at any step; the
+  only minting entry point requires `&GameState`, which the test's attacker does not hold (the
+  test compiles without it).
+
+### Writable-path declarations (before editing)
+
+`crates/ti4-engine/src/choice.rs` (signature + docs + call sites + new regression),
+`crates/ti4-policy/src/bot.rs` and `crates/ti4-policy/src/inference.rs` (test call sites only —
+both already declared writable for this finding in round 2). Plans files as usual. No production
+behavior change beyond the seam's signature; no new dependencies.
+
+**Request:** another narrow independent Tier-C recheck of the resulting commit. M09-021 and
+M09-024 remain blocked until acceptance.
+
+**Applied (implementer, 2026-08-24):** `ask_private` now takes `(choice, &GameState, &ContentStore,
+SourceSet, Option<&Galaxy>, decider)` and constructs the observation internally; all 23 call sites
+pass full fixture state explicitly; dead `watched` helper removed; new regression
+`a_bound_view_cannot_mint_an_opponent_capability` added. Gates: workspace **1368/0**; scoped clippy
+shows only the two documented pre-existing engine warnings (`game.rs:1260`, `strategy.rs:589`);
+rustfmt clean on all touched files; `git diff --check` clean. Exact outputs in
+`plans/evidence/M09-021.md` (round-3 section). Awaiting the narrow independent Tier-C recheck.

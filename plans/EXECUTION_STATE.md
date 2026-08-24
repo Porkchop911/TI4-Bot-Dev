@@ -3488,3 +3488,27 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** M09-021 and M09-024 remain blocked. Next action is to remove or authority-gate public
   `ask_private`, add a forged-seat/recursive negative regression, rerun affected gates, and request
   another narrow independent Tier-C recheck.
+
+## M09-021 F-M09-021-1 round 3 — authority-gated `ask_private` (implementer, 2026-08-24)
+
+- **Recheck of `11cb060`: changes required.** Accepted: private `SeatObservation`, argumentless
+  accessors, authenticated live `Table::ask_seeing` binding, removal of `redacted_for(viewer)`.
+  F-M09-021-1 remained HIGH: public `ask_private(choice, seen, decider)` minted a capability from
+  the caller-controlled `choice.player`, and the caller-supplied decider received it — code with
+  only bound/public assets could forge an opponent choice and read that seat's secrets.
+- **Correction (reviewer option 2):** `ask_private` now takes `(choice, &GameState, &ContentStore,
+  SourceSet, Option<&Galaxy>, decider)` and constructs the observation internally. A live policy
+  caller holds no state handle (all observation fields private), so the mint is inexpressible with
+  bound/public assets; offline contexts holding full state may bind any owner — hidden information
+  does not exist there (same model as `held_secret_progress(...)`).
+- **Call sites:** all 23 updated to pass full fixture state explicitly (engine ×2, bot tests ×15,
+  inference tests ×6); dead `watched` helper removed; four unused `seen` locals dropped.
+- **New regression:** `a_bound_view_cannot_mint_an_opponent_capability` — attacker assets exactly
+  {bound view for a, deref'd public Observed, forged opponent choice}; every reachable call returns
+  no data about b; the only minting entry point requires `&GameState`, which the test does not hold.
+- **Gates:** workspace **1368/0** (engine 855/0 incl. new regression); scoped clippy shows only the
+  two documented pre-existing engine warnings (`game.rs:1260`, `strategy.rs:589`); rustfmt clean on
+  all touched files; `git diff --check` clean. Exact outputs in `plans/evidence/M09-021.md`.
+- **Status:** round-3 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
+  independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
+  acceptance.

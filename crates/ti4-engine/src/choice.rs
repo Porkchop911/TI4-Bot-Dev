@@ -852,21 +852,30 @@ fn held_secret_records(
 /// Drive one ask through the same private-observation binding as [`Table::ask_seeing`], without
 /// a table (no log).
 ///
-/// For tests and offline drivers. The binding is identical to live play — the decider answers for
-/// the choice's owner and sees only that seat's secrets, because the [`SeatObservation`] is bound
-/// here inside engine code and never escapes to caller code. Live play additionally authenticates
-/// the decider against its seat through the table's per-seat map; a caller of this function
-/// chooses which decider answers for which owner, which is exactly what an offline context with
-/// full state access may do.
+/// For tests and offline drivers. **Authority-gated by full-state possession** (F-M09-021-1,
+/// round 3): it takes raw `&GameState`, not an [`Observed`]. A live policy-side caller holds
+/// neither — every field of the observation types is private, so there is no way to extract a
+/// state handle from a bound view — and therefore cannot mint a capability for any seat through
+/// this seam. An offline context that does hold complete state may bind any decider to any owner,
+/// because hidden information does not exist there: every seat's cards are already readable fields
+/// of the state it possesses (the same model as [`held_secret_progress`]).
+///
+/// The binding itself is identical to live play — the decider answers for the choice's owner and
+/// sees only that seat's secrets. Live play additionally authenticates the decider against its
+/// seat through the table's per-seat map.
 ///
 /// # Errors
 /// [`IllegalChoice`] if the answer was not on offer — the same validation as the table path.
 pub fn ask_private(
     choice: &Choice,
-    seen: &Observed<'_>,
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
     decider: &mut dyn Decider,
 ) -> Result<ChoiceOption, IllegalChoice> {
-    let seat_view = SeatObservation::bind(seen, choice.player.clone());
+    let seen = Observed::new(state, content, sources, galaxy);
+    let seat_view = SeatObservation::bind(&seen, choice.player.clone());
     let answer = decider.choose_seeing(choice, &seat_view)?;
     validate(choice, answer)
 }
@@ -1758,13 +1767,20 @@ mod tests {
         // The default on `choose_seeing` is what lets every scripted test and random smoke run
         // stay ignorant of the board. If it ever stopped delegating, those would silently change.
         let state = watched();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
         let asked = three();
 
         let mut blind = FirstOption;
         assert_eq!(
             blind.choose(&asked).unwrap(),
-            ask_private(&asked, &seen, &mut blind).unwrap()
+            ask_private(
+                &asked,
+                &state,
+                ContentStore::embedded(),
+                POK,
+                None,
+                &mut blind,
+            )
+            .unwrap()
         );
     }
 
@@ -1911,7 +1927,6 @@ mod tests {
         state.player_mut(&pid("b")).unwrap().secret_objectives =
             vec![ti4_model::id::SecretObjectiveId::new("mlp")];
 
-        let seen = Observed::new(&state, content, POK, None);
         let choice = Choice::new(
             pid("a"),
             "decide",
@@ -1919,7 +1934,61 @@ mod tests {
         );
 
         let mut decider = Seeing;
-        let answer = ask_private(&choice, &seen, &mut decider).unwrap();
+        // Offline context: the test holds the full state, so it may bind any owner — and the
+        // bound view still answers for that owner only.
+        let answer = ask_private(&choice, &state, content, POK, None, &mut decider).unwrap();
         assert_eq!(answer.id, "x");
+    }
+
+    #[test]
+    fn a_bound_view_cannot_mint_an_opponent_capability() {
+        // F-M09-021-1 round 3 regression. The attacker's complete asset set is what live policy
+        // code can hold: one bound view for seat "a", the public `Observed` it derefs to, and a
+        // forged choice owned by opponent "b" (Choice is freely constructible). Walked through
+        // every reachable call, that asset set yields no data about "b":
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&pid("a")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("otf")];
+        state.player_mut(&pid("b")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("mlp")];
+
+        let seen = Observed::new(&state, content, POK, None);
+        // The attacker's assets — and nothing else. Note the test never names `state` again:
+        // it is held by the table, not by policy code.
+        let bound_a = SeatObservation::bind(&seen, pid("a"));
+        let view_a: &SeatObservation<'_> = &bound_a;
+        let public_view: &Observed<'_> = view_a.observed();
+        let forged_b_choice = Choice::new(
+            pid("b"),
+            "decide",
+            vec![ChoiceOption::labelled("y", "kind", "y")],
+        );
+
+        // 1. The bound view answers for its own seat only.
+        let cards = view_a.held_secret_progress();
+        assert!(
+            !cards.iter().any(|card| card.alias == "mlp"),
+            "the bound view named the opponent's secret"
+        );
+
+        // 2. The full-state form hides the opponent.
+        let st = view_a.held_state();
+        assert_eq!(
+            st.player(&pid("b")).unwrap().secret_objectives[0].as_str(),
+            HIDDEN,
+            "the bound state exposed the opponent's card"
+        );
+
+        // 3. The public observation exposes no private data for any seat — counts only.
+        let rival = public_view.seat(&pid("b")).expect("b is seated");
+        assert_eq!(rival.secret_objectives_held, 1, "counts stay public");
+
+        // 4. The forged choice changes nothing: no public function accepts (choice, view) and
+        //    produces a capability. `SeatObservation` has no public constructor, and the only
+        //    minting entry point — `ask_private` — requires `&GameState`, which this attacker
+        //    does not hold; this test compiles without passing it, so the attack is
+        //    inexpressible with these assets alone.
+        let _ = &forged_b_choice;
     }
 }

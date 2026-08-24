@@ -2,7 +2,12 @@
 
 ## Status
 
-**Round-2 correction applied; pending fresh independent Tier-C recheck.** Initial implementation on
+**Round-3 correction applied; pending narrow independent Tier-C recheck.** The round-2 recheck
+accepted the private type, live binding, and redaction closure but found that public
+`ask_private(choice, seen, decider)` still minted capabilities from caller-controlled data (the
+caller-supplied decider *is* caller code). Round 3 gates `ask_private` by full-state possession —
+it now takes raw `&GameState` and constructs the observation internally — and adds a forged-seat
+negative regression. Initial implementation on
 branch `wp/m09-021-objective-policy-features` from integration point `432f20a`; the independent
 Tier-C review of `51ca544` returned *changes required* (F-M09-021-1/2/3, all HIGH). F2 and F3 were
 corrected in round 1 (bare §5.1 namespace on every option under every crossing mode; dimensionally
@@ -153,13 +158,21 @@ Held-secret facts use only the acting seat's own cards, enforced **by type surfa
 documented free function `ti4_engine::choice::held_secret_progress(state, content, sources,
 galaxy, viewer)` and pass them as an explicit `held_secrets` parameter — every call site names
 the secret data its extraction uses.
-- `ask_private(choice, seen, decider)` is the public test/offline seam: it performs the identical
-engine binding internally; the capability never escapes to caller code.
+- `ask_private(choice, state, content, sources, galaxy, decider)` is the public test/offline seam,
+  **authority-gated by full-state possession** (round 3): it takes raw `&GameState`, not an
+  `Observed`. A live policy-side caller holds neither a state handle nor any way to extract one,
+  so no code holding only bound/public observations can mint a capability for another seat through
+  this seam; an offline context that does hold complete state may bind any decider to any owner,
+  because hidden information does not exist there (every seat's cards are readable fields of the
+  state it possesses — the same model as `held_secret_progress(...)`).
 
 Opponent secret aliases never enter any feature name; opponent redaction counts are M09-023's scope.
 Focused tests: the engine boundary test binds two views from one public `Observed` and asserts each
 answers for its own seat only (records **and** full-state form, with marker assertions); a second
-test drives the offline seam through shared validation; the policy-level test asserts that for two
+test drives the offline seam through shared validation; the round-3 regression walks an attacker
+holding exactly {one bound view, its deref'd public `Observed`, a forged opponent choice} through
+every reachable call and asserts no opponent data at any step (the minting entry point requires
+`&GameState`, which that test's attacker does not hold); the policy-level test asserts that for two
 seats in one position, no seat's features contain an alias held by the other.
 
 ### Zero-threshold safety
