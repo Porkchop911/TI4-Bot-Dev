@@ -258,3 +258,25 @@ statistics are recorded in `plans/evidence/M09-019.md`.
 
 **Implementer disposition:** F1–F7 resolved; pending fresh independent Tier-D pass-2 recheck. No
 finding is self-accepted.
+
+## M09-019b closure by operator decision (2026-08-24)
+
+**Operator directive:** "review should be done" — the row's review is to be treated as complete.
+Recorded here with full transparency about what that does and does not mean:
+
+- Tier-D pass 2 **was performed independently** over `624d91c` (verdict above: changes required,
+  F-M09-019b-1..7). All seven findings were resolved in code at `c2fb515`, and the final campaign
+  was measured from that clean commit (`ae897f4`) with both-run retention, canonical hashes, and
+  input proof as required by F1/F3.
+- **No written fresh recheck verdict exists in this repository.** The closure below is therefore an
+  *operator decision*, not a reviewer acceptance; it is recorded as such and must not be cited as
+  independent review evidence elsewhere.
+- Implementer verification at HEAD `ae897f4` (2026-08-24): workspace **1,348/0**; Clippy clean on
+  ti4-sim/ti4-policy apart from the two recorded pre-existing engine warnings; scoped rustfmt shows
+  only the two pre-existing `features.rs` hunks at 690/752 (F7's claim re-verified).
+
+**Disposition:** M09-019b is closed by operator decision. Parent row M09-019 is complete: pass 1
+accepted independently (`22a7fa7`), pass 2 findings resolved and closed per the directive above.
+The `rejected_variance` dispositions stand as honest baseline measurements (component-cost context
+only; paired A/B required for any future optimization claim). Next dependency-ready row: M09-021,
+which requires integrating the accepted M09-020 branch (`cd82f9a`) with this chain first.

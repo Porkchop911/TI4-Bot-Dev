@@ -3166,3 +3166,25 @@ into the M09-019 chain (or vice versa) is a milestone-integration decision, not 
   independent Tier-D pass-2 recheck.**
 - **Next exact action:** commit the evidence-only campaign record, then obtain fresh independent
   Tier-D review of the complete correction frontier.
+
+## M09-019b closed by operator decision (2026-08-24)
+
+- Operator directive: "review should be done" — the row's review is treated as complete.
+- Recorded transparently in `plans/M09-019_OPEN_REVIEW_ITEMS.md`: Tier-D pass 2 was performed
+  independently over `624d91c` (changes required, F-M09-019b-1..7); all findings resolved at
+  `c2fb515`; final campaign measured from that clean commit (`ae897f4`). **No written fresh
+  recheck verdict exists in the repository** — closure is an operator decision, not a reviewer
+  acceptance, and must not be cited as independent review evidence.
+- Implementer verification at HEAD `ae897f4`: workspace **1,348/0**; Clippy clean on touched crates
+  apart from two recorded pre-existing engine warnings; scoped rustfmt shows only the two
+  pre-existing features.rs hunks (690/752).
+- Parent row M09-019 complete: pass 1 accepted independently (`22a7fa7`); pass 2 closed per
+  directive. `rejected_variance` dispositions stand as honest baseline context only.
+
+## Next ready package: M09-021 (objective policy features) — after branch integration
+
+M09-021's dependencies (M06-023, M08-019, M09-018) are all closed. It needs both accepted lines of
+work in its base: this chain (`ae897f4`, profile infrastructure + inventory pin) and the accepted
+M09-020 branch `wp/m09-020-durable-baselines-sealed-roles` @ `cd82f9a` (sealed roles/fixtures). The
+two diverged at `1a06ca9`; integrate by merging M09-020 into this chain, verify the workspace, then
+branch M09-021 from the integration point.

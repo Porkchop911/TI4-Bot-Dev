@@ -196,8 +196,11 @@ accepted until both are resolved.
 
 ## Status
 
-**Tier-D pass-2 corrections complete; fresh recheck pending (2026-08-24).** F-M09-019b-1..7 are
-implemented and the final six-report release campaign was generated from clean exact commit
-`c2fb515`. All semantic/integrity gates pass; both retained runs fail variance for each workload,
-so W1/W2/W3 are correctly `rejected_variance`. Exact statistics/hashes are in the evidence file.
-Row 019 is not accepted until a fresh independent Tier-D pass-2 recheck accepts this correction.
+**Closed by operator decision (2026-08-24).** F-M09-019b-1..7 are implemented and the final
+six-report release campaign was generated from clean exact commit `c2fb515` (`ae897f4`). All
+semantic/integrity gates pass; both retained runs fail variance for each workload, so W1/W2/W3 are
+correctly `rejected_variance`. Exact statistics/hashes are in the evidence file. Tier-D pass 2 was
+performed independently (changes required); no written fresh recheck verdict exists in the
+repository — per operator directive the row's review is treated as complete and this package is
+closed on that basis, recorded as an operator decision rather than a reviewer acceptance (see
+`plans/M09-019_OPEN_REVIEW_ITEMS.md`).
