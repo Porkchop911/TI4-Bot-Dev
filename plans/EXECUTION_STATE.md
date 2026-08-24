@@ -3061,3 +3061,17 @@ Files to read first after compaction:
   (`panel.json` `c9478867…`, checkpoint `be792a2a…`, pool `aba33c81…`).
 - **Next exact action:** commit the scoped correction and request a fresh independent Tier-D pass-1
   recheck. M09-019b remains pending until M09-019a acceptance.
+
+## M09-019a fresh Tier-D pass-1 recheck of `1a06ca9` (2026-08-24) — ACCEPTED
+
+- F-M09-019a-1/2 are closed: checkpoint identity and deserialization use the same bytes; empty and
+  failed panels cannot publish success, and failure detail retains seed/reason.
+- Independent gates: baseline **4/0**; ti4-sim **36/0**, doc tests **0/0**; ti4-sim Clippy clean
+  apart from two recorded pre-existing engine warnings; scoped rustfmt and commit diff-check clean.
+- Real panel reproduced 30 games, 0 failed, 0 completed, 33,825 decisions and all recorded VP
+  means. Output remains byte-identical (`c9478867…`); validation pool `aba33c81…` and checkpoint
+  `be792a2a…` remain unchanged.
+- No new actionable finding. O-M09-019a-1/2 accepted; O-M09-019a-3 remains a LOW durable-fixture
+  gap assigned to M09-020 and does not block this child.
+- **Next ready package:** M09-019b (bounded profile + raw samples + feature inventory), followed by
+  the row's required Tier-D pass 2. M09-020 independently remains changes-required on its branch.

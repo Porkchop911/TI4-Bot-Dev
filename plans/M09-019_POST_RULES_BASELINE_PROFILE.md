@@ -2,18 +2,13 @@
 
 ## Status
 
-**Independent Tier-D review 1: changes required (2026-08-23, reviewed tip `7ccae2e`).** The named
-artifacts and 30-game output independently reproduce exactly, but the checkpoint manifest checksum
-is not enforced and failed games still allow `run_panel`/the example to return success and write a
-baseline. Resolve F-M09-019a-1/2 in `plans/M09-019_OPEN_REVIEW_ITEMS.md` and request a fresh pass-1
-recheck before M09-019b.
+**M09-019a accepted by fresh Tier-D pass-1 recheck (2026-08-24, reviewed tip `1a06ca9`).** Both
+findings from the original `7ccae2e` review are resolved: checkpoint identity is verified against
+the same bytes deserialized, and empty/failed panels cannot publish success. Focused **4/0**,
+ti4-sim **36/0**, lint/format/diff clean, and the real panel remains byte-identical. M09-019b is
+now dependency-ready and retains the row's required Tier-D pass 2.
 
-**Pass-1 findings resolved (2026-08-23); fresh Tier-D recheck pending.** The exact checkpoint bytes
-are now manifest-verified before deserialization; empty panels and any failed game are rejected
-with seed/reason detail before output can be written. Focused **4/0**, ti4-sim **36/0**, lint/format
-clean, and the real panel remains byte-identical. See the correction round in the ledger/evidence.
-
-**M09-019a complete 2026-08-23, pending independent Tier-D frontier review (first of two).**
+**M09-019a complete and accepted.**
 Base commit `9a83223` (M09-018 accepted). Branch `wp/m09-019-post-rules-baseline-profile`. Split
 into M09-019a and M09-019b **before implementation** per AGENTS.md; the parent acceptance
 criterion is preserved across both children.

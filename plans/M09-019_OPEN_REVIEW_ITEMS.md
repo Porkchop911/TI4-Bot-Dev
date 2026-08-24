@@ -31,8 +31,8 @@ committed test can verify them without depending on gitignored local data.
 
 ## Status
 
-M09-019a: implementation complete, **pending independent Tier-D frontier review** (first of two).
-No findings yet; observations above are recorded for the reviewer's disposition.
+M09-019a: **accepted by fresh independent Tier-D pass-1 recheck of `1a06ca9` on 2026-08-24.**
+M09-019b is dependency-ready and retains the row's second Tier-D review pass.
 
 ---
 
@@ -108,3 +108,24 @@ this branch until M09-019a is accepted.
 
 **Status: both Tier-D pass-1 findings resolved; requesting a fresh independent Tier-D recheck.**
 M09-019b remains pending until that acceptance.
+
+---
+
+## Fresh Tier-D pass-1 recheck of `1a06ca9` (Codex frontier, 2026-08-24)
+
+**Verdict: ACCEPTED.** F-M09-019a-1 and F-M09-019a-2 are resolved. The checkpoint digest is
+compared with the manifest prefix before deserializing that same immutable byte buffer. Empty
+panels return `EmptyPanel` before artifact access. Every collected `GameResult.error` is converted
+to `GameFailures` before an accepted report reaches the example's write path, retaining the
+failing seed and reason. No new actionable finding was identified in the correction diff.
+
+Independent gates: baseline tests **4/0**; ti4-sim **36/0**, doc tests **0/0**; ti4-sim Clippy has
+no package warning (only the two recorded pre-existing engine warnings); scoped rustfmt and commit
+diff-check clean. The real release panel reproduced 30 games, 0 failed, 0 completed, 33,825
+decisions and the six recorded VP means. `panel.json` remains byte-identical at sha256
+`c94788677d73de9ee5359f0954a258ba2dea4875938a0161bc5f0b3f9f06cd4e`; input hashes remain
+validation pool `aba33c81…` and checkpoint `be792a2a…`.
+
+O-M09-019a-1/2 are accepted as measurements/design choices. O-M09-019a-3 remains a recorded LOW
+gap owned by M09-020's durable-fixture work, not a blocker for M09-019a. M09-019b is now
+dependency-ready; its completion still requires the row's Tier-D pass 2.
