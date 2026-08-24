@@ -689,13 +689,25 @@ impl<'a> Observed<'a> {
             .collect()
     }
 
-    /// Exact progress for the secrets this seat holds, answered only for the seat asking.
+    /// Exact progress for the secrets held by the seat this choice belongs to — and only that
+    /// seat's.
     ///
-    /// The same boundary as [`Observed::scoreable_secret`]: a seat's own cards are its to read,
-    /// and no other seat's holdings ever reach these records. Occurrence-based secrets have no
-    /// position progress representation and are omitted rather than zero-filled.
+    /// The acting seat is derived from [`Choice::player`]; there is no parameter through which an
+    /// opponent could be requested, so a public [`Observed`] value cannot name another seat's
+    /// cards. That is the hidden-information boundary enforced by signature rather than caller
+    /// convention: in live play the only choices that exist are those asked of their owners, so
+    /// extracting for one can read nothing but its own secrets. (The former `player`-argument
+    /// form was removed in M09-021's F-M09-021-1 correction because it let one public view
+    /// request any seat.)
+    ///
+    /// Occurrence-based secrets have no position progress representation and are omitted rather
+    /// than zero-filled.
     #[must_use]
-    pub fn held_secret_progress(&self, player: &PlayerId) -> Vec<crate::objectives::CardProgress> {
+    pub fn held_secret_progress_for_choice(
+        &self,
+        choice: &Choice,
+    ) -> Vec<crate::objectives::CardProgress> {
+        let player = &choice.player;
         let Some(seat) = self.state.players.iter().find(|seat| &seat.id == player) else {
             return Vec::new();
         };
@@ -1695,21 +1707,36 @@ mod tests {
             assert_eq!(cards[0].alias, "outer_rim");
         }
 
-        // Secrets: each seat sees exactly its own cards.
-        let a_cards = seen_a.held_secret_progress(&pid("a"));
+        // Secrets: the API is bound to the choice's own owner — there is no seat argument an
+        // opponent could be requested through. Each seat's decision sees exactly its own cards.
+        let choice_a = Choice::new(
+            pid("a"),
+            "decide",
+            vec![ChoiceOption::labelled("x", "kind", "x")],
+        );
+        let choice_b = Choice::new(
+            pid("b"),
+            "decide",
+            vec![ChoiceOption::labelled("y", "kind", "y")],
+        );
+
+        // One public `Observed` value answers for whichever seat owns the choice it is given —
+        // and only that seat. There is no signature left to request an arbitrary seat.
+        let a_cards = seen_a.held_secret_progress_for_choice(&choice_a);
         assert_eq!(a_cards.len(), 1);
         assert_eq!(a_cards[0].alias, "otf");
 
-        let b_cards = seen_b.held_secret_progress(&pid("b"));
+        let b_cards = seen_a.held_secret_progress_for_choice(&choice_b);
         assert_eq!(b_cards.len(), 1);
         assert_eq!(b_cards[0].alias, "mlp");
 
-        // Cross-seat access through the same observed view is still scoped by the seat argument.
-        let a_sees_b = seen_a.held_secret_progress(&pid("b"));
-        assert_eq!(a_sees_b.len(), 1);
-        assert_eq!(
-            a_sees_b[0].alias, "mlp",
-            "the accessor follows its seat argument"
+        // Negative boundary: answering through a's choice never names b's card. The old API
+        // (`held_secret_progress(player)`) let one public `Observed` value request any seat;
+        // that signature no longer exists — the owner is derived from the choice itself, so an
+        // opponent's cards are unrequestable through a public observation.
+        assert!(
+            !a_cards.iter().any(|card| card.alias == "mlp"),
+            "an opponent's secret alias reached the acting seat's view"
         );
     }
 }

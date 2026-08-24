@@ -2,8 +2,12 @@
 
 ## Status
 
-**In progress.** Implementation on branch `wp/m09-021-objective-policy-features` from integration
-point `432f20a`.
+**Correction round applied; pending fresh independent Tier-C recheck.** Initial implementation on
+branch `wp/m09-021-objective-policy-features` from integration point `432f20a`; the independent
+Tier-C review of `51ca544` returned *changes required* (F-M09-021-1/2/3, all HIGH). All three are
+corrected in-package on this branch: F1 replaced the arbitrary-seat accessor with a choice-bound
+one; F2 added the bare §5.1 namespace emitted on every option under every crossing mode; F3 removed
+the dimensionally invalid performance claim from the evidence.
 
 ## Normative sources
 
@@ -104,24 +108,37 @@ consumed, not modified.
    - **Max is applied before the vector is constructed**; no duplicate names rely on additive
      merge (§5.1 aggregation rule).
 
-5. **Crossed emission** — objective facts are choice-invariant, so per the accepted `StateCross`
-   architecture they reach a head only crossed: `state-kind:<kind>:<fact>` under `ByKind`,
-   `state-option:<option_id>:<fact>` under `ByOption`, inert under `None` (exactly as seat facts
-   already behave). MLP §5.1's bare names are preserved verbatim as the fact-name portion of the
-   crossed name; this is recorded as an architectural reconciliation, not a deviation — uncrossed
-   emission would be mathematically inert in every linear head and the package would deliver
-   nothing.
+5. **Dual-namespace emission (corrected per F-M09-021-2)** — objective facts are emitted in two
+   disjoint namespaces:
+   - **Bare** — MLP §5.1's names verbatim (`objective-progress:<family>`, `objective-met:<alias>`,
+     …), on **every option under every crossing mode**, including `StateCross::None`. This is the
+     nonlinear MLP input contract (§4.1/§5.1): a per-option trunk can let an option-invariant state
+     fact interact with option facts, so they must be present even where no linear cross exists.
+   - **Crossed** — `state-kind:<kind>:<fact>` under `ByKind`, `state-option:<option_id>:<fact>`
+     under `ByOption` (absent under `None`), the linear-schema delivery path: a linear softmax
+     cannot see an option-invariant name, so crossed copies are how these facts reach existing and
+     future linear heads.
+   The namespaces are disjoint by construction (bare names start with `objective-`; crossed ones
+   carry the `state-kind:`/`state-option:` prefix). A focused test proves bare need/progress/met/
+   stage facts survive a `StateCross::None` choice and stay option-order deterministic. The five
+   bare families are added to the closed explicit inventory (a reviewed extension; every legacy
+   name is unchanged).
 
-6. **Legacy subvector unchanged** — all new names contain `:objective-`; no existing feature name
-   or value is touched. A pinning test records the full non-objective vector of a fixed fixture
-   choice before the change and asserts it byte-for-byte after.
+6. **Legacy subvector unchanged** — no existing feature name or value is touched: new names either
+   start with `objective-` (bare) or contain `:objective-` (crossed), and a pinning test records
+   the full non-objective vector of a fixed fixture choice before the change and asserts it
+   byte-for-byte after.
 
-### Information boundary
+### Information boundary (corrected per F-M09-021-1)
 
-Held-secret facts use only the acting seat's own cards (accessor enforces this). Opponent secret
-aliases never enter any feature name; opponent redaction counts are M09-023's scope. A focused
-test asserts that for two seats in one position, no seat's features contain an alias held by the
-other.
+Held-secret facts use only the acting seat's own cards, enforced **by signature**: the engine
+accessor is `held_secret_progress_for_choice(choice)` — the acting seat is derived from the
+choice's owner and there is no parameter through which an opponent could be requested (the former
+`player`-argument form was removed). A public `Observed` value therefore cannot name another
+seat's cards. Opponent secret aliases never enter any feature name; opponent redaction counts are
+M09-023's scope. Focused tests: the engine boundary test asserts owner-binding plus a negative
+opponent-absence assertion, and the policy-level test asserts that for two seats in one position,
+no seat's features contain an alias held by the other.
 
 ### Zero-threshold safety
 

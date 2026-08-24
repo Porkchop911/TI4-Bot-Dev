@@ -71,3 +71,56 @@ dispositions.
 **Next exact action:** resolve F1–F3, rerun focused/affected/workspace gates, correct spec/evidence,
 then request a fresh independent Tier-C recheck. Do not close M09-021 or begin a dependent package
 on the basis of `51ca544`.
+
+## F1–F3 correction round (implementer, 2026-08-24)
+
+All three findings resolved in-package on `wp/m09-021-objective-policy-features`, within the
+package's originally declared writable paths (`choice.rs`, `features.rs`, plans files). No new
+writable path was needed.
+
+### F-M09-021-1 — resolved (typed boundary by signature)
+
+`Observed::held_secret_progress(player)` is **removed**. Its replacement,
+`Observed::held_secret_progress_for_choice(choice)`, derives the acting seat from `choice.player`;
+there is no parameter through which an opponent could be requested, so a public `Observed` value
+cannot name another seat's cards. The feature path (`features.rs`) now calls the choice-bound form;
+it was the only production caller.
+
+- Engine test rewritten: owner-binding assertions for both seats **through one public `Observed`
+  value**, plus an explicit negative assertion that answering through a's choice never names b's
+  card, with a comment recording that the arbitrary-seat signature no longer exists.
+- Policy-level end-to-end redaction test retained and re-pointed at the new accessor: for two seats
+  in one position (met channel provably active via affordable `trade_routes`), no seat's features
+  contain an alias held by the other.
+
+### F-M09-021-2 — resolved (bare namespace on every option)
+
+Objective facts are now emitted in **two disjoint namespaces**:
+
+- **Bare** — MLP §5.1 names verbatim, on every option under every crossing mode including
+  `StateCross::None` (the nonlinear per-option trunk input contract).
+- **Crossed** — unchanged from the initial implementation (`state-kind:`/`state-option:` under
+  `ByKind`/`ByOption`, absent under `None`), remaining the linear-schema delivery path.
+
+The five bare families (`objective-progress`, `objective-met`, `objective-need`,
+`objective-count`, `objective-stage`) were added to `EXPLICIT_FIXED_FAMILIES` (22 → 27) — a
+reviewed extension of the closed grammar; every legacy name is unchanged, and M09-019b's pinned
+inventory test was updated with that rationale. New focused test
+`bare_objective_facts_survive_state_cross_none`: a uniform-kind choice with composite ids (asserted
+to resolve to `StateCross::None`) proves all four fact classes survive on every option under their
+bare names, that no crossed copy exists under `None`, and that the bare set is option-order
+deterministic.
+
+### F-M09-021-3 — resolved (records-only)
+
+The "negligible at game scale / ~0.3%" claim is removed from `plans/evidence/M09-021.md`. The
+replacement makes only dimensionally valid statements: W2 = 145–152 µs **per extraction** on this
+feature-heavy fixture versus M09-019b's W1 normalizer ≈42 µs **per decision**; on this fixture the
+objective-fact construction alone costs several times the engine per-decision cost, and no
+whole-game extrapolation is made without a measured live choice distribution. The raw measurements
+and variance dispositions are preserved unchanged.
+
+### Gates after correction (exact results in `plans/evidence/M09-021.md` addendum)
+
+Pending: fresh independent Tier-C recheck of the corrected commit. M09-021 remains open until then;
+no dependent package may start on the basis of this branch's pre-correction commits.

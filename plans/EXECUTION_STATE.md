@@ -3398,3 +3398,25 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   delivery test exists.
 - **Status:** M09-021 remains open. Next action is F1–F3 correction, affected/workspace gates,
   corrected evidence, and a fresh independent Tier-C recheck.
+
+## M09-021 F1–F3 correction round (implementer, 2026-08-24)
+
+- **F-M09-021-1 resolved:** `Observed::held_secret_progress(player)` removed; replaced by
+  `held_secret_progress_for_choice(choice)` — acting seat derived from the choice's owner, no
+  parameter through which an opponent could be requested. Engine test rewritten (owner-binding +
+  negative opponent-absence through one public view); policy redaction test retained end-to-end.
+- **F-M09-021-2 resolved:** dual-namespace emission — bare §5.1 names on every option under every
+  crossing mode (including `StateCross::None`) plus unchanged crossed copies for linear delivery;
+  five bare families added to the closed explicit inventory (22 → 27, M09-019b pin updated with
+  rationale); new focused test proves survival + disjointness + option-order determinism under a
+  `StateCross::None` choice.
+- **F-M09-021-3 resolved:** records-only — invalid ~0.3% claim removed from evidence; only
+  dimensionally valid statements remain (W2 145–152 µs/extraction vs W1 ≈42 µs/decision); raw
+  measurements preserved.
+- Gates: workspace **1366/0**; clippy clean except the three pre-existing engine warnings in
+  untouched files; fmt clean on both package files (remaining diffs are pre-existing drift in
+  out-of-scope engine files). Pinned baseline fixture unchanged.
+- Writable paths used: `crates/ti4-engine/src/choice.rs`, `crates/ti4-policy/src/features.rs`,
+  plans files — all within the package's original declarations; no extension needed.
+- **Status:** correction round complete on `wp/m09-021-objective-policy-features`; pending fresh
+  independent Tier-C recheck of the corrected commit. M09-021 remains open until that verdict.

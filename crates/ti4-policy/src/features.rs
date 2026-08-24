@@ -407,7 +407,7 @@ pub fn explicit_option_features(
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, player),
+        objective_facts: objective_facts(seen, choice),
     };
     explicit_option_features_with(
         seen,
@@ -433,20 +433,22 @@ struct ChoiceContext<'a> {
 /// Objective progress facts for the acting seat, computed once per choice.
 ///
 /// Built from the engine's scoring sources of truth through [`Observed::revealed_objective_
-/// progress`] and [`Observed::held_secret_progress`], aggregated per MLP plan section 5.1:
-/// clipped `min(1, have / threshold)` ratios, **max applied before any vector is constructed**
-/// (never relying on the additive merge), threshold-keyed slots, need markers, family counts,
-/// and stage counts over revealed publics. The gap feature is deliberately absent: it is linear
-/// in what is already there.
+/// progress`] and [`Observed::held_secret_progress_for_choice`], aggregated per MLP plan section
+/// 5.1: clipped `min(1, have / threshold)` ratios, **max applied before any vector is
+/// constructed** (never relying on the additive merge), threshold-keyed slots, need markers,
+/// family counts, and stage counts over revealed publics. The gap feature is deliberately absent:
+/// it is linear in what is already there.
 ///
-/// Names carry the `":objective-"` marker so the legacy subvector stays identifiable for the
-/// pinning test. Emission crosses them with the option kind or id like every other choice-level
-/// fact, because a linear softmax cannot see an option-invariant name; under `StateCross::None`
-/// they are inert exactly as seat facts already are.
+/// The acting seat comes from the choice itself — the secret boundary is enforced by the engine
+/// accessor's signature (F-M09-021-1), not by this caller passing the right id. Emission uses two
+/// disjoint namespaces: the bare section 5.1 names on every option under every crossing mode (the
+/// nonlinear MLP input contract, where an option-invariant fact can interact with option facts),
+/// and crossed copies under `state-kind:`/`state-option:` for linear-schema delivery.
 #[must_use]
-fn objective_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+fn objective_facts(seen: &Observed<'_>, choice: &Choice) -> Vec<(String, f64)> {
+    let player = &choice.player;
     let publics = seen.revealed_objective_progress(player);
-    let secrets = seen.held_secret_progress(player);
+    let secrets = seen.held_secret_progress_for_choice(choice);
 
     // Stage counts over revealed publics only; secrets have no printed stage.
     let mut stage_counts = [0usize; 3];
@@ -582,7 +584,7 @@ pub fn explicit_choice_features(
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, player),
+        objective_facts: objective_facts(seen, choice),
     };
     let cross = state_cross(choice);
     choice
@@ -832,6 +834,16 @@ fn explicit_option_features_with(
             }
             Value::Null | Value::Object(_) => {}
         }
+    }
+
+    // MLP plan section 5.1's bare namespace: emitted on every option under every crossing mode,
+    // so a nonlinear per-option trunk can interact with these facts even where no linear cross
+    // exists (StateCross::None). A linear head sees them as an option-invariant constant and
+    // ignores them; the crossed copies below remain the linear delivery path. The namespaces are
+    // disjoint by construction: bare names start with "objective-", crossed ones carry the
+    // state-kind:/state-option: prefix.
+    for (name, value) in &context.objective_facts {
+        add_named(&mut features, format_args!("{name}"), *value);
     }
 
     match cross {
@@ -1529,7 +1541,10 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 
 /// Closed grammar of fixed explicit feature families. Structured unit families additionally use
 /// `<canonical-kind>-unit:`; that bounded suffix rule is checked by [`explicit_family_is_known`].
-const EXPLICIT_FIXED_FAMILIES: [&str; 22] = [
+/// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
+/// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
+/// vocabulary by construction.
+const EXPLICIT_FIXED_FAMILIES: [&str; 27] = [
     "kind",
     "option",
     "prompt-kind",
@@ -1552,6 +1567,11 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 22] = [
     "destination",
     "invasion",
     "landing",
+    "objective-progress",
+    "objective-met",
+    "objective-need",
+    "objective-count",
+    "objective-stage",
 ];
 
 fn explicit_family_is_known(name: &str) -> bool {
@@ -2051,7 +2071,9 @@ mod tests {
         );
 
         // 3. The explicit vocabulary is closed: fixed factual families plus bounded
-        //    `<canonical-kind>-unit` structured families.
+        //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
+        //    with the five bare objective families — a reviewed extension of the closed grammar,
+        //    not drift: every legacy name above is unchanged.
         assert_eq!(
             EXPLICIT_FIXED_FAMILIES,
             [
@@ -2077,6 +2099,11 @@ mod tests {
                 "destination",
                 "invasion",
                 "landing",
+                "objective-progress",
+                "objective-met",
+                "objective-need",
+                "objective-count",
+                "objective-stage",
             ]
         );
 
@@ -2178,7 +2205,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
-            objective_facts: objective_facts(&seen, &player),
+            objective_facts: objective_facts(&seen, &choice),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -2292,7 +2319,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
-            objective_facts: objective_facts(&seen, &player),
+            objective_facts: objective_facts(&seen, &choice),
         };
         let full = explicit_option_features_with(
             &seen,
@@ -2372,10 +2399,14 @@ mod tests {
         ]
     }
 
-    /// Reconstruct an objective fact name from its crossed form. Crossed names are
-    /// `state-kind:<kind>:objective-<rest>` or `state-option:<id>:objective-<rest>`; the marker
-    /// carries a trailing dash, so strip `:objective-` and reattach `objective-`.
+    /// The objective fact name inside a full feature name, in either namespace: the bare MLP
+    /// section 5.1 form (`objective-progress:same_trait`) or the crossed linear-schema form
+    /// (`state-kind:<kind>:objective-<rest>` / `state-option:<id>:objective-<rest>`, where the
+    /// marker carries a trailing dash, so strip `:objective-` and reattach `objective-`).
     fn objective_fact_name(full: &str) -> Option<String> {
+        if let Some(rest) = full.strip_prefix("objective-") {
+            return Some(format!("objective-{rest}"));
+        }
         full.rsplit_once(":objective-")
             .map(|(_, rest)| format!("objective-{rest}"))
     }
@@ -2412,7 +2443,9 @@ mod tests {
                 let mut got: BTreeMap<String, f64> = vector
                     .iter()
                     .map(|(key, value)| (crate::intern::name_of(*key), *value))
-                    .filter(|(name, _)| !name.contains(":objective-"))
+                    .filter(|(name, _)| {
+                        !(name.starts_with("objective-") || name.contains(":objective-"))
+                    })
                     .collect();
                 let mut missing = Vec::new();
                 for (name, value) in &want {
@@ -2437,6 +2470,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "differential table: one assertion per fact class and aggregation rule"
+    )]
     #[test]
     fn objective_facts_come_from_the_scoring_sources_of_truth() {
         // Differential against the engine's own progress APIs: every emitted fact must equal what
@@ -2447,9 +2484,11 @@ mod tests {
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
         let player = PlayerId::new("a");
 
-        // The engine-side records the facts must be built from.
+        // The engine-side records the facts must be built from. The secret accessor is bound to
+        // the choice's owner (F-M09-021-1), so a choice for this seat is what authorises it.
+        let choices = m09_021_choices(&player);
         let publics = ti4_engine::choice::Observed::revealed_objective_progress(&seen, &player);
-        let secrets = seen.held_secret_progress(&player);
+        let secrets = seen.held_secret_progress_for_choice(&choices[0]);
         assert!(!publics.is_empty(), "the fixture reveals four publics");
         assert_eq!(secrets.len(), 2, "seat a holds two counting secrets");
 
@@ -2491,7 +2530,6 @@ mod tests {
         }
 
         // The facts as the extractor emits them, read back through one option of each crossing mode.
-        let choices = m09_021_choices(&player);
         let kind_vectors = explicit_choice_features(&seen, &choices[0], &player);
         let option_vectors = explicit_choice_features(&seen, &choices[1], &player);
         let by_kind_vector = &kind_vectors[0];
@@ -2675,18 +2713,11 @@ mod tests {
         }
         let seen = Observed::new(&state, content, POK, Some(&galaxy));
 
-        // The accessor boundary: each seat's records are exactly its own cards.
+        // The accessor boundary: each seat's records are exactly its own cards, and the API is
+        // bound to the choice's owner (F-M09-021-1) — there is no signature left that could
+        // request an opponent's cards.
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
-        let aliases_of = |seat: &PlayerId| -> Vec<String> {
-            seen.held_secret_progress(seat)
-                .into_iter()
-                .map(|card| card.alias)
-                .collect()
-        };
-        assert_eq!(aliases_of(&a), vec!["otf".to_owned(), "mlp".to_owned()]);
-        assert_eq!(aliases_of(&b), vec!["eap".to_owned()]);
-
         let choice_for = |seat: &PlayerId| {
             Choice::new(
                 seat.clone(),
@@ -2694,6 +2725,14 @@ mod tests {
                 vec![ChoiceOption::labelled("no", "strategy", "decline")],
             )
         };
+        let aliases_of = |seat: &PlayerId| -> Vec<String> {
+            seen.held_secret_progress_for_choice(&choice_for(seat))
+                .into_iter()
+                .map(|card| card.alias)
+                .collect()
+        };
+        assert_eq!(aliases_of(&a), vec!["otf".to_owned(), "mlp".to_owned()]);
+        assert_eq!(aliases_of(&b), vec!["eap".to_owned()]);
 
         let names_for = |seat: &PlayerId| -> Vec<String> {
             explicit_choice_features(&seen, &choice_for(seat), seat)[0]
@@ -2727,6 +2766,96 @@ mod tests {
                 .any(|name| name.contains("otf") || name.contains("mlp")),
             "a's secrets leaked into b's features"
         );
+    }
+
+    #[test]
+    fn bare_objective_facts_survive_state_cross_none() {
+        // F-M09-021-2: the MLP plan section 5.1 facts are input to a nonlinear per-option trunk,
+        // where an option-invariant fact can interact with option facts — so they must be present
+        // on every option even when no linear cross exists. This choice is uniform-kind with
+        // composite ids, which resolves to StateCross::None: the crossed namespaces are absent by
+        // construction, and only the bare namespace carries the objective input.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, galaxy) = m09_021_fixture();
+        // Make trade_routes affordable so the met-flag channel is provably active.
+        state.player_mut(&PlayerId::new("a")).unwrap().trade_goods = 5;
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+
+        let choice = Choice::new(
+            player.clone(),
+            "produce a unit",
+            vec![
+                ChoiceOption::labelled("produce|fighter@18", "production", "build a fighter"),
+                ChoiceOption::labelled("produce|scout@19", "production", "build a scout"),
+            ],
+        );
+        assert_eq!(
+            state_cross(&choice),
+            StateCross::None,
+            "the fixture must be a None choice"
+        );
+
+        let expected = objective_facts(&seen, &choice);
+        // Non-vacuity: all four fact classes are present in this position.
+        for class in [
+            "objective-need:",
+            "objective-progress:",
+            "objective-met:",
+            "objective-stage:",
+        ] {
+            assert!(
+                expected.iter().any(|(name, _)| name.starts_with(class)),
+                "{class} is missing from the fixture position"
+            );
+        }
+
+        let bare_of = |vector: &FeatureVector| -> BTreeMap<String, f64> {
+            vector
+                .iter()
+                .map(|(key, value)| (crate::intern::name_of(*key).clone(), *value))
+                .filter_map(|(name, value)| {
+                    name.strip_prefix("objective-")
+                        .map(|rest| (format!("objective-{rest}"), value))
+                })
+                .collect()
+        };
+
+        let vectors = explicit_choice_features(&seen, &choice, &player);
+        assert_eq!(vectors.len(), 2);
+        for vector in &vectors {
+            // Every fact the extractor computes survives on this option under its bare name.
+            let bare = bare_of(vector);
+            for (name, value) in &expected {
+                assert!(
+                    (bare.get(name).copied().unwrap_or(-1.0) - value).abs() < 1e-9,
+                    "{name} did not survive to a StateCross::None option"
+                );
+            }
+            // And no crossed copy exists under None: the two namespaces are disjoint.
+            let names: Vec<String> = vector
+                .iter()
+                .map(|(key, _)| crate::intern::name_of(*key).clone())
+                .collect();
+            assert!(
+                !names.iter().any(|name| name.contains(":objective-")),
+                "crossed objective facts must be absent under StateCross::None"
+            );
+        }
+
+        // Option-order determinism: reversing the options leaves every option's bare set intact.
+        let reversed = Choice::new(
+            player.clone(),
+            "produce a unit",
+            vec![
+                ChoiceOption::labelled("produce|scout@19", "production", "build a scout"),
+                ChoiceOption::labelled("produce|fighter@18", "production", "build a fighter"),
+            ],
+        );
+        let reversed_vectors = explicit_choice_features(&seen, &reversed, &player);
+        for vector in vectors.iter().chain(reversed_vectors.iter()) {
+            assert_eq!(bare_of(vector).len(), expected.len());
+        }
     }
 
     #[test]
