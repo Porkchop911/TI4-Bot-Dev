@@ -129,3 +129,15 @@ Clippy adds no warning (two pre-existing engine warnings only); scoped rustfmt a
 diff-check clean. Deterministic reseal left tracked fixtures unchanged. The final pool was refused
 by the real trainer with exit 1; the real validation panel reproduced 30 games, 0 failures and the
 recorded aggregates/output hash. O-M09-020-4 remains accepted.
+
+### F-M09-020-R1 — RESOLVED (implementer, 2026-08-24), pending narrow recheck
+
+`plans/evidence/MLP-ARTIFACTS.md` "Role rules enforced in code" now describes the exact unified
+boundaries at `185180a`: `run_panel` = one `fs::read` → checksum prefix check →
+`verify_pool_role_bytes` (Train/Validation) → `MapPool::load_verified`; stage-2 =
+`read_and_verify_pool_role` → `MapPool::load_verified`. It also notes that
+`verify_pool_role(path)` remains only as a path-only convenience wrapper with no live consumer.
+Documentation diff-check: every other `verify_pool_role` mention in the repository is either
+historical/chronological (the 52c17fb implementation record, the spec's deliverable text, this
+ledger's finding quotes, EXECUTION_STATE checkpoints) or current code — none describes the
+superseded call sites as active. Records-only change; no source, fixture, or measurement touched.

@@ -18,11 +18,18 @@ mismatch means the corpus moved and every number measured against it needs re-re
 
 ## Role rules enforced in code
 
-- `ti4_sim::artifacts::verify_pool_role(path, allowed)` hashes the exact file bytes and fails
-  closed on unknown artifacts or disallowed roles. Wired at both live corpus entry points:
-  `ti4_sim::baseline::run_panel` (allows Train/Validation only) and
-  `stage2_training.rs --map-pool` (allows Train/Validation only). The final pool's checksum is in
-  the static manifest with role Final, so any attempt to train or measure on it fails closed.
+- Role enforcement is fail-closed over exact bytes: unknown artifact identities and disallowed
+  roles are refused, not conventionally ignored. Both live corpus entry points use a single
+  immutable byte buffer per pool — checksum verification, role gate, and parse all consume the
+  same read (MLP plan §10 unified boundary):
+  - `ti4_sim::baseline::run_panel`: one `fs::read`, then the checksum prefix check,
+    `artifacts::verify_pool_role_bytes` over those bytes (Train/Validation only), and
+    `MapPool::load_verified` from them.
+  - `stage2_training.rs --map-pool`: `artifacts::read_and_verify_pool_role` (Train/Validation
+    only) followed by `MapPool::load_verified` on the returned buffer.
+  The final pool's checksum is in the static manifest with role Final, so any attempt to train or
+  measure on it fails closed. (`verify_pool_role(path)` remains as a path-only convenience wrapper
+  over the same byte-level check; no live consumer uses it.)
 - `ti4_sim::artifacts::is_known_checkpoint(sha256)` recognizes artifacts 4 and 5 by raw sha256;
   its call site (teacher-checksum rejection) arrives with M10-038.
 - The committed fixture-integrity test (`artifacts::tests`) verifies the sealed `.zst` files
