@@ -22,7 +22,7 @@
 //! and nothing to a gradient, and storing it would make a vector's size depend on how many facts
 //! happened to be zero.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -407,6 +407,7 @@ pub fn explicit_option_features(
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
+        objective_facts: objective_facts(seen, player),
     };
     explicit_option_features_with(
         seen,
@@ -426,6 +427,97 @@ pub fn explicit_option_features(
 struct ChoiceContext<'a> {
     facts: [(&'static str, f64); 8],
     own_units: Vec<&'a SystemId>,
+    objective_facts: Vec<(String, f64)>,
+}
+
+/// Objective progress facts for the acting seat, computed once per choice.
+///
+/// Built from the engine's scoring sources of truth through [`Observed::revealed_objective_
+/// progress`] and [`Observed::held_secret_progress`], aggregated per MLP plan section 5.1:
+/// clipped `min(1, have / threshold)` ratios, **max applied before any vector is constructed**
+/// (never relying on the additive merge), threshold-keyed slots, need markers, family counts,
+/// and stage counts over revealed publics. The gap feature is deliberately absent: it is linear
+/// in what is already there.
+///
+/// Names carry the `":objective-"` marker so the legacy subvector stays identifiable for the
+/// pinning test. Emission crosses them with the option kind or id like every other choice-level
+/// fact, because a linear softmax cannot see an option-invariant name; under `StateCross::None`
+/// they are inert exactly as seat facts already are.
+#[must_use]
+fn objective_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let publics = seen.revealed_objective_progress(player);
+    let secrets = seen.held_secret_progress(player);
+
+    // Stage counts over revealed publics only; secrets have no printed stage.
+    let mut stage_counts = [0usize; 3];
+    for card in &publics {
+        if let Some(stage) = card.stage {
+            stage_counts[stage as usize] += 1;
+        }
+    }
+
+    // Group by family token: max clipped ratio per family and per (family, threshold), plus the
+    // number of revealed/held cards in each family. BTreeMap keeps the order canonical.
+    let mut family_max: BTreeMap<String, f64> = BTreeMap::new();
+    let mut pair_max: BTreeMap<(String, String), f64> = BTreeMap::new();
+    let mut family_count: BTreeMap<String, usize> = BTreeMap::new();
+
+    for card in publics.iter().chain(&secrets) {
+        // The engine guarantees threshold > 0 (bought_progress rejects targets of zero or less;
+        // counting thresholds are registered constants), so the ratio is well-defined.
+        debug_assert!(
+            card.threshold > 0.0,
+            "{} has a non-positive threshold",
+            card.alias
+        );
+        let ratio = (card.have / card.threshold).min(1.0);
+        family_max
+            .entry(card.family_token.clone())
+            .and_modify(|best| *best = (*best).max(ratio))
+            .or_insert(ratio);
+        // Thresholds are exact small integers; render them as such.
+        #[expect(
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation,
+            reason = "small integer thresholds"
+        )]
+        let threshold = card.threshold as u64;
+        pair_max
+            .entry((card.family_token.clone(), threshold.to_string()))
+            .and_modify(|best| *best = (*best).max(ratio))
+            .or_insert(ratio);
+        *family_count.entry(card.family_token.clone()).or_insert(0) += 1;
+    }
+
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    // met flags in stable card order; unsatisfied cards emit nothing (the zero-skip convention).
+    for card in publics.iter().chain(&secrets) {
+        if card.satisfied {
+            facts.push((format!("objective-met:{}", card.alias), 1.0));
+        }
+    }
+    for (family, best) in &family_max {
+        if *best > 0.0 {
+            facts.push((format!("objective-progress:{family}"), *best));
+        }
+    }
+    for ((family, threshold), best) in &pair_max {
+        if *best > 0.0 {
+            facts.push((format!("objective-progress:{family}:{threshold}"), *best));
+        }
+        // The threshold is its own feature even at zero progress: a ratio alone cannot
+        // distinguish "3 of 4" from "9 of 12", and neither can it see the difficulty left.
+        facts.push((format!("objective-need:{family}:{threshold}"), 1.0));
+    }
+    for (family, count) in &family_count {
+        facts.push((format!("objective-count:{family}"), count_value(*count)));
+    }
+    for (stage, count) in stage_counts.iter().enumerate().skip(1) {
+        if *count > 0 {
+            facts.push((format!("objective-stage:{stage}"), count_value(*count)));
+        }
+    }
+    facts
 }
 
 /// The eight per-seat facts every option of a choice is described against.
@@ -485,11 +577,12 @@ pub fn explicit_choice_features(
     choice: &Choice,
     player: &PlayerId,
 ) -> Vec<FeatureVector> {
-    // Both of these are constant across the choice's options and are computed once here.
+    // All three are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
     let context = ChoiceContext {
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
+        objective_facts: objective_facts(seen, player),
     };
     let cross = state_cross(choice);
     choice
@@ -690,10 +783,7 @@ fn explicit_option_features_with(
                     // the two separately cannot express either. Recorded only where both are
                     // present, so no other head is touched.
                     if key == "worth"
-                        && let Some(owed) = option
-                            .payload
-                            .get("owed")
-                            .and_then(Value::as_f64)
+                        && let Some(owed) = option.payload.get("owed").and_then(Value::as_f64)
                     {
                         add_named(
                             &mut features,
@@ -749,10 +839,28 @@ fn explicit_option_features_with(
             for (name, value) in &context.facts {
                 add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
             }
+            for (name, value) in &context.objective_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-kind:{kind}:{name}"),
+                    *value,
+                );
+            }
         }
         StateCross::ByOption => {
             for (name, value) in &context.facts {
-                add_parts(&mut features, &["state-option:", &option.id, ":", name], *value);
+                add_parts(
+                    &mut features,
+                    &["state-option:", &option.id, ":", name],
+                    *value,
+                );
+            }
+            for (name, value) in &context.objective_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-option:{option_id}:{name}", option_id = option.id),
+                    *value,
+                );
             }
         }
         StateCross::None => {}
@@ -2070,6 +2178,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
+            objective_facts: objective_facts(&seen, &player),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -2183,6 +2292,7 @@ mod tests {
         let context = ChoiceContext {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
+            objective_facts: objective_facts(&seen, &player),
         };
         let full = explicit_option_features_with(
             &seen,
@@ -2196,6 +2306,454 @@ mod tests {
             explicit_choice_features(&seen, &choice, &player)[0],
             full,
             "a mixed-kind choice loses nothing"
+        );
+    }
+
+    // ------------------------------------------------------------------ M09-021
+
+    /// The pinning fixture: a deployed three-player board with four revealed publics (two
+    /// counting families, one bought card) and two held secrets on seat "a".
+    fn m09_021_fixture() -> (GameState, ti4_content::galaxy::Galaxy) {
+        let content = ti4_content::ContentStore::embedded();
+        let players = ["a", "b", "c"].map(PlayerId::new);
+        let factions: BTreeMap<PlayerId, FactionId> = players
+            .iter()
+            .cloned()
+            .zip(["letnev", "jolnar", "hacan"].map(FactionId::new))
+            .collect();
+        let mut state =
+            ti4_engine::setup::start_game_seeded(content, &players, POK, None, 17).expect("setup");
+        for (player, faction) in &factions {
+            state.player_mut(player).unwrap().faction = faction.clone();
+        }
+        let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, POK, 17)
+            .into_iter()
+            .map(|system| system.to_string())
+            .collect();
+        let refs: Vec<&str> = filler.iter().map(String::as_str).collect();
+        let galaxy = ti4_engine::seating::build_board(content, &factions, &refs, POK).unwrap();
+        for (player, faction) in &factions {
+            ti4_engine::seating::deploy(&mut state, content, player, faction, POK).unwrap();
+        }
+        state.revealed_objectives = vec![
+            ti4_model::id::ObjectiveId::new("outer_rim"),
+            ti4_model::id::ObjectiveId::new("diversify"),
+            ti4_model::id::ObjectiveId::new("unify_colonies"),
+            ti4_model::id::ObjectiveId::new("trade_routes"),
+        ];
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![
+            ti4_model::id::SecretObjectiveId::new("otf"),
+            ti4_model::id::SecretObjectiveId::new("mlp"),
+        ];
+        (state, galaxy)
+    }
+
+    fn m09_021_choices(player: &PlayerId) -> Vec<Choice> {
+        vec![
+            Choice::new(
+                player.clone(),
+                "activate a system or pass",
+                vec![
+                    ChoiceOption::new("18", "activate"),
+                    ChoiceOption::labelled("no", "decline", "pass"),
+                ],
+            ),
+            Choice::new(
+                player.clone(),
+                "spend a strategy token to replenish commodities",
+                vec![
+                    ChoiceOption::labelled("no", "strategy", "decline"),
+                    ChoiceOption::labelled("yes", "strategy", "replenish"),
+                ],
+            ),
+        ]
+    }
+
+    /// Reconstruct an objective fact name from its crossed form. Crossed names are
+    /// `state-kind:<kind>:objective-<rest>` or `state-option:<id>:objective-<rest>`; the marker
+    /// carries a trailing dash, so strip `:objective-` and reattach `objective-`.
+    fn objective_fact_name(full: &str) -> Option<String> {
+        full.rsplit_once(":objective-")
+            .map(|(_, rest)| format!("objective-{rest}"))
+    }
+
+    #[test]
+    fn the_legacy_subvector_is_pinned_against_the_recorded_baseline() {
+        // The baseline was dumped by `examples/m09_021_baseline_dump.rs` before any objective
+        // feature existed. Every name not containing ":objective-" must still match it exactly:
+        // the legacy factual subvector is unchanged, and any later drift in legacy emission fails
+        // here rather than surfacing as a silently re-trained policy.
+        let baseline: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/objective_baseline.json"))
+                .expect("the baseline fixture parses");
+        assert_eq!(baseline.len(), 4, "two choices of two options each");
+
+        let content = ti4_content::ContentStore::embedded();
+        let (state, galaxy) = m09_021_fixture();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+
+        for (entry_index, choice) in m09_021_choices(&player).into_iter().enumerate() {
+            let vectors = explicit_choice_features(&seen, &choice, &player);
+            for (option_index, vector) in vectors.into_iter().enumerate() {
+                let entry = &baseline[entry_index * 2 + option_index];
+                assert_eq!(entry["choice"].as_u64(), Some(entry_index as u64));
+                assert_eq!(entry["option"].as_u64(), Some(option_index as u64));
+                let want: BTreeMap<String, f64> = entry["features"]
+                    .as_object()
+                    .expect("feature map")
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_f64().expect("finite")))
+                    .collect();
+
+                let mut got: BTreeMap<String, f64> = vector
+                    .iter()
+                    .map(|(key, value)| (crate::intern::name_of(*key), *value))
+                    .filter(|(name, _)| !name.contains(":objective-"))
+                    .collect();
+                let mut missing = Vec::new();
+                for (name, value) in &want {
+                    match got.remove(name) {
+                        Some(got_value) => assert!(
+                            (got_value - value).abs() < 1e-9,
+                            "legacy feature {name} moved: {got_value} against the pinned {value}"
+                        ),
+                        None => missing.push(name.clone()),
+                    }
+                }
+                assert!(
+                    missing.is_empty(),
+                    "pinned legacy features vanished: {missing:?}"
+                );
+                assert!(
+                    got.is_empty(),
+                    "unexpected non-objective names: {:?}",
+                    got.keys()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn objective_facts_come_from_the_scoring_sources_of_truth() {
+        // Differential against the engine's own progress APIs: every emitted fact must equal what
+        // counting_progress / remaining_position_progress / bought_progress / stage_of say, with
+        // D17 clipping and max-before-vector aggregation. No hand-written requirement table.
+        let content = ti4_content::ContentStore::embedded();
+        let (state, galaxy) = m09_021_fixture();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+
+        // The engine-side records the facts must be built from.
+        let publics = ti4_engine::choice::Observed::revealed_objective_progress(&seen, &player);
+        let secrets = seen.held_secret_progress(&player);
+        assert!(!publics.is_empty(), "the fixture reveals four publics");
+        assert_eq!(secrets.len(), 2, "seat a holds two counting secrets");
+
+        // Stage counts: derived from stage_of, both stages present in this fixture.
+        let mut stage_counts = [0usize; 3];
+        for card in &publics {
+            if let Some(stage) = card.stage {
+                stage_counts[stage as usize] += 1;
+            }
+        }
+        assert!(
+            stage_counts[1] >= 1 && stage_counts[2] >= 1,
+            "both stages revealed"
+        );
+
+        // Expected family aggregation per MLP plan section 5.1.
+        let mut family_max: BTreeMap<String, f64> = BTreeMap::new();
+        let mut pair_max: BTreeMap<(String, String), f64> = BTreeMap::new();
+        let mut family_count: BTreeMap<String, usize> = BTreeMap::new();
+        for card in publics.iter().chain(&secrets) {
+            assert!(card.threshold > 0.0, "{} has a zero threshold", card.alias);
+            let ratio = (card.have / card.threshold).min(1.0);
+            // Same conversion as the extractor: small integer thresholds.
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "small integer thresholds"
+            )]
+            let threshold = card.threshold as u64;
+            family_max
+                .entry(card.family_token.clone())
+                .and_modify(|best| *best = (*best).max(ratio))
+                .or_insert(ratio);
+            pair_max
+                .entry((card.family_token.clone(), threshold.to_string()))
+                .and_modify(|best| *best = (*best).max(ratio))
+                .or_insert(ratio);
+            *family_count.entry(card.family_token.clone()).or_insert(0) += 1;
+        }
+
+        // The facts as the extractor emits them, read back through one option of each crossing mode.
+        let choices = m09_021_choices(&player);
+        let kind_vectors = explicit_choice_features(&seen, &choices[0], &player);
+        let option_vectors = explicit_choice_features(&seen, &choices[1], &player);
+        let by_kind_vector = &kind_vectors[0];
+        let by_option_vector = &option_vectors[0];
+
+        let facts_of = |vector: &FeatureVector| -> BTreeMap<String, f64> {
+            vector
+                .iter()
+                .map(|(key, value)| (crate::intern::name_of(*key), *value))
+                .filter_map(|(name, value)| objective_fact_name(&name).map(|fact| (fact, value)))
+                .collect()
+        };
+
+        for vector in [&by_kind_vector, &by_option_vector] {
+            let facts = facts_of(vector);
+            // met flags: exactly the satisfied cards.
+            for card in publics.iter().chain(&secrets) {
+                let name = format!("objective-met:{}", card.alias);
+                if card.satisfied {
+                    assert!(
+                        (facts.get(&name).copied().unwrap_or(0.0) - 1.0).abs() < 1e-9,
+                        "{name} must be met in this position"
+                    );
+                } else {
+                    assert!(!facts.contains_key(&name), "{name} is not satisfied");
+                }
+            }
+            // family max, threshold-keyed slots, need markers, counts.
+            for (family, best) in &family_max {
+                let name = format!("objective-progress:{family}");
+                if *best > 0.0 {
+                    assert!(
+                        (facts.get(&name).copied().unwrap_or(-1.0) - best).abs() < 1e-9,
+                        "{name}: {} against the engine's {best}",
+                        facts.get(&name).unwrap_or(&-1.0)
+                    );
+                } else {
+                    assert!(
+                        !facts.contains_key(&name),
+                        "{name} is zero and must be dropped, not stored"
+                    );
+                }
+            }
+            for ((family, threshold), best) in &pair_max {
+                let name = format!("objective-progress:{family}:{threshold}");
+                if *best > 0.0 {
+                    assert!(
+                        (facts.get(&name).copied().unwrap_or(-1.0) - best).abs() < 1e-9,
+                        "{name} disagrees with the engine"
+                    );
+                } else {
+                    assert!(
+                        !facts.contains_key(&name),
+                        "{name} is zero and must be dropped, not stored"
+                    );
+                }
+                let need = format!("objective-need:{family}:{threshold}");
+                assert!(
+                    (facts.get(&need).copied().unwrap_or(0.0) - 1.0).abs() < 1e-9,
+                    "the threshold must be its own feature: {need}"
+                );
+            }
+            for (family, count) in &family_count {
+                let name = format!("objective-count:{family}");
+                assert!(
+                    (facts.get(&name).copied().unwrap_or(-1.0) - count_value(*count)).abs() < 1e-9,
+                    "{name}: expected {count} revealed/held cards in the family"
+                );
+            }
+            // stage counts, publics only.
+            for (stage, count) in stage_counts.iter().enumerate().skip(1) {
+                if *count > 0 {
+                    let name = format!("objective-stage:{stage}");
+                    assert!(
+                        (facts.get(&name).copied().unwrap_or(-1.0) - count_value(*count)).abs()
+                            < 1e-9,
+                        "{name}: expected {count} revealed publics at that stage"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn two_cards_in_one_family_aggregate_by_max_not_sum() {
+        // lead (cost_tokens, 3) and galvanize (cost_tokens, 6) share a family. With four tokens
+        // the seat is fully there on one card and two-thirds of the way on the other: the family
+        // slot must carry the max of the clipped ratios (1.0), not their sum (1.67), which would
+        // read an overshoot as more urgent than completion.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, galaxy) = m09_021_fixture();
+        state.revealed_objectives = vec![
+            ti4_model::id::ObjectiveId::new("lead"),
+            ti4_model::id::ObjectiveId::new("galvanize"),
+        ];
+        {
+            let seat = state.player_mut(&PlayerId::new("a")).unwrap();
+            seat.tactic_tokens = 4;
+            seat.strategic_tokens = 0;
+            seat.fleet_tokens = 0;
+        }
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+
+        let records = seen.revealed_objective_progress(&player);
+        assert_eq!(records.len(), 2, "both cards resolve to bought progress");
+        let ratios: Vec<f64> = records
+            .iter()
+            .map(|card| (card.have / card.threshold).min(1.0))
+            .collect();
+        assert_eq!(ratios.len(), 2);
+        // The fixture must actually distinguish max from sum: both ratios positive and unequal.
+        let expected_max = ratios.iter().copied().fold(0.0f64, f64::max);
+        let expected_sum: f64 = ratios.iter().sum();
+        assert!(
+            expected_max > 0.0 && (expected_max - expected_sum).abs() > 1e-9,
+            "fixture must have two positive unequal ratios, got {ratios:?}"
+        );
+
+        let choice = Choice::new(
+            player.clone(),
+            "activate a system or pass",
+            vec![ChoiceOption::labelled("no", "decline", "pass")],
+        );
+        let vectors = explicit_choice_features(&seen, &choice, &player);
+        let vector = &vectors[0];
+        let facts: BTreeMap<String, f64> = vector
+            .iter()
+            .map(|(key, value)| (crate::intern::name_of(*key), *value))
+            .filter_map(|(name, value)| objective_fact_name(&name).map(|fact| (fact, value)))
+            .collect();
+
+        assert!(
+            (facts
+                .get("objective-progress:cost_tokens")
+                .copied()
+                .unwrap_or(-1.0)
+                - expected_max)
+                .abs()
+                < 1e-9,
+            "the family slot must be the max, not the sum ({ratios:?})"
+        );
+        assert!(
+            (facts
+                .get("objective-count:cost_tokens")
+                .copied()
+                .unwrap_or(-1.0)
+                - 2.0)
+                .abs()
+                < 1e-9,
+            "two revealed cards in the family"
+        );
+        for (alias, threshold) in [("lead", "3"), ("galvanize", "6")] {
+            let name = format!("objective-progress:cost_tokens:{threshold}");
+            assert!(facts.contains_key(&name), "{name} must exist");
+            let need = format!("objective-need:cost_tokens:{threshold}");
+            assert!(
+                facts.contains_key(&need),
+                "the {alias} threshold is its own feature"
+            );
+        }
+    }
+
+    #[test]
+    fn opponent_secrets_never_enter_any_seat_features() {
+        // Seat a holds otf/mlp, seat b holds eap. The met-flag channel is proven active by making
+        // trade_routes affordable for both seats (five goods each), so the absence of any other
+        // seat's secret alias from every feature set is meaningful rather than vacuous: public
+        // cards may be named, own secrets may be named, and nothing else.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, galaxy) = m09_021_fixture();
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        for seat_name in ["a", "b"] {
+            state
+                .player_mut(&PlayerId::new(seat_name))
+                .unwrap()
+                .trade_goods = 5;
+        }
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+
+        // The accessor boundary: each seat's records are exactly its own cards.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let aliases_of = |seat: &PlayerId| -> Vec<String> {
+            seen.held_secret_progress(seat)
+                .into_iter()
+                .map(|card| card.alias)
+                .collect()
+        };
+        assert_eq!(aliases_of(&a), vec!["otf".to_owned(), "mlp".to_owned()]);
+        assert_eq!(aliases_of(&b), vec!["eap".to_owned()]);
+
+        let choice_for = |seat: &PlayerId| {
+            Choice::new(
+                seat.clone(),
+                "spend a strategy token to replenish commodities",
+                vec![ChoiceOption::labelled("no", "strategy", "decline")],
+            )
+        };
+
+        let names_for = |seat: &PlayerId| -> Vec<String> {
+            explicit_choice_features(&seen, &choice_for(seat), seat)[0]
+                .iter()
+                .map(|(key, _)| crate::intern::name_of(*key))
+                .collect()
+        };
+
+        let names_a = names_for(&a);
+        let names_b = names_for(&b);
+
+        // The met channel is active: the satisfied public card is named for both seats.
+        for names in [&names_a, &names_b] {
+            assert!(
+                names
+                    .iter()
+                    .any(|name| name.contains("objective-met:trade_routes")),
+                "the affordable public must be visible to both seats"
+            );
+        }
+        // No seat may name a card held by the other.
+        for names in [&names_a, &names_b] {
+            assert!(
+                !names.iter().any(|name| name.contains("eap")),
+                "b's secret leaked into features"
+            );
+        }
+        assert!(
+            !names_b
+                .iter()
+                .any(|name| name.contains("otf") || name.contains("mlp")),
+            "a's secrets leaked into b's features"
+        );
+    }
+
+    #[test]
+    fn objective_facts_are_deterministic_across_runs() {
+        let content = ti4_content::ContentStore::embedded();
+        let (state, galaxy) = m09_021_fixture();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let choices = m09_021_choices(&player);
+
+        let names = |choices: &[Choice]| -> Vec<Vec<String>> {
+            choices
+                .iter()
+                .map(|choice| {
+                    let vectors = explicit_choice_features(&seen, choice, &player);
+                    vectors[0]
+                        .keys()
+                        .map(|key| crate::intern::name_of(*key))
+                        .collect()
+                })
+                .collect()
+        };
+        let first = names(&choices);
+        let second = names(&choices);
+        assert_eq!(
+            first, second,
+            "the same position names the same facts twice"
         );
     }
 }

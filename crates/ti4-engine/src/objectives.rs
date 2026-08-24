@@ -108,6 +108,105 @@ impl RequirementProgress {
     }
 }
 
+/// One revealed or held card's exact progress toward its requirement, in the shape the policy
+/// feature path consumes.
+///
+/// Unifies [`RequirementProgress`] (counting and formerly-bespoke cards) and [`CostProgress`]
+/// (bought cards) so the extractor sees one record per card. `threshold` is always positive:
+/// counting thresholds are registered constants, and [`bought_progress`] rejects targets of zero
+/// or less before a record can exist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardProgress {
+    /// The objective or secret alias the progress belongs to.
+    pub alias: String,
+    /// Canonical family token from [`family_token`] or [`cost_family_token`].
+    pub family_token: String,
+    /// Raw count, or greatest exactly affordable amount for bought cards.
+    pub have: f64,
+    /// Required count or amount; always > 0.
+    pub threshold: f64,
+    /// Whether the card is satisfied right now (`have >= threshold`).
+    pub satisfied: bool,
+    /// Printed stage for public objectives (one or two); secrets have none.
+    pub stage: Option<u8>,
+}
+
+/// The canonical feature-name token for a counting family.
+///
+/// Keying on the family rather than the alias is what lets learning transfer between cards that
+/// share machinery — Outer Rim and Control the Borderlands both count rim planets. Tokens are
+/// stable lowercase words; parameterised variants fold their parameter in (`colours_2`,
+/// `planets_of_trait_cultural`), matching the feature-name convention of underscores within a
+/// token.
+#[must_use]
+pub fn family_token(family: &CountFamily) -> String {
+    match family {
+        CountFamily::NonHome => "non_home".to_owned(),
+        CountFamily::OnTheRim => "on_the_rim".to_owned(),
+        CountFamily::SameTrait => "same_trait".to_owned(),
+        CountFamily::TechSpecialties => "tech_specialties".to_owned(),
+        CountFamily::UnitUpgrades => "unit_upgrades".to_owned(),
+        CountFamily::Colours { per_colour } => format!("colours_{per_colour}"),
+        CountFamily::Structures => "structures".to_owned(),
+        CountFamily::StructuresAway => "structures_away".to_owned(),
+        CountFamily::FleetInOneSystem => "fleet_in_one_system".to_owned(),
+        CountFamily::PlanetlessSystems => "planetless_systems".to_owned(),
+        CountFamily::AttachedPlanets => "attached_planets".to_owned(),
+        CountFamily::NotableSystems => "notable_systems".to_owned(),
+        CountFamily::GroundForcesOnOnePlanet => "ground_forces_on_one_planet".to_owned(),
+        CountFamily::MechsOnDistinctPlanets => "mechs_on_distinct_planets".to_owned(),
+        CountFamily::PlanetsOfTrait { trait_name } => format!("planets_of_trait_{trait_name}"),
+        CountFamily::SameColourTechnologies => "same_colour_technologies".to_owned(),
+        CountFamily::ShipsInSystems => "ships_in_systems".to_owned(),
+        CountFamily::Units { base_type } => format!("units_{base_type}"),
+        CountFamily::RivalHomePlanets => "rival_home_planets".to_owned(),
+        CountFamily::CapitalShipSystems => "capital_ship_systems".to_owned(),
+        CountFamily::CapitalShipsInRivalHomeOrMecatol => {
+            "capital_ships_rival_or_mecatol".to_owned()
+        }
+        CountFamily::ShipsAdjacentToMecatol => "ships_adjacent_to_mecatol".to_owned(),
+        CountFamily::WeakerNeighbours => "weaker_neighbours".to_owned(),
+        CountFamily::DistinctRivalHomeReaches => "distinct_rival_home_reaches".to_owned(),
+        CountFamily::RivalDockSystemsWithShips => "rival_dock_systems_with_ships".to_owned(),
+        CountFamily::RelicFragments => "relic_fragments".to_owned(),
+        CountFamily::ActionCards => "action_cards".to_owned(),
+        CountFamily::RivalNoteIssuers => "rival_note_issuers".to_owned(),
+        CountFamily::ShipSystemsBesideAnomaly => "ship_systems_beside_anomaly".to_owned(),
+        CountFamily::ShipSystemsBesideRivalHome => "ship_systems_beside_rival_home".to_owned(),
+        CountFamily::Neighbours => "neighbours".to_owned(),
+        CountFamily::UnitsInNexus => "units_in_nexus".to_owned(),
+        CountFamily::WormholeKinds => "wormhole_kinds".to_owned(),
+        CountFamily::FactionTechnologies => "faction_technologies".to_owned(),
+        CountFamily::Laws => "laws".to_owned(),
+        CountFamily::SharedPlanetSystems => "shared_planet_systems".to_owned(),
+        CountFamily::ProductionInOneSystem => "production_in_one_system".to_owned(),
+        CountFamily::LegendaryPlanets => "legendary_planets".to_owned(),
+        CountFamily::MecatolShipsWhileControlling => "mecatol_ships_while_controlling".to_owned(),
+        CountFamily::CombinedValue { kind } => match kind {
+            crate::production::Spend::Resources => "combined_value_resources".to_owned(),
+            crate::production::Spend::Influence => "combined_value_influence".to_owned(),
+        },
+    }
+}
+
+/// The canonical feature-name token for a bought-objective cost family.
+///
+/// Bought cards are affordability, not accumulation: their progress is the greatest scaled cost
+/// the exact payment planner accepts, so they get distinct tokens rather than sharing with the
+/// counting families (MLP plan section 5.1).
+#[must_use]
+pub fn cost_family_token(family: &CostFamily) -> String {
+    match family {
+        CostFamily::Spend(kind) => match kind {
+            crate::production::Spend::Resources => "cost_spend_resources".to_owned(),
+            crate::production::Spend::Influence => "cost_spend_influence".to_owned(),
+        },
+        CostFamily::TradeGoods => "cost_trade_goods".to_owned(),
+        CostFamily::Tokens => "cost_tokens".to_owned(),
+        CostFamily::AllThree => "cost_all_three".to_owned(),
+    }
+}
+
 impl<'a> Position<'a> {
     /// Resolve a player's position once, ready for any number of requirement checks.
     ///
@@ -3531,5 +3630,110 @@ mod tests {
             scoreable(&state, ContentStore::embedded(), POK, &PlayerId::new("a")).is_empty(),
             "invented planets must not satisfy a requirement"
         );
+    }
+
+    #[test]
+    fn every_registered_objective_threshold_is_positive() {
+        // Zero-division guard: no counting or remaining objective may carry a zero threshold and
+        // no bought cost target may be non-positive. A regression here would surface as an
+        // infinite ratio in the policy's clipped progress features. Two seats, because some
+        // requirements (fc) are defined against the rival count.
+        let player = PlayerId::new("a");
+        let players = ids(&["a", "b"]);
+        let state = game(&players);
+        let content = ContentStore::embedded();
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let position = Position::new(&state, content, POK, &player).with_galaxy(&hub.galaxy);
+
+        for alias in registered_aliases() {
+            let id = ti4_model::id::ObjectiveId::new(alias);
+            if let Some(card) = counting_progress(&id, &position) {
+                assert!(card.threshold >= 1, "{alias}: zero or negative threshold");
+            } else if let Some(card) = remaining_position_progress(&id, &position) {
+                assert!(card.threshold >= 1, "{alias}: zero or negative threshold");
+            } else if let Some(cost) = bought_progress(&state, content, POK, &player, &id) {
+                assert!(cost.target > 0, "{alias}: non-positive bought target");
+            } else {
+                panic!("{alias} is registered but resolves to no progress source");
+            }
+        }
+
+        // Secrets: every registered secret is a counting family with a positive threshold.
+        let secret_position = crate::secrets::Position {
+            state: &state,
+            content,
+            sources: POK,
+            player: &player,
+            galaxy: Some(&hub.galaxy),
+        };
+        for alias in crate::secrets::registered_aliases() {
+            let id = ti4_model::id::SecretObjectiveId::new(alias);
+            if let Some(card) = crate::secrets::counting_progress(&id, &secret_position) {
+                assert!(
+                    card.threshold >= 1,
+                    "{alias}: zero or negative secret threshold"
+                );
+            } else if let Some(card) =
+                crate::secrets::remaining_position_progress(&id, &secret_position)
+            {
+                assert!(
+                    card.threshold >= 1,
+                    "{alias}: zero or negative secret threshold"
+                );
+            } else {
+                // Occurrence-based: no position progress exists, so nothing can divide by zero.
+                assert!(
+                    crate::secrets::feat_for(alias).is_some(),
+                    "{alias} has neither position progress nor a feat — unregistered requirement"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn objective_family_tokens_are_disjoint_between_publics_and_secrets() {
+        // The policy crosses these facts under one shared state-* namespace; a family token used by
+        // both a public and a secret card would make the two indistinguishable in features. Two
+        // seats, because some requirements (fc) are defined against the rival count.
+        let player = PlayerId::new("a");
+        let players = ids(&["a", "b"]);
+        let state = game(&players);
+        let content = ContentStore::embedded();
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let position = Position::new(&state, content, POK, &player).with_galaxy(&hub.galaxy);
+
+        let mut public_tokens: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for alias in registered_aliases() {
+            let id = ti4_model::id::ObjectiveId::new(alias);
+            if let Some(card) = counting_progress(&id, &position) {
+                public_tokens.insert(super::family_token(&card.family));
+            } else if let Some(card) = remaining_position_progress(&id, &position) {
+                public_tokens.insert(super::family_token(&card.family));
+            } else if let Some(cost) = bought_progress(&state, content, POK, &player, &id) {
+                public_tokens.insert(super::cost_family_token(&cost.family));
+            }
+        }
+
+        let secret_position = crate::secrets::Position {
+            state: &state,
+            content,
+            sources: POK,
+            player: &player,
+            galaxy: Some(&hub.galaxy),
+        };
+        for alias in crate::secrets::registered_aliases() {
+            let id = ti4_model::id::SecretObjectiveId::new(alias);
+            // Occurrence-based secrets emit no family token at all, so they cannot collide.
+            if let Some(card) = crate::secrets::counting_progress(&id, &secret_position)
+                .or_else(|| crate::secrets::remaining_position_progress(&id, &secret_position))
+            {
+                let token = super::family_token(&card.family);
+                assert!(
+                    !public_tokens.contains(&token),
+                    "{alias} shares family token '{token}' with a public objective"
+                );
+            }
+        }
     }
 }

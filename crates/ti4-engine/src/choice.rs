@@ -575,7 +575,11 @@ impl<'a> Observed<'a> {
     /// Public, on the table, and one of the two reasons to take a card you do not otherwise want.
     #[must_use]
     pub fn strategy_card_goods(&self, card: &ti4_model::id::StrategyCardId) -> i32 {
-        self.state.strategy_card_goods.get(card).copied().unwrap_or(0)
+        self.state
+            .strategy_card_goods
+            .get(card)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub fn scored_by(&self, player: &PlayerId) -> BTreeSet<ObjectiveId> {
@@ -622,6 +626,106 @@ impl<'a> Observed<'a> {
     pub fn scoreable_secret(&self, player: &PlayerId) -> usize {
         crate::secrets::scoreable_on(self.state, self.content, self.sources, player, self.galaxy)
             .len()
+    }
+
+    /// Exact progress for every revealed public objective, from the seat's point of view.
+    ///
+    /// A rules predicate built on the scoring sources of truth — [`crate::objectives::
+    /// counting_progress`], [`crate::objectives::remaining_position_progress`] and [`crate::
+    /// objectives::bought_progress`] — so a feature that says "three of five" is the same number
+    /// the scorer would use. Cards whose progress cannot be resolved (unknown alias, missing
+    /// galaxy context) are omitted rather than emitted as factual zero.
+    #[must_use]
+    pub fn revealed_objective_progress(
+        &self,
+        player: &PlayerId,
+    ) -> Vec<crate::objectives::CardProgress> {
+        let mut position =
+            crate::objectives::Position::new(self.state, self.content, self.sources, player);
+        if let Some(galaxy) = self.galaxy {
+            position = position.with_galaxy(galaxy);
+        }
+        self.state
+            .revealed_objectives
+            .iter()
+            .filter_map(|alias| {
+                let stage = crate::objectives::stage_of(self.content, alias);
+                if let Some(progress) = crate::objectives::counting_progress(alias, &position)
+                    .or_else(|| crate::objectives::remaining_position_progress(alias, &position))
+                {
+                    // Counts are small integers; the cast is exact.
+                    #[expect(clippy::cast_precision_loss, reason = "small integer counts")]
+                    let (have, threshold) = (progress.have as f64, progress.threshold as f64);
+                    return Some(crate::objectives::CardProgress {
+                        alias: alias.as_str().to_owned(),
+                        family_token: crate::objectives::family_token(&progress.family),
+                        have,
+                        threshold,
+                        satisfied: progress.satisfied(),
+                        stage,
+                    });
+                }
+                crate::objectives::bought_progress(
+                    self.state,
+                    self.content,
+                    self.sources,
+                    player,
+                    alias,
+                )
+                .map(|cost| {
+                    // Planner amounts are bounded by the cost target; exact in f64.
+                    #[expect(clippy::cast_precision_loss, reason = "small integer amounts")]
+                    let (have, threshold) = (cost.have as f64, cost.target as f64);
+                    crate::objectives::CardProgress {
+                        alias: alias.as_str().to_owned(),
+                        family_token: crate::objectives::cost_family_token(&cost.family),
+                        have,
+                        threshold,
+                        satisfied: cost.satisfied(),
+                        stage,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// Exact progress for the secrets this seat holds, answered only for the seat asking.
+    ///
+    /// The same boundary as [`Observed::scoreable_secret`]: a seat's own cards are its to read,
+    /// and no other seat's holdings ever reach these records. Occurrence-based secrets have no
+    /// position progress representation and are omitted rather than zero-filled.
+    #[must_use]
+    pub fn held_secret_progress(&self, player: &PlayerId) -> Vec<crate::objectives::CardProgress> {
+        let Some(seat) = self.state.players.iter().find(|seat| &seat.id == player) else {
+            return Vec::new();
+        };
+        let position = crate::secrets::Position {
+            state: self.state,
+            content: self.content,
+            sources: self.sources,
+            player,
+            galaxy: self.galaxy,
+        };
+        seat.secret_objectives
+            .iter()
+            .filter_map(|alias| {
+                crate::secrets::counting_progress(alias, &position)
+                    .or_else(|| crate::secrets::remaining_position_progress(alias, &position))
+                    .map(|progress| {
+                        // Counts are small integers; the cast is exact.
+                        #[expect(clippy::cast_precision_loss, reason = "small integer counts")]
+                        let (have, threshold) = (progress.have as f64, progress.threshold as f64);
+                        crate::objectives::CardProgress {
+                            alias: alias.as_str().to_owned(),
+                            family_token: crate::objectives::family_token(&progress.family),
+                            have,
+                            threshold,
+                            satisfied: progress.satisfied(),
+                            stage: None,
+                        }
+                    })
+            })
+            .collect()
     }
 
     /// A full state with every other player's private holdings replaced by markers.
@@ -1565,6 +1669,47 @@ mod tests {
         assert!(
             table.ask_seeing(&three(), &seen).is_err(),
             "the boundary holds on both paths"
+        );
+    }
+
+    #[test]
+    fn objective_progress_accessors_are_seat_scoped_and_source_complete() {
+        // The policy's objective facts read exactly these two accessors, so the seat scoping and
+        // source completeness are pinned here at the engine boundary.
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.revealed_objectives = vec![ObjectiveId::new("outer_rim")];
+        state.player_mut(&pid("a")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("otf")];
+        state.player_mut(&pid("b")).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("mlp")];
+
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let seen_a = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        let seen_b = Observed::new(&state, content, POK, Some(&hub.galaxy));
+
+        // Publics: both seats see the same revealed card.
+        for seen in [&seen_a, &seen_b] {
+            let cards = seen.revealed_objective_progress(&pid("a"));
+            assert_eq!(cards.len(), 1);
+            assert_eq!(cards[0].alias, "outer_rim");
+        }
+
+        // Secrets: each seat sees exactly its own cards.
+        let a_cards = seen_a.held_secret_progress(&pid("a"));
+        assert_eq!(a_cards.len(), 1);
+        assert_eq!(a_cards[0].alias, "otf");
+
+        let b_cards = seen_b.held_secret_progress(&pid("b"));
+        assert_eq!(b_cards.len(), 1);
+        assert_eq!(b_cards[0].alias, "mlp");
+
+        // Cross-seat access through the same observed view is still scoped by the seat argument.
+        let a_sees_b = seen_a.held_secret_progress(&pid("b"));
+        assert_eq!(a_sees_b.len(), 1);
+        assert_eq!(
+            a_sees_b[0].alias, "mlp",
+            "the accessor follows its seat argument"
         );
     }
 }

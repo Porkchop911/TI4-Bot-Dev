@@ -3348,3 +3348,23 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **M09-020 is complete and Tier-C accepted.** All review findings are closed. Next
   dependency-ready work is M09-019b on `wp/m09-019-post-rules-baseline-profile`; the row retains
   its required Tier-D pass 2.
+
+## M09-021 in progress (2026-08-24) — implementation complete, pending clean-tree measurement + Tier-C review
+
+- Branch `wp/m09-021-objective-policy-features` from integration point `432f20a`.
+- **Deliverables:** engine-side `CardProgress` record + canonical family/cost-family tokens in
+  `objectives.rs`; two seat-scoped `Observed` accessors (`revealed_objective_progress`,
+  `held_secret_progress`) in `choice.rs`; policy-side objective-fact construction (max before
+  vector construction, threshold-keyed slots, need markers, counts, stage counts) with crossed
+  emission under the accepted StateCross architecture; pinning fixture + regeneration example.
+- **Tests:** 8 new focused tests (5 policy: differential vs engine sources of truth, legacy
+  subvector pin, max-not-sum aggregation, opponent-secret redaction, determinism; 3 engine:
+  zero-threshold safety over every registered alias, public/secret family-token disjointness,
+  accessor seat-scoping). ti4-engine **853/0**; ti4-policy **125/0**; full workspace green.
+- **Gates:** Clippy clean on all M09-021 code (four pre-existing warning sites verified at base);
+  fmt clean on all touched files (three untouched engine files with pre-existing drift restored to
+  HEAD after a whole-crate format pass).
+- **Pending before commit close-out:** extraction-cost measurement on the clean committed tree
+  (campaign runner is fail-closed against dirty trees; M09-019b precedent: measure post-commit,
+  record in evidence follow-up), then independent Tier C frontier review.
+- Evidence: `plans/evidence/M09-021.md`; open items ledger: `plans/M09-021_OPEN_REVIEW_ITEMS.md`.
