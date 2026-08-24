@@ -3368,3 +3368,14 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   (campaign runner is fail-closed against dirty trees; M09-019b precedent: measure post-commit,
   record in evidence follow-up), then independent Tier C frontier review.
 - Evidence: `plans/evidence/M09-021.md`; open items ledger: `plans/M09-021_OPEN_REVIEW_ITEMS.md`.
+
+## M09-021 extraction-cost measurement recorded (2026-08-24) — commit `8e91b9e` + evidence follow-up
+
+- Package committed as `8e91b9e` on `wp/m09-021-objective-policy-features`.
+- Clean-tree M00 campaign (release, three campaigns × two runs from `8e91b9ecc037`, operator
+  no-competing-processes assertion recorded): W2 median **145–152 µs/extraction** post-change vs
+  M09-019b's 54.9–57.2 µs pre-change (≈2.5× on the explicit path; inherent to §5.1 sources of
+  truth). Game-scale impact negligible (~0.3% of per-decision cost); authored-bot legacy hashed
+  path untouched → no M08-021 re-baseline triggered. Full table in `plans/evidence/M09-021.md`.
+- Status: implementation + measurement complete; **pending independent Tier C frontier review**
+  (hidden-information boundary + feature purity). Open items ledger: O-M09-021-1/2/3.
