@@ -3379,3 +3379,22 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   path untouched → no M08-021 re-baseline triggered. Full table in `plans/evidence/M09-021.md`.
 - Status: implementation + measurement complete; **pending independent Tier C frontier review**
   (hidden-information boundary + feature purity). Open items ledger: O-M09-021-1/2/3.
+
+## M09-021 independent Tier-C review of `51ca544` (2026-08-24) — changes required
+
+- **F-M09-021-1 HIGH:** `Observed::held_secret_progress(player)` exposes named secret progress for
+  any seat through a type documented as public-only; the test explicitly permits cross-seat access.
+  Require an acting-seat/private-view capability and a negative opponent-access test.
+- **F-M09-021-2 HIGH:** objective facts exist only inside the linear `StateCross` path and vanish
+  for `StateCross::None`; this does not satisfy the nonlinear MLP §4.1/§5.1 input contract. Preserve
+  a bare/disjoint MLP objective namespace on every option and test a `None` choice.
+- **F-M09-021-3 HIGH:** evidence compares W2/W3 per-decision time with W1 complete-game time and
+  incorrectly claims ~0.3% overhead. W1 is ~42 microseconds/decision; remove the invalid impact
+  claim without extrapolating the production fixture to a whole-game distribution.
+- O-M09-021-1/2 accepted; O-M09-021-3 rejected and superseded by F2.
+- Independent focused checks green: engine accessor 1/0, thresholds 1/0, token disjointness 1/0;
+  policy objective filter 8/0, opponent-secret 1/0, max aggregation 1/0. Green tests do not close
+  the findings because the hidden-boundary test endorses the leak and no `StateCross::None`
+  delivery test exists.
+- **Status:** M09-021 remains open. Next action is F1–F3 correction, affected/workspace gates,
+  corrected evidence, and a fresh independent Tier-C recheck.
