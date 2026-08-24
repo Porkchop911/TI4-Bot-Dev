@@ -3192,3 +3192,33 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   final-role trainer rejection exit 1; real validation panel 30/0 failed with identical output.
 - **Next exact action:** correct the one active durable-manifest paragraph, run diff-check, and
   request a narrow Tier-C recheck. M09-020 remains open; M09-019b is independently ready.
+
+## M09-020 F-M09-020-R1 resolved, committed `f1f070f` (2026-08-24) — pending narrow Tier-C recheck
+
+- **R1 resolved (records-only):** `plans/evidence/MLP-ARTIFACTS.md` "Role rules enforced in code"
+  now names the exact unified-boundary call sites at `185180a`: `run_panel` = one `fs::read` →
+  checksum prefix check → `verify_pool_role_bytes` (Train/Validation) → `MapPool::load_verified`;
+  stage-2 = `read_and_verify_pool_role` → `MapPool::load_verified`. Notes that
+  `verify_pool_role(path)` remains only as a path-only convenience wrapper with no live consumer.
+- **Documentation diff-check:** every other `verify_pool_role` mention in the repo is either
+  historical/chronological (52c17fb implementation record, spec deliverable text, ledger finding
+  quotes, EXECUTION_STATE checkpoints) or current code — none describes the superseded call sites
+  as active. No source, fixture, or measurement touched by this commit.
+- **Next exact action:** narrow independent Tier-C recheck of `f1f070f` (documentation-only delta
+  over the already-verified `185180a`). On acceptance, M09-020 closes; next dependency-ready work
+  is M09-019b on branch `wp/m09-019-post-rules-baseline-profile` (M09-019a accepted at `22a7fa7`;
+  the row retains a second Tier-D pass for 019b).
+
+## M09-020 narrow Tier-C recheck of `f1f070f` (2026-08-24) — ACCEPTED
+
+- F-M09-020-R1 is resolved: the active durable manifest now accurately names the exact
+  single-buffer call chains at both live consumers and correctly characterizes the retained
+  path-only convenience wrapper.
+- Scope verification: `41d1fdf..f1f070f` changes exactly four M09-020 documentation files; no
+  source, configuration, fixture, generated manifest JSON, or measurement changed. Diff-check clean.
+- The independently verified `185180a` results remain applicable: unified boundary **2/0**;
+  ti4-sim **45/0**; workspace **1,349/0**; scoped Clippy/rustfmt clean; deterministic reseal
+  unchanged; final-role training refusal and real validation panel reproduced.
+- **M09-020 is complete and Tier-C accepted.** All review findings are closed. Next
+  dependency-ready work is M09-019b on `wp/m09-019-post-rules-baseline-profile`; the row retains
+  its required Tier-D pass 2.

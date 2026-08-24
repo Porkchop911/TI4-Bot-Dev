@@ -141,3 +141,16 @@ Documentation diff-check: every other `verify_pool_role` mention in the reposito
 historical/chronological (the 52c17fb implementation record, the spec's deliverable text, this
 ledger's finding quotes, EXECUTION_STATE checkpoints) or current code — none describes the
 superseded call sites as active. Records-only change; no source, fixture, or measurement touched.
+
+## Narrow independent Tier-C recheck of `f1f070f` (2026-08-24)
+
+**Verdict: ACCEPTED; M09-020 closes.** F-M09-020-R1 is resolved. The active durable manifest now
+names the exact verified boundaries: `run_panel` checks the prefix and role then parses one
+`fs::read` buffer; stage-2 parses the buffer returned by `read_and_verify_pool_role`. Its note about
+the retained path-only convenience wrapper is also accurate.
+
+The delta from review commit `41d1fdf` to `f1f070f` contains exactly four M09-020 documentation
+files. There is no source, configuration, fixture, or artifact-manifest JSON delta; `git diff
+41d1fdf..f1f070f --check` is clean. The independently verified technical gates and end-to-end
+proofs from the `185180a` recheck remain applicable. F-M09-020-1, F-M09-020-2, F-M09-020-R1, and
+O-M09-020-4 are closed with no remaining actionable review item.

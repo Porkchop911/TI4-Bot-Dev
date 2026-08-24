@@ -1,10 +1,10 @@
 # M09-020 — Durable baselines and sealed data roles
 
-**Status: F-M09-020-R1 resolved (records-only) 2026-08-24, pending narrow Tier-C recheck.** The
-two original findings are technically resolved per the fresh recheck of `185180a`; R1 required the
-active durable artifact manifest to describe the new single-buffer call sites accurately — done in
-`plans/evidence/MLP-ARTIFACTS.md`, with a documentation diff-check recorded. Branch
-`wp/m09-020-durable-baselines-sealed-roles` from base commit `1a06ca9`. Dependencies M08-019,
+**Status: accepted by narrow independent Tier-C recheck of `f1f070f` on 2026-08-24.** The two
+original technical findings were accepted at the `185180a` recheck; F-M09-020-R1 is now resolved
+because the active durable artifact manifest describes the exact single-buffer call sites. The
+documentation-only delta is clean and changes no source, configuration, fixture, or measurement.
+Branch `wp/m09-020-durable-baselines-sealed-roles` from base commit `1a06ca9`. Dependencies M08-019,
 M09-018, and M09-019a are accepted. One declared scope extension: `.gitignore` negation block for
 `fixtures/mlp-baselines/` (S1 in `plans/evidence/M09-020.md`). Evidence:
 `plans/evidence/M09-020.md`, durable manifest `plans/evidence/MLP-ARTIFACTS.md`, ledger
