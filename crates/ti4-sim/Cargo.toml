@@ -13,6 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 flate2.workspace = true
+zstd.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 thiserror.workspace = true

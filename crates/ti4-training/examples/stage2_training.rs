@@ -972,6 +972,16 @@ fn main() -> Result<(), String> {
     }
     plan.train_seed_stride = train_seed_stride.unwrap_or(plan.train_seeds);
     if let Some(path) = &map_pool_path {
+        // Data-role gate (MLP plan §10): training may never consume final-role data, and an
+        // unknown pool identity fails closed before any rollout.
+        ti4_sim::artifacts::verify_pool_role(
+            path,
+            &[
+                ti4_sim::artifacts::ArtifactRole::Train,
+                ti4_sim::artifacts::ArtifactRole::Validation,
+            ],
+        )
+        .map_err(|error| format!("{}: {error}", path.display()))?;
         let pool = ti4_sim::MapPool::load(path)
             .map_err(|error| format!("load {}: {error}", path.display()))?;
         pool.validate_systems(ContentStore::embedded(), plan.sources)

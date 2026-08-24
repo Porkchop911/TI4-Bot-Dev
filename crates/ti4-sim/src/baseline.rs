@@ -24,6 +24,7 @@ use ti4_model::content_types::SourceSet;
 use ti4_model::id::PlayerId;
 use ti4_policy::learned::Profile;
 
+use crate::artifacts::{ArtifactError, ArtifactRole};
 use crate::maps::{MapPool, MapPoolError};
 use crate::result::GameResult;
 use crate::run::{Horizon, play_learned};
@@ -50,6 +51,8 @@ pub enum BaselineError {
     InvalidProfile { faction: String, reason: String },
     #[error("map pool: {0}")]
     Pool(#[from] MapPoolError),
+    #[error("artifact role: {0}")]
+    Artifact(#[from] ArtifactError),
     #[error("baseline panel requires at least one seed")]
     EmptyPanel,
     #[error("baseline panel games failed: {details}")]
@@ -104,6 +107,19 @@ impl Champions {
             source_sha256,
         })
     }
+}
+
+/// Collect per-game failures as `seed N: reason` details, if any game failed.
+fn failed_games(games: &[GameResult]) -> Option<String> {
+    let failures: Vec<String> = games
+        .iter()
+        .filter_map(|game| {
+            game.error
+                .as_ref()
+                .map(|reason| format!("seed {}: {reason}", game.seed))
+        })
+        .collect();
+    (!failures.is_empty()).then(|| failures.join("; "))
 }
 
 /// Verify that `path`'s sha256 starts with `expected_prefix`, returning the full digest.
@@ -211,6 +227,12 @@ pub fn run_panel(
         return Err(BaselineError::EmptyPanel);
     }
     let pool_sha256 = verify_checksum(pool_path, pool_sha_prefix)?;
+    // Data-role gate (MLP plan §10): a measurement panel may never consume final-role data,
+    // and an unknown pool identity fails closed before any game runs.
+    crate::artifacts::verify_pool_role(
+        pool_path,
+        &[ArtifactRole::Train, ArtifactRole::Validation],
+    )?;
     let champions = Champions::load_checkpoint_accepted(checkpoint_path, checkpoint_sha_prefix)?;
     let pool = MapPool::load(pool_path)?;
 
@@ -226,18 +248,8 @@ pub fn run_panel(
             &champions.profiles,
         ));
     }
-    let failures: Vec<String> = games
-        .iter()
-        .filter_map(|game| {
-            game.error
-                .as_ref()
-                .map(|reason| format!("seed {}: {reason}", game.seed))
-        })
-        .collect();
-    if !failures.is_empty() {
-        return Err(BaselineError::GameFailures {
-            details: failures.join("; "),
-        });
+    if let Some(details) = failed_games(&games) {
+        return Err(BaselineError::GameFailures { details });
     }
     Ok(PanelReport {
         pool_sha256,
@@ -462,23 +474,20 @@ mod tests {
             Err(BaselineError::EmptyPanel)
         ));
 
+        // M09-020 strengthened the contract: a panel given a pool that is not in the durable
+        // manifest fails closed at the role gate, before any game runs. The synthetic test pool
+        // has no manifest identity, so it must be refused as unknown.
         let dir = std::env::temp_dir().join("ti4-sim-baseline-panel-failure-test");
         fs::create_dir_all(&dir).unwrap();
         let pool_path = dir.join("pool.json");
         let checkpoint_path = dir.join("checkpoint.json");
         let pool_bytes = synthetic_pool_json(ContentStore::embedded()).into_bytes();
         fs::write(&pool_path, &pool_bytes).unwrap();
-
-        // Five valid profiles: the sixth seat deterministically fails with its seed and reason.
-        let accepted = IN_SCOPE_FACTIONS[..5]
-            .iter()
-            .map(|faction| ((*faction).to_owned(), test_profile(faction)))
-            .collect::<BTreeMap<_, _>>();
-        let checkpoint_bytes = serde_json::to_vec(&serde_json::json!({
-            "accepted": accepted,
-        }))
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_vec(&serde_json::json!({ "accepted": {} })).unwrap(),
+        )
         .unwrap();
-        fs::write(&checkpoint_path, &checkpoint_bytes).unwrap();
 
         let result = run_panel(
             ContentStore::embedded(),
@@ -492,13 +501,56 @@ mod tests {
                 steps: 20_000,
             },
             &hex(&Sha256::digest(&pool_bytes)),
-            &hex(&Sha256::digest(&checkpoint_bytes)),
+            "unused-for-an-unknown-pool",
         );
         let Err(error) = result else {
-            panic!("a failed game must reject the panel");
+            panic!("a panel on an unmanifested pool must be refused");
         };
-        let message = error.to_string();
-        assert!(message.contains("seed 919001"), "{message}");
-        assert!(message.contains("no champion profile"), "{message}");
+        assert!(
+            matches!(
+                error,
+                BaselineError::Artifact(crate::artifacts::ArtifactError::UnknownArtifact { .. })
+            ),
+            "{error}"
+        );
+    }
+
+    /// The per-game failure details that `run_panel` turns into `GameFailures`: every failing
+    /// seed and reason is preserved, in game order.
+    #[test]
+    fn failed_games_preserves_seed_and_reason() {
+        let games = vec![
+            game_with_error(919_001, "no champion profile for l1z1x"),
+            game_with_error(919_002, "deployment fault"),
+        ];
+        let details = super::failed_games(&games).expect("two failed games must produce details");
+        assert!(
+            details.contains("seed 919001: no champion profile for l1z1x"),
+            "{details}"
+        );
+        assert!(
+            details.contains("seed 919002: deployment fault"),
+            "{details}"
+        );
+
+        // No failures, no details.
+        let mut clean = game_with_error(0, "");
+        clean.error = None;
+        assert!(super::failed_games(&[clean]).is_none());
+    }
+
+    fn game_with_error(seed: u64, reason: &str) -> GameResult {
+        GameResult {
+            seed,
+            finished: false,
+            winner: None,
+            rounds: 0,
+            victory_points: BTreeMap::new(),
+            events: BTreeMap::new(),
+            decisions: 0,
+            seconds: 0.0,
+            ended_because: crate::result::Ending::Error,
+            error: Some(reason.to_owned()),
+        }
     }
 }
