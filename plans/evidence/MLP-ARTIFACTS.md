@@ -32,7 +32,12 @@ mismatch means the corpus moved and every number measured against it needs re-re
 ## Provenance and license
 
 - All five artifacts are this repository's own generated data (no third-party content).
-- zstd is BSD-3-Clause; it compresses but does not alter content. The fixtures contain only
-  repository-generated training outputs.
+- Compression toolchain licenses (verified against `cargo metadata --locked` on the current tree,
+  recorded in `fixtures/mlp-baselines/manifest.json`):
+  - Rust wrapper chain: `zstd 0.13.3` MIT; `zstd-safe 7.2.4` MIT OR Apache-2.0;
+    `zstd-sys 2.0.16+zstd.1.5.7` MIT/Apache-2.0.
+  - Bundled upstream native library: zstd 1.5.7, BSD-3-Clause (bundled by `zstd-sys`).
+- Compression does not alter content; the fixtures contain only repository-generated training
+  outputs.
 - Combined compressed fixture size: 5,104,654 bytes — under the 50 MiB cap of MLP plan §10 /
   milestone row P2.

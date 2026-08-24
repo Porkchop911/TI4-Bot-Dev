@@ -108,3 +108,15 @@ confirmed. Two findings remain in `plans/M09-020_OPEN_REVIEW_ITEMS.md`: F-M09-02
 the role check and `MapPool` parse to consume the same immutable bytes at both live entry points;
 F-M09-020-2 (MEDIUM) requires accurate license provenance for the locked Rust zstd chain versus
 the bundled upstream native library. M09-020 remains open until both are corrected and rechecked.
+
+## Correction round (implementer, 2026-08-24)
+
+Both findings resolved as directed: F-M09-020-1 via a single immutable byte buffer feeding
+checksum verification, role gate, and parse at both live consumers (new `verify_pool_role_bytes`,
+`read_and_verify_pool_role`, `MapPool::load_verified`; two focused unified-boundary tests);
+F-M09-020-2 via a structured license block in the regenerated manifest distinguishing the Rust
+wrapper chain from the bundled upstream native library. Writable-path declaration (including the
+finding-specific extension to `crates/ti4-sim/src/maps.rs`) is recorded in
+`plans/M09-020_OPEN_REVIEW_ITEMS.md`; verbatim evidence in `plans/evidence/M09-020.md`. Gates:
+ti4-sim 45/0, workspace 1349/0, clippy/fmt clean for scoped files. Pending fresh independent
+Tier-C recheck.

@@ -35,7 +35,27 @@
   },
   "provenance": {
     "content": "This repository's own training outputs (no third-party content).",
-    "license_note": "zstd is BSD-3-Clause; fixtures contain only repository-generated data.",
+    "licenses": {
+      "bundled_native_library": "upstream zstd 1.5.7 (BSD-3-Clause), bundled by zstd-sys",
+      "content_note": "fixtures contain only repository-generated data",
+      "rust_wrapper_chain": [
+        {
+          "crate": "zstd",
+          "license": "MIT",
+          "version": "0.13.3"
+        },
+        {
+          "crate": "zstd-safe",
+          "license": "MIT OR Apache-2.0",
+          "version": "7.2.4"
+        },
+        {
+          "crate": "zstd-sys",
+          "license": "MIT/Apache-2.0",
+          "version": "2.0.16+zstd.1.5.7"
+        }
+      ]
+    },
     "stage1_hacanclone": "Stage-1 hacan clone run, frozen checkpoint at update 5000.",
     "stage2_r6": "Stage-2 r6 run, completed checkpoint at update 10000."
   },

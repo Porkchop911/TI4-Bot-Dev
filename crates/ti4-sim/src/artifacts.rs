@@ -107,10 +107,52 @@ pub enum ArtifactError {
     },
 }
 
+/// Verify that `bytes` are a known pool whose role is in `allowed`. No I/O: the caller owns
+/// the buffer, so verification and any subsequent parse can consume the same immutable bytes
+/// (the unified boundary of MLP plan §10).
+///
+/// Fails closed on unknown artifacts and disallowed roles: these are fail-closed tests, not
+/// operator conventions.
+///
+/// # Errors
+/// [`ArtifactError::UnknownArtifact`] when the bytes are not in the durable manifest, or
+/// [`ArtifactError::RoleViolation`] when the pool's role is not allowed.
+pub fn verify_pool_role_bytes(bytes: &[u8], allowed: &[ArtifactRole]) -> Result<(), ArtifactError> {
+    let digest = hex(&Sha256::digest(bytes));
+    match pool_role(&digest) {
+        None => Err(ArtifactError::UnknownArtifact { found: digest }),
+        Some(role) if allowed.contains(&role) => Ok(()),
+        Some(role) => Err(ArtifactError::RoleViolation {
+            found: role,
+            allowed: allowed.to_vec(),
+        }),
+    }
+}
+
+/// Read `path` exactly once and verify its role over those exact bytes, returning the verified
+/// buffer so the consumer can parse from it. A file that changes after approval cannot be
+/// consumed, because parsing never reopens the path.
+///
+/// # Errors
+/// I/O errors reading the file, [`ArtifactError::UnknownArtifact`] when the bytes are not in the
+/// durable manifest, or [`ArtifactError::RoleViolation`] when the pool's role is not allowed.
+pub fn read_and_verify_pool_role(
+    path: &Path,
+    allowed: &[ArtifactRole],
+) -> Result<Vec<u8>, ArtifactError> {
+    let bytes = fs::read(path).map_err(|source| ArtifactError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    verify_pool_role_bytes(&bytes, allowed)?;
+    Ok(bytes)
+}
+
 /// Verify that `path` is a known pool whose role is in `allowed`, hashing the exact bytes read.
 ///
 /// Fails closed on unknown artifacts and disallowed roles (MLP plan §10): these are fail-closed
-/// tests, not operator conventions.
+/// tests, not operator conventions. Consumers that also parse the pool should use
+/// [`read_and_verify_pool_role`] so verification and parsing share one immutable buffer.
 ///
 /// # Errors
 /// I/O errors reading the file, [`ArtifactError::UnknownArtifact`] when the bytes are not in the
@@ -120,15 +162,7 @@ pub fn verify_pool_role(path: &Path, allowed: &[ArtifactRole]) -> Result<(), Art
         path: path.display().to_string(),
         source,
     })?;
-    let digest = hex(&Sha256::digest(&bytes));
-    match pool_role(&digest) {
-        None => Err(ArtifactError::UnknownArtifact { found: digest }),
-        Some(role) if allowed.contains(&role) => Ok(()),
-        Some(role) => Err(ArtifactError::RoleViolation {
-            found: role,
-            allowed: allowed.to_vec(),
-        }),
-    }
+    verify_pool_role_bytes(&bytes, allowed)
 }
 
 fn hex(digest: &[u8]) -> String {

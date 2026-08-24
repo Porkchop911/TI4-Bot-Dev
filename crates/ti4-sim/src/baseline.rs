@@ -205,10 +205,11 @@ impl PanelReport {
 /// Run the bounded validation panel: one game per seed, each on a pool-drawn board with every
 /// seat answered by its faction's champion profile.
 ///
-/// Validates artifact role and checksum before starting (MLP plan §10): the pool is verified
-/// against `pool_sha_prefix` and every champion profile is validated for its own faction before
-/// any game is played. The checkpoint checksum is verified against `checkpoint_sha_prefix` from
-/// the same byte buffer that is deserialized.
+/// Validates artifact role and checksum before starting (MLP plan §10): the pool is read once,
+/// and that single immutable buffer feeds the checksum verification, the data-role gate, and
+/// the parse — a file that changes after approval cannot be consumed. Every champion profile is
+/// validated for its own faction before any game is played; the checkpoint checksum is verified
+/// against `checkpoint_sha_prefix` from the same byte buffer that is deserialized.
 ///
 /// # Errors
 /// Checksum mismatch, unreadable/unparseable artifacts, invalid profiles, or a map-pool error.
@@ -226,15 +227,25 @@ pub fn run_panel(
     if seeds.is_empty() {
         return Err(BaselineError::EmptyPanel);
     }
-    let pool_sha256 = verify_checksum(pool_path, pool_sha_prefix)?;
+    // Unified boundary (MLP plan §10): one immutable buffer feeds the checksum verification,
+    // the data-role gate, and the parse — a file that changes after approval cannot be
+    // consumed. Error precedence is preserved: checksum mismatch before role violation.
+    let pool_bytes = fs::read(pool_path)?;
+    let pool_sha256 = hex(&Sha256::digest(&pool_bytes));
+    if !pool_sha256.starts_with(pool_sha_prefix) {
+        return Err(BaselineError::ChecksumMismatch {
+            expected: pool_sha_prefix.to_owned(),
+            found: pool_sha256,
+        });
+    }
     // Data-role gate (MLP plan §10): a measurement panel may never consume final-role data,
     // and an unknown pool identity fails closed before any game runs.
-    crate::artifacts::verify_pool_role(
-        pool_path,
+    crate::artifacts::verify_pool_role_bytes(
+        &pool_bytes,
         &[ArtifactRole::Train, ArtifactRole::Validation],
     )?;
     let champions = Champions::load_checkpoint_accepted(checkpoint_path, checkpoint_sha_prefix)?;
-    let pool = MapPool::load(pool_path)?;
+    let pool = MapPool::load_verified(pool_path, &pool_bytes)?;
 
     let mut games = Vec::with_capacity(seeds.len());
     for &seed in seeds {
@@ -512,6 +523,61 @@ mod tests {
                 BaselineError::Artifact(crate::artifacts::ArtifactError::UnknownArtifact { .. })
             ),
             "{error}"
+        );
+    }
+
+    /// Unified boundary (F-M09-020-1): parsing from the verified byte buffer works and agrees
+    /// with a path-based load of the same file — `run_panel` now parses only the buffer that
+    /// was checksummed and role-checked.
+    #[test]
+    fn unified_boundary_parses_from_the_verified_bytes() {
+        let dir = std::env::temp_dir().join("ti4-sim-baseline-unified-parse-test");
+        fs::create_dir_all(&dir).unwrap();
+        let pool_path = dir.join("pool.json");
+        let pool_bytes = synthetic_pool_json(ContentStore::embedded()).into_bytes();
+        fs::write(&pool_path, &pool_bytes).unwrap();
+
+        // The buffer-based parse (what run_panel uses) accepts the verified bytes.
+        let from_buffer =
+            MapPool::load_verified(&pool_path, &pool_bytes).expect("verified bytes must parse");
+        assert_eq!(
+            from_buffer.len(),
+            1,
+            "the synthetic pool has one arrangement"
+        );
+
+        // And it agrees with a path-based load of the same file.
+        let from_path = MapPool::load(&pool_path).expect("path load works too");
+        assert_eq!(from_buffer.len(), from_path.len());
+        assert_eq!(from_buffer.home_slots(), from_path.home_slots());
+    }
+
+    /// Unified boundary (F-M09-020-1): the role gate covers exactly the read buffer — the pure
+    /// byte check and the read-and-verify wrapper agree on the same bytes, before any parse.
+    #[test]
+    fn unified_boundary_role_gate_covers_the_same_read() {
+        let dir = std::env::temp_dir().join("ti4-sim-baseline-unified-role-test");
+        fs::create_dir_all(&dir).unwrap();
+        let pool_path = dir.join("pool.json");
+        let pool_bytes = synthetic_pool_json(ContentStore::embedded()).into_bytes();
+        fs::write(&pool_path, &pool_bytes).unwrap();
+
+        let allowed = [ArtifactRole::Train, ArtifactRole::Validation];
+        // The pure byte check refuses the unmanifested bytes...
+        assert!(
+            matches!(
+                crate::artifacts::verify_pool_role_bytes(&pool_bytes, &allowed),
+                Err(crate::artifacts::ArtifactError::UnknownArtifact { .. })
+            ),
+            "unmanifested pool bytes must be refused by the byte-level gate"
+        );
+        // ...and the read-and-verify wrapper refuses the same file's bytes.
+        assert!(
+            matches!(
+                crate::artifacts::read_and_verify_pool_role(&pool_path, &allowed),
+                Err(crate::artifacts::ArtifactError::UnknownArtifact { .. })
+            ),
+            "the I/O wrapper must refuse the same buffer it read"
         );
     }
 

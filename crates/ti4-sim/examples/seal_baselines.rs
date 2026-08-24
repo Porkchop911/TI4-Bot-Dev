@@ -153,7 +153,19 @@ fn write_fixtures(
             "content": "This repository's own training outputs (no third-party content).",
             "stage2_r6": "Stage-2 r6 run, completed checkpoint at update 10000.",
             "stage1_hacanclone": "Stage-1 hacan clone run, frozen checkpoint at update 5000.",
-            "license_note": "zstd is BSD-3-Clause; fixtures contain only repository-generated data.",
+            "licenses": {
+                "rust_wrapper_chain": [
+                    {"crate": "zstd", "version": "0.13.3", "license": "MIT"},
+                    {"crate": "zstd-safe", "version": "7.2.4", "license": "MIT OR Apache-2.0"},
+                    {
+                        "crate": "zstd-sys",
+                        "version": "2.0.16+zstd.1.5.7",
+                        "license": "MIT/Apache-2.0"
+                    }
+                ],
+                "bundled_native_library": "upstream zstd 1.5.7 (BSD-3-Clause), bundled by zstd-sys",
+                "content_note": "fixtures contain only repository-generated data",
+            },
         },
         "extraction": {
             "command_zstd_cli": [
