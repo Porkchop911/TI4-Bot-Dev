@@ -1,0 +1,156 @@
+# M09-020 open review items
+
+Ledger for the durable-baselines / sealed-data-roles package. Findings are recorded here as they
+arise; dispositions must be resolved before M09-020 closes (review tier C — frontier model).
+
+## Implementer observations (2026-08-23) — pending Tier-C review
+
+### O-M09-020-1 — ~30 diagnostic example binaries load pools without role wiring — INFO (spec non-goal)
+
+The spec wires the two live corpus/panel entry points (`baseline::run_panel`,
+`stage2_training.rs --map-pool`). The remaining pool-loading examples are diagnostics that produce
+no baselines or checkpoints and no training; wiring them would touch ~30 files for no integrity
+gain. If a diagnostic is ever promoted to a measurement command, it must gain the role check at
+that time (recorded here so the gap is visible).
+
+### O-M09-020-2 — `is_known_checkpoint` has no call site yet — INFO (by design)
+
+Provided and tested in this package; its consumer (teacher-checksum rejection) arrives with M10-038
+per §10. No dead-code warning because it is a public API of the crate.
+
+### O-M09-020-3 — pre-existing rustfmt drift in ti4-training examples — INFO (out of scope)
+
+`cargo fmt -p ti4-training --check` fails on ~30 files that this package never touched (the crate
+was never fmt-clean). Only the lines added by this package to `stage2_training.rs` were made
+fmt-conformant. A formatting-only cleanup package could close this if ever desired; it is not a
+gate for M09-020 because the acceptance criterion is "clippy/fmt clean for scoped files".
+
+### O-M09-020-4 — `.gitignore` negation block (scope extension S1) — needs reviewer confirmation
+
+Declared in `plans/evidence/M09-020.md`: a three-line negation following the existing
+`legacy_entropy/bounded-v1` convention was required because `fixtures/*` ignored everything under
+`fixtures/`, blocking the spec's own "fixtures committed with manifest" acceptance criterion. The
+reviewer should confirm this is the right mechanism (vs. force-adding tracked files) and that no
+other ignore behavior changed.
+
+## Independent Tier-C frontier review of `52c17fb` (2026-08-24)
+
+**Verdict: changes required; M09-020 is not accepted.** The bounded fixtures, hashes,
+reproducible sealing command, pool separation, and scoped gates independently reproduce. The
+role boundary is not yet fail-closed for the bytes actually consumed.
+
+### F-M09-020-1 — role verification and parsing use different reads — HIGH
+
+`verify_pool_role` hashes one `fs::read`, returns only `()`, and both live consumers subsequently
+reopen the path through `MapPool::load`. `baseline::run_panel` additionally performs a separate
+checksum read. A pool can change after approval and before parsing, allowing bytes with an unknown
+or final role to be consumed. Make role verification and parsing operate on one immutable byte
+buffer (or return a parsed pool derived from the verified bytes) at both live consumers, and add a
+focused test for the unified boundary.
+
+### F-M09-020-2 — zstd license note does not describe the locked Rust dependencies — MEDIUM
+
+The fixture manifest and sealing tool state `zstd is BSD-3-Clause`. `cargo metadata` reports the
+locked Rust packages as `zstd 0.13.3` MIT, `zstd-safe 7.2.4` MIT OR Apache-2.0, and
+`zstd-sys 2.0.16+zstd.1.5.7` MIT/Apache-2.0. If the note intends the bundled upstream native zstd
+library, say so separately and record the Rust wrapper-chain licenses. Update the deterministic
+manifest generator, regenerate the manifest, and keep provenance accurate.
+
+### O-M09-020-4 disposition — ACCEPTED
+
+The `.gitignore` negation is the correct repository-visible mechanism. Independent
+`git check-ignore -v --no-index` checks showed all three intended fixture paths end at
+`!fixtures/mlp-baselines/**`, while a sibling `fixtures/other-probe.txt` remains ignored by
+`fixtures/*`; `git ls-files fixtures/mlp-baselines` lists exactly the two archives and manifest.
+This is preferable to an opaque force-add and does not broaden sibling fixture behavior.
+
+## Correction round for F-M09-020-1 / F-M09-020-2 (implementer, 2026-08-24)
+
+**Finding-specific writable-path declaration (before any source edit):**
+
+- `crates/ti4-sim/src/maps.rs` — one new public function `MapPool::load_verified(path, bytes)`
+  that parses an already-read buffer with the same extension dispatch as `MapPool::load`. This is
+  the minimal addition required to make role verification and parsing consume one immutable byte
+  buffer at both live consumers (F-M09-020-1). No other change to maps.rs.
+- All other edits stay within the package's originally declared writable paths:
+  `crates/ti4-sim/src/artifacts.rs` (byte-based verification API),
+  `crates/ti4-sim/src/baseline.rs` (`run_panel` single-read boundary + focused tests),
+  `crates/ti4-training/examples/stage2_training.rs` (unified boundary at `--map-pool`),
+  `crates/ti4-sim/examples/seal_baselines.rs` (license-note correction, F-M09-020-2),
+  `fixtures/mlp-baselines/manifest.json` (regenerated by the committed seal command), and the
+  plans/evidence records.
+
+**Fix design (F-M09-020-1):** one `fs::read` per pool feeds, in order: checksum verification,
+role gate (`verify_pool_role_bytes` over those exact bytes), and parsing
+(`MapPool::load_verified` from those same bytes). No consumer reopens the path after approval.
+Error precedence at `run_panel` is preserved (checksum mismatch before role violation).
+Focused tests cover the unified boundary: parse-from-verified-bytes works, and the role gate
+covers exactly the read buffer.
+
+**Resolution status (2026-08-24):** both findings implemented as designed; full verbatim evidence
+in `plans/evidence/M09-020.md` (correction round section).
+
+### F-M09-020-1 — RESOLVED, pending recheck
+
+Single immutable buffer at both live consumers (`baseline::run_panel`,
+`stage2_training --map-pool`); new pure `verify_pool_role_bytes` + I/O wrapper
+`read_and_verify_pool_role`; new `MapPool::load_verified`. Two focused tests added
+(`unified_boundary_parses_from_the_verified_bytes`,
+`unified_boundary_role_gate_covers_the_same_read`). End-to-end re-proofs: final pool still
+rejected with exit 1; validation panel numbers unchanged.
+
+### F-M09-020-2 — RESOLVED, pending recheck
+
+License facts verified against `cargo metadata --locked` (zstd 0.13.3 MIT; zstd-safe 7.2.4
+MIT OR Apache-2.0; zstd-sys 2.0.16+zstd.1.5.7 MIT/Apache-2.0). Generator now records a structured
+`licenses` block separating the Rust wrapper chain from the bundled upstream native library
+(zstd 1.5.7, BSD-3-Clause); manifest regenerated by the committed seal command (`.zst` fixtures
+byte-identical; only `manifest.json` changed); durable manifest doc updated to match.
+
+## Fresh independent Tier-C recheck of `185180a` (2026-08-24)
+
+**Verdict: changes required.** F-M09-020-1 and F-M09-020-2 are technically resolved. The reviewer
+confirmed both live consumers parse the same immutable bytes whose full identity/role was checked,
+and the generated license block matches the locked Cargo metadata. One evidence-accuracy finding
+remains.
+
+### F-M09-020-R1 — active durable manifest names the superseded call sites — LOW
+
+`plans/evidence/MLP-ARTIFACTS.md`, under “Role rules enforced in code,” still says
+`verify_pool_role(path, allowed)` is wired at both live consumers. At `185180a` neither consumer
+uses that path-only API: `baseline::run_panel` uses `verify_pool_role_bytes` and
+`MapPool::load_verified` over its single read; stage-2 uses `read_and_verify_pool_role` followed by
+`MapPool::load_verified`. Update the active durable manifest to describe those exact boundaries.
+Historical implementation/review sections may remain chronological. Then run a documentation
+diff-check and request a narrow Tier-C recheck.
+
+Independent gates: unified-boundary **2/0**; ti4-sim **45/0**; workspace **1,349/0**; ti4-sim
+Clippy adds no warning (two pre-existing engine warnings only); scoped rustfmt and correction
+diff-check clean. Deterministic reseal left tracked fixtures unchanged. The final pool was refused
+by the real trainer with exit 1; the real validation panel reproduced 30 games, 0 failures and the
+recorded aggregates/output hash. O-M09-020-4 remains accepted.
+
+### F-M09-020-R1 — RESOLVED (implementer, 2026-08-24), pending narrow recheck
+
+`plans/evidence/MLP-ARTIFACTS.md` "Role rules enforced in code" now describes the exact unified
+boundaries at `185180a`: `run_panel` = one `fs::read` → checksum prefix check →
+`verify_pool_role_bytes` (Train/Validation) → `MapPool::load_verified`; stage-2 =
+`read_and_verify_pool_role` → `MapPool::load_verified`. It also notes that
+`verify_pool_role(path)` remains only as a path-only convenience wrapper with no live consumer.
+Documentation diff-check: every other `verify_pool_role` mention in the repository is either
+historical/chronological (the 52c17fb implementation record, the spec's deliverable text, this
+ledger's finding quotes, EXECUTION_STATE checkpoints) or current code — none describes the
+superseded call sites as active. Records-only change; no source, fixture, or measurement touched.
+
+## Narrow independent Tier-C recheck of `f1f070f` (2026-08-24)
+
+**Verdict: ACCEPTED; M09-020 closes.** F-M09-020-R1 is resolved. The active durable manifest now
+names the exact verified boundaries: `run_panel` checks the prefix and role then parses one
+`fs::read` buffer; stage-2 parses the buffer returned by `read_and_verify_pool_role`. Its note about
+the retained path-only convenience wrapper is also accurate.
+
+The delta from review commit `41d1fdf` to `f1f070f` contains exactly four M09-020 documentation
+files. There is no source, configuration, fixture, or artifact-manifest JSON delta; `git diff
+41d1fdf..f1f070f --check` is clean. The independently verified technical gates and end-to-end
+proofs from the `185180a` recheck remain applicable. F-M09-020-1, F-M09-020-2, F-M09-020-R1, and
+O-M09-020-4 are closed with no remaining actionable review item.

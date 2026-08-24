@@ -1665,6 +1665,7 @@ dependencies = [
  "ti4-model",
  "ti4-policy",
  "tracing",
+ "zstd",
 ]
 
 [[package]]

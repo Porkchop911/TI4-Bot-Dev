@@ -41,9 +41,12 @@ Thumbs.db
 *.profraw
 *.profdata
 
-# The bounded oracle traces are the one retained, checksummed fixture corpus.
+# The bounded oracle traces and sealed MLP baselines are the retained, checksummed fixture corpora.
 !fixtures/
 fixtures/*
+!fixtures/mlp-baselines/
+fixtures/mlp-baselines/*
+!fixtures/mlp-baselines/**
 !fixtures/legacy_entropy/
 fixtures/legacy_entropy/*
 !fixtures/legacy_entropy/bounded-v1/

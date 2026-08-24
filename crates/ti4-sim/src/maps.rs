@@ -85,6 +85,21 @@ impl MapPool {
         }
     }
 
+    /// Parse an already-read pool buffer, dispatching on `path`'s extension exactly like
+    /// [`Self::load`]. This is the unified boundary of MLP plan §10: role verification and
+    /// parsing consume the same immutable bytes, so a file that changes after approval cannot
+    /// be consumed.
+    ///
+    /// # Errors
+    /// Refuses oversized, malformed, or structurally inconsistent artifacts.
+    pub fn load_verified(path: &Path, bytes: &[u8]) -> Result<Self, MapPoolError> {
+        if path.extension().is_some_and(|extension| extension == "gz") {
+            Self::from_gzip_reader(io::Cursor::new(bytes))
+        } else {
+            Self::from_reader(io::Cursor::new(bytes))
+        }
+    }
+
     /// Parse a gzip-compressed pool stream.
     ///
     /// # Errors
