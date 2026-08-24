@@ -1,11 +1,10 @@
 # M09-020 — Durable baselines and sealed data roles
 
-**Status: complete 2026-08-23, pending independent Tier-C frontier review.** Branch
-`wp/m09-020-durable-baselines-sealed-roles` from base commit `1a06ca9`. Dependencies M08-019
-(accepted) and M09-018 (accepted) are met. This package is dependency-ready independently of the
-pending M09-019a Tier-D recheck; its edit scope is disjoint from the files under review except
-`crates/ti4-sim/src/baseline.rs` (one added role-check call), which extends — not alters — the
-accepted fail-closed behavior. One declared scope extension: `.gitignore` negation block for
+**Status: fresh Tier-C recheck of `185180a` completed 2026-08-24 — changes required.** The two
+original findings are technically resolved, but F-M09-020-R1 requires the active durable artifact
+manifest to describe the new single-buffer call sites accurately before acceptance. Branch
+`wp/m09-020-durable-baselines-sealed-roles` from base commit `1a06ca9`. Dependencies M08-019,
+M09-018, and M09-019a are accepted. One declared scope extension: `.gitignore` negation block for
 `fixtures/mlp-baselines/` (S1 in `plans/evidence/M09-020.md`). Evidence:
 `plans/evidence/M09-020.md`, durable manifest `plans/evidence/MLP-ARTIFACTS.md`, ledger
 `plans/M09-020_OPEN_REVIEW_ITEMS.md`.
