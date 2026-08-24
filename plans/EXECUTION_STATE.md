@@ -3470,3 +3470,21 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** correction complete on `wp/m09-021-objective-policy-features`; pending fresh
   independent Tier-C recheck of this commit (confirming both the capability boundary and the
   redaction-boundary extension). M09-021 remains open; M09-024 remains dependency-blocked.
+
+## M09-021 fresh independent Tier-C recheck of `11cb060` (2026-08-24) — changes required
+
+- Accepted: private `SeatObservation` fields/construction, argumentless private-data accessors,
+  authenticated live `Table::ask_seeing` binding, removal of `Observed::redacted_for(viewer)`, and
+  explicit full-state offline feature inputs. F-M09-021-2/3 remain resolved.
+- **F-M09-021-1 remains HIGH:** public `ask_private(choice, seen, decider)` mints a
+  `SeatObservation` from freely constructible `choice.player`. Code holding a legitimate bound
+  view can deref to public `Observed`, forge an opponent choice, supply its own decider, and receive
+  the opponent-bound capability, exposing both `held_secret_progress()` and `held_state()`.
+- The focused `ask_private` test demonstrates this primitive; the function bypasses the per-seat
+  decider lookup that authenticates the safe live table path and does not require full-state access.
+- Independent gates: engine bound-progress **1/0**; engine `ask_private` **1/0**; policy opponent
+  isolation **1/0**; policy `StateCross::None` **1/0**; scoped Clippy has no new package warning;
+  `git diff --check` clean.
+- **Status:** M09-021 and M09-024 remain blocked. Next action is to remove or authority-gate public
+  `ask_private`, add a forged-seat/recursive negative regression, rerun affected gates, and request
+  another narrow independent Tier-C recheck.

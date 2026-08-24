@@ -267,3 +267,57 @@ Exact outputs pasted in `plans/evidence/M09-021.md` (round-2 section).
 **Request:** fresh independent Tier-C recheck of this commit, confirming (a) the capability boundary
 closes F-M09-021-1 as specified, and (b) the redaction-boundary extension is accepted as part of the
 same finding. M09-021 remains open until acceptance; dependent M09-024 stays blocked.
+
+## Fresh independent Tier-C recheck of `11cb060` (2026-08-24)
+
+**Verdict: changes required; F-M09-021-1 remains HIGH and blocking.** The private type and live
+`Table` binding are sound, and removing `Observed::redacted_for(viewer)` is accepted in scope.
+However, the new public offline/test seam recreates the same capability-forging flaw.
+
+### F-M09-021-1 round 2 — still open: public `ask_private` mints arbitrary seat capabilities
+
+`ask_private(choice, seen, decider)` is public and binds `SeatObservation` directly from the
+caller-controlled `choice.player`. `Choice` remains freely constructible. Any policy-side code
+holding a legitimate `SeatObservation` can obtain its deref'd/public `Observed`, construct a choice
+owned by an opponent, provide its own `Decider`, and call `ask_private`. That nested decider receives
+an opponent-bound `SeatObservation` and can read both `held_secret_progress()` and `held_state()`.
+
+The claim that the capability “never escapes to caller code” is insufficient: the caller supplies
+the decider whose `choose_seeing` method receives the minted capability. Nor does this seam require
+full-state access; it accepts the exact public `Observed` reachable from a live bound view. Thus it
+bypasses the authenticated per-seat lookup that makes `Table::ask_seeing` safe.
+
+The new `ask_private_binds_the_view_to_the_choice_owner` test positively demonstrates the primitive:
+the public function mints a view solely from a constructed choice owner and exposes that owner's
+secret alias to caller-provided decider code. Changing the fixture owner to an opponent is the leak.
+
+**Required:** remove or restrict the public capability-minting seam. Cross-crate tests/offline code
+must either drive the authenticated `Table` path, use an API gated by possession of full-state
+authority rather than `Observed`, or use a non-production test-only mechanism unavailable to policy
+implementations. Add a regression proving code with only a bound/public observation cannot mint a
+view for another seat. The public full-state `held_secret_progress(...)` helper is acceptable only
+because its caller must already possess `&GameState`.
+
+### Accepted parts of round 2
+
+- `SeatObservation` has private fields and no public constructor; its argumentless private-data
+  accessors are correctly bound.
+- Live `Table::ask_seeing` binds only after the per-seat decider lookup.
+- Removing `Observed::redacted_for(viewer)` closes the parallel arbitrary-viewer method.
+- Explicit offline feature inputs do not themselves reveal data; their callers already hold the
+  complete state.
+- F-M09-021-2 and F-M09-021-3 remain resolved.
+
+### Independent checks
+
+- engine bound-progress test **1/0**;
+- engine `ask_private` binding test **1/0** (demonstrates the capability-mint primitive);
+- policy opponent-secret isolation **1/0**;
+- policy `StateCross::None` delivery **1/0**;
+- scoped engine/policy Clippy: no new package warning; only the documented pre-existing
+  `game.rs:1260` and `strategy.rs:589` warnings;
+- `git diff --check` clean; the three unrelated pre-existing user edits remain untouched.
+
+**Next exact action:** eliminate or authority-gate public `ask_private`, add the recursive/forged-seat
+negative regression, rerun affected gates, and request another narrow Tier-C recheck. M09-021 and
+M09-024 remain blocked.
