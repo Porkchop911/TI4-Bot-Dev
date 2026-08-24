@@ -192,10 +192,8 @@ accepted until both are resolved.
 
 ## Status
 
-**Complete, pending independent Tier-D frontier review (pass 2 of row 019).** Implementation,
-both-build campaign execution, and evidence (`plans/evidence/M09-019.md`, M09-019b section) are
-done. The W1 workload definition was corrected in-package before measurement (fixed step budget →
-one complete game per sample) after `w1_ending_diagnostic` showed every manifest seed completes at
-round 9 by objective-deck exhaustion; the correction is recorded in evidence with the diagnostic
-data, and this spec's W1 section reflects the final design. All semantic gates passed; variance
-verdicts are honestly reported as unstable on this host (see evidence).
+**Tier-D pass 2 review of `624d91c`: changes required (2026-08-24).** Semantic gates and tests pass,
+but the campaign omits the mandatory same-build variance repeat/disposition, does not bind all
+consumed/published evidence to the final integrity checks, and reports measurements from an
+uncommitted source tree. Additional M00 schema/statistics/host gaps, an incomplete inventory pin,
+and a new rustfmt delta are recorded as F-M09-019b-1..7 in the row ledger. Row 019 is not accepted.

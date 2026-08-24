@@ -13,6 +13,11 @@ Base commit `9a83223` (M09-018 accepted). Branch `wp/m09-019-post-rules-baseline
 into M09-019a and M09-019b **before implementation** per AGENTS.md; the parent acceptance
 criterion is preserved across both children.
 
+**M09-019b Tier-D pass 2 review of `624d91c`: changes required (2026-08-24).** The focused and
+workspace tests pass, but the timing campaign does not conform to the fixed M00 protocol and the
+feature inventory is not yet the exact per-family pin the package claims. Findings
+F-M09-019b-1..7 are recorded in `plans/M09-019_OPEN_REVIEW_ITEMS.md`. Row 019 remains open.
+
 M09-019a result: r6 champions (`final10000.json` `accepted` map, sha256 verified against §10)
 played 30 fixed seeds on the validation-role pool (sha256 verified) at a 4-round horizon —
 **30/30 error-free, 0 completed, mean VP per seat 2.700/2.467/2.167/2.600/2.600/2.533,

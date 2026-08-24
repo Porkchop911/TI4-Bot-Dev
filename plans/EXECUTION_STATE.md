@@ -3105,3 +3105,26 @@ M09-020 (durable baselines + sealed data roles) was fully closed on its own bran
 Tier-C recheck accepted at `cd82f9a`. The "remains changes-required" line above is superseded. Its
 fixtures (`fixtures/mlp-baselines/`) and role-enforcement module live on that branch; merging it
 into the M09-019 chain (or vice versa) is a milestone-integration decision, not part of 019b.
+
+## M09-019b Tier-D frontier review pass 2 of `624d91c` (2026-08-24) — changes required
+
+- Focused profile **6/0**, inventory pin **1/0**, workspace **1,347/0**, scoped Clippy clean;
+  rustfmt fails on one new inventory-test delta plus two recorded pre-existing feature.rs deltas.
+- Independent release rerun at exact `624d91c`: every semantic gate Pass; W1 variance
+  9.37/14.55%, W2 18.30/39.78%, W3 16.28/36.36%, all rejected. Original reports preserved under
+  ignored `out/profiles/review-624d91c-original/` before the runner overwrote primary paths.
+- **F-M09-019b-1 HIGH:** no mandatory retained same-build repeat or correct
+  unstable/rejected_variance disposition.
+- **F-M09-019b-2 HIGH:** pool verify-then-reread, no checkpoint after-hash, and reports published
+  before all campaign/integrity gates.
+- **F-M09-019b-3 HIGH:** claimed raw reports identify parent `22a7fa7`, not the dirty source tree
+  actually measured; final evidence must come from a clean exact commit.
+- **F-M09-019b-4 MEDIUM:** population stdev substitutes for required sample stdev.
+- **F-M09-019b-5 MEDIUM:** processor group/actual affinity/operator assertion and retained warmup
+  output are absent; timestamp is not excluded from equality/hash as claimed.
+- **F-M09-019b-6 MEDIUM:** inventory is not per-family and does not pin `DECISION_HEADS` or a closed
+  explicit-family set as claimed.
+- **F-M09-019b-7 LOW:** new pinning-test code is not rustfmt-clean.
+- **Next exact action:** resolve F1–F7, commit code/evidence, run the final campaign from that clean
+  exact commit with both variance runs retained and correctly classified, then request a fresh
+  independent Tier-D pass-2 recheck. M09-019 and M09-019b remain open.

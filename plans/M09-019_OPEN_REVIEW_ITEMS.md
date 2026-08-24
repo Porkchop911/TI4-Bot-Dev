@@ -129,3 +129,86 @@ validation pool `aba33c81…` and checkpoint `be792a2a…`.
 O-M09-019a-1/2 are accepted as measurements/design choices. O-M09-019a-3 remains a recorded LOW
 gap owned by M09-020's durable-fixture work, not a blocker for M09-019a. M09-019b is now
 dependency-ready; its completion still requires the row's Tier-D pass 2.
+
+---
+
+## Independent Tier-D frontier review — pass 2 over `624d91c` (2026-08-24)
+
+**Verdict: changes required; M09-019b and parent row 019 are not accepted.** Focused profile tests
+6/0, the inventory pin 1/0, workspace 1,347/0, and scoped Clippy pass. The independently rerun
+release campaign passes every semantic gate but exposes protocol/evidence defects below.
+
+### F-M09-019b-1 — mandatory variance repeat and disposition are not implemented — HIGH
+
+M00-012e and the package spec require one fresh same-build 30-sample repeat whenever either
+threshold fails, retention of both reports, then `unstable` only if either run passes or
+`rejected_variance` if both fail. `run_campaign` executes each workload once, has no repeat/result
+state, and overwrites one fixed filename. The evidence labels the first failed release run
+`unstable`; the debug build is not a repeat of the release workload. The independent release rerun
+also failed both thresholds for W1/W2/W3 (9.37/14.55%, 18.30/39.78%, 16.28/36.36%), which would
+make all three `rejected_variance` if both valid runs were retained. Implement the fixed policy,
+retain run 1 and run 2 separately, never combine them, and report the correct disposition.
+
+### F-M09-019b-2 — input identity and report publication are not one fail-closed boundary — HIGH
+
+The pool is hashed from one `fs::read` and then reopened by `MapPool::load`, so the bytes consumed
+need not be the bytes approved. Only the pool is hashed after the campaign; the checkpoint has no
+after-hash despite the package's explicit before/after claim. Each workload report is written
+immediately, before later workload gates and the final input check, so a failed campaign or changed
+input can leave valid-looking partial reports. Parse the verified pool bytes, verify both inputs
+afterward, assemble all reports in memory, and publish atomically only after every semantic,
+variance, and integrity gate completes. Add failure-path tests proving no accepted report survives.
+
+### F-M09-019b-3 — recorded timings are not tied to the source tree measured — HIGH
+
+All six evidence reports name `rust_commit = 22a7fa7`, the parent commit before profile.rs and the
+pinning test existed. They measured an uncommitted working tree, so that commit cannot reproduce
+the measured program. The independent rerun at `624d91c` correctly records that commit but produces
+different samples/hashes and cannot silently replace the claimed evidence. After corrections are
+committed, run the final campaign from a clean reviewed commit and record its exact commit and raw
+report hashes; reject a dirty tree or record a complete diff identity rather than attributing it to
+HEAD alone.
+
+### F-M09-019b-4 — population stdev violates the fixed sample-stdev rule — MEDIUM
+
+M00-012b requires sample standard deviation. `ProfileReport::assemble` delegates to
+`benchmark::Statistics::over`, which divides squared deviations by `n`; the package spec explicitly
+acknowledges this population convention and substitutes it for the normative calculation. Use
+`n - 1` for the M00 report/threshold and add a fixture that distinguishes the two formulas. A claim
+that the difference is unlikely to flip a threshold does not satisfy an exact protocol.
+
+### F-M09-019b-5 — required M00 audit metadata/equality behavior is absent — MEDIUM
+
+M00-012c requires the Windows processor group, actual current process affinity, and an operator
+assertion that no competing benchmark/simulation process is known to be running. The report records
+only the literal `inherited; unchanged by the runner`, and evidence repeats it without the group,
+mask, or operator assertion. M00-012a also says warmup output is retained locally, but the runner
+discards every warmup result. Finally, M00-012d excludes `captured_at_utc` from hash/equality, while
+`ProfileReport` derives equality over it and evidence hashes the timestamped file directly. Record
+the required audit data/warmups and define a canonical equality/hash projection that omits only the
+timestamp.
+
+### F-M09-019b-6 — feature inventory and pin do not cover the claimed vocabulary — MEDIUM
+
+The evidence aggregates all 13 legacy prefixes into one row rather than cataloguing each family's
+name shape, extractor, factual-vs-hashed status, and head mapping as required. It claims the pinning
+test asserts all four rows verbatim, but the test asserts only `STAGE1_DECISION_HEADS`, not the
+19-entry `DECISION_HEADS` row, and it does not define a closed explicit-family vocabulary: an
+unexercised explicit family can be added without breaking the pin. Supply the per-family inventory
+and tests that pin both head lists and exact legacy/explicit family sets.
+
+### F-M09-019b-7 — the stated rustfmt gate is not clean — LOW
+
+`cargo fmt -p ti4-sim -p ti4-policy --check` exits 1. Two diffs at features.rs:690/752 are the
+recorded pre-existing drift, but the added assertion around line 1888 is a new package-owned diff.
+Format the new test and report the scoped/pre-existing distinction accurately.
+
+### Independent execution evidence
+
+- Profile unit tests **6/0**; feature inventory pin **1/0**; workspace **1,347/0**.
+- Clippy: no new ti4-sim/ti4-policy warning; two recorded pre-existing engine warnings.
+- Rustfmt: failed as described in F-M09-019b-7; commit diff-check clean.
+- The original three release raw reports were preserved under ignored
+  `out/profiles/review-624d91c-original/` before the reviewer rerun. The rerun at exact commit
+  `624d91c` passed all semantic gates and reproduced input hashes, but all variance thresholds
+  failed and the runner overwrote the primary report paths, independently confirming F1/F3.
