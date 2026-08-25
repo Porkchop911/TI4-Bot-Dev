@@ -4304,3 +4304,36 @@ order is pinned separately. Three excluded-family reserved rows remain deliberat
 must stay zero/masked. **M09-024b1 is next ready**;
 M09-024b2, parent M09-024, and M09-026 remain blocked on its acceptance. Full decision:
 `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.
+
+## M09-024b1 implemented — MLP projection, bare-seat family, registry v2 (2026-08-25)
+
+- **Specified by the Tier-C ruling and its clarification**, which name the package's contents
+  directly; no separate package document. Evidence: `plans/evidence/M09-024b1.md`.
+- **All three clarification points applied as directed.** `24,576` is a reviewed ceiling, not a
+  stored value — the M09-024a invariant `capacity == capacity_for(allocated_for)` is untouched and
+  M09-024b2 derives the actual figure. Registry coverage is now **set-based**, with order pinned by
+  a separate test that checks element-by-element that v2 preserves every v1 index. The three dead
+  reserved rows are classified in code (`dead_reserved_families`, `is_dead_reserved`) rather than
+  left for a future reader to wonder about.
+- **A projection, not a change to the extractor.** `crates/ti4-policy/src/projection.rs` takes a
+  *view* of the schema-4 vector: unbounded memorisation crosses suppressed before lookup, the eight
+  acting-seat facts restored under `seat-state:`. `explicit_choice_features` is byte-for-byte what
+  it was, so the six champions and both pins are untouched — which is what the ruling required.
+- **Registry v2 appends rather than sorts**, keeping every v1 reserved index in place. The
+  migration still shifts the ordinary columns after the reserved block, affordable for exactly one
+  reason: no v1 artifact or tensor exists. Recorded in the doc comment that after the first
+  artifact this becomes a full reviewed tensor/layout migration.
+- **A defect the tests caught.** `projecting_a_name_set_agrees_with_projecting_a_vector` failed on
+  first run: the seat-state facts were added with `FeatureKey::of`, which computes a key without
+  registering the name. `value_of` found them and the `ByOption` test passed, but `names_of`
+  resolved them to the empty string — so M09-024b2, which builds the vocabulary from *names*, would
+  have produced a `slots.json` missing eight columns the model asks for. Fixed with
+  `intern::register`. A passing value-path test beside a broken name-path is exactly the
+  half-covered property this chain keeps finding.
+- **Gates:** projection **7/0**; vocabulary **26/0** (24 before); workspace **1415/0** (1406
+  before); clippy clean in both files; rustfmt clean; `git diff --check` clean. Both pins pass
+  unmodified.
+- **Open items:** O-M09-024b1-1 (INFO) the unbounded-cross predicate is enforced by a list rather
+  than a checkable property — the ruling makes admission an architecture-review obligation, which
+  code cannot enforce; O-M09-024b1-2 (INFO) dead-row zeroing and optimizer masking are M09-026/028.
+- **Status:** pending independent Tier-C review. M09-024b2 follows on acceptance and is P2.

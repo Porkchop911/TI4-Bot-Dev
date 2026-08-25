@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 1;
+pub const OOV_REGISTRY_VERSION: u32 = 2;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -124,13 +124,59 @@ const OOV_FAMILIES_V1: [&str; 38] = [
     "target",
 ];
 
+/// The **frozen** version-2 reserved family order.
+///
+/// Version 1's order, unchanged and in place, with `seat-state` appended — the bounded bare family
+/// M09-024b1 adds so the eight acting-seat facts survive the suppression of `state-option`.
+///
+/// **Appended, not sorted in.** Sorting would put `seat-state` between `route` and `state-kind` and
+/// move every reserved column after it. Appending keeps v1's reserved indices exactly where they
+/// were, so this migration costs only the shift of the *ordinary* columns that follow the reserved
+/// block. That shift is real, and it is affordable for exactly one reason: **no v1 vocabulary
+/// artifact or tensor exists yet** — M09-024b wrote none. After the first artifact is published,
+/// growing the reserved block is a full reviewed tensor/layout migration, never this.
+///
+/// A consequence of appending: this list is no longer sorted. Coverage against the live grammar is
+/// therefore checked as a **set**, and the order is pinned by its own separate test.
+const OOV_FAMILIES_V2: [&str; 39] = {
+    let mut families = [""; 39];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V1.len() {
+        families[index] = OOV_FAMILIES_V1[index];
+        index += 1;
+    }
+    families[38] = crate::projection::SEAT_STATE_FAMILY;
+    families
+};
+
 /// The families that get a reserved OOV column, in the order they are allocated.
 ///
 /// Returns the frozen list for the current [`OOV_REGISTRY_VERSION`]. It is not recomputed from the
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V1
+    &OOV_FAMILIES_V2
+}
+
+/// Families whose reserved rows exist only to hold v1's indices in place.
+///
+/// The MLP projection suppresses these names **before** lookup rather than routing them to their
+/// family OOV column, so nothing can ever land here. The rows are retained anyway: dropping them
+/// would move every later reserved index for no gain. They cost 768 weights at width 256 and are
+/// required to be zero-initialised, masked from optimization, and asserted zero at save/load by
+/// M09-026/M09-028 — the same treatment as free rows above `slot_count`.
+#[must_use]
+pub fn dead_reserved_families() -> &'static [&'static str] {
+    &crate::projection::EXCLUDED_FAMILIES
+}
+
+/// Whether a reserved column can ever be a routing destination.
+///
+/// False for the suppressed families. A reader asking why three columns are always zero should
+/// find the answer here rather than in a commit message.
+#[must_use]
+pub fn is_dead_reserved(family: &str) -> bool {
+    crate::projection::is_unbounded_cross(family)
 }
 
 /// The families the live grammars say should be registered, sorted.
@@ -148,6 +194,7 @@ pub fn live_grammar_families() -> Vec<String> {
             .map(|family| (*family).to_owned()),
     );
     families.insert(UNIT_SUFFIX_FAMILY.to_owned());
+    families.insert(crate::projection::SEAT_STATE_FAMILY.to_owned());
     families.into_iter().collect()
 }
 
@@ -1005,23 +1052,70 @@ mod tests {
     }
 
     #[test]
-    fn the_frozen_registry_matches_the_live_grammar() {
-        // F-M09-024a-1. The registry is frozen data, so it can fall behind the grammars it was
-        // written from — and falling behind silently is the whole failure mode: a new family whose
-        // unseen names quietly pool into the global column, or worse, a "fix" that re-derives the
-        // order and moves every reserved index under a version that still reads 1.
+    fn the_frozen_registry_covers_the_live_grammar() {
+        // The registry is frozen data, so it can fall behind the grammars it was written from —
+        // and falling behind silently is the failure mode: a new family whose unseen names quietly
+        // pool into the global column.
         //
-        // This test is the forcing function. When it fails, the correct response is a migration —
-        // bump OOV_REGISTRY_VERSION and write a new frozen list — not an edit to OOV_FAMILIES_V1
-        // in place, which would move existing columns under a version promising they never move.
-        let frozen: Vec<String> = oov_families().iter().map(|f| (*f).to_owned()).collect();
-        let live = live_grammar_families();
+        // Coverage is checked as a **set**, because order is no longer a function of the contents.
+        // v2 appends `seat-state` rather than sorting it in, so that v1's reserved indices do not
+        // move; the exact order is pinned by `the_reserved_order_is_pinned` instead.
+        let frozen: BTreeSet<String> = oov_families().iter().map(|f| (*f).to_owned()).collect();
+        let live: BTreeSet<String> = live_grammar_families().into_iter().collect();
         assert_eq!(
             frozen, live,
-            "the feature grammars and the frozen OOV registry disagree. Do not edit \
-             OOV_FAMILIES_V1 in place: that moves reserved columns under a version that promises \
-             they never move. Bump OOV_REGISTRY_VERSION and add a new frozen list."
+            "the feature grammars and the frozen OOV registry disagree. Do not edit a frozen list              in place: that moves reserved columns under a version that promises they never move.              Bump OOV_REGISTRY_VERSION and append to a new frozen list."
         );
+    }
+
+    #[test]
+    fn the_reserved_order_is_pinned_and_v2_preserves_every_v1_index() {
+        // The migration's whole claim: v2 is v1 with one family appended, so every reserved column
+        // v1 assigned is still at the index v1 gave it. Checked element by element rather than by
+        // length, since a reordering preserves the count.
+        assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
+        for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V2[index], *family,
+                "v2 moved the v1 reserved column at index {index}"
+            );
+        }
+        assert_eq!(
+            OOV_FAMILIES_V2[OOV_FAMILIES_V1.len()],
+            crate::projection::SEAT_STATE_FAMILY,
+            "the appended family is not the bare seat family"
+        );
+
+        // And the same property on the built vocabulary: reserved column i+1 is families[i].
+        let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
+        assert_eq!(vocabulary.slots[0].name, GLOBAL_OOV);
+        for (index, family) in OOV_FAMILIES_V2.iter().enumerate() {
+            assert_eq!(vocabulary.slots[index + 1].name, oov_name(family));
+        }
+    }
+
+    #[test]
+    fn the_suppressed_families_keep_dead_reserved_rows() {
+        // They are retained so no v1 index moves, and they are unreachable: the MLP projection
+        // drops those names before lookup rather than routing them here. A reader asking why three
+        // columns are always zero should find the answer in the code, not in a commit message.
+        let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
+        assert_eq!(dead_reserved_families().len(), 3);
+        for family in dead_reserved_families() {
+            assert!(is_dead_reserved(family), "{family} is not marked dead");
+            let column = vocabulary.column_of(&oov_name(family));
+            assert!(
+                column < vocabulary.oov_count,
+                "{family} has no reserved row to keep"
+            );
+        }
+        // Every other registered family is live.
+        for family in oov_families() {
+            if dead_reserved_families().contains(family) {
+                continue;
+            }
+            assert!(!is_dead_reserved(family), "{family} was marked dead");
+        }
     }
 
     #[test]

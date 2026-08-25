@@ -14,6 +14,7 @@ pub mod inference;
 pub mod intern;
 pub mod learned;
 pub mod progress;
+pub mod projection;
 pub mod scoring;
 pub mod valuation;
 pub mod view;

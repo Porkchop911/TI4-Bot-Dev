@@ -64,6 +64,22 @@ impl FeatureVector {
         Self(Vec::new())
     }
 
+    /// Build a vector from keyed values, ordering them and summing any duplicates.
+    ///
+    /// The one public way to construct a populated vector outside this module. The MLP projection
+    /// (`crate::projection`) needs it: it derives a second view of an extracted vector, and doing
+    /// that through the extractor would mean changing what the extractor emits — which is the one
+    /// thing six trained champions and two pinned inventories depend on not happening.
+    #[must_use]
+    pub fn from_pairs<I: IntoIterator<Item = (FeatureKey, f64)>>(pairs: I) -> Self {
+        let mut vector = Self::new();
+        for (key, value) in pairs {
+            vector.push(key, value);
+        }
+        vector.finish();
+        vector
+    }
+
     /// Record a value, without ordering. Call [`Self::finish`] once every value is in.
     fn push(&mut self, key: FeatureKey, value: f64) {
         self.0.push((key, value));
@@ -671,7 +687,7 @@ fn opponent_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> 
 /// once for every option offered, to take its length each time.
 #[must_use]
 #[expect(clippy::cast_precision_loss, reason = "public counts are small")]
-fn seat_facts(seen: &Observed<'_>, player: &PlayerId) -> [(&'static str, f64); 8] {
+pub fn seat_facts(seen: &Observed<'_>, player: &PlayerId) -> [(&'static str, f64); 8] {
     let seat = seen.seat(player);
     [
         ("round", f64::from(seen.round())),
