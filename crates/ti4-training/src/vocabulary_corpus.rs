@@ -100,7 +100,11 @@ pub fn champion_names(checkpoint: &Path) -> Result<Contribution, CorpusError> {
     }
     Ok(Contribution {
         source: "r6-champions",
-        names,
+        // The checkpoint holds every name its schema-4 *and* legacy channels ever scored with,
+        // including the `kind-faction`/`option-faction` families the explicit path never emits.
+        // The projection is the same filter the model's own inputs go through, so a name that
+        // cannot reach the model cannot reach the vocabulary either.
+        names: ti4_policy::projection::project_names(names),
     })
 }
 
@@ -162,7 +166,7 @@ pub fn content_names(content: &ContentStore, sources: SourceSet) -> Contribution
 
     Contribution {
         source: "content",
-        names,
+        names: ti4_policy::projection::project_names(names),
     }
 }
 
@@ -190,24 +194,18 @@ impl Decider for Collector {
         let held = seen.held_secret_progress();
         let observed = seen.observed();
         {
+            // **One path.** The architecture ruling is explicit that the MLP consumes one
+            // schema-4 explicit policy path and "does not union two runtime extractors". The
+            // first pass also collected `option_feature_names`, the legacy schema-2 hashed
+            // channel, which put 38,542 `prompt-bigram` names into a vocabulary no schema-4
+            // model reads (O-M09-024b-4). Collecting through the projection instead means the
+            // names discovered here and the vectors the model is fed are the same set by
+            // construction, rather than two lists someone has to keep in step.
             let mut names = self.names.borrow_mut();
-            for vector in ti4_policy::features::explicit_choice_features(
-                observed,
-                choice,
-                &choice.player,
-                &held,
-            ) {
+            for vector in
+                ti4_policy::projection::mlp_choice_features(observed, choice, &choice.player, &held)
+            {
                 names.extend(ti4_policy::features::names_of(&vector));
-            }
-            for option in &choice.options {
-                for (name, _) in ti4_policy::features::option_feature_names(
-                    observed,
-                    choice,
-                    option,
-                    &choice.player,
-                ) {
-                    names.insert(name);
-                }
             }
         }
         self.inner.choose_seeing(choice, seen)

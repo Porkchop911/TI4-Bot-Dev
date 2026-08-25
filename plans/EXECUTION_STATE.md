@@ -4643,3 +4643,92 @@ libtorch downloaded                         none
 
 Implementation complete; gates green. **Pending independent Tier-C review.** M09-026 — the batched
 MLP actor, and the first real model code — is unblocked by this package and by M09-024's completion.
+
+## M09-024b2 COMPLETE — the vocabulary fits (2026-08-25)
+
+## Outcome: the vocabulary fits, with room
+
+```
+slot_count            10,997
+V_cap                 16,384          (ceiling 24,576; hard limit 65,536)
+oov_registry_version  2
+oov_count             40              (39 families + the global column)
+allocated_for         10,997
+slots_sha256          14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479
+artifact              out/vocabulary/slots.json, 1,137,045 bytes  (cap 16 MiB)
+wall time             315 s
+double build          byte-identical over reversed input
+```
+
+**16,384 is the figure the clarification anticipated** — *"may therefore derive 16,384"* — and it is
+derived, not chosen: `capacity_for(10,997)` under the M09-024a invariant, which is exactly why
+24,576 was recorded as a ceiling rather than a stored value.
+
+At width 256 that is **4,194,304 input-row weights** and, with §4.2's other blocks (hidden 65,536,
+shared readout 3,584, faction residuals 118,272, identity embedding 528, value head 256),
+**4,382,480 plan-accounted parameters ≈ 4.38 M** — 17.5 MB of f32 weights, 52.6 MB with two Adam
+moments. The clarification's stated figure for this capacity was "approximately 4.38M". It matches.
+
+For contrast, the uncorrected pass needed **245,760**. The plan's original estimate was 49,152.
+
+## What changed since the first pass
+
+| | first pass | corrected |
+|---|---|---|
+| extractor paths | explicit **and** legacy schema-2 hashed | **one** — the schema-4 explicit path, through the MLP projection |
+| (a) r6 champions | 41,113 | **3,208** |
+| (c) content | 295 | 295 |
+| (b) replay | 194,083 | **10,957** |
+| union | 203,843 | **10,957** |
+| `V_cap` | 245,760 (stopped) | **16,384** |
+
+Three corrections compound here, and it is worth separating them because they were found at
+different times by different people:
+
+1. **One path, not two.** The ruling: the MLP "does not union two runtime extractors." The first
+   collector called `option_feature_names` as well, which is the legacy schema-2 hashed channel. I
+   found and self-reported that as O-M09-024b-4 while writing the evaluation request.
+2. **Suppression before lookup.** M09-024b1's projection drops the three unbounded memorisation
+   crosses — 91.3% of the original union.
+3. **Closed-default admission.** M09-024b1's F1 correction, from the review: `kind-faction` and
+   `option-faction` are legacy-only families that the explicit path never emits but the r6
+   checkpoint *does* contain. They are why source (a) fell from 41,113 to 3,208 rather than to
+   about 9,400, and why the review's estimate of "roughly 6,188 stale columns" was right.
+
+## The union, by family
+
+```
+union by family (10,957 names, 36 families):
+  state-kind                  6731   61.4%
+  prompt-kind                 1982   18.1%
+  option                      1024    9.3%
+  payload                     442     4.0%
+  objective-progress          115     1.0%
+  objective-met                80     0.7%
+  ability                      73     0.7%
+
+## O-M09-025-1 closed — advisory scan run (2026-08-25)
+
+The operator granted download permission, so the scan §7.1 asks for was run rather than deferred.
+`cargo-audit v0.22.2` installed; 1,226 advisories loaded; 247 crate dependencies scanned.
+
+**Zero vulnerabilities.** Two `unmaintained` warnings, and **neither comes from this package**:
+
+| crate | advisory | pulled in by |
+|---|---|---|
+| `bincode` 2.0.1 | RUSTSEC-2025-0141, unmaintained since 2025-12-16 | `ti4-legacy`, `ti4-policy` — pre-existing |
+| `paste` 1.0.15 | RUSTSEC-2024-0436, unmaintained since 2024-10-07 | `parquet` → `ti4-legacy`, `ti4-training` — pre-existing |
+
+Attributed with `cargo tree -i` rather than assumed. **`tch` and `torch-sys` introduce no advisory
+of any kind**, which is the question M09-025 had to answer.
+
+The two warnings are real and belong to the workspace rather than to this package. Neither is a
+vulnerability; both are maintenance status. Recorded here because a scan that finds something and
+does not say so is worse than one nobody ran — but they are not M09-025's to resolve, and this
+package does not silently adopt them.
+
+**O-M09-025-1 is closed.** A new open item is raised against the workspace instead:
+
+| ID | Severity | Item |
+|---|---|---|
+| O-WORKSPACE-1 | LOW | `bincode` 2.0.1 and `paste` 1.0.15 are unmaintained (RUSTSEC-2025-0141, RUSTSEC-2024-0436). Both pre-date M09-025 and neither is a vulnerability. `bincode` is a direct workspace dependency and a replacement is a decision; `paste` is transitive through `parquet` and moves only when `parquet` does. |
