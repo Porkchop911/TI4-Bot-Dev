@@ -182,6 +182,90 @@ pub struct SparseOption {
     pub values: Vec<f32>,
 }
 
+/// The only thing [`Actor::value`] accepts.
+///
+/// # Why this is not just `SparseOption`
+///
+/// F-M09-027-2: the value head used to take the public `SparseOption`, the same type the policy
+/// path builds from options. So a caller could hand it an option's vector — legal-set-derived
+/// columns and all — and the documented claim that the value function "has no way to see the legal
+/// set" was false at the actual inference API. It was true of the *extractor* and I wrote it about
+/// the *model*, which is one step further than the construction supported.
+///
+/// The field is private and the only constructor takes a [`ti4_policy::critic::CriticVector`],
+/// which in turn comes only from `critic_vector`, which takes only an engine-bound
+/// `SeatObservation` and no `Choice`. That makes the whole chain from capability to value typed:
+///
+/// ```text
+/// SeatObservation -> CriticVector -> CriticInput -> Actor::value
+/// ```
+///
+/// A policy option cannot enter anywhere along it. The positive control first — every line of the
+/// setup below is valid on its own, so the refusal that follows is about the argument type and not
+/// about a typo in the fixture:
+///
+/// ```
+/// # use ti4_mlp::{Actor, FactionRow, SparseOption, Width};
+/// let actor = Actor::zeros(Width::W128, 4_096);
+/// let option = SparseOption { columns: vec![1], values: vec![1.0] };
+/// let row = FactionRow::of("sol").unwrap();
+/// let _ = (&actor, &option, row);
+/// ```
+///
+/// And the refusal itself — `E0308`, mismatched types, pinned so this cannot pass on an unrelated
+/// compile error:
+///
+/// ```compile_fail,E0308
+/// # use ti4_mlp::{Actor, FactionRow, SparseOption, Width};
+/// let actor = Actor::zeros(Width::W128, 4_096);
+/// let option = SparseOption { columns: vec![1], values: vec![1.0] };
+/// // A policy option is not a critic input, and must not compile as one.
+/// let _ = actor.value(&option, FactionRow::of("sol").unwrap());
+/// ```
+#[derive(Debug, Clone)]
+pub struct CriticInput {
+    sparse: SparseOption,
+}
+
+impl CriticInput {
+    /// Resolve a critic vector's names against the vocabulary.
+    ///
+    /// A name with no column of its own is **not dropped**: it routes to its family's
+    /// out-of-vocabulary column, or the global one, so an unknown fact stays distinguishable from
+    /// an absent one.
+    #[must_use]
+    pub fn new(
+        vector: &ti4_policy::critic::CriticVector,
+        vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    ) -> Self {
+        let facts = vector.facts();
+        let mut columns = Vec::with_capacity(facts.len());
+        let mut values = Vec::with_capacity(facts.len());
+        for (key, value) in facts {
+            let name = ti4_policy::intern::name_of(*key);
+            columns.push(i64::try_from(vocabulary.column_of(&name)).unwrap_or(0));
+            #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
+            values.push(*value as f32);
+        }
+        Self {
+            sparse: SparseOption { columns, values },
+        }
+    }
+
+    /// How many distinct columns this input actually occupies.
+    ///
+    /// Exposed because it is the difference between a critic and a rank-1 sum: when every
+    /// `critic-state:*` name falls to the same out-of-vocabulary column, `V` is one weighted row no
+    /// matter how rich the position is. Tests assert on it (M09-027b).
+    #[must_use]
+    pub fn distinct_columns(&self) -> usize {
+        let mut seen: Vec<i64> = self.sparse.columns.clone();
+        seen.sort_unstable();
+        seen.dedup();
+        seen.len()
+    }
+}
+
 /// The actor: one shared trunk, one shared readout, and a thin per-faction residual.
 #[derive(Debug)]
 pub struct Actor {
@@ -412,18 +496,18 @@ impl Actor {
     /// `V(s)` for one position, from the canonical critic vector.
     ///
     /// §4.2: computed **once per decision** by a separate trunk pass over a disjoint namespace,
-    /// never from anything derived from the option set. The critic vector arrives already built by
-    /// `ti4_policy::critic`, which takes no `Choice` — so this function has no way to see the legal
-    /// set even if it wanted to, and the two invariance properties follow from that rather than
+    /// never from anything derived from the option set. The argument is a [`CriticInput`], which
+    /// has no public constructor other than one taking a `CriticVector` — so an option's vector
+    /// cannot be passed here, and the two invariance properties follow from the type rather than
     /// from care at the call site.
     ///
     /// # Errors
     /// [`ActorError::NotUsable`] if the resulting value is not finite, plus anything the gather
     /// raises.
-    pub fn value(&self, critic: &SparseOption, row: FactionRow) -> Result<f64, ActorError> {
+    pub fn value(&self, critic: &CriticInput, row: FactionRow) -> Result<f64, ActorError> {
         // The same trunk, one row. `trunk` refuses an empty batch, and a position with no critic
         // facts at all is a malformed extraction rather than a legal state.
-        let z = self.trunk(std::slice::from_ref(critic), row)?;
+        let z = self.trunk(std::slice::from_ref(&critic.sparse), row)?;
         let scalar = z.matmul(&self.w_value) + &self.b_value;
         let value = scalar.double_value(&[0]);
         if !value.is_finite() {

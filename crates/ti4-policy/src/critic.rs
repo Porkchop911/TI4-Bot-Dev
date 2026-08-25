@@ -30,9 +30,17 @@
 //!
 //! # Hidden information
 //!
-//! Built from the acting seat's view: its own holdings in full, and **counts only** for everyone
-//! else, exactly as the policy path. The same `held_secrets` records the engine binds to the choice
-//! owner are passed in, so the critic can see no more than the policy does.
+//! The entry points take a [`SeatObservation`] and **nothing else that names a seat**. The acting
+//! player and the held-secret progress are both read off that capability, which the engine mints
+//! only for the seat it is about to ask ([`ti4_engine::choice::ask_private`] performs the same
+//! binding for offline drivers). There is no public constructor, so a policy-side caller cannot
+//! bind one to a seat of its choosing.
+//!
+//! F-M09-027-1: the first version took a public `Observed`, an arbitrary `PlayerId`, and a
+//! caller-supplied `held_secrets` slice. That recreated exactly the hole `SeatObservation` was
+//! introduced to close — any caller could request any seat's position and staple any seat's
+//! unredacted secret progress to it. The documentation claimed the records were engine-bound; the
+//! signature did not say so, and only the signature counts.
 //!
 //! # Ablation gating
 //!
@@ -43,7 +51,7 @@
 
 use std::collections::BTreeMap;
 
-use ti4_engine::choice::Observed;
+use ti4_engine::choice::{Observed, SeatObservation};
 use ti4_model::id::PlayerId;
 use ti4_model::state::Phase;
 
@@ -202,19 +210,20 @@ fn table_aggregate(
 
 /// The critic's view of a position, as named facts.
 ///
-/// Takes **no `Choice`**. That is the load-bearing part of the signature: a function that cannot
-/// see the legal set cannot depend on its order or its contents.
+/// Takes **no `Choice`**, and takes its seat as a capability rather than as data. Both are
+/// load-bearing: a function that cannot see the legal set cannot depend on its order or its
+/// contents, and a function whose only seat argument is an engine-minted [`SeatObservation`] cannot
+/// be pointed at somebody else's cards.
 #[must_use]
 #[expect(
     clippy::cast_precision_loss,
     reason = "public counts are small integers"
 )]
-pub fn critic_facts(
-    seen: &Observed<'_>,
-    player: &PlayerId,
-    enabled: CriticFeatures,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
-) -> Vec<(String, f64)> {
+pub fn critic_facts(view: &SeatObservation<'_>, enabled: CriticFeatures) -> Vec<(String, f64)> {
+    let seen: &Observed<'_> = view.observed();
+    let player: &PlayerId = view.bound_seat();
+    let held_secrets = view.held_secret_progress();
+    let held_secrets = held_secrets.as_slice();
     let mut facts: Vec<(String, f64)> = Vec::new();
     let mut push = |name: &str, value: f64| facts.push((format!("{CRITIC_FAMILY}:{name}"), value));
 
@@ -343,23 +352,38 @@ fn ability_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
 
 /// The critic vector, keyed and ordered like any other.
 #[must_use]
-pub fn critic_vector(
-    seen: &Observed<'_>,
-    player: &PlayerId,
-    enabled: CriticFeatures,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
-) -> FeatureVector {
-    FeatureVector::from_pairs(
-        critic_facts(seen, player, enabled, held_secrets)
+pub fn critic_vector(view: &SeatObservation<'_>, enabled: CriticFeatures) -> CriticVector {
+    CriticVector(FeatureVector::from_pairs(
+        critic_facts(view, enabled)
             .into_iter()
             .map(|(name, value)| (register(&name), value)),
-    )
+    ))
+}
+
+/// A feature vector that came out of [`critic_vector`], and can have come from nowhere else.
+///
+/// F-M09-027-2: the value head used to accept the same public sparse type the policy uses, so a
+/// caller could hand it an option's vector — legal-set-derived columns and all — and the claim that
+/// the value function "has no way to see the legal set" was simply false at the inference API. The
+/// wrapper is the fix: it holds a private field and has no public constructor, so the only route to
+/// a critic input starts at a [`SeatObservation`] and passes through the option-free extractor
+/// above.
+#[derive(Debug, Clone)]
+pub struct CriticVector(FeatureVector);
+
+impl CriticVector {
+    /// The underlying facts, for naming and column lookup.
+    #[must_use]
+    pub const fn facts(&self) -> &FeatureVector {
+        &self.0
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ti4_content::ContentStore;
+    use ti4_engine::choice::{Choice, ChoiceOption};
     use ti4_model::content_types::POK;
     use ti4_model::id::FactionId;
     use ti4_model::state::GameState;
@@ -386,8 +410,55 @@ mod tests {
         (state, player)
     }
 
-    fn names(seen: &Observed<'_>, player: &PlayerId, enabled: CriticFeatures) -> Vec<String> {
-        critic_facts(seen, player, enabled, &[])
+    /// Obtain the facts the way production does: through the engine's own seat binding.
+    ///
+    /// `SeatObservation::bind` is `pub(crate)` to `ti4-engine`, so these tests cannot mint a
+    /// capability — which is the property F-M09-027-1 asked for. The only public route is
+    /// `ask_private`, which binds the view to the choice's owner and hands it to the decider. The
+    /// probe therefore reads its facts *inside* `choose_seeing`, exactly where a real bot does.
+    fn facts_via_engine(
+        state: &GameState,
+        player: &PlayerId,
+        enabled: CriticFeatures,
+    ) -> Vec<(String, f64)> {
+        struct Probe {
+            enabled: CriticFeatures,
+            out: Vec<(String, f64)>,
+        }
+        impl ti4_engine::choice::Decider for Probe {
+            fn choose(
+                &mut self,
+                choice: &Choice,
+            ) -> Result<ChoiceOption, ti4_engine::choice::IllegalChoice> {
+                Ok(choice.options[0].clone())
+            }
+            fn choose_seeing(
+                &mut self,
+                choice: &Choice,
+                seen: &SeatObservation<'_>,
+            ) -> Result<ChoiceOption, ti4_engine::choice::IllegalChoice> {
+                self.out = critic_facts(seen, self.enabled);
+                Ok(choice.options[0].clone())
+            }
+        }
+
+        let content = ContentStore::embedded();
+        let choice = Choice::new(
+            player.clone(),
+            "probe",
+            vec![ChoiceOption::new("noop", "noop")],
+        );
+        let mut probe = Probe {
+            enabled,
+            out: Vec::new(),
+        };
+        ti4_engine::choice::ask_private(&choice, state, content, POK, None, &mut probe)
+            .expect("the probe answers");
+        probe.out
+    }
+
+    fn names(state: &GameState, player: &PlayerId, enabled: CriticFeatures) -> Vec<String> {
+        facts_via_engine(state, player, enabled)
             .into_iter()
             .map(|(name, _)| name)
             .collect()
@@ -397,10 +468,8 @@ mod tests {
     fn every_critic_name_is_in_its_own_namespace() {
         // §4.1: the critic namespace never aliases policy columns. Checked over the full inventory
         // rather than by inspection of the builder.
-        let content = ContentStore::embedded();
         let (state, player) = position();
-        let seen = Observed::new(&state, content, POK, None);
-        let facts = names(&seen, &player, CriticFeatures::full());
+        let facts = names(&state, &player, CriticFeatures::full());
         assert!(!facts.is_empty());
         for name in &facts {
             assert!(
@@ -415,10 +484,8 @@ mod tests {
         // The exclusions are the design. A name carrying a prompt, an option, a target or a
         // legal-set aggregate would make `V` a function of what was offered rather than of the
         // position.
-        let content = ContentStore::embedded();
         let (state, player) = position();
-        let seen = Observed::new(&state, content, POK, None);
-        for name in names(&seen, &player, CriticFeatures::full()) {
+        for name in names(&state, &player, CriticFeatures::full()) {
             let bare = name
                 .strip_prefix(&format!("{CRITIC_FAMILY}:"))
                 .expect("namespaced");
@@ -442,10 +509,8 @@ mod tests {
 
     #[test]
     fn opponents_contribute_counts_and_never_identities() {
-        let content = ContentStore::embedded();
         let (state, player) = position();
-        let seen = Observed::new(&state, content, POK, None);
-        let facts = critic_facts(&seen, &player, CriticFeatures::full(), &[]);
+        let facts = facts_via_engine(&state, &player, CriticFeatures::full());
 
         // Two opponents, both on three points, so the spread names neither of them.
         let spread = facts
@@ -473,11 +538,9 @@ mod tests {
     #[test]
     fn the_gated_groups_are_absent_unless_enabled() {
         // §4.1: a `factual` ablation must not gain objective or ability signal through the critic.
-        let content = ContentStore::embedded();
         let (state, player) = position();
-        let seen = Observed::new(&state, content, POK, None);
 
-        let factual = names(&seen, &player, CriticFeatures::factual());
+        let factual = names(&state, &player, CriticFeatures::factual());
         assert!(!factual.is_empty());
         assert!(
             !factual
@@ -486,7 +549,7 @@ mod tests {
             "the factual inventory carries gated signal"
         );
 
-        let full = names(&seen, &player, CriticFeatures::full());
+        let full = names(&state, &player, CriticFeatures::full());
         // Non-vacuity: enabling really does add something, so the absence above is meaningful.
         assert!(
             full.iter().any(|n| n.contains("critic-state:ability:")),
@@ -503,16 +566,105 @@ mod tests {
 
     #[test]
     fn the_vector_is_ordered_and_deduplicated() {
-        let content = ContentStore::embedded();
         let (state, player) = position();
-        let seen = Observed::new(&state, content, POK, None);
-        let facts = critic_facts(&seen, &player, CriticFeatures::full(), &[]);
+        let facts = facts_via_engine(&state, &player, CriticFeatures::full());
         let mut sorted = facts.clone();
         sorted.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(facts, sorted, "the facts are not in a canonical order");
         let mut seen_names = std::collections::BTreeSet::new();
         for (name, _) in &facts {
             assert!(seen_names.insert(name.clone()), "{name} appears twice");
+        }
+    }
+
+    #[test]
+    fn two_bound_seats_receive_only_their_own_secret_progress() {
+        // F-M09-027-1. The critic used to take a caller-supplied `held_secrets` slice, so nothing
+        // stopped a caller from handing seat `a`'s critic seat `b`'s cards. Now the records come
+        // off the capability, and the capability is minted by the engine per seat.
+        //
+        // Ground truth comes from the offline free function, which is authority-gated by full-state
+        // possession — a test holds the whole state by design, so it may compute what each seat
+        // *should* see and compare.
+        use std::collections::BTreeSet;
+
+        let content = ContentStore::embedded();
+        let mut state = ti4_engine::fixtures::game(&["a", "b", "c"]);
+        state.round = 3;
+        // `ans` scores off the holder's own technologies; `dp` scores off the laws in play. Both
+        // are given real progress, because a fixture where neither card registers would satisfy
+        // every containment assertion below with two empty sets.
+        //
+        // `dp` is the sharper of the two: laws are *global* state, so seat `a` can read the same
+        // board fact — but the card is `b`'s, and a progress family is a statement about a card in
+        // hand. If `laws` appears in `a`'s critic, `b`'s hand leaked.
+        {
+            let seat = state.player_mut(&PlayerId::new("a")).unwrap();
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("ans")];
+            seat.technologies = ["t1", "t2"]
+                .into_iter()
+                .map(ti4_model::id::TechnologyId::new)
+                .collect();
+        }
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("dp")];
+        state.laws = ["l1", "l2", "l3"]
+            .into_iter()
+            .map(|law| (law.to_owned(), law.to_owned()))
+            .collect();
+
+        let families = |seat: &str| -> BTreeSet<String> {
+            ti4_engine::choice::held_secret_progress(
+                &state,
+                content,
+                POK,
+                None,
+                &PlayerId::new(seat),
+            )
+            .into_iter()
+            .filter(|card| card.threshold > 0.0 && card.have > 0.0)
+            .map(|card| card.family_token)
+            .collect()
+        };
+        let progress_names = |seat: &str| -> BTreeSet<String> {
+            facts_via_engine(&state, &PlayerId::new(seat), CriticFeatures::full())
+                .into_iter()
+                .filter_map(|(name, _)| {
+                    name.strip_prefix(&format!("{CRITIC_FAMILY}:objective_progress:"))
+                        .map(str::to_owned)
+                })
+                .collect()
+        };
+
+        let (truth_a, truth_b) = (families("a"), families("b"));
+        let (seen_a, seen_b) = (progress_names("a"), progress_names("b"));
+
+        // Non-vacuity: if neither seat's secret contributes a progress family, the containment
+        // assertions below are satisfied by two empty sets and prove nothing.
+        assert!(
+            !truth_a.is_empty() || !truth_b.is_empty(),
+            "neither fixture secret produces progress, so this test is vacuous"
+        );
+
+        for (seat, truth, seen) in [("a", &truth_a, &seen_a), ("b", &truth_b, &seen_b)] {
+            assert!(
+                truth.is_subset(seen),
+                "seat {seat} lost its own secret progress: {truth:?} against {seen:?}"
+            );
+        }
+        // The load-bearing direction: what only the *other* seat holds must never appear.
+        for (seat, mine, theirs, seen) in [
+            ("a", &truth_a, &truth_b, &seen_a),
+            ("b", &truth_b, &truth_a, &seen_b),
+        ] {
+            for family in theirs.difference(mine) {
+                assert!(
+                    !seen.contains(family),
+                    "seat {seat}'s critic saw an opponent-only secret family {family}"
+                );
+            }
         }
     }
 }

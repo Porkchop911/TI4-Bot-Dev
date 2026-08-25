@@ -3,10 +3,16 @@
 //! The first two say `V` does not depend on the legal set. The third exists because a model that
 //! ignores option features entirely satisfies both — so invariance alone would let that through,
 //! and the policy is checked for the opposite property on the same shuffle.
+//!
+//! Every model output here is reached through `ask_private` -> `choose_seeing`, the engine's own
+//! ask path. F-M09-027-2: the first version of this file never used a production boundary — it
+//! built a `Choice`, discarded it with `let _ = choice`, and then called the extractor three times
+//! with *identical arguments*, asserting the three results agreed. That is `f(x) == f(x)`: a
+//! determinism check wearing an invariance test's name, which no implementation could fail.
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Observed};
-use ti4_mlp::{Actor, FactionRow, SparseOption, Width};
+use ti4_engine::choice::{Choice, ChoiceOption, IllegalChoice, Observed, SeatObservation};
+use ti4_mlp::{Actor, CriticInput, FactionRow, SparseOption, Width};
 use ti4_model::content_types::POK;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::critic::{CriticFeatures, critic_vector};
@@ -40,16 +46,6 @@ fn actor() -> Actor {
     *actor.shared_readout_mut() = patterned(14, 128, 3);
     *actor.value_readout_mut() = patterned(1, 128, 4).view([128]);
     actor
-}
-
-/// A vocabulary built from the names this position actually emits.
-///
-/// A synthetic one does not work, and the way it fails is the point: every real name falls to its
-/// family's OOV column, so all options collapse onto the same columns and the policy comes out
-/// uniform. An earlier version of this test did that and its non-vacuity guard passed on f32
-/// accumulation noise — a distribution that "differed" by 2e-6 while `p` and `q` were bit-identical.
-fn vocabulary_for(names: &[String]) -> Vocabulary {
-    Vocabulary::build(names).expect("builds")
 }
 
 fn sparse(vector: &ti4_policy::features::FeatureVector, vocab: &Vocabulary) -> SparseOption {
@@ -87,60 +83,166 @@ fn options(ids: &[&str]) -> Vec<ChoiceOption> {
         .collect()
 }
 
-#[test]
-fn the_critic_vector_and_value_are_invariant_to_legal_set_order_and_contents() {
-    let content = ContentStore::embedded();
-    let (state, player) = position();
-    let seen = Observed::new(&state, content, POK, None);
-    let actor = actor();
-    let row = FactionRow::of("sol").expect("roster");
-    let vocab = vocabulary_for(&ti4_policy::features::names_of(&critic_vector(
-        &seen,
-        &player,
-        CriticFeatures::full(),
-        &[],
-    )));
+const BASE: [&str; 3] = [
+    "produce|fighter@18",
+    "produce|scout@19",
+    "produce|carrier@20",
+];
+const SHUFFLED: [&str; 3] = [
+    "produce|carrier@20",
+    "produce|fighter@18",
+    "produce|scout@19",
+];
+const SHORTER: [&str; 2] = ["produce|fighter@18", "produce|scout@19"];
+/// `SHUFFLED[i]` is `BASE[ORDER[i]]`.
+const ORDER: [usize; 3] = [2, 0, 1];
 
-    // The critic never receives a choice, so these are the same call. Building the three legal sets
-    // anyway is the point: the value must be identical across all of them.
-    let base = options(&[
-        "produce|fighter@18",
-        "produce|scout@19",
-        "produce|carrier@20",
-    ]);
-    let shuffled = options(&[
-        "produce|carrier@20",
-        "produce|fighter@18",
-        "produce|scout@19",
-    ]);
-    let shorter = options(&["produce|fighter@18", "produce|scout@19"]);
+/// One decision, answered the way a seated bot answers one.
+///
+/// Both model outputs are produced inside `choose_seeing`, which is the only place a
+/// [`SeatObservation`] exists: `SeatObservation::bind` is `pub(crate)` to `ti4-engine`, so this
+/// test cannot mint the capability, and the critic cannot be called without it.
+struct Decision {
+    actor: Actor,
+    vocabulary: Vocabulary,
+    row: FactionRow,
+    value: f64,
+    critic_columns: usize,
+    critic_names: Vec<String>,
+    probabilities: Vec<f64>,
+    option_columns: Vec<Vec<i64>>,
+}
 
-    let vector = critic_vector(&seen, &player, CriticFeatures::full(), &[]);
-    let critic = sparse(&vector, &vocab);
-    let value = actor.value(&critic, row).expect("a value");
-
-    for legal in [&base, &shuffled, &shorter] {
-        let choice = Choice::new(player.clone(), "produce a unit", legal.clone());
-        // Constructing the choice and then recomputing must change nothing.
-        let again = critic_vector(&seen, &player, CriticFeatures::full(), &[]);
-        assert_eq!(
-            ti4_policy::features::names_of(&again),
-            ti4_policy::features::names_of(&vector),
-            "the critic vector moved with the legal set"
-        );
-        let recomputed = actor.value(&sparse(&again, &vocab), row).expect("a value");
-        assert!(
-            (recomputed - value).abs() < f64::EPSILON,
-            "V moved with the legal set: {recomputed} against {value}"
-        );
-        let _ = choice;
+impl ti4_engine::choice::Decider for Decision {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        Ok(choice.options[0].clone())
     }
 
-    // Non-vacuity: the value is not simply zero for every input.
-    assert!(
-        value.abs() > 0.0,
-        "the fixture produced V = 0, so invariance is vacuous"
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        // The critic half: the capability goes in, and the choice in scope stays out — there is no
+        // parameter to pass it through.
+        let vector = critic_vector(seen, CriticFeatures::full());
+        self.critic_names = ti4_policy::features::names_of(vector.facts());
+        let critic = CriticInput::new(&vector, &self.vocabulary);
+        self.critic_columns = critic.distinct_columns();
+        self.value = self.actor.value(&critic, self.row).expect("a value");
+
+        // The policy half: the same decision, option-conditioned.
+        let scored: Vec<SparseOption> = ti4_policy::projection::mlp_choice_features(
+            seen.observed(),
+            choice,
+            seen.bound_seat(),
+            &[],
+        )
+        .iter()
+        .map(|vector| sparse(vector, &self.vocabulary))
+        .collect();
+        self.option_columns = scored
+            .iter()
+            .map(|option| {
+                let mut columns = option.columns.clone();
+                columns.sort_unstable();
+                columns.dedup();
+                columns
+            })
+            .collect();
+        self.probabilities = self
+            .actor
+            .probabilities(&scored, "production", self.row, 1.0)
+            .expect("probabilities");
+
+        Ok(choice.options[0].clone())
+    }
+}
+
+/// Put one legal set through the engine and report what the model saw.
+fn run(
+    state: &ti4_model::state::GameState,
+    player: &PlayerId,
+    ids: &[&str],
+    vocabulary: &Vocabulary,
+) -> Decision {
+    let mut decision = Decision {
+        actor: actor(),
+        vocabulary: vocabulary.clone(),
+        row: FactionRow::of("sol").expect("roster"),
+        value: 0.0,
+        critic_columns: 0,
+        critic_names: Vec::new(),
+        probabilities: Vec::new(),
+        option_columns: Vec::new(),
+    };
+    let choice = Choice::new(player.clone(), "produce a unit", options(ids));
+    ti4_engine::choice::ask_private(
+        &choice,
+        state,
+        ContentStore::embedded(),
+        POK,
+        None,
+        &mut decision,
+    )
+    .expect("the decision is answered");
+    decision
+}
+
+/// A vocabulary built from the names this position actually emits, critic and policy alike.
+///
+/// A synthetic one does not work, and the way it fails is the point: every real name falls to its
+/// family's OOV column, so all options collapse onto the same columns and the policy comes out
+/// uniform. An earlier version of this file did that, and its non-vacuity guard passed on f32
+/// accumulation noise — a distribution that "differed" by 2e-6 while the two were bit-identical.
+fn vocabulary_for_position(state: &ti4_model::state::GameState, player: &PlayerId) -> Vocabulary {
+    // A first pass through the engine to collect the critic's names; the bootstrap vocabulary only
+    // has to let the run complete, not to resolve anything.
+    let bootstrap = Vocabulary::build(["option:bootstrap"]).expect("builds");
+    let mut names = run(state, player, &BASE, &bootstrap).critic_names;
+
+    let seen = Observed::new(state, ContentStore::embedded(), POK, None);
+    let choice = Choice::new(player.clone(), "produce a unit", options(&BASE));
+    for vector in ti4_policy::projection::mlp_choice_features(&seen, &choice, player, &[]) {
+        names.extend(ti4_policy::features::names_of(&vector));
+    }
+    Vocabulary::build(names).expect("builds")
+}
+
+#[test]
+fn the_critic_vector_and_value_are_invariant_to_legal_set_order_and_contents() {
+    let (state, player) = position();
+    let vocabulary = vocabulary_for_position(&state, &player);
+
+    let base = run(&state, &player, &BASE, &vocabulary);
+    let shuffled = run(&state, &player, &SHUFFLED, &vocabulary);
+    let shorter = run(&state, &player, &SHORTER, &vocabulary);
+
+    // Non-vacuity: the runs must really have been different decisions, or "V did not move" is a
+    // statement about the same decision repeated — which is what the earlier version asserted.
+    assert_ne!(
+        base.option_columns, shuffled.option_columns,
+        "the shuffled run presented the same option vectors, so the order was never varied"
     );
+    assert_eq!(
+        shorter.option_columns.len(),
+        2,
+        "the shorter run did not drop an option"
+    );
+    assert!(base.value.abs() > 0.0, "V = 0, so invariance is vacuous");
+
+    for (label, other) in [("shuffled", &shuffled), ("shorter", &shorter)] {
+        assert_eq!(
+            other.critic_names, base.critic_names,
+            "the critic vector moved with the {label} legal set"
+        );
+        assert!(
+            (other.value - base.value).abs() < f64::EPSILON,
+            "V moved with the {label} legal set: {} against {}",
+            other.value,
+            base.value
+        );
+    }
 }
 
 /// The agreement two orderings of the same options can actually reach.
@@ -157,93 +259,75 @@ const REASSOCIATION: f64 = 1e-5;
 
 #[test]
 fn the_policy_is_not_accidentally_invariant_to_the_same_shuffle() {
-    // §4.2's third test, and the reason the first two are not enough: a model ignoring option
-    // features passes both of them. The same shuffle must permute `p` correspondingly and leave
-    // its entropy unchanged.
-    let content = ContentStore::embedded();
     let (state, player) = position();
-    let seen = Observed::new(&state, content, POK, None);
-    let actor = actor();
-    let row = FactionRow::of("sol").expect("roster");
+    let vocabulary = vocabulary_for_position(&state, &player);
 
-    let ids = [
-        "produce|fighter@18",
-        "produce|scout@19",
-        "produce|carrier@20",
-    ];
-    let choice = Choice::new(player.clone(), "produce a unit", options(&ids));
-    let order = [2usize, 0, 1];
-    let shuffled_ids: Vec<&str> = order.iter().map(|i| ids[*i]).collect();
-    let shuffled = Choice::new(player.clone(), "produce a unit", options(&shuffled_ids));
+    let base = run(&state, &player, &BASE, &vocabulary);
+    let shuffled = run(&state, &player, &SHUFFLED, &vocabulary);
 
-    // The vocabulary must contain the names this choice emits, or every option routes to the same
-    // OOV columns and the policy is uniform by construction.
-    let emitted: Vec<String> =
-        ti4_policy::projection::mlp_choice_features(&seen, &choice, &player, &[])
-            .iter()
-            .flat_map(ti4_policy::features::names_of)
-            .collect();
-    let vocab = vocabulary_for(&emitted);
-
-    let extract = |choice: &Choice| -> Vec<SparseOption> {
-        ti4_policy::projection::mlp_choice_features(&seen, choice, &player, &[])
-            .iter()
-            .map(|vector| sparse(vector, &vocab))
-            .collect()
-    };
-
-    // Non-vacuity, checked on the *inputs* rather than on the outputs: the three options must
-    // occupy different columns. Checking only that probabilities differ numerically is what let the
+    // Non-vacuity, checked on the *inputs* rather than the outputs: the options must occupy
+    // different columns. Checking only that probabilities differ numerically is what let the
     // earlier version pass on float noise.
-    let columns: Vec<Vec<i64>> = extract(&choice)
-        .iter()
-        .map(|option| {
-            let mut c = option.columns.clone();
-            c.sort_unstable();
-            c.dedup();
-            c
-        })
-        .collect();
     assert_ne!(
-        columns[0], columns[1],
+        base.option_columns[0], base.option_columns[1],
         "the options are indistinguishable to the model"
     );
     assert_ne!(
-        columns[1], columns[2],
+        base.option_columns[1], base.option_columns[2],
         "the options are indistinguishable to the model"
     );
-
-    let p = actor
-        .probabilities(&extract(&choice), "production", row, 1.0)
-        .expect("probabilities");
-    let q = actor
-        .probabilities(&extract(&shuffled), "production", row, 1.0)
-        .expect("probabilities");
-
-    // Non-vacuity first: the options must actually score differently, or a uniform policy would
-    // satisfy the permutation check trivially — which is exactly the bug this test exists for.
-    let spread =
-        p.iter().copied().fold(f64::MIN, f64::max) - p.iter().copied().fold(f64::MAX, f64::min);
+    let spread = base.probabilities.iter().copied().fold(f64::MIN, f64::max)
+        - base.probabilities.iter().copied().fold(f64::MAX, f64::min);
     assert!(
         spread > 1e-3,
-        "the policy is uniform over these options, so the permutation check proves nothing"
+        "the policy is uniform, so the shuffle proves nothing: {spread}"
     );
 
-    for (shuffled_index, original_index) in order.iter().enumerate() {
+    for (shuffled_index, original_index) in ORDER.iter().enumerate() {
         assert!(
-            (q[shuffled_index] - p[*original_index]).abs() < REASSOCIATION,
+            (shuffled.probabilities[shuffled_index] - base.probabilities[*original_index]).abs()
+                < REASSOCIATION,
             "probability {original_index} did not follow the shuffle"
         );
     }
 
-    let entropy = |d: &[f64]| -> f64 {
-        -d.iter()
-            .filter(|x| **x > 0.0)
-            .map(|x| x * x.ln())
+    // The same statement in one number, which a permutation bug cannot satisfy by accident.
+    let entropy = |p: &[f64]| -> f64 {
+        -p.iter()
+            .filter(|value| **value > 0.0)
+            .map(|value| value * value.ln())
             .sum::<f64>()
     };
     assert!(
-        (entropy(&p) - entropy(&q)).abs() < REASSOCIATION,
-        "entropy changed under a permutation"
+        (entropy(&base.probabilities) - entropy(&shuffled.probabilities)).abs() < REASSOCIATION,
+        "the shuffle changed the distribution's entropy"
+    );
+}
+
+#[test]
+fn the_critic_input_reports_how_many_columns_it_actually_occupies() {
+    // The measurement F-M09-027-3 turns into an acceptance criterion. Against a vocabulary built
+    // from the critic's own names every fact has a column of its own; against one that has never
+    // seen the family, the whole vector sums onto the global OOV column and `V` is a rank-1
+    // projection of the position no matter how rich the position is.
+    let (state, player) = position();
+
+    let known = vocabulary_for_position(&state, &player);
+    let rich = run(&state, &player, &BASE, &known);
+    assert!(
+        rich.critic_columns > 1,
+        "the critic collapsed onto {} column(s) against its own vocabulary",
+        rich.critic_columns
+    );
+
+    let stranger = Vocabulary::build(["option:unrelated"]).expect("builds");
+    let collapsed = run(&state, &player, &BASE, &stranger);
+    assert_eq!(
+        collapsed.critic_columns, 1,
+        "a vocabulary that has never seen `critic-state` should collapse every fact onto one column"
+    );
+    assert!(
+        rich.critic_columns > collapsed.critic_columns,
+        "the two vocabularies are indistinguishable, so this test measures nothing"
     );
 }
