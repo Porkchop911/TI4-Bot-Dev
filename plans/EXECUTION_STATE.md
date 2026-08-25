@@ -4088,6 +4088,19 @@ artifacts exist.
 
 Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
 
+## M09-024a independent Tier-C acceptance of `1b1c0b0` (2026-08-25)
+
+- **Verdict:** accept. F-M09-024a-4 is resolved: persisted provenance is structurally bounded
+  before arithmetic, and `capacity_for` is total and overflow-safe for every `usize`.
+- **Review closure:** F-M09-024a-1 through F-M09-024a-4 are closed with no new actionable findings.
+  Existing O1 LOW/O2 transfer/O3 deferred tensor gate/O4 accepted dispositions remain recorded in
+  `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.
+- **Independent gates:** vocabulary 24/0; complete workspace 1,403/0; scoped Clippy has no
+  package-owned warning and only the documented pre-existing engine warning at `game.rs:1260`;
+  scoped rustfmt and `git diff --check` clean.
+- **Status:** M09-024a is accepted. **Next ready package: M09-024b**, the bounded corpus discovery,
+  final `slots.json`, measured `V_cap`, and manifest evidence specified by the parent split.
+
 ## M09-024a independent Tier-C recheck of `7eb0722` (2026-08-25) — changes required
 
 - **Resolved:** F-M09-024a-3. Allocation provenance remains fixed across append; crossing the

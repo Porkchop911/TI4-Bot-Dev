@@ -272,6 +272,31 @@ artifacts exist.
 
 Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
 
+## Independent Tier-C acceptance of `1b1c0b0` (2026-08-25)
+
+**Verdict: accept.** F-M09-024a-4 is resolved. `validate` now rejects allocation provenance
+outside `oov_count ..= slots.len()` before performing capacity arithmetic, and `capacity_for` uses
+overflow-safe integer arithmetic that is total over every `usize`. The retained extreme-value,
+lower-bound, threshold-crossing, and full-capacity round-trip regressions cover both the schema
+boundary and append/resume behavior.
+
+The complete correction frontier was rechecked. F-M09-024a-1 through F-M09-024a-4 are closed; no
+new actionable findings remain. The earlier open-item dispositions stand: O-M09-024a-1 remains an
+accepted LOW residual, O-2 transfers the final measured `V_cap` to M09-024b, O-3 remains a mandatory
+free-row-zeroing gate for M09-026/M09-028, and O-4 is accepted.
+
+### Independent checks
+
+- `cargo test -p ti4-policy --lib vocabulary`: **24 passed, 0 failed**;
+- `cargo test --workspace`: **1,403 passed, 0 failed**;
+- `cargo clippy -p ti4-policy --all-targets`: no package-owned warning; only the documented
+  pre-existing engine `too_many_lines` warning at `game.rs:1260`;
+- `rustfmt --edition 2024 --check crates/ti4-policy/src/vocabulary.rs`: clean;
+- `git diff --check`: clean before this review-record update.
+
+**Status:** M09-024a is accepted. M09-024b is now dependency-ready and may begin from the accepted
+frontier.
+
 ## Independent Tier-C recheck of `7eb0722` (2026-08-25)
 
 **Verdict: changes required.** F-M09-024a-3 is resolved: allocation provenance is fixed at build,
