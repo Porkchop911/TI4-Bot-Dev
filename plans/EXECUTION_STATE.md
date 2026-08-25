@@ -3723,3 +3723,78 @@ claim is made either way about whether the recorded bounds move.
   M09-023 branch cannot integrate and **M09-024 remains dependency-blocked**. M09-025 remains ready.
 - **Next exact action:** implement the bounded alternate-store regression for M09-022, rerun its
   focused/policy/workspace gates, update evidence, and request a narrow Tier-B plus overlap recheck.
+
+## MEASURED — the authored bot plays at the wrong source scope, and it changes the game (2026-08-25)
+
+Follow-up to the finding carried forward in `1d50213`. It was recorded there as unmeasured. It is
+now measured, and it is not latent.
+
+### The defect
+
+`ScoredBot::new` (`crates/ti4-policy/src/bot.rs:64`) sets `sources: POK`. `Seats::Scored`
+(`crates/ti4-sim/src/run.rs:63`) seats it without `.with_sources()`, so **every authored-bot seat
+values the position at POK while the game is played at DEFAULT = FULL**. `content_types.rs` states
+the rule the code breaks, in the doc comment on `DEFAULT` itself:
+
+> Runtime paths — the simulator, the training rollout, evaluation — use this. A test may still
+> scope to `BASE` or `POK` deliberately when it is *about* scoping; anything else should read this
+> constant rather than picking a set of its own.
+
+FULL = POK + Thunder's Edge. Measured: **354 TE-only records** are invisible to the bot's valuation
+— 21 units, 13 technologies, 49 planets, 36 systems, 8 tokens, 20 leaders, 7 relics, 6 promissory
+notes, 2 strategy cards. The bot filters them out of every `in_sources(self.sources)` check and
+fails every `unit_value` lookup against them, in games that contain them.
+
+### The measurement
+
+Probe: `ScoredBot::new`'s `sources` changed `POK` → `DEFAULT`, nothing else; the M08-021 behavioral
+suite (`play_batch`, all 30 seeds, `Seats::Scored`) run before and after; mutation reverted and
+`bot.rs` verified byte-identical to HEAD afterwards.
+
+| metric | recorded v3 bound | POK (as committed) | DEFAULT (corrected) | in bound? |
+|---|---|---|---|---|
+| `vp_pace` | 0.383333–0.448765 | 0.416049383 | **0.460493827** | **outside** |
+| `score_spread` | 1.608871–1.922139 | 1.765128774 | **1.959731245** | **outside** |
+| `share_INVASION_RESOLVED` | 0.027887–0.029380 | 0.028637045 | **0.030831871** | **outside** |
+| `share_PRODUCTION_RESOLVED` | 0.047429–0.048661 | 0.048040855 | **0.049742140** | **outside** |
+| `share_SHIP_MOVED` | 0.067421–0.072386 | 0.069932540 | **0.072865453** | **outside** |
+| `share_SYSTEM_ACTIVATED` | 0.093517–0.095810 | 0.094654092 | **0.095836669** | **outside** |
+| `faction_differentiation` | 0.306363–0.763379 | 0.432335032 | 0.654801827 | inside |
+| `share_SPACE_COMBAT_RESOLVED` | 0.008142–0.009275 | 0.008714879 | 0.008700170 | inside |
+| `share_TACTICAL_ACTION_BEGAN` | 0.046067–0.047169 | 0.046613238 | 0.046094528 | inside |
+| `completion` | 1.0–1.0 | 1.000000000 | 1.000000000 | inside |
+
+Total VP across the 30-seed × 6-seat set: **674 → 746**, mean VP/seat **3.744 → 4.144 (+10.7%)**.
+`faction_differentiation` moves **+51.5%**.
+
+**Six of the ten gated metrics land outside the recorded v3 bounds.** The behavioral gate would
+fail on the corrected bot — which is the correct outcome, because the bounds were recorded from a
+bot playing at the wrong scope. They are bounds on a mis-scoped agent.
+
+### What this means, stated plainly
+
+1. The M08-021 v1/v2/v3 behavioral baselines describe an authored bot that cannot see Thunder's
+   Edge content in games that contain it. Every downstream citation of those bounds inherits that.
+2. Correcting the scope is a **re-baseline event**, and by the M07-020/M08-019 precedent an
+   operator decision — it invalidates a recorded baseline and moves a gate.
+3. The direction is not neutral. The corrected bot scores materially more, so the mis-scoped
+   baseline understates what the authored bot can do — which is the arm the MLP branch is measured
+   against.
+
+### The second half — the instrument
+
+`ScoredBot::new` also sets `content: ContentStore::embedded()`, ignoring whichever store the game
+runs on. That makes the bot **invisible to any `ContentStore::from_dir` perturbation**, which is
+the same blindness mechanism M08-019 Y1 identified in `annexable()`.
+
+Consequence for the M08 exit gate: the E1 campaign (28 content categories × 30 seeds, reported
+`0/28`) was run with `Seats::Scored`. It could not have detected an order or content dependence
+inside the bot's own valuation path, because that path never reads the perturbed store. **The 0/28
+result is sound for the engine and vacuous for the bot.** No claim is made here that such a
+dependence exists — only that the instrument could not have seen one.
+
+### Not yet decided
+
+This is a finding with a measurement, not a package. It needs an operator decision before any code
+moves, because the fix changes recorded gate values. The options, and what each costs, are for the
+operator; recorded here so the decision is made against numbers rather than against an argument.
