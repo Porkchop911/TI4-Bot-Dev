@@ -3704,3 +3704,22 @@ claim is made either way about whether the recorded bounds move.
 - **Status:** implementation complete, gates green, pending independent Tier-C review. With rows
   019–023 landed, **M09-024** (dense vocabulary, OOV registry and capacity) becomes
   dependency-ready. **M09-025** (CPU libtorch/tch adapter) has been ready since row 019.
+
+## M09-022 / M09-023 independent reviews (2026-08-25)
+
+- **M09-022 (`26ad269`) — changes required.** F-M09-022-1 MEDIUM: the package specification and
+  definition of done require an alternate `ContentStore::from_dir` regression proving emitted
+  decomposition follows the active store. Only the source-scope half is tested; code inspection of
+  `seen.content()` is not the required regression evidence. Other decomposition/separation and pin
+  checks pass. Ledger: `plans/M09-022_OPEN_REVIEW_ITEMS.md`.
+- **M09-023 (`662e27c`) — Tier-C accepted for its delta.** Opponent facts read only public counts,
+  are seat-anonymous and distribution-sensitive, survive `StateCross::None`, and leave the legacy
+  extractor unchanged. All three observations are non-blocking/deferred as recorded in
+  `plans/M09-023_OPEN_REVIEW_ITEMS.md`.
+- Independent gates on combined HEAD: focused M09-022 and M09-023 tests green; legacy/inventory
+  pins green; `ti4-policy --lib` **135/0**; scoped Clippy has no policy warning; rustfmt and
+  `git diff --check` clean.
+- **Status correction:** rows 019–023 are not all complete. M09-022 remains open, so the stacked
+  M09-023 branch cannot integrate and **M09-024 remains dependency-blocked**. M09-025 remains ready.
+- **Next exact action:** implement the bounded alternate-store regression for M09-022, rerun its
+  focused/policy/workspace gates, update evidence, and request a narrow Tier-B plus overlap recheck.
