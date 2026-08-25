@@ -1,0 +1,14 @@
+[package]
+name = "ti4-mlp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ti4-tensor.workspace = true
+ti4-policy.workspace = true
+tch.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

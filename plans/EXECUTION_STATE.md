@@ -4732,3 +4732,75 @@ package does not silently adopt them.
 | ID | Severity | Item |
 |---|---|---|
 | O-WORKSPACE-1 | LOW | `bincode` 2.0.1 and `paste` 1.0.15 are unmaintained (RUSTSEC-2025-0141, RUSTSEC-2024-0436). Both pre-date M09-025 and neither is a vulnerability. `bincode` is a direct workspace dependency and a replacement is a decision; `paste` is transitive through `parquet` and moves only when `parquet` does. |
+
+## M09-026 implemented — the batched MLP actor (2026-08-25)
+
+## What was built
+
+`crates/ti4-mlp` — the actor, and only the actor:
+
+```
+z_i = relu(W2 · relu(W1·x_i + b1) + b2)
+s_i = (w_shared[h] + delta[f,h]) · z_i + b_shared[h] + b_delta[f,h]
+p   = softmax(s / temperature)
+```
+
+`W1` is the `[V_cap, width]` table and `W1·x` is a **sparse gather**, not a matrix product —
+§4.3's embedding-bag requirement. The gather is per option because the input is sparse; both dense
+stages after it are one batched matmul over `[n, width]`, which is what §4.3 calls not optional.
+
+Widths are an enum with exactly two members. 128 is the pre-registered §7.1 throughput fallback and
+there is no third value to reach for.
+
+Faction conditioning is at the output only: `w_shared[h] + delta[f,h]`, every residual
+**zero-initialised**, so a faction absent from training uses the learned shared readout and a zero
+residual rather than an untrained output row.
+
+### Parameter count at the measured capacity
+
+`V_cap` = 16,384 (M09-024b2), width 256, 14 heads, 33 seats:
+
+| block | params |
+|---|---:|
+| input table | 4,194,304 |
+| hidden | 65,536 |
+| shared readout | 3,584 |
+| faction residuals | 118,272 |
+| biases | 988 |
+| **actor total** | **4,382,684** — 17.5 MB f32 |
+
+§4.2's clarified figure for this capacity was 4,382,480, which includes a 528-parameter identity
+embedding and a 256-parameter value head and excludes the biases itemised here. The value head is
+M09-027's; the embedding is discussed below.
+
+## The identity embedding is deliberately absent — an open specification question
+
+§4.2's parameter budget lists an identity embedding (16 × 33) and §3 says faction information
+enters "at the input (abilities + embedding)". But **§4.2's own model formula has no embedding
+term**, and nothing in the plan says how a dim-16 vector joins a width-256 input — added? projected?
+concatenated, which would change `W1`'s shape? The M09-026 row does not name it either.
+
+
+### Defects the tests caught, all mine
+
+**1. My fixtures were not deterministic.** `Tensor::rand` draws from libtorch's **process-global**
+generator, and cargo runs a binary's tests in parallel threads of one process. Two fixtures built
+from the same seed in different tests were therefore *not* the same fixture — the residual and
+gradient tests failed comparing two different models. Replaced with `patterned()`, a pure function
+of `(index, salt)` that never touches libtorch's RNG. This is the kind of shared-global coupling I
+would flag in a review, and it took two test failures to find in my own code.
+
+**2. The fixture's value range was wrong.** `patterned` shifted 24 bits and divided by `u16::MAX`,
+so "unit in [0,1)" was actually up to ~256 and activations reached 4 × 10⁶. Corrected to a 16-bit
+shift.
+
+**3. My tolerances were wrong twice, in opposite directions.** A softmax over f32 sums to
+1.0000000298, not to within 1e-9; and a dense-versus-sparse comparison cannot use a fixed absolute
+tolerance, because the two paths sum the same terms in different groupings and their disagreement
+scales with the values. Now a relative comparison against f32's ~7 significant digits.
+
+Worth stating plainly: defect 2 masked nothing but defect 3 nearly did. A 1e-5 absolute tolerance
+on values of order 4 × 10⁶ is a test that cannot fail; had I fixed only the fixture range and kept
+the absolute tolerance, both would have passed for the wrong reason.
+
+## Gates

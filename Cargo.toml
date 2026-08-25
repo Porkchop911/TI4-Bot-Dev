@@ -11,6 +11,7 @@ members = [
     "crates/ti4-legacy",
     "crates/ti4-cli",
     "crates/ti4-tensor",
+    "crates/ti4-mlp",
     "crates/xtask",
 ]
 
@@ -31,6 +32,7 @@ ti4-bridge = { path = "crates/ti4-bridge" }
 ti4-legacy = { path = "crates/ti4-legacy" }
 ti4-cli = { path = "crates/ti4-cli" }
 ti4-tensor = { path = "crates/ti4-tensor" }
+ti4-mlp = { path = "crates/ti4-mlp" }
 xtask = { path = "crates/xtask" }
 
 # External

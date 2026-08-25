@@ -1852,6 +1852,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ti4-mlp"
+version = "0.1.0"
+dependencies = [
+ "tch",
+ "thiserror 2.0.20",
+ "ti4-policy",
+ "ti4-tensor",
+]
+
+[[package]]
 name = "ti4-model"
 version = "0.1.0"
 dependencies = [
