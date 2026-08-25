@@ -41,6 +41,13 @@ const SEEDS: std::ops::Range<u64> = 202_608_210..202_608_338;
 /// The six r6 champion factions, in the rotation order the schedule uses.
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
+
+/// The fewest `critic-state:*` names a full campaign must discover.
+///
+/// A floor rather than an exact count, so ordinary extractor growth does not trip it — but high
+/// enough that a silently empty or near-empty critic namespace cannot pass. The regeneration that
+/// introduced the family found 121.
+const MINIMUM_CRITIC_NAMES: usize = 60;
 /// §6.1's horizon. Fixed for the same reason as the seed range.
 const ROUNDS: u32 = 4;
 /// The reviewed ceiling for this branch, below the architecture's global limit.
@@ -218,6 +225,54 @@ fn main() {
             vocabulary.capacity()
         ));
     }
+
+    // --- Gate: the critic namespace reached the dense vocabulary. ---
+    //
+    // F-M09-027-3. The published generation before this one carried no `critic-state:*` name at
+    // all, so every critic fact resolved to the reserved family column — or, before the family was
+    // registered, to the global one — and `V` was a rank-1 sum over a single row. Nothing failed:
+    // the artifact validated, the smoke ran, the coverage read 100%. A vocabulary that cannot
+    // represent the critic must not become the accepted one, so the check runs before publication
+    // rather than being something a reader is trusted to notice.
+    let critic_names: Vec<&String> = union
+        .iter()
+        .filter(|name| ti4_policy::vocabulary::family_of(name) == ti4_policy::critic::CRITIC_FAMILY)
+        .collect();
+    if critic_names.len() < MINIMUM_CRITIC_NAMES {
+        refuse(&format!(
+            "discovery found only {} `{}` names, below {MINIMUM_CRITIC_NAMES}: the critic would be rank-1",
+            critic_names.len(),
+            ti4_policy::critic::CRITIC_FAMILY
+        ));
+    }
+    let unassigned: Vec<&&String> = critic_names
+        .iter()
+        .filter(|name| !vocabulary.is_assigned(name))
+        .collect();
+    if let Some(name) = unassigned.first() {
+        refuse(&format!(
+            "{} critic names have no column of their own, e.g. {name}",
+            unassigned.len()
+        ));
+    }
+    // Distinct facts must occupy distinct columns — the property that separates a critic from a
+    // single weighted row. Assignment alone does not imply it.
+    let distinct: std::collections::BTreeSet<usize> = critic_names
+        .iter()
+        .map(|name| vocabulary.column_of(name))
+        .collect();
+    if distinct.len() != critic_names.len() {
+        refuse(&format!(
+            "{} critic names share {} columns",
+            critic_names.len(),
+            distinct.len()
+        ));
+    }
+    println!(
+        "critic namespace: {} names, {} distinct columns, none out of vocabulary",
+        critic_names.len(),
+        distinct.len()
+    );
 
     // --- Gate: the double build over reversed input. ---
     let reversed: Vec<&String> = union.iter().rev().collect();

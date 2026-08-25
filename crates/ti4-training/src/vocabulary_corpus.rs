@@ -237,6 +237,21 @@ impl Decider for Collector {
             {
                 names.extend(ti4_policy::features::names_of(&vector));
             }
+
+            // M09-027b: the critic's own namespace, discovered on the same decisions.
+            //
+            // Without this the `critic-state` family had a reserved out-of-vocabulary column and
+            // nothing else, so every critic fact resolved to that one column and `V` was a rank-1
+            // sum over a single row however rich the position was (F-M09-027-3).
+            //
+            // Discovered with **every group enabled**, independent of what an ablation run will
+            // switch off. A column that exists and goes unused costs one slot; a name with no
+            // column is the defect. The extractor takes the same bound capability the policy path
+            // above uses, so this collects nothing the acting seat cannot see.
+            names.extend(ti4_policy::features::names_of(
+                ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full())
+                    .facts(),
+            ));
         }
         self.inner.choose_seeing(choice, seen)
     }

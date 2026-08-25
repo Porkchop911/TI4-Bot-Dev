@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 2;
+pub const OOV_REGISTRY_VERSION: u32 = 3;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -149,6 +149,40 @@ const OOV_FAMILIES_V2: [&str; 39] = {
     families
 };
 
+/// The **frozen** version-3 reserved family order.
+///
+/// Version 2's order, unchanged and in place, with [`crate::critic::CRITIC_FAMILY`] appended — the
+/// namespace M09-027 introduced for the value function.
+///
+/// # Why this migration is affordable, stated rather than assumed
+///
+/// [`OOV_FAMILIES_V2`] says that once an artifact is published, growing the reserved block is a
+/// full reviewed tensor/layout migration. An artifact *is* published now (generation
+/// `14c19387…8479`), so that sentence applies and the reason it is still only a regeneration has to
+/// be given rather than skipped:
+///
+/// - **No trained tensor is addressed by these columns.** The MLP bundle is M09-028 and does not
+///   exist yet; every actor in the tree today is zero- or fixture-initialised. The r6 champion
+///   checkpoint that seeds the corpus is a schema-4 linear model keyed **by feature name**, not by
+///   column index, so a column shift cannot silently repoint one of its weights.
+/// - What the shift does invalidate is the published generation itself, which is replaced by
+///   republishing — exactly the step F-M09-027-3 requires.
+///
+/// After M09-028 writes a bundle, neither of those holds and this route closes.
+///
+/// Appended, not sorted in, for the reason v2 gives: sorting would put `critic-state` between
+/// `board` and `faction` and move every reserved column after it.
+const OOV_FAMILIES_V3: [&str; 40] = {
+    let mut families = [""; 40];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V2.len() {
+        families[index] = OOV_FAMILIES_V2[index];
+        index += 1;
+    }
+    families[39] = crate::critic::CRITIC_FAMILY;
+    families
+};
+
 /// A stable fingerprint of an ordered family list.
 ///
 /// SHA-256 over the names joined by a separator that cannot occur in a family name, so the digest
@@ -180,6 +214,10 @@ pub const OOV_FAMILIES_V1_FINGERPRINT: &str =
 pub const OOV_FAMILIES_V2_FINGERPRINT: &str =
     "8bb0d25c5c49d9c751a2385016b3c3dcd1a70b86fcd856f1508148de1a5006ac";
 
+/// The pinned fingerprint of the ordered version-3 registry.
+pub const OOV_FAMILIES_V3_FINGERPRINT: &str =
+    "f09ce17c5ef69e8a2a9ec3a2c74d4d94fada361665ee05bc4456037880f32b9d";
+
 /// The frozen v1 list, for migration checks. Nothing routes by it.
 #[must_use]
 pub const fn oov_families_v1() -> &'static [&'static str] {
@@ -192,7 +230,7 @@ pub const fn oov_families_v1() -> &'static [&'static str] {
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V2
+    &OOV_FAMILIES_V3
 }
 
 /// Families whose reserved rows exist only to hold v1's indices in place.
@@ -233,6 +271,10 @@ pub fn live_grammar_families() -> Vec<String> {
     );
     families.insert(UNIT_SUFFIX_FAMILY.to_owned());
     families.insert(crate::projection::SEAT_STATE_FAMILY.to_owned());
+    // M09-027b: the critic's namespace is a live family like any other. Without it here the
+    // coverage test would pass while `critic-state:*` names had no reserved column and pooled into
+    // the global one — which is precisely how the defect F-M09-027-3 found came to exist.
+    families.insert(crate::critic::CRITIC_FAMILY.to_owned());
     families.into_iter().collect()
 }
 
@@ -1107,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn the_reserved_order_is_pinned_and_v2_preserves_every_v1_index() {
+    fn the_reserved_order_is_pinned_and_each_version_preserves_every_earlier_index() {
         // The migration's whole claim: v2 is v1 with one family appended, so every reserved column
         // v1 assigned is still at the index v1 gave it. Checked element by element rather than by
         // length, since a reordering preserves the count.
@@ -1124,6 +1166,14 @@ mod tests {
             OOV_FAMILIES_V2_FINGERPRINT,
             "the ordered v2 registry changed"
         );
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V3),
+            OOV_FAMILIES_V3_FINGERPRINT,
+            "the ordered v3 registry changed"
+        );
+        // The three digests must differ, or pinning them separately proves nothing.
+        assert_ne!(OOV_FAMILIES_V1_FINGERPRINT, OOV_FAMILIES_V2_FINGERPRINT);
+        assert_ne!(OOV_FAMILIES_V2_FINGERPRINT, OOV_FAMILIES_V3_FINGERPRINT);
 
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
@@ -1138,10 +1188,23 @@ mod tests {
             "the appended family is not the bare seat family"
         );
 
+        assert_eq!(OOV_FAMILIES_V3.len(), OOV_FAMILIES_V2.len() + 1);
+        for (index, family) in OOV_FAMILIES_V2.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V3[index], *family,
+                "v3 moved the v2 reserved column at index {index}"
+            );
+        }
+        assert_eq!(
+            OOV_FAMILIES_V3[OOV_FAMILIES_V2.len()],
+            crate::critic::CRITIC_FAMILY,
+            "the appended family is not the critic namespace"
+        );
+
         // And the same property on the built vocabulary: reserved column i+1 is families[i].
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         assert_eq!(vocabulary.slots[0].name, GLOBAL_OOV);
-        for (index, family) in OOV_FAMILIES_V2.iter().enumerate() {
+        for (index, family) in OOV_FAMILIES_V3.iter().enumerate() {
             assert_eq!(vocabulary.slots[index + 1].name, oov_name(family));
         }
     }

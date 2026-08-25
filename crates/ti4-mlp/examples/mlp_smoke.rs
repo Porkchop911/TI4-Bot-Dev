@@ -38,9 +38,14 @@ use ti4_sim::artifacts::ArtifactRole;
 
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
-/// The vocabulary generation M09-024b2 published. The smoke runs against that one or none.
+/// The accepted vocabulary generation. The smoke runs against that one or none.
+///
+/// M09-027b replaced M09-024b2's `14c19387…8479`. The registry moved to v3 to give the critic
+/// namespace a reserved column, which shifts every ordinary column after the reserved block, and
+/// discovery now emits `critic-state:*` names — 10,997 slots became 11,118. Both changes make the
+/// previous generation a different artifact rather than a stale one, so the pin moves with it.
 const ACCEPTED_SLOTS_SHA256: &str =
-    "14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479";
+    "8805cfdd4fa459102e6c1d2adf165a476346e00f5031eb4762904d032ec69295";
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {
@@ -226,6 +231,91 @@ completed {completed} of {rounds} rounds (round state {start_round} -> {}): {ste
         started.elapsed()
     );
     println!("finished: {}", game.state.finished);
+
+    // --- The value path, against the generation this run actually loaded. ---
+    //
+    // F-M09-027-3. The unit tests build their own vocabulary, so they cannot see a *published*
+    // artifact that has no room for the critic — which is exactly the state the previous generation
+    // was in: every `critic-state:*` fact resolved to one column and `V` was a rank-1 sum. This
+    // runs the real extractor over the position the game just reached, through the engine's own
+    // ask path, and refuses if the critic collapses.
+    {
+        struct Probe {
+            actor: Actor,
+            vocabulary: Vocabulary,
+            row: FactionRow,
+            columns: usize,
+            names: usize,
+            value: f64,
+        }
+        impl ti4_engine::choice::Decider for Probe {
+            fn choose(
+                &mut self,
+                choice: &ti4_engine::choice::Choice,
+            ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice>
+            {
+                Ok(choice.options[0].clone())
+            }
+            fn choose_seeing(
+                &mut self,
+                choice: &ti4_engine::choice::Choice,
+                seen: &ti4_engine::choice::SeatObservation<'_>,
+            ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice>
+            {
+                let vector = ti4_policy::critic::critic_vector(
+                    seen,
+                    ti4_policy::critic::CriticFeatures::full(),
+                );
+                self.names = vector.facts().len();
+                let input = ti4_mlp::CriticInput::new(&vector, &self.vocabulary);
+                self.columns = input.distinct_columns();
+                self.value = self.actor.value(&input, self.row).unwrap_or(f64::NAN);
+                Ok(choice.options[0].clone())
+            }
+        }
+
+        let mut probe = Probe {
+            actor: Actor::zeros(Width::W256, capacity),
+            vocabulary: Vocabulary::from_json(&text).expect("vocabulary"),
+            row: FactionRow::of(factions[&players[0]].as_str()).expect("roster"),
+            columns: 0,
+            names: 0,
+            value: f64::NAN,
+        };
+        let choice = ti4_engine::choice::Choice::new(
+            players[0].clone(),
+            "value probe",
+            vec![ti4_engine::choice::ChoiceOption::new("noop", "noop")],
+        );
+        if let Err(error) = ti4_engine::choice::ask_private(
+            &choice,
+            &game.state,
+            content,
+            DEFAULT,
+            game.galaxy(),
+            &mut probe,
+        ) {
+            refuse(&format!("the value probe could not be answered: {error}"));
+        }
+        // Plumbing only, and worth saying so: this actor is zero-initialised like the ones the
+        // seats use, so `V` is 0 by construction and its value carries no information. What is
+        // being checked is that the gather, the trunk and the readout complete over real columns
+        // without producing a non-finite number.
+        if !probe.value.is_finite() {
+            refuse("V is not finite against the accepted vocabulary");
+        }
+        // The load-bearing number. One column means every critic fact landed on the same row.
+        if probe.columns <= 1 {
+            refuse(&format!(
+                "the critic collapsed onto {} column(s): {} facts, so V is a rank-1 projection",
+                probe.columns, probe.names
+            ));
+        }
+        println!(
+            "critic: {} facts over {} distinct columns; V = {:.6} (zero actor, plumbing only)",
+            probe.names, probe.columns, probe.value
+        );
+    }
     let assigned: usize = statuses
         .iter()
         .map(|s| s.counters().assigned.load(Ordering::Relaxed))

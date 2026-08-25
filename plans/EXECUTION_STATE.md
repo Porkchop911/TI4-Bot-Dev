@@ -5662,3 +5662,34 @@ Clippy reports no warning in the package delta. Three HIGH findings remain:
 extraction to `SeatObservation`, introduce a critic-only sparse input/value API, implement the 027b
 registry/projection/corpus generation, and rerun the invariance/non-vacuity gates against the
 accepted vocabulary. Full ledger: `plans/M09-027_OPEN_REVIEW_ITEMS.md`.
+
+---
+
+## M09-027 correction round 1 + M09-027b implemented (2026-08-26)
+
+Review of `ab9c896` returned three HIGH findings. **All three accepted, none disputed.**
+Corrections in `f52f00c` and the commit that follows this note.
+
+- **F-M09-027-1:** the critic took a public `Observed`, an arbitrary `PlayerId` and a caller-supplied
+  `held_secrets` slice — the hole `SeatObservation` was introduced to close, reopened one package
+  after it closed. Both entry points now take the capability.
+- **F-M09-027-2:** `Actor::value` accepted the public `SparseOption`, so "has no way to see the legal
+  set" was true of the extractor and written about the model. `CriticInput` is now the only accepted
+  type. The invariance tests never touched a production boundary — they called the extractor three
+  times with identical arguments, which is `f(x) == f(x)` and cannot fail; all three now run through
+  `ask_private`.
+- **F-M09-027-3:** the parent may not bank the easy half of a split. M09-027 stayed open; M09-027b
+  landed with it. Registry v3 (`critic-state` appended, fingerprint pinned), the family admitted as
+  `Transferable`, discovery emitting critic names, and the generation republished:
+  **`14c19387…8479` -> `8805cfdd…9295`**, 10,997 -> 11,118 slots, 768/768 games. `critic-state:round`
+  moved from column 0 unassigned to column 571 assigned; the smoke reports 38 facts over 38 distinct
+  columns where it would previously have had 1.
+
+Three gates guard the collapse — publication, accepted artifact, and a hermetic test — each falsified
+by reintroducing the defect and confirming the refusal, with sources restored byte-identically.
+
+**Gates:** workspace 1482 passed / 0 failed; ti4-policy 180; ti4-mlp 23+3+2+2 plus 2 doc-tests
+(one `compile_fail,E0308` with a positive control); clippy and rustfmt clean on touched files; smoke
+exit 0 with 409 decisions and 0 fallbacks.
+
+**M09-027 and M09-027b are submitted together for recheck. M09-028 remains blocked until both close.**

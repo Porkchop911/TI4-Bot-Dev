@@ -79,10 +79,17 @@ pub enum FamilyRole {
 /// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
 /// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
 /// so the decision cannot be skipped.
-const FAMILY_ROLES: [(&str, FamilyRole); 39] = [
+const FAMILY_ROLES: [(&str, FamilyRole); 40] = [
     ("*-unit", FamilyRole::Transferable),
     ("ability", FamilyRole::Transferable),
     ("card", FamilyRole::Transferable),
+    // M09-027b. Transferable: every critic identity is bounded and means the same thing next game
+    // — the round, the acting seat's economy and score, opponent counts, and the `objective_
+    // progress:<family>` / `ability:<x>` / `faction_tech:<t>` tokens, all of which are corpus
+    // identities rather than board ones. Admitting it is what gives `critic-state:*` names real
+    // columns; without the entry the closed default routes the whole critic vector to one column
+    // and `V` is a rank-1 sum (F-M09-027-3).
+    ("critic-state", FamilyRole::Transferable),
     ("destination", FamilyRole::Transferable),
     ("faction-commodities", FamilyRole::Transferable),
     ("faction-home", FamilyRole::Transferable),
@@ -541,7 +548,7 @@ mod tests {
             "a registered family has no MLP role, or a role names a family nobody registers. \
              Admission is an architecture decision: classify it deliberately, do not default it."
         );
-        assert_eq!(FAMILY_ROLES.len(), 39, "one role per registered family");
+        assert_eq!(FAMILY_ROLES.len(), 40, "one role per registered family");
     }
 
     #[test]
