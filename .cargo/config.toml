@@ -1,0 +1,7 @@
+# The pinned libtorch (M09-025). Relative to this file's parent, so the pin travels with the
+# repository rather than depending on a machine-specific absolute path or a shell export.
+#
+# The directory itself is gitignored (`/out/`) and is reproduced from
+# `plans/artifacts/libtorch-2.9.1-cpu.manifest.json`, which pins every file by SHA-256.
+[env]
+LIBTORCH = { value = "out/libtorch-2.9.1-cpu", relative = true }

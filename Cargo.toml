@@ -10,6 +10,7 @@ members = [
     "crates/ti4-bridge",
     "crates/ti4-legacy",
     "crates/ti4-cli",
+    "crates/ti4-tensor",
     "crates/xtask",
 ]
 
@@ -29,6 +30,7 @@ ti4-training = { path = "crates/ti4-training" }
 ti4-bridge = { path = "crates/ti4-bridge" }
 ti4-legacy = { path = "crates/ti4-legacy" }
 ti4-cli = { path = "crates/ti4-cli" }
+ti4-tensor = { path = "crates/ti4-tensor" }
 xtask = { path = "crates/xtask" }
 
 # External
@@ -47,6 +49,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rand = "0.9"
 rand_chacha = "0.9"
 parquet = "55"
+# Pinned exactly: tch 0.22.0 is the release built against libtorch 2.9.x, which is what
+# plans/artifacts/libtorch-2.9.1-cpu.manifest.json pins. Newer tch requires libtorch 2.13 (M09-025).
+tch = "=0.22.0"
 chrono = { version = "0.4", features = ["serde"] }
 globset = "0.4"
 anyhow = "1"

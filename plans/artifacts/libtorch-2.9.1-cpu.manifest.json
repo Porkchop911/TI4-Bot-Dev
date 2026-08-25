@@ -1,7 +1,9 @@
 {
  "device": "cpu",
- "files": 9311,
- "lib_files": [
+ "files": 9313,
+ "libtorch_version": "2.9.1+cpu",
+ "licenses": "LICENSE (BSD-3-Clause) and NOTICE copied from torch-2.9.1.dist-info, which is outside the package directory and was missed by the first copy",
+ "pinned_files": [
   {
    "bytes": 2703490,
    "path": "lib/XNNPACK.lib",
@@ -136,10 +138,19 @@
    "bytes": 815,
    "path": "lib/libshm_windows/libshm.h",
    "sha256": "4cda048d2158eaf99ff698b5966f05d2a2e4fd2b613312c31864eb74a7a883b1"
+  },
+  {
+   "bytes": 538235,
+   "path": "licenses/LICENSE",
+   "sha256": "a60db7b1ec2872f18d2c1b86d147ea39d5ead7d671fe8a9c07c28b17d167e51d"
+  },
+  {
+   "bytes": 24088,
+   "path": "licenses/NOTICE",
+   "sha256": "1c3dec6c0342c7ed9e12af59b296c7bb1d394af5cf881db74191cc8299efce5c"
   }
  ],
- "libtorch_version": "2.9.1+cpu",
  "provenance": "copied once from the python site-packages torch install; never linked in place",
- "total_bytes": 367553850,
- "tree_sha256": "b9f97c5783db935ce3858f17ee8808235066ae2102004f17215545c55662c364"
+ "total_bytes": 368116173,
+ "tree_sha256": "5dce91590eaea3fbe035c338fba206ac052b16e2e1d869a8bfef129b383c425f"
 }

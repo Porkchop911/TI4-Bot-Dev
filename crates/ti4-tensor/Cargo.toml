@@ -1,0 +1,12 @@
+[package]
+name = "ti4-tensor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tch.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
