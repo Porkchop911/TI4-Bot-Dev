@@ -4867,3 +4867,22 @@ the absolute tolerance, both would have passed for the wrong reason.
   and objective flow, not the model.
 - Head routing folds schema 5 names to schema 4 through `Actor::resolve_head`, the same rule
   `Profile::resolved_head` uses for the linear champions.
+
+## M09-026 independent Tier-C frontier review of `94e4fa3..f98f4f8` (2026-08-25) — changes required
+
+- Independent gates: `cargo test -p ti4-mlp` **12/0**; release smoke reproduced 409 MLP decisions,
+  143,562 assigned lookups, 0 OOV, no engine error.
+- **F-M09-026-1 HIGH:** mandatory `[33,16]` identity embedding absent. Ruling: zero-pad it to width
+  and add it to gathered first-layer preactivation, preserving accepted shapes and the 528 budget.
+- **F-M09-026-2 HIGH:** residual row is selected by raw physical seat, not a pinned selectable-
+  faction identity; the smoke also constructs six mutable actors rather than one shared model.
+- **F-M09-026-3 HIGH:** all inference errors silently become random legal choices and the smoke
+  has no fallback/error gate.
+- **F-M09-026-4 HIGH:** non-finite/empty softmax cases can return success and fall through to the
+  last option.
+- **F-M09-026-5 HIGH:** inactive-row verification accepts caller-chosen rows and invalid bounds;
+  it does not check/mask the real five reserved families and free rows.
+- **F-M09-026-6 MEDIUM:** “100% coverage” uses unverified inputs from the discovery campaign
+  itself and labels round state 5 as five played rounds for a four-round horizon.
+- **Status:** changes required; upstream M09-024/M09-025 reviews are also open. M09-027 blocked.
+  Full ledger: `plans/M09-026_OPEN_REVIEW_ITEMS.md`.
