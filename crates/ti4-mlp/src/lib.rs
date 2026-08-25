@@ -39,6 +39,7 @@
 pub mod bot;
 
 use thiserror::Error;
+use ti4_policy::vocabulary::Vocabulary;
 use ti4_tensor::{Device, Kind, Tensor};
 
 /// The trunk width. §4.2 admits exactly two, and the fallback to 128 is the only in-plan response
@@ -62,6 +63,83 @@ impl Width {
     }
 }
 
+/// The dimension of the identity embedding (§4.2's 16 × 33 budget).
+pub const EMBED_DIM: i64 = 16;
+
+/// The **pinned** roster of selectable faction identities, in the order their rows are allocated.
+///
+/// This is the model's conditioning key, and it is a faction identity — not a physical table seat.
+/// An earlier version took a raw `seat: usize` and the smoke passed the player index, so across
+/// rotations one faction was conditioned on a different residual and embedding row every game
+/// (F-M09-026-2). Thirty-three rows, including the three Keleres separately, because §3 sizes them
+/// on 33 for exactly that reason.
+///
+/// Frozen like the OOV registry: a trained row is addressed by index, so reordering this list
+/// silently repoints every faction's residual and embedding. `the_roster_is_the_corpus_selectable_
+/// seats` fails when the corpus and this list disagree.
+pub const FACTION_ROSTER: [&str; 33] = [
+    "arborec",
+    "argent",
+    "bastion",
+    "cabal",
+    "crimson",
+    "deepwrought",
+    "empyrean",
+    "firmament",
+    "ghost",
+    "hacan",
+    "jolnar",
+    "keleresa",
+    "keleresm",
+    "keleresx",
+    "l1z1x",
+    "letnev",
+    "mahact",
+    "mentak",
+    "muaat",
+    "naalu",
+    "naaz",
+    "nekro",
+    "nomad",
+    "obsidian",
+    "ralnel",
+    "saar",
+    "sardakk",
+    "sol",
+    "titans",
+    "winnu",
+    "xxcha",
+    "yin",
+    "yssaril",
+];
+
+/// A validated row in [`FACTION_ROSTER`].
+///
+/// Constructing one is the only way to condition the model, so a physical seat index cannot be
+/// passed by mistake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FactionRow(usize);
+
+impl FactionRow {
+    /// Resolve a faction alias to its pinned row.
+    ///
+    /// # Errors
+    /// [`ActorError::UnknownFaction`] for an alias the roster does not carry.
+    pub fn of(alias: &str) -> Result<Self, ActorError> {
+        FACTION_ROSTER
+            .iter()
+            .position(|known| *known == alias)
+            .map(Self)
+            .ok_or_else(|| ActorError::UnknownFaction(alias.to_owned()))
+    }
+
+    /// The row index.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// Schema 4's fourteen decision heads, in their fixed order.
 #[must_use]
 pub fn heads() -> &'static [&'static str] {
@@ -74,9 +152,16 @@ pub enum ActorError {
     /// A head name the schema does not define.
     #[error("unknown head {0:?}")]
     UnknownHead(String),
-    /// A faction index outside the allocated residual rows.
-    #[error("faction {seat} is outside {factions} residual rows")]
-    UnknownFaction { seat: usize, factions: usize },
+    /// A faction alias the pinned roster does not carry.
+    #[error("faction {0:?} is not in the pinned 33-identity roster")]
+    UnknownFaction(String),
+    /// A legal set with no options. Not a position: a decision always has something to choose.
+    #[error("the legal set is empty")]
+    EmptyLegalSet,
+    /// A logit, probability or normaliser that is not finite, or a distribution that does not sum
+    /// to one. Never returned as a plausible-looking distribution.
+    #[error("{what} is not usable: {detail}")]
+    NotUsable { what: &'static str, detail: String },
     /// A sparse option vector was malformed.
     #[error(transparent)]
     Tensor(#[from] ti4_tensor::TensorError),
@@ -116,6 +201,8 @@ pub struct Actor {
     delta: Tensor,
     /// `[factions, heads]`, zero.
     b_delta: Tensor,
+    /// `[33, EMBED_DIM]`, zero. §4.2's identity embedding.
+    embedding: Tensor,
 }
 
 impl Actor {
@@ -147,6 +234,7 @@ impl Actor {
             b_shared: Tensor::zeros([heads], opts),
             delta: Tensor::zeros([factions_dim, heads, w], opts),
             b_delta: Tensor::zeros([factions_dim, heads], opts),
+            embedding: Tensor::zeros([factions_dim, EMBED_DIM], opts),
         }
     }
 
@@ -187,6 +275,43 @@ impl Actor {
         &mut self.delta
     }
 
+    /// Mutable access to the identity embedding.
+    pub const fn embedding_mut(&mut self) -> &mut Tensor {
+        &mut self.embedding
+    }
+
+    /// The identity embedding.
+    pub const fn embedding(&self) -> &Tensor {
+        &self.embedding
+    }
+
+    /// The selected identity, zero-padded from [`EMBED_DIM`] to the trunk width.
+    ///
+    /// §4.2 budgets exactly 528 embedding parameters and fixes the `[V_cap, width]` and
+    /// `[width, width]` shapes, so the embedding joins the input by **addition into the first-layer
+    /// preactivation**, before `b1` and the `ReLU` — the architecture direction the review gave for
+    /// O-M09-026-1. Concatenation or a projection would change those shapes and the budget, and
+    /// would need its own ruling.
+    ///
+    /// # Panics
+    /// If a validated roster index does not fit an `i64`; there are thirty-three.
+    pub fn identity_row(&self, row: FactionRow) -> Tensor {
+        let index = i64::try_from(row.index()).expect("roster fits");
+        let selected = self.embedding.get(index);
+        let padding = self.width - EMBED_DIM;
+        if padding <= 0 {
+            selected
+        } else {
+            Tensor::cat(
+                &[
+                    selected,
+                    Tensor::zeros([padding], (Kind::Float, Device::Cpu)),
+                ],
+                0,
+            )
+        }
+    }
+
     /// The schema-4 head that carries a requested head.
     ///
     /// `decision_head` names schema 5's nineteen; schema 4 carries fourteen and routes the later
@@ -220,9 +345,9 @@ impl Actor {
     ///
     /// # Errors
     /// Propagates a malformed sparse vector.
-    pub fn trunk(&self, options: &[SparseOption]) -> Result<Tensor, ActorError> {
+    pub fn trunk(&self, options: &[SparseOption], row: FactionRow) -> Result<Tensor, ActorError> {
         if options.is_empty() {
-            return Ok(Tensor::zeros([0, self.width], (Kind::Float, Device::Cpu)));
+            return Err(ActorError::EmptyLegalSet);
         }
         let mut gathered = Vec::with_capacity(options.len());
         for option in options {
@@ -233,7 +358,9 @@ impl Actor {
             )?);
         }
         let x = Tensor::stack(&gathered, 0);
-        let first = (x + &self.b1).relu();
+        // The identity joins here: zero-padded to the trunk width and added to the first-layer
+        // preactivation, before `b1` and the ReLU.
+        let first = (x + self.identity_row(row) + &self.b1).relu();
         let second = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
         Ok(second)
     }
@@ -249,15 +376,11 @@ impl Actor {
         &self,
         options: &[SparseOption],
         head: &str,
-        seat: usize,
+        row: FactionRow,
     ) -> Result<Tensor, ActorError> {
         let head_index = Self::head_index(head)?;
-        let factions = usize::try_from(self.delta.size()[0]).expect("non-negative");
-        if seat >= factions {
-            return Err(ActorError::UnknownFaction { seat, factions });
-        }
-        let z = self.trunk(options)?;
-        let seat_i = i64::try_from(seat).expect("seat fits");
+        let z = self.trunk(options, row)?;
+        let seat_i = i64::try_from(row.index()).expect("roster fits");
         let head_i = i64::try_from(head_index).expect("head fits");
         // w_effective[f,h] = w_shared[h] + delta[f,h] — the decomposition §3 fixes.
         let w = self.w_shared.get(head_i) + self.delta.get(seat_i).get(head_i);
@@ -278,50 +401,160 @@ impl Actor {
         &self,
         options: &[SparseOption],
         head: &str,
-        seat: usize,
+        row: FactionRow,
         temperature: f64,
     ) -> Result<Vec<f64>, ActorError> {
-        if temperature.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+        if options.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if !temperature.is_finite() || temperature <= 0.0 {
             return Err(ActorError::Temperature(temperature));
         }
-        if options.is_empty() {
-            return Ok(Vec::new());
+        let scores = self.logits(options, head, row)? / temperature;
+        let probabilities = stable_softmax(&scores)?;
+        if probabilities.len() != options.len() {
+            return Err(ActorError::NotUsable {
+                what: "distribution length",
+                detail: format!("{} for {} options", probabilities.len(), options.len()),
+            });
         }
-        let scores = self.logits(options, head, seat)? / temperature;
-        Ok(stable_softmax(&scores))
+        Ok(probabilities)
     }
 
-    /// Whether every row from `slot_count` up, and every row named by `dead`, is exactly zero.
+    /// The rows that must never move, derived from the vocabulary rather than supplied.
     ///
-    /// M09-024a allocates capacity above the assigned columns and M09-024b1 retains five reserved
-    /// rows that the projection can never route to. Both must stay zero and out of the optimizer;
-    /// this is the assertion side of that obligation, for save/load and for tests.
-    #[must_use]
-    pub fn inactive_rows_are_zero(&self, slot_count: i64, dead: &[i64]) -> bool {
-        let free_clean = if slot_count >= self.capacity {
-            true
-        } else {
-            let free = self.input.narrow(0, slot_count, self.capacity - slot_count);
-            free.abs().max().double_value(&[]) == 0.0
-        };
-        free_clean
-            && dead.iter().all(|row| {
-                *row < self.capacity && self.input.get(*row).abs().max().double_value(&[]) == 0.0
-            })
+    /// Two sets: every row from `slot_count` to `capacity` (the append headroom M09-024a
+    /// allocates), and the reserved columns M09-024b1 classified inactive — the three unbounded
+    /// crosses and the two legacy-only channels, five in all, which the projection suppresses
+    /// before lookup so nothing can ever route to them.
+    ///
+    /// Derived, because an earlier version took caller-supplied indices and its test passed
+    /// `[1,2,3,4,5]` — not the actual reserved columns — so the gate could pass without checking a
+    /// single real row (F-M09-026-5).
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] if the vocabulary does not fit this actor's table.
+    ///
+    /// # Panics
+    /// If a validated slot count or column index does not fit an `i64`.
+    pub fn inactive_rows(&self, vocabulary: &Vocabulary) -> Result<Vec<i64>, ActorError> {
+        let slot_count = i64::try_from(vocabulary.slot_count()).expect("slots fit");
+        let capacity = i64::try_from(vocabulary.capacity()).expect("capacity fits");
+        if capacity != self.capacity {
+            return Err(ActorError::NotUsable {
+                what: "vocabulary capacity",
+                detail: format!("{capacity} against a table of {}", self.capacity),
+            });
+        }
+        if slot_count < 0 || slot_count > capacity {
+            return Err(ActorError::NotUsable {
+                what: "slot count",
+                detail: format!("{slot_count} against capacity {capacity}"),
+            });
+        }
+        let mut rows: Vec<i64> = (slot_count..capacity).collect();
+        for family in ti4_policy::vocabulary::dead_reserved_families() {
+            let column = vocabulary.column_of(&ti4_policy::vocabulary::oov_name(family));
+            let column = i64::try_from(column).expect("column fits");
+            if column >= capacity {
+                return Err(ActorError::NotUsable {
+                    what: "a reserved column",
+                    detail: format!("{family} at {column}, capacity {capacity}"),
+                });
+            }
+            rows.push(column);
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        Ok(rows)
+    }
+
+    /// Whether every row that must never move is exactly zero.
+    ///
+    /// # Errors
+    /// Propagates [`Self::inactive_rows`].
+    pub fn inactive_rows_are_zero(&self, vocabulary: &Vocabulary) -> Result<bool, ActorError> {
+        let rows = self.inactive_rows(vocabulary)?;
+        Ok(rows
+            .iter()
+            .all(|row| self.input.get(*row).abs().max().double_value(&[]) == 0.0))
+    }
+
+    /// A `[capacity]` mask that is 1 where a row may train and 0 where it may not.
+    ///
+    /// The optimizer boundary M09-024a's headroom and M09-024b1's dead rows both depend on:
+    /// multiplying a gradient by this cannot move a free or inactive row, which is stronger than
+    /// asserting they are still zero afterwards.
+    ///
+    /// # Errors
+    /// Propagates [`Self::inactive_rows`].
+    pub fn trainable_mask(&self, vocabulary: &Vocabulary) -> Result<Tensor, ActorError> {
+        let mask = Tensor::ones([self.capacity], (Kind::Float, Device::Cpu));
+        for row in self.inactive_rows(vocabulary)? {
+            let _ = mask.get(row).fill_(0.0);
+        }
+        Ok(mask)
     }
 }
 
-/// Softmax with the maximum subtracted first.
-#[must_use]
-pub fn stable_softmax(scores: &Tensor) -> Vec<f64> {
-    let shifted = scores - scores.max();
-    let weights = shifted.exp();
-    let total = weights.sum(Kind::Float);
-    let normalised = weights / total;
-    ti4_tensor::to_vec_or_panic(&normalised)
-        .into_iter()
-        .map(f64::from)
-        .collect()
+/// Softmax with the maximum subtracted first, validated end to end.
+///
+/// Subtracting the max is what stops `exp` overflowing `f32` on a logit around 90 — without it the
+/// result is `NaN` for every option rather than a wrong one for some. But overflow is not the only
+/// way this goes wrong: a `NaN` logit, an all-`-inf` set, or a normaliser that underflows to zero
+/// each produce a non-finite or meaningless distribution, and an earlier version returned those as
+/// success (F-M09-026-4). Every stage is checked, because a model refusal that becomes a
+/// legal-looking action is worse than a model refusal.
+///
+/// # Errors
+/// [`ActorError::NotUsable`] for non-finite logits, a non-finite or non-positive normaliser, or a
+/// distribution that is not a distribution.
+pub fn stable_softmax(scores: &Tensor) -> Result<Vec<f64>, ActorError> {
+    let raw = ti4_tensor::to_vec(scores).map_err(|error| ActorError::NotUsable {
+        what: "logits",
+        detail: error.to_string(),
+    })?;
+    if raw.is_empty() {
+        return Err(ActorError::EmptyLegalSet);
+    }
+    if let Some(bad) = raw.iter().copied().find(|value| !value.is_finite()) {
+        return Err(ActorError::NotUsable {
+            what: "a logit",
+            detail: format!("{bad}"),
+        });
+    }
+
+    let highest = raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let weights: Vec<f64> = raw
+        .iter()
+        .map(|value| f64::from(*value - highest).exp())
+        .collect();
+    let total: f64 = weights.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return Err(ActorError::NotUsable {
+            what: "the softmax normaliser",
+            detail: format!("{total}"),
+        });
+    }
+    let probabilities: Vec<f64> = weights.into_iter().map(|weight| weight / total).collect();
+    if let Some(bad) = probabilities
+        .iter()
+        .copied()
+        .find(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(ActorError::NotUsable {
+            what: "a probability",
+            detail: format!("{bad}"),
+        });
+    }
+    let sum: f64 = probabilities.iter().sum();
+    if (sum - 1.0).abs() > 1e-9 {
+        return Err(ActorError::NotUsable {
+            what: "the distribution total",
+            detail: format!("{sum}"),
+        });
+    }
+    Ok(probabilities)
 }
 
 #[cfg(test)]
@@ -332,17 +565,19 @@ mod tests {
     const CAPACITY: i64 = 512;
     const FACTIONS: usize = 33;
 
+    fn row(alias: &str) -> FactionRow {
+        FactionRow::of(alias).expect("in the roster")
+    }
+
     /// Reproducible pseudo-random weights that do **not** touch libtorch's RNG.
     ///
     /// `Tensor::rand` draws from a process-global generator, and cargo runs a binary's tests in
     /// parallel threads of one process — so two fixtures built from the same seed in different
     /// tests are not the same fixture, and a comparison between them fails for reasons that have
-    /// nothing to do with the model. A pure function of `(row, column, salt)` has no such
-    /// coupling.
+    /// nothing to do with the model. A pure function of `(index, salt)` has no such coupling.
     fn patterned(rows: i64, cols: i64, salt: u64) -> Tensor {
         let mut values = Vec::with_capacity(usize::try_from(rows * cols).expect("fixture fits"));
         for index in 0..(rows * cols) {
-            // A small LCG, folded to [-0.5, 0.5).
             let mut state = u64::try_from(index)
                 .expect("non-negative")
                 .wrapping_mul(6_364_136_223_846_793_005)
@@ -367,30 +602,28 @@ mod tests {
         actor
     }
 
+    /// Agreement to f32 precision, relative to the magnitude being compared.
+    ///
+    /// A fixed absolute tolerance is wrong for a dense-versus-sparse comparison: the two paths sum
+    /// the same terms in different groupings, so their disagreement scales with the values.
+    fn close(a: f32, b: f32) -> bool {
+        let scale = a.abs().max(b.abs()).max(1.0);
+        (a - b).abs() <= 1e-5 * scale
+    }
+
     /// The same forward pass, computed densely: materialise `[n, V_cap]` and use a real matmul.
-    /// §4.3 requires the sparse path to be tested against this.
-    fn dense_trunk(actor: &Actor, options: &[SparseOption]) -> Tensor {
+    fn dense_trunk(actor: &Actor, options: &[SparseOption], identity: FactionRow) -> Tensor {
         let n = i64::try_from(options.len()).expect("small batch");
-        let dense = Tensor::zeros([n, actor.capacity], (Kind::Float, Device::Cpu));
-        for (row, option) in options.iter().enumerate() {
+        let dense = Tensor::zeros([n, actor.capacity()], (Kind::Float, Device::Cpu));
+        for (index, option) in options.iter().enumerate() {
             for (column, value) in option.columns.iter().zip(option.values.iter()) {
-                let mut cell = dense.get(i64::try_from(row).expect("small")).get(*column);
+                let mut cell = dense.get(i64::try_from(index).expect("small")).get(*column);
                 let _ = cell.g_add_(&Tensor::from(*value));
             }
         }
         let x = dense.matmul(actor.input());
-        let first = (x + &actor.b1).relu();
+        let first = (x + actor.identity_row(identity) + &actor.b1).relu();
         (first.matmul(&actor.hidden.tr()) + &actor.b2).relu()
-    }
-
-    /// Agreement to f32 precision, relative to the magnitude being compared.
-    ///
-    /// A fixed absolute tolerance is wrong for a dense-versus-sparse comparison: the two paths sum
-    /// the same terms in different groupings, so their disagreement scales with the values, not
-    /// with a constant. f32 carries about seven significant digits.
-    fn close(a: f32, b: f32) -> bool {
-        let scale = a.abs().max(b.abs()).max(1.0);
-        (a - b).abs() <= 1e-5 * scale
     }
 
     fn option(columns: &[i64], values: &[f32]) -> SparseOption {
@@ -415,13 +648,76 @@ mod tests {
             Actor::head_index("scoring"),
             Err(ActorError::UnknownHead(_))
         ));
+        // Schema 5 heads fold to `other` rather than failing at a call site.
+        assert_eq!(Actor::resolve_head("scoring"), "other");
+        assert_eq!(Actor::resolve_head("movement"), "movement");
+    }
+
+    #[test]
+    fn the_roster_is_the_corpus_selectable_seats() {
+        // F-M09-026-2. The conditioning key is a faction identity and the rows are addressed by
+        // index, so this list is frozen and must match the corpus. A drift here silently repoints
+        // every trained residual and embedding.
+        let content = ti4_content::ContentStore::embedded();
+        let selectable: Vec<String> =
+            ti4_content::factions::catalogue(content, ti4_model::content_types::DEFAULT)
+                .into_iter()
+                .filter(|(_, faction)| ti4_policy::features::is_selectable_seat(faction))
+                .map(|(alias, _)| alias.to_owned())
+                .collect();
+        let roster: Vec<String> = FACTION_ROSTER.iter().map(|a| (*a).to_owned()).collect();
+        assert_eq!(roster, selectable, "the roster and the corpus disagree");
+        assert_eq!(FACTION_ROSTER.len(), 33);
+
+        // No duplicates, and the three Keleres are three rows.
+        let unique: std::collections::BTreeSet<&str> = FACTION_ROSTER.iter().copied().collect();
+        assert_eq!(unique.len(), 33, "the roster has a duplicate");
+        for keleres in ["keleresa", "keleresm", "keleresx"] {
+            assert!(unique.contains(keleres), "{keleres} is missing");
+        }
+        assert_ne!(row("keleresa"), row("keleresm"));
+        assert_ne!(row("keleresm"), row("keleresx"));
+    }
+
+    #[test]
+    fn an_unknown_identity_is_refused_and_a_seat_index_cannot_be_passed() {
+        assert!(matches!(
+            FactionRow::of("neutral"),
+            Err(ActorError::UnknownFaction(_))
+        ));
+        assert!(matches!(
+            FactionRow::of("seat0"),
+            Err(ActorError::UnknownFaction(_))
+        ));
+        // `neutral` is a corpus record but not a selectable seat, which is why it is not a row.
+        assert_eq!(FACTION_ROSTER.iter().position(|a| *a == "neutral"), None);
+    }
+
+    #[test]
+    fn one_faction_keeps_one_row_across_physical_seats() {
+        // The rotation property the finding named: a faction's conditioning must not depend on
+        // where it happens to sit. `FactionRow::of` is a pure function of the alias, so six
+        // rotations of the same six factions give the same six rows.
+        let table: Vec<&str> = vec!["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+        let baseline: Vec<usize> = table.iter().map(|a| row(a).index()).collect();
+        for rotation in 1..table.len() {
+            let rotated: Vec<usize> = (0..table.len())
+                .map(|seat| row(table[(seat + rotation) % table.len()]).index())
+                .collect();
+            for (seat, index) in rotated.iter().enumerate() {
+                let faction = table[(seat + rotation) % table.len()];
+                assert_eq!(
+                    *index,
+                    row(faction).index(),
+                    "{faction} changed row at physical seat {seat}"
+                );
+            }
+            assert_ne!(rotated, baseline, "the fixture must actually rotate");
+        }
     }
 
     #[test]
     fn the_sparse_trunk_matches_a_dense_reference() {
-        // §4.3's requirement. The awkward cases are the point: duplicated columns, negative and
-        // fractional values, a column that is a free row (the OOV/unassigned case), and an option
-        // with no active columns at all.
         for width in [Width::W256, Width::W128] {
             let actor = actor(width);
             let options = vec![
@@ -429,14 +725,13 @@ mod tests {
                 option(&[7, 7, 7], &[0.5, 0.25, 0.125]),
                 option(&[0, 511], &[-1.5, 2.75]),
                 option(&[499], &[0.0]),
-                option(&[], &[]),
                 option(&[42, 41, 40], &[0.3, -0.3, 0.9]),
             ];
-            let sparse = ti4_tensor::to_vec_or_panic(&actor.trunk(&options).expect("sparse"));
-            let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options));
+            let identity = row("sol");
+            let sparse =
+                ti4_tensor::to_vec_or_panic(&actor.trunk(&options, identity).expect("sparse"));
+            let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options, identity));
             assert_eq!(sparse.len(), dense.len());
-            assert!(!sparse.is_empty());
-            // Non-vacuity: a zero trunk would agree with anything.
             assert!(
                 sparse.iter().any(|value| *value != 0.0),
                 "the fixture produced an all-zero trunk"
@@ -451,15 +746,80 @@ mod tests {
     }
 
     #[test]
+    fn the_identity_embedding_influences_the_trunk_at_both_widths() {
+        // F-M09-026-1. A zero embedding is the correct start, so influence is proved by setting a
+        // row and showing it moves that faction's trunk and no other's.
+        for width in [Width::W256, Width::W128] {
+            let mut actor = actor(width);
+            let options = vec![option(&[3, 17], &[1.0, 0.5])];
+            let sol = row("sol");
+            let hacan = row("hacan");
+            let before_sol = ti4_tensor::to_vec_or_panic(&actor.trunk(&options, sol).expect("t"));
+            let before_hacan =
+                ti4_tensor::to_vec_or_panic(&actor.trunk(&options, hacan).expect("t"));
+            assert_eq!(
+                before_sol, before_hacan,
+                "a zero embedding must not separate seats"
+            );
+
+            let sol_row = i64::try_from(sol.index()).expect("fits");
+            let _ = actor.embedding_mut().get(sol_row).fill_(0.75);
+
+            let after_sol = ti4_tensor::to_vec_or_panic(&actor.trunk(&options, sol).expect("t"));
+            let after_hacan =
+                ti4_tensor::to_vec_or_panic(&actor.trunk(&options, hacan).expect("t"));
+            assert_ne!(
+                before_sol, after_sol,
+                "{width:?}: the embedding had no influence"
+            );
+            assert_eq!(
+                before_hacan, after_hacan,
+                "{width:?}: it leaked to another identity"
+            );
+        }
+    }
+
+    #[test]
+    fn an_untrained_identity_selects_a_zero_row() {
+        // §3: a faction absent from training uses the shared readout, a zero residual and a zero
+        // embedding. Every row starts zero, and the padded selection is all zeros.
+        let actor = Actor::zeros(Width::W256, CAPACITY, FACTIONS);
+        for alias in ["bastion", "crimson", "ralnel"] {
+            let selected = ti4_tensor::to_vec_or_panic(&actor.identity_row(row(alias)));
+            assert_eq!(selected.len(), 256, "the selection is padded to the width");
+            assert!(selected.iter().all(|v| *v == 0.0), "{alias} is not zero");
+        }
+    }
+
+    #[test]
+    fn the_padded_identity_occupies_only_the_first_sixteen_slots() {
+        let mut actor = actor(Width::W256);
+        let sol = row("sol");
+        let sol_row = i64::try_from(sol.index()).expect("fits");
+        let _ = actor.embedding_mut().get(sol_row).fill_(1.0);
+        let padded = ti4_tensor::to_vec_or_panic(&actor.identity_row(sol));
+        assert_eq!(padded.len(), 256);
+        assert!(
+            padded[..16].iter().all(|v| (*v - 1.0).abs() < f32::EPSILON),
+            "the embedding is not at the front"
+        );
+        assert!(
+            padded[16..].iter().all(|v| *v == 0.0),
+            "the padding is not zero"
+        );
+        assert_eq!(EMBED_DIM, 16);
+        // The budget §4.2 fixes: 33 x 16.
+        assert_eq!(actor.embedding().size(), vec![33, 16]);
+    }
+
+    #[test]
     fn input_row_gradients_match_the_dense_reference() {
-        // The other half of §4.3's requirement. If the gather's backward pass disagreed with the
-        // dense one, training would move the wrong rows — and no forward test would notice.
         ti4_tensor::configure_deterministic(SEED).expect("configured");
         let options = vec![
             option(&[3, 17], &[1.0, -0.5]),
             option(&[7, 7], &[0.25, 0.75]),
-            option(&[], &[]),
         ];
+        let identity = row("sol");
 
         let grad_of = |dense_path: bool| -> Vec<f32> {
             let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
@@ -467,9 +827,9 @@ mod tests {
             *actor.hidden_mut() = patterned(128, 128, 2);
             let _ = actor.input.set_requires_grad(true);
             let z = if dense_path {
-                dense_trunk(&actor, &options)
+                dense_trunk(&actor, &options, identity)
             } else {
-                actor.trunk(&options).expect("sparse")
+                actor.trunk(&options, identity).expect("sparse")
             };
             z.sum(Kind::Float).backward();
             ti4_tensor::to_vec_or_panic(&actor.input.grad())
@@ -477,7 +837,6 @@ mod tests {
 
         let sparse = grad_of(false);
         let dense = grad_of(true);
-        assert_eq!(sparse.len(), dense.len());
         assert!(
             sparse.iter().any(|value| *value != 0.0),
             "no gradient reached the input table: the comparison would be vacuous"
@@ -491,104 +850,155 @@ mod tests {
     }
 
     #[test]
+    fn the_embedding_receives_gradient_only_on_the_selected_row() {
+        ti4_tensor::configure_deterministic(SEED).expect("configured");
+        let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
+        *actor.input_mut() = patterned(CAPACITY, 128, 1);
+        *actor.hidden_mut() = patterned(128, 128, 2);
+        let _ = actor.embedding.set_requires_grad(true);
+
+        let sol = row("sol");
+        actor
+            .trunk(&[option(&[3, 17], &[1.0, 0.5])], sol)
+            .expect("trunk")
+            .sum(Kind::Float)
+            .backward();
+        let grad = actor.embedding.grad();
+
+        let sol_row = i64::try_from(sol.index()).expect("fits");
+        assert!(
+            grad.get(sol_row).abs().max().double_value(&[]) > 0.0,
+            "the selected identity got no gradient"
+        );
+        for other in [row("hacan"), row("bastion"), row("yssaril")] {
+            let index = i64::try_from(other.index()).expect("fits");
+            assert!(
+                grad.get(index).abs().max().double_value(&[]) == 0.0,
+                "an unselected identity received gradient"
+            );
+        }
+    }
+
+    #[test]
     fn only_the_named_rows_receive_gradient() {
-        // A row nothing referenced must stay untouched, or the optimizer would move columns no
-        // decision used — including the free and dead rows M09-024 requires to stay zero.
         ti4_tensor::configure_deterministic(SEED).expect("configured");
         let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
         *actor.input_mut() = patterned(CAPACITY, 128, 1);
         *actor.hidden_mut() = patterned(128, 128, 2);
         let _ = actor.input.set_requires_grad(true);
 
-        let options = vec![option(&[5, 9], &[1.0, 1.0])];
         actor
-            .trunk(&options)
+            .trunk(&[option(&[5, 9], &[1.0, 1.0])], row("sol"))
             .expect("sparse")
             .sum(Kind::Float)
             .backward();
         let grad = actor.input.grad();
 
-        for row in [5_i64, 9] {
+        for named in [5_i64, 9] {
             assert!(
-                grad.get(row).abs().max().double_value(&[]) > 0.0,
-                "row {row} was named and got no gradient"
+                grad.get(named).abs().max().double_value(&[]) > 0.0,
+                "row {named} was named and got no gradient"
             );
         }
-        for row in [0_i64, 6, 100, 511] {
+        for untouched in [0_i64, 6, 100, 511] {
             assert!(
-                grad.get(row).abs().max().double_value(&[]) == 0.0,
-                "row {row} was never named and received gradient"
+                grad.get(untouched).abs().max().double_value(&[]) == 0.0,
+                "row {untouched} was never named and received gradient"
             );
         }
     }
 
     #[test]
     fn a_zero_faction_residual_leaves_the_shared_readout_alone() {
-        // §3: a faction absent from training uses the learned shared readout and a zero residual
-        // rather than an untrained output row. Every seat must therefore agree at initialisation.
         let actor = actor(Width::W128);
         let options = vec![option(&[3, 17], &[1.0, 0.5]), option(&[7], &[0.25])];
-        let first =
-            ti4_tensor::to_vec_or_panic(&actor.logits(&options, "movement", 0).expect("logits"));
+        let first = ti4_tensor::to_vec_or_panic(
+            &actor.logits(&options, "movement", row("sol")).expect("l"),
+        );
         assert!(first.iter().any(|value| *value != 0.0), "vacuous fixture");
-        for seat in [1_usize, 17, FACTIONS - 1] {
+        for alias in ["hacan", "keleresx", "yssaril"] {
             let other = ti4_tensor::to_vec_or_panic(
-                &actor.logits(&options, "movement", seat).expect("logits"),
+                &actor.logits(&options, "movement", row(alias)).expect("l"),
             );
-            assert_eq!(first, other, "seat {seat} differs with a zero residual");
+            assert_eq!(
+                first, other,
+                "{alias} differs with a zero residual and embedding"
+            );
         }
     }
 
     #[test]
     fn a_non_zero_residual_moves_only_its_own_seat_and_head() {
-        // Every baseline comes from one actor before the mutation. Comparing against a second
-        // freshly built actor would compare two fixtures, not one change.
         let mut actor = actor(Width::W128);
         let probe = [option(&[3], &[1.0])];
-        let read = |actor: &Actor, head: &str, seat: usize| -> Vec<f32> {
-            ti4_tensor::to_vec_or_panic(&actor.logits(&probe, head, seat).expect("logits"))
+        let read = |actor: &Actor, head: &str, alias: &str| -> Vec<f32> {
+            ti4_tensor::to_vec_or_panic(&actor.logits(&probe, head, row(alias)).expect("logits"))
         };
 
-        let own_before = read(&actor, "movement", 4);
-        let neighbour_before = read(&actor, "movement", 5);
-        let other_head_before = read(&actor, "cargo", 4);
+        let own_before = read(&actor, "movement", "sol");
+        let neighbour_before = read(&actor, "movement", "hacan");
+        let other_head_before = read(&actor, "cargo", "sol");
         assert!(own_before.iter().any(|v| *v != 0.0), "vacuous fixture");
 
         let head = i64::try_from(Actor::head_index("movement").expect("known")).expect("small");
-        let _ = actor.residual_mut().get(4).get(head).fill_(0.05);
+        let sol = i64::try_from(row("sol").index()).expect("fits");
+        let _ = actor.residual_mut().get(sol).get(head).fill_(0.05);
 
         assert_ne!(
             own_before,
-            read(&actor, "movement", 4),
-            "the residual missed its own seat"
+            read(&actor, "movement", "sol"),
+            "missed its own seat"
         );
         assert_eq!(
             neighbour_before,
-            read(&actor, "movement", 5),
-            "the residual leaked into another seat"
+            read(&actor, "movement", "hacan"),
+            "leaked into another seat"
         );
         assert_eq!(
             other_head_before,
-            read(&actor, "cargo", 4),
-            "the residual leaked into another head"
+            read(&actor, "cargo", "sol"),
+            "leaked into another head"
         );
     }
 
     #[test]
     fn the_softmax_survives_logits_that_would_overflow() {
-        // Without subtracting the max, exp(90) overflows f32 and every probability becomes NaN.
         let scores = Tensor::from_slice(&[90.0f32, 89.0, 0.0, -90.0]);
-        let probabilities = stable_softmax(&scores);
+        let probabilities = stable_softmax(&scores).expect("finite logits");
         assert_eq!(probabilities.len(), 4);
         assert!(
             probabilities.iter().all(|p| p.is_finite()),
             "{probabilities:?}"
         );
         let total: f64 = probabilities.iter().sum();
-        // f32 accumulation: the sum is exact to about seven digits, not to 1e-9.
-        assert!((total - 1.0).abs() < 1e-6, "probabilities sum to {total}");
+        assert!((total - 1.0).abs() < 1e-9, "probabilities sum to {total}");
         assert!(probabilities[0] > probabilities[1], "ordering was lost");
-        assert!(probabilities[3] >= 0.0);
+    }
+
+    #[test]
+    fn a_softmax_that_cannot_produce_a_distribution_refuses_to() {
+        // F-M09-026-4. Overflow is not the only failure. Each of these once returned a non-finite
+        // "distribution" as success, and the sampler then fell through to the last option — a model
+        // refusal arriving as a legal-looking action.
+        for bad in [
+            vec![f32::NAN, 1.0],
+            vec![f32::INFINITY, 0.0],
+            vec![f32::NEG_INFINITY, f32::NEG_INFINITY],
+            vec![1.0, f32::NAN],
+        ] {
+            let scores = Tensor::from_slice(&bad);
+            assert!(
+                matches!(stable_softmax(&scores), Err(ActorError::NotUsable { .. })),
+                "{bad:?} was accepted"
+            );
+        }
+        // An empty set is not a position.
+        assert!(matches!(
+            stable_softmax(&Tensor::from_slice(&[] as &[f32])),
+            Err(ActorError::EmptyLegalSet)
+        ));
+        // And a finite set still works, so the guard is not rejecting everything.
+        assert!(stable_softmax(&Tensor::from_slice(&[1.0f32, 2.0])).is_ok());
     }
 
     #[test]
@@ -598,71 +1008,141 @@ mod tests {
             .map(|i| option(&[i * 7 + 1, i * 3 + 2], &[1.0, 0.5]))
             .collect();
         let p = actor
-            .probabilities(&options, "production", 2, 1.0)
+            .probabilities(&options, "production", row("jolnar"), 1.0)
             .expect("probabilities");
-        assert_eq!(p.len(), 8);
+        assert_eq!(p.len(), 8, "one probability per legal option");
         let total: f64 = p.iter().sum();
-        assert!((total - 1.0).abs() < 1e-6, "sum {total}");
+        assert!((total - 1.0).abs() < 1e-9, "sum {total}");
         assert!(p.iter().all(|value| *value >= 0.0 && value.is_finite()));
     }
 
     #[test]
-    fn an_empty_legal_set_and_a_bad_temperature_are_refused_rather_than_guessed() {
+    fn an_empty_legal_set_and_a_bad_temperature_are_refused() {
         let actor = actor(Width::W128);
-        assert!(
-            actor
-                .probabilities(&[], "turn", 0, 1.0)
-                .expect("empty")
-                .is_empty()
-        );
         assert!(matches!(
-            actor.probabilities(&[option(&[1], &[1.0])], "turn", 0, 0.0),
-            Err(ActorError::Temperature(_))
+            actor.probabilities(&[], "turn", row("sol"), 1.0),
+            Err(ActorError::EmptyLegalSet)
         ));
         assert!(matches!(
-            actor.logits(&[option(&[1], &[1.0])], "turn", FACTIONS),
-            Err(ActorError::UnknownFaction { .. })
+            actor.trunk(&[], row("sol")),
+            Err(ActorError::EmptyLegalSet)
         ));
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(
+                matches!(
+                    actor.probabilities(&[option(&[1], &[1.0])], "turn", row("sol"), bad),
+                    Err(ActorError::Temperature(_))
+                ),
+                "temperature {bad} was accepted"
+            );
+        }
     }
 
     #[test]
     fn a_full_option_batch_goes_through_in_one_pass() {
-        // §4.3's worst case: an activation or production decision with a large legal set. The
-        // batched path must produce one logit per option and stay finite.
         let actor = actor(Width::W256);
+        let identity = row("l1z1x");
         let options: Vec<SparseOption> = (0..64)
             .map(|i| option(&[(i * 5) % CAPACITY, (i * 11) % CAPACITY], &[0.75, -0.25]))
             .collect();
-        let logits = actor.logits(&options, "activation", 9).expect("logits");
+        let logits = actor
+            .logits(&options, "activation", identity)
+            .expect("logits");
         assert_eq!(logits.size(), vec![64]);
-        let values = ti4_tensor::to_vec_or_panic(&logits);
-        assert!(values.iter().all(|value| value.is_finite()));
-        let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options));
-        let sparse = ti4_tensor::to_vec_or_panic(&actor.trunk(&options).expect("sparse"));
+        assert!(
+            ti4_tensor::to_vec_or_panic(&logits)
+                .iter()
+                .all(|value| value.is_finite())
+        );
+        let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options, identity));
+        let sparse = ti4_tensor::to_vec_or_panic(&actor.trunk(&options, identity).expect("sparse"));
         for (a, b) in sparse.iter().zip(dense.iter()) {
             assert!(close(*a, *b), "sparse {a} against dense {b}");
         }
     }
 
-    #[test]
-    fn free_and_dead_rows_start_zero_and_are_reported() {
-        // The assertion side of M09-024's obligation: rows above `slot_count`, and the five
-        // reserved rows the projection can never route to, must be zero.
-        let actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
-        assert!(actor.inactive_rows_are_zero(100, &[1, 2, 3, 4, 5]));
+    /// A vocabulary shaped like the real one: 40 reserved columns, then ordinary names.
+    fn vocabulary(slots: usize) -> Vocabulary {
+        let names: Vec<String> = (0..slots).map(|n| format!("option:name{n}")).collect();
+        Vocabulary::build(names).expect("builds")
+    }
 
-        // And it detects a violation rather than always agreeing.
-        let mut dirty = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
-        let _ = dirty.input_mut().get(200).fill_(0.1);
+    #[test]
+    fn the_inactive_rows_are_the_real_ones_and_are_zero() {
+        // F-M09-026-5. The rows are derived from the vocabulary, not supplied: an earlier version
+        // took caller indices and its test passed `[1,2,3,4,5]`, which are not the reserved family
+        // columns, so the gate could pass without checking a single real row.
+        let built = vocabulary(200);
+        let capacity = i64::try_from(built.capacity()).expect("fits");
+        let actor = Actor::zeros(Width::W128, capacity, FACTIONS);
+
+        let rows = actor.inactive_rows(&built).expect("derives");
+        // Five reserved columns plus every free row above `slot_count`.
+        let free = built.capacity() - built.slot_count();
+        assert_eq!(rows.len(), free + 5, "wrong inactive-row count");
+        for family in ti4_policy::vocabulary::dead_reserved_families() {
+            let column = i64::try_from(built.column_of(&ti4_policy::vocabulary::oov_name(family)))
+                .expect("fits");
+            assert!(
+                rows.contains(&column),
+                "{family}'s reserved column is missing"
+            );
+        }
+        assert!(actor.inactive_rows_are_zero(&built).expect("checks"));
+
+        // A dirty reserved row is detected — the real one, not an arbitrary index.
+        let mut dirty = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let dead =
+            i64::try_from(built.column_of(&ti4_policy::vocabulary::oov_name("state-option")))
+                .expect("fits");
+        let _ = dirty.input_mut().get(dead).fill_(0.1);
+        assert!(!dirty.inactive_rows_are_zero(&built).expect("checks"));
+
+        // And a dirty free row.
+        let mut free_dirty = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let _ = free_dirty.input_mut().get(capacity - 1).fill_(0.1);
+        assert!(!free_dirty.inactive_rows_are_zero(&built).expect("checks"));
+    }
+
+    #[test]
+    fn a_mismatched_vocabulary_is_refused_rather_than_checked_against_the_wrong_table() {
+        let built = vocabulary(200);
+        let actor = Actor::zeros(Width::W128, 4_096 * 4, FACTIONS);
+        assert!(matches!(
+            actor.inactive_rows(&built),
+            Err(ActorError::NotUsable { .. })
+        ));
+    }
+
+    #[test]
+    fn the_trainable_mask_pins_every_inactive_row_against_an_optimizer_step() {
+        // Stronger than asserting the rows are still zero afterwards: multiplying a gradient by
+        // this mask cannot move them at all.
+        let built = vocabulary(200);
+        let capacity = i64::try_from(built.capacity()).expect("fits");
+        let mut actor = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let mask = actor.trainable_mask(&built).expect("mask");
+        assert_eq!(mask.size(), vec![capacity]);
+
+        let inactive = actor.inactive_rows(&built).expect("rows");
+        for row in &inactive {
+            assert!(
+                mask.get(*row).double_value(&[]) == 0.0,
+                "row {row} is trainable"
+            );
+        }
         assert!(
-            !dirty.inactive_rows_are_zero(100, &[]),
-            "a dirty free row went unreported"
+            mask.sum(Kind::Float).double_value(&[]) > 0.0,
+            "the mask blocks everything: it would be vacuous"
         );
-        let mut dead = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
-        let _ = dead.input_mut().get(3).fill_(0.1);
+
+        // Simulate a weight-decay/optimizer step over every row and confirm the mask holds.
+        let dense_gradient = Tensor::ones([capacity, 128], (Kind::Float, Device::Cpu));
+        let masked = dense_gradient * mask.unsqueeze(1);
+        let _ = actor.input_mut().g_sub_(&(masked * 0.1));
         assert!(
-            !dead.inactive_rows_are_zero(100, &[3]),
-            "a dirty dead row went unreported"
+            actor.inactive_rows_are_zero(&built).expect("checks"),
+            "an inactive row moved under a masked step"
         );
     }
 }

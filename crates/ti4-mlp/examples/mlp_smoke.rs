@@ -1,10 +1,18 @@
 //! Can the MLP play a game? — the §7.1 legality smoke, at its smallest.
 //!
-//! Six MLP bots, one real six-player game on the training map pool, every decision scored by the
-//! actor against the M09-024b2 vocabulary. The weights are zero, so the policy is uniform over each
-//! legal set; that is the point. This proves the chain — engine choice → bound observation →
-//! projected features → dense columns → trunk → readout → softmax → a legal answer — actually
-//! connects, before anything is trained and before there is a checkpoint format to load.
+//! Six MLP bots, one real six-player game, every decision scored by the actor against the
+//! M09-024b2 vocabulary. The weights are zero, so the policy is uniform over each legal set; that
+//! is the point. This proves the chain — engine choice → bound observation → projected features →
+//! dense columns → trunk → readout → softmax → a legal answer — actually connects, before anything
+//! is trained and before there is a checkpoint format to load.
+//!
+//! # What the coverage number is, and is not
+//!
+//! By default this runs a **discovery-regression** smoke: the seed is inside M09-024b2's own
+//! discovery range on the same training pool and extractor, so 100% vocabulary coverage is expected
+//! *by construction* and a shortfall would mean discovery or the projection had regressed. It is
+//! not independent coverage. `--seed` outside `202_608_210..202_608_338`, or a different pool,
+//! measures something else and is labelled as such in the output.
 //!
 //! ```text
 //! cargo run --release -p ti4-mlp --example mlp_smoke -- \
@@ -21,7 +29,7 @@ use ti4_engine::choice::{Decider, SeededRandom, Table};
 use ti4_engine::game::Game;
 use ti4_engine::setup::start_game_seeded;
 use ti4_mlp::bot::MlpBot;
-use ti4_mlp::{Actor, Width};
+use ti4_mlp::{Actor, FactionRow, Width};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::vocabulary::Vocabulary;
@@ -49,6 +57,10 @@ fn main() {
     let rounds: u32 = argument("--rounds")
         .and_then(|v| v.parse().ok())
         .unwrap_or(4);
+    // Proves the fail-closed path is real rather than asserted: one bot is given a temperature the
+    // actor must refuse, so every one of its decisions becomes a counted fallback and the run must
+    // exit non-zero (F-M09-026-3).
+    let force_failure = std::env::args().any(|a| a == "--force-inference-failure");
     let seed: u64 = argument("--seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(202_608_210);
@@ -116,14 +128,20 @@ fn main() {
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
     let mut counters = Vec::new();
     for (index, player) in players.iter().enumerate() {
-        let actor = Actor::zeros(Width::W256, capacity, 33);
-        let bot = MlpBot::new(
-            actor,
+        // The conditioning key is the **faction identity**, resolved through the pinned roster —
+        // never the physical seat index, which changes with rotation (F-M09-026-2).
+        let identity = FactionRow::of(factions[player].as_str())
+            .expect("every seated faction is in the roster");
+        let mut bot = MlpBot::new(
+            Actor::zeros(Width::W256, capacity, 33),
             Vocabulary::from_json(&text).expect("vocabulary"),
-            index,
+            identity,
             seed.wrapping_mul(1_000_003)
                 .wrapping_add(u64::try_from(index).unwrap_or(0)),
         );
+        if force_failure && index == 0 {
+            bot = bot.at_temperature(0.0);
+        }
         counters.push(Arc::clone(&bot.counters));
         table.seat(player.clone(), Box::new(bot) as Box<dyn Decider>);
     }
@@ -133,7 +151,8 @@ fn main() {
         .with_galaxy(galaxy);
 
     let started = std::time::Instant::now();
-    let target = game.state.round.saturating_add(rounds);
+    let start_round = game.state.round;
+    let target = start_round.saturating_add(rounds);
     let mut steps = 0usize;
     let mut resolved = 0usize;
     while !game.state.finished && game.state.round < target {
@@ -152,8 +171,13 @@ fn main() {
         }
     }
 
+    // The round *state* is not the number of rounds played: the game starts at round 1, so a
+    // four-round horizon ends with the counter reading 5. Reporting the counter as "played 5
+    // rounds" overstated it by one (F-M09-026-6).
+    let completed = game.state.round.saturating_sub(start_round);
     println!(
-        "\nplayed {} rounds: {steps} steps, {resolved} resolved choices, {:.1?}",
+        "
+completed {completed} of {rounds} rounds (round state {start_round} -> {}): {steps} steps, {resolved} resolved choices, {:.1?}",
         game.state.round,
         started.elapsed()
     );
@@ -174,9 +198,42 @@ fn main() {
     } else {
         100.0 * (assigned as f64) / (looked_up as f64)
     };
+    let fallbacks: usize = counters
+        .iter()
+        .map(|c| c.fallbacks.load(Ordering::Relaxed))
+        .sum();
+    let inside_discovery = (202_608_210..202_608_338).contains(&seed);
     println!(
-        "model answered {decisions} decisions; {looked_up} feature lookups, {coverage:.2}% found a column of their own, {oov} fell to an OOV column"
+        "model answered {decisions} decisions, {fallbacks} fallbacks; {looked_up} feature lookups, {coverage:.2}% assigned, {oov} OOV"
     );
+    println!(
+        "coverage reading: {}",
+        if inside_discovery {
+            "discovery-regression (seed inside M09-024b2's discovery range: 100% is expected by construction; a shortfall means discovery or the projection regressed)"
+        } else {
+            "independent (this seed is outside the discovery range)"
+        }
+    );
+
+    // Fail closed. A run in which the model never answered, or fell back even once, is not a
+    // successful smoke — it is a failure that happens to have produced legal moves.
+    let mut refusals: Vec<String> = Vec::new();
+    if fallbacks != 0 {
+        refusals.push(format!("{fallbacks} inference fallbacks"));
+    }
+    if decisions == 0 {
+        refusals.push("the model answered no decisions".to_owned());
+    }
+    if looked_up == 0 {
+        refusals.push("no feature lookups were made".to_owned());
+    }
+    if completed != rounds && !game.state.finished {
+        refusals.push(format!("completed {completed} of {rounds} rounds"));
+    }
+    if !refusals.is_empty() {
+        eprintln!("SMOKE FAILED: {}", refusals.join("; "));
+        std::process::exit(4);
+    }
 
     for player in &players {
         let seat = game.state.player(player).expect("seated");

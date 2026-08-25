@@ -24,13 +24,13 @@ use rand::{Rng, SeedableRng};
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
 use ti4_policy::vocabulary::Vocabulary;
 
-use crate::{Actor, SparseOption};
+use crate::{Actor, FactionRow, SparseOption};
 
 /// A decider that scores every legal option with the MLP and samples from the result.
 pub struct MlpBot {
     actor: Actor,
     vocabulary: Vocabulary,
-    seat: usize,
+    row: FactionRow,
     temperature: f64,
     rng: rand_chacha::ChaCha8Rng,
     /// Counters a driver can read after the bot has been handed to a table.
@@ -46,6 +46,12 @@ pub struct MlpBot {
 pub struct Counters {
     /// Decisions answered by the model.
     pub decisions: AtomicUsize,
+    /// Decisions the model **failed** to answer, where the bot fell back to a legal guess.
+    ///
+    /// Any non-zero value invalidates the campaign that produced it. An earlier version caught
+    /// every actor error and made a random legal choice with no counter at all, so a run in which
+    /// every model call failed exited successfully (F-M09-026-3).
+    pub fallbacks: AtomicUsize,
     /// Feature names that fell to an out-of-vocabulary column.
     pub oov: AtomicUsize,
     /// Feature names that found a column of their own.
@@ -55,11 +61,11 @@ pub struct Counters {
 impl MlpBot {
     /// Seat an actor behind a vocabulary.
     #[must_use]
-    pub fn new(actor: Actor, vocabulary: Vocabulary, seat: usize, stream: u64) -> Self {
+    pub fn new(actor: Actor, vocabulary: Vocabulary, row: FactionRow, stream: u64) -> Self {
         Self {
             actor,
             vocabulary,
-            seat,
+            row,
             temperature: 1.0,
             rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
             counters: Arc::new(Counters::default()),
@@ -141,13 +147,23 @@ impl Decider for MlpBot {
             .collect();
 
         let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
-        let Ok(probabilities) =
-            self.actor
-                .probabilities(&options, head, self.seat, self.temperature)
-        else {
-            // A malformed vector or an unknown head is a defect, not a legal position. Fall back to
-            // a legal answer rather than taking the game down, and let the smoke's counters show it.
-            return self.choose(choice);
+        let probabilities = match self.actor.probabilities(
+            &options,
+            head,
+            self.row,
+            self.temperature,
+        ) {
+            Ok(probabilities) => probabilities,
+            Err(error) => {
+                // A model refusal must not become an apparent success. The game still needs a legal
+                // answer, so one is given — but the failure is counted and named, and any campaign
+                // that sees a non-zero fallback count is invalid.
+                self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "MLP inference failed on head {head} ({error}); falling back to a legal guess"
+                );
+                return self.choose(choice);
+            }
         };
         self.counters.decisions.fetch_add(1, Ordering::Relaxed);
 
