@@ -409,6 +409,7 @@ pub fn explicit_option_features(
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
         objective_facts: objective_facts(seen, player, held_secrets),
+        ability_facts: ability_facts(seen, player),
     };
     explicit_option_features_with(
         seen,
@@ -429,6 +430,10 @@ struct ChoiceContext<'a> {
     facts: [(&'static str, f64); 8],
     own_units: Vec<&'a SystemId>,
     objective_facts: Vec<(String, f64)>,
+    /// MLP plan section 5.3's faction decomposition, computed once per choice rather than per
+    /// option: it parses the starting fleet, and an activation choice offers thirty-odd options
+    /// that would each have parsed the same string.
+    ability_facts: Vec<(String, f64)>,
 }
 
 /// Objective progress facts for the acting seat, computed once per choice.
@@ -530,6 +535,92 @@ fn objective_facts(
     facts
 }
 
+/// Whether a faction record names a seat a player can select.
+///
+/// A corpus predicate rather than a deny-list. The Thunder's Edge `neutral` record is a
+/// units-only entry — no home system, no starting fleet, no home planets, no abilities, and none
+/// of the playable-seat fields — and it is the only record in the corpus that fails this today.
+/// Naming it in code instead would let the next non-seat record through silently.
+#[must_use]
+pub fn is_selectable_seat(faction: &ti4_content::factions::Faction<'_>) -> bool {
+    !faction.home_system().unwrap_or_default().is_empty()
+}
+
+/// Faction decomposition facts for the acting seat (MLP plan section 5.3).
+///
+/// Six families describing what a faction *does*, so the identity embedding is not what separates
+/// two seats: its printed abilities, its starting and faction technology, the units it opens with,
+/// its home planets, and its commodity ceiling. Measured over the 33 selectable seats, abilities
+/// alone leave the three Keleres identical, and only the last three families separate them — which
+/// is exactly the decomposition section 5.3 specifies.
+///
+/// **Domain.** The record is resolved through the *active* store and source scope carried by the
+/// observation, never `ContentStore::embedded()` and never a hardcoded scope. A function that
+/// takes a position and then reaches for the compiled-in corpus ignores whichever store the game
+/// is actually being played from; that is the defect M08-019 named in `annexable()`, and it stays
+/// named here so the next reader does not reintroduce it.
+///
+/// **Unseen identity contributes nothing.** Only the acting seat's faction is read, and absent
+/// facts are absent rather than zero-valued — the zero-skip convention the rest of this module
+/// uses. No fact names another seat's faction.
+#[must_use]
+fn ability_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let Some(seat) = seen.seat(player) else {
+        return Vec::new();
+    };
+    let content = seen.content();
+    let Some(faction) = content
+        .get(
+            ti4_model::content_types::ContentType::Factions,
+            seat.faction.as_str(),
+        )
+        .filter(|record| record.in_sources(seen.sources()))
+        .map(ti4_content::factions::Faction::new)
+    else {
+        return Vec::new();
+    };
+    if !is_selectable_seat(&faction) {
+        return Vec::new();
+    }
+
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    // Sorted collections throughout: emission order is part of the feature contract even though
+    // addition is commutative.
+    for ability in faction.abilities().into_iter().collect::<BTreeSet<_>>() {
+        facts.push((format!("ability:{ability}"), 1.0));
+    }
+    for tech in faction.starting_tech().into_iter().collect::<BTreeSet<_>>() {
+        facts.push((format!("faction-start-tech:{tech}"), 1.0));
+    }
+    for tech in faction.faction_tech().into_iter().collect::<BTreeSet<_>>() {
+        facts.push((format!("faction-tech:{tech}"), 1.0));
+    }
+    // The opening fleet, parsed against the same store. A fleet that will not parse is a content
+    // error; the seat still gets its other five families rather than losing them all.
+    if let Ok(deployments) = faction.deployments(content) {
+        let mut opening: BTreeMap<String, u32> = BTreeMap::new();
+        for deployment in deployments {
+            *opening
+                .entry(deployment.unit_id.as_str().to_owned())
+                .or_default() += deployment.count;
+        }
+        for (unit, count) in &opening {
+            facts.push((
+                format!("faction-start-unit:{unit}"),
+                count_value(*count as usize),
+            ));
+        }
+    }
+    for planet in faction.home_planets().into_iter().collect::<BTreeSet<_>>() {
+        facts.push((format!("faction-home:{planet}"), 1.0));
+    }
+    let commodities = faction.commodities();
+    if commodities != 0 {
+        facts.push(("faction-commodities".to_owned(), f64::from(commodities)));
+    }
+    facts
+}
+
 /// The eight per-seat facts every option of a choice is described against.
 ///
 /// None of them varies with the option: they are the round, this seat's pools, its goods, its
@@ -594,6 +685,7 @@ pub fn explicit_choice_features(
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
         objective_facts: objective_facts(seen, player, held_secrets),
+        ability_facts: ability_facts(seen, player),
     };
     let cross = state_cross(choice);
     choice
@@ -854,6 +946,12 @@ fn explicit_option_features_with(
     for (name, value) in &context.objective_facts {
         add_named(&mut features, format_args!("{name}"), *value);
     }
+    // MLP plan section 5.3's faction decomposition, on the same terms and for the same reason:
+    // the trunk is nonlinear, so an option-invariant identity fact can interact with option facts
+    // and must be present on every option under every crossing mode.
+    for (name, value) in &context.ability_facts {
+        add_named(&mut features, format_args!("{name}"), *value);
+    }
 
     match cross {
         StateCross::ByKind => {
@@ -861,6 +959,13 @@ fn explicit_option_features_with(
                 add_parts(&mut features, &["state-kind:", kind, ":", name], *value);
             }
             for (name, value) in &context.objective_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-kind:{kind}:{name}"),
+                    *value,
+                );
+            }
+            for (name, value) in &context.ability_facts {
                 add_named(
                     &mut features,
                     format_args!("state-kind:{kind}:{name}"),
@@ -877,6 +982,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.objective_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-option:{option_id}:{name}", option_id = option.id),
+                    *value,
+                );
+            }
+            for (name, value) in &context.ability_facts {
                 add_named(
                     &mut features,
                     format_args!("state-option:{option_id}:{name}", option_id = option.id),
@@ -1553,7 +1665,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 27] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 33] = [
     "kind",
     "option",
     "prompt-kind",
@@ -1581,6 +1693,12 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 27] = [
     "objective-need",
     "objective-count",
     "objective-stage",
+    "ability",
+    "faction-start-tech",
+    "faction-tech",
+    "faction-start-unit",
+    "faction-home",
+    "faction-commodities",
 ];
 
 fn explicit_family_is_known(name: &str) -> bool {
@@ -1608,6 +1726,274 @@ mod tests {
     use ti4_model::content_types::POK;
     use ti4_model::id::FactionId;
     use ti4_model::state::GameState;
+
+    // --- M09-022: faction ability decomposition (MLP plan section 5.3) ----------------------
+
+    /// The six decomposition families in their bare form, as `name=value` pairs, sorted.
+    ///
+    /// Read off the **emitted** vector rather than from `ability_facts`, so the test measures what
+    /// a policy actually receives. Values are part of the key: two seats could share every fact
+    /// name and differ only in a starting-unit count or a commodity ceiling.
+    fn decomposition_pairs(vector: &FeatureVector) -> Vec<String> {
+        const FAMILIES: [&str; 6] = [
+            "ability:",
+            "faction-start-tech:",
+            "faction-tech:",
+            "faction-start-unit:",
+            "faction-home:",
+            "faction-commodities",
+        ];
+        let mut out: Vec<String> = vector
+            .iter()
+            .map(|(key, value)| (crate::intern::name_of(*key).clone(), *value))
+            .filter(|(name, _)| FAMILIES.iter().any(|family| name.starts_with(family)))
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// One seat of `faction`, and the decomposition features it emits.
+    fn seat_decomposition(
+        content: &'static ti4_content::ContentStore,
+        sources: ti4_model::content_types::SourceSet,
+        faction: &str,
+    ) -> Vec<String> {
+        let player = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().faction = FactionId::new(faction);
+        let seen = Observed::new(&state, content, sources, None);
+        let choice = Choice::new(
+            player.clone(),
+            "decide",
+            vec![ChoiceOption::labelled("x", "kind", "x")],
+        );
+        let vector = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        decomposition_pairs(&vector)
+    }
+
+    #[test]
+    fn the_selectable_seat_predicate_excludes_exactly_the_neutral_record() {
+        // "33 seats" is a corpus fact, not a constant. This pins both halves: how many records
+        // exist, and which one is not a seat. It fails loudly the day a faction is added.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let catalogue = ti4_content::factions::catalogue(content, sources);
+        let excluded: Vec<&str> = catalogue
+            .iter()
+            .filter(|(_, faction)| !is_selectable_seat(faction))
+            .map(|(alias, _)| *alias)
+            .collect();
+        assert_eq!(catalogue.len(), 34, "faction records in the corpus");
+        assert_eq!(excluded, ["neutral"], "the only non-seat record");
+        assert_eq!(catalogue.len() - excluded.len(), 33, "selectable seats");
+    }
+
+    #[test]
+    fn ability_decomposition_separates_every_selectable_seat() {
+        // MLP plan section 5.3 requirement, measured on emitted features: no two selectable
+        // seats may share a decomposition, or the identity embedding is silently load-bearing.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut seats = 0usize;
+        for (alias, faction) in ti4_content::factions::catalogue(content, sources) {
+            if !is_selectable_seat(&faction) {
+                continue;
+            }
+            seats += 1;
+            let pairs = seat_decomposition(content, sources, alias);
+            assert!(!pairs.is_empty(), "{alias}: emitted no decomposition facts");
+            groups
+                .entry(pairs.join("|"))
+                .or_default()
+                .push(alias.to_owned());
+        }
+        assert_eq!(seats, 33, "selectable seats");
+        let collisions: Vec<&Vec<String>> = groups.values().filter(|g| g.len() > 1).collect();
+        assert!(collisions.is_empty(), "seats not separated: {collisions:?}");
+        assert_eq!(groups.len(), 33, "one distinct decomposition per seat");
+    }
+
+    #[test]
+    fn keleres_variants_separate_only_on_the_last_row() {
+        // Section 5.3 records one collision, pinned here rather than restated: the three Keleres
+        // share abilities, starting technology and faction technology, and are told apart only by
+        // the fields the last row adds. If a corpus edit made abilities differ, this fails and the
+        // table needs rereading — that is the point of pinning it.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let shared = ["ability:", "faction-start-tech:", "faction-tech:"];
+        let variants = ["keleresa", "keleresm", "keleresx"];
+        let subsets: Vec<Vec<String>> = variants
+            .iter()
+            .map(|alias| {
+                seat_decomposition(content, sources, alias)
+                    .iter()
+                    .filter(|pair| shared.iter().any(|family| pair.starts_with(family)))
+                    .cloned()
+                    .collect()
+            })
+            .collect();
+        assert!(
+            !subsets[0].is_empty(),
+            "the shared subset must be non-empty"
+        );
+        assert_eq!(
+            subsets[0], subsets[1],
+            "keleresa and keleresm share the first three families"
+        );
+        assert_eq!(
+            subsets[1], subsets[2],
+            "keleresm and keleresx share the first three families"
+        );
+
+        let full: Vec<Vec<String>> = variants
+            .iter()
+            .map(|alias| seat_decomposition(content, sources, alias))
+            .collect();
+        assert_ne!(
+            full[0], full[1],
+            "the last row must separate keleresa from keleresm"
+        );
+        assert_ne!(
+            full[1], full[2],
+            "the last row must separate keleresm from keleresx"
+        );
+        assert_ne!(
+            full[0], full[2],
+            "the last row must separate keleresa from keleresx"
+        );
+    }
+
+    #[test]
+    fn unseen_factions_contribute_nothing() {
+        // Only the acting seat faction is described. A Sol seat must not name Hacan abilities,
+        // technology, home planets or units anywhere in its vector.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let sol = seat_decomposition(content, sources, "sol");
+        let hacan = seat_decomposition(content, sources, "hacan");
+        assert!(
+            !sol.is_empty() && !hacan.is_empty(),
+            "both seats emit facts"
+        );
+        let hacan_only: Vec<&String> = hacan.iter().filter(|pair| !sol.contains(pair)).collect();
+        assert!(
+            !hacan_only.is_empty(),
+            "the fixture is vacuous unless hacan has facts sol lacks"
+        );
+        for pair in hacan_only {
+            assert!(
+                !sol.contains(pair),
+                "a sol seat named a hacan-only fact: {pair}"
+            );
+        }
+    }
+
+    #[test]
+    fn ability_facts_follow_the_active_source_scope() {
+        // Invariant 2, scope half: the record is resolved through the scope the observation
+        // carries, not a hardcoded one. `bastion` is a Thunder's Edge faction — in scope under
+        // DEFAULT, out of scope under POK — so a hardcoded scope of either kind makes exactly one
+        // of these two assertions fail.
+        let content = ti4_content::ContentStore::embedded();
+        let full = seat_decomposition(content, ti4_model::content_types::DEFAULT, "bastion");
+        let pok = seat_decomposition(content, POK, "bastion");
+        assert!(!full.is_empty(), "bastion is a seat under DEFAULT");
+        assert!(pok.is_empty(), "bastion is out of scope under POK");
+    }
+
+    #[test]
+    fn ability_facts_survive_state_cross_none() {
+        // The section 4.1 contract, same shape as the objective families: the nonlinear trunk
+        // needs these on every option even where no linear cross exists.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().faction = FactionId::new("sol");
+        let seen = Observed::new(&state, content, sources, None);
+        let choice = Choice::new(
+            player.clone(),
+            "produce a unit",
+            vec![
+                ChoiceOption::labelled("produce|fighter@18", "production", "build a fighter"),
+                ChoiceOption::labelled("produce|scout@19", "production", "build a scout"),
+            ],
+        );
+        assert_eq!(
+            state_cross(&choice),
+            StateCross::None,
+            "the fixture must be a None choice"
+        );
+
+        let expected = ability_facts(&seen, &player);
+        assert!(
+            !expected.is_empty(),
+            "the fixture position emits facts at all"
+        );
+        for family in [
+            "ability:",
+            "faction-start-tech:",
+            "faction-tech:",
+            "faction-start-unit:",
+            "faction-home:",
+        ] {
+            assert!(
+                expected.iter().any(|(name, _)| name.starts_with(family)),
+                "{family} is missing from the fixture position"
+            );
+        }
+
+        let vectors = explicit_choice_features(&seen, &choice, &player, &[]);
+        assert_eq!(vectors.len(), 2);
+        let mut previous: Option<Vec<String>> = None;
+        for vector in &vectors {
+            let emitted = decomposition_pairs(vector);
+            for (name, value) in &expected {
+                assert_eq!(
+                    value_of(vector, name),
+                    Some(*value),
+                    "{name} did not survive StateCross::None under its bare name"
+                );
+            }
+            for name in names_of(vector) {
+                assert!(
+                    !name.starts_with("state-kind:") && !name.starts_with("state-option:"),
+                    "{name}: StateCross::None emits no crossed copy"
+                );
+            }
+            if let Some(before) = &previous {
+                assert_eq!(
+                    before, &emitted,
+                    "the bare set is option-order deterministic"
+                );
+            }
+            previous = Some(emitted);
+        }
+    }
+
+    /// The six M09-022 faction-decomposition families, and M09-021's five objective families.
+    ///
+    /// Both were added after the legacy subvector baseline was recorded, so the pin excludes them
+    /// and their own focused tests assert them. Matching on the family segment rather than on a
+    /// loose substring keeps the legacy `kind-faction:` and `option-faction:` channels — which
+    /// contain `-faction:` but never `:faction-` — on the pinned side where they belong.
+    fn is_post_baseline_family(name: &str) -> bool {
+        const ADDED: [&str; 7] = [
+            "objective-",
+            "ability:",
+            "faction-start-tech:",
+            "faction-tech:",
+            "faction-start-unit:",
+            "faction-home:",
+            "faction-commodities",
+        ];
+        ADDED
+            .iter()
+            .any(|family| name.starts_with(family) || name.contains(&format!(":{family}")))
+    }
 
     /// Held-secret records for seat "a" on this full state — the offline form of what live play
     /// receives bound to its `SeatObservation`. Same position inputs as the test's `Observed`.
@@ -2115,8 +2501,9 @@ mod tests {
 
         // 3. The explicit vocabulary is closed: fixed factual families plus bounded
         //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
-        //    with the five bare objective families — a reviewed extension of the closed grammar,
-        //    not drift: every legacy name above is unchanged.
+        //    with the five bare objective families, and M09-022 with the six faction-decomposition
+        //    families (MLP plan section 5.3) — reviewed extensions of the closed grammar, not
+        //    drift: every legacy name above is unchanged.
         assert_eq!(
             EXPLICIT_FIXED_FAMILIES,
             [
@@ -2147,6 +2534,12 @@ mod tests {
                 "objective-need",
                 "objective-count",
                 "objective-stage",
+                "ability",
+                "faction-start-tech",
+                "faction-tech",
+                "faction-start-unit",
+                "faction-home",
+                "faction-commodities",
             ]
         );
 
@@ -2255,6 +2648,7 @@ mod tests {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
+            ability_facts: ability_facts(&seen, &player),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -2379,6 +2773,7 @@ mod tests {
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
+            ability_facts: ability_facts(&seen, &player),
         };
         let full = explicit_option_features_with(
             &seen,
@@ -2512,9 +2907,13 @@ mod tests {
                 let mut got: BTreeMap<String, f64> = vector
                     .iter()
                     .map(|(key, value)| (crate::intern::name_of(*key), *value))
-                    .filter(|(name, _)| {
-                        !(name.starts_with("objective-") || name.contains(":objective-"))
-                    })
+                    // Families added after this baseline was recorded: M09-021's five objective
+                    // families and M09-022's six faction-decomposition families. The pin exists
+                    // to prove the *legacy* subvector did not move, so the additions are excluded
+                    // here and asserted separately by their own focused tests. Both bare and
+                    // crossed forms are excluded, since a crossed copy carries the family after
+                    // the cross prefix.
+                    .filter(|(name, _)| !is_post_baseline_family(name))
                     .collect();
                 let mut missing = Vec::new();
                 for (name, value) in &want {
