@@ -4337,3 +4337,20 @@ M09-024b2, parent M09-024, and M09-026 remain blocked on its acceptance. Full de
   than a checkable property — the ruling makes admission an architecture-review obligation, which
   code cannot enforce; O-M09-024b1-2 (INFO) dead-row zeroing and optimizer masking are M09-026/028.
 - **Status:** pending independent Tier-C review. M09-024b2 follows on acceptance and is P2.
+
+## M09-024b1 independent Tier-C review of `4f63973` (2026-08-25) — changes required
+
+- **Sound:** eight bare seat facts under every crossing mode; suppression of the three named
+  crosses before lookup; unchanged schema-4 extractor; pre-artifact v2 prefix migration.
+- **F-M09-024b1-1 HIGH:** projection admission is an open-default three-family deny-list. It
+  violates the ruling for unknown families and already retains legacy-only `kind-faction` and
+  `option-faction` source-(a) names. Their two unreachable reserved rows are also absent from the
+  dead inventory; five current families are inactive, not three.
+- **F-M09-024b1-2 HIGH:** v2 is derived from v1 and the order test compares it back to v1. A v1
+  reorder therefore changes both and passes the set/prefix tests. Pin independent exact ordered
+  bytes/fingerprints for both versions and falsify by swapping v1 entries.
+- **Independent gates:** projection 7/0; vocabulary 26/0; full `ti4-policy --lib` 169/0; scoped
+  Clippy has only the documented pre-existing engine warning at `game.rs:1260`; scoped rustfmt and
+  `git diff --check` clean.
+- **Status:** M09-024b1 remains open; M09-024b2 remains blocked. Full ledger:
+  `plans/M09-024b1_OPEN_REVIEW_ITEMS.md`.
