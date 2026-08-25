@@ -4001,3 +4001,19 @@ adequate now that loader validation is corrected), O-2 provisional `V_cap` belon
 free-row zeroing remains a mandatory M09-026/M09-028 gate, O-4 the `*-unit` wildcard stands.
 
 Requesting a fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked until it lands.
+
+## M09-024a independent Tier-C recheck of `0aa415f` (2026-08-25) — changes required
+
+- **Resolved:** F-M09-024a-1. `OOV_FAMILIES_V1` now freezes the exact ordered registry and the
+  live-grammar test forces an explicit versioned migration. The unsupported-version, exact
+  reserved-prefix/global-OOV, and private invariant-surface portions of F-M09-024a-2 are resolved.
+- **F-M09-024a-3 HIGH:** `validate` requires `capacity == capacity_for(slots.len())`, but append
+  correctly preserves fixed physical capacity while increasing assigned slots. A valid vocabulary
+  filled to its 4,096-row capacity is consequently rejected on reload because the sizing rule now
+  returns 8,192. The existing boundary test never round-trips the filled vocabulary.
+- **Independent checks:** focused vocabulary suite 18/0; scoped Clippy has only the documented
+  pre-existing engine warning at `game.rs:1260`; `git diff --check` clean.
+- **Status:** M09-024a remains open; M09-024b remains blocked. Correct fixed-capacity validation,
+  add append-across-threshold serialize/load coverage preserving capacity and all columns, rerun
+  gates, then request a fresh Tier-C recheck. Full ledger:
+  `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.

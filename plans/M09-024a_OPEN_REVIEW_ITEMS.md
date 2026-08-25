@@ -163,3 +163,41 @@ adequate now that loader validation is corrected), O-2 provisional `V_cap` belon
 free-row zeroing remains a mandatory M09-026/M09-028 gate, O-4 the `*-unit` wildcard stands.
 
 Requesting a fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked until it lands.
+
+## Independent Tier-C recheck of `0aa415f` (2026-08-25)
+
+**Verdict: changes required.** F-M09-024a-1 is resolved: version 1 is now an exact ordered
+registry, and the live-grammar comparison forces an explicit migration decision. The registry
+version, reserved prefix, global OOV, and private invariant surface portions of
+F-M09-024a-2 are also resolved. One new load-path finding blocks acceptance.
+
+### F-M09-024a-3 — HIGH: valid appended vocabularies are rejected on reload
+
+`append` deliberately preserves the vocabulary's allocated capacity while consuming free rows,
+and its boundary test proves that filling every free row is valid. The corrected `validate`,
+however, requires `capacity == capacity_for(slots.len())`. That sizing function is appropriate at
+initial allocation, not after append: a vocabulary allocated at 4,096 rows and validly appended to
+4,096 assigned slots is reclassified as requiring 8,192 rows. Its own serialized representation
+therefore cannot be loaded. The same failure begins whenever append growth crosses the 1.2x sizing
+threshold, before physical capacity is exhausted.
+
+This violates the package's append-only resume contract and makes a successful append capable of
+producing an unloadable checkpoint.
+
+**Required:** validate the persisted fixed capacity without recomputing initial allocation from the
+current post-append slot count. At minimum enforce the 4,096 granularity, 65,536 ceiling, and
+`slots.len() <= capacity`; if the initial 1.2x allocation must remain independently provable,
+persist the necessary allocation provenance. Add a regression that appends across the sizing
+threshold (or exactly fills capacity), serializes, reloads, and proves capacity plus every existing
+and appended column remain unchanged.
+
+### Independent checks
+
+- vocabulary-focused suite **18/0**;
+- scoped Clippy produced no vocabulary/policy warning and only the documented pre-existing engine
+  `too_many_lines` warning at `game.rs:1260`;
+- `git diff --check` clean.
+
+**Status:** M09-024a remains open and M09-024b remains blocked. Next action is to correct fixed
+capacity validation, add the append/round-trip regression, rerun gates, and request another fresh
+Tier-C recheck.
