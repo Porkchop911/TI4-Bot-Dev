@@ -4199,3 +4199,47 @@ Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remai
   scoped-access declaration — reads two artifacts already on disk, 768 games, one written artifact
   (`out/vocabulary/slots.json`) capped at 16 MiB, no network, no dependencies, names only.
 - **Not started.** The package is P2 and has not been authorized. Nothing in it has been run.
+
+## M09-024b RAN AND STOPPED — vocabulary overruns the architecture limit (2026-08-25)
+
+- **P2 authorized as declared** by the operator; the pass ran within every declared bound and
+  **wrote no artifact**. `out/vocabulary/` does not exist.
+- **Result: `V_cap` required 245,760 against the 65,536 limit — 3.75x over.** MLP plan section 4.5
+  requires the package to stop for an explicit architecture review rather than allocate a larger
+  model, and it did. This is the packages declared purpose, not a defect in it; what did not
+  survive contact with the completed extractors is the plans own estimate.
+- **Sources:** (a) r6 champions 41,113 names / 9,573 unique; (c) content 295 / 187; (b) the 768-game
+  section 6.1 replay 194,083 / 162,435. Union 203,843. Every source contributes something no other
+  does, so none is silently empty.
+- **Growth:** r6 only 41,152 slots / 53,248 V_cap, reproducing M09-024a exactly; + content 41,447 /
+  53,248; + replay STOPPED. The replay multiplies the vocabulary by 4.9x.
+- **Where it comes from — the number the review needs.** Three families are **91.3
+## M09-024b RAN AND STOPPED — the vocabulary overruns the architecture limit (2026-08-25)
+
+- **P2 authorized as declared** by the operator. The pass ran within every declared bound and
+  **wrote no artifact**: `out/vocabulary/` does not exist.
+- **Result: `V_cap` required 245,760 against the 65,536 limit — 3.75× over.** MLP plan §4.5
+  requires the package to stop for an explicit architecture review rather than silently allocate a
+  larger model, and it did. This is the package's declared purpose, not a defect in it; what did
+  not survive contact with the completed extractors is the plan's own estimate, drawn from the r6
+  profile's 41,113 names.
+- **Sources:** (a) r6 champions 41,113 names / 9,573 unique; (c) content records 295 / 187;
+  (b) the 768-game §6.1 replay 194,083 / 162,435. Union **203,843**. Every source contributes
+  something no other does, so none is silently empty — the check the package exists to make.
+- **Growth:** r6 only → 41,152 slots / 53,248 `V_cap`, reproducing M09-024a exactly; + content →
+  41,447 / 53,248; + replay → **STOPPED**. The replay multiplies the vocabulary by 4.9×.
+- **Where it comes from — the number the review needs.** Three families are **91.3%** of the union:
+  `state-option` 88,909 (43.6%), `prompt-option` 58,637 (28.8%), `prompt-bigram` 38,542 (18.9%).
+  All three are keyed by option identity or prompt text rather than by anything the corpus bounds.
+  `state-option` is the crossed namespace M09-021 kept for **linear** schema delivery — the
+  nonlinear trunk reads the bare names; `prompt-option` and `prompt-bigram` are legacy
+  hashed-extractor families. The objective, decomposition and opponent families this branch spent
+  four packages adding are **0.3% combined**.
+- **By exclusion:** without all three, 17,794 slots and `V_cap` 24,576 — comfortably inside the
+  limit. Without only some of them, still over. So the decision is narrow: which of those three
+  families get dense columns in the MLP input.
+- **Gates:** `vocabulary_corpus` 3/0; workspace **1406/0** (1403 before); clippy clean in both new
+  files; rustfmt clean; `git diff --check` clean.
+- **Blocked on O-M09-024b-1**, an architecture decision and not mine to take. O-2: no frequency
+  data — a pruning-by-frequency option would need a second pass. O-3: 203,843 is a lower bound at
+  the four-round horizon, not a ceiling.
