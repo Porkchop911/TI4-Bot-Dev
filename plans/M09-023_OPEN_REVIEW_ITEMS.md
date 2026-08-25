@@ -39,3 +39,9 @@ arbitrary-viewer capability.
 M09-023's code delta is Tier-C accepted. Because it is stacked on the still-open M09-022 branch,
 integration and M09-024 remain blocked until F-M09-022-1 is corrected and the resulting combined
 frontier is rechecked for overlap.
+
+## Combined-frontier overlap recheck at `b444f52` (2026-08-25)
+
+The M09-022 correction adds only its alternate-store test and records. M09-023 opponent-secret
+tests remain **3/0**, and both shared feature pins remain **1/0**. The accepted Tier-C disposition
+is unchanged; the stacked frontier is now clear for integration.

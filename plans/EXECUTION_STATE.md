@@ -3724,6 +3724,18 @@ claim is made either way about whether the recorded bounds move.
 - **Next exact action:** implement the bounded alternate-store regression for M09-022, rerun its
   focused/policy/workspace gates, update evidence, and request a narrow Tier-B plus overlap recheck.
 
+## M09-022 correction accepted at `b444f52` (2026-08-25)
+
+- **F-M09-022-1 resolved and closed:** the required alternate-store regression loads a valid
+  modified corpus through `ContentStore::from_dir`, proves emitted decomposition follows the active
+  store in both directions, and includes non-degeneracy plus recorded mutant-failure evidence.
+- Independent narrow gates: active-store **1/0**; source-scope **1/0**; M09-023 overlap **3/0**;
+  legacy-subvector and inventory pins **1/0** each; scoped Clippy introduces no policy warning;
+  rustfmt/diff-check clean; temporary fixture directories remaining **0**.
+- **M09-022 is Tier-B accepted. M09-023's Tier-C acceptance remains valid on the combined
+  frontier. Rows M09-019 through M09-023 are complete, so M09-024 is dependency-ready.** M09-025
+  also remains ready.
+
 ## MEASURED — the authored bot plays at the wrong source scope, and it changes the game (2026-08-25)
 
 Follow-up to the finding carried forward in `1d50213`. It was recorded there as unmeasured. It is

@@ -114,3 +114,21 @@ deferred to M09-029, per the review.
 Requesting the narrow independent Tier-B recheck. M09-022 remains open until it lands; M09-023 is
 already accepted for its delta, and M09-024 unblocks once the combined frontier passes its overlap
 recheck.
+
+## Narrow independent Tier-B recheck of `b444f52` (2026-08-25)
+
+**Verdict: accepted. F-M09-022-1 is resolved and closed.**
+
+The new regression loads a separately copied and modified corpus through
+`ContentStore::from_dir`, changes Sol's commodity decomposition from the embedded value 4 to 9,
+and proves the emitted feature follows each observation's active store in both directions. Its
+non-degeneracy assertions prove the alternate store remains functional and that exactly the edited
+feature differs. The recorded mutation check directly falsifies the embedded-store defect while
+leaving the separate source-scope test green, confirming that both tests are necessary.
+
+Independent checks: active-store **1/0**; active-source-scope **1/0**; M09-023 opponent overlap
+**3/0**; legacy-subvector pin **1/0**; inventory pin **1/0**; scoped Clippy adds no policy warning;
+rustfmt and `git diff --check` clean; **0** matching temporary fixture directories remain.
+
+M09-022 is complete and independently accepted. The previously accepted M09-023 delta remains
+valid on the combined frontier. M09-024 is dependency-ready.
