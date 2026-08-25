@@ -4017,3 +4017,73 @@ Requesting a fresh independent Tier-C recheck. M09-024a and M09-024b remain bloc
   add append-across-threshold serialize/load coverage preserving capacity and all columns, rerun
   gates, then request a fresh Tier-C recheck. Full ledger:
   `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.
+
+## F-M09-024a-3 correction (implementer, 2026-08-25)
+
+The finding is correct, and the defect was introduced by my own F2 correction. Hardening
+`validate` to check capacity, I checked it against `slots.len()` — the count *now* — when capacity
+is fixed at allocation and `append` deliberately consumes free rows without touching it. So the
+moment a vocabulary is appended past the 1.2× threshold, its own serialized form stops loading. A
+successful append could produce an unloadable checkpoint, which is worse than the unchecked field
+I was replacing.
+
+Worth naming why no test caught it: `appending_past_capacity_is_refused_rather_than_reshaping`
+already filled capacity exactly, and `a_round_trip_through_json_preserves_every_column_and_its_
+lookups` already round-tripped. Neither did both. The defect lived precisely in the gap between two
+tests that each covered half of it.
+
+### The fix — allocation provenance, not recomputation
+
+A new persisted field, `allocated_for`, records the assigned-column count the capacity was
+allocated for. It is set once at build and never changed by `append`. `validate` now checks:
+
+- `capacity == capacity_for(allocated_for)` — so the 1.2× rule stays independently provable after
+  the slot count has moved, and `capacity_for` still carries the 4,096 granularity and the 65,536
+  ceiling with it. The reviewer offered a weaker option (granularity + ceiling + `slots.len() <=
+  capacity`); provenance is taken instead because it keeps the sizing rule checkable rather than
+  merely making a stored capacity plausible.
+- `allocated_for <= slots.len()` — columns are appended and never removed, so provenance exceeding
+  the columns present means a file has had columns dropped, and every column after the gap would
+  be addressed wrongly. New error `AllocationProvenance`.
+- `slots.len() <= capacity`, unchanged.
+
+### Regressions — three added, twenty-one total
+
+| test | what it pins |
+|---|---|
+| `an_appended_vocabulary_survives_a_round_trip_across_the_sizing_threshold` | append past the 1.2× point, serialize, reload; capacity, provenance, every existing and appended column, and every lookup unchanged |
+| `a_vocabulary_appended_to_exactly_full_still_reloads` | the sharpest form: every free row consumed |
+| `a_file_claiming_more_columns_were_allocated_than_exist_is_refused` | the provenance check in the one direction it is checkable |
+
+The first asserts its fixture is genuinely past the threshold — `capacity_for(slot_count) !=
+capacity` — before round-tripping, so it cannot pass by testing a vocabulary that never crossed it.
+
+**Falsification check.** `validate` was temporarily reverted to the defective
+`capacity_for(self.slots.len())` rule and the suite re-run:
+
+```
+test vocabulary::tests::an_appended_vocabulary_survives_a_round_trip_across_the_sizing_threshold ... FAILED
+test vocabulary::tests::a_vocabulary_appended_to_exactly_full_still_reloads ... FAILED
+test result: FAILED. 19 passed; 2 failed
+```
+
+Both new round-trip regressions fail on the defect and nothing else does, which is the property
+that makes them regressions rather than decoration. Reverted; 21/21 green on the reverted tree.
+
+### Gates after the correction
+
+```
+cargo test -p ti4-policy --lib vocabulary   21 passed, 0 failed   (18 before)
+cargo test --workspace                    1400 passed, 0 failed   (1397 before)
+cargo clippy -p ti4-policy --all-targets   0 warnings mentioning vocabulary.rs
+rustfmt --edition 2024 --check             clean
+git diff --check                           clean
+```
+
+### Note on the JSON shape
+
+`slots.json` gains one field. No vocabulary has been persisted anywhere yet — M09-024b produces
+the first — so this is a schema change with no existing readers, taken now rather than after
+artifacts exist.
+
+Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.

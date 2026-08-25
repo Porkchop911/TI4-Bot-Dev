@@ -214,6 +214,12 @@ pub enum VocabularyError {
         expected: usize,
         slots: usize,
     },
+    /// The recorded allocation count is larger than the assigned columns.
+    ///
+    /// Columns are only ever appended, so the count a capacity was allocated for can never exceed
+    /// the count now present. A file claiming otherwise has had columns removed.
+    #[error("capacity was allocated for {allocated_for} columns but only {slots} are present")]
+    AllocationProvenance { allocated_for: usize, slots: usize },
     /// A stored key is not the key of the name beside it.
     ///
     /// Either the file was edited or the key function changed. Both mean every column addresses
@@ -262,7 +268,17 @@ pub struct Vocabulary {
     /// Every assigned column, in index order. Index `i` is `slots[i]`.
     slots: Vec<Slot>,
     /// Physical rows allocated in the model tensor. `slots.len() <= capacity`.
+    ///
+    /// Fixed at allocation and **never recomputed**. Append consumes free rows without changing
+    /// it — that is the whole point of preallocating them.
     capacity: usize,
+    /// The assigned-column count this capacity was allocated for.
+    ///
+    /// Allocation provenance, so the 1.2x sizing rule stays independently provable after the slot
+    /// count has moved. Without it a loader can only check that a stored capacity is *plausible*;
+    /// with it, the capacity is checkable against the rule that produced it. Never changed by
+    /// [`Vocabulary::append`], which is why validating against `slots.len()` was wrong.
+    allocated_for: usize,
     /// Column index by key, for lookup. Rebuilt on load rather than stored.
     #[serde(skip)]
     index: BTreeMap<FeatureKey, usize>,
@@ -339,12 +355,14 @@ impl Vocabulary {
             });
         }
 
-        let capacity = capacity_for(slots.len())?;
+        let allocated_for = slots.len();
+        let capacity = capacity_for(allocated_for)?;
         let mut vocabulary = Self {
             oov_registry_version: OOV_REGISTRY_VERSION,
             oov_count,
             slots,
             capacity,
+            allocated_for,
             index: BTreeMap::new(),
         };
         vocabulary.reindex();
@@ -386,6 +404,12 @@ impl Vocabulary {
     #[must_use]
     pub fn slots(&self) -> &[Slot] {
         &self.slots
+    }
+
+    /// The assigned-column count this vocabulary's capacity was allocated for.
+    #[must_use]
+    pub const fn allocated_for(&self) -> usize {
+        self.allocated_for
     }
 
     /// Rows allocated in the tensor. The physical size.
@@ -587,13 +611,24 @@ impl Vocabulary {
             }
         }
 
-        // 3. Capacity is not a free field. It is a function of the assigned count, and it carries
-        //    the granularity and the architecture limit with it.
-        let expected_capacity = capacity_for(self.slots.len())?;
+        // 3. Capacity is not a free field, but neither is it a function of the *current* slot
+        //    count. It is fixed at allocation and append deliberately consumes free rows without
+        //    touching it, so recomputing from `slots.len()` would reject exactly the vocabularies
+        //    a successful append produces — a valid checkpoint that cannot be loaded, which is
+        //    worse than an unchecked field (F-M09-024a-3). It is checked against the count it was
+        //    allocated for, which the file carries for this purpose; `capacity_for` brings the
+        //    4,096 granularity and the 65,536 ceiling with it.
+        let expected_capacity = capacity_for(self.allocated_for)?;
         if self.capacity != expected_capacity {
             return Err(VocabularyError::CapacityMismatch {
                 stored: self.capacity,
                 expected: expected_capacity,
+                slots: self.allocated_for,
+            });
+        }
+        if self.allocated_for > self.slots.len() {
+            return Err(VocabularyError::AllocationProvenance {
+                allocated_for: self.allocated_for,
                 slots: self.slots.len(),
             });
         }
@@ -1058,5 +1093,100 @@ mod tests {
                 "wrong error for capacity {bad}: {error}"
             );
         }
+    }
+    #[test]
+    fn an_appended_vocabulary_survives_a_round_trip_across_the_sizing_threshold() {
+        // F-M09-024a-3. Append deliberately consumes free rows without changing capacity, so the
+        // slot count moves away from the count the capacity was allocated for. Validating capacity
+        // against the *current* count therefore rejected exactly the vocabularies a successful
+        // append produces: a valid checkpoint that cannot be loaded, which is worse than an
+        // unchecked field. Nothing caught it because no test serialized *after* appending.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let allocated_at = vocabulary.allocated_for();
+        let capacity = vocabulary.capacity();
+
+        // Cross the 1.2x threshold: past this point `capacity_for(slots.len())` disagrees with the
+        // allocated capacity, which is the condition that used to break reload.
+        #[expect(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "small counts"
+        )]
+        let past_threshold = ((capacity as f64) / CAPACITY_HEADROOM).ceil() as usize + 1;
+        assert!(
+            past_threshold > vocabulary.slot_count(),
+            "the fixture must actually need appending"
+        );
+        let batch: Vec<String> = (0..past_threshold - vocabulary.slot_count())
+            .map(|n| format!("option:appended{n}"))
+            .collect();
+        let added = vocabulary.append(batch.clone()).expect("fits");
+        assert_eq!(added, batch.len());
+        assert_ne!(
+            capacity_for(vocabulary.slot_count()).expect("under the limit"),
+            capacity,
+            "the fixture must be past the sizing threshold, or this proves nothing"
+        );
+
+        let before = vocabulary.slots().to_vec();
+        let reloaded = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect("an appended vocabulary must reload");
+
+        assert_eq!(
+            reloaded.capacity(),
+            capacity,
+            "capacity moved across a round trip"
+        );
+        assert_eq!(reloaded.allocated_for(), allocated_at, "provenance moved");
+        assert_eq!(
+            reloaded.slots(),
+            &before[..],
+            "a column changed across a round trip"
+        );
+        for name in sample().iter().chain(batch.iter()) {
+            assert_eq!(
+                reloaded.column_of(name),
+                vocabulary.column_of(name),
+                "{name} moved across a round trip"
+            );
+            assert!(reloaded.is_assigned(name));
+        }
+    }
+
+    #[test]
+    fn a_vocabulary_appended_to_exactly_full_still_reloads() {
+        // The boundary the other test approaches: every free row consumed. `capacity_for` on that
+        // slot count demands a larger capacity, so this is the sharpest form of the same defect.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let capacity = vocabulary.capacity();
+        let room = vocabulary.free_rows();
+        let batch: Vec<String> = (0..room).map(|n| format!("option:fill{n}")).collect();
+        assert_eq!(vocabulary.append(batch).expect("exact fit"), room);
+        assert_eq!(vocabulary.free_rows(), 0);
+
+        let reloaded = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect("a full vocabulary must reload");
+        assert_eq!(reloaded.capacity(), capacity);
+        assert_eq!(reloaded.slot_count(), capacity);
+    }
+
+    #[test]
+    fn a_file_claiming_more_columns_were_allocated_than_exist_is_refused() {
+        // Provenance is checkable in one direction only: columns are appended, never removed, so
+        // the count a capacity was allocated for can never exceed the count present. A file
+        // claiming otherwise has had columns dropped, and every column after the gap would be
+        // addressed wrongly.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.allocated_for = vocabulary.slots.len() + 1;
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("impossible provenance must be refused");
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(VocabularyError::AllocationProvenance { .. })
+            ),
+            "wrong error: {error}"
+        );
     }
 }
