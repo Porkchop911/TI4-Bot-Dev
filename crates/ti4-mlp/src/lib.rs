@@ -36,6 +36,8 @@
 //! question instead. The ability decomposition (M09-022) is what carries faction identity at the
 //! input today.
 
+pub mod bot;
+
 use thiserror::Error;
 use ti4_tensor::{Device, Kind, Tensor};
 
@@ -183,6 +185,21 @@ impl Actor {
     /// Mutable access to the per-faction residual.
     pub const fn residual_mut(&mut self) -> &mut Tensor {
         &mut self.delta
+    }
+
+    /// The schema-4 head that carries a requested head.
+    ///
+    /// `decision_head` names schema 5's nineteen; schema 4 carries fourteen and routes the later
+    /// splits — `scoring`, `agenda`, `exploration`, `ability`, `transit` — to `other`, exactly as
+    /// `Profile::resolved_head` does for the linear champions. Folding here rather than at each
+    /// call site keeps one rule.
+    #[must_use]
+    pub fn resolve_head(requested: &str) -> &str {
+        if heads().contains(&requested) {
+            requested
+        } else {
+            "other"
+        }
     }
 
     /// The index of a head by name.

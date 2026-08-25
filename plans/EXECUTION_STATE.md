@@ -4850,3 +4850,20 @@ the absolute tolerance, both would have passed for the wrong reason.
   without verifying the written file.
 - **Status:** M09-024b2 and parent M09-024 remain open; b2 is also downstream-blocked by
   F-M09-024b1-3. Full ledger: `plans/M09-024b2_OPEN_REVIEW_ITEMS.md`.
+
+## The MLP played a game (2026-08-25)
+
+- `crates/ti4-mlp/src/bot.rs` + `examples/mlp_smoke.rs`. Six MLP deciders, one real six-player
+  game on the training pool, every decision scored by the actor against the M09-024b2 vocabulary.
+- **Result: 5 rounds, 368 steps, 298 resolved choices, 112 ms, no error, VP scored.** The chain
+  connects end to end — engine choice, bound `SeatObservation`, projected features, dense columns,
+  trunk, readout, stable softmax, sampled legal option.
+- **Vocabulary coverage: 143,562 feature lookups, 100.00% found a column of their own, 0 fell to an
+  OOV column.** The discovered vocabulary covers everything this game emitted — which is a real
+  check on M09-024b2 and not one that had to come out this way.
+- **What it does not show.** The weights are zero, so every logit is identical and the policy is
+  uniform over each legal set. This is a legality and integration smoke, exactly what section 7.1
+  asks for before training; it says nothing about play strength. The 1 VP per seat is the custodians
+  and objective flow, not the model.
+- Head routing folds schema 5 names to schema 4 through `Actor::resolve_head`, the same rule
+  `Profile::resolved_head` uses for the linear champions.
