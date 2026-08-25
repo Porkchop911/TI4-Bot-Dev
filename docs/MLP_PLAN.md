@@ -1415,13 +1415,25 @@ The projection adds the eight original acting-seat facts under one bounded bare 
 option. Without that correction, suppressing `state-option` would remove tokens, goods, round,
 planet count, and technology count from uniform-kind fixed-vocabulary decisions. Existing linear
 schema feature vectors remain unchanged. The new family is a versioned registry migration; version
-1 is never edited in place.
+1 is never edited in place. Version 2 preserves the exact ordered v1 prefix and appends the new
+family. Live-grammar coverage is a set comparison; separate tests pin exact per-version order,
+prefix preservation, and uniqueness. Registry order is version-defined, not re-sorted on growth.
+The v2 reserved append shifts ordinary v1 slots and is allowed only because no v1 vocabulary or
+tensor was published. Once artifacts exist, reserved-block growth is a full reviewed layout/tensor
+migration, not append-only vocabulary growth.
 
-The approved physical capacity is **24,576 rows**. At width 256 the input has exactly 6,291,456
-weights; the architecture described in §4.2 accounts for approximately 6.48M total parameters,
-about 25.9 MB of f32 weights or 77.8 MB with two Adam moments before framework overhead. M09-026
-records the exact manifest-derived total. The 65,536 load/migration ceiling remains a hard guard,
-not a vocabulary estimate; exceeding it still stops for review.
+**24,576 rows is the reviewed M09-024b ceiling, not a fixed capacity.** Exact stored capacity stays
+derived by `capacity_for(allocated_for)`; corrected single-path discovery may produce 16,384. A
+result above 24,576 stops for renewed package review. At the ceiling the input has 6,291,456
+width-256 weights and the architecture described in §4.2 accounts for approximately 6.48M total
+parameters, about 25.9 MB of f32 weights or 77.8 MB with two Adam moments before framework
+overhead. M09-024b2 records the derived capacity and M09-026 records the exact manifest-derived
+total. The 65,536 load/migration ceiling remains a hard guard, not a vocabulary estimate.
+
+The v1 OOV rows for `prompt-bigram`, `prompt-option`, and `state-option` remain reserved to preserve
+their indices but are deliberately inactive: the projection cannot route to them. At width 256
+they cost 768 weights. M09-026/M09-028 initialize and mask them exactly like free rows and assert
+that they remain zero across optimization and save/load.
 
 Distillation is **feature-compressed distillation**. Teachers still provide their complete action
 probability vectors and training still minimizes teacher-to-student KL, but the student uses the

@@ -49,9 +49,13 @@ growth append-only so a trained weight never changes meaning.
 
 ## Invariants
 
-1. **Reserved columns never move.** The global OOV is column 0, then one column per registered
-   family, in a sorted order fixed by `OOV_REGISTRY_VERSION`. A trained model addresses these by
-   index, so they are allocated before anything a corpus could vary.
+1. **Reserved columns never move within a registry version.** The global OOV is column 0, then one
+   column per registered family in the exact order fixed by `OOV_REGISTRY_VERSION`. Version 1's
+   order is sorted and frozen. The pre-artifact version-2 migration preserves the ordered v1
+   reserved prefix and appends `seat-state`; this shifts ordinary v1 positions, which is permitted
+   only because no v1 vocabulary artifact or tensor exists. After the first artifact, growing the
+   reserved block is a full reviewed tensor/layout migration, never ordinary append-only vocabulary
+   growth. Coverage against the live grammar is set-based; exact order is pinned separately.
 2. **Assignment is by ascending `FeatureKey`.** The key is a pure function of the name, so input
    order cannot reach the output. This is what makes the double-build check meaningful and what
    lets discovery run in any order on any number of threads.

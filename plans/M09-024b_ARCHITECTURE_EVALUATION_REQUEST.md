@@ -232,7 +232,7 @@ and is **not an unbounded memorisation cross**. An unbounded memorisation cross 
 identity is the Cartesian product of two free lexical identities, or of a full option identity and
 a state fact. Under the current grammar this excludes `prompt-bigram`, `prompt-option`, and
 `state-option`. Those names are suppressed by the MLP projection before lookup; they must not be
-collapsed into their family OOV row. The frozen registry may retain its reserved rows so this
+collapsed into their family OOV row. The frozen registry retains those three reserved rows so this
 decision does not rewrite version 1 in place.
 
 This is a predicate over the semantic shape of a family, not permission to maintain an exclusion
@@ -252,18 +252,28 @@ uniform-kind fixed-vocabulary decisions.
 The MLP projection must therefore emit those eight facts on every option under one bounded bare
 family (for example `seat-state:<fact>`), while leaving the existing schema-4 vector unchanged.
 This requires a versioned registry migration rather than editing `OOV_FAMILIES_V1` in place.
+Version 2 preserves the entire ordered v1 prefix and appends `seat-state`; it does not sort the new
+family into the old prefix. Registry/live-grammar coverage is compared as a set, while separate
+tests pin exact v1 bytes, exact v2 order, the v1-prefix relationship, and absence of duplicates.
+Appending the reserved row shifts ordinary v1 slots; that is allowed here only because no v1
+vocabulary artifact or tensor exists. Any such change after publication is a full reviewed layout
+migration, not append-only vocabulary growth.
 
 ### Capacity and parameter budget
 
-The approved branch capacity is **`V_cap = 24,576`**, based on the measured union after removing
-the three unbounded crosses. The required bare-seat family is far too small to cross the next
-capacity boundary; the corrected single-path replay must nevertheless confirm the final
-`slot_count`, byte identity, and capacity before publishing `slots.json`.
+**Clarification:** **24,576 is the package's reviewed capacity ceiling, not a fixed stored
+`V_cap`.** The accepted M09-024a invariant remains unchanged: the artifact stores exactly
+`V_cap = capacity_for(allocated_for)`. The corrected single-path run is expected to remove further
+legacy-only families and may therefore derive 16,384. It must record the actual `slot_count`, byte
+identity, and derived capacity before publishing `slots.json`. A derived value at or below 24,576
+is within this ruling; a larger result is unexpected and stops for renewed review even though the
+global 65,536 migration ceiling is higher.
 
-At width 256 this is exactly **6,291,456 input-row weights**. Under the parameter blocks already
-specified in §4.2, the plan-accounted model is approximately **6.48 million parameters**
-(about 25.9 MB of f32 weights); model plus two Adam moments is about 77.8 MB before framework
-overhead. M09-026 must record the exact manifest-derived total once tensor shapes exist.
+At the 24,576 ceiling, width 256 gives exactly **6,291,456 input-row weights** and approximately
+**6.48 million plan-accounted parameters** (about 25.9 MB of f32 weights; about 77.8 MB with two
+Adam moments before framework overhead). If the derived capacity is 16,384, those figures fall to
+4,194,304 input weights and approximately 4.38M plan-accounted parameters. M09-024b2 records the
+derived value; M09-026 records the exact manifest-derived total once tensor shapes exist.
 
 The **65,536 limit stands** as a hard load/migration ceiling, not as an estimate of expected
 vocabulary size. At width 256 it caps the input at 16,777,216 weights and about 201 MB for input
@@ -292,12 +302,17 @@ Split the correction before another P2 replay:
    migration, pre-lookup suppression, and tests covering `StateCross::ByOption`, redaction,
    excluded-family absence, and unchanged legacy/schema-4 inference vectors.
 2. **M09-024b2 (P2, Tier C):** rerun the same 768-game schedule through only that projection,
-   rebuild from all three filtered sources, confirm `V_cap = 24,576`, write the bounded artifact,
-   and independently review the final layout and manifest evidence.
+   rebuild from all three filtered sources, confirm derived `V_cap <= 24,576`, write the bounded
+   artifact, and independently review the final layout and manifest evidence.
 
 No frequency pass is authorized or required. O-M09-024b-2 is closed as not selected;
 O-M09-024b-3 remains an INFO limitation handled by OOV routing plus deterministic append headroom;
 O-M09-024b-4 is resolved by the single explicit path and mandatory remeasurement.
+
+The retained OOV rows for the three excluded families are deliberately dead. They cost 768 weights
+at width 256 and buy preservation of every v1 reserved index. M09-024b1 pins their inactive
+classification; M09-026/M09-028 must initialize them to zero, mask them from optimization, and
+assert them zero at save/load alongside free rows. They are never a routing destination.
 
 **Status:** the architecture decision is complete. M09-024 remains open; M09-024b1 is the next
 ready package. M09-024b2 and M09-026 remain blocked on its acceptance.

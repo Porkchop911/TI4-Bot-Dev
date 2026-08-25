@@ -4111,8 +4111,9 @@ Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remai
 - Required correction: the eight original seat facts currently have no bare delivery path.
   M09-024b1 must add a bounded bare family before removing `state-option`; excluded names may not
   aggregate into an OOV row. The registry change is versioned, never an edit to v1.
-- Approved **`V_cap = 24,576`**: 6,291,456 input weights at width 256 and approximately 6.48M total
-  plan-accounted parameters. A corrected single-path replay must confirm final slot count/capacity.
+- **24,576 is the package review ceiling, not fixed `V_cap`.** Exact capacity remains derived by
+  accepted `capacity_for(allocated_for)` and may be 16,384 after single-path filtering. At the
+  ceiling: 6,291,456 width-256 input weights and approximately 6.48M plan-accounted parameters.
 - §6.1 is now feature-compressed distillation: full teacher distributions remain KL targets, but
   student inputs use the transferable projection. Fixed validation gates decide adequacy.
 - **Continuation split:** M09-024b1 (P1/Tier C projection, bare facts, registry and tests) is next
@@ -4296,7 +4297,10 @@ re-measurement on that path.
 ## Current frontier after the M09-024b architecture ruling (2026-08-25)
 
 The Tier-C decision recorded above is now authoritative: schema-4 explicit feature-compressed
-input, unbounded crosses suppressed before lookup, bare acting-seat facts restored, approved
-`V_cap = 24,576`, and the 65,536 migration ceiling retained. **M09-024b1 is next ready**;
+input, unbounded crosses suppressed before lookup, bare acting-seat facts restored, reviewed
+capacity ceiling 24,576 with exact `V_cap` still derived, and the 65,536 migration ceiling retained.
+Registry v2 preserves the ordered v1 prefix and appends `seat-state`; coverage is set-based while
+order is pinned separately. Three excluded-family reserved rows remain deliberately inactive and
+must stay zero/masked. **M09-024b1 is next ready**;
 M09-024b2, parent M09-024, and M09-026 remain blocked on its acceptance. Full decision:
 `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.

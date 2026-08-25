@@ -111,14 +111,19 @@ The Tier-C ruling in `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md` selects
 explicit, feature-compressed MLP projection. It excludes unbounded memorisation crosses before
 lookup (`prompt-bigram`, `prompt-option`, and `state-option` under the current grammar), requires a
 new bounded bare family for the eight acting-seat facts, keeps the 65,536 hard ceiling, and approves
-`V_cap = 24,576` subject to corrected single-path confirmation.
+a package review ceiling of 24,576 subject to corrected single-path confirmation. Exact stored
+capacity remains `capacity_for(allocated_for)`; it may be 16,384 after legacy-only names disappear.
+
+Registry v2 keeps the exact ordered v1 prefix and appends `seat-state`. Grammar coverage is checked
+as a set; exact version order and prefix preservation are checked separately. The three excluded
+families keep deliberately inactive reserved rows, which later tensor packages zero and mask.
 
 This package is split before more implementation:
 
 - **M09-024b1 (P1, Tier C):** projection contract, bare-seat facts, versioned registry migration,
   pre-lookup filtering, and focused invariants. No replay or artifact.
 - **M09-024b2 (P2, Tier C):** corrected 768-game single-path discovery, final deterministic
-  `slots.json`, measured manifest fields, and final layout review.
+  `slots.json`, derived `V_cap <= 24,576`, measured manifest fields, and final layout review.
 
 The original parent acceptance criterion remains unchanged. M09-024b1 is next ready; M09-024b2 is
 blocked on its acceptance.
