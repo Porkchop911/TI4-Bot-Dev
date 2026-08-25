@@ -410,6 +410,7 @@ pub fn explicit_option_features(
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
         objective_facts: objective_facts(seen, player, held_secrets),
         ability_facts: ability_facts(seen, player),
+        opponent_facts: opponent_facts(seen, player),
     };
     explicit_option_features_with(
         seen,
@@ -434,6 +435,9 @@ struct ChoiceContext<'a> {
     /// option: it parses the starting fleet, and an activation choice offers thirty-odd options
     /// that would each have parsed the same string.
     ability_facts: Vec<(String, f64)>,
+    /// MLP plan section 5.2's opponent surface: public counts, no identities. Once per choice for
+    /// the same reason — it walks every seat.
+    opponent_facts: Vec<(String, f64)>,
 }
 
 /// Objective progress facts for the acting seat, computed once per choice.
@@ -621,6 +625,43 @@ fn ability_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
     facts
 }
 
+/// What the acting seat may know about its opponents' hands: counts, never identities.
+///
+/// MLP plan section 5.2 (D6) requires that opponents expose only `opponent-secrets-held:<n>`,
+/// which is public information in TI4 — at a real table you can see how many facedown cards
+/// somebody holds without seeing which. The count keys the family and the value counts the
+/// opponents at that count, so the fact names no seat: `opponent-secrets-held:2 = 3.0` says three
+/// opponents hold two secrets each. That is deliberate. A per-seat name would be a board identity
+/// that means nothing in the next game and would make the feature untransferable, which is the
+/// same reason bare option ids are kept out of the explicit path.
+///
+/// A count of zero is emitted: an opponent who has scored every secret they held is a materially
+/// different threat from one sitting on three, and "nobody left to score" is a fact about the
+/// position rather than an absence of one. The zero-skip convention this module uses is about
+/// zero *values*; a bucket that exists always has at least one opponent in it.
+///
+/// **This is the whole opponent surface.** Section 5.2 says "only", and the count is what the
+/// package delivers — no action-card counts, no per-seat detail, nothing derived from a hand.
+/// Everything read here comes from [`ti4_engine::choice::PublicSeat`], which carries counts and
+/// no card identity of any kind.
+#[must_use]
+fn opponent_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let mut seats_at_count: BTreeMap<usize, usize> = BTreeMap::new();
+    for other in seen.players() {
+        if other == player {
+            continue;
+        }
+        let held = seen
+            .seat(other)
+            .map_or(0, |seat| seat.secret_objectives_held);
+        *seats_at_count.entry(held).or_default() += 1;
+    }
+    seats_at_count
+        .into_iter()
+        .map(|(held, seats)| (format!("opponent-secrets-held:{held}"), count_value(seats)))
+        .collect()
+}
+
 /// The eight per-seat facts every option of a choice is described against.
 ///
 /// None of them varies with the option: they are the round, this seat's pools, its goods, its
@@ -686,6 +727,7 @@ pub fn explicit_choice_features(
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
         objective_facts: objective_facts(seen, player, held_secrets),
         ability_facts: ability_facts(seen, player),
+        opponent_facts: opponent_facts(seen, player),
     };
     let cross = state_cross(choice);
     choice
@@ -952,6 +994,12 @@ fn explicit_option_features_with(
     for (name, value) in &context.ability_facts {
         add_named(&mut features, format_args!("{name}"), *value);
     }
+    // MLP plan section 5.2: what the acting seat may know about opponents. Counts only, and on
+    // every option under every crossing mode for the same section 4.1 reason as the two families
+    // above.
+    for (name, value) in &context.opponent_facts {
+        add_named(&mut features, format_args!("{name}"), *value);
+    }
 
     match cross {
         StateCross::ByKind => {
@@ -966,6 +1014,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.ability_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-kind:{kind}:{name}"),
+                    *value,
+                );
+            }
+            for (name, value) in &context.opponent_facts {
                 add_named(
                     &mut features,
                     format_args!("state-kind:{kind}:{name}"),
@@ -989,6 +1044,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.ability_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-option:{option_id}:{name}", option_id = option.id),
+                    *value,
+                );
+            }
+            for (name, value) in &context.opponent_facts {
                 add_named(
                     &mut features,
                     format_args!("state-option:{option_id}:{name}", option_id = option.id),
@@ -1665,7 +1727,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 33] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 34] = [
     "kind",
     "option",
     "prompt-kind",
@@ -1699,6 +1761,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 33] = [
     "faction-start-unit",
     "faction-home",
     "faction-commodities",
+    "opponent-secrets-held",
 ];
 
 fn explicit_family_is_known(name: &str) -> bool {
@@ -1726,6 +1789,222 @@ mod tests {
     use ti4_model::content_types::POK;
     use ti4_model::id::FactionId;
     use ti4_model::state::GameState;
+
+    // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
+
+    /// A three-seat position with known, distinct secret holdings: a holds two, b holds one,
+    /// c holds none. Trade goods are set so the met-flag channel is provably active, which is what
+    /// makes "no opponent alias appears" a measurement rather than an observation about an empty
+    /// set.
+    fn m09_023_fixture() -> (GameState, ti4_content::galaxy::Galaxy) {
+        let (mut state, galaxy) = m09_021_fixture();
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        state
+            .player_mut(&PlayerId::new("c"))
+            .unwrap()
+            .secret_objectives = Vec::new();
+        for seat in ["a", "b", "c"] {
+            state.player_mut(&PlayerId::new(seat)).unwrap().trade_goods = 5;
+        }
+        (state, galaxy)
+    }
+
+    #[test]
+    fn opponent_secrets_expose_counts_and_never_identities_in_any_feature_set() {
+        // Section 5.2, stated as the acceptance criterion of M09-023: the acting seat sees its own
+        // secrets, opponents expose public counts only, and this holds across *every* feature set
+        // — the legacy hashed name path as well as the explicit one. The legacy path takes only an
+        // `Observed` and no secret records, so it cannot name a secret at all; that is asserted
+        // rather than assumed, because "it takes no secrets" is an argument about the signature
+        // and this is a measurement of the output.
+        let content = ti4_content::ContentStore::embedded();
+        let (state, galaxy) = m09_023_fixture();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+
+        let seats = ["a", "b", "c"].map(PlayerId::new);
+        let aliases_of = |seat: &PlayerId| -> Vec<String> {
+            state
+                .player(seat)
+                .map(|player| {
+                    player
+                        .secret_objectives
+                        .iter()
+                        .map(|id| id.as_str().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(aliases_of(&seats[0]), ["otf".to_owned(), "mlp".to_owned()]);
+        assert_eq!(aliases_of(&seats[1]), ["eap".to_owned()]);
+        assert!(aliases_of(&seats[2]).is_empty());
+
+        for seat in &seats {
+            let choice = Choice::new(
+                seat.clone(),
+                "spend a strategy token to replenish commodities",
+                vec![ChoiceOption::labelled("no", "strategy", "decline")],
+            );
+            let held =
+                ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), seat);
+
+            let explicit: Vec<String> =
+                names_of(&explicit_choice_features(&seen, &choice, seat, &held)[0]);
+            let legacy: Vec<String> =
+                option_feature_names(&seen, &choice, &choice.options[0], seat)
+                    .into_iter()
+                    .map(|(name, _)| name)
+                    .collect();
+            assert!(
+                !explicit.is_empty() && !legacy.is_empty(),
+                "both sets are non-empty"
+            );
+
+            for other in &seats {
+                if other == seat {
+                    continue;
+                }
+                for alias in aliases_of(other) {
+                    for (label, names) in [("explicit", &explicit), ("legacy", &legacy)] {
+                        assert!(
+                            !names.iter().any(|name| name.contains(&alias)),
+                            "{label} features for {seat} named {other}'s secret {alias}"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Non-vacuity, the half that makes the assertions above mean something. A held secret
+        // reaches the features by *alias* only once it is satisfied (the met channel); before that
+        // it contributes family-token progress instead. So the test does not assert an alias
+        // appears — it asserts the channel carries something at all, by removing the records and
+        // showing the features change. If secrets were inert for the acting seat, no opponent
+        // alias could appear either, and every assertion above would pass by measuring nothing.
+        let a = &seats[0];
+        let choice = Choice::new(
+            a.clone(),
+            "spend a strategy token to replenish commodities",
+            vec![ChoiceOption::labelled("no", "strategy", "decline")],
+        );
+        let held = ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&galaxy), a);
+        assert!(
+            !held.is_empty(),
+            "seat a holds secrets with position progress"
+        );
+        let with_secrets = names_of(&explicit_choice_features(&seen, &choice, a, &held)[0]);
+        let without = names_of(&explicit_choice_features(&seen, &choice, a, &[])[0]);
+        assert_ne!(
+            with_secrets, without,
+            "the acting seat's own secret records changed nothing: the channel is inert"
+        );
+    }
+
+    #[test]
+    fn opponent_secret_counts_are_a_seat_anonymous_distribution() {
+        // Two halves, and the second is the one that matters. Anonymity: which opponent holds
+        // which count must not change the facts, or the feature has smuggled in a seat identity
+        // that means nothing next game. Sensitivity: changing the *distribution* must change them,
+        // or the feature is a constant and the anonymity half proves nothing.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, galaxy) = m09_023_fixture();
+        let c = PlayerId::new("c");
+
+        let facts =
+            |state: &GameState, galaxy: &ti4_content::galaxy::Galaxy| -> Vec<(String, f64)> {
+                let seen = Observed::new(state, content, POK, Some(galaxy));
+                opponent_facts(&seen, &c)
+            };
+
+        // a holds two, b holds one.
+        let before = facts(&state, &galaxy);
+        assert_eq!(
+            before,
+            vec![
+                ("opponent-secrets-held:1".to_owned(), 1.0),
+                ("opponent-secrets-held:2".to_owned(), 1.0),
+            ],
+            "one opponent at each count"
+        );
+
+        // Swap the two hands. Same distribution, different seats.
+        let a_cards = state
+            .player(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives
+            .clone();
+        let b_cards = state
+            .player(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives
+            .clone();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = b_cards;
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .secret_objectives = a_cards.clone();
+        assert_eq!(
+            facts(&state, &galaxy),
+            before,
+            "the facts followed a seat identity rather than the distribution"
+        );
+
+        // Now change the distribution itself: both opponents hold two.
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = a_cards;
+        let after = facts(&state, &galaxy);
+        assert_ne!(
+            after, before,
+            "the facts are insensitive to the distribution"
+        );
+        assert_eq!(
+            after,
+            vec![("opponent-secrets-held:2".to_owned(), 2.0)],
+            "two opponents at count two"
+        );
+    }
+
+    #[test]
+    fn opponent_counts_survive_state_cross_none() {
+        // Same section 4.1 contract as the objective and decomposition families.
+        let content = ti4_content::ContentStore::embedded();
+        let (state, galaxy) = m09_023_fixture();
+        let seen = Observed::new(&state, content, POK, Some(&galaxy));
+        let player = PlayerId::new("a");
+        let choice = Choice::new(
+            player.clone(),
+            "produce a unit",
+            vec![
+                ChoiceOption::labelled("produce|fighter@18", "production", "build a fighter"),
+                ChoiceOption::labelled("produce|scout@19", "production", "build a scout"),
+            ],
+        );
+        assert_eq!(state_cross(&choice), StateCross::None);
+
+        let expected = opponent_facts(&seen, &player);
+        assert!(
+            !expected.is_empty(),
+            "the fixture has opponents holding cards"
+        );
+        let vectors = explicit_choice_features(&seen, &choice, &player, &[]);
+        assert_eq!(vectors.len(), 2);
+        for vector in &vectors {
+            for (name, value) in &expected {
+                assert_eq!(
+                    value_of(vector, name),
+                    Some(*value),
+                    "{name} did not survive StateCross::None"
+                );
+            }
+        }
+    }
 
     // --- M09-022: faction ability decomposition (MLP plan section 5.3) ----------------------
 
@@ -1981,7 +2260,7 @@ mod tests {
     /// loose substring keeps the legacy `kind-faction:` and `option-faction:` channels — which
     /// contain `-faction:` but never `:faction-` — on the pinned side where they belong.
     fn is_post_baseline_family(name: &str) -> bool {
-        const ADDED: [&str; 7] = [
+        const ADDED: [&str; 8] = [
             "objective-",
             "ability:",
             "faction-start-tech:",
@@ -1989,6 +2268,7 @@ mod tests {
             "faction-start-unit:",
             "faction-home:",
             "faction-commodities",
+            "opponent-secrets-held:",
         ];
         ADDED
             .iter()
@@ -2540,6 +2820,7 @@ mod tests {
                 "faction-start-unit",
                 "faction-home",
                 "faction-commodities",
+                "opponent-secrets-held",
             ]
         );
 
@@ -2649,6 +2930,7 @@ mod tests {
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
             ability_facts: ability_facts(&seen, &player),
+            opponent_facts: opponent_facts(&seen, &player),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -2774,6 +3056,7 @@ mod tests {
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
             ability_facts: ability_facts(&seen, &player),
+            opponent_facts: opponent_facts(&seen, &player),
         };
         let full = explicit_option_features_with(
             &seen,

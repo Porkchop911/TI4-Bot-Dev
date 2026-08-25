@@ -3665,3 +3665,42 @@ Two consequences, one live and one about instruments:
 **Unmeasured:** whether correcting the scope changes play. The probe (flip `ScoredBot::new` to
 DEFAULT, replay the 30-seed behavioral batch, compare) was set up but not run. Until it is, no
 claim is made either way about whether the recorded bounds move.
+
+## M09-023 implemented — secret redaction in feature paths (2026-08-25)
+
+- **Author:** Claude Opus 5, ineligible to review it. Tier **C** (hidden information) requires a
+  frontier review; that seat is open. Spec: `plans/M09-023_SECRET_REDACTION_IN_FEATURE_PATHS.md`.
+  Evidence: `plans/evidence/M09-023.md`.
+- **§5.2's prescribed mechanism no longer exists, and that is the right outcome.** The plan says to
+  build features from `Observed::redacted_for(player)`. That method was removed in M09-021
+  F-M09-021-1 round 2 as a defect in its own right, and its successor `held_state()` at round 4.
+  What replaced them is stronger than what §5.2 asked for: `Observed` carries no private data of
+  any seat, so there is no view to redact. This package delivers §5.2's **requirement**, not its
+  **mechanism**, and records the divergence rather than reinterpreting the plan.
+- **What was actually outstanding** was the emission. `opponent-secrets-held:<n>` was specified in
+  §5.2 and had never been built — there were no opponent facts of any kind in the feature paths.
+- **Delivered:** `opponent-secrets-held:<n>` = the number of opponents holding exactly n secrets.
+  The count keys the name, the value counts the seats, so no opponent is named — a per-seat
+  feature would be a board identity meaningless next game. Read entirely from `PublicSeat`, which
+  carries counts and no card identity. Emitted bare on every option under every crossing mode plus
+  crossed copies, per F-M09-021-2. `EXPLICIT_FIXED_FAMILIES` 33 → 34. Explicit path only: the
+  legacy hashed extractor's bucket inputs stay frozen.
+- **Proof across every feature set, not one:** for each of three seats holding 2 / 1 / 0 known
+  secrets, both the explicit path and the legacy hashed name path are extracted and no opponent
+  alias appears in either. The anonymity test carries a **sensitivity** half — swapping which
+  opponent holds which count leaves the facts identical, changing the distribution changes them —
+  because anonymity alone is satisfied by a constant (the X1 lesson from M08-021).
+- **A wrong assertion, recorded rather than quietly fixed.** The first non-vacuity check asserted
+  that the acting seat's own secret alias appears in its features, and failed: an alias reaches the
+  features only once the secret is *satisfied*; before that it contributes family-token progress.
+  The fix was to strengthen rather than weaken — remove the acting seat's records and show the
+  feature set changes.
+- **Gates:** `ti4-policy --lib` **135/0** (132 after M09-022); workspace **1378/0** (1375 after
+  M09-022); clippy clean in `ti4-policy`; rustfmt clean with changed lines confined to code this
+  package added; `git diff --check` clean. Both pins pass with no legacy value moved.
+- **Open items:** O-M09-023-1 (LOW) alias-absence measured on one fixture position and one choice
+  kind; O-M09-023-2 (INFO) emitting `opponent-secrets-held:0` is a judgement the plan does not
+  settle; O-M09-023-3 (INFO) per-choice cost unmeasured.
+- **Status:** implementation complete, gates green, pending independent Tier-C review. With rows
+  019–023 landed, **M09-024** (dense vocabulary, OOV registry and capacity) becomes
+  dependency-ready. **M09-025** (CPU libtorch/tch adapter) has been ready since row 019.
