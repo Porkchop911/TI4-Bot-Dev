@@ -5191,3 +5191,40 @@ approved inputs                                        768/768 games, artifact p
 
 M09-025 F1's durable acquisition/recovery recipe — the manifest pins the bytes but does not yet say
 how to reproduce the omitted 368 MB. That is the last item from this round.
+
+## Independent correction recheck at `9db6bbf` (Codex frontier, 2026-08-25)
+
+Rechecked `9bdb297`, `0ed0cfb`, and `9db6bbf` in dependency order. Durable verdicts and exact
+findings are in the four package review files.
+
+- **M09-024b1 accepted.** The five approved `*-unit` families are now a closed inventory; focused
+  projection tests passed 12/0 and the regenerated vocabulary retained SHA-256
+  `14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`.
+- **M09-024b2 changes required.** It verifies only a 64-bit checkpoint prefix, and its Windows
+  two-file vocabulary/provenance publication is not an atomic recoverable generation. Required
+  forced-failure/publication regressions are absent.
+- **M09-025 changes required.** Deterministic configuration and canonical duplicate reduction are
+  corrected, and the acquisition recipe is now durable. Cargo tracks only the manifest, however,
+  so source-library-only drift can bypass the build verifier on an up-to-date build; the required
+  conversion-failure regression is also absent.
+- **M09-026 changes required.** Identity embedding, typed faction lookup, softmax, and inactive-row
+  masking are corrected. `Actor::zeros` can still create fewer than 33 rows behind the typed key;
+  the smoke consumes unverified vocabulary/pool paths; and model errors still become successful
+  random legal choices unless each caller remembers to inspect a side counter.
+
+Independent checks:
+
+```
+cargo test -p ti4-policy --lib projection       12 passed, 0 failed
+cargo test -p ti4-tensor                        11 + 1 passed, 0 failed
+cargo test -p ti4-training --lib vocabulary_corpus
+                                                  3 passed, 0 failed
+cargo test -p ti4-mlp                           22 passed, 0 failed
+release mlp_smoke --seed 999000111              exit 0, 448 model decisions, 0 fallbacks
+release mlp_smoke --seed 999000111 --force-inference-failure
+                                                  exit 4, 63 fallbacks
+```
+
+Current frontier: M09-024b2, M09-025, and M09-026 are open. M09-027 is blocked until all three are
+corrected and independently accepted. Next safe action is correction of the dependency roots,
+starting with M09-024b2/M09-025 before M09-026.

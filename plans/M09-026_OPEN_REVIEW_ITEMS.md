@@ -143,3 +143,23 @@ smoke, --force-inference-failure          76 fallbacks, exit 4
 M09-024b2's five findings, and M09-025 F1's acquisition/recovery recipe. 024b2 needs regenerating
 regardless: the unit-family predicate changed in F-M09-024b1-3, so the retained artifact must be
 rebuilt and its identity re-confirmed.
+
+## Independent Tier-C recheck of `0ed0cfb` at `9db6bbf` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+Independent gates: `cargo test -p ti4-mlp` — **22 passed, 0 failed**; release smoke at seed
+`999000111` — **448 model decisions, 0 fallbacks, 159,384 assigned lookups, exit 0**; forced
+inference failure — **63 fallbacks, exit 4**. The identity embedding, typed roster lookup, stable
+softmax, and derived inactive-row mask close F-M09-026-1, -2, -4, and -5. The live boundary remains
+unacceptable for three reasons.
+
+| ID | Severity | Recheck finding | Required correction |
+|---|---|---|---|
+| F-M09-026-7 | **HIGH** | `Actor::zeros(width, capacity, factions)` still accepts an arbitrary faction-row count. `FactionRow` can validly name any of 33 rows, but an actor constructed with fewer rows will pass the typed API and panic in `embedding.get`/`delta.get`. The type therefore does not actually guarantee the roster-sized model it claims. | Remove the caller-supplied faction count and always allocate `FACTION_ROSTER.len()` rows, or make construction fallible and require exactly 33. Add too-small/too-large construction regressions and prove every valid `FactionRow` is safe. |
+| F-M09-026-8 | **HIGH** | `mlp_smoke` still reads `slots.json` with `read_to_string` and the pool with `MapPool::load`. Neither input is checked against a durable digest/role, and both are reparsed from paths rather than unified verified buffers. The correction therefore did not implement F-M09-026-6's first sentence; an arbitrary valid vocabulary or final/unknown pool can produce a successful “independent coverage” report. | Verify the exact accepted vocabulary generation and an allowed Train/Validation pool before use, parse every consumer from those verified bytes, and add wrong-vocabulary plus wrong-role/final-pool refusal tests. |
+| F-M09-026-9 | **HIGH** | `MlpBot::choose_seeing` still converts every model error into `Ok(random_legal_choice)`. The new public counter invalidates this one example because the example remembers to inspect it, but the decider API itself does not make inspection mandatory; another simulation/training/profile consumer can report a successful game while ignoring the counter. This remains caller convention, not the required fail-closed boundary. | Surface a typed inference failure through the game/campaign boundary, or wrap the bot in a result contract whose success cannot be obtained without consuming and validating the inference status. Ensure every current and future training/profile/smoke entry point uses that boundary. Keep the forced-failure regression. |
+
+M09-026 also remains dependency-blocked by the open M09-024b2 and M09-025 rechecks.
+
+**Verdict: changes required.** M09-027 remains blocked.

@@ -121,3 +121,22 @@ approved inputs                                        768/768 games, artifact p
 
 M09-025 F1's durable acquisition/recovery recipe — the manifest pins the bytes but does not yet say
 how to reproduce the omitted 368 MB. That is the last item from this round.
+
+## Independent Tier-C recheck of `9db6bbf` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+Independent gate: `cargo test -p ti4-training --lib vocabulary_corpus` — **3 passed, 0 failed**.
+The retained vocabulary identity remains unchanged. F-M09-024b2-2 and F-M09-024b2-3 are
+substantively corrected, and the fixed schedule closes the executable part of F-M09-024b2-4. The
+package is not accepted because the input and publication contracts still fail closed only
+partially.
+
+| ID | Severity | Recheck finding | Required correction |
+|---|---|---|---|
+| F-M09-024b2-6 | **HIGH** | The checkpoint gate compares only the 16-hex-character `R6_CHECKPOINT_SHA_PREFIX`, even though `ti4_sim::artifacts::is_known_checkpoint` already carries the accepted full SHA-256. A different envelope sharing that 64-bit prefix is accepted and published as r6, so F1's “durable accepted identity” is not enforced. | Require the exact full digest through the durable artifact manifest (and specifically the r6 identity, not merely any known checkpoint). Continue parsing only the already-verified bytes. Add an otherwise valid checkpoint fixture whose digest does not exactly match. |
+| F-M09-024b2-7 | **HIGH** | The two-file publication is neither atomic nor recoverable on the supported Windows runtime. `std::fs::rename(staged, destination)` does not replace an existing destination on Windows, and after the vocabulary rename succeeds the provenance is written separately with direct `fs::write`. A provenance failure therefore leaves a newly published artifact with missing/stale provenance while `refuse` incorrectly prints “No artifact was written.” Neither file is synced. | Publish the vocabulary and its provenance as one recoverable generation, with staged, flushed/synced, reread, hashed, parsed, mutually bound bytes and a Windows-safe replacement/rollback protocol. A failure at any publication step must leave the prior accepted generation intact and report state truthfully. Add existing-destination and injected-second-file-failure regressions. |
+| F-M09-024b2-8 | **MEDIUM** | The required forced-campaign-failure and publication-failure regressions were not added. The only focused tests are the three pre-existing `vocabulary_corpus` source tests, so the critical refusal paths are evidenced only by an ad hoc successful campaign and two input substitutions. | Add bounded tests that inject a rollout/campaign failure and a publication failure and prove neither can replace or partially update the accepted generation. |
+
+**Verdict: changes required.** M09-024b2 and therefore M09-024 remain open; M09-026 cannot be
+accepted on this dependency frontier.

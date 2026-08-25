@@ -206,6 +206,22 @@ architecture review a new family requires.
 `-unit` itself and `faction-start-unit-unit`, and confirms the fixed `faction-start-unit` keeps its
 own role.
 
+## Independent Tier-C recheck of `9bdb297` (2026-08-25) — accepted
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+The correction closes F-M09-024b1-3. `APPROVED_UNIT_FAMILIES` is now the finite five-family
+inventory approved by the architecture ruling; `role_of` uses membership rather than an open
+`-unit` suffix match. The regression exercises all five approved families and rejects both an
+unknown `never-reviewed-unit` family and suffix edge cases. The downstream discovery rerun retained
+the previously reviewed bytes, SHA-256
+`14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`.
+
+Independent gate: `cargo test -p ti4-policy --lib projection` — **12 passed, 0 failed**.
+
+**Verdict: accepted.** M09-024b1 has no open review finding. This does not accept M09-024b2, whose
+separate recheck is recorded in its own review file.
+
 ### F-M09-025-1 — the manifest is now a gate rather than a document
 
 Correct and the most consequential of the four. M09-025 committed a SHA-256 manifest and pointed

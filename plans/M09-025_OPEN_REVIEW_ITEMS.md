@@ -132,3 +132,20 @@ M09-025 F1's "durable acquisition/recovery recipe" is not yet written — the ma
 but does not say how to reproduce the omitted 368 MB. M09-026's six findings and M09-024b2's five
 are untouched; 024b2 must in any case be regenerated now that the unit-family predicate has changed,
 which is what F-M09-024b1-3 required.
+
+## Independent Tier-C recheck of `9bdb297..9db6bbf` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+Independent gates: `cargo test -p ti4-tensor` — **11 unit + 1 integration passed, 0 failed**;
+the acquisition/recovery recipe is now durably recorded in `plans/evidence/M09-025.md`.
+F-M09-025-2 and F-M09-025-3 are closed, and F-M09-025-4's API no longer converts an error to an
+empty result. Two review requirements remain.
+
+| ID | Severity | Recheck finding | Required correction |
+|---|---|---|---|
+| F-M09-025-5 | **HIGH** | Both build scripts emit `cargo:rerun-if-changed` only for the manifest. Once a crate is up to date, modifying a gitignored pinned DLL or adding an extra DLL under `LIBTORCH/lib` does not make Cargo rerun the verifier. The next ordinary `cargo test` can therefore execute/link changed library bytes while the manifest gate is skipped. The recorded mutation run necessarily caused a rebuild by some other change and does not establish the normal incremental-build boundary. | Emit rerun tracking for every pinned source path and for the library directory (covering additions/removals), in both consuming crates, or centralize an equivalent verifier that Cargo is guaranteed to execute whenever usable libtorch bytes can change. Add an incremental regression: first complete an up-to-date build, mutate/add only a source library, invoke Cargo without touching Rust or the manifest, and require refusal. |
+| F-M09-025-6 | **MEDIUM** | The correction did not add the required conversion-failure regression. All 11 library tests exercise successful `to_vec` conversions, so a future error-to-empty regression remains undetected even though the current return type is fallible. | Add a tensor/device/layout fixture that makes `to_vec` return `TensorError::Conversion`, and assert it cannot be confused with a genuinely empty tensor. |
+
+**Verdict: changes required.** The recovery-recipe portion of F-M09-025-1 is closed, but the pin
+is not an incremental Cargo gate yet. M09-025 remains open.
