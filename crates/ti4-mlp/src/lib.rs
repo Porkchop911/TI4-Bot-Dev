@@ -318,7 +318,7 @@ pub fn stable_softmax(scores: &Tensor) -> Vec<f64> {
     let weights = shifted.exp();
     let total = weights.sum(Kind::Float);
     let normalised = weights / total;
-    ti4_tensor::to_vec(&normalised)
+    ti4_tensor::to_vec_or_panic(&normalised)
         .into_iter()
         .map(f64::from)
         .collect()
@@ -432,8 +432,8 @@ mod tests {
                 option(&[], &[]),
                 option(&[42, 41, 40], &[0.3, -0.3, 0.9]),
             ];
-            let sparse = ti4_tensor::to_vec(&actor.trunk(&options).expect("sparse"));
-            let dense = ti4_tensor::to_vec(&dense_trunk(&actor, &options));
+            let sparse = ti4_tensor::to_vec_or_panic(&actor.trunk(&options).expect("sparse"));
+            let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options));
             assert_eq!(sparse.len(), dense.len());
             assert!(!sparse.is_empty());
             // Non-vacuity: a zero trunk would agree with anything.
@@ -472,7 +472,7 @@ mod tests {
                 actor.trunk(&options).expect("sparse")
             };
             z.sum(Kind::Float).backward();
-            ti4_tensor::to_vec(&actor.input.grad())
+            ti4_tensor::to_vec_or_panic(&actor.input.grad())
         };
 
         let sparse = grad_of(false);
@@ -528,11 +528,13 @@ mod tests {
         // rather than an untrained output row. Every seat must therefore agree at initialisation.
         let actor = actor(Width::W128);
         let options = vec![option(&[3, 17], &[1.0, 0.5]), option(&[7], &[0.25])];
-        let first = ti4_tensor::to_vec(&actor.logits(&options, "movement", 0).expect("logits"));
+        let first =
+            ti4_tensor::to_vec_or_panic(&actor.logits(&options, "movement", 0).expect("logits"));
         assert!(first.iter().any(|value| *value != 0.0), "vacuous fixture");
         for seat in [1_usize, 17, FACTIONS - 1] {
-            let other =
-                ti4_tensor::to_vec(&actor.logits(&options, "movement", seat).expect("logits"));
+            let other = ti4_tensor::to_vec_or_panic(
+                &actor.logits(&options, "movement", seat).expect("logits"),
+            );
             assert_eq!(first, other, "seat {seat} differs with a zero residual");
         }
     }
@@ -544,7 +546,7 @@ mod tests {
         let mut actor = actor(Width::W128);
         let probe = [option(&[3], &[1.0])];
         let read = |actor: &Actor, head: &str, seat: usize| -> Vec<f32> {
-            ti4_tensor::to_vec(&actor.logits(&probe, head, seat).expect("logits"))
+            ti4_tensor::to_vec_or_panic(&actor.logits(&probe, head, seat).expect("logits"))
         };
 
         let own_before = read(&actor, "movement", 4);
@@ -633,10 +635,10 @@ mod tests {
             .collect();
         let logits = actor.logits(&options, "activation", 9).expect("logits");
         assert_eq!(logits.size(), vec![64]);
-        let values = ti4_tensor::to_vec(&logits);
+        let values = ti4_tensor::to_vec_or_panic(&logits);
         assert!(values.iter().all(|value| value.is_finite()));
-        let dense = ti4_tensor::to_vec(&dense_trunk(&actor, &options));
-        let sparse = ti4_tensor::to_vec(&actor.trunk(&options).expect("sparse"));
+        let dense = ti4_tensor::to_vec_or_panic(&dense_trunk(&actor, &options));
+        let sparse = ti4_tensor::to_vec_or_panic(&actor.trunk(&options).expect("sparse"));
         for (a, b) in sparse.iter().zip(dense.iter()) {
             assert!(close(*a, *b), "sparse {a} against dense {b}");
         }

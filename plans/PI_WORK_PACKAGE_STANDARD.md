@@ -2,8 +2,8 @@
 
 ## Models and reviews
 
-- Default implementer: Qwen 3.6 35B through Pi v0.84.1.
-- Qwen 27B: mechanical fixtures, renames, or repetitive tables only after a successful sampled review.
+- Default implementer: Qwen 3.8 27B through Pi v0.84.2.
+- Qwen 3.6 35B: superseded as the default. Historical evidence naming it stays as written.
 - Frontier model: architecture, critical logic, milestone exits, security, training mathematics, and performance validation.
 - The implementer must not be the only reviewer of its own patch.
 
@@ -50,7 +50,7 @@ Definition of done
 ## Escalation
 
 - First failure: same Qwen context diagnoses and retries.
-- Second failure: fresh Qwen 35B context independently diagnoses the invariant.
+- Second failure: fresh Qwen 3.8 27B context independently diagnoses the invariant.
 - Third failure, nondeterminism, or architecture conflict: frontier model takes over.
 - A flaky test blocks merge; rerunning until green is not acceptance.
 

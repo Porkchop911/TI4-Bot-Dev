@@ -34,6 +34,12 @@ pub enum TensorError {
     /// A column index is outside the allocated capacity.
     #[error("column {column} is outside a table of {capacity} rows")]
     OutOfRange { column: i64, capacity: i64 },
+    /// A feature value was NaN or infinite.
+    #[error("feature value {value} is not finite")]
+    NotFinite { value: f32 },
+    /// A tensor could not be converted to host values.
+    #[error("tensor conversion failed: {0}")]
+    Conversion(String),
     /// The deterministic configuration did not take effect.
     ///
     /// §7.2 requires the settings to be *enforced*, not merely requested. Setting a thread count
@@ -91,20 +97,39 @@ pub fn backend() -> Backend {
 /// # Errors
 /// [`TensorError::NotEnforced`] if libtorch does not report the settings that were requested.
 pub fn configure_deterministic(seed: i64) -> Result<Backend, TensorError> {
+    // libtorch's thread counts and RNG are process-global, and cargo runs a binary's tests in
+    // parallel threads of one process. Without this lock, one test's configuration and another's
+    // read interleave and the gate becomes scheduler-dependent rather than deterministic — which
+    // is not a gate (F-M09-025-2, harness note).
+    let _serialised = CONFIG_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     tch::set_num_threads(1);
     pin_interop_threads();
     tch::manual_seed(seed);
 
     let reported = backend();
-    if reported.intra_op_threads != 1 {
-        return Err(TensorError::NotEnforced {
-            setting: "intra-op threads",
-            wanted: 1,
-            got: i64::from(reported.intra_op_threads),
-        });
+    // **Both** counts. `pin_interop_threads` swallows libtorch's refusal so a second call cannot
+    // take the process down, and an earlier version then returned `Ok` regardless — a swallowed
+    // failure reported as successful configuration, which is exactly the shape §7.2 warns about
+    // (F-M09-025-2).
+    for (setting, got) in [
+        ("intra-op threads", reported.intra_op_threads),
+        ("inter-op threads", reported.inter_op_threads),
+    ] {
+        if got != 1 {
+            return Err(TensorError::NotEnforced {
+                setting,
+                wanted: 1,
+                got: i64::from(got),
+            });
+        }
     }
     Ok(reported)
 }
+
+/// Serialises every global libtorch configuration change.
+static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Attempt the inter-op pool size exactly once per process.
 ///
@@ -180,6 +205,12 @@ pub fn gather_reduce(
             capacity,
         });
     }
+    if let Some(bad) = values.iter().copied().find(|value| !value.is_finite()) {
+        // A NaN has no place in a total order and none in a logit; an infinity poisons every sum
+        // downstream. Refused here rather than propagated into a softmax that would return a
+        // plausible-looking distribution.
+        return Err(TensorError::NotFinite { value: bad });
+    }
     if columns.is_empty() {
         // An empty vector is a legal input — a decision whose every feature was out of vocabulary.
         // It contributes the zero row, not an error and not a panic.
@@ -191,7 +222,20 @@ pub fn gather_reduce(
         .copied()
         .zip(values.iter().copied())
         .collect();
-    pairs.sort_by_key(|(column, _)| *column);
+    // Sorting by column alone is not enough. Rust's sort is stable, so duplicate columns kept the
+    // *caller's* order — and f32 addition is not associative, so a caller handing one column
+    // large-positive, large-negative and small contributions in a different order got a different
+    // sum (F-M09-025-3). Duplicates are explicitly legal, so the order among them is part of the
+    // contract, not an accident of the sort.
+    //
+    // The tie-break is the value's bit pattern under a total order. Non-finite values are rejected
+    // above, so nothing incomparable reaches it, and `-0.0` and `+0.0` get a defined relative order
+    // rather than comparing equal and falling back to caller order.
+    pairs.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| total_order_key(left.1).cmp(&total_order_key(right.1)))
+    });
     let sorted_columns: Vec<i64> = pairs.iter().map(|(column, _)| *column).collect();
     let sorted_values: Vec<f32> = pairs.iter().map(|(_, value)| *value).collect();
 
@@ -206,10 +250,41 @@ pub fn matmul(left: &Tensor, right: &Tensor) -> Tensor {
     left.matmul(right)
 }
 
-/// A tensor's values as `f32`, for assertions and for recording evidence.
+/// A total order over `f32` bit patterns, for breaking ties among duplicate columns.
+///
+/// Flip the sign bit for non-negative values and invert everything for negative ones: the
+/// resulting `u32` orders exactly as the float does, and unlike `partial_cmp` it is *total*, which
+/// is what a sort comparator needs. Non-finite values never reach it.
+const fn total_order_key(value: f32) -> u32 {
+    let bits = value.to_bits();
+    if bits & 0x8000_0000 == 0 {
+        bits ^ 0x8000_0000
+    } else {
+        !bits
+    }
+}
+
+/// A tensor's values as `f32`.
+///
+/// Fallible on purpose. An earlier version returned `unwrap_or_default()`, so an unsupported dtype
+/// or a failed conversion produced an empty vector that every downstream assertion accepted as a
+/// legitimately empty tensor (F-M09-025-4). A helper documented for assertions and evidence is the
+/// last place a silent empty result belongs.
+///
+/// # Errors
+/// [`TensorError::Conversion`] carrying the underlying reason.
+pub fn to_vec(tensor: &Tensor) -> Result<Vec<f32>, TensorError> {
+    Vec::<f32>::try_from(tensor.contiguous().view([-1]))
+        .map_err(|error| TensorError::Conversion(error.to_string()))
+}
+
+/// [`to_vec`], panicking on a conversion failure. For tests and diagnostics only.
+///
+/// # Panics
+/// If the conversion fails — loudly, which is the point.
 #[must_use]
-pub fn to_vec(tensor: &Tensor) -> Vec<f32> {
-    Vec::<f32>::try_from(tensor.contiguous().view([-1])).unwrap_or_default()
+pub fn to_vec_or_panic(tensor: &Tensor) -> Vec<f32> {
+    to_vec(tensor).expect("tensor converts to f32 values")
 }
 
 #[cfg(test)]
@@ -238,19 +313,11 @@ mod tests {
             1,
             "libtorch disagrees with the report"
         );
-        // Non-vacuity: the setting is one libtorch can actually change, so asserting it equals 1
-        // is not asserting a constant.
-        tch::set_num_threads(2);
-        assert_eq!(
-            tch::get_num_threads(),
-            2,
-            "the thread count is not settable at all"
-        );
-        configure_deterministic(SEED).expect("re-pinned");
-        assert_eq!(tch::get_num_threads(), 1);
-        // Inter-op is deliberately not asserted here: it is settable once per process and this
-        // process shares itself with every other test in the binary. `tests/interop.rs` proves it
-        // in a process of its own.
+        // Non-vacuity is deliberately **not** checked here by mutating the thread count. It is a
+        // process-global setting and this process is shared with every other test in the binary,
+        // so a temporary change races anything that reads it. `tests/interop.rs` does it in a
+        // process of its own.
+        assert_eq!(reported.inter_op_threads, 1, "both counts are enforced");
     }
 
     #[test]
@@ -278,8 +345,8 @@ mod tests {
             "the fixture must be large enough to reorder"
         );
 
-        let first = to_vec(&gather_reduce(&table, &columns, &values).expect("reduces"));
-        let second = to_vec(&gather_reduce(&table, &columns, &values).expect("reduces"));
+        let first = to_vec_or_panic(&gather_reduce(&table, &columns, &values).expect("reduces"));
+        let second = to_vec_or_panic(&gather_reduce(&table, &columns, &values).expect("reduces"));
         assert_eq!(first.len(), usize::try_from(width).expect("small"));
         assert_eq!(first, second, "the same input produced a different sum");
         assert!(
@@ -301,7 +368,7 @@ mod tests {
         )]
         let values: Vec<f32> = columns.iter().map(|c| 1.0 - (*c as f32) * 0.0005).collect();
 
-        let forward = to_vec(&gather_reduce(&table, &columns, &values).expect("reduces"));
+        let forward = to_vec_or_panic(&gather_reduce(&table, &columns, &values).expect("reduces"));
         let mut reversed: Vec<(i64, f32)> = columns
             .iter()
             .copied()
@@ -310,8 +377,9 @@ mod tests {
         reversed.reverse();
         let reversed_columns: Vec<i64> = reversed.iter().map(|(c, _)| *c).collect();
         let reversed_values: Vec<f32> = reversed.iter().map(|(_, v)| *v).collect();
-        let backward =
-            to_vec(&gather_reduce(&table, &reversed_columns, &reversed_values).expect("reduces"));
+        let backward = to_vec_or_panic(
+            &gather_reduce(&table, &reversed_columns, &reversed_values).expect("reduces"),
+        );
 
         assert_ne!(
             columns, reversed_columns,
@@ -330,8 +398,73 @@ mod tests {
         let _ = table.narrow(0, 1, 1).fill_(2.0);
 
         // Column 1 twice: the row is worth 2.0 per element, so 0.5 + 0.25 of it is 1.5.
-        let summed = to_vec(&gather_reduce(&table, &[1, 1], &[0.5, 0.25]).expect("reduces"));
+        let summed =
+            to_vec_or_panic(&gather_reduce(&table, &[1, 1], &[0.5, 0.25]).expect("reduces"));
         assert_eq!(summed, vec![1.5, 1.5, 1.5]);
+    }
+
+    #[test]
+    fn duplicate_contributions_are_summed_in_a_canonical_order() {
+        // F-M09-025-3. Sorting by column alone left duplicates in caller order, and f32 addition
+        // is not associative: a large positive, a large negative and a small value summed in a
+        // different order give a different last bit, and a softmax over near-tied logits turns a
+        // last bit into a different action. Every permutation must give bit-identical output.
+        configure_deterministic(SEED).expect("configured");
+        let table = zeros_table(4, 3);
+        let mut row = table.narrow(0, 1, 1);
+        let _ = row.fill_(1.0);
+
+        let contributions: [f32; 3] = [1.0e7, -1.0e7, 0.125];
+        let permutations = [
+            [0usize, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        let mut results = Vec::new();
+        for order in permutations {
+            let values: Vec<f32> = order.iter().map(|i| contributions[*i]).collect();
+            let reduced = gather_reduce(&table, &[1, 1, 1], &values).expect("reduces");
+            results.push(to_vec_or_panic(&reduced));
+        }
+        // Non-vacuity: these values really are order-sensitive in f32. Summed left to right the
+        // small term is lost against the large ones; the canonical order is what makes the answer
+        // one answer rather than whichever the caller happened to produce.
+        let naive_forward = (contributions[0] + contributions[1]) + contributions[2];
+        let naive_reverse = (contributions[2] + contributions[1]) + contributions[0];
+        assert!(
+            (naive_forward - naive_reverse).abs() > 0.0,
+            "the fixture is not order-sensitive, so the test proves nothing"
+        );
+
+        for (index, result) in results.iter().enumerate() {
+            assert_eq!(
+                *result, results[0],
+                "permutation {index} produced a different sum"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_finite_feature_value_is_refused() {
+        // A NaN has no place in a total order and none in a logit; an infinity poisons every sum
+        // downstream. Both are refused rather than propagated into a softmax that would return a
+        // plausible-looking distribution.
+        configure_deterministic(SEED).expect("configured");
+        let table = zeros_table(8, 4);
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(
+                matches!(
+                    gather_reduce(&table, &[1], &[bad]),
+                    Err(TensorError::NotFinite { .. })
+                ),
+                "{bad} was accepted"
+            );
+        }
+        // And a finite value still passes, so the guard is not rejecting everything.
+        assert!(gather_reduce(&table, &[1], &[1.5]).is_ok());
     }
 
     #[test]
@@ -340,7 +473,7 @@ mod tests {
         configure_deterministic(SEED).expect("configured");
         let table = Tensor::rand([16, 8], (Kind::Float, Device::Cpu));
         let empty = gather_reduce(&table, &[], &[]).expect("an empty vector is legal");
-        assert_eq!(to_vec(&empty), vec![0.0; 8]);
+        assert_eq!(to_vec_or_panic(&empty), vec![0.0; 8]);
     }
 
     #[test]
@@ -372,10 +505,10 @@ mod tests {
         // M09-024a's capacity headroom assumes rows above `slot_count` are zero, and M09-026/028
         // must keep asserting it. The allocation is where that starts being true.
         let table = zeros_table(64, 16);
-        assert_eq!(to_vec(&table), vec![0.0; 64 * 16]);
+        assert_eq!(to_vec_or_panic(&table), vec![0.0; 64 * 16]);
         let reduced = gather_reduce(&table, &[63], &[1.0]).expect("reduces");
         assert_eq!(
-            to_vec(&reduced),
+            to_vec_or_panic(&reduced),
             vec![0.0; 16],
             "a free row contributed something"
         );

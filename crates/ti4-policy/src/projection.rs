@@ -130,9 +130,16 @@ const FAMILY_ROLES: [(&str, FamilyRole); 39] = [
 /// family nobody decided to put in the model.
 #[must_use]
 pub fn role_of(family: &str) -> Option<FamilyRole> {
-    // The bounded `<canonical-kind>-unit` suffix rule shares one entry, since its left half varies
-    // with the choice kind.
-    let key = if family.ends_with("-unit") {
+    // The `<canonical-kind>-unit` families share one registry entry, but admission is **not** a
+    // suffix test. An earlier draft mapped every family ending in `-unit` to the shared role, so
+    // `never-reviewed-unit:x` was admitted — reopening by suffix exactly the closed default this
+    // classification exists to hold (F-M09-024b1-3). Checkpoint names are a discovery source, so an
+    // arbitrary historical `*-unit` family would have entered the dense vocabulary without the
+    // architecture review a new family requires.
+    //
+    // The approved list is pinned instead, and an unrecognised suffix family falls through to
+    // `None` like any other unclassified name.
+    let key = if APPROVED_UNIT_FAMILIES.contains(&family) {
         crate::vocabulary::UNIT_SUFFIX_FAMILY
     } else {
         family
@@ -142,6 +149,21 @@ pub fn role_of(family: &str) -> Option<FamilyRole> {
         .find(|(name, _)| *name == key)
         .map(|(_, role)| *role)
 }
+
+/// The `<canonical-kind>-unit` families approved for the dense input.
+///
+/// Frozen, for the same reason `OOV_FAMILIES_V1` is: the left half is a canonical decision kind and
+/// `canonical_feature_kind` passes unknown kinds through unchanged, so the set of families the
+/// extractor *could* emit is open. The set the architecture approved is not. Adding one is a
+/// review, and `every_approved_unit_family_is_emitted_by_the_grammar` fails when this list and the
+/// observed families disagree.
+pub const APPROVED_UNIT_FAMILIES: [&str; 5] = [
+    "commit-unit",
+    "load-unit",
+    "move-unit",
+    "produce-unit",
+    "transit-unit",
+];
 
 /// Whether a family is an unbounded memorisation cross.
 #[must_use]
@@ -598,11 +620,35 @@ mod tests {
     }
 
     #[test]
-    fn the_unit_suffix_rule_resolves_to_one_role() {
-        // `<canonical-kind>-unit` families share one registry entry, so they must share one role
-        // rather than falling through to unclassified.
-        assert_eq!(role_of("commit-unit"), Some(FamilyRole::Transferable));
-        assert_eq!(role_of("produce-unit"), Some(FamilyRole::Transferable));
-        assert!(admits("commit-unit:cost"));
+    fn every_approved_unit_family_resolves_and_no_other_does() {
+        // F-M09-024b1-3. The five approved families share one registry entry and one role; an
+        // unapproved `-unit` family is unclassified and therefore denied, because admission is a
+        // pinned list rather than a suffix test. Checkpoint names are a discovery source, so a
+        // suffix test would let an arbitrary historical family into the dense vocabulary.
+        for family in APPROVED_UNIT_FAMILIES {
+            assert_eq!(
+                role_of(family),
+                Some(FamilyRole::Transferable),
+                "{family} is approved but unclassified"
+            );
+            assert!(admits(&format!("{family}:cost")), "{family} was denied");
+        }
+        for family in [
+            "never-reviewed-unit",
+            "sneaky-unit",
+            "-unit",
+            "faction-start-unit-unit",
+        ] {
+            assert_eq!(role_of(family), None, "{family} resolved a role");
+            assert!(
+                !admits(&format!("{family}:anything")),
+                "{family} was admitted by suffix"
+            );
+        }
+        // The fixed family that merely looks like one keeps its own role.
+        assert_eq!(
+            role_of("faction-start-unit"),
+            Some(FamilyRole::Transferable)
+        );
     }
 }

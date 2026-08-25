@@ -121,6 +121,14 @@ own face-up note would list itself as an issuer. Harmless today: `baf` tests
 face-up own note. Worth a one-line guard or a comment recording why none is needed, so the
 asymmetry between the two functions is deliberate rather than incidental.
 
+## Toolchain note
+
+Raised during this review and resolved by operator direction: the resident model is
+**Qwen 3.8 27B**, and Pi is **0.84.2**. Both are current — `AGENTS.md:80` and
+`PI_WORK_PACKAGE_STANDARD.md:5` were stale, naming Qwen 3.6 35B and Pi 0.84.1. Both governing
+documents have been updated. Evidence files naming the older model record what actually
+reviewed those packages at the time and were deliberately left unchanged.
+
 ## Disposition
 
 **Accept.** L1 should be recorded in the evidence before the package commits; L2 belongs in the

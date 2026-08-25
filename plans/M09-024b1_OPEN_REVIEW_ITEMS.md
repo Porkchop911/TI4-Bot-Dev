@@ -184,3 +184,107 @@ M09-026/M09-028 do not inherit conflicting requirements.
 
 **Disposition:** the operator override remains an operator override, not a reviewer acceptance.
 M09-024b1 still needs correction and recheck; M09-024b2 remains review-blocked by this predicate.
+
+## Dependency-root corrections: F-M09-024b1-3 and M09-025 F1–F4 (2026-08-25)
+
+Fifteen findings landed across four packages. These are the two roots — the vocabulary admission
+predicate and the tensor boundary — corrected first, because M09-024b2 and M09-026 both sit on them
+and any fix above them would have to be redone.
+
+### F-M09-024b1-3 — the wildcard reopened by suffix what the classification had just closed
+
+Correct, and it is the same hole one level down. `role_of` mapped **every** family ending in
+`-unit` to the shared transferable role, so `never-reviewed-unit:x` was admitted — after the F1
+correction had made admission closed by default. Checkpoint names are a discovery source, so an
+arbitrary historical `*-unit` family would have entered the dense vocabulary without the
+architecture review a new family requires.
+
+`APPROVED_UNIT_FAMILIES` now pins the five: `commit-unit`, `load-unit`, `move-unit`,
+`produce-unit`, `transit-unit`. Admission is membership, not a suffix test, so an unrecognised
+`-unit` family falls through to `None` like any other unclassified name.
+`every_approved_unit_family_resolves_and_no_other_does` asserts both directions, including
+`-unit` itself and `faction-start-unit-unit`, and confirms the fixed `faction-start-unit` keeps its
+own role.
+
+### F-M09-025-1 — the manifest is now a gate rather than a document
+
+Correct and the most consequential of the four. M09-025 committed a SHA-256 manifest and pointed
+`LIBTORCH` at gitignored bytes, and **nothing compared them**. A changed `out/libtorch-2.9.1-cpu`
+would have been linked with every committed checksum still green. That is not a pin; it is a
+filename.
+
+`build.rs` now verifies every pinned file against the manifest **before** anything is linked or
+staged, refuses any DLL present in the pinned directory but absent from the manifest, and stages by
+**content** rather than by filename — an earlier version skipped a same-named file, so a stale DLL
+from a previous pin kept being loaded. A missing manifest, an unreadable file, or a mismatch fails
+the build; no filesystem error is discarded.
+
+**Falsification, both halves.** One byte of `c10.dll` flipped:
+
+```
+error: failed to run custom build command for `ti4-tensor`
+  pinned libtorch file lib/c10.dll is 9c6b3a65…, manifest says 89853f00…
+  The pin is the bytes, not the path: restore the pinned copy or re-pin deliberately.
+```
+
+And a stale `c10.dll` planted in `target/debug`: the build replaced it, and the staged file's digest
+afterwards matches the pinned one. Both reverted.
+
+### F-M09-025-2 — a swallowed failure was being reported as success
+
+Correct. `configure_deterministic` checked intra-op only, while `pin_interop_threads` swallowed
+libtorch's refusal — so a configuration that did not take effect returned `Ok`. It now enforces
+**both** counts and errors if either is not 1.
+
+The harness concern is fixed too. A `CONFIG_LOCK` serialises every global configuration change,
+because libtorch's thread counts and RNG are process-global and cargo runs a binary's tests in
+parallel threads of one process — the gate was scheduler-dependent, which is not a gate. The
+non-vacuity check that temporarily set the count to 2 is **removed** from the shared process; it
+raced anything reading the value. `tests/interop.rs` is the process where global configuration is
+safe to assert, and it remains one test.
+
+### F-M09-025-3 — duplicates were summed in caller order
+
+Correct, and the sharpest of the four. `gather_reduce` sorted by column, Rust's sort is stable, so
+duplicate columns retained the **caller's** order. Duplicates are explicitly legal and f32 addition
+is not associative, so the same feature contributed as large-positive, large-negative and small
+gave a different sum depending on how the caller happened to order it — and a softmax over
+near-tied logits turns a last bit into a different action.
+
+The sort now breaks ties on the value's bit pattern under a total order, so `-0.0` and `+0.0` have
+a defined relative order rather than comparing equal and falling back to caller order. Non-finite
+values are refused before the sort: NaN has no place in a total order and none in a logit, and an
+infinity poisons every sum downstream.
+
+`duplicate_contributions_are_summed_in_a_canonical_order` runs **all six permutations** of
+`[1e7, -1e7, 0.125]` into one column and requires bit identity, and asserts first that the fixture
+really is order-sensitive in f32 — otherwise it would prove nothing.
+`a_non_finite_feature_value_is_refused` covers NaN and both infinities, and checks a finite value
+still passes so the guard is not rejecting everything.
+
+**Falsification:** reverting to `sort_by_key(column)` fails exactly that test — *"permutation 1
+produced a different sum"*.
+
+### F-M09-025-4 — a helper that turned failure into an empty result
+
+Correct. `to_vec` returned `unwrap_or_default()`, so a failed conversion produced an empty vector
+that every downstream assertion accepted as a legitimately empty tensor. It is now
+`Result<Vec<f32>, TensorError>` carrying the reason, with `to_vec_or_panic` for tests and
+diagnostics — loud rather than silent.
+
+### Gates
+
+```
+cargo test -p ti4-tensor                 11 + 1 passed, 0 failed   (9 + 1 before)
+cargo test --workspace                 1444 passed, 0 failed      (1442 before)
+cargo clippy (tensor, mlp, policy)        0 warnings in any touched file
+rustfmt --edition 2024 --check            clean
+git diff --check                          clean
+```
+
+### Still open from this round
+
+M09-025 F1's "durable acquisition/recovery recipe" is not yet written — the manifest pins the bytes
+but does not say how to reproduce the omitted 368 MB. M09-026's six findings and M09-024b2's five
+are untouched; 024b2 must in any case be regenerated now that the unit-family predicate has changed,
+which is what F-M09-024b1-3 required.
