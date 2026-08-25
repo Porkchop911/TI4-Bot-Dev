@@ -5510,6 +5510,6 @@ git diff --check                                     clean
 ```
 
 **Status:** M09-024b2 and M09-026 corrections are complete but not self-accepted. Their next exact
-action is a fresh independent Tier-C recheck of the correction commit. M09-027 remains blocked on
+action is a fresh independent Tier-C recheck of correction commit `f60a6c0`. M09-027 remains blocked on
 those acceptances. Unrelated user changes in `AGENTS.md` remain untouched and must not be included
 in the package commit.

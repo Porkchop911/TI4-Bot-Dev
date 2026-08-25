@@ -422,5 +422,5 @@ input-refusal tests run. Two fail-closed gaps remain:
 - `cargo test -p ti4-mlp` passes **28/28**; release smoke seed `999000111` completes with 448 model
   decisions and zero failures, while the forced-failure run aborts at step 0 with exit 4.
 
-The correction is implemented and locally verified, but it is **not self-accepted**. M09-026
-remains open pending a fresh independent Tier-C recheck of the correction commit.
+The correction is implemented and locally verified in `f60a6c0`, but it is **not self-accepted**.
+M09-026 remains open pending a fresh independent Tier-C recheck of that commit.

@@ -400,5 +400,5 @@ campaign regression remain sound. Two generation-integrity gaps prevent acceptan
 - Regressions cover missing provenance, same-slots/different-provenance immutability, and pointer
   traversal. Focused corpus tests now pass **13/13**.
 
-The correction is implemented and locally verified, but it is **not self-accepted**. M09-024b2
-remains open pending a fresh independent Tier-C recheck of the correction commit.
+The correction is implemented and locally verified in `f60a6c0`, but it is **not self-accepted**.
+M09-024b2 remains open pending a fresh independent Tier-C recheck of that commit.
