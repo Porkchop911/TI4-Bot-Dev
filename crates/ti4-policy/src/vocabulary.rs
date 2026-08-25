@@ -65,14 +65,74 @@ pub fn family_of(name: &str) -> &str {
     name.split_once(':').map_or(name, |(family, _)| family)
 }
 
-/// The families that get a reserved OOV column, in the versioned order they are allocated.
+/// The **frozen** version-1 reserved family order.
 ///
-/// Built from the two closed grammars the extractors emit — the legacy hashed prefixes and the
-/// explicit fixed families — plus one entry for the bounded `<canonical-kind>-unit` suffix rule,
-/// whose left half varies with the choice kind and so cannot be enumerated. Sorted, so the order
-/// is a function of the contents rather than of how the two lists happen to be written.
+/// This list is data, not a derivation. An earlier draft computed it from `FEATURE_PREFIXES` and
+/// `explicit_fixed_families()` and sorted the result, which made `OOV_REGISTRY_VERSION` decorative:
+/// adding an ordinary feature family — something the last three packages each did — would insert
+/// into the sorted order and shift every later reserved column, while the version still read 1. A
+/// trained weight addressed to an old OOV index would then quietly mean something else.
+///
+/// So the order is written down. Adding a family is a **migration decision**, taken by bumping
+/// [`OOV_REGISTRY_VERSION`] and writing a new list, not a side effect of editing a grammar. Until
+/// that decision is taken, a new family's unseen names route to the global column, which is the
+/// conservative direction. [`registry_matches_the_live_grammar`] fails loudly when the grammars
+/// and this list disagree, so the decision cannot be skipped by accident.
+const OOV_FAMILIES_V1: [&str; 38] = [
+    "*-unit",
+    "ability",
+    "card",
+    "destination",
+    "faction-commodities",
+    "faction-home",
+    "faction-start-tech",
+    "faction-start-unit",
+    "faction-tech",
+    "invasion",
+    "kind",
+    "kind-faction",
+    "landing",
+    "objective-count",
+    "objective-met",
+    "objective-need",
+    "objective-progress",
+    "objective-stage",
+    "opponent-secrets-held",
+    "option",
+    "option-faction",
+    "option-system",
+    "origin",
+    "pay",
+    "payload",
+    "payload-bool",
+    "payload-count",
+    "payload-number",
+    "payload-number-kind",
+    "placement",
+    "production",
+    "prompt-bigram",
+    "prompt-kind",
+    "prompt-option",
+    "route",
+    "state-kind",
+    "state-option",
+    "target",
+];
+
+/// The families that get a reserved OOV column, in the order they are allocated.
+///
+/// Returns the frozen list for the current [`OOV_REGISTRY_VERSION`]. It is not recomputed from the
+/// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
-pub fn oov_families() -> Vec<String> {
+pub fn oov_families() -> &'static [&'static str] {
+    &OOV_FAMILIES_V1
+}
+
+/// The families the live grammars say should be registered, sorted.
+///
+/// Only for comparison against the frozen registry. Nothing addresses a column by this.
+#[must_use]
+pub fn live_grammar_families() -> Vec<String> {
     let mut families: BTreeSet<String> = crate::features::FEATURE_PREFIXES
         .iter()
         .map(|prefix| prefix.trim_end_matches(':').to_owned())
@@ -85,6 +145,12 @@ pub fn oov_families() -> Vec<String> {
     families.insert(UNIT_SUFFIX_FAMILY.to_owned());
     families.into_iter().collect()
 }
+
+/// The column the global OOV always occupies.
+///
+/// Guaranteed by construction and re-checked by [`Vocabulary::validate`], so a lookup that falls
+/// all the way through has a defined destination rather than a hopeful `unwrap_or(0)`.
+pub const GLOBAL_OOV_COLUMN: usize = 0;
 
 /// Stands in for every `<canonical-kind>-unit` family at once.
 ///
@@ -129,6 +195,25 @@ pub enum VocabularyError {
         slots: usize,
         capacity: usize,
     },
+    /// The stored layout version is not one this build understands.
+    #[error(
+        "slots.json declares OOV registry version {found}, but this build supports {supported}"
+    )]
+    UnsupportedRegistry { found: u32, supported: u32 },
+    /// A reserved column is not the one the registry says belongs at that index.
+    #[error("reserved column {column}: expected {expected:?}, found {found:?}")]
+    ReservedLayout {
+        column: usize,
+        expected: String,
+        found: String,
+    },
+    /// The stored capacity is not the capacity the sizing rule gives for these slots.
+    #[error("capacity {stored} is not the {expected} the rule gives for {slots} slots")]
+    CapacityMismatch {
+        stored: usize,
+        expected: usize,
+        slots: usize,
+    },
     /// A stored key is not the key of the name beside it.
     ///
     /// Either the file was edited or the key function changed. Both mean every column addresses
@@ -166,13 +251,18 @@ pub struct Slot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vocabulary {
     /// Layout version of the reserved OOV columns.
-    pub oov_registry_version: u32,
+    ///
+    /// Fields are private and the accessors are read-only on purpose. Every invariant this type
+    /// carries — the reserved prefix, the capacity rule, key/name agreement — is established at
+    /// construction or at [`Self::validate`], and a `pub` field would let a caller undo any of
+    /// them afterwards without passing through either.
+    oov_registry_version: u32,
     /// How many leading columns are reserved OOV columns.
-    pub oov_count: usize,
+    oov_count: usize,
     /// Every assigned column, in index order. Index `i` is `slots[i]`.
-    pub slots: Vec<Slot>,
+    slots: Vec<Slot>,
     /// Physical rows allocated in the model tensor. `slots.len() <= capacity`.
-    pub capacity: usize,
+    capacity: usize,
     /// Column index by key, for lookup. Rebuilt on load rather than stored.
     #[serde(skip)]
     index: BTreeMap<FeatureKey, usize>,
@@ -220,7 +310,7 @@ impl Vocabulary {
             Ok(())
         };
         push_reserved(&mut slots, &mut ordered, GLOBAL_OOV.to_owned())?;
-        for family in &reserved {
+        for family in reserved {
             push_reserved(&mut slots, &mut ordered, oov_name(family))?;
         }
         let oov_count = slots.len();
@@ -262,7 +352,10 @@ impl Vocabulary {
     }
 
     /// Rebuild the key-to-column map. Called after construction and after loading.
-    pub fn reindex(&mut self) {
+    ///
+    /// Private: it is not a repair, and calling it on a vocabulary whose slots were changed behind
+    /// the type's back would produce a consistent index over an invalid layout.
+    fn reindex(&mut self) {
         self.index = self
             .slots
             .iter()
@@ -275,6 +368,24 @@ impl Vocabulary {
     #[must_use]
     pub fn slot_count(&self) -> usize {
         self.slots.len()
+    }
+
+    /// The reserved-layout version this vocabulary was built under.
+    #[must_use]
+    pub const fn oov_registry_version(&self) -> u32 {
+        self.oov_registry_version
+    }
+
+    /// How many leading columns are reserved OOV columns.
+    #[must_use]
+    pub const fn oov_count(&self) -> usize {
+        self.oov_count
+    }
+
+    /// Every assigned column, in index order.
+    #[must_use]
+    pub fn slots(&self) -> &[Slot] {
+        &self.slots
     }
 
     /// Rows allocated in the tensor. The physical size.
@@ -306,11 +417,14 @@ impl Vocabulary {
         } else {
             oov_name(family)
         };
+        // The global column is at a known index, guaranteed at construction and re-checked by
+        // `validate`, so a lookup that falls all the way through lands somewhere defined rather
+        // than on a hopeful `unwrap_or(0)` that would silently alias column 0 to whatever happened
+        // to be there.
         self.index
             .get(&FeatureKey::of(&reserved))
-            .or_else(|| self.index.get(&FeatureKey::of(GLOBAL_OOV)))
             .copied()
-            .unwrap_or(0)
+            .unwrap_or(GLOBAL_OOV_COLUMN)
     }
 
     /// Whether a name has a column of its own rather than falling back to an OOV column.
@@ -427,6 +541,63 @@ impl Vocabulary {
     /// [`VocabularyError::Collision`], [`VocabularyError::KeyMismatch`], or
     /// [`VocabularyError::AppendOverflow`] when the assigned columns exceed capacity.
     pub fn validate(&self) -> Result<(), VocabularyError> {
+        // 1. Fail closed on a layout this build does not know. An unrecognised version means the
+        //    reserved columns below are somebody else's, and nothing here can tell which.
+        if self.oov_registry_version != OOV_REGISTRY_VERSION {
+            return Err(VocabularyError::UnsupportedRegistry {
+                found: self.oov_registry_version,
+                supported: OOV_REGISTRY_VERSION,
+            });
+        }
+
+        // 2. The reserved prefix is checked element by element, not by length. A reordered or
+        //    substituted reserved column is exactly the corruption that would silently re-point
+        //    every trained OOV weight, and it preserves the count.
+        let families = oov_families();
+        if self.oov_count != families.len() + 1 {
+            return Err(VocabularyError::ReservedLayout {
+                column: self.oov_count,
+                expected: format!("{} reserved columns", families.len() + 1),
+                found: format!("{}", self.oov_count),
+            });
+        }
+        if self.slots.len() < self.oov_count {
+            return Err(VocabularyError::ReservedLayout {
+                column: self.slots.len(),
+                expected: format!("at least {} columns", self.oov_count),
+                found: format!("{}", self.slots.len()),
+            });
+        }
+        if self.slots[GLOBAL_OOV_COLUMN].name != GLOBAL_OOV {
+            return Err(VocabularyError::ReservedLayout {
+                column: GLOBAL_OOV_COLUMN,
+                expected: GLOBAL_OOV.to_owned(),
+                found: self.slots[GLOBAL_OOV_COLUMN].name.clone(),
+            });
+        }
+        for (offset, family) in families.iter().enumerate() {
+            let column = offset + 1;
+            let expected = oov_name(family);
+            if self.slots[column].name != expected {
+                return Err(VocabularyError::ReservedLayout {
+                    column,
+                    expected,
+                    found: self.slots[column].name.clone(),
+                });
+            }
+        }
+
+        // 3. Capacity is not a free field. It is a function of the assigned count, and it carries
+        //    the granularity and the architecture limit with it.
+        let expected_capacity = capacity_for(self.slots.len())?;
+        if self.capacity != expected_capacity {
+            return Err(VocabularyError::CapacityMismatch {
+                stored: self.capacity,
+                expected: expected_capacity,
+                slots: self.slots.len(),
+            });
+        }
+
         let mut seen: BTreeMap<FeatureKey, &str> = BTreeMap::new();
         for slot in &self.slots {
             let computed = FeatureKey::of(&slot.name);
@@ -768,9 +939,6 @@ mod tests {
 
     #[test]
     fn every_registered_family_has_exactly_one_reserved_column() {
-        // The registry must cover both closed grammars. If a family is added to the extractors and
-        // not to the registry, its unseen names fall through to the global OOV and are pooled with
-        // everything else unknown — silently, which is why this is asserted rather than assumed.
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         let families = oov_families();
         assert_eq!(
@@ -778,24 +946,116 @@ mod tests {
             families.len() + 1,
             "the reserved block is not the registry plus the global column"
         );
-        for family in &families {
+        for family in families {
             let column = vocabulary.column_of(&oov_name(family));
             assert!(
                 column < vocabulary.oov_count,
                 "{family} has no reserved column"
             );
         }
-        for family in crate::features::explicit_fixed_families() {
-            assert!(
-                families.iter().any(|known| known == family),
-                "explicit family {family} is missing from the OOV registry"
-            );
+    }
+
+    #[test]
+    fn the_frozen_registry_matches_the_live_grammar() {
+        // F-M09-024a-1. The registry is frozen data, so it can fall behind the grammars it was
+        // written from — and falling behind silently is the whole failure mode: a new family whose
+        // unseen names quietly pool into the global column, or worse, a "fix" that re-derives the
+        // order and moves every reserved index under a version that still reads 1.
+        //
+        // This test is the forcing function. When it fails, the correct response is a migration —
+        // bump OOV_REGISTRY_VERSION and write a new frozen list — not an edit to OOV_FAMILIES_V1
+        // in place, which would move existing columns under a version promising they never move.
+        let frozen: Vec<String> = oov_families().iter().map(|f| (*f).to_owned()).collect();
+        let live = live_grammar_families();
+        assert_eq!(
+            frozen, live,
+            "the feature grammars and the frozen OOV registry disagree. Do not edit \
+             OOV_FAMILIES_V1 in place: that moves reserved columns under a version that promises \
+             they never move. Bump OOV_REGISTRY_VERSION and add a new frozen list."
+        );
+    }
+
+    #[test]
+    fn a_stored_file_from_an_unknown_registry_version_is_refused() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.oov_registry_version = OOV_REGISTRY_VERSION + 1;
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("an unknown layout must be refused");
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(VocabularyError::UnsupportedRegistry { .. })
+            ),
+            "wrong error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_reordered_reserved_prefix_is_refused_even_though_the_count_is_right() {
+        // The count-preserving corruption: swap two reserved columns. Every trained OOV weight
+        // would silently change meaning, and a length check would not notice.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.slots.swap(1, 2);
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("a reordered reserved prefix must be refused");
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(VocabularyError::ReservedLayout { .. })
+            ),
+            "wrong error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_missing_global_oov_column_is_refused() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let stolen = vocabulary.slots[vocabulary.oov_count].clone();
+        vocabulary.slots[GLOBAL_OOV_COLUMN] = stolen;
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("a missing global OOV must be refused");
+        match error {
+            LoadError::Invalid(VocabularyError::ReservedLayout { column, .. }) => {
+                assert_eq!(column, GLOBAL_OOV_COLUMN);
+            }
+            other => panic!("wrong error: {other}"),
         }
-        for prefix in crate::features::FEATURE_PREFIXES {
-            let family = prefix.trim_end_matches(':');
+    }
+
+    #[test]
+    fn a_wrong_reserved_count_is_refused() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.oov_count += 1;
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("a wrong reserved count must be refused");
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(VocabularyError::ReservedLayout { .. })
+            ),
+            "wrong error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_stored_capacity_that_the_rule_does_not_give_is_refused() {
+        // Three ways to get a wrong capacity, all refused: not a multiple of the granularity,
+        // above the architecture limit, and simply not the value the rule produces.
+        for bad in [4_000_usize, 70_000, 8_192] {
+            let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+            assert_ne!(vocabulary.capacity, bad, "the fixture must actually differ");
+            vocabulary.capacity = bad;
+            let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+                .expect_err("a wrong capacity must be refused");
             assert!(
-                families.iter().any(|known| known == family),
-                "legacy family {family} is missing from the OOV registry"
+                matches!(
+                    error,
+                    LoadError::Invalid(
+                        VocabularyError::CapacityMismatch { .. }
+                            | VocabularyError::OverCapacity { .. }
+                    )
+                ),
+                "wrong error for capacity {bad}: {error}"
             );
         }
     }
