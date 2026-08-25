@@ -3888,3 +3888,20 @@ blocking today.
   shared `*-unit` OOV column as a design call the plan does not make.
 - **Status:** pending independent Tier-C review (schema — the column layout is a migration
   boundary). M09-024b follows on acceptance and needs a P2 scoped-access declaration first.
+
+## M09-024a independent Tier-C review of `c3d5514` (2026-08-25) — changes required
+
+- **F-M09-024a-1 HIGH:** `OOV_REGISTRY_VERSION = 1` does not pin the reserved layout. The order is
+  dynamically rebuilt and sorted from current family lists, so adding a family can move existing
+  OOV columns without changing the version; the coverage test does not catch this migration.
+- **F-M09-024a-2 HIGH:** `from_json` validates only key/name agreement, duplicate keys, and
+  assigned rows fitting capacity. It accepts unsupported versions, arbitrary `oov_count`, a wrong
+  or missing reserved prefix/global OOV, and invalid/over-limit capacity. Public mutable fields and
+  unchecked public `reindex` also bypass the claimed invariant boundary.
+- Independent gates: vocabulary **12/0**; full policy **148/0**; scoped Clippy/rustfmt and
+  diff-check clean. Independently reproduced r6 counts exactly, union **41,113**.
+- O-M09-024a-1 accepted LOW; O2 provisional to 024b; O3 deferred to tensor gates; O4 accepted.
+  Ledger: `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.
+- **Status:** M09-024a remains open and M09-024b remains blocked. Next action is a frozen
+  version-1 registry, fail-closed stored-layout validation/private invariant surface, negative
+  fixtures, affected gates, and a fresh Tier-C recheck.
