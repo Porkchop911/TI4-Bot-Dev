@@ -47,8 +47,13 @@ pub const OOV_REGISTRY_VERSION: u32 = 1;
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
 
-/// Headroom over the assigned columns, so a later append has somewhere to go.
-const CAPACITY_HEADROOM: f64 = 1.2;
+/// Headroom over the assigned columns, so a later append has somewhere to go: capacity is
+/// `1.2 ×` the assigned count, held as the exact ratio 6/5.
+///
+/// A ratio rather than `1.2_f64` because the sizing rule is reachable from deserialized data and
+/// must be total over every `usize`; the float form saturates its cast and then overflows the
+/// rounding step (F-M09-024a-4). 1.2 is exactly 6/5, so nothing is given up by leaving floats out.
+const CAPACITY_HEADROOM: (usize, usize) = (6, 5);
 
 /// The largest capacity this architecture will allocate without an explicit review.
 ///
@@ -214,11 +219,12 @@ pub enum VocabularyError {
         expected: usize,
         slots: usize,
     },
-    /// The recorded allocation count is larger than the assigned columns.
+    /// The recorded allocation count is outside the range a real vocabulary can produce.
     ///
-    /// Columns are only ever appended, so the count a capacity was allocated for can never exceed
-    /// the count now present. A file claiming otherwise has had columns removed.
-    #[error("capacity was allocated for {allocated_for} columns but only {slots} are present")]
+    /// A vocabulary always holds at least its reserved prefix, and columns are only ever appended,
+    /// so provenance lies between `oov_count` and the columns present. A file outside that range
+    /// has had columns removed or was never written by this code.
+    #[error("allocation provenance {allocated_for} is out of range for {slots} present columns")]
     AllocationProvenance { allocated_for: usize, slots: usize },
     /// A stored key is not the key of the name beside it.
     ///
@@ -618,18 +624,24 @@ impl Vocabulary {
         //    worse than an unchecked field (F-M09-024a-3). It is checked against the count it was
         //    allocated for, which the file carries for this purpose; `capacity_for` brings the
         //    4,096 granularity and the 65,536 ceiling with it.
+        //    Provenance is bounded structurally *before* it reaches any arithmetic. It arrives
+        //    from the file like everything else here, and a deserialized field is not a number
+        //    this code chose: `capacity_for` on an absurd value used to overflow and unwind rather
+        //    than return an error (F-M09-024a-4). A vocabulary always holds at least its reserved
+        //    prefix, and columns are only ever appended, so provenance lies in `oov_count ..=
+        //    slots.len()` and anything outside that is a malformed file, not a large number.
+        if self.allocated_for < self.oov_count || self.allocated_for > self.slots.len() {
+            return Err(VocabularyError::AllocationProvenance {
+                allocated_for: self.allocated_for,
+                slots: self.slots.len(),
+            });
+        }
         let expected_capacity = capacity_for(self.allocated_for)?;
         if self.capacity != expected_capacity {
             return Err(VocabularyError::CapacityMismatch {
                 stored: self.capacity,
                 expected: expected_capacity,
                 slots: self.allocated_for,
-            });
-        }
-        if self.allocated_for > self.slots.len() {
-            return Err(VocabularyError::AllocationProvenance {
-                allocated_for: self.allocated_for,
-                slots: self.slots.len(),
             });
         }
 
@@ -672,14 +684,16 @@ impl Vocabulary {
 /// [`VocabularyError::OverCapacity`] above [`CAPACITY_LIMIT`] — the package stops for an explicit
 /// architecture review rather than silently allocating a larger model.
 pub fn capacity_for(slots: usize) -> Result<usize, VocabularyError> {
-    #[expect(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "slot counts are far below 2^53 and the result is rounded up anyway"
-    )]
-    let wanted = (slots as f64 * CAPACITY_HEADROOM).ceil() as usize;
-    let needed = wanted.div_ceil(CAPACITY_GRANULARITY) * CAPACITY_GRANULARITY;
+    // Integer arithmetic throughout, and saturating. The float form — `slots as f64 * 1.2` then
+    // round up — saturates its cast and overflows the rounding step for large inputs, and this
+    // function is reachable from a deserialized field, so "large" is whatever a malformed file
+    // says (F-M09-024a-4). `1.2` is exactly `6/5`, so nothing is lost by leaving floats out.
+    let (numerator, denominator) = CAPACITY_HEADROOM;
+    let needed = slots
+        .saturating_mul(numerator)
+        .div_ceil(denominator)
+        .checked_next_multiple_of(CAPACITY_GRANULARITY)
+        .unwrap_or(usize::MAX);
     if needed > CAPACITY_LIMIT {
         return Err(VocabularyError::OverCapacity { needed, slots });
     }
@@ -1107,13 +1121,8 @@ mod tests {
 
         // Cross the 1.2x threshold: past this point `capacity_for(slots.len())` disagrees with the
         // allocated capacity, which is the condition that used to break reload.
-        #[expect(
-            clippy::cast_precision_loss,
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "small counts"
-        )]
-        let past_threshold = ((capacity as f64) / CAPACITY_HEADROOM).ceil() as usize + 1;
+        let (numerator, denominator) = CAPACITY_HEADROOM;
+        let past_threshold = (capacity * denominator).div_ceil(numerator) + 1;
         assert!(
             past_threshold > vocabulary.slot_count(),
             "the fixture must actually need appending"
@@ -1188,5 +1197,80 @@ mod tests {
             ),
             "wrong error: {error}"
         );
+    }
+    #[test]
+    fn an_extreme_allocation_provenance_is_refused_without_unwinding() {
+        // F-M09-024a-4. `allocated_for` arrives from the file like every other field, so it is not
+        // a number this code chose. Passing it to the capacity arithmetic before bounding it let a
+        // malformed `slots.json` panic the loader instead of returning an error — a parser that
+        // unwinds on hostile input is a different class of defect from one that computes a wrong
+        // answer, and neither is acceptable at a schema boundary.
+        for provenance in [usize::MAX, usize::MAX / 2, CAPACITY_LIMIT * 4] {
+            let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+            vocabulary.allocated_for = provenance;
+            let text = vocabulary.to_json().expect("json");
+            let error = Vocabulary::from_json(&text)
+                .expect_err("an out-of-range provenance must be refused");
+            assert!(
+                matches!(
+                    error,
+                    LoadError::Invalid(VocabularyError::AllocationProvenance { .. })
+                ),
+                "wrong error for provenance {provenance}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_provenance_below_the_reserved_prefix_is_refused() {
+        // The other end of the range. A vocabulary always holds at least its reserved columns, so
+        // provenance below that was never produced by this code.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        assert!(vocabulary.oov_count > 0);
+        vocabulary.allocated_for = vocabulary.oov_count - 1;
+        let error = Vocabulary::from_json(&vocabulary.to_json().expect("json"))
+            .expect_err("provenance below the reserved prefix must be refused");
+        assert!(
+            matches!(
+                error,
+                LoadError::Invalid(VocabularyError::AllocationProvenance { .. })
+            ),
+            "wrong error: {error}"
+        );
+    }
+
+    #[test]
+    fn the_sizing_rule_is_total_over_every_input() {
+        // `capacity_for` is reachable from deserialized data, so it must answer for any `usize`
+        // rather than for the range this code happens to produce. Every input either yields a
+        // capacity within the limit or a structured refusal; none may unwind.
+        for slots in [
+            0,
+            1,
+            CAPACITY_GRANULARITY,
+            CAPACITY_LIMIT,
+            CAPACITY_LIMIT + 1,
+            usize::MAX / 6,
+            usize::MAX / 2,
+            usize::MAX - 1,
+            usize::MAX,
+        ] {
+            match capacity_for(slots) {
+                Ok(capacity) => {
+                    assert!(capacity <= CAPACITY_LIMIT, "{slots} produced {capacity}");
+                    assert_eq!(
+                        capacity % CAPACITY_GRANULARITY,
+                        0,
+                        "{slots} broke granularity"
+                    );
+                }
+                Err(VocabularyError::OverCapacity { .. }) => {}
+                Err(other) => panic!("{slots}: wrong error {other}"),
+            }
+        }
+        // The integer form must agree with the 1.2x rule it replaced on the values that matter.
+        assert_eq!(capacity_for(1).expect("small"), 4_096);
+        assert_eq!(capacity_for(4_096).expect("exact"), 8_192);
+        assert_eq!(capacity_for(41_152).expect("r6"), 53_248);
     }
 }

@@ -4102,3 +4102,74 @@ Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remai
   before arithmetic, make `capacity_for` total/overflow-safe for every `usize`, retain an extreme
   malformed-JSON no-unwind regression, rerun gates, and request a fresh Tier-C recheck. Full ledger:
   `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.
+
+## F-M09-024a-4 correction (implementer, 2026-08-25)
+
+Correct, and the review reproduced it before reporting it, which made it unarguable. `allocated_for`
+arrives from the file like every other field, and `validate` handed it to `capacity_for` *before*
+bounding it. On an absurd value the float sizing arithmetic saturated its cast and then overflowed
+the rounding step, so a malformed `slots.json` unwound the loader instead of returning
+`LoadError::Invalid`.
+
+The shape of the mistake, since this is the second one in a row on the same function: I keep
+treating `allocated_for` as a number this code chose. It is not. It is untrusted input to a schema
+boundary, and the checks on it have to come before anything computes with it — which is exactly
+what "fail closed" means and exactly what I wrote in the doc comment while not doing it.
+
+### The fix — two independent halves
+
+**Ordering.** The structural bound runs first: a vocabulary always holds at least its reserved
+prefix and columns are only ever appended, so provenance lies in `oov_count ..= slots.len()`.
+Anything outside that is a malformed file, not a large number, and is refused before any
+arithmetic sees it.
+
+**Totality.** `capacity_for` is now total over every `usize`. The headroom is held as the exact
+ratio `6/5` rather than `1.2_f64`, and the arithmetic is saturating with a checked rounding step,
+so every input yields either a capacity within the limit or a structured `OverCapacity`. 1.2 is
+exactly 6/5, so nothing is given up by leaving floats out; the three pinned values (4,096 at one
+slot, 8,192 at an exact 4,096, 53,248 for the r6 corpus) are unchanged.
+
+Both halves are kept even though either alone stops the panic, because they answer different
+questions: the ordering says what a valid file may claim, and the totality says the function may
+be called with anything at all.
+
+### Regressions — three added, twenty-four total
+
+| test | what it pins |
+|---|---|
+| `an_extreme_allocation_provenance_is_refused_without_unwinding` | `usize::MAX`, `usize::MAX / 2`, `4 × CAPACITY_LIMIT` all return `AllocationProvenance` |
+| `a_provenance_below_the_reserved_prefix_is_refused` | the other end of the range |
+| `the_sizing_rule_is_total_over_every_input` | nine inputs from 0 to `usize::MAX`: each yields a capacity within the limit and on the granularity, or a structured refusal — never an unwind. Also re-pins the three known values against the integer form. |
+
+**Falsification check, one mutation per half.**
+
+Restoring the float sizing rule:
+
+```
+test vocabulary::tests::the_sizing_rule_is_total_over_every_input ... FAILED
+    attempt to multiply with overflow
+test result: FAILED. 23 passed; 1 failed
+```
+
+Restoring the original check ordering (with the safe arithmetic kept):
+
+```
+test vocabulary::tests::an_extreme_allocation_provenance_is_refused_without_unwinding ... FAILED
+    wrong error for provenance 18446744073709551615: … vocabulary needs capacity
+    3689348814741913600, above the 65536 limit
+test result: FAILED. 23 passed; 1 failed
+```
+
+Each half is caught by exactly one test, and by a different one. Both reverted; 24/24 green.
+
+### Gates after the correction
+
+```
+cargo test -p ti4-policy --lib vocabulary   24 passed, 0 failed   (21 before)
+cargo test --workspace                    1403 passed, 0 failed   (1400 before)
+cargo clippy -p ti4-policy --all-targets   0 warnings mentioning vocabulary.rs
+rustfmt --edition 2024 --check             clean
+git diff --check                           clean
+```
+
+Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
