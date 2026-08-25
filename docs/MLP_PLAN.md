@@ -3,7 +3,7 @@
 Branch: `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`
 (carries the planet-trait fix and the secondary-eligibility gates; 1271 tests green).
 
-Status: **revision 5**, approved as an implementation design after an independent
+Status: **revision 6**, approved as an implementation design after independent
 Codex review. M06-021 is merged (`0d751a8`) but **failed its tier C
 review** and is not complete; M06-021a corrects it before any later package.
 Python parity is no longer an acceptance criterion by project decision; official
@@ -11,8 +11,9 @@ rules and the Rust package specifications govern behavior (§11.3). Everything e
 in this document is design, not implemented behavior.
 
 Review history: revisions 2–4 corrected the original design and recorded its
-protocol deviations. **Revision 5 closes the remaining architecture, dependency,
-data-leakage, artifact, timing, and accelerator gaps.** Any implementation change
+protocol deviations. Revision 5 closed the remaining architecture, dependency,
+data-leakage, artifact, timing, and accelerator gaps. **Revision 6 resolves the
+M09-024 vocabulary overrun with the feature-compressed input ruling in §13.** Any implementation change
 to these decisions requires a recorded plan revision and the review tier in §11.2.
 
 ---
@@ -1393,3 +1394,42 @@ the argument, and the packages are the work.
 - Any hand-authored evaluator, teacher, or preference. The standing constraint is
   straight learning, and it holds throughout: every feature added here reports a
   fact the engine already computes, and every weight is learned.
+
+---
+
+## 13. Revision 6 — dense-input architecture after M09-024 discovery
+
+This section supersedes §4.1, §4.2, §4.5 and §6.1 wherever they imply that every legacy teacher
+feature name receives a dense student column. The completed discovery pass measured 203,843 names
+and a 245,760-row requirement; 91.3% came from unbounded lexical or full-option-identity crosses.
+
+The MLP consumes one schema-4 explicit extractor through a projection applied **before** vocabulary
+lookup. A family receives ordinary dense columns unless its identity is an unbounded Cartesian
+cross of two free lexical identities or a full option identity with a state fact. In the current
+grammar this suppresses `prompt-bigram`, `prompt-option`, and `state-option`; suppressed names do
+not aggregate into OOV. `state-kind` remains because canonical decision kind is a bounded,
+transferable axis. New families of an excluded semantic shape require architecture review rather
+than silently entering the vocabulary.
+
+The projection adds the eight original acting-seat facts under one bounded bare family on every
+option. Without that correction, suppressing `state-option` would remove tokens, goods, round,
+planet count, and technology count from uniform-kind fixed-vocabulary decisions. Existing linear
+schema feature vectors remain unchanged. The new family is a versioned registry migration; version
+1 is never edited in place.
+
+The approved physical capacity is **24,576 rows**. At width 256 the input has exactly 6,291,456
+weights; the architecture described in §4.2 accounts for approximately 6.48M total parameters,
+about 25.9 MB of f32 weights or 77.8 MB with two Adam moments before framework overhead. M09-026
+records the exact manifest-derived total. The 65,536 load/migration ceiling remains a hard guard,
+not a vocabulary estimate; exceeding it still stops for review.
+
+Distillation is **feature-compressed distillation**. Teachers still provide their complete action
+probability vectors and training still minimizes teacher-to-student KL, but the student uses the
+transferable projection rather than every sparse teacher interaction name. The fixed validation
+gates determine whether that representation is adequate. A failure stops; it does not restore
+excluded crosses, raise capacity, or move a threshold without review.
+
+M09-024b is split: b1 implements and reviews the projection/bare-state/registry contract (P1,
+Tier C); b2 reruns the fixed 768-game schedule through that single path and publishes the final
+deterministic vocabulary (P2, Tier C). The authoritative ruling and parameter arithmetic are in
+`plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.

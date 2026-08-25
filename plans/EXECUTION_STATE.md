@@ -4101,6 +4101,25 @@ Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remai
 - **Status:** M09-024a is accepted. **Next ready package: M09-024b**, the bounded corpus discovery,
   final `slots.json`, measured `V_cap`, and manifest evidence specified by the parent split.
 
+## M09-024b Tier-C architecture ruling (2026-08-25)
+
+- The 245,760 all-family result is rejected as an MLP layout; the 65,536 hard load/migration
+  ceiling remains unchanged.
+- The MLP consumes one **schema-4 explicit** path through a feature-compressed projection. Families
+  whose identity is an unbounded lexical cross or full-option-id/state cross are suppressed before
+  vocabulary lookup (`prompt-bigram`, `prompt-option`, `state-option` today). `state-kind` remains.
+- Required correction: the eight original seat facts currently have no bare delivery path.
+  M09-024b1 must add a bounded bare family before removing `state-option`; excluded names may not
+  aggregate into an OOV row. The registry change is versioned, never an edit to v1.
+- Approved **`V_cap = 24,576`**: 6,291,456 input weights at width 256 and approximately 6.48M total
+  plan-accounted parameters. A corrected single-path replay must confirm final slot count/capacity.
+- §6.1 is now feature-compressed distillation: full teacher distributions remain KL targets, but
+  student inputs use the transferable projection. Fixed validation gates decide adequacy.
+- **Continuation split:** M09-024b1 (P1/Tier C projection, bare facts, registry and tests) is next
+  ready; M09-024b2 (P2/Tier C corrected 768-game replay and final artifact) follows. M09-024 and
+  M09-026 remain blocked.
+- Full decision: `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.
+
 ## M09-024a independent Tier-C recheck of `7eb0722` (2026-08-25) — changes required
 
 - **Resolved:** F-M09-024a-3. Allocation provenance remains fixed across append; crossing the
@@ -4273,3 +4292,11 @@ re-measurement on that path.
   measurements, the traced provenance of the 65,536 limit, the self-reported dual-path
   contamination, four costed options, and six things a satisfying answer must contain. Nothing
   proceeds on this frontier until it returns.
+
+## Current frontier after the M09-024b architecture ruling (2026-08-25)
+
+The Tier-C decision recorded above is now authoritative: schema-4 explicit feature-compressed
+input, unbounded crosses suppressed before lookup, bare acting-seat facts restored, approved
+`V_cap = 24,576`, and the 65,536 migration ceiling retained. **M09-024b1 is next ready**;
+M09-024b2, parent M09-024, and M09-026 remain blocked on its acceptance. Full decision:
+`plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.

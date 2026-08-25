@@ -216,3 +216,88 @@ here touches engine behavior.
 
 M09-024a accepted. M09-024b ran within its authorized P2 bounds and **wrote no artifact**;
 `out/vocabulary/` does not exist. Nothing proceeds on this frontier until this evaluation returns.
+
+---
+
+## Frontier architecture ruling (Tier C, 2026-08-25)
+
+**Decision: B, with a required bare-seat correction.** The MLP consumes one schema-4 explicit
+policy path, projected before vocabulary lookup. It does not consume the schema-2 hashed path and
+does not union two runtime extractors.
+
+### Dense-family composition rule
+
+A name receives an ordinary dense column iff it is in one of the three approved discovery sources
+and is **not an unbounded memorisation cross**. An unbounded memorisation cross is a family whose
+identity is the Cartesian product of two free lexical identities, or of a full option identity and
+a state fact. Under the current grammar this excludes `prompt-bigram`, `prompt-option`, and
+`state-option`. Those names are suppressed by the MLP projection before lookup; they must not be
+collapsed into their family OOV row. The frozen registry may retain its reserved rows so this
+decision does not rewrite version 1 in place.
+
+This is a predicate over the semantic shape of a family, not permission to maintain an exclusion
+list forever. Any new family with either unbounded-cross shape is excluded by default and requires
+another architecture review to enter the dense input. `state-kind` remains eligible: its crossing
+axis is the bounded canonical decision kind, so its columns transfer between games rather than
+memorising a full option identity.
+
+### Required bare-seat correction
+
+The request's statement that the nonlinear trunk already reads all bare facts is incomplete. The
+objective, ability, and opponent facts are bare, but the eight original acting-seat facts are
+currently emitted only through `state-kind` or `state-option`. Removing `state-option` without a
+replacement would erase round, token pools, goods, planet count, and technology count from
+uniform-kind fixed-vocabulary decisions.
+
+The MLP projection must therefore emit those eight facts on every option under one bounded bare
+family (for example `seat-state:<fact>`), while leaving the existing schema-4 vector unchanged.
+This requires a versioned registry migration rather than editing `OOV_FAMILIES_V1` in place.
+
+### Capacity and parameter budget
+
+The approved branch capacity is **`V_cap = 24,576`**, based on the measured union after removing
+the three unbounded crosses. The required bare-seat family is far too small to cross the next
+capacity boundary; the corrected single-path replay must nevertheless confirm the final
+`slot_count`, byte identity, and capacity before publishing `slots.json`.
+
+At width 256 this is exactly **6,291,456 input-row weights**. Under the parameter blocks already
+specified in §4.2, the plan-accounted model is approximately **6.48 million parameters**
+(about 25.9 MB of f32 weights); model plus two Adam moments is about 77.8 MB before framework
+overhead. M09-026 must record the exact manifest-derived total once tensor shapes exist.
+
+The **65,536 limit stands** as a hard load/migration ceiling, not as an estimate of expected
+vocabulary size. At width 256 it caps the input at 16,777,216 weights and about 201 MB for input
+weights plus two f32 Adam moments. Exceeding it still requires an explicit reviewed migration; it
+is not moved to fit a discovery result.
+
+### Distillation position
+
+This remains knowledge distillation: the targets are still the complete teacher probability
+vectors and the objective remains teacher-to-student KL. Teacher and student do not need identical
+input representations. The accurate name is **feature-compressed distillation**, because the
+student approximates the teacher from a transferable projection rather than reproducing its sparse
+memorisation crosses.
+
+MLP plan §6.1 is revised accordingly: “legacy factual policy vector” means the factual schema-4
+explicit vector after the dense-family projection and bare-seat correction, not byte identity with
+every teacher input name. The fixed validation KL and behavioral gates decide whether the reduced
+representation is adequate. Failure stops the distillation package; it does not silently restore
+excluded families, raise capacity, or move thresholds.
+
+### Required continuation
+
+Split the correction before another P2 replay:
+
+1. **M09-024b1 (P1, Tier C):** implement and pin the MLP projection, bare-seat family, registry
+   migration, pre-lookup suppression, and tests covering `StateCross::ByOption`, redaction,
+   excluded-family absence, and unchanged legacy/schema-4 inference vectors.
+2. **M09-024b2 (P2, Tier C):** rerun the same 768-game schedule through only that projection,
+   rebuild from all three filtered sources, confirm `V_cap = 24,576`, write the bounded artifact,
+   and independently review the final layout and manifest evidence.
+
+No frequency pass is authorized or required. O-M09-024b-2 is closed as not selected;
+O-M09-024b-3 remains an INFO limitation handled by OOV routing plus deterministic append headroom;
+O-M09-024b-4 is resolved by the single explicit path and mandatory remeasurement.
+
+**Status:** the architecture decision is complete. M09-024 remains open; M09-024b1 is the next
+ready package. M09-024b2 and M09-026 remain blocked on its acceptance.

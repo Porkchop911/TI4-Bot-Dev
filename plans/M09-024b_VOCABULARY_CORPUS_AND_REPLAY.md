@@ -104,3 +104,21 @@ the declared cap; double-build byte-identical; `V_cap` recorded and under the li
 stopped and reported; evidence complete; independent Tier-C review resolved.
 
 **Authorship note.** Claude Opus 5 authors and cannot review it.
+
+## Architecture-gate result and continuation split (2026-08-25)
+
+The Tier-C ruling in `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md` selects a schema-4
+explicit, feature-compressed MLP projection. It excludes unbounded memorisation crosses before
+lookup (`prompt-bigram`, `prompt-option`, and `state-option` under the current grammar), requires a
+new bounded bare family for the eight acting-seat facts, keeps the 65,536 hard ceiling, and approves
+`V_cap = 24,576` subject to corrected single-path confirmation.
+
+This package is split before more implementation:
+
+- **M09-024b1 (P1, Tier C):** projection contract, bare-seat facts, versioned registry migration,
+  pre-lookup filtering, and focused invariants. No replay or artifact.
+- **M09-024b2 (P2, Tier C):** corrected 768-game single-path discovery, final deterministic
+  `slots.json`, measured manifest fields, and final layout review.
+
+The original parent acceptance criterion remains unchanged. M09-024b1 is next ready; M09-024b2 is
+blocked on its acceptance.
