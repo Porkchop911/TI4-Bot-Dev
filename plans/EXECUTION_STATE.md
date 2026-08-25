@@ -4186,3 +4186,16 @@ git diff --check                           clean
 ```
 
 Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
+
+## M09-024a ACCEPTED; M09-024b specified and awaiting P2 authorization (2026-08-25)
+
+- **M09-024a accepted** at the Tier-C acceptance of `1b1c0b0`. F-M09-024a-1 through -4 all closed
+  across four correction rounds: the frozen v1 registry, the hardened stored-layout validator,
+  capacity validated against allocation provenance rather than the current slot count, and that
+  provenance bounded before it reaches the arithmetic. Open-item dispositions stand (O-1 accepted
+  LOW residual, O-2 final `V_cap` transfers to 024b, O-3 free-row zeroing remains a mandatory
+  M09-026/M09-028 gate, O-4 accepted).
+- **M09-024b specified**: `plans/M09-024b_VOCABULARY_CORPUS_AND_REPLAY.md`, including its full P2
+  scoped-access declaration — reads two artifacts already on disk, 768 games, one written artifact
+  (`out/vocabulary/slots.json`) capped at 16 MiB, no network, no dependencies, names only.
+- **Not started.** The package is P2 and has not been authorized. Nothing in it has been run.
