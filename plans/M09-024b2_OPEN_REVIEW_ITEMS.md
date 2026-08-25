@@ -256,3 +256,23 @@ incremental DLL mutation                           build refused
 
 The republished generation is unchanged: `slots_sha256`
 `14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`, 768/768 games, `V_cap` 16,384.
+
+## Independent Tier-C recheck of `8a6c0ee` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+First, a correction to the prior review record: the Windows replacement statement in
+F-M09-024b2-7 was wrong. Rust's Windows `std::fs::rename` implementation uses replacement
+semantics, and the new existing-destination test passes. That factual correction does not close the
+generation-integrity finding.
+
+Independent gate: `cargo test -p ti4-training --lib vocabulary_corpus` — **7 passed, 0 failed**.
+The campaign refusal and capacity/source gates remain sound. Three issues remain:
+
+| ID | Severity | Recheck finding | Required correction |
+|---|---|---|---|
+| F-M09-024b2-9 | **HIGH** | `R6_CHECKPOINT_SHA256` was added, but discovery still calls `checkpoint_sha.starts_with(R6_CHECKPOINT_SHA_PREFIX)`. The new exact constant is unused at the gate, so the 64-bit-prefix acceptance defect is unchanged while the evidence claims it is fixed. | Compare the digest consumed by `champion_names`/`champion_profiles` to the exact r6 SHA-256 from the durable artifact manifest. Add a focused regression that would pass the prefix gate but fails exact identity. |
+| F-M09-024b2-10 | **HIGH** | `publish_generation` is not an atomic or crash-recoverable two-file generation. A process loss after the slots rename but before the provenance rename leaves a torn pair; the rollback exists only in memory. Even for returned errors, snapshots use `.ok()` (conflating absence with read failure), staged provenance is never reread or parsed, binding is only `provenance_text.contains(digest)`, provenance restoration errors are discarded, and `previous_intact` is computed from slots restoration alone. The failure test deletes the previous provenance before calling the function, then reports the “previous generation” intact after checking only the slots file. The example also still calls `refuse` after publication errors, which unconditionally prints “No artifact was written” even when `previous_intact` can be false. | Use a manifest-last/versioned-generation or durable journal/recovery protocol whose accepted state is one atomic pointer/manifest update. Parse and validate an exact provenance schema/field from the reread staged bytes, fail closed on snapshot/read errors, verify restoration of both files, and report the actual post-failure state. Add injected failure/crash-boundary tests that begin with a valid prior pair and verify both halves after recovery. |
+| F-M09-024b2-11 | **MEDIUM** | `a_campaign_with_a_failed_game_publishes_nothing` loads `out/pools/full_np8_12_train.json`, which is gitignored and untracked. The workspace gate therefore passes only on this populated machine and fails in a fresh checkout before testing the campaign invariant. | Build a bounded in-test pool fixture or use a committed package-approved fixture so the regression is hermetic. |
+
+**Verdict: changes required.** M09-024b2 and M09-024 remain open.

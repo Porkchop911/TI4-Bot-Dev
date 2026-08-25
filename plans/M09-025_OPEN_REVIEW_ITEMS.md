@@ -265,3 +265,22 @@ incremental DLL mutation                           build refused
 
 The republished generation is unchanged: `slots_sha256`
 `14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`, 768/768 games, `V_cap` 16,384.
+
+## Independent Tier-C recheck of `8a6c0ee` (2026-08-25) — accepted
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+F-M09-025-5 is closed: both build scripts now tell Cargo to track every pinned source file and the
+library directory, so changed, added, or removed usable library bytes rerun the verifier on the
+incremental path. The recorded source-only DLL mutation is the right falsification.
+
+F-M09-025-6 is also closed with a corrected premise. `tch` converts integer dtype to f32, and
+`to_vec` deliberately flattens rank-2 tensors before conversion; the added test demonstrates those
+facts and distinguishes a genuine empty tensor from the old error-to-empty behavior. The fallible
+return type and fallible callers make a future silent `unwrap_or_default` regression a compile-time
+API change even though no supported CPU input currently reaches the defensive conversion error.
+
+Independent gates: `cargo test -p ti4-tensor --lib` — **12 passed, 0 failed**; touched code produced
+no new Clippy warning.
+
+**Verdict: accepted.** M09-025 has no open review finding.

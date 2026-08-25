@@ -279,3 +279,22 @@ incremental DLL mutation                           build refused
 
 The republished generation is unchanged: `slots_sha256`
 `14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`, 768/768 games, `V_cap` 16,384.
+
+## Independent Tier-C recheck of `8a6c0ee` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the correction implementation.
+
+Independent gates: `cargo test -p ti4-mlp` — **23 passed, 0 failed**; independent-seed release
+smoke — **448 model decisions, 0 fallbacks, exit 0**; forced inference failure — **63 fallbacks,
+exit 4**. F-M09-026-7 is closed by the fixed 33-row constructor and exhaustive roster-row test.
+F-M09-026-8's runtime verification is substantively corrected: the vocabulary uses an exact digest
+and the pool is role-verified and parsed from the verified bytes.
+
+| ID | Severity | Recheck finding | Required correction |
+|---|---|---|---|
+| F-M09-026-10 | **HIGH** | `MlpBot::seat` is not the only way to obtain or use a boxed bot. `MlpBot`, `MlpBot::new`, and its `Decider` implementation are public, so any caller can still write `Box::new(MlpBot::new(...)) as Box<dyn Decider>` and obtain a successful game while every model call falls back. Even through `seat`, `#[must_use]` is only a warning and callers can explicitly discard the status. The game/campaign success type is unchanged; fail-closed behavior still depends on caller convention. | Make the fallible status part of the actual campaign/game result boundary, or hide the direct `Decider` implementation behind a private wrapper that can only be finalized through a consuming checked result. It must be impossible—not merely lint-discouraged—to report campaign success without validating inference status. Add a compile-fail/API test for direct boxing and a runtime forced-failure test through the production campaign boundary. |
+| F-M09-026-11 | **MEDIUM** | The wrong-vocabulary and Final-pool refusals are recorded only as manual example runs; no automated regression was added. | Add bounded CLI/library tests that prove both invalid inputs exit/refuse before game setup. |
+
+M09-026 also remains dependency-blocked by the open M09-024b2 recheck.
+
+**Verdict: changes required.** M09-027 remains blocked.

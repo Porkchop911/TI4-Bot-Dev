@@ -5344,3 +5344,30 @@ incremental DLL mutation                           build refused
 
 The republished generation is unchanged: `slots_sha256`
 `14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`, 768/768 games, `V_cap` 16,384.
+
+## Independent recheck at `8a6c0ee` (Codex frontier, 2026-08-25)
+
+- **M09-025 accepted.** Incremental Cargo tracking now covers all pinned libtorch files and the
+  library directory; conversion/empty semantics are accurately pinned. Tensor tests pass 12/0.
+- **M09-024b2 changes required.** The exact r6 constant was added but the executable still uses the
+  old prefix gate. The two-file publisher is not crash-recoverable and its rollback/test can call
+  an incomplete pair intact. One new unit test depends on an untracked local pool.
+- **M09-026 changes required.** Fixed 33-row construction and verified smoke inputs are sound.
+  `MlpBot` remains publicly directly boxable as `Decider`, however, so `seat`/`InferenceStatus` is
+  bypassable and campaign success still does not enforce status consumption. Input-refusal runs
+  also lack automated regressions.
+
+Independent checks:
+
+```
+cargo test -p ti4-training --lib vocabulary_corpus   7 passed, 0 failed
+cargo test -p ti4-tensor --lib                      12 passed, 0 failed
+cargo test -p ti4-mlp                               23 passed, 0 failed
+release mlp_smoke --seed 999000111                  exit 0, 448 decisions, 0 fallbacks
+release mlp_smoke --seed 999000111 --force-inference-failure
+                                                      exit 4, 63 fallbacks
+```
+
+The prior review's claim that Windows `std::fs::rename` cannot replace an existing destination was
+incorrect and is explicitly corrected in the M09-024b2 review. Current frontier: M09-024b2 and
+M09-026 are open; M09-027 remains blocked.
