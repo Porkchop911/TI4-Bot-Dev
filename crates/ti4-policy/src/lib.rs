@@ -17,6 +17,7 @@ pub mod progress;
 pub mod scoring;
 pub mod valuation;
 pub mod view;
+pub mod vocabulary;
 
 pub use bot::*;
 pub use features::*;

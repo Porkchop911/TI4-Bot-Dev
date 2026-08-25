@@ -1764,6 +1764,13 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 34] = [
     "opponent-secrets-held",
 ];
 
+/// The closed grammar of fixed explicit families, for callers that must enumerate every family —
+/// notably the dense vocabulary, which reserves an out-of-vocabulary column per family.
+#[must_use]
+pub const fn explicit_fixed_families() -> &'static [&'static str] {
+    &EXPLICIT_FIXED_FAMILIES
+}
+
 fn explicit_family_is_known(name: &str) -> bool {
     let family = name.split_once(':').map_or(name, |(family, _)| family);
     EXPLICIT_FIXED_FAMILIES.contains(&family) || family.ends_with("-unit")

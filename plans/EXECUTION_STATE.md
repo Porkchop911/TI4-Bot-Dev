@@ -3856,3 +3856,35 @@ blocking today.
 - **M09-022** open, awaiting the narrow Tier-B recheck of `b444f52` (F-M09-022-1 corrected: the
   alternate-store regression now exists and was proved to fail without the property).
 - **M09-024** blocked on that recheck. **M09-025** held by decision. Rows 026–030 follow 024/025.
+
+## M09-022 accepted, M09-024 split, M09-024a implemented (2026-08-25)
+
+- **M09-022 accepted** at the narrow Tier-B recheck of `b444f52`; F-M09-022-1 closed. The recheck
+  confirmed the mutation check falsifies the embedded-store defect while leaving the source-scope
+  test green, so both tests are necessary. M09-024 dependency-ready.
+- **M09-024 split, declared before implementation** per the plan's instruction for oversized rows.
+  `plans/M09-024_DENSE_VOCABULARY_AND_OOV_CAPACITY.md` records it: **M09-024a** (P1) is the
+  vocabulary itself; **M09-024b** (P2) is the corpus — the r6 names, the §6.1 teacher-schedule
+  replay, and the statically enumerable content names. The parent acceptance criterion is unchanged
+  and is met only when both land. "Build the vocabulary" and "discover the names to build it from"
+  are not one behavior cluster, and together they cannot be reviewed from a single diff.
+- **M09-024a implemented.** New `crates/ti4-policy/src/vocabulary.rs`: reserved OOV registry
+  (global column 0, then one per registered family, order fixed by `OOV_REGISTRY_VERSION`),
+  assignment by ascending `FeatureKey`, hard collision refusal, `slot_count` vs `capacity` (next
+  multiple of 4,096 at or above 1.2×, refused above 65,536), append-only growth that is key-ordered
+  within the batch and refuses rather than reshaping, and a validating `slots.json` round trip.
+- **Measured:** the r6 champion profile holds **41,113** distinct names — §4.5's own figure,
+  recomputed independently as the union across the six champions (hacan 37,109, jolnar 38,189,
+  l1z1x 38,605, letnev 37,267, sol 38,925, xxcha 36,351) and matching exactly. **39** reserved
+  columns (38 families + global). `V_cap` for the r6 corpus alone: **53,248**, under the 65,536
+  limit, so no architecture review is triggered. The figure grows when 024b folds in the replayed
+  and content names; it is recorded now so that growth is visible rather than asserted.
+- **Gates:** vocabulary focused **12/0**; workspace **1391/0** (1379 before); clippy clean in
+  `ti4-policy`; rustfmt clean; `git diff --check` clean.
+- **Open items:** O-M09-024a-1 (LOW) the build-time collision branch is covered by inspection only
+  — a real 64-bit FNV-1a collision cannot be constructed in a test, so the branch is reached
+  through the loader rather than by adding a test-only seam. O-M09-024a-2/3/4 (INFO): provisional
+  `V_cap`; free-row zeroing deferred to the tensor packages, where the tensor exists; and the
+  shared `*-unit` OOV column as a design call the plan does not make.
+- **Status:** pending independent Tier-C review (schema — the column layout is a migration
+  boundary). M09-024b follows on acceptance and needs a P2 scoped-access declaration first.

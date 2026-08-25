@@ -86,6 +86,16 @@ impl FeatureKey {
     pub const fn bits(self) -> u64 {
         self.0
     }
+
+    /// Rebuild a key from stored bits.
+    ///
+    /// For loading a side table that recorded keys beside their names — the dense vocabulary does
+    /// this so a loader can verify the key function has not changed under it. Not a way to invent
+    /// a key: every key in the system is still [`Self::of`] applied to some name.
+    #[must_use]
+    pub const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
 }
 
 /// Whether this thread has already recorded `key`, marking it recorded if not.
