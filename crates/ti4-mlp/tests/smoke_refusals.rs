@@ -42,12 +42,19 @@ fn a_vocabulary_that_is_not_the_accepted_generation_is_refused() {
 }
 
 #[test]
-fn a_pool_outside_the_allowed_roles_is_refused() {
+fn a_pool_without_an_allowed_manifest_role_is_refused() {
+    let scratch = std::env::temp_dir().join(format!("ti4-smoke-pool-{}", std::process::id()));
+    std::fs::write(
+        &scratch,
+        b"{\"schema\":\"ti4-map-pool-v1\",\"effort\":1,\"coords\":[[0,0]],\"slots\":[[0,0]],\"arrangements\":[[\"18\"]]}",
+    )
+    .expect("write pool");
     let output = smoke()
-        .args(["--map-pool", "out/pools/full_np8_12_final.json"])
+        .args(["--map-pool", scratch.to_str().expect("path")])
         .current_dir(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
         .output()
         .expect("the smoke runs");
+    let _ = std::fs::remove_file(&scratch);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
     assert!(stderr.contains("not an allowed pool"), "stderr: {stderr}");

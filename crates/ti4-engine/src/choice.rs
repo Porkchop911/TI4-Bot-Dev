@@ -163,6 +163,12 @@ pub enum IllegalChoice {
     },
     #[error("{player} was asked {prompt:?} with no options")]
     NoOptions { player: PlayerId, prompt: String },
+    #[error("decider for {player} failed while answering {prompt:?}: {reason}")]
+    DeciderFailed {
+        player: PlayerId,
+        prompt: String,
+        reason: String,
+    },
 }
 
 /// Reject any answer that was not among the offered options.

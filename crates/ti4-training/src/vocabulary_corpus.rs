@@ -436,6 +436,39 @@ fn write_synced(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_generation_files(
+    generation: &std::path::Path,
+    digest: &str,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    if !valid_sha256(digest) {
+        return Err(format!("generation id {digest:?} is not a SHA-256 digest"));
+    }
+    let slots = generation.join("slots.json");
+    let provenance = generation.join("slots.provenance.json");
+
+    let written_slots =
+        std::fs::read(&slots).map_err(|e| format!("reading {}: {e}", slots.display()))?;
+    let written_digest = format!("{:x}", Sha256::digest(&written_slots));
+    if written_digest != digest {
+        return Err(format!(
+            "the generation vocabulary hashes {written_digest}, expected {digest}"
+        ));
+    }
+    let reparsed = String::from_utf8(written_slots)
+        .map_err(|e| format!("the generation vocabulary is not UTF-8: {e}"))?;
+    ti4_policy::vocabulary::Vocabulary::from_json(&reparsed)
+        .map_err(|e| format!("the generation vocabulary does not load: {e}"))?;
+
+    let written_provenance =
+        std::fs::read(&provenance).map_err(|e| format!("reading {}: {e}", provenance.display()))?;
+    provenance_names(&written_provenance, digest)?;
+    Ok((slots, provenance))
+}
+
 /// Publish one generation and make it accepted with a single atomic pointer update.
 ///
 /// The vocabulary and provenance are written into `root/generations/<digest>/`, flushed, re-read,
@@ -457,31 +490,53 @@ pub fn publish_generation(
         previous_intact: true,
     };
 
-    let generation = root.join("generations").join(&digest);
-    std::fs::create_dir_all(&generation).map_err(|e| fail(format!("generation directory: {e}")))?;
-    let slots = generation.join("slots.json");
-    let provenance = generation.join("slots.provenance.json");
+    // Validate the intended pair before creating anything. The generation directory is immutable:
+    // writing directly into `generations/<slots digest>` would mutate the currently accepted
+    // generation when the slots bytes repeat but provenance differs or a retry fails halfway.
+    provenance_names(provenance_text.as_bytes(), &digest).map_err(fail)?;
 
-    write_synced(&slots, slots_text.as_bytes()).map_err(fail)?;
-    write_synced(&provenance, provenance_text.as_bytes()).map_err(fail)?;
+    let generations = root.join("generations");
+    std::fs::create_dir_all(&generations).map_err(|e| fail(format!("generation root: {e}")))?;
+    let generation = generations.join(&digest);
 
-    // Verify what landed, not what was intended.
-    let written_slots =
-        std::fs::read(&slots).map_err(|e| fail(format!("re-reading the vocabulary: {e}")))?;
-    let written_digest = format!("{:x}", Sha256::digest(&written_slots));
-    if written_digest != digest {
-        return Err(fail(format!(
-            "the written vocabulary hashes {written_digest}, expected {digest}"
-        )));
-    }
-    let reparsed = String::from_utf8(written_slots)
-        .map_err(|e| fail(format!("the written vocabulary is not UTF-8: {e}")))?;
-    ti4_policy::vocabulary::Vocabulary::from_json(&reparsed)
-        .map_err(|e| fail(format!("the written vocabulary does not load: {e}")))?;
-
-    let written_provenance =
-        std::fs::read(&provenance).map_err(|e| fail(format!("re-reading the provenance: {e}")))?;
-    provenance_names(&written_provenance, &digest).map_err(fail)?;
+    let (slots, provenance) = if generation.exists() {
+        let (slots, provenance) = validate_generation_files(&generation, &digest).map_err(fail)?;
+        let existing_slots =
+            std::fs::read(&slots).map_err(|e| fail(format!("reading existing vocabulary: {e}")))?;
+        let existing_provenance = std::fs::read(&provenance)
+            .map_err(|e| fail(format!("reading existing provenance: {e}")))?;
+        if existing_slots != slots_text.as_bytes()
+            || existing_provenance != provenance_text.as_bytes()
+        {
+            return Err(fail(format!(
+                "immutable generation {digest} already exists with different bytes"
+            )));
+        }
+        (slots, provenance)
+    } else {
+        let staging = generations.join(format!(".{digest}.{}.staging", std::process::id()));
+        std::fs::create_dir(&staging)
+            .map_err(|e| fail(format!("creating staging generation: {e}")))?;
+        let staged_slots = staging.join("slots.json");
+        let staged_provenance = staging.join("slots.provenance.json");
+        let staged_result = (|| -> Result<(), String> {
+            write_synced(&staged_slots, slots_text.as_bytes())?;
+            write_synced(&staged_provenance, provenance_text.as_bytes())?;
+            validate_generation_files(&staging, &digest)?;
+            Ok(())
+        })();
+        if let Err(reason) = staged_result {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(fail(reason));
+        }
+        if let Err(error) = std::fs::rename(&staging, &generation) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(fail(format!(
+                "committing the generation directory: {error}"
+            )));
+        }
+        validate_generation_files(&generation, &digest).map_err(fail)?
+    };
 
     // Commit: one small pointer, one atomic rename. A reader sees either the old generation or the
     // new one, never half of each.
@@ -531,22 +586,29 @@ pub fn accepted_generation(root: &std::path::Path) -> Result<Generation, CorpusE
         .get("generation")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| fail("the pointer names no generation".to_owned()))?;
-    let slots = root.join("generations").join(digest).join("slots.json");
-    let bytes =
-        std::fs::read(&slots).map_err(|e| fail(format!("reading {}: {e}", slots.display())))?;
-    let found = format!("{:x}", Sha256::digest(&bytes));
-    if found != digest {
-        return Err(fail(format!(
-            "the accepted generation hashes {found} but is filed under {digest}"
-        )));
+    if !valid_sha256(digest) {
+        return Err(fail(
+            "the pointer generation is not a SHA-256 digest".to_owned(),
+        ));
     }
+    let canonical_slots = format!("generations/{digest}/slots.json");
+    let canonical_provenance = format!("generations/{digest}/slots.provenance.json");
+    if document.get("slots").and_then(serde_json::Value::as_str) != Some(canonical_slots.as_str())
+        || document
+            .get("provenance")
+            .and_then(serde_json::Value::as_str)
+            != Some(canonical_provenance.as_str())
+    {
+        return Err(fail(
+            "the pointer paths do not match its generation id".to_owned(),
+        ));
+    }
+    let generation = root.join("generations").join(digest);
+    let (slots, provenance) = validate_generation_files(&generation, digest).map_err(fail)?;
     Ok(Generation {
         digest: digest.to_owned(),
         slots,
-        provenance: root
-            .join("generations")
-            .join(digest)
-            .join("slots.provenance.json"),
+        provenance,
     })
 }
 
@@ -824,7 +886,71 @@ mod tests {
         let error = accepted_generation(&scratch.0).expect_err("a tampered generation is refused");
         match error {
             CorpusError::Publication { reason, .. } => {
-                assert!(reason.contains("filed under"), "reason: {reason}");
+                assert!(reason.contains("hashes"), "reason: {reason}");
+            }
+            other => panic!("wrong error: {other}"),
+        }
+    }
+
+    #[test]
+    fn an_accepted_generation_requires_its_valid_provenance() {
+        let scratch = Scratch::new("missing-provenance");
+        let text = small_vocabulary_text();
+        let generation =
+            publish_generation(&scratch.0, &text, &provenance_for(&text, true)).expect("publishes");
+        std::fs::remove_file(&generation.provenance).expect("remove provenance");
+
+        let error = accepted_generation(&scratch.0)
+            .expect_err("slots alone must not constitute an accepted generation");
+        match error {
+            CorpusError::Publication { reason, .. } => {
+                assert!(reason.contains("provenance"), "reason: {reason}");
+            }
+            other => panic!("wrong error: {other}"),
+        }
+    }
+
+    #[test]
+    fn republishing_one_slots_digest_cannot_mutate_its_accepted_provenance() {
+        let scratch = Scratch::new("immutable");
+        let text = small_vocabulary_text();
+        let first_provenance = provenance_for(&text, true);
+        let generation = publish_generation(&scratch.0, &text, &first_provenance)
+            .expect("first generation publishes");
+        let before = std::fs::read(&generation.provenance).expect("read before");
+
+        let changed = first_provenance.replace("\"abc\"", "\"different-checkpoint\"");
+        let error = publish_generation(&scratch.0, &text, &changed)
+            .expect_err("an immutable generation cannot be rewritten");
+        match error {
+            CorpusError::Publication { reason, .. } => {
+                assert!(reason.contains("immutable generation"), "reason: {reason}");
+            }
+            other => panic!("wrong error: {other}"),
+        }
+        assert_eq!(
+            std::fs::read(&generation.provenance).expect("read after"),
+            before,
+            "a failed same-digest publication changed accepted provenance"
+        );
+        assert_eq!(
+            accepted_generation(&scratch.0).expect("still accepted"),
+            generation
+        );
+    }
+
+    #[test]
+    fn a_pointer_generation_cannot_escape_the_generation_root() {
+        let scratch = Scratch::new("pointer-traversal");
+        std::fs::write(
+            scratch.0.join("current.json"),
+            "{\"generation\":\"../../outside\",\"slots\":\"x\",\"provenance\":\"y\"}",
+        )
+        .expect("write pointer");
+        let error = accepted_generation(&scratch.0).expect_err("path traversal must be refused");
+        match error {
+            CorpusError::Publication { reason, .. } => {
+                assert!(reason.contains("SHA-256"), "reason: {reason}");
             }
             other => panic!("wrong error: {other}"),
         }

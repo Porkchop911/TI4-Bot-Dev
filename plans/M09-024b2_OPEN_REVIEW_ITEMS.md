@@ -373,3 +373,32 @@ smoke                                                 exit 0, 0 fallbacks
 the digest is present and correct, the evidence fields are not),
 `a_crash_before_the_pointer_leaves_the_previous_generation_accepted`, and
 `a_pointer_naming_a_generation_that_does_not_match_is_refused`.
+
+## Independent Tier-C review of `27d37a1` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the `27d37a1` implementation.
+
+The manifest-last shape is the right crash boundary, and the exact r6 identity and hermetic
+campaign regression remain sound. Two generation-integrity gaps prevent acceptance:
+
+| ID | Severity | Finding | Required correction |
+|---|---|---|---|
+| F-M09-024b2-12 | **HIGH** | `publish_generation` writes directly into `generations/<slots-sha>/`. Repeating the same vocabulary with different provenance therefore overwrites an already accepted generation before the pointer commit. A failure between the two writes can corrupt the generation named by the old pointer. The directory is versioned in name only, not immutable. | Stage both files in a new sibling directory, validate the complete pair, and atomically rename the directory into place. If the digest directory already exists, require its complete bytes to match exactly and never rewrite it. Add a same-slots/different-provenance regression that proves the accepted bytes remain unchanged. |
+| F-M09-024b2-13 | **HIGH** | `accepted_generation` hashes only `slots.json`; it returns an absent, invalid, or mismatched provenance as accepted. It also joins the pointer's unvalidated `generation` string into a path and ignores the pointer's `slots` and `provenance` fields. A forged pointer can therefore traverse outside the generation root or present a vocabulary/provenance pair that was never validated together. | Restrict generation IDs to canonical SHA-256 text, require canonical pointer paths, and validate the same complete slots/provenance pair readers subsequently consume. Add missing-provenance and traversal regressions. |
+
+**Verdict: changes required.** M09-024b2 and parent M09-024 remain open.
+
+## F-M09-024b2-12..13 correction (2026-08-25) — pending independent recheck
+
+- A new generation is now built under a sibling staging directory. Both files are synced and
+  validated there, the complete directory is renamed into place, and only then may `current.json`
+  move. An existing digest directory is treated as immutable: both existing files must validate
+  and match the requested bytes exactly.
+- `accepted_generation` accepts only a 64-hex generation ID, requires the two canonical relative
+  paths in the pointer, verifies the slots digest and vocabulary schema, and parses/binds the
+  provenance from the exact bytes it returns.
+- Regressions cover missing provenance, same-slots/different-provenance immutability, and pointer
+  traversal. Focused corpus tests now pass **13/13**.
+
+The correction is implemented and locally verified, but it is **not self-accepted**. M09-024b2
+remains open pending a fresh independent Tier-C recheck of the correction commit.

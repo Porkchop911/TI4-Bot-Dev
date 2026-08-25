@@ -5468,3 +5468,48 @@ smoke                                                 exit 0, 0 fallbacks
 the digest is present and correct, the evidence fields are not),
 `a_crash_before_the_pointer_leaves_the_previous_generation_accepted`, and
 `a_pointer_naming_a_generation_that_does_not_match_is_refused`.
+
+## Post-`27d37a1` Tier-C review and correction (2026-08-25)
+
+Independent review of `27d37a1` found four actionable items:
+
+- **F-M09-024b2-12 HIGH:** digest-named generation directories were rewritten directly when the
+  slots digest repeated, allowing accepted provenance to change before pointer commit.
+- **F-M09-024b2-13 HIGH:** `accepted_generation` validated only slots bytes and trusted pointer
+  paths, so it did not enforce a complete bound pair or contain path traversal.
+- **F-M09-026-12 HIGH:** actor refusal and the position-free MLP path still returned random legal
+  answers, leaving successful execution dependent on later status inspection.
+- **F-M09-026-13 MEDIUM:** smoke generation resolution could fall back to a legacy file, and its
+  pool-refusal regression depended on an ignored machine-local artifact.
+
+All four are implementation-resolved in the working correction:
+
+- generation directories are staged, fully validated, committed by directory rename, and immutable
+  once named; a repeat digest must match both files byte-for-byte;
+- accepted-generation reads validate a canonical SHA-256 ID, canonical pointer paths, slots digest
+  and schema, plus bound provenance from the exact returned pair;
+- MLP inference refusal and observation-free use return typed `IllegalChoice::DeciderFailed` and
+  cannot become legal moves;
+- the smoke uses the full accepted-generation reader with no fallback, and the role-refusal test is
+  hermetic.
+
+Checks at the correction frontier:
+
+```
+cargo test -p ti4-training --lib vocabulary_corpus   13 passed, 0 failed
+cargo test -p ti4-mlp                                28 passed, 0 failed
+cargo test --workspace                               passed, 0 failed
+cargo clippy -p ti4-engine --lib                     exit 0; one pre-existing game.rs warning
+cargo clippy -p ti4-mlp --all-targets                exit 0; no warning in touched files
+cargo clippy -p ti4-training --lib --example vocabulary_discovery
+                                                     exit 0; no warning in touched files
+release smoke seed 999000111                         exit 0, 448 decisions, 0 failures
+forced-failure smoke                                 typed refusal at step 0, exit 4
+rustfmt --edition 2024 --check <touched Rust files>  clean
+git diff --check                                     clean
+```
+
+**Status:** M09-024b2 and M09-026 corrections are complete but not self-accepted. Their next exact
+action is a fresh independent Tier-C recheck of the correction commit. M09-027 remains blocked on
+those acceptances. Unrelated user changes in `AGENTS.md` remain untouched and must not be included
+in the package commit.

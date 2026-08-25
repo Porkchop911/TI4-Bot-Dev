@@ -96,7 +96,9 @@ pub struct MlpBot {
 pub struct Counters {
     /// Decisions answered by the model.
     pub decisions: AtomicUsize,
-    /// Decisions the model **failed** to answer, where the bot fell back to a legal guess.
+    /// Decisions the model **failed** to answer. The name is retained from the first implementation,
+    /// but failures now propagate through [`IllegalChoice::DeciderFailed`] and no legal guess is
+    /// returned.
     ///
     /// Any non-zero value invalidates the campaign that produced it. An earlier version caught
     /// every actor error and made a random legal choice with no counter at all, so a run in which
@@ -175,7 +177,15 @@ struct SeatedBot(MlpBot);
 
 impl Decider for SeatedBot {
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
-        self.0.choose_legal(choice)
+        // An MLP cannot score without its bound observation. Returning a random legal choice here
+        // would recreate the same apparent-success hole as an actor error, just through the
+        // position-free Decider method.
+        self.0.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
+        Err(IllegalChoice::DeciderFailed {
+            player: choice.player.clone(),
+            prompt: choice.prompt.clone(),
+            reason: "MLP inference requires a bound seat observation".to_owned(),
+        })
     }
 
     fn choose_seeing(
@@ -188,19 +198,6 @@ impl Decider for SeatedBot {
 }
 
 impl MlpBot {
-    fn choose_legal(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
-        // No position offered. Uniform over the legal set rather than a fixed index, so a decider
-        // without a view does not silently bias every such decision to the first option.
-        choice
-            .options
-            .get(self.rng.random_range(0..choice.options.len().max(1)))
-            .cloned()
-            .ok_or_else(|| IllegalChoice::NoOptions {
-                player: choice.player.clone(),
-                prompt: choice.prompt.clone(),
-            })
-    }
-
     fn decide(
         &mut self,
         choice: &Choice,
@@ -225,24 +222,27 @@ impl MlpBot {
             .collect();
 
         let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
-        let probabilities = match self.actor.probabilities(
-            &options,
-            head,
-            self.row,
-            self.temperature,
-        ) {
-            Ok(probabilities) => probabilities,
-            Err(error) => {
-                // A model refusal must not become an apparent success. The game still needs a legal
-                // answer, so one is given — but the failure is counted and named, and any campaign
-                // that sees a non-zero fallback count is invalid.
-                self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
-                    "MLP inference failed on head {head} ({error}); falling back to a legal guess"
-                );
-                return self.choose_legal(choice);
-            }
-        };
+        let probabilities =
+            match self
+                .actor
+                .probabilities(&options, head, self.row, self.temperature)
+            {
+                Ok(probabilities) => probabilities,
+                Err(error) => {
+                    // A model refusal is a failed game step, not a legal-looking move plus a side
+                    // channel a caller may forget to inspect. The counter remains useful evidence, but
+                    // correctness no longer depends on consuming it.
+                    self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
+                    eprintln!(
+                        "MLP inference failed on head {head} ({error}); refusing the decision"
+                    );
+                    return Err(IllegalChoice::DeciderFailed {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                        reason: format!("MLP head {head}: {error}"),
+                    });
+                }
+            };
         self.counters.decisions.fetch_add(1, Ordering::Relaxed);
 
         // Sample. The cumulative walk is the same shape the linear bot uses, so a comparison

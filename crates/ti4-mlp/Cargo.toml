@@ -20,6 +20,7 @@ sha2.workspace = true
 
 [dev-dependencies]
 ti4-sim.workspace = true
+ti4-training.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 

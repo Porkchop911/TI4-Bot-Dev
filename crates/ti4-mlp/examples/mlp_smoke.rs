@@ -44,10 +44,9 @@ const ACCEPTED_SLOTS_SHA256: &str =
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {
-    let pointer = std::fs::read("out/vocabulary/current.json").ok()?;
-    let document: serde_json::Value = serde_json::from_slice(&pointer).ok()?;
-    let digest = document.get("generation")?.as_str()?;
-    Some(format!("out/vocabulary/generations/{digest}/slots.json"))
+    ti4_training::vocabulary_corpus::accepted_generation(std::path::Path::new("out/vocabulary"))
+        .ok()
+        .map(|generation| generation.slots.display().to_string())
 }
 
 fn refuse(reason: &str) -> ! {
@@ -72,7 +71,8 @@ fn main() {
     // Default to the accepted generation the pointer names, rather than a fixed path that a
     // republish moves out from under.
     let slots = argument("--slots").unwrap_or_else(|| {
-        ti4_training_generation().unwrap_or_else(|| "out/vocabulary/slots.json".to_owned())
+        ti4_training_generation()
+            .unwrap_or_else(|| refuse("out/vocabulary/current.json names no valid generation"))
     });
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
@@ -203,7 +203,7 @@ fn main() {
         let result = game.step();
         if let Some(error) = &result.error {
             eprintln!("game died at step {steps}: {error}");
-            std::process::exit(2);
+            std::process::exit(if force_failure { 4 } else { 2 });
         }
         if result.resolved_choice {
             resolved += 1;

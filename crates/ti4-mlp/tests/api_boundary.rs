@@ -38,8 +38,33 @@ fn a_bot_cannot_be_seated_without_receiving_its_inference_status() {
 }
 
 #[test]
-fn the_status_reports_fallbacks_rather_than_a_clean_result() {
-    // A temperature the actor must refuse turns every decision into a counted fallback.
+fn the_position_free_decider_path_refuses_instead_of_guessing() {
+    let (mut decider, status) = bot().seat();
+    let choice = ti4_engine::choice::Choice::new(
+        ti4_model::id::PlayerId::new("a"),
+        "position required",
+        vec![ti4_engine::choice::ChoiceOption::labelled("x", "kind", "x")],
+    );
+    let error = decider
+        .choose(&choice)
+        .expect_err("an MLP without an observation must not guess");
+    assert!(matches!(
+        error,
+        ti4_engine::choice::IllegalChoice::DeciderFailed { .. }
+    ));
+    assert_eq!(
+        status
+            .into_result()
+            .expect_err("the refusal is recorded")
+            .fallbacks,
+        1
+    );
+}
+
+#[test]
+fn an_inference_failure_is_a_typed_decider_error_and_a_failed_status() {
+    // A temperature the actor must refuse makes the decision itself fail. The status is retained
+    // for reporting, but it is no longer what makes the campaign fail closed.
     let seated = bot().at_temperature(0.0);
     let (mut decider, status) = seated.seat();
 
@@ -54,7 +79,7 @@ fn the_status_reports_fallbacks_rather_than_a_clean_result() {
         "decide",
         vec![ti4_engine::choice::ChoiceOption::labelled("x", "kind", "x")],
     );
-    let answered = ti4_engine::choice::ask_private(
+    let error = ti4_engine::choice::ask_private(
         &choice,
         &state,
         content,
@@ -62,11 +87,18 @@ fn the_status_reports_fallbacks_rather_than_a_clean_result() {
         None,
         decider.as_mut(),
     )
-    .expect("the game still receives a legal answer");
-    assert_eq!(answered.id, "x", "a fallback must still be legal");
+    .expect_err("inference failure must propagate through the decider boundary");
+    assert!(
+        matches!(
+            error,
+            ti4_engine::choice::IllegalChoice::DeciderFailed { ref reason, .. }
+                if reason.contains("temperature")
+        ),
+        "wrong error: {error}"
+    );
 
     let error = status
         .into_result()
         .expect_err("a run containing a fallback is not a success");
-    assert_eq!(error.fallbacks, 1, "the fallback was not counted");
+    assert_eq!(error.fallbacks, 1, "the inference failure was not counted");
 }

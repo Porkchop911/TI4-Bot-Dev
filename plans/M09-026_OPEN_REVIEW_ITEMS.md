@@ -395,3 +395,32 @@ smoke                                                 exit 0, 0 fallbacks
 the digest is present and correct, the evidence fields are not),
 `a_crash_before_the_pointer_leaves_the_previous_generation_accepted`, and
 `a_pointer_naming_a_generation_that_does_not_match_is_refused`.
+
+## Independent Tier-C review of `27d37a1` (2026-08-25) — changes required
+
+Reviewer: Codex frontier model, independent of the `27d37a1` implementation.
+
+The private `SeatedBot` closes direct boxing, the actor dimensions remain sound, and the automated
+input-refusal tests run. Two fail-closed gaps remain:
+
+| ID | Severity | Finding | Required correction |
+|---|---|---|---|
+| F-M09-026-12 | **HIGH** | `SeatedBot` still converts actor inference errors into random legal answers, and its position-free `Decider::choose` also guesses randomly. `InferenceStatus` can still be explicitly discarded, so both paths can produce a successful game despite failed or observation-free inference. | Return a typed game-step error from both paths. Keep counters only as evidence; campaign correctness must no longer depend on consuming the status. Add runtime regressions for actor refusal and the position-free path. |
+| F-M09-026-13 | **MEDIUM** | The smoke reads `current.json` itself, validates only the slots hash, and silently falls back to the legacy `out/vocabulary/slots.json` when the pointer cannot be resolved. Its pool-refusal regression depends on an untracked final pool and can pass on a generic file-read failure rather than proving role refusal. | Resolve the default through the full accepted-generation validator with no legacy fallback, and make the pool refusal hermetic with a structurally valid unknown-role/unmanifested fixture. |
+
+**Verdict: changes required.** M09-026 and M09-027 remain blocked.
+
+## F-M09-026-12..13 correction (2026-08-25) — pending independent recheck
+
+- Added `IllegalChoice::DeciderFailed`. Actor refusal and the observation-free `Decider::choose`
+  path now return this typed error instead of selecting a legal-looking random option. The legacy
+  counter remains diagnostic only.
+- The smoke resolves its default vocabulary through `accepted_generation`, refuses an invalid or
+  absent pointer without a legacy fallback, and exits 4 immediately on forced inference failure.
+- The pool refusal regression now creates a bounded, structurally valid pool in a temporary path,
+  so the assertion proves the manifest/role gate and does not depend on ignored local artifacts.
+- `cargo test -p ti4-mlp` passes **28/28**; release smoke seed `999000111` completes with 448 model
+  decisions and zero failures, while the forced-failure run aborts at step 0 with exit 4.
+
+The correction is implemented and locally verified, but it is **not self-accepted**. M09-026
+remains open pending a fresh independent Tier-C recheck of the correction commit.
