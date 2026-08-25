@@ -165,3 +165,22 @@ capacity is likely to land at **16,384** rather than the 24,576 ceiling — whic
 already anticipates ("may therefore derive 16,384"). 024b2 measures it; nothing here assumes it.
 
 Requesting a fresh independent Tier-C recheck. M09-024b1 remains open and M09-024b2 blocked.
+
+## Fresh independent Tier-C recheck of `0b8bd8e` (2026-08-25) — changes required
+
+The correction closes F-M09-024b1-1's two named legacy-only leaks and adds independent ordered
+registry fingerprints, closing F-M09-024b1-2. Focused gates independently rerun at current HEAD:
+projection **12/0**, vocabulary **26/0**.
+
+One fail-open edge remains:
+
+| ID | Severity | Finding | Required correction |
+|---|---|---|---|
+| F-M09-024b1-3 | **HIGH** | `role_of` maps **every** family ending in `-unit` to the transferable `*-unit` role. Thus `admits("never-reviewed-unit:anything")` is true even though the correction claims unknown families are denied and the architecture ruling approves only `<canonical-kind>-unit`. This is especially material because checkpoint names are a discovery source: an arbitrary historical `*-unit` family can enter the dense vocabulary without the architecture review required for a new family. The test covers two valid examples but no invalid suffix family. | Bound the wildcard to the closed canonical decision-kind inventory (or another independently pinned finite inventory), deny unknown suffix prefixes, and add positive tests for every approved unit family plus a negative unknown-`-unit` regression. Rerun discovery after the corrected predicate; if the retained name set or checksum changes, regenerate and re-review M09-024b2. |
+
+The stale “three dead rows / 768 weights” prose in `vocabulary.rs` and the architecture request must
+also be reconciled with the corrected five-row inventory (**1,280** weights at width 256), so
+M09-026/M09-028 do not inherit conflicting requirements.
+
+**Disposition:** the operator override remains an operator override, not a reviewer acceptance.
+M09-024b1 still needs correction and recheck; M09-024b2 remains review-blocked by this predicate.

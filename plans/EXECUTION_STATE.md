@@ -4804,3 +4804,49 @@ on values of order 4 × 10⁶ is a test that cannot fail; had I fixed only the f
 the absolute tolerance, both would have passed for the wrong reason.
 
 ## Gates
+## Independent review checkpoint — M09-024b1 recheck and M09-025 (2026-08-25)
+
+### M09-024b1 fresh Tier-C recheck of `0b8bd8e` — changes required
+
+- The correction closes F-M09-024b1-1's two named legacy-only leaks and closes
+  F-M09-024b1-2 with independent ordered fingerprints. Independent focused reruns at current HEAD:
+  projection **12/0**, vocabulary **26/0**.
+- **F-M09-024b1-3 HIGH:** `role_of` maps every family ending `-unit` to the transferable wildcard,
+  so an unknown `never-reviewed-unit` family is admitted despite the closed-default claim. Bound
+  the wildcard to a pinned canonical decision-kind inventory and rerun discovery if its retained
+  set changes.
+- Reconcile stale three-row/768-weight prose with the corrected five-row/**1,280-weight** inventory.
+- **Status:** operator override remains recorded as an override, not reviewer acceptance.
+  M09-024b1 remains open; M09-024b2 remains review-blocked. Full finding:
+  `plans/M09-024b1_OPEN_REVIEW_ITEMS.md`.
+
+### M09-025 independent Tier-C review of `e74a18e` — changes required
+
+- Independent serial focused gate: `cargo test -p ti4-tensor -- --test-threads=1` — **10 passed,
+  0 failed**.
+- **F-M09-025-1 HIGH:** the committed manifest is never checked against the DLL bytes actually
+  staged/loaded, and `build.rs` silently keeps same-named stale targets and discards errors.
+- **F-M09-025-2 HIGH:** deterministic configuration checks only intra-op; a failed inter-op pin is
+  swallowed and can still return `Ok`.
+- **F-M09-025-3 HIGH:** duplicate-column reductions preserve caller order among differing values,
+  so non-associative f32 sums are not permutation-deterministic.
+- **F-M09-025-4 MEDIUM:** `to_vec` turns conversion errors into an empty vector, allowing evidence
+  and assertions to become vacuous.
+- **Status:** M09-025 remains open. M09-026 cannot be accepted on this tensor boundary until the
+  correction receives a fresh recheck. Full ledger: `plans/M09-025_OPEN_REVIEW_ITEMS.md`.
+
+### M09-024b2 independent Tier-C review of `45c6a2d` — changes required
+
+- Retained artifact independently verified: 1,137,045 bytes, SHA-256 `14c19387…efd8479`, 10,997
+  slots, capacity 16,384, registry v2, OOV count 40. Focused corpus tests: **3/0**.
+- **F-M09-024b2-1 HIGH:** checkpoint and pool identities/roles are not verified, and the checkpoint
+  is reopened rather than consumed through one verified buffer.
+- **F-M09-024b2-2 HIGH:** rollout errors are discarded and still counted as successful games.
+- **F-M09-024b2-3 HIGH:** the reviewed 24,576 ceiling and required non-empty/unique source
+  contributions are printed but not enforced.
+- **F-M09-024b2-4 HIGH:** `--rounds` permits a non-four-round campaign to publish output without
+  recording a distinct schedule identity.
+- **F-M09-024b2-5 MEDIUM:** direct publication is non-atomic and reports an in-memory digest
+  without verifying the written file.
+- **Status:** M09-024b2 and parent M09-024 remain open; b2 is also downstream-blocked by
+  F-M09-024b1-3. Full ledger: `plans/M09-024b2_OPEN_REVIEW_ITEMS.md`.
