@@ -1,10 +1,18 @@
-//! M09-024b: build the dense feature vocabulary from §4.5's three sources.
+//! M09-024b2: build the dense feature vocabulary from §4.5's three sources.
 //!
-//! One bounded discovery pass. Reads the r6 checkpoint and the training map pool, replays the
-//! §6.1 teacher seed schedule, and writes exactly one artifact — the `slots.json` every trained
-//! weight will be addressed by.
+//! One bounded discovery pass over the §6.1 teacher seed schedule, publishing exactly one artifact.
 //!
-//! Run:
+//! # Everything here fails closed
+//!
+//! An earlier version verified nothing and published anyway. It opened the checkpoint twice without
+//! checking either read against the durable accepted identity, opened the pool without its role
+//! gate, discarded every rollout error while counting the game as a success, enforced only the
+//! global 65,536 limit rather than this branch's reviewed 24,576 ceiling, accepted any `--rounds`
+//! value while recording no schedule identity, and wrote the artifact with a bare `fs::write` whose
+//! digest was computed from memory rather than from the bytes on disk.
+//!
+//! Each of those is now a gate, and the artifact is published only if every one of them passes.
+//!
 //! ```text
 //! cargo run --release -p ti4-training --example vocabulary_discovery -- \
 //!     --checkpoint out/stage2_r6/final10000.json \
@@ -12,24 +20,35 @@
 //!     --out out/vocabulary/slots.json
 //! ```
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use sha2::Digest;
 use ti4_content::ContentStore;
 use ti4_model::content_types::DEFAULT;
 use ti4_policy::vocabulary::{CAPACITY_LIMIT, Vocabulary};
+use ti4_sim::artifacts::ArtifactRole;
 use ti4_training::rollout::Horizon;
-use ti4_training::vocabulary_corpus::{champion_names, content_names, replay_names};
+use ti4_training::vocabulary_corpus::{
+    Contribution, champion_names, champion_profiles, content_names, replay_names,
+};
 
-/// MLP plan §6.1's fixed teacher seed schedule.
+/// MLP plan §6.1's fixed teacher seed schedule. Not configurable: a one-round or half-schedule pass
+/// would publish under the same evidence labels as the approved run (F-M09-024b2-4).
 const SEEDS: std::ops::Range<u64> = 202_608_210..202_608_338;
 /// The six r6 champion factions, in the rotation order the schedule uses.
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
-/// Matches the diagnostic drivers already in this crate.
 const TILE_SEED_OFFSET: u64 = 20_000_000;
-/// Declared artifact cap for this package.
+/// §6.1's horizon. Fixed for the same reason as the seed range.
+const ROUNDS: u32 = 4;
+/// The reviewed ceiling for this branch, below the architecture's global limit.
+const REVIEWED_CAPACITY_CEILING: usize = 24_576;
+/// Declared artifact cap.
 const ARTIFACT_CAP_BYTES: usize = 16 * 1024 * 1024;
+/// §4.5's three sources, and exactly three.
+const EXPECTED_SOURCES: usize = 3;
 
 fn argument(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
@@ -39,54 +58,101 @@ fn argument(name: &str) -> Option<String> {
         .cloned()
 }
 
-fn report(label: &str, vocabulary: &Vocabulary) {
-    println!(
-        "  {label:<28} slot_count {:>6}   V_cap {:>6}   free {:>6}",
-        vocabulary.slot_count(),
-        vocabulary.capacity(),
-        vocabulary.free_rows()
-    );
+fn refuse(reason: &str) -> ! {
+    eprintln!("\nREFUSED: {reason}");
+    eprintln!("No artifact was written.");
+    std::process::exit(2);
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+/// Write, verify the bytes that landed, then atomically replace.
+///
+/// A bare `fs::write` can truncate the previous artifact and leave a short file behind, and a
+/// digest taken from memory describes bytes that may not be on disk (F-M09-024b2-5). The staged
+/// file is re-read, re-hashed and re-parsed before it replaces anything.
+fn publish(destination: &Path, text: &str, expected_digest: &str) -> Result<(), String> {
+    let staged = destination.with_extension("json.staging");
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("output directory: {e}"))?;
+    }
+    std::fs::write(&staged, text.as_bytes()).map_err(|e| format!("staging write: {e}"))?;
+
+    let written = std::fs::read(&staged).map_err(|e| format!("staging reread: {e}"))?;
+    let digest = sha256(&written);
+    if digest != expected_digest {
+        let _ = std::fs::remove_file(&staged);
+        return Err(format!(
+            "staged bytes hash {digest}, expected {expected_digest}"
+        ));
+    }
+    let reparsed =
+        String::from_utf8(written).map_err(|e| format!("staged bytes not UTF-8: {e}"))?;
+    Vocabulary::from_json(&reparsed).map_err(|e| format!("staged artifact does not load: {e}"))?;
+
+    std::fs::rename(&staged, destination).map_err(|e| format!("atomic replace: {e}"))?;
+    Ok(())
 }
 
 #[expect(
     clippy::too_many_lines,
-    reason = "a linear discovery script: it reads in the order the pass runs, and splitting it               would hide that order behind call sites"
+    reason = "a linear discovery script: every gate is visible in the order it runs rather than \
+              hidden behind call sites"
 )]
 fn main() {
     let content = ContentStore::embedded();
-    let checkpoint =
+    let checkpoint_path =
         argument("--checkpoint").unwrap_or_else(|| "out/stage2_r6/final10000.json".to_owned());
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
     let out =
         PathBuf::from(argument("--out").unwrap_or_else(|| "out/vocabulary/slots.json".to_owned()));
-    let rounds: u32 = argument("--rounds")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(4);
 
     let started = std::time::Instant::now();
 
-    // Source (a) — the champions' existing names.
-    let champions = champion_names(Path::new(&checkpoint)).expect("r6 checkpoint");
-    println!("source (a) r6 champions : {} names", champions.names.len());
-
-    // Source (c) — everything a content record determines on its own.
-    let content_source = content_names(content, DEFAULT);
-    println!(
-        "source (c) content      : {} names",
-        content_source.names.len()
-    );
-
-    // Source (b) — the replay. The expensive one, and the only reason this package is P2.
-    let document: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&checkpoint).expect("read")).expect("parse");
-    let profiles = serde_json::from_value(document["profiles"].clone()).expect("profiles");
-    let pool = Arc::new(ti4_sim::MapPool::load(Path::new(&pool_path)).expect("pool"));
-    let horizon = Horizon {
-        rounds,
-        steps: 2_000_000,
+    // --- Inputs: read once, verify those exact bytes, parse every consumer from them. ---
+    let checkpoint_bytes = match std::fs::read(&checkpoint_path) {
+        Ok(bytes) => bytes,
+        Err(error) => refuse(&format!("reading {checkpoint_path}: {error}")),
     };
-    let (replay, games) = replay_names(
+    let checkpoint_sha = sha256(&checkpoint_bytes);
+    if !checkpoint_sha.starts_with(ti4_sim::baseline::R6_CHECKPOINT_SHA_PREFIX) {
+        refuse(&format!(
+            "{checkpoint_path} is {checkpoint_sha}, not the accepted r6 checkpoint (expected \
+             prefix {})",
+            ti4_sim::baseline::R6_CHECKPOINT_SHA_PREFIX
+        ));
+    }
+    let pool_bytes = match ti4_sim::artifacts::read_and_verify_pool_role(
+        Path::new(&pool_path),
+        &[ArtifactRole::Train],
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) => refuse(&format!(
+            "{pool_path} is not an approved Train pool: {error}"
+        )),
+    };
+    let pool_sha = sha256(&pool_bytes);
+    let pool = match ti4_sim::MapPool::from_reader(Cursor::new(&pool_bytes)) {
+        Ok(pool) => Arc::new(pool),
+        Err(error) => refuse(&format!("parsing the verified pool bytes: {error}")),
+    };
+    println!("checkpoint {checkpoint_sha} (accepted r6)");
+    println!("pool       {pool_sha} (role Train)");
+
+    // --- The three sources. ---
+    let champions = match champion_names(&checkpoint_bytes, &checkpoint_path) {
+        Ok(contribution) => contribution,
+        Err(error) => refuse(&format!("source (a): {error}")),
+    };
+    let content_source = content_names(content, DEFAULT);
+    let profiles = match champion_profiles(&checkpoint_bytes, &checkpoint_path) {
+        Ok(profiles) => profiles,
+        Err(error) => refuse(&format!("checkpoint profiles: {error}")),
+    };
+    let campaign = match replay_names(
         content,
         DEFAULT,
         &pool,
@@ -94,37 +160,60 @@ fn main() {
         &FACTIONS,
         SEEDS,
         TILE_SEED_OFFSET,
-        horizon,
-    );
+        Horizon {
+            rounds: ROUNDS,
+            steps: 2_000_000,
+        },
+    ) {
+        Ok(campaign) => campaign,
+        Err(error) => refuse(&format!("source (b): {error}")),
+    };
+    let replay = Contribution {
+        source: "replay",
+        names: campaign.names.clone(),
+    };
     println!(
-        "source (b) replay       : {} names over {games} games",
-        replay.names.len()
+        "source (a) r6 champions : {} names\nsource (c) content      : {} names\nsource (b) \
+         replay       : {} names over {} completed games",
+        champions.names.len(),
+        content_source.names.len(),
+        replay.names.len(),
+        campaign.completed
     );
 
-    // What each source alone contributed. A source that produced nothing looks exactly like a
-    // source that was redundant unless this is measured.
+    // --- Gate: three sources, each non-empty and each contributing something no other did. ---
+    let sources = [&champions, &content_source, &replay];
+    assert_eq!(sources.len(), EXPECTED_SOURCES, "§4.5 names three sources");
     println!("\nunique contributions:");
-    for (source, others) in [
-        (&champions, vec![&content_source, &replay]),
-        (&content_source, vec![&champions, &replay]),
-        (&replay, vec![&champions, &content_source]),
-    ] {
+    for (index, source) in sources.iter().enumerate() {
+        let others: Vec<&Contribution> = sources
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != index)
+            .map(|(_, s)| *s)
+            .collect();
+        let unique = source.unique_against(&others);
         println!(
-            "  {:<24} {:>6} names no other source produced",
-            source.source,
-            source.unique_against(&others)
+            "  {:<16} {unique:>6} names no other source produced",
+            source.source
         );
+        if source.names.is_empty() {
+            refuse(&format!("source {} is empty", source.source));
+        }
+        if unique == 0 {
+            refuse(&format!(
+                "source {} contributed nothing no other source did; it is not load-bearing",
+                source.source
+            ));
+        }
     }
 
-    // Where the names actually come from. If the union overruns the architecture limit, the
-    // review that follows needs the distribution, not the total: a few unbounded families are a
-    // different problem from uniform growth across all of them.
+    // --- Build. ---
     let mut union: BTreeSet<String> = BTreeSet::new();
-    for source in [&champions, &content_source, &replay] {
+    for source in sources {
         union.extend(source.names.iter().cloned());
     }
-    let mut by_family: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
+    let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
     for name in &union {
         *by_family
             .entry(ti4_policy::vocabulary::family_of(name).to_owned())
@@ -133,81 +222,87 @@ fn main() {
     let mut ranked: Vec<(&String, &usize)> = by_family.iter().collect();
     ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
     println!(
-        "
-union by family ({} names, {} families):",
+        "\nunion by family ({} names, {} families):",
         union.len(),
         by_family.len()
     );
-    for (family, count) in ranked.iter().take(15) {
+    for (family, count) in ranked.iter().take(12) {
         #[expect(clippy::cast_precision_loss, reason = "reporting only")]
         let share = 100.0 * (**count as f64) / (union.len() as f64);
         println!("  {family:<24} {count:>7}  {share:>5.1}%");
     }
 
-    // Growth, one source at a time, so the replay's contribution to V_cap is readable rather than
-    // folded into a single final number.
-    println!("\ngrowth:");
-    let mut cumulative: BTreeSet<String> = BTreeSet::new();
-    let mut built: Option<Vocabulary> = None;
-    for source in [&champions, &content_source, &replay] {
-        cumulative.extend(source.names.iter().cloned());
-        match Vocabulary::build(cumulative.iter()) {
-            Ok(vocabulary) => {
-                report(&format!("+ {}", source.source), &vocabulary);
-                built = Some(vocabulary);
-            }
-            Err(error) => {
-                eprintln!("\nSTOPPED after + {}: {error}", source.source);
-                eprintln!(
-                    "MLP plan section 4.5: above {CAPACITY_LIMIT} this package stops for an \
-                     explicit architecture review rather than allocating a larger model."
-                );
-                std::process::exit(2);
-            }
-        }
-    }
-    let vocabulary = built.expect("at least one source");
-
-    // The double-build requirement, over the real corpus rather than a fixture.
-    let reversed: Vec<&String> = cumulative.iter().rev().collect();
-    let second = Vocabulary::build(reversed).expect("second build");
-    let first_json = vocabulary.to_json().expect("json");
-    let second_json = second.to_json().expect("json");
-    assert_eq!(
-        first_json, second_json,
-        "the double build over reversed input differed"
-    );
-    println!("\ndouble build over reversed input: byte-identical");
-
-    assert!(
-        first_json.len() <= ARTIFACT_CAP_BYTES,
-        "slots.json is {} bytes, above the declared {ARTIFACT_CAP_BYTES} cap",
-        first_json.len()
-    );
-
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent).expect("output directory");
-    }
-    std::fs::write(&out, &first_json).expect("write slots.json");
-
-    let digest = {
-        use sha2::Digest;
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(first_json.as_bytes());
-        format!("{:x}", hasher.finalize())
+    let vocabulary = match Vocabulary::build(union.iter()) {
+        Ok(vocabulary) => vocabulary,
+        Err(error) => refuse(&format!("building the vocabulary: {error}")),
     };
 
-    println!("\nmanifest:");
-    println!("  slots_sha256          {digest}");
-    println!("  slot_count            {}", vocabulary.slot_count());
-    println!("  V_cap                 {}", vocabulary.capacity());
-    println!("  allocated_for         {}", vocabulary.allocated_for());
-    println!(
-        "  oov_registry_version  {}",
-        vocabulary.oov_registry_version()
+    // --- Gate: the reviewed ceiling, not merely the architecture's global limit. ---
+    if vocabulary.capacity() > REVIEWED_CAPACITY_CEILING {
+        refuse(&format!(
+            "V_cap {} is above this branch's reviewed ceiling of {REVIEWED_CAPACITY_CEILING} (the \
+             global limit is {CAPACITY_LIMIT}); this needs a fresh architecture review",
+            vocabulary.capacity()
+        ));
+    }
+
+    // --- Gate: the double build over reversed input. ---
+    let reversed: Vec<&String> = union.iter().rev().collect();
+    let second = match Vocabulary::build(reversed) {
+        Ok(second) => second,
+        Err(error) => refuse(&format!("the second build failed: {error}")),
+    };
+    let text = match vocabulary.to_json() {
+        Ok(text) => text,
+        Err(error) => refuse(&format!("serialising: {error}")),
+    };
+    let second_text = second.to_json().unwrap_or_default();
+    if text != second_text {
+        refuse("the double build over reversed input differed");
+    }
+    if text.len() > ARTIFACT_CAP_BYTES {
+        refuse(&format!(
+            "slots.json is {} bytes, above the {ARTIFACT_CAP_BYTES} cap",
+            text.len()
+        ));
+    }
+    println!("\ndouble build over reversed input: byte-identical");
+
+    // --- Publish, verifying the bytes that landed. ---
+    let digest = sha256(text.as_bytes());
+    if let Err(reason) = publish(&out, &text, &digest) {
+        refuse(&format!("publication: {reason}"));
+    }
+
+    // --- Provenance, tied to the artifact. ---
+    let provenance = format!(
+        "{{\n \"artifact\": \"{}\",\n \"slots_sha256\": \"{digest}\",\n \"slot_count\": {},\n \
+         \"v_cap\": {},\n \"allocated_for\": {},\n \"oov_registry_version\": {},\n \
+         \"oov_count\": {},\n \"checkpoint_sha256\": \"{checkpoint_sha}\",\n \
+         \"pool_sha256\": \"{pool_sha}\",\n \"pool_role\": \"train\",\n \
+         \"seed_range\": \"{}..{}\",\n \"rotations\": {},\n \"faction_order\": \"{}\",\n \
+         \"horizon_rounds\": {ROUNDS},\n \"games_completed\": {},\n \
+         \"tile_seed_offset\": {TILE_SEED_OFFSET},\n \"content_scope\": \"DEFAULT\"\n}}\n",
+        out.display(),
+        vocabulary.slot_count(),
+        vocabulary.capacity(),
+        vocabulary.allocated_for(),
+        vocabulary.oov_registry_version(),
+        vocabulary.oov_count(),
+        SEEDS.start,
+        SEEDS.end,
+        FACTIONS.len(),
+        FACTIONS.join(","),
+        campaign.completed,
     );
-    println!("  oov_count             {}", vocabulary.oov_count());
-    println!("  artifact bytes        {}", first_json.len());
-    println!("  wrote                 {}", out.display());
+    let provenance_path = out.with_file_name("slots.provenance.json");
+    if let Err(error) = std::fs::write(&provenance_path, &provenance) {
+        refuse(&format!("writing provenance: {error}"));
+    }
+
+    println!("\nmanifest:");
+    print!("{provenance}");
+    println!("  artifact bytes        {}", text.len());
+    println!("  provenance            {}", provenance_path.display());
     println!("  wall time             {:.1?}", started.elapsed());
 }

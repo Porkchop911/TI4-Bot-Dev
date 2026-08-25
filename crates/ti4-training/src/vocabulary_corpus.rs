@@ -19,7 +19,6 @@
 //! is what captures those, under its own permission.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
@@ -61,50 +60,73 @@ pub enum CorpusError {
     /// A checkpoint did not hold the profiles this pass needs.
     #[error("checkpoint {path}: {reason}")]
     Checkpoint { path: String, reason: String },
+    /// The campaign did not complete every game it was asked for.
+    #[error("campaign completed {completed} of {expected} games; {} failed", failures.len())]
+    Campaign {
+        completed: usize,
+        expected: usize,
+        failures: Vec<(u64, usize, String)>,
+    },
 }
 
 /// Source (a): every feature name the r6 champions already carry.
 ///
-/// The union across the six per-faction profiles, read from the weight maps by name. §4.5 records
-/// 41,113 for this checkpoint; the figure is reproduced rather than asserted.
+/// Takes the **already-verified bytes**, not a path. An earlier version opened the checkpoint here
+/// and the driver opened it again for the profiles, so the two consumers need not have read the
+/// same file and neither checked it against the durable accepted identity (F-M09-024b2-1). One
+/// read, one verification, and every consumer parses from that one immutable buffer.
 ///
 /// # Errors
-/// [`CorpusError::Io`] if the checkpoint cannot be read, [`CorpusError::Checkpoint`] if it does not
-/// hold a `profiles` object of the expected shape.
-pub fn champion_names(checkpoint: &Path) -> Result<Contribution, CorpusError> {
-    let bytes = std::fs::read(checkpoint).map_err(|source| CorpusError::Io {
-        path: checkpoint.display().to_string(),
-        source,
-    })?;
+/// [`CorpusError::Checkpoint`] if the bytes are not an envelope with a non-empty `profiles` map.
+pub fn champion_names(bytes: &[u8], label: &str) -> Result<Contribution, CorpusError> {
     let document: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|error| CorpusError::Checkpoint {
-            path: checkpoint.display().to_string(),
+        serde_json::from_slice(bytes).map_err(|error| CorpusError::Checkpoint {
+            path: label.to_owned(),
             reason: format!("not JSON: {error}"),
         })?;
     let profiles: BTreeMap<String, Profile> = serde_json::from_value(document["profiles"].clone())
         .map_err(|error| CorpusError::Checkpoint {
-            path: checkpoint.display().to_string(),
+            path: label.to_owned(),
             reason: format!("profiles: {error}"),
         })?;
     if profiles.is_empty() {
         return Err(CorpusError::Checkpoint {
-            path: checkpoint.display().to_string(),
+            path: label.to_owned(),
             reason: "no profiles".to_owned(),
         });
     }
-    let mut names = BTreeSet::new();
+    let mut raw = BTreeSet::new();
     for profile in profiles.values() {
         for head in profile.learned.heads.values() {
-            names.extend(head.weights.keys().cloned());
+            raw.extend(head.weights.keys().cloned());
         }
     }
     Ok(Contribution {
         source: "r6-champions",
         // The checkpoint holds every name its schema-4 *and* legacy channels ever scored with,
-        // including the `kind-faction`/`option-faction` families the explicit path never emits.
-        // The projection is the same filter the model's own inputs go through, so a name that
-        // cannot reach the model cannot reach the vocabulary either.
-        names: ti4_policy::projection::project_names(names),
+        // including the `kind-faction`/`option-faction` families the explicit path never emits. The
+        // projection is the same filter the model's own inputs go through, so a name that cannot
+        // reach the model cannot reach the vocabulary either.
+        names: ti4_policy::projection::project_names(raw),
+    })
+}
+
+/// The profiles from the same verified buffer the names came from.
+///
+/// # Errors
+/// [`CorpusError::Checkpoint`] if the envelope does not carry a `profiles` map.
+pub fn champion_profiles(
+    bytes: &[u8],
+    label: &str,
+) -> Result<BTreeMap<String, Profile>, CorpusError> {
+    let document: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|error| CorpusError::Checkpoint {
+            path: label.to_owned(),
+            reason: format!("not JSON: {error}"),
+        })?;
+    serde_json::from_value(document["profiles"].clone()).map_err(|error| CorpusError::Checkpoint {
+        path: label.to_owned(),
+        reason: format!("profiles: {error}"),
     })
 }
 
@@ -212,15 +234,32 @@ impl Decider for Collector {
     }
 }
 
+/// What one discovery campaign did, in full.
+#[derive(Debug, Clone)]
+pub struct Campaign {
+    /// The names the campaign emitted.
+    pub names: BTreeSet<String>,
+    /// Games that completed without an engine error.
+    pub completed: usize,
+    /// Games that failed, with seed, rotation and reason.
+    pub failures: Vec<(u64, usize, String)>,
+}
+
 /// Source (b): every name emitted while replaying the §6.1 teacher seed schedule.
 ///
-/// One bounded pass, single-threaded so the collected set does not depend on thread interleaving —
-/// it would not anyway, since the union is a set and assignment is by key, but a discovery pass
-/// whose output could depend on scheduling is harder to argue about than one that cannot.
+/// One bounded pass, single-threaded so the collected set cannot depend on thread interleaving.
+///
+/// **Failures are returned, not counted as successes.** An earlier version discarded every
+/// `Rollout.error` and incremented the game count regardless, so a seating failure, an illegal
+/// choice or a horizon trip contributed a partial name set and was reported as one of 768 good
+/// games — after which the caller published the artifact (F-M09-024b2-2).
+///
+/// # Errors
+/// [`CorpusError::Campaign`] if any game failed or the completed count is not the expected one.
 ///
 /// # Panics
-/// If a seat has no profile in `champions`, which is a caller error rather than a game state.
-#[must_use]
+/// If a collector outlives its game, which cannot happen: the table owns every decider and is
+/// dropped with the rollout.
 pub fn replay_names(
     content: &'static ContentStore,
     sources: SourceSet,
@@ -230,13 +269,15 @@ pub fn replay_names(
     seeds: std::ops::Range<u64>,
     tile_seed_offset: u64,
     horizon: crate::rollout::Horizon,
-) -> (Contribution, usize) {
+) -> Result<Campaign, CorpusError> {
     let names = std::rc::Rc::new(std::cell::RefCell::new(BTreeSet::new()));
-    let mut games = 0usize;
+    let mut completed = 0usize;
+    let mut failures = Vec::new();
 
     let players: Vec<PlayerId> = (0..factions.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
+    let expected = usize::try_from(seeds.end - seeds.start).unwrap_or(0) * factions.len();
 
     for seed in seeds {
         for rotation in 0..factions.len() {
@@ -250,6 +291,21 @@ pub fn replay_names(
                     )
                 })
                 .collect();
+            // A seat with no champion profile is a campaign failure, not something to substitute
+            // a default for.
+            let missing: Vec<String> = players
+                .iter()
+                .map(|player| seated[player].as_str().to_owned())
+                .filter(|faction| !champions.contains_key(faction))
+                .collect();
+            if !missing.is_empty() {
+                failures.push((
+                    seed,
+                    rotation,
+                    format!("no champion profile for {}", missing.join(", ")),
+                ));
+                continue;
+            }
             let deciders: BTreeMap<PlayerId, Box<dyn Decider>> = players
                 .iter()
                 .enumerate()
@@ -283,20 +339,30 @@ pub fn replay_names(
                 },
                 deciders,
             );
-            let _ = rollout;
-            games += 1;
+            if let Some(error) = rollout.error {
+                failures.push((seed, rotation, error.clone()));
+            } else {
+                completed += 1;
+            }
         }
     }
 
-    (
-        Contribution {
-            source: "replay",
-            names: std::rc::Rc::try_unwrap(names)
-                .expect("every collector is dropped with its game")
-                .into_inner(),
-        },
-        games,
-    )
+    let names = std::rc::Rc::try_unwrap(names)
+        .expect("every collector is dropped with its game")
+        .into_inner();
+
+    if !failures.is_empty() || completed != expected {
+        return Err(CorpusError::Campaign {
+            completed,
+            expected,
+            failures,
+        });
+    }
+    Ok(Campaign {
+        names,
+        completed,
+        failures,
+    })
 }
 
 #[cfg(test)]
