@@ -4087,3 +4087,18 @@ the first — so this is a schema change with no existing readers, taken now rat
 artifacts exist.
 
 Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
+
+## M09-024a independent Tier-C recheck of `7eb0722` (2026-08-25) — changes required
+
+- **Resolved:** F-M09-024a-3. Allocation provenance remains fixed across append; crossing the
+  sizing threshold and filling capacity both serialize/reload without changing capacity or columns.
+- **F-M09-024a-4 HIGH:** untrusted `allocated_for` reaches `capacity_for` before its
+  `slots.len()` bound is checked. A temporary malformed-JSON regression using `usize::MAX`
+  independently panicked at `vocabulary.rs:682` (`attempt to multiply with overflow`) instead of
+  returning `LoadError::Invalid`; the temporary test was removed after reproduction.
+- **Independent gates:** vocabulary 21/0; full `ti4-policy --lib` 157/0; scoped Clippy has only the
+  documented pre-existing engine warning at `game.rs:1260`.
+- **Status:** M09-024a remains open; M09-024b remains blocked. Check provenance structural bounds
+  before arithmetic, make `capacity_for` total/overflow-safe for every `usize`, retain an extreme
+  malformed-JSON no-unwind regression, rerun gates, and request a fresh Tier-C recheck. Full ledger:
+  `plans/M09-024a_OPEN_REVIEW_ITEMS.md`.

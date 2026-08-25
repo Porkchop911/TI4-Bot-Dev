@@ -271,3 +271,45 @@ the first — so this is a schema change with no existing readers, taken now rat
 artifacts exist.
 
 Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remain blocked.
+
+## Independent Tier-C recheck of `7eb0722` (2026-08-25)
+
+**Verdict: changes required.** F-M09-024a-3 is resolved: allocation provenance is fixed at build,
+append leaves it unchanged, and both threshold-crossing and exact-capacity vocabularies now survive
+serialization and reload without moving columns. One malformed-input finding blocks acceptance.
+
+### F-M09-024a-4 — HIGH: untrusted allocation provenance can panic the loader
+
+`from_json` deserializes `allocated_for` directly from the file. `validate` passes that value to
+`capacity_for` before checking whether it exceeds `slots.len()`. For a value such as
+`usize::MAX`, `capacity_for` saturates the floating-point-to-integer cast and then overflows while
+rounding to the 4,096-row granularity. A malformed `slots.json` therefore panics at
+`vocabulary.rs:682` instead of returning `LoadError::Invalid`.
+
+This was independently falsified with a temporary regression setting `allocated_for` to
+`usize::MAX` and loading the serialized value:
+
+```text
+thread '...a_maximum_allocation_provenance_is_refused_without_panicking' panicked at
+crates/ti4-policy/src/vocabulary.rs:682:18:
+attempt to multiply with overflow
+test result: FAILED. 0 passed; 1 failed
+```
+
+The temporary test was removed after reproduction; the submitted source tree was restored.
+
+**Required:** validate that allocation provenance is within its structural range (at least the
+reserved prefix and no greater than the current slot count) before capacity arithmetic, make
+`capacity_for` overflow-safe for every `usize` input, and retain a malformed-JSON regression proving
+an extreme provenance value returns a structured error without unwinding.
+
+### Independent checks
+
+- vocabulary-focused suite **21/0**;
+- full `ti4-policy --lib` suite **157/0**;
+- scoped Clippy produced only the documented pre-existing engine `too_many_lines` warning at
+  `game.rs:1260`;
+- `git diff --check` clean before the review-record update.
+
+**Status:** M09-024a remains open and M09-024b remains blocked. Correct F-M09-024a-4, rerun the
+gates, and request another fresh Tier-C recheck.
