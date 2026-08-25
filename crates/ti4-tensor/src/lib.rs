@@ -25,6 +25,16 @@ use thiserror::Error;
 
 pub use tch::{Device, Kind, Tensor};
 
+/// The pinned `tch` version this crate is built against.
+///
+/// Recorded in every checkpoint manifest (MLP plan §4.4) so a bundle carries the binding it was
+/// produced under. Kept in step with the workspace dependency by
+/// `the_pinned_versions_match_the_build`.
+pub const TCH_VERSION: &str = "0.22.0";
+
+/// The pinned libtorch version, matching `plans/artifacts/libtorch-2.9.1-cpu.manifest.json`.
+pub const LIBTORCH_VERSION: &str = "2.9.1";
+
 /// Anything that stopped a tensor operation.
 #[derive(Debug, Error)]
 pub enum TensorError {

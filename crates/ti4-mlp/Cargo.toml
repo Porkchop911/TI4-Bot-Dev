@@ -14,6 +14,8 @@ rand.workspace = true
 rand_chacha.workspace = true
 tch.workspace = true
 thiserror.workspace = true
+sha2.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 sha2.workspace = true

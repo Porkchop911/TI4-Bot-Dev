@@ -37,6 +37,7 @@
 //! input today.
 
 pub mod bot;
+pub mod bundle;
 
 use thiserror::Error;
 use ti4_policy::vocabulary::Vocabulary;
@@ -59,6 +60,25 @@ impl Width {
         match self {
             Self::W256 => 256,
             Self::W128 => 128,
+        }
+    }
+
+    /// Alias for [`Self::dim`], for call sites that read better as a count of units.
+    #[must_use]
+    pub const fn units(self) -> i64 {
+        self.dim()
+    }
+
+    /// The width a stored dimension names, or `None` if it is not one this build supports.
+    ///
+    /// Only 256 and 128 exist, and a bundle claiming any other width is refused rather than
+    /// accommodated — §4.2 fixes the two, and a third would not match any reviewed measurement.
+    #[must_use]
+    pub const fn of(dim: i64) -> Option<Self> {
+        match dim {
+            256 => Some(Self::W256),
+            128 => Some(Self::W128),
+            _ => None,
         }
     }
 }
@@ -388,6 +408,81 @@ impl Actor {
     /// The identity embedding.
     pub const fn embedding(&self) -> &Tensor {
         &self.embedding
+    }
+
+    /// The hidden layer.
+    pub const fn hidden(&self) -> &Tensor {
+        &self.hidden
+    }
+
+    /// The first-layer bias.
+    pub const fn b1(&self) -> &Tensor {
+        &self.b1
+    }
+
+    /// Mutable access to the first-layer bias.
+    pub const fn b1_mut(&mut self) -> &mut Tensor {
+        &mut self.b1
+    }
+
+    /// The hidden-layer bias.
+    pub const fn b2(&self) -> &Tensor {
+        &self.b2
+    }
+
+    /// Mutable access to the hidden-layer bias.
+    pub const fn b2_mut(&mut self) -> &mut Tensor {
+        &mut self.b2
+    }
+
+    /// The shared readout.
+    pub const fn shared_readout(&self) -> &Tensor {
+        &self.w_shared
+    }
+
+    /// The shared readout bias.
+    pub const fn b_shared(&self) -> &Tensor {
+        &self.b_shared
+    }
+
+    /// Mutable access to the shared readout bias.
+    pub const fn b_shared_mut(&mut self) -> &mut Tensor {
+        &mut self.b_shared
+    }
+
+    /// The per-faction residual.
+    pub const fn delta(&self) -> &Tensor {
+        &self.delta
+    }
+
+    /// Mutable access to the per-faction residual.
+    pub const fn delta_mut(&mut self) -> &mut Tensor {
+        &mut self.delta
+    }
+
+    /// The per-faction residual bias.
+    pub const fn b_delta(&self) -> &Tensor {
+        &self.b_delta
+    }
+
+    /// Mutable access to the per-faction residual bias.
+    pub const fn b_delta_mut(&mut self) -> &mut Tensor {
+        &mut self.b_delta
+    }
+
+    /// The value readout.
+    pub const fn value_readout(&self) -> &Tensor {
+        &self.w_value
+    }
+
+    /// The value bias.
+    pub const fn b_value(&self) -> &Tensor {
+        &self.b_value
+    }
+
+    /// Mutable access to the value bias.
+    pub const fn b_value_mut(&mut self) -> &mut Tensor {
+        &mut self.b_value
     }
 
     /// The selected identity, zero-padded from [`EMBED_DIM`] to the trunk width.
