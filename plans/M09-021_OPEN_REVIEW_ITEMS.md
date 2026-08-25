@@ -366,3 +366,198 @@ pass full fixture state explicitly; dead `watched` helper removed; new regressio
 shows only the two documented pre-existing engine warnings (`game.rs:1260`, `strategy.rs:589`);
 rustfmt clean on all touched files; `git diff --check` clean. Exact outputs in
 `plans/evidence/M09-021.md` (round-3 section). Awaiting the narrow independent Tier-C recheck.
+
+## Independent Tier-C recheck of `aed3304` — round 3 (Claude Opus 5, 2026-08-25)
+
+**Verdict: changes required. F-M09-021-1 remains open and blocking.** Round 3 is a real
+improvement — the seam no longer accepts an `Observed` — but the authority gate it installs is
+not actually closed, and the property the round-3 record and the new regression both assert is
+false. Measured, not argued: a decider holding only its bound view mints an opponent capability,
+and recovers every opponent's secret alias.
+
+| Field | Value |
+|---|---|
+| Reviewer | Claude Opus 5 |
+| Independence | Implemented none of M09-021. Reviewed M08-017/018/019/020/021. |
+| Base | `aed3304` |
+| Diff under `crates/` | `choice.rs` +93, `bot.rs` +189, `inference.rs` +71 |
+| Method | throwaway integration test in `crates/ti4-engine/tests/`, deleted after; tree restored to the three pre-existing user edits (`git status` verified) |
+
+### What verifies
+
+- Workspace suite **1368 passed / 0 failed** — matches the recorded gate exactly. Re-run on a
+  clean tree with no probe present.
+- `ask_private` call sites: **23** (engine ×2, `bot.rs` ×15, `inference.rs` ×6). Claim exact.
+- `SeatObservation` has private fields, no public constructor, `bind` is `pub(crate)`; its two
+  private-data accessors take no arguments. Correct as described.
+- `Observed` exposes no deck accessor and no method returning named private data. Correct.
+- **F-M09-021-2 concurred.** `bare_objective_facts_survive_state_cross_none` asserts
+  `state_cross(&choice) == StateCross::None`, asserts all four fact classes are present in the
+  fixture before comparing, and checks every option. Non-vacuous.
+- **F-M09-021-3 concurred.** The dimensionally invalid comparison is gone.
+
+### Z1 — HIGH (blocking) · `SeatObservation::held_state()` is a `GameState` source, so the full-state authority gate is not a gate
+
+The round-3 rationale — and the doc comment on `ask_private` — states that a live policy-side
+caller "holds neither `&GameState` nor any way to extract one (all `Observed`/`SeatObservation`
+fields are private)". The fields are private. The **methods** are not:
+`SeatObservation::held_state()` returns an owned `GameState` by value, and it is reachable from
+exactly the place the finding is about — a `Decider::choose_seeing` implementation, which is
+handed the bound view.
+
+So the minting seam is expressible with bound assets alone:
+
+```rust
+fn choose_seeing(&mut self, choice: &Choice, seen: &SeatObservation<'_>) -> ... {
+    let st = seen.held_state();                       // <- the &GameState the gate requires
+    let forged = Choice::new(pid("b"), "forged", vec![...]);
+    ask_private(&forged, &st, seen.content(), seen.sources(), seen.galaxy(), &mut inner);
+    // `inner` now receives a SeatObservation bound to "b"
+}
+```
+
+Measured on a six-seat `start_game_seeded(.., 4242)` position, with the attacker implemented as a
+`Decider` and given nothing but the view it is handed:
+
+```
+MINTED SEAT      : Some("b")
+```
+
+The minted capability's own `held_secret_progress()` returns `[]`, because `redact_others` did
+hide b's hand in the copy — so the mint alone yields no alias. The claim that fails is not
+"secrets leaked through the mint"; it is the round-3 record's and the regression's claim that the
+mint is **inexpressible**. It is expressible, and it is one method call away.
+
+### Z2 — HIGH (blocking) · the redaction the boundary now rests on is defeated by set complement over `secret_deck`
+
+Because Z1 removes the type-level gate, the whole hidden-information boundary reduces to the
+completeness of `redact_others`. That function redacts exactly two fields per seat —
+`action_cards` and `secret_objectives`. `GameState::secret_deck` is copied verbatim.
+
+`setup.rs:226` pins the invariant that makes this fatal: `secret_deck.len() + players.len() == 40`
+— the deck is the exact complement of the dealt secrets. The catalogue is enumerable from the
+`ContentStore` the view already hands out. So:
+
+> opponents' secrets = catalogue − `secret_deck` − own hand − scored
+
+Same probe, same position:
+
+```
+GROUND TRUTH     : a=sar  b=te  c=dtgs  d=eap  e=sb  f=mlp
+secret_deck len  : 34
+RECOVERED (b..f) : ["dtgs", "eap", "mlp", "sb", "te"]
+```
+
+Five of five, exact. The per-seat attribution is not directly recovered — the union is — but the
+finding forbids a public/bound observation yielding *named* opponent secret objectives, and this
+names all of them.
+
+**Scope note, in fairness.** The mechanism is **pre-existing**: `redact_others` is byte-identical
+to the `Observed::redacted_for(viewer)` body at `8e91b9e~1`, and that method was equally reachable
+from `choose_seeing`. M09-021 did not introduce the leak. What M09-021 did is declare this boundary
+closed, rewrite its tests, and carry the closure claim through three correction rounds. The claim
+is what is wrong, and the finding is the one under review.
+
+The same construction narrows opponents' action-card hands (`action_card_deck` is likewise
+unredacted, and there is no discard field in `GameState`, so the complement there is
+hands ∪ already-played rather than hands alone). `objective_deck`, `agenda_deck`, `relic_deck` and
+`exploration_decks` are future-draw order in full, at every seat.
+
+### Z3 — MEDIUM · the new regression asserts its conclusion two lines after contradicting it
+
+`a_bound_view_cannot_mint_an_opponent_capability` (`choice.rs:1944`) enumerates the attacker's
+assets, then at step 4 concludes:
+
+> the only minting entry point — `ask_private` — requires `&GameState`, which this attacker does
+> not hold; this test compiles without passing it, so the attack is inexpressible with these
+> assets alone.
+
+Step 2 of the same test is `let st = view_a.held_state();`. The attacker does hold a `GameState`,
+produced by the test itself, sixteen lines above the claim that it does not. The test proves that
+*this particular sequence of calls* returns nothing about b; it does not establish the
+inexpressibility it asserts, and "compiles without passing it" is not evidence about what a
+different caller can express.
+
+This is the same shape as V1, W1 and X1 in M08-021 and Y1 in M08-019: a claim one step stronger
+than its construction supports, in the flattering direction, inside the correction to a finding
+about exactly that.
+
+### Required before F-M09-021-1 can close
+
+1. **Remove `held_state()` from `SeatObservation`.** It has no production caller — engine tests
+   ×5 and three offline examples (`military_support`, `objective_report`, `vp_where`). Offline
+   contexts already hold full state under the round-3 model; give them a free function beside
+   `held_secret_progress(state, …)`. This closes Z1 and Z2 together and makes the round-3
+   rationale true as written rather than true-by-accident.
+2. If `held_state()` must survive on the capability, then the gate is redaction, not possession:
+   redact every facedown deck (`secret_deck`, `action_card_deck`, `agenda_deck`, `relic_deck`,
+   `objective_deck`, `exploration_decks`) length-preservingly, **and** correct the `ask_private`
+   doc comment and the round-3 record, which currently assert a property the code does not have.
+   I do not recommend this route: it leaves the mint expressible with an empty payload, which is a
+   boundary that holds only as long as nobody adds a field.
+3. **Rewrite the regression to attempt the attack**, not to narrate it: a decider that calls
+   `held_state()` → `ask_private` → opponent-bound view, asserting no opponent alias is reachable
+   at any step, plus the complement computation asserting it recovers nothing. A negative test
+   that never performs the forbidden call cannot fail when the forbidden call starts working.
+
+### Disposition
+
+**Blocked on Z1/Z2.** F-M09-021-2 and F-M09-021-3 are resolved and I concur with that. M09-021
+does not close, and M09-024 stays blocked.
+
+Round 3's direction is right and each round has genuinely narrowed the surface — round 2 correctly
+removed `redacted_for(viewer)`, round 3 correctly removed the `Observed` seam. The remaining hole
+is the one the redaction was always hiding: a capability that can hand out a copy of the state is
+a state handle, and a redaction that leaves the deck in place is not a redaction.
+
+## F-M09-021-1 round 4 — remove the state source from the capability (implementer, 2026-08-25)
+
+The recheck of `aed3304` is correct on both counts. Z1: `held_state()` returned an owned
+`GameState`, so the "full-state possession" gate was not a gate — the bound view itself was a
+state handle, one method call away from minting any seat's capability. Z2: even the redaction it
+produced is defeated by set complement (`secret_deck` unredacted; `deck + dealt == 40`), so the
+copy named every opponent's secret — measured 5/5 exact. The reviewer's scope note is accepted:
+the mechanism pre-dates M09-021, but this finding is about the closure claim, and the claim was
+false as written.
+
+### Correction (reviewer option 1)
+
+- **`SeatObservation::held_state()` removed.** No method on `SeatObservation` or `Observed` now
+  produces a `GameState` or any deck data; the only private-data accessors take no arguments and
+  answer for the bound seat. The round-3 rationale ("holds neither `&GameState` nor any way to
+  extract one") is now true as written, not true-by-accident.
+- **Free function `redacted_full_state(state, viewer)`** beside `held_secret_progress(...)`:
+  authority-gated by full-state possession, for the five engine tests that exercise redaction
+  behavior itself (they hold the fixture state).
+- **The three offline examples no longer need a state copy.** They read only face-up facts plus
+  their own seat's cards: `Observed` gains public-fact accessors (`promissory_notes()`,
+  `support_holders()`, `strategic_tokens(player)` — all face-up table data), and `SeatObservation`
+  gains a no-argument `held_secrets()` (the bound seat's raw secret ids, same binding discipline
+  as `held_secret_progress`). No example touches another seat's private data.
+- **Regression rewritten to attempt the attack** (Z3): an attacker decider is handed exactly what
+  `choose_seeing` provides and attempts every reachable read — bound records, raw held secrets,
+  every public fact naming the opponent — recording anything that names the opponent's private
+  data; the test asserts the record is empty. The complement computation is executed from the
+  table side (catalogue − deck recovers all five opponents' secrets in the fixture) to prove the
+  danger the gate prevents is real, then asserted unreachable through any bound-asset call.
+
+### Writable-path declarations (before editing)
+
+`crates/ti4-engine/src/choice.rs` (capability surface, free function, `Observed` public-fact
+accessors, regression rewrite, five test call sites, docs); the three already-declared examples
+(`military_support`, `objective_report`, `vp_where`) — escape-hatch reads replaced by typed
+accessors. Plans files as usual. No engine legality/scoring change; no new dependencies.
+
+**Request:** another narrow independent Tier-C recheck of the resulting commit. M09-021 and
+M09-024 remain blocked until acceptance.
+
+**Applied (implementer, 2026-08-25):** `held_state()` removed from the capability; free function
+`redacted_full_state(state, viewer)` added beside `held_secret_progress`; `SeatObservation::
+held_secrets()` (no arguments, bound seat) and `Observed::{promissory_notes, support_holders}`
+(face-up table data) added; all three examples reworked off the state copy (military_support reads
+face-up note positions + strategy pool via `Observed`; objective_report uses `held_secrets()`;
+vp_where reads `support_holders()`); regression rewritten as an active attack attempt with a
+non-vacuous complement demonstration. Gates: workspace **1368/0**; no new clippy warnings in any
+touched file (hunk-verified against HEAD for the examples); choice.rs rustfmt-clean; `git diff
+--check` clean. Exact outputs in `plans/evidence/M09-021.md` (round-4 section). Awaiting the
+narrow independent Tier-C recheck.

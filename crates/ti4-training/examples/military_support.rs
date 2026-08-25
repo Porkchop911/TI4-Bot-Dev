@@ -51,21 +51,20 @@ impl Decider for WatchBot {
         choice: &Choice,
         seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
-        let state = seen.held_state();
-        let holder = state.promissory_notes.get("ms:sol").cloned();
-        let tokens = state
-            .player(&self.sol)
-            .map_or(0, |seat| seat.strategic_tokens);
+        // Face-up table data only — notes sit faceup and the strategy pool is public. No state
+        // copy: the bound view exposes these through `Observed` (F-M09-021-1 round 4 removed the
+        // escape hatch).
+        let holder = seen.promissory_notes().get("ms:sol").cloned();
+        let tokens = seen.seat(&self.sol).map_or(0, |seat| seat.strategic_tokens);
         {
             let mut watch = self.watch.borrow_mut();
             let away = holder.as_ref().is_some_and(|who| who != &self.sol);
             if away && !watch.away {
                 watch.departures += 1;
                 if let Some(who) = &holder {
-                    let name = state
-                        .player(who)
-                        .map(|seat| seat.faction.to_string())
-                        .unwrap_or_else(|| who.to_string());
+                    let name = seen
+                        .seat(who)
+                        .map_or_else(|| who.to_string(), |seat| seat.faction.to_string());
                     *watch.holders.entry(name).or_default() += 1;
                 }
             }

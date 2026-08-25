@@ -2,12 +2,20 @@
 
 ## Status
 
-**Round-3 correction applied; pending narrow independent Tier-C recheck.** The round-2 recheck
-accepted the private type, live binding, and redaction closure but found that public
+**Round-4 correction applied; pending narrow independent Tier-C recheck.** The round-3 recheck
+accepted the authority-gated seam but found two HIGH holes: Z1 — `SeatObservation::held_state()`
+returned an owned `GameState`, so the bound view itself was a state handle and the "full-state
+possession" gate was not a gate (a decider could mint any seat's capability one method call away);
+Z2 — even that copy's redaction is defeated by set complement (`secret_deck` unredacted, deck +
+dealt == 40), naming every opponent's secret. Round 4 removes the state source from the
+capability entirely (reviewer option 1): no method on `SeatObservation` or `Observed` produces a
+`GameState`; redaction moves to an authority-gated free function; the examples read face-up facts
+through new `Observed` accessors plus a bound-seat `held_secrets()`; and the regression is
+rewritten as an active attack attempt with a non-vacuous complement demonstration. The round-2
+recheck had accepted the private type, live binding, and redaction closure but found that public
 `ask_private(choice, seen, decider)` still minted capabilities from caller-controlled data (the
-caller-supplied decider *is* caller code). Round 3 gates `ask_private` by full-state possession —
-it now takes raw `&GameState` and constructs the observation internally — and adds a forged-seat
-negative regression. Initial implementation on
+caller-supplied decider *is* caller code); round 3 gates `ask_private` by full-state possession —
+it takes raw `&GameState` and constructs the observation internally. Initial implementation on
 branch `wp/m09-021-objective-policy-features` from integration point `432f20a`; the independent
 Tier-C review of `51ca544` returned *changes required* (F-M09-021-1/2/3, all HIGH). F2 and F3 were
 corrected in round 1 (bare §5.1 namespace on every option under every crossing mode; dimensionally
@@ -147,8 +155,13 @@ Held-secret facts use only the acting seat's own cards, enforced **by type surfa
 - `SeatObservation<'a>` (`ti4_engine::choice`) is a private observation bound to exactly one seat.
   It has **no public constructor**: values exist only where engine ask paths bind them (the decider
   was just looked up by `choice.player`). Its secret accessors — `held_secret_progress()` and
-  `held_state()` — take no arguments, so even holding a valid capability there is no call that
+  `held_secrets()` — take no arguments, so even holding a valid capability there is no call that
   names another seat. It derefs to `Observed` for public facts.
+- **No method on either type produces a `GameState` or any deck data** (round 4 removed the former
+  `held_state()` — a capability that can hand out a copy of the state is a state handle, and it made
+  every other seat mintable through `ask_private`). The only private-data surface is the two
+  no-argument bound-seat accessors; everything else reachable is face-up table data on `Observed`
+  (board, counts, revealed objectives, note positions).
 - No method on the public `Observed` returns named private data with any caller-controlled identity
   argument (the former `held_secret_progress(player)`, `held_secret_progress_for_choice(choice)`,
   and `redacted_for(viewer)` are all gone; `seat(player)` returns counts only).
@@ -169,11 +182,14 @@ the secret data its extraction uses.
 Opponent secret aliases never enter any feature name; opponent redaction counts are M09-023's scope.
 Focused tests: the engine boundary test binds two views from one public `Observed` and asserts each
 answers for its own seat only (records **and** full-state form, with marker assertions); a second
-test drives the offline seam through shared validation; the round-3 regression walks an attacker
-holding exactly {one bound view, its deref'd public `Observed`, a forged opponent choice} through
-every reachable call and asserts no opponent data at any step (the minting entry point requires
-`&GameState`, which that test's attacker does not hold); the policy-level test asserts that for two
-seats in one position, no seat's features contain an alias held by the other.
+test drives the offline seam through shared validation; the round-4 regression is an active attack
+attempt — an attacker decider handed exactly what `choose_seeing` provides tries every reachable
+read (bound records, raw held secrets, public facts naming the opponent) and records anything that
+names the opponent's actual card, which the test asserts never happens; it also executes the
+complement computation from the table side (catalogue − deck recovers exactly the dealt cards,
+asserted non-vacuously) to prove the danger the gate prevents is real and unreachable through any
+bound-asset call; the policy-level test asserts that for two seats in one position, no seat's
+features contain an alias held by the other.
 
 ### Zero-threshold safety
 

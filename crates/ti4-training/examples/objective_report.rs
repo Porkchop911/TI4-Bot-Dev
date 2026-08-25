@@ -67,11 +67,10 @@ impl Decider for SeeBot {
             for id in seen.scored_by(&self.player) {
                 tally.scored.insert(id.to_string());
             }
-            let state = seen.held_state();
-            if let Some(seat) = state.player(&self.player) {
-                for secret in &seat.secret_objectives {
-                    tally.held.insert(secret.to_string());
-                }
+            // Own seat's cards only — the bound capability answers for its own seat (F-M09-021-
+            // 1 round 4 removed the state-copy escape hatch).
+            for secret in seen.held_secrets() {
+                tally.held.insert(secret.to_string());
             }
             if imperial {
                 tally.imperial_offered += 1;

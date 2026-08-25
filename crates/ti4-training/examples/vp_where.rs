@@ -52,13 +52,12 @@ impl Decider for ScoreBot {
         self.revealed = seen.revealed_objectives().len();
         self.scoreable = seen.scoreable_public(&self.player);
         // Support for the Throne is the one note whose position scores (promissory.rs:231), so
-        // count how many of the six are sitting in front of this seat. The redacted view is a
-        // clone, so it is only taken when this seat's point total has moved.
+        // count how many of the six are sitting in front of this seat. The holders map is faceup
+        // table data on `Observed` (F-M09-021-1 round 4 removed the state-copy escape hatch).
         let mut slot = self.owned.borrow_mut();
         if points != slot.1 {
             slot.2 = seen
-                .held_state()
-                .support_holders
+                .support_holders()
                 .values()
                 .filter(|holder| *holder == &self.player)
                 .count();

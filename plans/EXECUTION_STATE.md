@@ -3512,3 +3512,30 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** round-3 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
   independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
   acceptance.
+
+## M09-021 F-M09-021-1 round 4 — remove the state source from the capability (implementer, 2026-08-25)
+
+- **Recheck of `aed3304`: changes required.** Z1 (HIGH): `held_state()` returned an owned
+  `GameState`, so the bound view was itself a state handle — a decider could mint any seat's
+  capability through `ask_private` one method call away (reviewer measured: minted seat "b").
+  Z2 (HIGH): even that copy's redaction is defeated by set complement (`secret_deck` unredacted;
+  deck + dealt == 40) — catalogue − deck named every opponent's secret, 5/5 exact. Z3 (MEDIUM):
+  the round-3 regression asserted "inexpressible" while its own step 2 called `held_state()`.
+  Reviewer scope note accepted: mechanism pre-dates M09-021; the closure claim was what was wrong.
+- **Correction (reviewer option 1):** `SeatObservation::held_state()` removed — no method on
+  `SeatObservation` or `Observed` now produces a `GameState` or deck data. Free function
+  `redacted_full_state(state, viewer)` beside `held_secret_progress(...)` serves the five engine
+  redaction tests (they hold fixture state). New bound-seat accessor `held_secrets()` (no args) and
+  face-up `Observed` accessors (`promissory_notes()`, `support_holders()`; strategic tokens were
+  already on PublicSeat). All three offline examples reworked off the state copy.
+- **Regression rewritten as an active attack attempt** (Z3): attacker decider tries every reachable
+  read and records anything naming b's actual card — asserted empty; complement computation
+  executed from the table side recovers exactly the two dealt cards (non-vacuous), proving the
+  danger is real and unreachable through bound assets.
+- **Gates:** workspace **1368/0**; ti4-engine clippy shows only the two documented pre-existing
+  warnings; no new warning in any touched file (example drift hunk-verified against HEAD); choice.rs
+  rustfmt-clean (examples carry only their pre-existing drift, same hunks as at HEAD); `git diff
+  --check` clean. Exact outputs in `plans/evidence/M09-021.md`.
+- **Status:** round-4 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
+  independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
+  acceptance.

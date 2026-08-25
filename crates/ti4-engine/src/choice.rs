@@ -27,7 +27,7 @@ use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::SourceSet;
-use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SystemId, UnitTypeId};
+use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SecretObjectiveId, SystemId, UnitTypeId};
 use ti4_model::state::{GameState, SystemState};
 use ti4_model::units::Unit;
 
@@ -398,8 +398,9 @@ pub trait Window {
 /// accessor answers something any player at the table may read: the board, who controls what, how
 /// many cards somebody holds. A hand's *contents* are not reachable here at all: they live on the
 /// engine-bound [`SeatObservation`] ([`SeatObservation::held_secret_progress`],
-/// [`SeatObservation::held_state`]), which answers for its bound seat only — there is no method
-/// on this type that takes a caller-chosen seat and returns private data.
+/// [`SeatObservation::held_secrets`]), which answers for its bound seat only — there is no method
+/// on this type that takes a caller-chosen seat and returns private data, and no method on
+/// either type produces a `GameState` (round 4 removed the state source from the capability).
 ///
 /// The Rust counterpart of the oracle's `views.GameView`, differently shaped for the reason it
 /// exists at all: the oracle hands a bot a facade over a live game, and Rust cannot hand a decider
@@ -558,6 +559,21 @@ impl<'a> Observed<'a> {
     #[must_use]
     pub const fn revealed_objectives(&self) -> &'a [ObjectiveId] {
         self.state.revealed_objectives.as_slice()
+    }
+
+    /// Every promissory note's position: note id (`alias:owner`) to the player holding it.
+    ///
+    /// Public: notes sit faceup on the table (LRR 69.3) and their movement is announced.
+    #[must_use]
+    pub const fn promissory_notes(&self) -> &'a BTreeMap<String, PlayerId> {
+        &self.state.promissory_notes
+    }
+
+    /// Support for the Throne: owner to the player holding it faceup — the one note whose
+    /// position scores.
+    #[must_use]
+    pub const fn support_holders(&self) -> &'a BTreeMap<PlayerId, PlayerId> {
+        &self.state.support_holders
     }
 
     /// The initiative number printed on a strategy card.
@@ -752,17 +768,18 @@ impl<'a> SeatObservation<'a> {
         &self.acting_seat
     }
 
-    /// A full state with every other player's private holdings replaced by markers — for the
-    /// bound seat only.
+    /// The raw secret objectives the bound seat holds — and only that seat's.
     ///
-    /// No arguments, so even holding a valid capability there is no call that names another
-    /// seat (the former `Observed::redacted_for(viewer)` took an arbitrary viewer and was removed
-    /// in F-M09-021-1 round 2). Copies: reading private information should cost something visible.
+    /// No arguments: the acting seat is fixed at binding time, so an opponent cannot be
+    /// requested through this value. (Round 4, F-M09-021-1: the former `held_state()` returned a
+    /// copy of the whole state and was removed — a capability that can hand out a copy of the
+    /// state is a state handle, and it made every other seat mintable through `ask_private`.)
     #[must_use]
-    pub fn held_state(&self) -> GameState {
-        let mut view = self.observed.state.clone();
-        redact_others(&mut view, &self.acting_seat);
-        view
+    pub fn held_secrets(&self) -> Vec<SecretObjectiveId> {
+        self.observed
+            .state
+            .player(&self.acting_seat)
+            .map_or_else(Vec::new, |seat| seat.secret_objectives.clone())
     }
 
     /// Exact progress for the secrets the bound seat holds — and only that seat's.
@@ -806,6 +823,21 @@ pub fn held_secret_progress(
     viewer: &PlayerId,
 ) -> Vec<crate::objectives::CardProgress> {
     held_secret_records(state, content, sources, galaxy, viewer)
+}
+
+/// A copy of the complete state with every other player's face-down holdings replaced by markers —
+/// for `viewer` only.
+///
+/// For **offline analysis and test contexts**, which hold the full state by design — there is no
+/// hidden information to protect, because every seat's cards are already readable fields of that
+/// state. Live play never calls this: a decider handed a [`SeatObservation`] has no method that
+/// produces a `GameState` (round 4 removed `held_state()` from the capability), so it cannot mint
+/// one for any seat through [`ask_private`].
+#[must_use]
+pub fn redacted_full_state(state: &GameState, viewer: &PlayerId) -> GameState {
+    let mut view = state.clone();
+    redact_others(&mut view, viewer);
+    view
 }
 
 /// The shared computation behind [`SeatObservation::held_secret_progress`] and the offline free
@@ -1645,7 +1677,7 @@ mod tests {
 
     // --- what a decider may see ---------------------------------------------------------------
 
-    use ti4_model::content_types::POK;
+    use ti4_model::content_types::{ContentType, POK};
 
     fn watched() -> ti4_model::state::GameState {
         let mut state = crate::fixtures::game(&["a", "b"]);
@@ -1674,11 +1706,11 @@ mod tests {
 
     #[test]
     fn reading_a_hand_costs_a_copy_and_returns_markers() {
-        // The public form is the bound capability: no viewer argument exists to point at an
-        // opponent (F-M09-021-1).
+        // The offline form takes explicit records: this test holds the fixture state, so it may
+        // name its viewer. Live play has no such call — the capability carries no state source at
+        // all (F-M09-021-1 round 4).
         let state = watched();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
-        let view = SeatObservation::bind(&seen, pid("a")).held_state();
+        let view = redacted_full_state(&state, &pid("a"));
 
         let rival = view.player(&pid("b")).unwrap();
         assert_eq!(rival.action_cards.len(), 2, "the count is public");
@@ -1699,8 +1731,7 @@ mod tests {
     #[test]
     fn you_can_read_your_own_hand() {
         let state = watched();
-        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
-        let view = SeatObservation::bind(&seen, pid("b")).held_state();
+        let view = redacted_full_state(&state, &pid("b"));
 
         assert_eq!(
             view.player(&pid("b")).unwrap().action_cards[0].as_str(),
@@ -1868,12 +1899,12 @@ mod tests {
             "an opponent's secret alias reached the acting seat's view"
         );
 
-        // The full-state form obeys the same binding: each view shows its own cards and hides
-        // the other seat's. (The former `Observed::redacted_for(viewer)` took a caller-chosen
-        // viewer and was removed in F-M09-021-1 round 2; this no-argument method cannot be
-        // pointed at an opponent.)
-        let state_a = view_a.held_state();
-        let state_b = view_b.held_state();
+        // The offline full-state form obeys the same binding when given explicit records: each
+        // copy shows its viewer's cards and hides the other seat's. (The capability itself no
+        // longer produces a state at all — round 4 removed `held_state()`; this free function is
+        // authority-gated by full-state possession, which these tests hold.)
+        let state_a = redacted_full_state(&state, &pid("a"));
+        let state_b = redacted_full_state(&state, &pid("b"));
         assert_eq!(
             state_a.player(&pid("a")).unwrap().secret_objectives,
             vec![ti4_model::id::SecretObjectiveId::new("otf")]
@@ -1942,53 +1973,116 @@ mod tests {
 
     #[test]
     fn a_bound_view_cannot_mint_an_opponent_capability() {
-        // F-M09-021-1 round 3 regression. The attacker's complete asset set is what live policy
-        // code can hold: one bound view for seat "a", the public `Observed` it derefs to, and a
-        // forged choice owned by opponent "b" (Choice is freely constructible). Walked through
-        // every reachable call, that asset set yields no data about "b":
+        // F-M09-021-1 round 4 regression — the attacker is a live decider implementation, and its
+        // asset set is exactly what `choose_seeing` hands it: one bound view for seat "a" (and the
+        // public `Observed` it derefs to). Every reachable read is attempted below; anything that
+        // names opponent "b's private data is recorded, and the test asserts nothing was.
+        struct Attacker {
+            /// The alias being hunted — b's actual card. Known only because this test holds the
+            /// table side; a live attacker would hunt every alias in turn.
+            target: String,
+            leaked: Vec<String>,
+        }
+
+        impl Decider for Attacker {
+            fn choose(&mut self, _choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::decline())
+            }
+
+            fn choose_seeing(
+                &mut self,
+                choice: &Choice,
+                seen: &SeatObservation<'_>,
+            ) -> Result<ChoiceOption, IllegalChoice> {
+                // Attempt 1 — the bound progress records.
+                for card in seen.held_secret_progress() {
+                    if card.alias == self.target {
+                        self.leaked.push(format!("progress:{card:?}"));
+                    }
+                }
+
+                // Attempt 2 — the raw held secrets (the round-4 accessor).
+                for secret in seen.held_secrets() {
+                    if secret.as_str() == self.target {
+                        self.leaked.push(format!("secrets:{secret}"));
+                    }
+                }
+
+                // Attempt 3 — every public fact on the deref'd Observed that names b. Counts are
+                // legitimately visible; what must not exist is any named private data.
+                let rival = seen.seat(&pid("b")).expect("b is seated");
+                assert_eq!(rival.secret_objectives_held, 1, "counts stay public");
+
+                // Attempt 4 — minting an opponent capability. `ask_private` requires `&GameState`,
+                // and no method on SeatObservation or Observed produces one (round 4 removed
+                // held_state()), so this call cannot be written with these assets: the decider's
+                // signature has nothing to pass. If a state source is ever re-added, extend this
+                // attempt to use it — and watch this test fail.
+
+                Ok(choice.options[0].clone())
+            }
+        }
+
         let content = ContentStore::embedded();
         let mut state = crate::fixtures::game(&["a", "b"]);
-        state.player_mut(&pid("a")).unwrap().secret_objectives =
-            vec![ti4_model::id::SecretObjectiveId::new("otf")];
-        state.player_mut(&pid("b")).unwrap().secret_objectives =
-            vec![ti4_model::id::SecretObjectiveId::new("mlp")];
+        let originally_held: Vec<String> = state
+            .players
+            .iter()
+            .flat_map(|seat| {
+                seat.secret_objectives
+                    .iter()
+                    .map(|id| id.as_str().to_owned())
+            })
+            .collect();
 
-        let seen = Observed::new(&state, content, POK, None);
-        // The attacker's assets — and nothing else. Note the test never names `state` again:
-        // it is held by the table, not by policy code.
-        let bound_a = SeatObservation::bind(&seen, pid("a"));
-        let view_a: &SeatObservation<'_> = &bound_a;
-        let public_view: &Observed<'_> = view_a.observed();
-        let forged_b_choice = Choice::new(
-            pid("b"),
-            "decide",
-            vec![ChoiceOption::labelled("y", "kind", "y")],
-        );
-
-        // 1. The bound view answers for its own seat only.
-        let cards = view_a.held_secret_progress();
-        assert!(
-            !cards.iter().any(|card| card.alias == "mlp"),
-            "the bound view named the opponent's secret"
-        );
-
-        // 2. The full-state form hides the opponent.
-        let st = view_a.held_state();
+        // The complement attack is real, and this proves it from the table side: catalogue − deck
+        // names every secret that was dealt — exactly the two cards above. This is the danger the
+        // gate prevents; it is unreachable from inside `choose_seeing` because no bound asset
+        // exposes a deck.
+        let catalogue: BTreeSet<String> = content
+            .from_sources(ContentType::SecretObjectives, POK)
+            .filter_map(|record| record.id().map(ToOwned::to_owned))
+            .collect();
+        let deck: BTreeSet<String> = state
+            .secret_deck
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
+        let recovered: BTreeSet<String> =
+            catalogue.difference(&deck).map(ToOwned::to_owned).collect();
         assert_eq!(
-            st.player(&pid("b")).unwrap().secret_objectives[0].as_str(),
-            HIDDEN,
-            "the bound state exposed the opponent's card"
+            recovered.len(),
+            2,
+            "two secrets were dealt to the two seats"
         );
+        for held in &originally_held {
+            assert!(
+                recovered.contains(held),
+                "the complement names every dealt card: {held}"
+            );
+        }
 
-        // 3. The public observation exposes no private data for any seat — counts only.
-        let rival = public_view.seat(&pid("b")).expect("b is seated");
-        assert_eq!(rival.secret_objectives_held, 1, "counts stay public");
+        // Now set known cards and run the attack through the offline seam, which is driven with
+        // full state (this test holds it); the decider inside gets only its bound view.
+        state.player_mut(&pid("a")).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("otf")];
+        state.player_mut(&pid("b")).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("mlp")];
 
-        // 4. The forged choice changes nothing: no public function accepts (choice, view) and
-        //    produces a capability. `SeatObservation` has no public constructor, and the only
-        //    minting entry point — `ask_private` — requires `&GameState`, which this attacker
-        //    does not hold; this test compiles without passing it, so the attack is
-        //    inexpressible with these assets alone.
-        let _ = &forged_b_choice;
+        let choice = Choice::new(
+            pid("a"),
+            "decide",
+            vec![ChoiceOption::labelled("x", "kind", "x")],
+        );
+        let mut attacker = Attacker {
+            target: "mlp".to_owned(),
+            leaked: Vec::new(),
+        };
+        ask_private(&choice, &state, content, POK, None, &mut attacker).unwrap();
+        assert!(
+            attacker.leaked.is_empty(),
+            "the bound view named opponent data: {:?}",
+            attacker.leaked
+        );
     }
 }
