@@ -4479,3 +4479,28 @@ Requesting a fresh independent Tier-C recheck. M09-024b1 remains open and M09-02
   project-local location with a committed SHA-256 manifest — 331 MB of disk, no download, and the
   pin becomes bytes this project owns rather than a version string pip controls.
 - **Awaiting authorization.**
+
+## M09-024b1 accepted by operator override; M09-025 authorized and step one complete (2026-08-25)
+
+- **M09-024b1 accepted by operator override.** The operator manually overrode the pending Tier-C
+  recheck of `0b8bd8e`. Recorded as an **operator decision, not a reviewer acceptance** (M09-021 and
+  M09-019b precedent): no written recheck verdict for that commit exists in this repository. The
+  F1/F2 corrections and their falsification checks stand as recorded; M09-024b2 is unblocked.
+- **M09-025 P2 authorized as declared**, and its gating step is done.
+- **The version check returned a mismatch at the newest release and a match four releases back.**
+  `tch` 0.26.0 needs libtorch 2.13.0; 0.24.0 needs 2.11.0; 0.23.0 needs 2.10.0; **0.22.0 needs
+  2.9.0**, against the installed 2.9.1. Read from each release README in the crates.io source.
+  `download-libtorch` is opt-in and was never enabled; no libtorch was fetched.
+- **The pin is bytes.** libtorch was copied once to `out/libtorch-2.9.1-cpu/` (9,311 files,
+  367.6 MB, gitignored) rather than linked in a Python site-packages path a pip upgrade could
+  change under it. `plans/artifacts/libtorch-2.9.1-cpu.manifest.json` carries one rolling
+  `tree_sha256` over every file plus per-file rows for the 27 linked binaries — 4 KB instead of the
+  1.6 MB a full per-file listing produced.
+- **CPU-only load proven:** `cuda available: false`, `device count: 0`, tensor arithmetic correct,
+  built with `tch = "=0.22.0"` in a throwaway crate outside the workspace, since deleted. The
+  workspace is untouched. Section 8 friction confirmed and characterised: the first run failed
+  `STATUS_DLL_NOT_FOUND` because a Git Bash PATH is not what the Windows loader reads.
+- **Surfaced for decision, not taken:** pin A (`tch` 0.22.0 + the local 2.9.1, no download, proven)
+  versus pin B (`tch` 0.26.0 + a ~2 GB libtorch 2.13.0 download, current). Pinning four releases
+  back has a tail, and section 7.2 determinism settings must be checked against whichever API is
+  chosen. The adapter is not started until this is settled.

@@ -1,0 +1,145 @@
+{
+ "device": "cpu",
+ "files": 9311,
+ "lib_files": [
+  {
+   "bytes": 2703490,
+   "path": "lib/XNNPACK.lib",
+   "sha256": "ec350b878be156e7301c25e9a0fc26a1f69f8d86a094aad066fa8aa52ec6d3e5"
+  },
+  {
+   "bytes": 1924,
+   "path": "lib/_C.lib",
+   "sha256": "e0b71f4af86a549ed3ff54a9d52c6086d5107231eaa6319c93a5d0e36f94841f"
+  },
+  {
+   "bytes": 1085952,
+   "path": "lib/c10.dll",
+   "sha256": "89853f00c79a6d922d3b348616698f873f1687ff96ba85f44b07be572f1d6a0c"
+  },
+  {
+   "bytes": 814188,
+   "path": "lib/c10.lib",
+   "sha256": "66d8a8404ef5032f069703e69056c70fe9af389b9a35a2b5038b86ec830496c9"
+  },
+  {
+   "bytes": 117878,
+   "path": "lib/cpuinfo.lib",
+   "sha256": "9d00b1219d8321f57d765e96826edaedc27693fe8376c3c1978bf5e385d76987"
+  },
+  {
+   "bytes": 1318290,
+   "path": "lib/fmt.lib",
+   "sha256": "9d1a909d38c98b296e0712ea310ff9bda424efa6e27ff28d58ad508f4cbe426e"
+  },
+  {
+   "bytes": 1614192,
+   "path": "lib/libiomp5md.dll",
+   "sha256": "d41a71c38f627a95748596820ab380135dcccc4ceecd6fe7d4e247d015bf55a4"
+  },
+  {
+   "bytes": 43888,
+   "path": "lib/libiompstubs5md.dll",
+   "sha256": "137dd44f652a926eb540861994c58ea24ebfbf6b45886ac964a68c5742549c47"
+  },
+  {
+   "bytes": 284300,
+   "path": "lib/libittnotify.lib",
+   "sha256": "8799a4b3b5e67052ea08b48fa2d4a1bcafab74a4a388cfb0582c991e254e53f4"
+  },
+  {
+   "bytes": 2891768,
+   "path": "lib/microkernels-prod.lib",
+   "sha256": "4a54b7b59ffc9d2a8e9caaacf2eef86bff74f9852c1eae041e1b23436940985a"
+  },
+  {
+   "bytes": 185328,
+   "path": "lib/pthreadpool.lib",
+   "sha256": "5fca7f22fa902ead4d5a78b8331a55aec9272b2c3ad2c2422ed24ea2153991ac"
+  },
+  {
+   "bytes": 15360,
+   "path": "lib/shm.dll",
+   "sha256": "9d70904461b7994a56a39620053cdd6eb19fca8c59e053990f573f775f57b656"
+  },
+  {
+   "bytes": 3790,
+   "path": "lib/shm.lib",
+   "sha256": "0f281128e8748dcfa63a9f6f3c704755a6dff7bb3f40b4bf7a7f4766150d69c2"
+  },
+  {
+   "bytes": 8812252,
+   "path": "lib/sleef.lib",
+   "sha256": "6f5a4dad2adb8270327365104871ce9f56f9a5d7ff1b057ad72df41d36046107"
+  },
+  {
+   "bytes": 9728,
+   "path": "lib/torch.dll",
+   "sha256": "62b745701824e8056e304bd9ecaf14832b7b30da3ea24a0b3dc82858fa368bd3"
+  },
+  {
+   "bytes": 1832,
+   "path": "lib/torch.lib",
+   "sha256": "29d1371ffc604de7170c9536163bc7feb992dabb493ecd2438c5edf32712c8dd"
+  },
+  {
+   "bytes": 262656512,
+   "path": "lib/torch_cpu.dll",
+   "sha256": "f106a2daa5487d919ab121bdddda0dd52a8503e408a51428f621b24cca670950"
+  },
+  {
+   "bytes": 29438978,
+   "path": "lib/torch_cpu.lib",
+   "sha256": "268fafb972379e0fb4d66683d3aaef9a48197beb4881841dc7a25e28451582b6"
+  },
+  {
+   "bytes": 9728,
+   "path": "lib/torch_global_deps.dll",
+   "sha256": "6268960feb741b8d7b8b73b8650d2c44e125b1c3e07c5dcbf43f102ca3cd1716"
+  },
+  {
+   "bytes": 18522624,
+   "path": "lib/torch_python.dll",
+   "sha256": "9c203b49d09804c2e5a99e2b1b4a6bf378f7f3ad183f48f48f7c12bd0794d433"
+  },
+  {
+   "bytes": 287976,
+   "path": "lib/torch_python.lib",
+   "sha256": "822ffdd3fd94d636e8fa221f3b6e8c5efa8cdcbf370665f487ddeb65daf79930"
+  },
+  {
+   "bytes": 195072,
+   "path": "lib/uv.dll",
+   "sha256": "fa569e682fc5fb7a8eb94c6829af9f30a569748dbbc6bce39735d48bc960bcf8"
+  },
+  {
+   "bytes": 113,
+   "path": "lib/libshm/alloc_info.h",
+   "sha256": "645a0b6fdd40426e3f88af9e14d95b2369f6b5d8d5b56e4a0a0818086567ada3"
+  },
+  {
+   "bytes": 1283,
+   "path": "lib/libshm/err.h",
+   "sha256": "b3f8ec03a27a2931b2e8448764f13dfd2f4d8557c2fa47e8b528b49b93d7788c"
+  },
+  {
+   "bytes": 1242,
+   "path": "lib/libshm/libshm.h",
+   "sha256": "f908d67c6230abbdd474e881165ebf3929fd3836f8f5740036951b666f35ca6b"
+  },
+  {
+   "bytes": 4571,
+   "path": "lib/libshm/socket.h",
+   "sha256": "deaa62fbc75990491c0fdff52e24f43799ce7bb00084cb91280bb83b4f89a21c"
+  },
+  {
+   "bytes": 815,
+   "path": "lib/libshm_windows/libshm.h",
+   "sha256": "4cda048d2158eaf99ff698b5966f05d2a2e4fd2b613312c31864eb74a7a883b1"
+  }
+ ],
+ "libtorch_version": "2.9.1+cpu",
+ "provenance": "copied once from the python site-packages torch install; never linked in place",
+ "total_bytes": 367553850,
+ "tree_sha256": "b9f97c5783db935ce3858f17ee8808235066ae2102004f17215545c55662c364"
+}
