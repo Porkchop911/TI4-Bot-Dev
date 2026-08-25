@@ -4457,3 +4457,25 @@ capacity is likely to land at **16,384** rather than the 24,576 ceiling — whic
 already anticipates ("may therefore derive 16,384"). 024b2 measures it; nothing here assumes it.
 
 Requesting a fresh independent Tier-C recheck. M09-024b1 remains open and M09-024b2 blocked.
+
+## M09-025 specified; the P2 is far smaller than the plan assumed (2026-08-25)
+
+- `plans/M09-025_PIN_CPU_LIBTORCH_AND_TENSOR_ADAPTER.md`. Written while M09-024b1 awaits its
+  recheck; M09-025 depends only on row 019, so it can run in parallel with the M09-024 chain
+  rather than after it. **Not started** — operator decision D-2026-08-25-2 holds it, and nothing
+  has been added, downloaded or edited.
+- **Measured, not assumed:** libtorch is already on this machine. `torch 2.9.1+cpu`, CUDA
+  unavailable, 24 files totalling **331.0 MB** in the Python install. `tch` can build against an
+  existing PyTorch libtorch, so the ~2 GB download section 8 warns about is probably unnecessary;
+  what remains is the ordinary crates.io fetch of the `tch`/`torch-sys` source crates.
+- **The one unverified claim, stated as step one:** `tch` pins a specific libtorch version per
+  release, and whether any release targets 2.9.1 cannot be checked offline. The package establishes
+  that and reports back **before** touching `Cargo.toml`; if no match exists, downloading a
+  different distribution is a separate decision, not implied by authorizing this one.
+- **A provenance objection recorded against the cheap path.** Linking at a path inside a user-local
+  Python installation is not a pin: a `pip install --upgrade torch` would silently change the
+  native library this project links against, which is the same defect class as resolving content
+  through the wrong domain. Recommendation is to copy the directory once into a gitignored
+  project-local location with a committed SHA-256 manifest — 331 MB of disk, no download, and the
+  pin becomes bytes this project owns rather than a version string pip controls.
+- **Awaiting authorization.**
