@@ -90,11 +90,12 @@ fn main() {
         Err(error) => refuse(&format!("reading {checkpoint_path}: {error}")),
     };
     let checkpoint_sha = sha256(&checkpoint_bytes);
-    if !checkpoint_sha.starts_with(ti4_sim::baseline::R6_CHECKPOINT_SHA_PREFIX) {
+    // The **exact** digest. A 16-hex prefix is 64 bits, and a gate that accepts any envelope
+    // sharing it is not enforcing a durable identity (F-M09-024b2-6/-9).
+    if checkpoint_sha != ti4_sim::baseline::R6_CHECKPOINT_SHA256 {
         refuse(&format!(
-            "{checkpoint_path} is {checkpoint_sha}, not the accepted r6 checkpoint (expected \
-             prefix {})",
-            ti4_sim::baseline::R6_CHECKPOINT_SHA_PREFIX
+            "{checkpoint_path} is {checkpoint_sha}, not the accepted r6 checkpoint {}",
+            ti4_sim::baseline::R6_CHECKPOINT_SHA256
         ));
     }
     let pool_bytes = match ti4_sim::artifacts::read_and_verify_pool_role(
@@ -262,20 +263,31 @@ fn main() {
         FACTIONS.join(","),
         campaign.completed,
     );
-    let provenance_path = out.with_file_name("slots.provenance.json");
-    match ti4_training::vocabulary_corpus::publish_generation(
-        &out,
-        &text,
-        &provenance_path,
-        &provenance,
-    ) {
-        Ok(published) => assert_eq!(published, digest, "the published digest moved"),
-        Err(error) => refuse(&format!("{error}")),
-    }
+    // One generation, committed by a single pointer update. A publication failure reports its own
+    // state rather than going through `refuse`, whose "No artifact was written" is only true
+    // before publication begins.
+    let root = out.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let published =
+        match ti4_training::vocabulary_corpus::publish_generation(&root, &text, &provenance) {
+            Ok(published) => published,
+            Err(error) => {
+                eprintln!(
+                    "
+PUBLICATION FAILED: {error}"
+                );
+                std::process::exit(3);
+            }
+        };
+    assert_eq!(published.digest, digest, "the published digest moved");
 
     println!("\nmanifest:");
     print!("{provenance}");
     println!("  artifact bytes        {}", text.len());
-    println!("  provenance            {}", provenance_path.display());
+    println!("  generation            {}", published.slots.display());
+    println!("  provenance            {}", published.provenance.display());
+    println!(
+        "  accepted pointer      {}",
+        root.join("current.json").display()
+    );
     println!("  wall time             {:.1?}", started.elapsed());
 }

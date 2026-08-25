@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use sha2::Digest;
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
@@ -373,111 +373,181 @@ pub fn replay_names(
     })
 }
 
-/// Publish a vocabulary and its provenance as one recoverable generation.
+/// A published vocabulary generation: the artifact, its provenance, and the pointer that makes
+/// them accepted.
 ///
-/// # Why both files together
+/// # Why a pointer rather than two renames
 ///
-/// An earlier version renamed the vocabulary into place and then wrote the provenance with a bare
-/// `fs::write`. A failure at that second step left a newly published artifact beside missing or
-/// stale provenance, while the caller reported "no artifact was written" — which was false
-/// (F-M09-024b2-7). The two files are one generation: both are staged, flushed, re-read, re-hashed
-/// and re-parsed, and the provenance must name the vocabulary's digest, so a torn pair cannot be
-/// mistaken for a matched one.
+/// An earlier version renamed the vocabulary into place and then the provenance, with an in-memory
+/// rollback if the second failed. That is not crash-recoverable: a process loss between the two
+/// renames leaves a torn pair and no rollback runs at all (F-M09-024b2-10).
 ///
-/// On any failure the previous generation is restored from a snapshot taken before either rename,
-/// and the returned error says truthfully what state the destination is in.
+/// Here the two files are written into a **generation directory named by the artifact's digest**,
+/// and the accepted state is a single small pointer replaced by one atomic rename. Every step
+/// before that rename is invisible to a reader; the rename is the commit. A crash at any point
+/// leaves the previous pointer — and therefore the previous generation — exactly as it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generation {
+    /// The artifact digest, which is also the generation directory's name.
+    pub digest: String,
+    /// Where the published vocabulary lives.
+    pub slots: std::path::PathBuf,
+    /// Where its provenance lives.
+    pub provenance: std::path::PathBuf,
+}
+
+/// Check that a provenance document names this artifact and carries the fields evidence needs.
+///
+/// Parsed from the **re-read staged bytes**, and by field rather than by substring: a
+/// `contains(digest)` test would accept a document that merely mentioned the digest somewhere.
+fn provenance_names(bytes: &[u8], digest: &str) -> Result<(), String> {
+    let document: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|error| format!("provenance is not JSON: {error}"))?;
+    let named = document
+        .get("slots_sha256")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "provenance has no slots_sha256 field".to_owned())?;
+    if named != digest {
+        return Err(format!(
+            "provenance names {named}, the artifact hashes to {digest}"
+        ));
+    }
+    for required in [
+        "slot_count",
+        "v_cap",
+        "checkpoint_sha256",
+        "pool_sha256",
+        "games_completed",
+    ] {
+        if document.get(required).is_none() {
+            return Err(format!("provenance has no {required} field"));
+        }
+    }
+    Ok(())
+}
+
+fn write_synced(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file =
+        std::fs::File::create(path).map_err(|e| format!("creating {}: {e}", path.display()))?;
+    file.write_all(bytes)
+        .map_err(|e| format!("writing {}: {e}", path.display()))?;
+    file.sync_all()
+        .map_err(|e| format!("syncing {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Publish one generation and make it accepted with a single atomic pointer update.
+///
+/// The vocabulary and provenance are written into `root/generations/<digest>/`, flushed, re-read,
+/// re-hashed and re-parsed — the vocabulary as a `Vocabulary`, the provenance by field — and only
+/// then does `root/current.json` become the new pointer.
 ///
 /// # Errors
-/// [`CorpusError::Publication`] carrying what happened and whether the previous generation survived.
+/// [`CorpusError::Publication`] with `previous_intact` reporting the real state. It is `true` on
+/// every failure path here, and that is a property of the protocol rather than a hopeful restore:
+/// the pointer moves last and once, so nothing before it can be observed.
 pub fn publish_generation(
-    slots_path: &std::path::Path,
+    root: &std::path::Path,
     slots_text: &str,
-    provenance_path: &std::path::Path,
     provenance_text: &str,
-) -> Result<String, CorpusError> {
-    let digest = format!("{:x}", sha2::Sha256::digest(slots_text.as_bytes()));
-
-    if !provenance_text.contains(&digest) {
-        return Err(CorpusError::Publication {
-            reason: "the provenance does not name the vocabulary's digest".to_owned(),
-            previous_intact: true,
-        });
-    }
-
+) -> Result<Generation, CorpusError> {
+    let digest = format!("{:x}", Sha256::digest(slots_text.as_bytes()));
     let fail = |reason: String| CorpusError::Publication {
         reason,
         previous_intact: true,
     };
 
-    // Snapshot whatever is already there, so a half-applied generation can be undone.
-    let previous_slots = std::fs::read(slots_path).ok();
-    let previous_provenance = std::fs::read(provenance_path).ok();
+    let generation = root.join("generations").join(&digest);
+    std::fs::create_dir_all(&generation).map_err(|e| fail(format!("generation directory: {e}")))?;
+    let slots = generation.join("slots.json");
+    let provenance = generation.join("slots.provenance.json");
 
-    if let Some(parent) = slots_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| fail(format!("output directory: {e}")))?;
-    }
+    write_synced(&slots, slots_text.as_bytes()).map_err(fail)?;
+    write_synced(&provenance, provenance_text.as_bytes()).map_err(fail)?;
 
-    // Stage both, flushing each to disk rather than trusting the write cache.
-    let staged_slots = slots_path.with_extension("json.staging");
-    let staged_provenance = provenance_path.with_extension("json.staging");
-    for (path, text) in [
-        (&staged_slots, slots_text),
-        (&staged_provenance, provenance_text),
-    ] {
-        let mut file = std::fs::File::create(path)
-            .map_err(|e| fail(format!("staging {}: {e}", path.display())))?;
-        file.write_all(text.as_bytes())
-            .map_err(|e| fail(format!("staging write {}: {e}", path.display())))?;
-        file.sync_all()
-            .map_err(|e| fail(format!("staging sync {}: {e}", path.display())))?;
-    }
-
-    // Verify the bytes that actually landed, not the ones in memory.
+    // Verify what landed, not what was intended.
     let written_slots =
-        std::fs::read(&staged_slots).map_err(|e| fail(format!("staging reread: {e}")))?;
-    let written_digest = format!("{:x}", sha2::Sha256::digest(&written_slots));
+        std::fs::read(&slots).map_err(|e| fail(format!("re-reading the vocabulary: {e}")))?;
+    let written_digest = format!("{:x}", Sha256::digest(&written_slots));
     if written_digest != digest {
-        let _ = std::fs::remove_file(&staged_slots);
-        let _ = std::fs::remove_file(&staged_provenance);
         return Err(fail(format!(
-            "staged vocabulary hashes {written_digest}, expected {digest}"
+            "the written vocabulary hashes {written_digest}, expected {digest}"
         )));
     }
     let reparsed = String::from_utf8(written_slots)
-        .map_err(|e| fail(format!("staged vocabulary is not UTF-8: {e}")))?;
-    if ti4_policy::vocabulary::Vocabulary::from_json(&reparsed).is_err() {
-        let _ = std::fs::remove_file(&staged_slots);
-        let _ = std::fs::remove_file(&staged_provenance);
-        return Err(fail("the staged vocabulary does not load".to_owned()));
-    }
+        .map_err(|e| fail(format!("the written vocabulary is not UTF-8: {e}")))?;
+    ti4_policy::vocabulary::Vocabulary::from_json(&reparsed)
+        .map_err(|e| fail(format!("the written vocabulary does not load: {e}")))?;
 
-    // Replace. `std::fs::rename` replaces an existing destination on both Unix and Windows (the
-    // Windows implementation passes `MOVEFILE_REPLACE_EXISTING`), so this is a replacement rather
-    // than a create.
-    std::fs::rename(&staged_slots, slots_path).map_err(|e| {
-        let _ = std::fs::remove_file(&staged_slots);
-        let _ = std::fs::remove_file(&staged_provenance);
-        fail(format!("replacing the vocabulary: {e}"))
+    let written_provenance =
+        std::fs::read(&provenance).map_err(|e| fail(format!("re-reading the provenance: {e}")))?;
+    provenance_names(&written_provenance, &digest).map_err(fail)?;
+
+    // Commit: one small pointer, one atomic rename. A reader sees either the old generation or the
+    // new one, never half of each.
+    let pointer = root.join("current.json");
+    let staged_pointer = root.join("current.json.staging");
+    let pointer_text = pointer_document(&digest);
+    write_synced(&staged_pointer, pointer_text.as_bytes()).map_err(fail)?;
+    std::fs::rename(&staged_pointer, &pointer).map_err(|e| {
+        let _ = std::fs::remove_file(&staged_pointer);
+        fail(format!("committing the pointer: {e}"))
     })?;
 
-    if let Err(error) = std::fs::rename(&staged_provenance, provenance_path) {
-        // The vocabulary is already in place. Roll it back rather than leaving a generation whose
-        // halves disagree, and report which state the destination ended in.
-        let restored = match &previous_slots {
-            Some(bytes) => std::fs::write(slots_path, bytes).is_ok(),
-            None => std::fs::remove_file(slots_path).is_ok(),
-        };
-        if let Some(bytes) = &previous_provenance {
-            let _ = std::fs::write(provenance_path, bytes);
-        }
-        let _ = std::fs::remove_file(&staged_provenance);
-        return Err(CorpusError::Publication {
-            reason: format!("replacing the provenance: {error}"),
-            previous_intact: restored,
-        });
-    }
+    Ok(Generation {
+        digest,
+        slots,
+        provenance,
+    })
+}
 
-    Ok(digest)
+fn pointer_document(digest: &str) -> String {
+    let mut text = String::new();
+    text.push_str("{\n \"generation\": \"");
+    text.push_str(digest);
+    text.push_str("\",\n \"slots\": \"generations/");
+    text.push_str(digest);
+    text.push_str("/slots.json\",\n \"provenance\": \"generations/");
+    text.push_str(digest);
+    text.push_str("/slots.provenance.json\"\n}\n");
+    text
+}
+
+/// The accepted generation, as the pointer names it.
+///
+/// # Errors
+/// [`CorpusError::Publication`] if there is no pointer, it does not parse, or the generation it
+/// names does not hash to the digest it is filed under.
+pub fn accepted_generation(root: &std::path::Path) -> Result<Generation, CorpusError> {
+    let fail = |reason: String| CorpusError::Publication {
+        reason,
+        previous_intact: true,
+    };
+    let pointer = std::fs::read(root.join("current.json"))
+        .map_err(|e| fail(format!("no accepted generation: {e}")))?;
+    let document: serde_json::Value =
+        serde_json::from_slice(&pointer).map_err(|e| fail(format!("pointer is not JSON: {e}")))?;
+    let digest = document
+        .get("generation")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| fail("the pointer names no generation".to_owned()))?;
+    let slots = root.join("generations").join(digest).join("slots.json");
+    let bytes =
+        std::fs::read(&slots).map_err(|e| fail(format!("reading {}: {e}", slots.display())))?;
+    let found = format!("{:x}", Sha256::digest(&bytes));
+    if found != digest {
+        return Err(fail(format!(
+            "the accepted generation hashes {found} but is filed under {digest}"
+        )));
+    }
+    Ok(Generation {
+        digest: digest.to_owned(),
+        slots,
+        provenance: root
+            .join("generations")
+            .join(digest)
+            .join("slots.provenance.json"),
+    })
 }
 
 #[cfg(test)]
@@ -568,21 +638,34 @@ mod tests {
             .expect("json")
     }
 
+    fn provenance_for(text: &str, complete: bool) -> String {
+        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+        if complete {
+            format!(
+                "{{\n \"slots_sha256\": \"{digest}\",\n \"slot_count\": 2,\n \"v_cap\": 4096,\n \
+                 \"checkpoint_sha256\": \"abc\",\n \"pool_sha256\": \"def\",\n \
+                 \"games_completed\": 768\n}}\n"
+            )
+        } else {
+            format!("{{\n \"slots_sha256\": \"{digest}\"\n}}\n")
+        }
+    }
+
     #[test]
     fn a_campaign_with_a_failed_game_publishes_nothing() {
-        // F-M09-024b2-8. The campaign type is what stops a partial name set being reported as a
-        // complete run, so the refusal is exercised rather than assumed. An empty champion map
-        // makes every game fail at seating.
+        // F-M09-024b2-8/-11. Hermetic: the pool is built in-test rather than read from a
+        // gitignored path, so this runs in a fresh checkout. An empty champion map makes every
+        // game fail before the engine is reached, which is the refusal being tested.
         let content = ti4_content::ContentStore::embedded();
+        // A minimal in-test `ti4-map-pool-v1` payload. Every game in this campaign fails at the
+        // champion check before the pool is consulted, so the pool only has to be structurally
+        // valid — and building it here is what makes the test hermetic (F-M09-024b2-11).
+        let payload = "{\"schema\":\"ti4-map-pool-v1\",\"effort\":1,            \"coords\":[[0,0]],\"slots\":[[0,0]],\"arrangements\":[[\"18\"]]}";
         let pool = std::sync::Arc::new(
-            ti4_sim::MapPool::load(std::path::Path::new(
-                "../../out/pools/full_np8_12_train.json",
-            ))
-            .or_else(|_| {
-                ti4_sim::MapPool::load(std::path::Path::new("out/pools/full_np8_12_train.json"))
-            })
-            .expect("the train pool is on disk"),
+            ti4_sim::MapPool::from_reader(std::io::Cursor::new(payload.as_bytes()))
+                .expect("a minimal pool is valid"),
         );
+
         let error = replay_names(
             content,
             DEFAULT,
@@ -613,20 +696,64 @@ mod tests {
     }
 
     #[test]
-    fn a_publication_whose_provenance_does_not_name_the_artifact_is_refused() {
+    fn a_generation_is_accepted_only_when_the_pointer_moves() {
+        let scratch = Scratch::new("commit");
+        let text = small_vocabulary_text();
+        let generation =
+            publish_generation(&scratch.0, &text, &provenance_for(&text, true)).expect("publishes");
+
+        let accepted = accepted_generation(&scratch.0).expect("an accepted generation exists");
+        assert_eq!(accepted, generation);
+        assert_eq!(
+            std::fs::read_to_string(&accepted.slots).expect("read"),
+            text
+        );
+        assert!(
+            !scratch.0.join("current.json.staging").exists(),
+            "staging left behind"
+        );
+    }
+
+    #[test]
+    fn a_second_generation_replaces_the_pointer_and_leaves_the_first_readable() {
+        // The replacement case, and the reason a pointer is better than two renames: the previous
+        // generation is still on disk and still self-consistent, so a rollback is a pointer write.
+        let scratch = Scratch::new("second");
+        let first = small_vocabulary_text();
+        let first_generation =
+            publish_generation(&scratch.0, &first, &provenance_for(&first, true)).expect("first");
+
+        let second =
+            ti4_policy::vocabulary::Vocabulary::build(["option:a", "option:b", "option:c"])
+                .expect("builds")
+                .to_json()
+                .expect("json");
+        let second_generation =
+            publish_generation(&scratch.0, &second, &provenance_for(&second, true))
+                .expect("second");
+
+        assert_ne!(first_generation.digest, second_generation.digest);
+        assert_eq!(
+            accepted_generation(&scratch.0).expect("accepted").digest,
+            second_generation.digest
+        );
+        assert!(
+            first_generation.slots.exists(),
+            "the previous generation was destroyed rather than superseded"
+        );
+    }
+
+    #[test]
+    fn a_provenance_that_does_not_name_the_artifact_never_becomes_accepted() {
         let scratch = Scratch::new("mismatch");
-        let slots = scratch.0.join("slots.json");
-        let provenance = scratch.0.join("slots.provenance.json");
+        let text = small_vocabulary_text();
         let error = publish_generation(
-            &slots,
-            &small_vocabulary_text(),
-            &provenance,
-            "{
- \"slots_sha256\": \"0000\"
-}
-",
+            &scratch.0,
+            &text,
+            "{\n \"slots_sha256\": \"0000\",\n \"slot_count\": 2,\n \"v_cap\": 4096,\n \
+             \"checkpoint_sha256\": \"a\",\n \"pool_sha256\": \"b\",\n \"games_completed\": 1\n}\n",
         )
-        .expect_err("a provenance that names the wrong artifact must be refused");
+        .expect_err("a provenance naming another artifact must be refused");
         assert!(matches!(
             error,
             CorpusError::Publication {
@@ -635,98 +762,72 @@ mod tests {
             }
         ));
         assert!(
-            !slots.exists(),
-            "a refused publication wrote the vocabulary anyway"
+            accepted_generation(&scratch.0).is_err(),
+            "a refused publication became the accepted generation"
         );
-        assert!(!provenance.exists());
     }
 
     #[test]
-    fn a_failed_second_write_leaves_the_previous_generation_intact() {
-        // The torn-generation case: the vocabulary is replaced and the provenance cannot be. A
-        // directory standing where the provenance file must go makes the second rename fail.
-        let scratch = Scratch::new("torn");
-        let slots = scratch.0.join("slots.json");
-        let provenance = scratch.0.join("slots.provenance.json");
-
-        // An accepted generation already in place.
-        std::fs::write(&slots, "PREVIOUS VOCABULARY").expect("seed");
-        std::fs::write(&provenance, "PREVIOUS PROVENANCE").expect("seed");
-        // Now make the provenance replacement impossible.
-        std::fs::remove_file(&provenance).expect("remove");
-        std::fs::create_dir(&provenance).expect("a directory blocks the rename");
-
+    fn an_incomplete_provenance_never_becomes_accepted() {
+        // Substring matching would have passed this: the digest is present and correct, and the
+        // evidence fields are missing.
+        let scratch = Scratch::new("incomplete");
         let text = small_vocabulary_text();
-        let digest = format!("{:x}", sha2::Sha256::digest(text.as_bytes()));
-        let error = publish_generation(
-            &slots,
-            &text,
-            &provenance,
-            &format!(
-                "{{
- \"slots_sha256\": \"{digest}\"
-}}
-"
-            ),
-        )
-        .expect_err("the second replacement cannot succeed");
-
+        let error = publish_generation(&scratch.0, &text, &provenance_for(&text, false))
+            .expect_err("an incomplete provenance must be refused");
         match error {
             CorpusError::Publication {
-                previous_intact,
                 reason,
+                previous_intact,
             } => {
-                assert!(reason.contains("provenance"), "reason: {reason}");
-                assert!(
-                    previous_intact,
-                    "the rollback did not restore the previous generation"
-                );
+                assert!(reason.contains("slot_count"), "reason: {reason}");
+                assert!(previous_intact);
             }
             other => panic!("wrong error: {other}"),
         }
+        assert!(accepted_generation(&scratch.0).is_err());
+    }
+
+    #[test]
+    fn a_crash_before_the_pointer_leaves_the_previous_generation_accepted() {
+        // The case two renames could not survive. A publication that dies after writing the
+        // generation directory but before the pointer is simulated by writing the files directly
+        // and never committing; the accepted generation must still be the first one.
+        let scratch = Scratch::new("crash");
+        let first = small_vocabulary_text();
+        let first_generation =
+            publish_generation(&scratch.0, &first, &provenance_for(&first, true)).expect("first");
+
+        let orphan = ti4_policy::vocabulary::Vocabulary::build(["option:z"])
+            .expect("builds")
+            .to_json()
+            .expect("json");
+        let orphan_digest = format!("{:x}", Sha256::digest(orphan.as_bytes()));
+        let orphan_dir = scratch.0.join("generations").join(&orphan_digest);
+        std::fs::create_dir_all(&orphan_dir).expect("dir");
+        std::fs::write(orphan_dir.join("slots.json"), &orphan).expect("write");
+
+        let accepted = accepted_generation(&scratch.0).expect("accepted");
         assert_eq!(
-            std::fs::read_to_string(&slots).expect("still there"),
-            "PREVIOUS VOCABULARY",
-            "a torn publication left the new vocabulary in place"
+            accepted.digest, first_generation.digest,
+            "an uncommitted generation became accepted"
         );
     }
 
     #[test]
-    fn a_complete_generation_replaces_an_existing_one() {
-        // The success path, over an existing destination — the case the finding worried `rename`
-        // could not do on Windows. It can: the standard library passes MOVEFILE_REPLACE_EXISTING.
-        let scratch = Scratch::new("replace");
-        let slots = scratch.0.join("slots.json");
-        let provenance = scratch.0.join("slots.provenance.json");
-        std::fs::write(&slots, "PREVIOUS").expect("seed");
-        std::fs::write(&provenance, "PREVIOUS").expect("seed");
-
+    fn a_pointer_naming_a_generation_that_does_not_match_is_refused() {
+        let scratch = Scratch::new("tamper");
         let text = small_vocabulary_text();
-        let digest = format!("{:x}", sha2::Sha256::digest(text.as_bytes()));
-        let published = publish_generation(
-            &slots,
-            &text,
-            &provenance,
-            &format!(
-                "{{
- \"slots_sha256\": \"{digest}\"
-}}
-"
-            ),
-        )
-        .expect("a complete generation publishes");
-        assert_eq!(published, digest);
-        assert_eq!(std::fs::read_to_string(&slots).expect("read"), text);
-        assert!(
-            std::fs::read_to_string(&provenance)
-                .expect("read")
-                .contains(&digest),
-            "the provenance does not name the published artifact"
-        );
-        assert!(
-            !slots.with_extension("json.staging").exists(),
-            "staging left behind"
-        );
+        let generation =
+            publish_generation(&scratch.0, &text, &provenance_for(&text, true)).expect("publishes");
+        std::fs::write(&generation.slots, "TAMPERED").expect("tamper");
+        let error = accepted_generation(&scratch.0).expect_err("a tampered generation is refused");
+        match error {
+            CorpusError::Publication { reason, .. } => {
+                assert!(reason.contains("filed under"), "reason: {reason}");
+            }
+            other => panic!("wrong error: {other}"),
+        }
     }
 
     #[test]

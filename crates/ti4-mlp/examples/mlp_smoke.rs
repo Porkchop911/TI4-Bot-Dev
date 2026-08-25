@@ -42,6 +42,14 @@ const TILE_SEED_OFFSET: u64 = 20_000_000;
 const ACCEPTED_SLOTS_SHA256: &str =
     "14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479";
 
+/// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
+fn ti4_training_generation() -> Option<String> {
+    let pointer = std::fs::read("out/vocabulary/current.json").ok()?;
+    let document: serde_json::Value = serde_json::from_slice(&pointer).ok()?;
+    let digest = document.get("generation")?.as_str()?;
+    Some(format!("out/vocabulary/generations/{digest}/slots.json"))
+}
+
 fn refuse(reason: &str) -> ! {
     eprintln!("REFUSED: {reason}");
     std::process::exit(2);
@@ -61,7 +69,11 @@ fn argument(name: &str) -> Option<String> {
 )]
 fn main() {
     let content = ContentStore::embedded();
-    let slots = argument("--slots").unwrap_or_else(|| "out/vocabulary/slots.json".to_owned());
+    // Default to the accepted generation the pointer names, rather than a fixed path that a
+    // republish moves out from under.
+    let slots = argument("--slots").unwrap_or_else(|| {
+        ti4_training_generation().unwrap_or_else(|| "out/vocabulary/slots.json".to_owned())
+    });
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
     let rounds: u32 = argument("--rounds")

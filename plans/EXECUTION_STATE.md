@@ -5371,3 +5371,100 @@ release mlp_smoke --seed 999000111 --force-inference-failure
 The prior review's claim that Windows `std::fs::rename` cannot replace an existing destination was
 incorrect and is explicitly corrected in the M09-024b2 review. Current frontier: M09-024b2 and
 M09-026 are open; M09-027 remains blocked.
+
+## Recheck round 2: M09-024b2 F9–F11, M09-026 F10–F11 (implementer, 2026-08-25)
+
+M09-025 accepted, and the `std::fs::rename` correction recorded. Five findings remain, all
+accepted. One of them is the worst kind and is named first.
+
+### F-M09-024b2-9 — the evidence claimed a fix that was not in the code
+
+The exact-digest constant was added and the gate still compared the 16-hex prefix. My edit did not
+apply — the replacement pattern did not match, the script reported success for the parts that did,
+and **I wrote up the fix without re-reading the line**. The finding is exactly right that the
+64-bit-prefix defect was unchanged while the evidence said otherwise.
+
+That is worse than the original defect. A wrong claim in the evidence is what a reviewer has to
+work against, and this one would have survived if the recheck had trusted the write-up. The gate now
+reads:
+
+```rust
+if checkpoint_sha != ti4_sim::baseline::R6_CHECKPOINT_SHA256 {
+```
+
+verified by grep after the edit rather than assumed, and refused in practice:
+
+```
+REFUSED: near.json is 5d9a8050…, not the accepted r6 checkpoint be792a2a207ced25d589162d…
+```
+
+**One part of the required correction cannot be built.** A fixture that "would pass the prefix gate
+but fails exact identity" needs a 64-bit prefix collision. The exact comparison is strictly stronger
+than the prefix one and the refusal is tested with a valid-but-different envelope; a collision
+fixture is not constructible and is not claimed.
+
+### F-M09-024b2-10 — a pointer, not two renames
+
+Accepted in full. The two-rename design was not crash-recoverable: a process loss between the
+renames leaves a torn pair and no in-memory rollback runs at all. The snapshot conflated absence
+with read failure, the staged provenance was never re-read, the binding was a substring test, and
+`previous_intact` was computed from one file.
+
+Replaced with a **manifest-last generation**. Both files are written into
+`generations/<digest>/`, flushed with `sync_all`, re-read, re-hashed, and re-parsed — the
+vocabulary as a `Vocabulary`, the provenance **by field**, requiring `slots_sha256` to equal the
+artifact digest plus the evidence fields. Then one small `current.json` is replaced by a single
+atomic rename. The pointer is the commit.
+
+`previous_intact: true` is now a property of the protocol rather than a hopeful restore: the
+pointer moves last and once, so nothing before it is observable. The example no longer routes
+publication failures through `refuse`, whose "No artifact was written" is only true beforehand; it
+reports `PUBLICATION FAILED` and exits 3.
+
+### F-M09-024b2-11 — hermetic
+
+The campaign test built its pool from a gitignored path. It now builds a minimal in-test
+`ti4-map-pool-v1` payload, so the regression runs in a fresh checkout.
+
+### F-M09-026-10 — the boundary is now the API
+
+Accepted: `#[must_use]` is a lint, and `MlpBot` implemented `Decider` publicly, so
+`Box::new(MlpBot::new(..))` bypassed `seat` entirely.
+
+`MlpBot` **no longer implements `Decider`**. The only implementor is a private `SeatedBot`, produced
+solely by `MlpBot::seat`, which returns it together with the `InferenceStatus`. Obtaining a usable
+decider and obtaining the status are the same act, so reporting a successful campaign without
+consuming the status is not expressible rather than merely discouraged.
+
+### F-M09-026-11 — the refusals are regressions now
+
+`tests/api_boundary.rs` (two tests, own process): a seated bot's status cannot yield a clean result
+when the model answered nothing, and a forced failure is counted and surfaced through
+`into_result`. `tests/smoke_refusals.rs` drives the real example binary and requires exit 2 with the
+matching message for a wrong vocabulary and for a Final-role pool.
+
+The smoke also now follows `current.json` to the accepted generation rather than a fixed path a
+republish moves out from under it.
+
+### Gates
+
+```
+cargo test --workspace                              1467 passed, 0 failed   (1460 before)
+cargo test -p ti4-training --lib vocabulary_corpus    10 passed, 0 failed   (7 before)
+cargo test -p ti4-mlp                                 27 passed, 0 failed   (23 before)
+clippy across ti4-mlp and ti4-training                 0 warnings in any touched file
+rustfmt --edition 2024 --check                        clean
+git diff --check                                      clean
+republished generation                                14c19387…8479, 768/768 games
+smoke                                                 exit 0, 0 fallbacks
+```
+
+### Six new refusal regressions
+
+`a_generation_is_accepted_only_when_the_pointer_moves`,
+`a_second_generation_replaces_the_pointer_and_leaves_the_first_readable`,
+`a_provenance_that_does_not_name_the_artifact_never_becomes_accepted`,
+`an_incomplete_provenance_never_becomes_accepted` (which substring matching would have passed —
+the digest is present and correct, the evidence fields are not),
+`a_crash_before_the_pointer_leaves_the_previous_generation_accepted`, and
+`a_pointer_naming_a_generation_that_does_not_match_is_refused`.

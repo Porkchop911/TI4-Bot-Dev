@@ -76,6 +76,12 @@ pub struct InferenceFailed {
 }
 
 /// A decider that scores every legal option with the MLP and samples from the result.
+///
+/// **`MlpBot` does not implement `Decider`.** It cannot be boxed and seated directly, because the
+/// only type that does implement it is private and is produced solely by [`MlpBot::seat`], which
+/// hands back an [`InferenceStatus`] alongside it. That is what makes fail-closed behaviour a
+/// property of the API rather than of each caller remembering (F-M09-026-10): reporting a
+/// successful campaign without consuming the status is not something a caller can express.
 pub struct MlpBot {
     actor: Actor,
     vocabulary: Vocabulary,
@@ -124,7 +130,7 @@ impl MlpBot {
         let status = InferenceStatus {
             counters: Arc::clone(&self.counters),
         };
-        (Box::new(self), status)
+        (Box::new(SeatedBot(self)), status)
     }
 
     /// Play at a different temperature.
@@ -164,8 +170,25 @@ impl MlpBot {
     }
 }
 
-impl Decider for MlpBot {
+/// The private decider. Boxed only by [`MlpBot::seat`], so obtaining one always yields the status.
+struct SeatedBot(MlpBot);
+
+impl Decider for SeatedBot {
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        self.0.choose_legal(choice)
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        self.0.decide(choice, seen)
+    }
+}
+
+impl MlpBot {
+    fn choose_legal(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
         // No position offered. Uniform over the legal set rather than a fixed index, so a decider
         // without a view does not silently bias every such decision to the first option.
         choice
@@ -178,7 +201,7 @@ impl Decider for MlpBot {
             })
     }
 
-    fn choose_seeing(
+    fn decide(
         &mut self,
         choice: &Choice,
         seen: &SeatObservation<'_>,
@@ -217,7 +240,7 @@ impl Decider for MlpBot {
                 eprintln!(
                     "MLP inference failed on head {head} ({error}); falling back to a legal guess"
                 );
-                return self.choose(choice);
+                return self.choose_legal(choice);
             }
         };
         self.counters.decisions.fetch_add(1, Ordering::Relaxed);
