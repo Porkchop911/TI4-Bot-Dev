@@ -36,6 +36,13 @@ pub const VALIDATION_POOL_SHA_PREFIX: &str = "aba33c81aa04cefb";
 /// The expected sha256 prefix of the completed r6 checkpoint (MLP plan §10 artifact manifest).
 pub const R6_CHECKPOINT_SHA_PREFIX: &str = "be792a2a207ced25";
 
+/// The **exact** accepted r6 checkpoint identity.
+///
+/// A 16-hex prefix is 64 bits, and a gate that accepts any envelope sharing it is not enforcing a
+/// durable identity (F-M09-024b2-6). Callers that mean "the accepted r6 checkpoint" compare this.
+pub const R6_CHECKPOINT_SHA256: &str =
+    "be792a2a207ced25d589162d875bae4fb1f320c8e5637045486db6a24ce5b55b";
+
 /// Why a baseline panel cannot run.
 #[derive(Debug, thiserror::Error)]
 pub enum BaselineError {

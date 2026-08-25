@@ -140,3 +140,119 @@ partially.
 
 **Verdict: changes required.** M09-024b2 and therefore M09-024 remain open; M09-026 cannot be
 accepted on this dependency frontier.
+
+## Recheck round: M09-024b2 F6–F8, M09-025 F5–F6, M09-026 F7–F9 (implementer, 2026-08-25)
+
+M09-024b1 accepted. Eight further findings across the other three, all accepted bar one factual
+point in F-M09-024b2-7, which is corrected below with evidence rather than argued.
+
+### One correction to the review
+
+F-M09-024b2-7 states that `std::fs::rename(staged, destination)` "does not replace an existing
+destination on Windows". It does: Rust's standard library passes `MOVEFILE_REPLACE_EXISTING`.
+Checked directly rather than assumed —
+
+```
+rename over existing: OK, dest now = "new"
+```
+
+— and now pinned by `a_complete_generation_replaces_an_existing_one`, which publishes over an
+existing pair. **Everything else in F7 stands**, and the two-file atomicity problem it names is
+real; that half is fixed below.
+
+### F-M09-025-5 — the verifier was skipped on the incremental path
+
+The sharpest of the eight, and it invalidated my own falsification. Both build scripts emitted
+`rerun-if-changed` for the manifest alone, so once a crate was up to date, changing a pinned DLL did
+not rerun the verifier. My earlier mutation check passed only because `touch build.rs` forced a
+rebuild — it never exercised the path that matters.
+
+Rerun tracking now covers **every pinned file and the `lib` directory itself**, so additions and
+removals are caught as well as edits. Falsified on the genuine incremental path this time: build to
+`Finished in 0.08s`, mutate one DLL and nothing else, then
+
+```
+pinned libtorch file lib/c10.dll is fd1e80d4…, manifest says 89853f00…
+error: failed to run custom build command for `ti4-tensor`
+```
+
+### F-M09-025-6 — the conversion test, and what it actually found
+
+The finding assumed a dtype mismatch would fail. It does not: `tch` converts `i64` to `f32`
+silently. The real failure is a rank-2 tensor, which cannot become a flat vector — and `to_vec`
+flattens first, so it never hits that. The test now records all three facts: the underlying
+conversion *does* reject rank-2, `to_vec` succeeds on the same tensor because the flatten is
+load-bearing, and an empty tensor converts to an empty vector — the value a failure used to be
+confused with. The dtype case is asserted as *converting*, because asserting otherwise would have
+been wrong.
+
+Recorded honestly: no input reaching `to_vec` has been found that fails, so the `Err` arm is
+defensive. The fallible signature is still right; the claim that a failure is *reachable* is not one
+I can make.
+
+### F-M09-024b2-6 — the exact digest
+
+The gate compared a 16-hex prefix, which is 64 bits. `R6_CHECKPOINT_SHA256` now carries the full
+accepted identity and the comparison is exact.
+
+### F-M09-024b2-7 — one recoverable generation
+
+`publish_generation` moved into the library so it is testable. Both files are staged, written
+through `File::sync_all` rather than trusting the write cache, re-read, re-hashed and re-parsed;
+the provenance must name the vocabulary's digest, so a torn pair cannot pass as a matched one. If
+the second replacement fails, the previous generation is restored from a snapshot taken before
+either rename and the error reports `previous_intact` truthfully instead of printing "No artifact
+was written". `refuse` is now documented as running only before publication, where its message is
+true.
+
+### F-M09-024b2-8 — the refusal regressions
+
+Four, and each fails for the reason it names:
+`a_campaign_with_a_failed_game_publishes_nothing` (an empty champion map, every game reported with
+its seed, rotation and reason);
+`a_publication_whose_provenance_does_not_name_the_artifact_is_refused` (nothing written);
+`a_failed_second_write_leaves_the_previous_generation_intact` (a directory blocks the provenance
+rename, and the previous vocabulary is still on disk afterwards);
+`a_complete_generation_replaces_an_existing_one`.
+
+### F-M09-026-7 — the actor is always roster-sized
+
+`Actor::zeros` no longer takes a faction count. `FactionRow` can name any of 33 rows, so a smaller
+actor passed the typed API and panicked inside the tensor — the type guaranteed a shape the
+constructor had not built. Every one of the 33 rows is now exercised end to end rather than assumed
+safe.
+
+### F-M09-026-8 — the smoke verifies its inputs
+
+`slots.json` is checked against the accepted generation digest and the pool through the M09-020 role
+gate, with every consumer parsing the verified bytes. Falsified:
+
+```
+REFUSED: badslots.json is 4986139e…, not the accepted vocabulary generation 14c19387…   exit 2
+REFUSED: full_np8_12_final.json is not an allowed pool: artifact role Final is not allowed
+         here (allowed roles: [Train, Validation])                                       exit 2
+```
+
+### F-M09-026-9 — inference status cannot be discarded
+
+The public counter relied on each caller remembering to read it. `MlpBot::seat` now returns
+`(Box<dyn Decider>, InferenceStatus)` — the only way to obtain a boxed bot — and `InferenceStatus`
+is `#[must_use]` with a single accessor returning `Result`. A campaign cannot reach a success
+without the fallback count having been consumed. Forced failure still exits 4.
+
+### Gates
+
+```
+cargo test --workspace                          1460 passed, 0 failed   (1454 before)
+cargo test -p ti4-training --lib vocabulary_corpus   7 passed, 0 failed   (3 before)
+cargo test -p ti4-tensor --lib                    12 passed, 0 failed   (11 before)
+cargo test -p ti4-mlp                             23 passed, 0 failed   (22 before)
+clippy across ti4-tensor, ti4-mlp, ti4-training     0 warnings in any touched file
+rustfmt --edition 2024 --check                     clean
+git diff --check                                   clean
+smoke                                              exit 0, 0 fallbacks
+incremental DLL mutation                           build refused
+```
+
+The republished generation is unchanged: `slots_sha256`
+`14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479`, 768/768 games, `V_cap` 16,384.

@@ -78,6 +78,19 @@ fn main() {
         fail("pinned libtorch manifest lists no files; refusing to link an unverified libtorch");
     }
 
+    // Tell Cargo to rerun whenever any usable libtorch byte can change. Emitting this only for the
+    // manifest meant that once the crate was up to date, editing a pinned DLL or dropping an extra
+    // one into `lib/` did not rerun the verifier, and the next ordinary `cargo test` linked the
+    // changed bytes with the gate skipped (F-M09-025-5). The earlier mutation check passed only
+    // because touching `build.rs` forced a rebuild — it never exercised the incremental path.
+    //
+    // The directory itself is tracked as well as each file, so an *addition* or a removal is caught
+    // and not only a modification.
+    println!("cargo:rerun-if-changed={}", root.join("lib").display());
+    for relative in pinned.keys() {
+        println!("cargo:rerun-if-changed={}", root.join(relative).display());
+    }
+
     // 1. Verify every pinned file against the manifest, before anything is linked or staged.
     for (relative, expected) in &pinned {
         let path = root.join(relative);

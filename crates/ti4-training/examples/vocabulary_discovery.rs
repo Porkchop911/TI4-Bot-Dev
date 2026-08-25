@@ -68,34 +68,6 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", sha2::Sha256::digest(bytes))
 }
 
-/// Write, verify the bytes that landed, then atomically replace.
-///
-/// A bare `fs::write` can truncate the previous artifact and leave a short file behind, and a
-/// digest taken from memory describes bytes that may not be on disk (F-M09-024b2-5). The staged
-/// file is re-read, re-hashed and re-parsed before it replaces anything.
-fn publish(destination: &Path, text: &str, expected_digest: &str) -> Result<(), String> {
-    let staged = destination.with_extension("json.staging");
-    if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("output directory: {e}"))?;
-    }
-    std::fs::write(&staged, text.as_bytes()).map_err(|e| format!("staging write: {e}"))?;
-
-    let written = std::fs::read(&staged).map_err(|e| format!("staging reread: {e}"))?;
-    let digest = sha256(&written);
-    if digest != expected_digest {
-        let _ = std::fs::remove_file(&staged);
-        return Err(format!(
-            "staged bytes hash {digest}, expected {expected_digest}"
-        ));
-    }
-    let reparsed =
-        String::from_utf8(written).map_err(|e| format!("staged bytes not UTF-8: {e}"))?;
-    Vocabulary::from_json(&reparsed).map_err(|e| format!("staged artifact does not load: {e}"))?;
-
-    std::fs::rename(&staged, destination).map_err(|e| format!("atomic replace: {e}"))?;
-    Ok(())
-}
-
 #[expect(
     clippy::too_many_lines,
     reason = "a linear discovery script: every gate is visible in the order it runs rather than \
@@ -268,13 +240,8 @@ fn main() {
     }
     println!("\ndouble build over reversed input: byte-identical");
 
-    // --- Publish, verifying the bytes that landed. ---
+    // --- Provenance, tied to the artifact, published with it as one generation. ---
     let digest = sha256(text.as_bytes());
-    if let Err(reason) = publish(&out, &text, &digest) {
-        refuse(&format!("publication: {reason}"));
-    }
-
-    // --- Provenance, tied to the artifact. ---
     let provenance = format!(
         "{{\n \"artifact\": \"{}\",\n \"slots_sha256\": \"{digest}\",\n \"slot_count\": {},\n \
          \"v_cap\": {},\n \"allocated_for\": {},\n \"oov_registry_version\": {},\n \
@@ -296,8 +263,14 @@ fn main() {
         campaign.completed,
     );
     let provenance_path = out.with_file_name("slots.provenance.json");
-    if let Err(error) = std::fs::write(&provenance_path, &provenance) {
-        refuse(&format!("writing provenance: {error}"));
+    match ti4_training::vocabulary_corpus::publish_generation(
+        &out,
+        &text,
+        &provenance_path,
+        &provenance,
+    ) {
+        Ok(published) => assert_eq!(published, digest, "the published digest moved"),
+        Err(error) => refuse(&format!("{error}")),
     }
 
     println!("\nmanifest:");

@@ -217,11 +217,15 @@ impl Actor {
     /// # Panics
     /// If the head or faction counts do not fit an `i64`, which they cannot: there are fourteen
     /// heads and thirty-three seats.
+    /// The faction dimension is **not** a parameter. `FactionRow` can name any of the 33 roster
+    /// rows, so an actor built with fewer would pass the typed API and then panic inside
+    /// `embedding.get` — the type would be guaranteeing a shape the constructor did not build
+    /// (F-M09-026-7). It is always `FACTION_ROSTER.len()`.
     #[must_use]
-    pub fn zeros(width: Width, capacity: i64, factions: usize) -> Self {
+    pub fn zeros(width: Width, capacity: i64) -> Self {
         let w = width.dim();
         let heads = i64::try_from(heads().len()).expect("fourteen heads");
-        let factions_dim = i64::try_from(factions).expect("thirty-three seats");
+        let factions_dim = i64::try_from(FACTION_ROSTER.len()).expect("thirty-three seats");
         let opts = (Kind::Float, Device::Cpu);
         Self {
             width: w,
@@ -242,6 +246,12 @@ impl Actor {
     #[must_use]
     pub const fn width(&self) -> i64 {
         self.width
+    }
+
+    /// Faction rows allocated. Always [`FACTION_ROSTER`]'s length.
+    #[must_use]
+    pub fn faction_rows(&self) -> i64 {
+        self.delta.size()[0]
     }
 
     /// Allocated input rows — `V_cap`.
@@ -563,7 +573,6 @@ mod tests {
 
     const SEED: i64 = 20_260_821;
     const CAPACITY: i64 = 512;
-    const FACTIONS: usize = 33;
 
     fn row(alias: &str) -> FactionRow {
         FactionRow::of(alias).expect("in the roster")
@@ -594,7 +603,7 @@ mod tests {
 
     fn actor(width: Width) -> Actor {
         ti4_tensor::configure_deterministic(SEED).expect("configured");
-        let mut actor = Actor::zeros(width, CAPACITY, FACTIONS);
+        let mut actor = Actor::zeros(width, CAPACITY);
         let w = width.dim();
         *actor.input_mut() = patterned(CAPACITY, w, 1);
         *actor.hidden_mut() = patterned(w, w, 2);
@@ -677,6 +686,25 @@ mod tests {
         }
         assert_ne!(row("keleresa"), row("keleresm"));
         assert_ne!(row("keleresm"), row("keleresx"));
+    }
+
+    #[test]
+    fn every_roster_row_is_safe_because_the_actor_is_always_roster_sized() {
+        // F-M09-026-7. `FactionRow` can name any of 33 rows, so an actor with fewer would pass the
+        // typed API and panic inside the tensor. The dimension is no longer a caller's to choose —
+        // and every row is exercised rather than assumed.
+        let actor = Actor::zeros(Width::W128, CAPACITY);
+        assert_eq!(actor.faction_rows(), 33);
+        assert_eq!(actor.embedding().size(), vec![33, 16]);
+        for alias in FACTION_ROSTER {
+            let identity = row(alias);
+            let selected = ti4_tensor::to_vec_or_panic(&actor.identity_row(identity));
+            assert_eq!(selected.len(), 128, "{alias}: wrong padded width");
+            let logits = actor
+                .logits(&[option(&[1], &[1.0])], "turn", identity)
+                .unwrap_or_else(|error| panic!("{alias} is a valid row but failed: {error}"));
+            assert_eq!(logits.size(), vec![1], "{alias}: wrong logit shape");
+        }
     }
 
     #[test]
@@ -783,7 +811,7 @@ mod tests {
     fn an_untrained_identity_selects_a_zero_row() {
         // §3: a faction absent from training uses the shared readout, a zero residual and a zero
         // embedding. Every row starts zero, and the padded selection is all zeros.
-        let actor = Actor::zeros(Width::W256, CAPACITY, FACTIONS);
+        let actor = Actor::zeros(Width::W256, CAPACITY);
         for alias in ["bastion", "crimson", "ralnel"] {
             let selected = ti4_tensor::to_vec_or_panic(&actor.identity_row(row(alias)));
             assert_eq!(selected.len(), 256, "the selection is padded to the width");
@@ -822,7 +850,7 @@ mod tests {
         let identity = row("sol");
 
         let grad_of = |dense_path: bool| -> Vec<f32> {
-            let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
+            let mut actor = Actor::zeros(Width::W128, CAPACITY);
             *actor.input_mut() = patterned(CAPACITY, 128, 1);
             *actor.hidden_mut() = patterned(128, 128, 2);
             let _ = actor.input.set_requires_grad(true);
@@ -852,7 +880,7 @@ mod tests {
     #[test]
     fn the_embedding_receives_gradient_only_on_the_selected_row() {
         ti4_tensor::configure_deterministic(SEED).expect("configured");
-        let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
+        let mut actor = Actor::zeros(Width::W128, CAPACITY);
         *actor.input_mut() = patterned(CAPACITY, 128, 1);
         *actor.hidden_mut() = patterned(128, 128, 2);
         let _ = actor.embedding.set_requires_grad(true);
@@ -882,7 +910,7 @@ mod tests {
     #[test]
     fn only_the_named_rows_receive_gradient() {
         ti4_tensor::configure_deterministic(SEED).expect("configured");
-        let mut actor = Actor::zeros(Width::W128, CAPACITY, FACTIONS);
+        let mut actor = Actor::zeros(Width::W128, CAPACITY);
         *actor.input_mut() = patterned(CAPACITY, 128, 1);
         *actor.hidden_mut() = patterned(128, 128, 2);
         let _ = actor.input.set_requires_grad(true);
@@ -1074,7 +1102,7 @@ mod tests {
         // columns, so the gate could pass without checking a single real row.
         let built = vocabulary(200);
         let capacity = i64::try_from(built.capacity()).expect("fits");
-        let actor = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let actor = Actor::zeros(Width::W128, capacity);
 
         let rows = actor.inactive_rows(&built).expect("derives");
         // Five reserved columns plus every free row above `slot_count`.
@@ -1091,7 +1119,7 @@ mod tests {
         assert!(actor.inactive_rows_are_zero(&built).expect("checks"));
 
         // A dirty reserved row is detected — the real one, not an arbitrary index.
-        let mut dirty = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let mut dirty = Actor::zeros(Width::W128, capacity);
         let dead =
             i64::try_from(built.column_of(&ti4_policy::vocabulary::oov_name("state-option")))
                 .expect("fits");
@@ -1099,7 +1127,7 @@ mod tests {
         assert!(!dirty.inactive_rows_are_zero(&built).expect("checks"));
 
         // And a dirty free row.
-        let mut free_dirty = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let mut free_dirty = Actor::zeros(Width::W128, capacity);
         let _ = free_dirty.input_mut().get(capacity - 1).fill_(0.1);
         assert!(!free_dirty.inactive_rows_are_zero(&built).expect("checks"));
     }
@@ -1107,7 +1135,7 @@ mod tests {
     #[test]
     fn a_mismatched_vocabulary_is_refused_rather_than_checked_against_the_wrong_table() {
         let built = vocabulary(200);
-        let actor = Actor::zeros(Width::W128, 4_096 * 4, FACTIONS);
+        let actor = Actor::zeros(Width::W128, 4_096 * 4);
         assert!(matches!(
             actor.inactive_rows(&built),
             Err(ActorError::NotUsable { .. })
@@ -1120,7 +1148,7 @@ mod tests {
         // this mask cannot move them at all.
         let built = vocabulary(200);
         let capacity = i64::try_from(built.capacity()).expect("fits");
-        let mut actor = Actor::zeros(Width::W128, capacity, FACTIONS);
+        let mut actor = Actor::zeros(Width::W128, capacity);
         let mask = actor.trainable_mask(&built).expect("mask");
         assert_eq!(mask.size(), vec![capacity]);
 

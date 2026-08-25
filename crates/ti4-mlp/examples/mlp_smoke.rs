@@ -24,8 +24,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use sha2::Digest;
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Decider, SeededRandom, Table};
+use ti4_engine::choice::{SeededRandom, Table};
 use ti4_engine::game::Game;
 use ti4_engine::setup::start_game_seeded;
 use ti4_mlp::bot::MlpBot;
@@ -33,9 +34,18 @@ use ti4_mlp::{Actor, FactionRow, Width};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::vocabulary::Vocabulary;
+use ti4_sim::artifacts::ArtifactRole;
 
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
+/// The vocabulary generation M09-024b2 published. The smoke runs against that one or none.
+const ACCEPTED_SLOTS_SHA256: &str =
+    "14c193878cb2b3f300f7716c22a8f506dd37d7f8be7d3566c945f459aefd8479";
+
+fn refuse(reason: &str) -> ! {
+    eprintln!("REFUSED: {reason}");
+    std::process::exit(2);
+}
 
 fn argument(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
@@ -68,8 +78,21 @@ fn main() {
     ti4_tensor::configure_deterministic(i64::try_from(seed).unwrap_or(i64::MAX))
         .expect("deterministic configuration");
 
-    let text = std::fs::read_to_string(&slots).expect("read slots.json");
-    let vocabulary = Vocabulary::from_json(&text).expect("slots.json is a valid vocabulary");
+    // F-M09-026-8: both inputs are verified before use and every consumer parses from the verified
+    // bytes. Reading a path twice, or reading an unverified one, lets an arbitrary vocabulary or an
+    // unknown pool produce a successful-looking coverage report.
+    let slot_bytes =
+        std::fs::read(&slots).unwrap_or_else(|e| refuse(&format!("reading {slots}: {e}")));
+    let slots_sha = format!("{:x}", sha2::Sha256::digest(&slot_bytes));
+    if slots_sha != ACCEPTED_SLOTS_SHA256 {
+        refuse(&format!(
+            "{slots} is {slots_sha}, not the accepted vocabulary generation {ACCEPTED_SLOTS_SHA256}"
+        ));
+    }
+    let text = String::from_utf8(slot_bytes)
+        .unwrap_or_else(|e| refuse(&format!("slots.json is not UTF-8: {e}")));
+    let vocabulary = Vocabulary::from_json(&text)
+        .unwrap_or_else(|e| refuse(&format!("slots.json does not load: {e}")));
     println!(
         "vocabulary: {} slots, V_cap {}, registry v{}",
         vocabulary.slot_count(),
@@ -102,7 +125,15 @@ fn main() {
         }
     }
     ti4_engine::promissory::deal(&mut state, content, DEFAULT);
-    let pool = Arc::new(ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"));
+    let pool_bytes = ti4_sim::artifacts::read_and_verify_pool_role(
+        std::path::Path::new(&pool_path),
+        &[ArtifactRole::Train, ArtifactRole::Validation],
+    )
+    .unwrap_or_else(|e| refuse(&format!("{pool_path} is not an allowed pool: {e}")));
+    let pool = Arc::new(
+        ti4_sim::MapPool::from_reader(std::io::Cursor::new(&pool_bytes))
+            .unwrap_or_else(|e| refuse(&format!("parsing the verified pool bytes: {e}"))),
+    );
     let homes: Vec<String> = players
         .iter()
         .map(|player| {
@@ -126,14 +157,14 @@ fn main() {
     }
 
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
-    let mut counters = Vec::new();
+    let mut statuses: Vec<ti4_mlp::bot::InferenceStatus> = Vec::new();
     for (index, player) in players.iter().enumerate() {
         // The conditioning key is the **faction identity**, resolved through the pinned roster —
         // never the physical seat index, which changes with rotation (F-M09-026-2).
         let identity = FactionRow::of(factions[player].as_str())
             .expect("every seated faction is in the roster");
         let mut bot = MlpBot::new(
-            Actor::zeros(Width::W256, capacity, 33),
+            Actor::zeros(Width::W256, capacity),
             Vocabulary::from_json(&text).expect("vocabulary"),
             identity,
             seed.wrapping_mul(1_000_003)
@@ -142,8 +173,9 @@ fn main() {
         if force_failure && index == 0 {
             bot = bot.at_temperature(0.0);
         }
-        counters.push(Arc::clone(&bot.counters));
-        table.seat(player.clone(), Box::new(bot) as Box<dyn Decider>);
+        let (decider, status) = bot.seat();
+        statuses.push(status);
+        table.seat(player.clone(), decider);
     }
 
     let mut game = Game::with_table(state, content, table)
@@ -182,15 +214,24 @@ completed {completed} of {rounds} rounds (round state {start_round} -> {}): {ste
         started.elapsed()
     );
     println!("finished: {}", game.state.finished);
-    let decisions: usize = counters
+    let assigned: usize = statuses
         .iter()
-        .map(|c| c.decisions.load(Ordering::Relaxed))
+        .map(|s| s.counters().assigned.load(Ordering::Relaxed))
         .sum();
-    let assigned: usize = counters
+    let oov: usize = statuses
         .iter()
-        .map(|c| c.assigned.load(Ordering::Relaxed))
+        .map(|s| s.counters().oov.load(Ordering::Relaxed))
         .sum();
-    let oov: usize = counters.iter().map(|c| c.oov.load(Ordering::Relaxed)).sum();
+    // The status cannot be discarded to reach a success: this is the only accessor, and it returns
+    // a Result that carries the fallback count.
+    let mut decisions = 0usize;
+    let mut inference_failures = Vec::new();
+    for status in statuses {
+        match status.into_result() {
+            Ok(answered) => decisions += answered,
+            Err(failure) => inference_failures.push(failure),
+        }
+    }
     let looked_up = assigned + oov;
     #[expect(clippy::cast_precision_loss, reason = "reporting only")]
     let coverage = if looked_up == 0 {
@@ -198,10 +239,7 @@ completed {completed} of {rounds} rounds (round state {start_round} -> {}): {ste
     } else {
         100.0 * (assigned as f64) / (looked_up as f64)
     };
-    let fallbacks: usize = counters
-        .iter()
-        .map(|c| c.fallbacks.load(Ordering::Relaxed))
-        .sum();
+    let fallbacks: usize = inference_failures.iter().map(|f| f.fallbacks).sum();
     let inside_discovery = (202_608_210..202_608_338).contains(&seed);
     println!(
         "model answered {decisions} decisions, {fallbacks} fallbacks; {looked_up} feature lookups, {coverage:.2}% assigned, {oov} OOV"
@@ -218,11 +256,8 @@ completed {completed} of {rounds} rounds (round state {start_round} -> {}): {ste
     // Fail closed. A run in which the model never answered, or fell back even once, is not a
     // successful smoke — it is a failure that happens to have produced legal moves.
     let mut refusals: Vec<String> = Vec::new();
-    if fallbacks != 0 {
-        refusals.push(format!("{fallbacks} inference fallbacks"));
-    }
-    if decisions == 0 {
-        refusals.push("the model answered no decisions".to_owned());
+    for failure in &inference_failures {
+        refusals.push(failure.to_string());
     }
     if looked_up == 0 {
         refusals.push("no feature lookups were made".to_owned());

@@ -448,6 +448,44 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_conversion_is_distinguishable_from_an_empty_tensor() {
+        // F-M09-025-6. Making `to_vec` fallible only matters if a failure is distinguishable from a
+        // legitimately empty tensor, so both sides are exercised — and what the underlying
+        // conversion actually rejects is recorded rather than assumed.
+        configure_deterministic(SEED).expect("configured");
+
+        // The real failure mode in `tch`: a rank-2 tensor cannot become a flat vector.
+        let rank_two = Tensor::from_slice(&[1.0f32, 2.0, 3.0, 4.0]).view([2, 2]);
+        let raw = Vec::<f32>::try_from(rank_two.shallow_clone());
+        assert!(
+            raw.is_err(),
+            "the underlying conversion accepted a rank-2 tensor"
+        );
+
+        // `to_vec` flattens first, so it succeeds on the same tensor — which is what makes that
+        // `.contiguous().view([-1])` load-bearing rather than decorative.
+        assert_eq!(
+            to_vec(&rank_two).expect("to_vec flattens"),
+            vec![1.0, 2.0, 3.0, 4.0]
+        );
+
+        // And a genuinely empty tensor converts to an empty vector: the value a failure used to be
+        // silently confused with.
+        let empty = Tensor::from_slice(&[] as &[f32]);
+        assert_eq!(
+            to_vec(&empty).expect("an empty tensor converts"),
+            Vec::<f32>::new()
+        );
+
+        // A dtype mismatch is *not* a failure: `tch` converts i64 to f32. Recorded because it is
+        // the case the finding suggested, and asserting it would have been wrong.
+        assert_eq!(
+            to_vec(&Tensor::from_slice(&[1_i64, 2])).expect("tch converts kinds"),
+            vec![1.0, 2.0]
+        );
+    }
+
+    #[test]
     fn a_non_finite_feature_value_is_refused() {
         // A NaN has no place in a total order and none in a logit; an infinity poisons every sum
         // downstream. Both are refused rather than propagated into a softmax that would return a

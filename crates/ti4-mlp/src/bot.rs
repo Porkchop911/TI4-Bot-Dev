@@ -26,6 +26,55 @@ use ti4_policy::vocabulary::Vocabulary;
 
 use crate::{Actor, FactionRow, SparseOption};
 
+/// A campaign's inference status, which cannot be discarded to obtain a success.
+///
+/// Handed out by [`MlpBot::seat`] and consumed by [`InferenceStatus::into_result`]. An earlier
+/// version exposed a public counter and relied on each caller remembering to read it — the smoke
+/// did, and nothing made the next training or profile entry point do the same, so a campaign could
+/// report a successful game while every model call had failed (F-M09-026-9).
+///
+/// This type is `#[must_use]` and its only accessor returns a `Result`, so the success path cannot
+/// be reached without the failure count having been looked at.
+#[must_use = "an inference status that is never consumed hides model failures"]
+pub struct InferenceStatus {
+    counters: Arc<Counters>,
+}
+
+impl InferenceStatus {
+    /// The campaign result: `Ok` with the decisions answered, or the failure count.
+    ///
+    /// # Errors
+    /// [`InferenceFailed`] if any decision fell back, or if the model answered nothing at all — a
+    /// run in which the model was never consulted is not a successful model run.
+    pub fn into_result(self) -> Result<usize, InferenceFailed> {
+        let decisions = self.counters.decisions.load(Ordering::Relaxed);
+        let fallbacks = self.counters.fallbacks.load(Ordering::Relaxed);
+        if fallbacks > 0 || decisions == 0 {
+            return Err(InferenceFailed {
+                decisions,
+                fallbacks,
+            });
+        }
+        Ok(decisions)
+    }
+
+    /// The raw counters, for reporting alongside the result.
+    #[must_use]
+    pub fn counters(&self) -> &Counters {
+        &self.counters
+    }
+}
+
+/// A campaign in which the model did not answer every decision it was given.
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[error("model answered {decisions} decisions with {fallbacks} fallbacks")]
+pub struct InferenceFailed {
+    /// Decisions the model answered.
+    pub decisions: usize,
+    /// Decisions that fell back to a legal guess.
+    pub fallbacks: usize,
+}
+
 /// A decider that scores every legal option with the MLP and samples from the result.
 pub struct MlpBot {
     actor: Actor,
@@ -33,12 +82,7 @@ pub struct MlpBot {
     row: FactionRow,
     temperature: f64,
     rng: rand_chacha::ChaCha8Rng,
-    /// Counters a driver can read after the bot has been handed to a table.
-    ///
-    /// Shared rather than owned because a `Decider` is boxed into the table and never handed back.
-    /// The out-of-vocabulary rate is the number a reviewer will ask for first: it says how much of
-    /// what live play emits the discovered vocabulary actually covers.
-    pub counters: Arc<Counters>,
+    counters: Arc<Counters>,
 }
 
 /// What a run saw, readable while the bot is inside a table.
@@ -70,6 +114,17 @@ impl MlpBot {
             rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
             counters: Arc::new(Counters::default()),
         }
+    }
+
+    /// Hand the bot to a table and keep the status that must be consumed.
+    ///
+    /// The only way to obtain a boxed `MlpBot`, so no caller can seat one and forget that the model
+    /// might have failed.
+    pub fn seat(self) -> (Box<dyn Decider>, InferenceStatus) {
+        let status = InferenceStatus {
+            counters: Arc::clone(&self.counters),
+        };
+        (Box::new(self), status)
     }
 
     /// Play at a different temperature.
