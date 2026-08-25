@@ -693,3 +693,19 @@ the policy side is plain `LearnedBot`s. New focused test
 receipt path. Gates: workspace **1369/0**; ti4-engine clippy at its two documented pre-existing
 warnings; example warning-free and rustfmt-clean; `git diff --check` clean. Exact outputs in
 `plans/evidence/M09-021.md` (AA1 section). Awaiting the narrow independent Tier-C recheck.
+
+**Closed (operator attestation, 2026-08-25).** The operator reports the independent Tier-C recheck
+of `4bf8e9f` is done and passed. **Transparency note:** no written recheck verdict for `4bf8e9f`
+exists in this repository — this closure rests on the operator's attestation, recorded as an
+operator decision rather than a reviewer acceptance (M09-019b precedent). The substance it covers:
+the round-4 recheck had already resolved F-M09-021-1 itself ("the boundary is now carried by the
+type surface"), and AA1 — its single required fix before close — was applied exactly as specified
+(faceup-only `promissory_notes()` filtered by `state.promissory_faceup`; `military_support.rs` on
+the explicit-records model; pinning test added). Final verification on the committed tree:
+workspace **1369/0**.
+
+**F-M09-021-1: RESOLVED and CLOSED.** All four rounds plus AA1 are recorded above with their
+findings, dispositions, and exact gate outputs. M09-021 is accepted; M09-024's dependency on it is
+satisfied (M09-024 additionally requires rows 022–023). Next dependency-ready packages: **M09-022**
+and **M09-023** (both depend only on accepted M08-019 + M09-018); M09-025 is also ready (depends on
+row 019).

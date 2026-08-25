@@ -3565,3 +3565,21 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** AA1 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
   independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
   acceptance.
+
+## M09-021 CLOSED — objective policy features (operator attestation, 2026-08-25)
+
+- **Acceptance:** the operator reports the independent Tier-C recheck of `4bf8e9f` is done and
+  passed. No written recheck verdict for that commit exists in this repository; recorded as an
+  operator decision rather than a reviewer acceptance (M09-019b precedent). Final verification on
+  the committed tree: workspace **1369/0**.
+- **Findings disposition:** F-M09-021-1 RESOLVED and CLOSED after four correction rounds + AA1
+  (typed `SeatObservation` boundary; authority-gated `ask_private`; state source removed from the
+  capability; faceup-only `promissory_notes()`). F-M09-021-2 (dual-namespace emission) and
+  F-M09-021-3 (dimensionally invalid performance claim) resolved in round 1. Full trail:
+  `plans/M09-021_OPEN_REVIEW_ITEMS.md`, `plans/evidence/M09-021.md`.
+- **Branch:** `wp/m09-021-objective-policy-features` @ `4bf8e9f` (chain: initial → F2/F3 round 1 →
+  typed boundary round 2 → authority-gated seam round 3 → state-source removal round 4 → AA1).
+- **Next dependency-ready packages:** **M09-022** (ability decomposition policy features; deps
+  M08-019 ✓, M09-018 ✓) and **M09-023** (secret redaction in feature paths; same deps). M09-025 is
+  also ready (deps row 019 ✓). M09-024 remains blocked on rows 022–023. In milestone row order the
+  next package to start is **M09-022**.

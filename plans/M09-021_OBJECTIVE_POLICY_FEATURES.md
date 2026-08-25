@@ -2,8 +2,9 @@
 
 ## Status
 
-**Round-4 correction applied, including AA1; pending narrow independent Tier-C recheck.** The
-round-4 recheck resolved F-M09-021-1 but required **AA1** before close: `promissory_notes()`
+**ACCEPTED (operator attestation of the independent Tier-C recheck of `4bf8e9f`, 2026-08-25; no
+written verdict in repo — M09-019b precedent). F-M09-021-1 resolved and closed after four rounds +
+AA1.** The round-4 recheck had resolved F-M09-021-1 but required **AA1** before close: `promissory_notes()`
 returned the whole note-position map under a doc comment claiming everything was faceup — 25 of 34
 corpus records are in-hand and private. Applied as specified: the accessor now returns only the
 faceup subset (filtered by `state.promissory_faceup`), and `military_support.rs` moved onto the
