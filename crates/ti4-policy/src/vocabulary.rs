@@ -149,6 +149,43 @@ const OOV_FAMILIES_V2: [&str; 39] = {
     families
 };
 
+/// A stable fingerprint of an ordered family list.
+///
+/// SHA-256 over the names joined by a separator that cannot occur in a family name, so the digest
+/// is a function of the exact sequence — swapping two entries changes it.
+#[must_use]
+pub fn registry_fingerprint(families: &[&str]) -> String {
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    for family in families {
+        hasher.update(family.as_bytes());
+        hasher.update(
+            b"
+",
+        );
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+/// The pinned fingerprint of the ordered version-1 registry.
+///
+/// **Independent of how the list is built.** Pinning v2 against v1 alone proved nothing: v2 is
+/// derived from v1, so swapping two v1 entries moved both together while the set-coverage and
+/// prefix tests stayed green (F-M09-024b1-2). A digest per version is the order-sensitive forcing
+/// function the sorted comparison used to provide, and it is not derivable from the other.
+pub const OOV_FAMILIES_V1_FINGERPRINT: &str =
+    "7bde13aa2972405de8944f3fdb9593453f3efb34f7f90817374658e8dbdc7a04";
+
+/// The pinned fingerprint of the ordered version-2 registry.
+pub const OOV_FAMILIES_V2_FINGERPRINT: &str =
+    "8bb0d25c5c49d9c751a2385016b3c3dcd1a70b86fcd856f1508148de1a5006ac";
+
+/// The frozen v1 list, for migration checks. Nothing routes by it.
+#[must_use]
+pub const fn oov_families_v1() -> &'static [&'static str] {
+    &OOV_FAMILIES_V1
+}
+
 /// The families that get a reserved OOV column, in the order they are allocated.
 ///
 /// Returns the frozen list for the current [`OOV_REGISTRY_VERSION`]. It is not recomputed from the
@@ -166,17 +203,18 @@ pub fn oov_families() -> &'static [&'static str] {
 /// required to be zero-initialised, masked from optimization, and asserted zero at save/load by
 /// M09-026/M09-028 — the same treatment as free rows above `slot_count`.
 #[must_use]
-pub fn dead_reserved_families() -> &'static [&'static str] {
-    &crate::projection::EXCLUDED_FAMILIES
+pub fn dead_reserved_families() -> Vec<&'static str> {
+    crate::projection::inactive_families()
 }
 
-/// Whether a reserved column can ever be a routing destination.
+/// Whether a reserved column can ever be a routing destination on the MLP path.
 ///
-/// False for the suppressed families. A reader asking why three columns are always zero should
-/// find the answer here rather than in a commit message.
+/// False for both non-transferable roles — the unbounded crosses and the legacy-only channels. A
+/// reader asking why five columns are always zero should find the answer here rather than in a
+/// commit message.
 #[must_use]
 pub fn is_dead_reserved(family: &str) -> bool {
-    crate::projection::is_unbounded_cross(family)
+    crate::projection::role_of(family) != Some(crate::projection::FamilyRole::Transferable)
 }
 
 /// The families the live grammars say should be registered, sorted.
@@ -1073,6 +1111,20 @@ mod tests {
         // The migration's whole claim: v2 is v1 with one family appended, so every reserved column
         // v1 assigned is still at the index v1 gave it. Checked element by element rather than by
         // length, since a reordering preserves the count.
+        // The order-sensitive forcing function. Pinned per version and independent of how either
+        // list is built, so swapping two v1 entries fails here even though v2 follows them and
+        // every derived comparison below still agrees.
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V1),
+            OOV_FAMILIES_V1_FINGERPRINT,
+            "the ordered v1 registry changed. Reserved model rows are addressed by this order;              a reorder is a migration, not an edit."
+        );
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V2),
+            OOV_FAMILIES_V2_FINGERPRINT,
+            "the ordered v2 registry changed"
+        );
+
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
             assert_eq!(
@@ -1100,7 +1152,11 @@ mod tests {
         // drops those names before lookup rather than routing them here. A reader asking why three
         // columns are always zero should find the answer in the code, not in a commit message.
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
-        assert_eq!(dead_reserved_families().len(), 3);
+        assert_eq!(
+            dead_reserved_families().len(),
+            5,
+            "three crosses plus two legacy-only channels"
+        );
         for family in dead_reserved_families() {
             assert!(is_dead_reserved(family), "{family} is not marked dead");
             let column = vocabulary.column_of(&oov_name(family));

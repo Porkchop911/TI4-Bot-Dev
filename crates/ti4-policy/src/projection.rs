@@ -52,27 +52,123 @@ use crate::features::{FeatureVector, seat_facts};
 /// uniform-kind fixed-vocabulary decision, which is the `StateCross::ByOption` branch.
 pub const SEAT_STATE_FAMILY: &str = "seat-state";
 
-/// Families excluded from the dense input under the current grammar.
+/// What a registered feature family is to the MLP input.
 ///
-/// The answer to the predicate, not the predicate. See [`is_unbounded_cross`].
-pub const EXCLUDED_FAMILIES: [&str; 3] = ["prompt-bigram", "prompt-option", "state-option"];
+/// A **total** classification: every family in the frozen registry has exactly one role, and a
+/// family with no role is not admitted. That direction matters. An earlier draft was a three-name
+/// deny-list, which admitted anything unlisted — the opposite of the architecture ruling's
+/// requirement that an unclassified family stays out until reviewed, and it silently admitted two
+/// legacy-only families that the schema-4 extractor never emits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FamilyRole {
+    /// Gets a dense column. Its identity transfers between games.
+    Transferable,
+    /// An unbounded memorisation cross: the Cartesian product of two free lexical identities, or
+    /// of a full option identity and a state fact. Suppressed before lookup.
+    UnboundedCross,
+    /// Emitted only by the legacy schema-2 hashed extractor. The MLP consumes one schema-4
+    /// explicit path, so these names never occur on it — but they *do* occur in the r6 checkpoint,
+    /// which is discovery source (a), so they must be rejected there rather than assumed absent.
+    LegacyOnly,
+}
+
+/// The frozen role of every registered family.
+///
+/// Written out rather than derived from `EXPLICIT_FIXED_FAMILIES`, for the same reason the OOV
+/// registry is written out: deriving it would mean a family added to a grammar is admitted to the
+/// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
+/// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
+/// so the decision cannot be skipped.
+const FAMILY_ROLES: [(&str, FamilyRole); 39] = [
+    ("*-unit", FamilyRole::Transferable),
+    ("ability", FamilyRole::Transferable),
+    ("card", FamilyRole::Transferable),
+    ("destination", FamilyRole::Transferable),
+    ("faction-commodities", FamilyRole::Transferable),
+    ("faction-home", FamilyRole::Transferable),
+    ("faction-start-tech", FamilyRole::Transferable),
+    ("faction-start-unit", FamilyRole::Transferable),
+    ("faction-tech", FamilyRole::Transferable),
+    ("invasion", FamilyRole::Transferable),
+    ("kind", FamilyRole::Transferable),
+    // Faction crosses are a legacy-only channel: the explicit path asserts it never emits them.
+    // `option-faction` would also fail the unbounded-cross shape; `LegacyOnly` is recorded because
+    // it is the reason the MLP never sees them.
+    ("kind-faction", FamilyRole::LegacyOnly),
+    ("landing", FamilyRole::Transferable),
+    ("objective-count", FamilyRole::Transferable),
+    ("objective-met", FamilyRole::Transferable),
+    ("objective-need", FamilyRole::Transferable),
+    ("objective-progress", FamilyRole::Transferable),
+    ("objective-stage", FamilyRole::Transferable),
+    ("opponent-secrets-held", FamilyRole::Transferable),
+    ("option", FamilyRole::Transferable),
+    ("option-faction", FamilyRole::LegacyOnly),
+    ("option-system", FamilyRole::Transferable),
+    ("origin", FamilyRole::Transferable),
+    ("pay", FamilyRole::Transferable),
+    ("payload", FamilyRole::Transferable),
+    ("payload-bool", FamilyRole::Transferable),
+    ("payload-count", FamilyRole::Transferable),
+    ("payload-number", FamilyRole::Transferable),
+    ("payload-number-kind", FamilyRole::Transferable),
+    ("placement", FamilyRole::Transferable),
+    ("production", FamilyRole::Transferable),
+    ("prompt-bigram", FamilyRole::UnboundedCross),
+    ("prompt-kind", FamilyRole::Transferable),
+    ("prompt-option", FamilyRole::UnboundedCross),
+    ("route", FamilyRole::Transferable),
+    ("seat-state", FamilyRole::Transferable),
+    ("state-kind", FamilyRole::Transferable),
+    ("state-option", FamilyRole::UnboundedCross),
+    ("target", FamilyRole::Transferable),
+];
+
+/// The role of a family, or `None` if it has none.
+///
+/// `None` is the fail-closed answer, not an error to paper over: a family nobody classified is a
+/// family nobody decided to put in the model.
+#[must_use]
+pub fn role_of(family: &str) -> Option<FamilyRole> {
+    // The bounded `<canonical-kind>-unit` suffix rule shares one entry, since its left half varies
+    // with the choice kind.
+    let key = if family.ends_with("-unit") {
+        crate::vocabulary::UNIT_SUFFIX_FAMILY
+    } else {
+        family
+    };
+    FAMILY_ROLES
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, role)| *role)
+}
 
 /// Whether a family is an unbounded memorisation cross.
-///
-/// The three names are the current grammar's members. A family added later with either shape —
-/// two free lexical identities crossed, or a full option identity crossed with a state fact — is
-/// excluded by default and requires an architecture review before it may be admitted, which is
-/// why `is_unbounded_cross` is consulted at one place and `EXCLUDED_FAMILIES` is not spread
-/// around the crate.
 #[must_use]
 pub fn is_unbounded_cross(family: &str) -> bool {
-    EXCLUDED_FAMILIES.contains(&family)
+    role_of(family) == Some(FamilyRole::UnboundedCross)
+}
+
+/// Every family that can never be a routing destination on the MLP path.
+///
+/// Both non-transferable roles: the unbounded crosses, suppressed by shape, and the legacy-only
+/// channels, which the schema-4 extractor does not emit at all. Their reserved rows are retained so
+/// no v1 index moves, and are dead — five of them, not the three the crosses alone would give.
+#[must_use]
+pub fn inactive_families() -> Vec<&'static str> {
+    FAMILY_ROLES
+        .iter()
+        .filter(|(_, role)| *role != FamilyRole::Transferable)
+        .map(|(name, _)| *name)
+        .collect()
 }
 
 /// Whether a feature name survives the projection into the dense input.
+///
+/// Closed by default: admitted only if its family is classified `Transferable`.
 #[must_use]
 pub fn admits(name: &str) -> bool {
-    !is_unbounded_cross(crate::vocabulary::family_of(name))
+    role_of(crate::vocabulary::family_of(name)) == Some(FamilyRole::Transferable)
 }
 
 /// The acting-seat facts under the bare family, for one position.
@@ -408,5 +504,105 @@ mod tests {
 
         assert!(!from_vectors.is_empty());
         assert_eq!(from_names, from_vectors);
+    }
+
+    #[test]
+    fn the_classification_covers_exactly_the_registry() {
+        // The forcing function for admission. If a family enters a grammar without a role, this
+        // fails and the correct response is an architecture decision about whether it belongs in
+        // the dense input — not adding it to the table to make the test green.
+        let classified: BTreeSet<&str> = FAMILY_ROLES.iter().map(|(name, _)| *name).collect();
+        let registered: BTreeSet<&str> =
+            crate::vocabulary::oov_families().iter().copied().collect();
+        assert_eq!(
+            classified, registered,
+            "a registered family has no MLP role, or a role names a family nobody registers. \
+             Admission is an architecture decision: classify it deliberately, do not default it."
+        );
+        assert_eq!(FAMILY_ROLES.len(), 39, "one role per registered family");
+    }
+
+    #[test]
+    fn an_unclassified_family_is_not_admitted() {
+        // Closed by default. The earlier deny-list admitted anything unlisted, which is the
+        // opposite of what the ruling requires of a new family.
+        assert_eq!(role_of("no-such-family-was-ever-registered"), None);
+        assert!(!admits("no-such-family-was-ever-registered:whatever"));
+        assert!(!admits("brand-new-cross:a:b"));
+        // And a name with no family separator at all.
+        assert!(!admits("bare-unclassified-name"));
+    }
+
+    #[test]
+    fn legacy_only_checkpoint_names_are_rejected() {
+        // `kind-faction` and `option-faction` never occur on the schema-4 explicit path, but they
+        // *do* occur in the r6 checkpoint, which is discovery source (a). Admitting them would
+        // carry roughly 6,188 stale columns into the layout and could reproduce the contaminated
+        // capacity instead of the corrected single-path one.
+        for family in ["kind-faction", "option-faction"] {
+            assert_eq!(role_of(family), Some(FamilyRole::LegacyOnly), "{family}");
+        }
+        let from_checkpoint = [
+            "kind-faction:strategy_card:sol",
+            "option-faction:pok2diplomacy:letnev",
+            "prompt-bigram:choose:a:card",
+            "prompt-option:starpoint:xanhact",
+            "state-option:holy_planet_of_ixth:strategic_tokens",
+        ];
+        let kept = project_names(from_checkpoint);
+        assert!(
+            kept.is_empty(),
+            "names no schema-4 decision can emit survived the projection: {kept:?}"
+        );
+
+        // Non-vacuity: the same call keeps a transferable name, so the assertion above is about
+        // these families rather than about `project_names` rejecting everything.
+        assert_eq!(
+            project_names(["objective-met:sar"]).len(),
+            1,
+            "the projection rejected a transferable name"
+        );
+    }
+
+    #[test]
+    fn every_inactive_family_is_reported_and_every_other_is_live() {
+        // Five, not three: the two legacy-only channels are as unreachable from the MLP runtime
+        // path as the three crosses, and M09-026/M09-028 must zero and mask all five reserved rows.
+        let inactive = inactive_families();
+        assert_eq!(
+            inactive.len(),
+            5,
+            "three crosses plus two legacy-only channels"
+        );
+        for family in [
+            "prompt-bigram",
+            "prompt-option",
+            "state-option",
+            "kind-faction",
+            "option-faction",
+        ] {
+            assert!(
+                inactive.contains(&family),
+                "{family} is not reported inactive"
+            );
+            assert!(!admits(&format!("{family}:anything")));
+        }
+        for (family, role) in &FAMILY_ROLES {
+            let listed = inactive.contains(family);
+            assert_eq!(
+                listed,
+                *role != FamilyRole::Transferable,
+                "{family} is misreported: role {role:?}, listed inactive {listed}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_unit_suffix_rule_resolves_to_one_role() {
+        // `<canonical-kind>-unit` families share one registry entry, so they must share one role
+        // rather than falling through to unclassified.
+        assert_eq!(role_of("commit-unit"), Some(FamilyRole::Transferable));
+        assert_eq!(role_of("produce-unit"), Some(FamilyRole::Transferable));
+        assert!(admits("commit-unit:cost"));
     }
 }
