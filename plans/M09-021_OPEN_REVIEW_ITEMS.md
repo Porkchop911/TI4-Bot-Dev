@@ -709,3 +709,77 @@ findings, dispositions, and exact gate outputs. M09-021 is accepted; M09-024's d
 satisfied (M09-024 additionally requires rows 022–023). Next dependency-ready packages: **M09-022**
 and **M09-023** (both depend only on accepted M08-019 + M09-018); M09-025 is also ready (depends on
 row 019).
+
+## Independent Tier-C recheck of `4bf8e9f` — AA1 (Claude Opus 5, 2026-08-25)
+
+**Verdict: accepted. AA1 is resolved; M09-021 has no open finding from me.**
+
+This is the written recheck verdict that `dc1fe49` recorded as absent. `dc1fe49` closed the
+package on an operator report rather than a reviewer acceptance, and labelled itself that way
+honestly. The verdict below agrees with that close — recorded now so the closure rests on a review
+in the repository rather than on a verbal report.
+
+| Field | Value |
+|---|---|
+| Reviewer | Claude Opus 5 |
+| Base | `4bf8e9f` (re-verified at `dc1fe49`, which is plans-only) |
+| Diff under `crates/` | `choice.rs` +48, `military_support.rs` +290/−105 |
+
+### The engine fix is as specified
+
+`promissory_notes()` filters by `state.promissory_faceup` and returns an owned map, and the doc
+comment now states the restriction instead of citing LRR 69.3 for the whole set. In-hand note
+positions are unreachable from a decider: the filter is the only path, `PublicSeat` carries counts
+only (`action_cards_held`, `secret_objectives_held`), and no other accessor touches
+`promissory_notes`.
+
+`promissory_notes_expose_only_the_faceup_subset` is the right test — it moves a note with
+`promissory::take`, the engine's own receipt path, rather than setting `promissory_faceup` by hand,
+so it pins the projection against the engine's definition rather than against a restatement of it.
+It also asserts the pre-condition (`promissory_notes` non-empty, public view empty at setup), so it
+cannot pass vacuously.
+
+### The equivalence claim — verified at 15× the recorded scale
+
+`military_support.rs` was rewritten from an in-decider watch into an offline driver. That changes
+two things at once: the setup path (`play_with_deciders`/`Horizon` → `start_game_seeded` +
+`promissory::deal` + `seating::deploy` + `MapPool::galaxy`) and the sampling moments
+(`choose_seeing` on six wrapped seats → every step with `resolved_choice`). The second is a
+superset of the first on its face, so "identical results" was worth more than the recorded
+2-seed × 6-rotation run, which observed **one** departure.
+
+I ran both versions — the reworked example at `4bf8e9f`, the pre-rework example built in a
+throwaway worktree at `1700824` so it ran against its own engine — on 30 seeds × 6 rotations,
+4 rounds, same checkpoint and pool:
+
+```
+                                  1700824 (old)    4bf8e9f (new)
+games                             180              180
+games where it ever left Sol      62 (34.4%)       62 (34.4%)
+total departures                  62 (0.344/game)  62 (0.344/game)
+held by                           hacan 9, jolnar 16, l1z1x 12, letnev 21, xxcha 4   (identical)
+Sol strategy-pool drops           22               22
+```
+
+Byte-identical, including the per-faction breakdown and the token-drop count. The setup-path change
+and the sampling-moment change are both confirmed inert at 180 games and 62 events, not at 12 games
+and 1 event. Worktree removed; tree restored to the three pre-existing user edits.
+
+### Gates re-run independently
+
+- `cargo test --workspace` → **1369 passed / 0 failed**. Matches.
+- `cargo clippy -p ti4-engine --all-targets` → exactly two warnings, at `game.rs:1260` and
+  `strategy.rs:589` — the two documented pre-existing sites, nothing new.
+
+### Disposition
+
+**M09-021 accepted.** F-M09-021-1 closed after four rounds plus AA1; F-M09-021-2 and -3 closed in
+round 1. M09-024's dependency on this package is satisfied.
+
+One process note worth keeping. Across this package the implementer's own equivalence check was
+run at a scale where the measured quantity fired once. It happened to be right — I checked. But a
+single-event comparison cannot distinguish "the rework preserved the diagnostic" from "the rework
+broke the diagnostic and the one event survived anyway", and the same shape has now appeared as
+V1's no-op mutant, Y3's single-seed bisect, and X1's three-identical-row fixture. The cheap habit
+that would have caught all four: before reporting an equivalence or a sensitivity, check that the
+thing being measured varies in the sample at all.

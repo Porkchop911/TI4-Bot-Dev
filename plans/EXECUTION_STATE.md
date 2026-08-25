@@ -3583,3 +3583,85 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
   M08-019 ✓, M09-018 ✓) and **M09-023** (secret redaction in feature paths; same deps). M09-025 is
   also ready (deps row 019 ✓). M09-024 remains blocked on rows 022–023. In milestone row order the
   next package to start is **M09-022**.
+
+## M09-021 AA1 — written independent recheck recorded (Claude Opus 5, 2026-08-25)
+
+- The close at `dc1fe49` rested on an operator attestation because no written verdict for
+  `4bf8e9f` existed. That verdict now exists in `plans/M09-021_OPEN_REVIEW_ITEMS.md`, and it
+  **accepts** the AA1 correction, so the closure rests on a recorded review rather than a verbal
+  report. No change to the disposition.
+- **Independently re-verified on the committed tree:** workspace **1369/0**; `cargo clippy -p
+  ti4-engine --all-targets` shows exactly the two documented pre-existing warnings
+  (`game.rs:1260`, `strategy.rs:589`); the faceup filter is the only path to note positions and
+  `PublicSeat` carries counts only.
+- **Equivalence claim re-measured at 15× the recorded scale.** The `military_support.rs` rework
+  changed both the setup path and the sampling moments; the implementer's check observed one
+  departure across 12 games. Both versions were run at 30 seeds × 6 rotations, 4 rounds — the
+  pre-rework example built in a throwaway worktree at `1700824` so it ran against its own engine:
+  **62 departures, 34.4% of games, identical per-faction holder breakdown, identical token-drop
+  count, byte-identical output**. Both changes confirmed inert at 62 events.
+
+## M09-022 implemented — ability decomposition policy features (2026-08-25)
+
+- **Author:** Claude Opus 5, who reviewed M08-017 through M09-021 and is therefore **not eligible
+  to review this package**. The independent-review seat for M09-022 onward is open; the package is
+  not done until that review is resolved.
+- **Branch:** `wp/m09-022-ability-decomposition-features` from `dc1fe49`. Spec:
+  `plans/M09-022_ABILITY_DECOMPOSITION_FEATURES.md`. Evidence: `plans/evidence/M09-022.md`.
+- **Delivered:** six faction-decomposition families (`ability:`, `faction-start-tech:`,
+  `faction-tech:`, `faction-start-unit:`, `faction-home:`, `faction-commodities`) for the acting
+  seat, emitted in the two disjoint namespaces F-M09-021-2 settled — bare on every option under
+  every crossing mode including `StateCross::None`, crossed copies for linear delivery. Computed
+  once per choice in `ChoiceContext`. `EXPLICIT_FIXED_FAMILIES` extended 27 → 33.
+- **Two reconciliations against MLP §5.3, recorded rather than absorbed:** the plan says 33
+  playable seats and the corpus holds **34 faction records** — the extra is `neutral`, the
+  Thunder's Edge units-only record (empty `homeSystem`/`startingFleet`/`homePlanets`, no abilities,
+  none of the playable-seat fields). Excluded by a **corpus predicate** (`is_selectable_seat`,
+  non-empty home system), not by name, so a future non-seat record cannot slip through. §5.3's
+  separation table otherwise reproduces exactly: 32/34 under abilities alone with the single
+  Keleres collision, **34/34** once fleet/home planets/commodities are added.
+- **Separation is measured on emitted features**, not on the builder: all **33 selectable seats**
+  produce distinct decompositions, zero collisions.
+- **Invariant kept:** the faction record resolves through `seen.content()`/`seen.sources()`, never
+  `ContentStore::embedded()` and never a hardcoded scope — the M08-019 Y2 / M09-021 AA1 defect
+  class. Guarded by `ability_facts_follow_the_active_source_scope` (`bastion` is in scope under
+  DEFAULT, out of scope under POK, so a hardcoded scope of either value fails one assertion).
+- **Gates:** `ti4-policy --lib` **132/0** (126 before); workspace **1375/0** (1369 before), re-run
+  after formatting; clippy clean in `ti4-policy`; rustfmt clean with all 56 changed lines confined
+  to code this package added (no pre-existing drift absorbed — the O-M09-021-2 trap);
+  `git diff --check` clean. Both pins pass with no legacy value moved.
+- **Open items:** O-M09-022-1 (LOW) — the *store* half of the active-domain invariant is argued
+  from the call, not proven by a second `from_dir` store; that is the standard of evidence M08-019
+  Y1 showed to be insufficient, so it is recorded as open rather than claimed. O-M09-022-2 (INFO) —
+  per-choice fleet parsing is unmeasured.
+- **Status:** implementation complete, gates green, **pending independent review**. M09-023 does
+  not depend on this package and may start in parallel; M09-024 stays blocked on rows 022–023.
+
+## Carried finding — authored bot resolves content through the wrong domain and scope (2026-08-25)
+
+Found while verifying the M08-019 corrections; **not** part of M09-022 and not yet scheduled.
+
+`ScoredBot::new` (`crates/ti4-policy/src/bot.rs:64`) sets `content: ContentStore::embedded()` and
+`sources: POK`. `Seats::Scored` (`crates/ti4-sim/src/run.rs:63`) seats it without
+`.with_sources()`, so every authored-bot seat values the position at **POK while the game is
+played at DEFAULT = FULL**. `content_types.rs` states the rule directly: "Runtime paths — the
+simulator, the training rollout, evaluation — use this [DEFAULT]. A test may still scope to BASE or
+POK deliberately when it is *about* scoping; anything else should read this constant rather than
+picking a set of its own."
+
+Measured: **354 Thunder's Edge-only records** are invisible to the bot — 21 units, 13 technologies,
+49 planets, 36 systems, 8 tokens, 20 leaders, 7 relics, 6 promissory notes, 2 strategy cards.
+
+Two consequences, one live and one about instruments:
+
+1. The authored bot systematically mis-values TE content in TE games, and the M08-021 v1/v2/v3
+   behavioral baselines were generated with that bot.
+2. Reading the store from `embedded()` makes the bot invisible to any `from_dir` corpus
+   perturbation — the same blindness mechanism M08-019 Y1 identified in `annexable()`. The E1
+   28-category × 30-seed matrix that certified M08 therefore could not have detected an order or
+   content dependence inside the bot's own valuation path. Its 0/28 result is sound for the engine
+   and vacuous for the bot.
+
+**Unmeasured:** whether correcting the scope changes play. The probe (flip `ScoredBot::new` to
+DEFAULT, replay the 30-seed behavioral batch, compare) was set up but not run. Until it is, no
+claim is made either way about whether the recorded bounds move.
