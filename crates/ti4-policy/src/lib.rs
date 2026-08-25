@@ -9,6 +9,7 @@
 //! profile lives in `ti4-training`.
 
 pub mod bot;
+pub mod critic;
 pub mod features;
 pub mod inference;
 pub mod intern;

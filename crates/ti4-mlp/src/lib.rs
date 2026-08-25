@@ -203,6 +203,10 @@ pub struct Actor {
     b_delta: Tensor,
     /// `[33, EMBED_DIM]`, zero. §4.2's identity embedding.
     embedding: Tensor,
+    /// `[width]`, zero. §4.2's value readout.
+    w_value: Tensor,
+    /// Scalar value bias.
+    b_value: Tensor,
 }
 
 impl Actor {
@@ -239,6 +243,8 @@ impl Actor {
             delta: Tensor::zeros([factions_dim, heads, w], opts),
             b_delta: Tensor::zeros([factions_dim, heads], opts),
             embedding: Tensor::zeros([factions_dim, EMBED_DIM], opts),
+            w_value: Tensor::zeros([w], opts),
+            b_value: Tensor::zeros([1], opts),
         }
     }
 
@@ -283,6 +289,11 @@ impl Actor {
     /// Mutable access to the per-faction residual.
     pub const fn residual_mut(&mut self) -> &mut Tensor {
         &mut self.delta
+    }
+
+    /// Mutable access to the value readout.
+    pub const fn value_readout_mut(&mut self) -> &mut Tensor {
+        &mut self.w_value
     }
 
     /// Mutable access to the identity embedding.
@@ -396,6 +407,32 @@ impl Actor {
         let w = self.w_shared.get(head_i) + self.delta.get(seat_i).get(head_i);
         let b = self.b_shared.get(head_i) + self.b_delta.get(seat_i).get(head_i);
         Ok(z.matmul(&w) + b)
+    }
+
+    /// `V(s)` for one position, from the canonical critic vector.
+    ///
+    /// §4.2: computed **once per decision** by a separate trunk pass over a disjoint namespace,
+    /// never from anything derived from the option set. The critic vector arrives already built by
+    /// `ti4_policy::critic`, which takes no `Choice` — so this function has no way to see the legal
+    /// set even if it wanted to, and the two invariance properties follow from that rather than
+    /// from care at the call site.
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] if the resulting value is not finite, plus anything the gather
+    /// raises.
+    pub fn value(&self, critic: &SparseOption, row: FactionRow) -> Result<f64, ActorError> {
+        // The same trunk, one row. `trunk` refuses an empty batch, and a position with no critic
+        // facts at all is a malformed extraction rather than a legal state.
+        let z = self.trunk(std::slice::from_ref(critic), row)?;
+        let scalar = z.matmul(&self.w_value) + &self.b_value;
+        let value = scalar.double_value(&[0]);
+        if !value.is_finite() {
+            return Err(ActorError::NotUsable {
+                what: "the value estimate",
+                detail: format!("{value}"),
+            });
+        }
+        Ok(value)
     }
 
     /// Probabilities over one decision's options.

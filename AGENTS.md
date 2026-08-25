@@ -77,8 +77,9 @@ For every work package:
 12. Commit only the package's scoped changes.
 13. Update `plans/EXECUTION_STATE.md`, including the next ready package.
 
-Use Qwen 3.6 35B through Pi v0.84.1 as the default implementer. Use Qwen 27B only for proven
-mechanical work. Use a frontier model for review tiers C and D, milestone exit reviews, repeated
+Use Qwen 3.8 27B through Pi v0.84.2 as the default implementer. Qwen 3.6 35B is superseded
+and is no longer the default; evidence files naming it record what actually reviewed those
+packages at the time and must not be rewritten. Use a frontier model for review tiers C and D, milestone exit reviews, repeated
 failures, architecture decisions, timing, legality, payments, hidden information, schema migration,
 training mathematics, security boundaries, unsafe code, and performance claims.
 
@@ -164,7 +165,7 @@ its versioned, package-approved process, inspect the semantic diff, and record w
 ## Review and failure handling
 
 - First failure: diagnose in the current Qwen context and retry once.
-- Second failure of the same invariant: use a fresh Qwen 35B context for independent diagnosis.
+- Second failure of the same invariant: use a fresh Qwen 3.8 27B context for independent diagnosis.
 - Third failure, architecture conflict, nondeterminism, or an unexplained mismatch with a package's
   normative source: obtain a frontier-model diagnosis before further implementation.
 - A reviewer reports findings; it does not silently rewrite critical code without preserving the

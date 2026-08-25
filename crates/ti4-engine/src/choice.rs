@@ -459,6 +459,15 @@ impl<'a> Observed<'a> {
         self.state.round
     }
 
+    /// Which phase the round is in.
+    ///
+    /// Public: every player at the table knows whether the game is in strategy, action, status or
+    /// agenda. The critic extractor (MLP plan §4.1) needs it as part of its option-free base.
+    #[must_use]
+    pub const fn phase(&self) -> ti4_model::state::Phase {
+        self.state.phase
+    }
+
     /// Every system holding anything. Absent systems are empty.
     #[must_use]
     pub const fn board(&self) -> &'a BTreeMap<SystemId, SystemState> {

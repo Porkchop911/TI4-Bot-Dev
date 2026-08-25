@@ -5609,3 +5609,38 @@ was of the same kind — a gate that could not fail, a claim the construction di
 refusal that produced a legal-looking answer anyway. Both directions of the review seat found that
 class repeatedly, including in each other's corrections, and including one round where my evidence
 described a fix that was not in the code.
+
+---
+
+## M09-027 implemented — canonical critic state and value inference (2026-08-26)
+
+**Author:** Claude Opus 5 (implementer seat; codex reviews). **Base:** `aed3304`.
+**Evidence:** `plans/evidence/M09-027.md`. **Review tier:** C — hidden information.
+
+`crates/ti4-policy/src/critic.rs` gives the critic a namespace disjoint from the policy's, and
+`critic_facts` **takes no `Choice`** — §4.1's exclusions are enforced by the signature rather than by
+an inventory. `Actor::value` runs the same trunk and the same selected `emb[f]` row over that vector.
+§4.2's three properties are tested, including the third, which exists because a model that ignores
+option features entirely satisfies the first two.
+
+Both ways that third test first passed for the wrong reason are written up in the evidence: a
+fixture that made the options indistinguishable so the policy was uniform and a `spread > 1e-9` guard
+passed on f32 noise, and a `1e-12` tolerance on f32 arithmetic. Non-vacuity is now checked on the
+inputs, and the tolerance is justified against the measured size of a real violation rather than
+tuned. Falsified by injecting a position bias; source restored byte-identically.
+
+**Gates:** workspace 1478 passed / 0 failed (1471 before), clippy and rustfmt clean on touched files,
+release smoke exit 0 with 409 decisions and 0 fallbacks.
+
+### New child row: M09-027b, recorded before implementation
+
+Measured against the accepted generation `14c19387…8479`: every `critic-state:*` name is unassigned
+and resolves to `GLOBAL_OOV_COLUMN`, because the family is in neither `OOV_FAMILIES_V2` nor
+`FAMILY_ROLES`. The whole critic vector therefore sums onto column 0 and **`V` is a rank-1 projection
+of the position plus the faction embedding.** The namespace and the invariance properties are
+correct; the value is not yet useful.
+
+Closing it needs an OOV registry v3 with `critic-state` appended, a `FamilyRole` for the family, the
+corpus emitting critic names, and one regenerated 768-game generation — two further crates and a
+republish, which the work-package standard says to split. **M09-027b** is in the milestone table and
+**M09-028 now depends on 027b** rather than on 027.
