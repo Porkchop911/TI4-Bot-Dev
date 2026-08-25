@@ -2,10 +2,16 @@
 
 ## Status
 
-**Round-4 correction applied; pending narrow independent Tier-C recheck.** The round-3 recheck
-accepted the authority-gated seam but found two HIGH holes: Z1 — `SeatObservation::held_state()`
-returned an owned `GameState`, so the bound view itself was a state handle and the "full-state
-possession" gate was not a gate (a decider could mint any seat's capability one method call away);
+**Round-4 correction applied, including AA1; pending narrow independent Tier-C recheck.** The
+round-4 recheck resolved F-M09-021-1 but required **AA1** before close: `promissory_notes()`
+returned the whole note-position map under a doc comment claiming everything was faceup — 25 of 34
+corpus records are in-hand and private. Applied as specified: the accessor now returns only the
+faceup subset (filtered by `state.promissory_faceup`), and `military_support.rs` moved onto the
+explicit-records model (main drives each game step by step and reads the note position from full
+state at visible cost; the policy side is plain learned bots). The round-3 recheck had accepted the
+authority-gated seam but found two HIGH holes: Z1 — `SeatObservation::held_state()` returned an
+owned `GameState`, so the bound view itself was a state handle and the "full-state possession" gate
+was not a gate (a decider could mint any seat's capability one method call away);
 Z2 — even that copy's redaction is defeated by set complement (`secret_deck` unredacted, deck +
 dealt == 40), naming every opponent's secret. Round 4 removes the state source from the
 capability entirely (reviewer option 1): no method on `SeatObservation` or `Observed` produces a
@@ -161,7 +167,8 @@ Held-secret facts use only the acting seat's own cards, enforced **by type surfa
   `held_state()` — a capability that can hand out a copy of the state is a state handle, and it made
   every other seat mintable through `ask_private`). The only private-data surface is the two
   no-argument bound-seat accessors; everything else reachable is face-up table data on `Observed`
-  (board, counts, revealed objectives, note positions).
+  (board, counts, revealed objectives, **faceup** note positions — in-hand notes are private and do
+  not appear, AA1).
 - No method on the public `Observed` returns named private data with any caller-controlled identity
   argument (the former `held_secret_progress(player)`, `held_secret_progress_for_choice(choice)`,
   and `redacted_for(viewer)` are all gone; `seat(player)` returns counts only).

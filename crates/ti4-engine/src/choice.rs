@@ -561,12 +561,19 @@ impl<'a> Observed<'a> {
         self.state.revealed_objectives.as_slice()
     }
 
-    /// Every promissory note's position: note id (`alias:owner`) to the player holding it.
+    /// Promissory notes faceup in a play area (LRR 69.3): note id (`alias:owner`) to holder.
     ///
-    /// Public: notes sit faceup on the table (LRR 69.3) and their movement is announced.
+    /// Only the faceup subset is public information. Notes held in hand are private — their
+    /// positions do not appear here; an offline diagnostic that needs them reads full state
+    /// explicitly, at visible cost (F-M09-021-1 AA1).
     #[must_use]
-    pub const fn promissory_notes(&self) -> &'a BTreeMap<String, PlayerId> {
-        &self.state.promissory_notes
+    pub fn promissory_notes(&self) -> BTreeMap<String, PlayerId> {
+        self.state
+            .promissory_notes
+            .iter()
+            .filter(|(id, _)| self.state.promissory_faceup.contains(*id))
+            .map(|(id, holder)| (id.clone(), holder.clone()))
+            .collect()
     }
 
     /// Support for the Throne: owner to the player holding it faceup — the one note whose
@@ -1969,6 +1976,39 @@ mod tests {
         // bound view still answers for that owner only.
         let answer = ask_private(&choice, &state, content, POK, None, &mut decider).unwrap();
         assert_eq!(answer.id, "x");
+    }
+
+    #[test]
+    fn promissory_notes_expose_only_the_faceup_subset() {
+        // F-M09-021-1 AA1 — in-hand notes are private. The public view carries only the faceup
+        // subset, and this pins that projection against the engine's own receipt path.
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+
+        // At setup every note is held in hand: the position map is populated, the public view empty.
+        assert!(
+            !state.promissory_notes.is_empty(),
+            "setup deals every seat its notes"
+        );
+        let seen = Observed::new(&state, content, POK, None);
+        assert!(
+            seen.promissory_notes().is_empty(),
+            "no note is faceup at setup"
+        );
+
+        // The engine's own receipt path: a play-area note goes to the table (public), an in-hand
+        // note stays private.
+        crate::promissory::take(&mut state, content, &pid("a"), "an:generic");
+        crate::promissory::take(&mut state, content, &pid("b"), "cf:generic");
+
+        let seen = Observed::new(&state, content, POK, None);
+        let public_notes = seen.promissory_notes();
+        assert_eq!(public_notes.len(), 1, "only the play-area note is public");
+        assert_eq!(public_notes.get("an:generic"), Some(&pid("a")));
+        assert!(
+            !public_notes.contains_key("cf:generic"),
+            "in-hand notes are private"
+        );
     }
 
     #[test]

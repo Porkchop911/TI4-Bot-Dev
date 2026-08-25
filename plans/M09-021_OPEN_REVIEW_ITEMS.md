@@ -561,3 +561,135 @@ non-vacuous complement demonstration. Gates: workspace **1368/0**; no new clippy
 touched file (hunk-verified against HEAD for the examples); choice.rs rustfmt-clean; `git diff
 --check` clean. Exact outputs in `plans/evidence/M09-021.md` (round-4 section). Awaiting the
 narrow independent Tier-C recheck.
+
+## Independent Tier-C recheck of `1700824` — round 4 (Claude Opus 5, 2026-08-25)
+
+**Verdict: Z1, Z2 and F-M09-021-1 are closed. One new MEDIUM, introduced by the fix itself,
+should be resolved before M09-021 closes.** The capability no longer carries a state source, and I
+verified that by compilation rather than by reading. But the accessor added to keep the offline
+examples working publishes in-hand promissory notes on `Observed`, justified by a rule that says
+the opposite of what the doc comment claims.
+
+| Field | Value |
+|---|---|
+| Reviewer | Claude Opus 5 |
+| Independence | Implemented none of M09-021. |
+| Base | `1700824` |
+| Diff under `crates/` | `choice.rs` +222, three `ti4-training` examples +33 |
+| Method | two throwaway integration tests in `crates/ti4-engine/tests/`, both deleted; tree restored to the three pre-existing user edits |
+
+### Z1 / Z2 — closed, verified by compile probe
+
+The round-3 rationale is now true as written. I enumerated the full public surface of both types:
+`Observed` has 22 public methods, `SeatObservation` four, and none returns a `GameState`, a deck,
+or anything derived from one. Then I compiled an attacker decider that tries anyway:
+
+```
+error[E0599]: no method named `held_state` found for reference `&SeatObservation<'_>`
+error[E0599]: no method named `secret_deck` found for reference `&SeatObservation<'_>`
+```
+
+The mint seam is now genuinely inexpressible from bound assets: `ask_private` needs a
+`&GameState`, and a decider has no way to obtain one. `redacted_full_state(state, viewer)` is the
+right shape for the offline callers — it takes the authority as an argument, so possession is
+visible at the call site.
+
+**Z3 — addressed.** The regression is an active attack now: the attacker is a real `Decider`,
+attempts 1 and 2 exercise both private accessors and record any hit on b's actual alias, and the
+complement computation runs from the table side and is asserted non-vacuously (`recovered.len()
+== 2`, and every dealt card is in it). That last part is the right move — it proves the danger is
+real rather than assuming it away.
+
+Attempt 4 is still a comment rather than code, but it is now a *true* compile-time claim, and the
+comment says so honestly and tells the next person to extend it if a state source returns. Residual
+(INFO, no action required): the invariant "no method on these types produces a `GameState`" is not
+mechanically enforced — a future accessor would not make this test fail. That is a limit of what
+Rust will let a test assert, not a defect in the test.
+
+### AA1 — MEDIUM · `Observed::promissory_notes()` publishes in-hand note positions, on a rule that says the opposite
+
+The new accessor returns the whole `promissory_notes` map — note id to holder, for every note in
+the game — and justifies it:
+
+```rust
+/// Public: notes sit faceup on the table (LRR 69.3) and their movement is announced.
+pub const fn promissory_notes(&self) -> &'a BTreeMap<String, PlayerId>
+```
+
+LRR 69.3 is the rule that *distinguishes* the two cases, and this engine already implements the
+distinction. `GameState::promissory_faceup` is documented as "Notes faceup in a play area **rather
+than held in hand** (LRR 69.3)", and `promissory::is_play_area` decides membership per note from
+the corpus `playArea` flag. Measured over the POK corpus:
+
+```
+promissory records: faceup=9  in_hand=25
+in-hand aliases: <color>_cf, <color>_ps, <color>_ta, ambuscade, war_funding, ragh,
+                 fires, ms, iff, ce, scepter, bmf, cavalry, tekklar, ra, ...
+ms record playArea = Some(false)
+```
+
+Three of the four generic notes every seat holds — Ceasefire, Political Secret, Trade Agreement —
+are in-hand cards. And `promissory_faceup` measured empty on a fresh six-seat
+`start_game_seeded`: at setup, *every* entry the accessor returns is a card in somebody's hand.
+
+The motivating caller makes the point sharper than I could. `military_support.rs` reads
+`seen.promissory_notes().get("ms:sol")` to track who is holding Sol's Military Support — and `ms`
+is `playArea = false`. The one example that needed this accessor needed it for an in-hand note.
+
+Note also what the accessor does *not* return: Support for the Throne, which lives in
+`support_holders` precisely because it is the faceup one. `support_holders()` is correct and I
+have no issue with it. The design already separates the public note from the private ones; the new
+accessor exposes the private set and calls it the public one.
+
+**Fairness, three ways.** (1) The data was equally reachable before round 4 — `redact_others`
+never touched `promissory_notes`, so the old `held_state()` leaked it too. Round 4 did not widen
+what is reachable; it converted an unredacted-copy leak into a declared public API with a "Public:"
+docstring, which is worse in one specific way: the next person will trust it. (2) The **oracle has
+the same gap** — `views.py`'s own docstring lists "your promissory notes" among the private things,
+then `PRIVATE_SEQUENCES = ("action_cards", "secret_objectives")` does not redact them. So this is
+oracle-conformant behaviour. (3) Whether note position is common knowledge at a real table is a
+rules question I am not resolving here. None of that rescues the doc comment, which asserts a
+property the engine's own corpus flag contradicts for 25 of 34 records.
+
+**Required before close.** Return only the faceup subset — filter the map by
+`state.promissory_faceup` (or by `is_play_area`), which is the projection the engine already
+maintains. Move `military_support.rs` onto the explicit-records model round 3 established for
+offline diagnostics: it is driven from full state, so it can take the note positions as a
+parameter, at visible cost, like the other offline paths. If the accessor is instead kept whole on
+oracle-conformance grounds, then say that in the doc comment — cite the oracle gap, not LRR 69.3 —
+and record it as a known deviation from the engine's own hidden-information model.
+
+### What verifies
+
+- Workspace **1368 passed / 0 failed** on a clean tree with no probe present. Matches the recorded
+  gate.
+- Public surface: `Observed` 22 methods, `SeatObservation` 4 (`observed`, `bound_seat`,
+  `held_secrets`, `held_secret_progress`); the two private-data accessors take no arguments.
+- `held_state()` gone; `redacted_full_state` is a free function taking `&GameState`.
+- The three examples read only public facts plus their own seat's cards — with the AA1 exception.
+- F-M09-021-2 and F-M09-021-3 remain resolved.
+
+### Disposition
+
+**F-M09-021-1 resolved.** Four rounds, and the boundary is now carried by the type surface rather
+than by a caller convention or by a redaction. AA1 is a small, contained change and is the only
+thing I would hold the package for; M09-024 can unblock as soon as it lands.
+
+Worth recording about the round: the fix is correct *and* it introduced a new instance of the same
+defect class it was fixing — a claim ("Public: … LRR 69.3") stated stronger than the construction
+supports, in the flattering direction, in the same commit that closed the previous one. The
+mechanism seems to be that the justification gets written from the intent of the change rather than
+read off the code, and nothing in the loop checks a doc comment against the field it describes.
+
+**AA1 applied (implementer, 2026-08-25):** `Observed::promissory_notes()` now returns only the
+faceup subset — filtered by `state.promissory_faceup`, the projection the engine already maintains;
+in-hand note positions are private and do not appear, and the doc comment says so instead of citing
+LRR 69.3 for the whole set (owned `BTreeMap` return — a filtered subset cannot be a borrow).
+`military_support.rs` moved onto the explicit-records model: main drives each game step by step and
+reads the note position from full state at visible cost, gated on `StepResult.resolved_choice` so
+the sampling moments are exactly the old watch's decider-ask moments (secondary windows included);
+the policy side is plain `LearnedBot`s. New focused test
+`promissory_notes_expose_only_the_faceup_subset` pins the projection against the engine's own
+receipt path. Gates: workspace **1369/0**; ti4-engine clippy at its two documented pre-existing
+warnings; example warning-free and rustfmt-clean; `git diff --check` clean. Exact outputs in
+`plans/evidence/M09-021.md` (AA1 section). Awaiting the narrow independent Tier-C recheck.

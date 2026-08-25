@@ -3539,3 +3539,29 @@ plans/evidence/M09-020.md, plans/M09-020_OPEN_REVIEW_ITEMS.md, plans/evidence/ML
 - **Status:** round-4 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
   independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
   acceptance.
+
+## M09-021 F-M09-021-1 round 4 — AA1 correction (implementer, 2026-08-25)
+
+- **Round-4 recheck: F-M09-021-1 resolved; one required fix before close.** AA1 (MEDIUM):
+  `Observed::promissory_notes()` returned the whole note-position map under a doc comment claiming
+  "Public: notes sit faceup on the table (LRR 69.3)" — but LRR 69.3 is exactly what distinguishes
+  the two cases, and the engine already implements it (`GameState::promissory_faceup`). Measured:
+  25 of 34 corpus note records are in-hand (`playArea = false`), including `ms`. Round 4 had
+  converted an unredacted-copy leak into a declared public API with a docstring the corpus
+  contradicts. Reviewer's required fix applied as specified.
+- **Fix:** (1) `promissory_notes()` now returns only the faceup subset — filtered by
+  `state.promissory_faceup`; owned `BTreeMap` return; doc comment corrected. (2) `military_support.rs`
+  moved onto the explicit-records model: main builds each game (the rollout's PythonPool setup path),
+  drives it step by step, and reads the note position from full state at visible cost — one named
+  read per decision in `drive()`, gated on `StepResult.resolved_choice` so sampling moments are
+  exactly the old watch's decider-ask moments (secondary windows included). Policy side: plain
+  `LearnedBot`s, nothing private reaches a decider. Output format unchanged; verified identical on a
+  2-seed × 6-rotation run before/after the rework.
+- **New focused test** `promissory_notes_expose_only_the_faceup_subset` pins the projection against
+  the engine's own receipt path (`promissory::take`: play-area note → public, in-hand note → absent).
+- **Gates:** workspace **1369/0**; ti4-engine clippy at its two documented pre-existing warnings;
+  example warning-free under `--example military_support`; choice.rs and the example rustfmt-clean;
+  `git diff --check` clean. Exact outputs in `plans/evidence/M09-021.md`.
+- **Status:** AA1 correction complete on `wp/m09-021-objective-policy-features`; pending narrow
+  independent Tier-C recheck of the resulting commit. M09-021 and M09-024 remain blocked until
+  acceptance.
