@@ -2183,6 +2183,147 @@ mod tests {
         assert!(pok.is_empty(), "bastion is out of scope under POK");
     }
 
+    /// A temporary corpus directory that deletes itself, holding a copy of the embedded content
+    /// with one faction record edited.
+    ///
+    /// Bounded fixture: the corpus is 30 files totalling under 1 MiB, copied once per test run
+    /// into the OS temp directory under a name carrying the process id, and removed by `Drop` —
+    /// including on panic, since `Drop` runs while unwinding. Nothing is generated into the repo
+    /// and nothing is committed.
+    struct EditedCorpus {
+        dir: std::path::PathBuf,
+    }
+
+    impl EditedCorpus {
+        /// Copy the corpus and rewrite one faction's `commodities` to `value`.
+        fn with_sol_commodities(value: i64) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("ti4-m09-022-store-{}-{value}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("temp corpus directory");
+            let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../ti4-content/content")
+                .canonicalize()
+                .expect("the embedded corpus directory exists on disk");
+            for entry in std::fs::read_dir(&source).expect("read corpus") {
+                let entry = entry.expect("corpus entry");
+                if entry.file_type().expect("file type").is_file() {
+                    std::fs::copy(entry.path(), dir.join(entry.file_name())).expect("copy");
+                }
+            }
+
+            let path = dir.join("factions.json");
+            let text = std::fs::read_to_string(&path).expect("read factions");
+            let mut records: serde_json::Value =
+                serde_json::from_str(&text).expect("factions parse");
+            let seat = records
+                .as_array_mut()
+                .expect("factions is an array")
+                .iter_mut()
+                .find(|record| record["alias"] == "sol")
+                .expect("sol is in the corpus");
+            seat["commodities"] = serde_json::json!(value);
+            std::fs::write(&path, serde_json::to_string(&records).expect("serialize"))
+                .expect("write factions");
+
+            Self { dir }
+        }
+    }
+
+    impl Drop for EditedCorpus {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn ability_facts_use_the_active_content_store() {
+        // F-M09-022-1. Invariant 2, store half — the half the source-scope test cannot reach.
+        //
+        // `ability_facts` calls `seen.content()`. Nothing about that is visible to a test that
+        // uses the embedded store in both arms: substituting `ContentStore::embedded()` inside the
+        // builder would leave every such test green. So this one builds a *second* corpus through
+        // `ContentStore::from_dir`, changes one decomposition field in it, and asserts the emitted
+        // vector follows the store the observation carries. M08-019 Y1 is the precedent: a
+        // function that takes a live position and then reaches for the compiled-in corpus stays
+        // green under every test that also assumes the compiled-in corpus.
+        const EDITED: i64 = 9;
+        let embedded = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+
+        let real = ti4_content::factions::get(embedded, "sol")
+            .expect("sol is in the embedded corpus")
+            .commodities();
+        assert_ne!(
+            i64::from(real),
+            EDITED,
+            "the fixture must actually differ from the embedded corpus"
+        );
+
+        let corpus = EditedCorpus::with_sol_commodities(EDITED);
+        let alternate = ti4_content::ContentStore::from_dir(&corpus.dir)
+            .expect("the edited corpus is a valid store");
+
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().faction = FactionId::new("sol");
+        let choice = Choice::new(
+            player.clone(),
+            "decide",
+            vec![ChoiceOption::labelled("x", "kind", "x")],
+        );
+        let facts_from = |content: &ti4_content::ContentStore| -> BTreeMap<String, f64> {
+            let seen = Observed::new(&state, content, sources, None);
+            let vector = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+            vector
+                .iter()
+                .map(|(key, value)| (crate::intern::name_of(*key).clone(), *value))
+                .filter(|(name, _)| name.starts_with("ability:") || name.starts_with("faction-"))
+                .collect()
+        };
+
+        let from_embedded = facts_from(embedded);
+        let from_alternate = facts_from(&alternate);
+
+        // The edited field follows the active store, in both directions.
+        let edited_value = f64::from(i32::try_from(EDITED).expect("small"));
+        assert_eq!(
+            from_alternate.get("faction-commodities"),
+            Some(&edited_value),
+            "the emitted fact did not follow the alternate store"
+        );
+        assert_eq!(
+            from_embedded.get("faction-commodities"),
+            Some(&f64::from(real)),
+            "the embedded arm did not report the embedded corpus"
+        );
+        assert_ne!(
+            from_embedded.get("faction-commodities"),
+            from_alternate.get("faction-commodities"),
+            "the two stores must disagree, or this test proves nothing"
+        );
+
+        // Non-degeneracy: the alternate store is a whole, working corpus rather than an empty one
+        // that would make the assertion above pass for the wrong reason. Everything except the one
+        // edited field is identical.
+        assert!(
+            from_alternate
+                .keys()
+                .any(|name| name.starts_with("ability:")),
+            "the alternate store produced no abilities at all"
+        );
+        let differing: Vec<&String> = from_alternate
+            .iter()
+            .filter(|(name, value)| from_embedded.get(*name) != Some(*value))
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(
+            differing,
+            ["faction-commodities"],
+            "exactly the edited field may differ between the two stores"
+        );
+    }
+
     #[test]
     fn ability_facts_survive_state_cross_none() {
         // The section 4.1 contract, same shape as the objective families: the nonlinear trunk
