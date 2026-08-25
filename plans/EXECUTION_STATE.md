@@ -4243,3 +4243,33 @@ Requesting another fresh independent Tier-C recheck. M09-024a and M09-024b remai
 - **Blocked on O-M09-024b-1**, an architecture decision and not mine to take. O-2: no frequency
   data — a pruning-by-frequency option would need a second pass. O-3: 203,843 is a lower bound at
   the four-round horizon, not a ceiling.
+
+## O-M09-024b-4 — the discovery pass collected two extractor paths (self-reported, 2026-08-25)
+
+Found while assembling the architecture evaluation request, and reported rather than quietly
+re-run, because which path the MLP consumes is part of what the review has to settle.
+
+The replay collector calls **both** `explicit_choice_features` (the schema-4 explicit path) and
+`option_feature_names` (the legacy schema-2 hashed path). `prompt-bigram` is emitted only by the
+second — `features.rs:302` — and is **not** a member of `EXPLICIT_FIXED_FAMILIES`. The schema-4 r6
+champions hold **zero** `prompt-bigram` names, which is consistent with it being a schema-2-only
+family.
+
+So if the MLP's input is the schema-4 explicit vector, **38,542 of the 203,843 names should not be
+in the union at all**, and some part of `prompt-option` may be in the same position. The union
+would be 165,301, `V_cap` 200,704 — still 2.5x over the 65,536 limit.
+
+**What this changes and what it does not.** The stop stands under either reading: the corpus
+overruns the limit whether or not the schema-2 channel is counted. What is not clean is the
+*composition*, and composition is precisely the question the evaluation request asks. Re-running
+single-path before the review would presuppose the answer.
+
+Severity: MEDIUM against M09-024b's numbers, not against its conclusion. Resolution is whatever
+the architecture review's answer to "which extractor path does the MLP consume" implies, plus a
+re-measurement on that path.
+
+- **Architecture evaluation requested:** `plans/M09-024b_ARCHITECTURE_EVALUATION_REQUEST.md`.
+  One question — which feature families receive dense columns, and what is `V_cap` — with the
+  measurements, the traced provenance of the 65,536 limit, the self-reported dual-path
+  contamination, four costed options, and six things a satisfying answer must contain. Nothing
+  proceeds on this frontier until it returns.
