@@ -5513,3 +5513,99 @@ git diff --check                                     clean
 action is a fresh independent Tier-C recheck of correction commit `f60a6c0`. M09-027 remains blocked on
 those acceptances. Unrelated user changes in `AGENTS.md` remain untouched and must not be included
 in the package commit.
+
+## Independent Tier-C recheck of `f60a6c0` (Claude Opus 5, 2026-08-25)
+
+**Verdict: accepted. F-M09-024b2-12/-13 and F-M09-026-12/-13 are resolved.**
+
+| Field | Value |
+|---|---|
+| Reviewer | Claude Opus 5 |
+| Independence | I implemented `27d37a1` and the rounds before it. **I did not write `f60a6c0`** — codex implemented these four corrections, so I am independent of the commit under review. Recorded because the reverse has been true all session. |
+| Base | `f60a6c0` |
+| Method | gates re-run; four behaviours probed through the public API outside the crate's own tests |
+
+### The findings were right, and one was mine to have caught
+
+F-M09-026-12 is the sharpest: my correction still returned a random legal answer on actor failure
+and on the position-free `choose`. I had made the *counter* mandatory and left the *answer* wrong —
+a game could still complete, and correctness still rested on someone reading a side channel. Making
+it a typed game-step error is the right fix and is what I should have done.
+
+### What I verified, rather than read
+
+**Inference failure now stops the game.** Forced refusal, release smoke:
+
+```
+MLP inference failed on head strategy (temperature 0 is not positive); refusing the decision
+game died at step 0: decider for seat0 failed while answering "choose a strategy card":
+  MLP head strategy: temperature 0 is not positive
+forced exit: 4        normal exit: 0
+```
+
+Step 0, not a completed game with a counter to inspect. Correctness no longer depends on consuming
+`InferenceStatus`, which is what the finding asked for.
+
+**Generation immutability**, probed through the public API in a throwaway integration test outside
+the crate:
+
+```
+PUBLISHED digest=a9d543c1aa9ce8bb
+REPUBLISH-DIFFERENT: immutable generation a9d543c1… already exists with different bytes
+ACCEPTED BYTES UNCHANGED: true
+REPUBLISH-IDENTICAL ok: true
+```
+
+Both directions matter and both hold: differing bytes are refused with the accepted provenance
+untouched, and an identical republish is idempotent rather than an error.
+
+**Pointer traversal and forgery**, same probe:
+
+```
+FORGED    ../../etc -> refused: true
+FORGED           .. -> refused: true
+FORGED not-a-digest -> refused: true
+FORGED ffff…ffff    -> refused: true
+```
+
+Including a well-formed 64-hex digest naming a generation that does not exist — so the guard is the
+validator and not merely a character-class filter.
+
+**No legacy fallback.** With `current.json` moved aside the smoke refuses rather than reaching for
+`out/vocabulary/slots.json`:
+
+```
+REFUSED: out/vocabulary/current.json names no valid generation      exit 2
+```
+
+Restored: exit 0.
+
+### Gates
+
+```
+cargo test --workspace                              1471 passed, 0 failed
+cargo test -p ti4-training --lib vocabulary_corpus    13 passed, 0 failed
+cargo test -p ti4-mlp (lib + 2 integration)           23 + 3 + 2 passed, 0 failed
+release smoke, accepted generation                    exit 0, 409 decisions, 0 fallbacks
+release smoke, forced failure                         exit 4, dies at step 0
+```
+
+### One observation, not a finding
+
+`ti4_training_generation()` maps the validator's error through `.ok()`, so the refusal message says
+the pointer "names no valid generation" without saying which check failed — a missing pointer, a
+bad digest, an absent provenance and a mismatched pair all read alike. The refusal is correct and
+fail-closed; only the diagnostic is lossy. Worth a line the next time that file is touched, not a
+correction round.
+
+### Disposition
+
+M09-024b2 and M09-026 have no open finding from me. Both were blocked on each other's dependency
+frontier and on M09-025, which is accepted, so **M09-024 closes** and **M09-027** — canonical critic
+state and value inference — is unblocked.
+
+Worth recording about this chain: M09-024b2 took six rounds and M09-026 five. Almost every finding
+was of the same kind — a gate that could not fail, a claim the construction did not support, or a
+refusal that produced a legal-looking answer anyway. Both directions of the review seat found that
+class repeatedly, including in each other's corrections, and including one round where my evidence
+described a fix that was not in the code.
