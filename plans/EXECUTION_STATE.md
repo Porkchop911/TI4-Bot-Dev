@@ -5644,3 +5644,21 @@ Closing it needs an OOV registry v3 with `critic-state` appended, a `FamilyRole`
 corpus emitting critic names, and one regenerated 768-game generation — two further crates and a
 republish, which the work-package standard says to split. **M09-027b** is in the milestone table and
 **M09-028 now depends on 027b** rather than on 027.
+
+## M09-027 independent Tier-C review of `ab9c896` (2026-08-26) — changes required
+
+Focused critic tests pass 5/0 and invariance tests pass 2/0; touched files are rustfmt-clean and
+Clippy reports no warning in the package delta. Three HIGH findings remain:
+
+- **F-M09-027-1:** critic extraction bypasses the existing `SeatObservation` capability by taking
+  public `Observed`, caller-selected player identity, and caller-supplied secret progress.
+- **F-M09-027-2:** `Actor::value` takes generic `SparseOption`, so option-derived input is accepted
+  by the value API; the invariance test changes and then discards `Choice` without exercising an
+  integrated value boundary.
+- **F-M09-027-3:** every critic fact maps to the global OOV row in the accepted vocabulary. The
+  recorded child split is valid, but the parent acceptance criterion remains open through M09-027b.
+
+**Status:** M09-027 and M09-027b are open; M09-028 remains blocked. Next exact action: bind critic
+extraction to `SeatObservation`, introduce a critic-only sparse input/value API, implement the 027b
+registry/projection/corpus generation, and rerun the invariance/non-vacuity gates against the
+accepted vocabulary. Full ledger: `plans/M09-027_OPEN_REVIEW_ITEMS.md`.
