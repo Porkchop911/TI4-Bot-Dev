@@ -557,6 +557,24 @@ impl Vocabulary {
         self.capacity - self.slots.len()
     }
 
+    /// The column an already-interned key contributes to, without ever building the name.
+    ///
+    /// The hot path. [`Self::column_of`] takes a `&str`, so a caller holding a [`FeatureKey`] — the
+    /// extractors all do — had to go key -> name -> key: a global `RwLock` read, a `String`
+    /// allocation, and an FNV hash of the whole name, per feature, per option, per decision, to
+    /// recover the key it started with. M09-029 measured that round trip as a large part of the
+    /// per-decision MLP cost, which would have been charged to the architecture.
+    ///
+    /// The fallback path is unchanged and still needs the name, because the OOV column is chosen by
+    /// **family** — but that is the miss case, and a resolved vocabulary hits.
+    #[must_use]
+    pub fn column_of_key(&self, key: FeatureKey) -> usize {
+        if let Some(column) = self.index.get(&key) {
+            return *column;
+        }
+        self.column_of(&crate::intern::name_of(key))
+    }
+
     /// The column a name contributes to.
     ///
     /// An unassigned name is **not dropped**. It contributes to its family's OOV column, or to the
@@ -588,6 +606,12 @@ impl Vocabulary {
     #[must_use]
     pub fn is_assigned(&self, name: &str) -> bool {
         self.index.contains_key(&FeatureKey::of(name))
+    }
+
+    /// [`Self::is_assigned`] for a caller that already holds the key. See [`Self::column_of_key`].
+    #[must_use]
+    pub fn is_assigned_key(&self, key: FeatureKey) -> bool {
+        self.index.contains_key(&key)
     }
 
     /// Append newly discovered names into unused preallocated rows.

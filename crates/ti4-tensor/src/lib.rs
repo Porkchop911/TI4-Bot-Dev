@@ -227,11 +227,6 @@ pub fn gather_reduce(
         return Ok(Tensor::zeros([width], (Kind::Float, Device::Cpu)));
     }
 
-    let mut pairs: Vec<(i64, f32)> = columns
-        .iter()
-        .copied()
-        .zip(values.iter().copied())
-        .collect();
     // Sorting by column alone is not enough. Rust's sort is stable, so duplicate columns kept the
     // *caller's* order — and f32 addition is not associative, so a caller handing one column
     // large-positive, large-negative and small contributions in a different order got a different
@@ -241,11 +236,7 @@ pub fn gather_reduce(
     // The tie-break is the value's bit pattern under a total order. Non-finite values are rejected
     // above, so nothing incomparable reaches it, and `-0.0` and `+0.0` get a defined relative order
     // rather than comparing equal and falling back to caller order.
-    pairs.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| total_order_key(left.1).cmp(&total_order_key(right.1)))
-    });
+    let pairs = ordered_pairs(columns, values, capacity)?;
     let sorted_columns: Vec<i64> = pairs.iter().map(|(column, _)| *column).collect();
     let sorted_values: Vec<f32> = pairs.iter().map(|(_, value)| *value).collect();
 
@@ -253,6 +244,133 @@ pub fn gather_reduce(
     let scale = Tensor::from_slice(&sorted_values).unsqueeze(1);
     let rows = table.index_select(0, &index) * scale;
     Ok(rows.sum_dim_intlist([0i64].as_slice(), false, Kind::Float))
+}
+
+/// One option's `(column, value)` pairs in the fixed reduction order.
+///
+/// Split out of [`gather_reduce`] so the batched path shares exactly the same ordering rule rather
+/// than reimplementing it — the two must agree bit for bit, and the cheapest way to guarantee that
+/// is for there to be one implementation.
+fn ordered_pairs(
+    columns: &[i64],
+    values: &[f32],
+    capacity: i64,
+) -> Result<Vec<(i64, f32)>, TensorError> {
+    if columns.len() != values.len() {
+        return Err(TensorError::Ragged {
+            indices: columns.len(),
+            values: values.len(),
+        });
+    }
+    if let Some(&bad) = columns
+        .iter()
+        .find(|column| **column < 0 || **column >= capacity)
+    {
+        return Err(TensorError::OutOfRange {
+            column: bad,
+            capacity,
+        });
+    }
+    if let Some(bad) = values.iter().copied().find(|value| !value.is_finite()) {
+        return Err(TensorError::NotFinite { value: bad });
+    }
+    let mut pairs: Vec<(i64, f32)> = columns
+        .iter()
+        .copied()
+        .zip(values.iter().copied())
+        .collect();
+    pairs.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| total_order_key(left.1).cmp(&total_order_key(right.1)))
+    });
+    Ok(pairs)
+}
+
+/// Every option of one decision gathered in a single pass: `[options, width]`.
+///
+/// # Why this exists
+///
+/// MLP plan §4.3: "batch every option of a decision into one forward pass ... Batching within a
+/// decision is not optional." The hidden layer was already batched; the **gather** was not.
+///
+/// # What actually costs, measured rather than assumed
+///
+/// M09-029 profiled one decision and the gather was 206 us of 252. It is neither dispatch-bound nor
+/// FLOP-bound but **latency**-bound: the input table is `[16384, width]`, far larger than L2, and a
+/// decision fetches hundreds of 1 KiB rows from random offsets in it. Halving the width barely moved
+/// the total, which is the signature of a per-row cost rather than a per-byte one.
+///
+/// So the lever is the number of rows fetched. Measured over 40,000 real decisions: a mean of 6.2
+/// options and **528.8 gathered rows of which only 131.9 are distinct** — every row is fetched about
+/// four times, once per option that mentions it.
+///
+/// This gathers each distinct row **once** — §4.3's "aggregate duplicate feature names first" — into
+/// a `[distinct, width]` block small enough to stay in cache, and then combines it into per-option
+/// sums with one `[options, distinct] x [distinct, width]` matmul.
+///
+/// # Determinism
+///
+/// Duplicate columns *within* an option are aggregated in the fixed order [`ordered_pairs`] defines,
+/// which is the contract F-M09-025-3 established and the reason that order exists. What remains is a
+/// sum across *distinct* columns, which the previous implementation left to `sum_dim_intlist` and
+/// this one leaves to the matmul: unspecified in both, and identical for a fixed build and thread
+/// count.
+///
+/// # Errors
+/// As [`gather_reduce`]: ragged input, an out-of-range column, or a non-finite value.
+pub fn gather_reduce_batch(
+    table: &Tensor,
+    options: &[(&[i64], &[f32])],
+) -> Result<Tensor, TensorError> {
+    let (capacity, width) = {
+        let size = table.size();
+        (size[0], size[1])
+    };
+    let rows = i64::try_from(options.len()).unwrap_or(0);
+
+    // Per option, in the fixed order, with duplicates summed as they are met.
+    let mut per_option: Vec<Vec<(i64, f32)>> = Vec::with_capacity(options.len());
+    let mut distinct: Vec<i64> = Vec::new();
+    for (columns, values) in options {
+        let pairs = ordered_pairs(columns, values, capacity)?;
+        let mut aggregated: Vec<(i64, f32)> = Vec::with_capacity(pairs.len());
+        for (column, value) in pairs {
+            match aggregated.last_mut() {
+                Some((last, sum)) if *last == column => *sum += value,
+                _ => aggregated.push((column, value)),
+            }
+            distinct.push(column);
+        }
+        per_option.push(aggregated);
+    }
+    distinct.sort_unstable();
+    distinct.dedup();
+
+    if distinct.is_empty() {
+        // Every option was empty — a decision whose every feature was out of vocabulary. The zero
+        // rows are the answer, not an error: the same contract as `gather_reduce`.
+        return Ok(Tensor::zeros([rows, width], (Kind::Float, Device::Cpu)));
+    }
+
+    // The one random-access gather, now over distinct rows only.
+    let index = Tensor::from_slice(&distinct);
+    let block = table.index_select(0, &index);
+
+    // `[options, distinct]`, dense and small: mean 6.2 x 131.9 in the measured workload.
+    let stride = distinct.len();
+    let mut weights = vec![0.0f32; options.len() * stride];
+    for (option, aggregated) in per_option.iter().enumerate() {
+        for (column, value) in aggregated {
+            // `distinct` is sorted, so the position is a binary search rather than a scan.
+            let position = distinct
+                .binary_search(column)
+                .expect("every column was inserted into distinct");
+            weights[option * stride + position] = *value;
+        }
+    }
+    let weights = Tensor::from_slice(&weights).view([rows, i64::try_from(stride).unwrap_or(0)]);
+    Ok(weights.matmul(&block))
 }
 
 /// A dense `[n, a] × [a, b]` product, for the hidden layer and the readouts.

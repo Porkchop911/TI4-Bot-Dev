@@ -262,8 +262,7 @@ impl CriticInput {
         let mut columns = Vec::with_capacity(facts.len());
         let mut values = Vec::with_capacity(facts.len());
         for (key, value) in facts {
-            let name = ti4_policy::intern::name_of(*key);
-            columns.push(i64::try_from(vocabulary.column_of(&name)).unwrap_or(0));
+            columns.push(i64::try_from(vocabulary.column_of_key(*key)).unwrap_or(0));
             #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
             values.push(*value as f32);
         }
@@ -549,15 +548,15 @@ impl Actor {
         if options.is_empty() {
             return Err(ActorError::EmptyLegalSet);
         }
-        let mut gathered = Vec::with_capacity(options.len());
-        for option in options {
-            gathered.push(ti4_tensor::gather_reduce(
-                &self.input,
-                &option.columns,
-                &option.values,
-            )?);
-        }
-        let x = Tensor::stack(&gathered, 0);
+        // One gather for the whole decision, per MLP plan §4.3. The per-option loop this replaced
+        // dispatched three libtorch ops and allocated three vectors *per option*, which M09-029
+        // measured as the dominant cost of a decision — the tell was that halving the trunk width
+        // barely changed the total.
+        let batch: Vec<(&[i64], &[f32])> = options
+            .iter()
+            .map(|option| (option.columns.as_slice(), option.values.as_slice()))
+            .collect();
+        let x = ti4_tensor::gather_reduce_batch(&self.input, &batch)?;
         // The identity joins here: zero-padded to the trunk width and added to the first-layer
         // preactivation, before `b1` and the ReLU.
         let first = (x + self.identity_row(row) + &self.b1).relu();

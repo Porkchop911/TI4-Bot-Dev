@@ -157,13 +157,14 @@ impl MlpBot {
         let mut columns = Vec::with_capacity(vector.len());
         let mut values = Vec::with_capacity(vector.len());
         for (key, value) in vector {
-            let name = ti4_policy::intern::name_of(*key);
-            if self.vocabulary.is_assigned(&name) {
+            // Keyed lookups throughout: resolving the name here cost a lock, an allocation and a
+            // re-hash per feature (M09-029).
+            if self.vocabulary.is_assigned_key(*key) {
                 self.counters.assigned.fetch_add(1, Ordering::Relaxed);
             } else {
                 self.counters.oov.fetch_add(1, Ordering::Relaxed);
             }
-            let column = self.vocabulary.column_of(&name);
+            let column = self.vocabulary.column_of_key(*key);
             columns.push(i64::try_from(column).unwrap_or(0));
             #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
             values.push(*value as f32);

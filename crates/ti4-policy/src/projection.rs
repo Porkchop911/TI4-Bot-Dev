@@ -200,6 +200,43 @@ pub fn admits(name: &str) -> bool {
     role_of(crate::vocabulary::family_of(name)) == Some(FamilyRole::Transferable)
 }
 
+thread_local! {
+    /// Memoised admission, keyed by the interned key.
+    ///
+    /// Admission is a pure function of the name, and [`crate::intern::FeatureKey`] is a pure
+    /// function of the name, so the answer for a key never changes and caching it is sound.
+    ///
+    /// Thread-local rather than a shared map: a decider runs on one thread for the life of a game,
+    /// so this needs no lock at all — and a lock is most of what was being paid.
+    static ADMITTED: std::cell::RefCell<std::collections::HashMap<crate::intern::FeatureKey, bool>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// [`admits`] for a caller that already holds the key, memoised.
+///
+/// # Why this exists
+///
+/// `project_vector` ran `admits(&name_of(key))` for **every feature of every option of every
+/// decision**: a global `RwLock` read, a `String` allocation, a `split_once`, and then a linear
+/// scan of the forty `FAMILY_ROLES` entries comparing strings. At roughly forty features across
+/// twenty options that is eight hundred locks and allocations and up to thirty-two thousand string
+/// comparisons for one decision.
+///
+/// M09-029 measured the consequence: feature extraction alone cost more than the entire linear
+/// game it was being compared against, so the throughput gate was about to charge the architecture
+/// for a memoisable string lookup.
+#[must_use]
+pub fn admits_key(key: crate::intern::FeatureKey) -> bool {
+    ADMITTED.with(|cache| {
+        if let Some(known) = cache.borrow().get(&key) {
+            return *known;
+        }
+        let verdict = admits(&crate::intern::name_of(key));
+        cache.borrow_mut().insert(key, verdict);
+        verdict
+    })
+}
+
 /// The acting-seat facts under the bare family, for one position.
 ///
 /// Option-invariant by construction — the same eight values on every option of a choice — which is
@@ -217,10 +254,13 @@ pub fn seat_state_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, 
 ///
 /// Suppression happens here, before any vocabulary lookup, so an excluded name never reaches a
 /// column at all.
-fn project_vector(vector: &FeatureVector, seat_state: &[(String, f64)]) -> FeatureVector {
+fn project_vector(
+    vector: &FeatureVector,
+    seat_state: &[(crate::intern::FeatureKey, f64)],
+) -> FeatureVector {
     let kept = vector
         .iter()
-        .filter(|(key, _)| admits(&crate::intern::name_of(**key)))
+        .filter(|(key, _)| admits_key(**key))
         .map(|(key, value)| (*key, *value));
     // The bare seat facts are a restatement of a position fact, not a second contribution to an
     // existing column: their family is disjoint from everything the extractor emits, so the
@@ -229,9 +269,9 @@ fn project_vector(vector: &FeatureVector, seat_state: &[(String, f64)]) -> Featu
     // nameless, so `names_of` resolves it to an empty string and the discovery pass that builds
     // the vocabulary from names would never see it. The agreement test between projected names
     // and projected vectors is what catches that.
-    let added = seat_state
-        .iter()
-        .map(|(name, value)| (crate::intern::register(name), *value));
+    // Already interned by the caller, once per choice. Registering per option meant a lock and a
+    // hash for each of the eight seat facts on every one of the legal options (M09-029).
+    let added = seat_state.iter().copied();
     FeatureVector::from_pairs(kept.chain(added))
 }
 
@@ -248,10 +288,26 @@ pub fn mlp_choice_features(
     player: &PlayerId,
     held_secrets: &[ti4_engine::objectives::CardProgress],
 ) -> Vec<FeatureVector> {
-    let seat_state = seat_state_facts(seen, player);
+    let seat_state = interned_seat_state(seen, player);
     crate::features::explicit_choice_features(seen, choice, player, held_secrets)
         .iter()
         .map(|vector| project_vector(vector, &seat_state))
+        .collect()
+}
+
+/// The bare seat facts, interned once for the whole choice.
+///
+/// `register` rather than `FeatureKey::of`: the key alone puts a value in the vector but leaves it
+/// nameless, so `names_of` resolves it to an empty string and the discovery pass that builds the
+/// vocabulary from names would never see it. The agreement test between projected names and
+/// projected vectors is what catches that.
+fn interned_seat_state(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+) -> Vec<(crate::intern::FeatureKey, f64)> {
+    seat_state_facts(seen, player)
+        .into_iter()
+        .map(|(name, value)| (crate::intern::register(&name), value))
         .collect()
 }
 
@@ -264,7 +320,7 @@ pub fn mlp_option_features(
     player: &PlayerId,
     held_secrets: &[ti4_engine::objectives::CardProgress],
 ) -> FeatureVector {
-    let seat_state = seat_state_facts(seen, player);
+    let seat_state = interned_seat_state(seen, player);
     let vector =
         crate::features::explicit_option_features(seen, choice, option, player, held_secrets);
     project_vector(&vector, &seat_state)
