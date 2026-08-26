@@ -670,7 +670,8 @@ mod tests {
         if let Some(seat) = state.player_mut(&player) {
             seat.faction = ti4_model::id::FactionId::new("hacan");
         }
-        let limit = crate::strategy_cards::commodity_limit(&state, ContentStore::embedded(), &player);
+        let limit =
+            crate::strategy_cards::commodity_limit(&state, ContentStore::embedded(), &player);
         assert!(limit > 0, "hacan has a commodity value");
         if let Some(seat) = state.player_mut(&player) {
             seat.strategic_tokens = 3;

@@ -101,11 +101,14 @@ fn is_anomaly(raw: &serde_json::Value) -> bool {
     })
 }
 
-#[expect(clippy::too_many_lines, reason = "one generator, the reporting kept visible")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one generator, the reporting kept visible"
+)]
 fn main() {
     let store = ContentStore::embedded();
-    let template = argument("--template")
-        .unwrap_or_else(|| "out/pools/save52_e400_train.json.gz".to_owned());
+    let template =
+        argument("--template").unwrap_or_else(|| "out/pools/save52_e400_train.json.gz".to_owned());
     let output = argument("--out").expect("--out");
     let boards: usize = argument("--boards")
         .and_then(|v| v.parse().ok())
@@ -237,10 +240,7 @@ fn main() {
         fill.len()
     );
     println!("  {} non-home adjacencies tested", edges.len());
-    println!(
-        "\ncandidate systems: {} ({backs:?})",
-        candidates.len()
-    );
+    println!("\ncandidate systems: {} ({backs:?})", candidates.len());
     println!("  planetless among them: {planetless_available}");
     println!("  anomalies among them:  {anomalies_available}");
     assert!(
@@ -277,7 +277,9 @@ fn main() {
         }
 
         let empties = (0..board.len())
-            .filter(|index| !home[*index] && planetless.get(&board[*index]).copied().unwrap_or(false))
+            .filter(|index| {
+                !home[*index] && planetless.get(&board[*index]).copied().unwrap_or(false)
+            })
             .count();
         *histogram.entry(empties).or_default() += 1;
         if empties < min || empties > max {
@@ -320,7 +322,11 @@ fn main() {
     );
     println!("planetless-count distribution over all draws:");
     for (count, n) in &histogram {
-        let marker = if *count >= min && *count <= max { "  <-- kept" } else { "" };
+        let marker = if *count >= min && *count <= max {
+            "  <-- kept"
+        } else {
+            ""
+        };
         #[expect(clippy::cast_precision_loss, reason = "small counts")]
         let share = 100.0 * *n as f64 / attempts as f64;
         println!("  {count:>3}  {n:>7}  {share:>5.1}%{marker}");
@@ -332,8 +338,11 @@ fn main() {
     );
 
     pool["arrangements"] = serde_json::to_value(&arrangements).expect("serialize arrangements");
-    std::fs::write(&output, serde_json::to_string(&pool).expect("serialize pool"))
-        .expect("write pool");
+    std::fs::write(
+        &output,
+        serde_json::to_string(&pool).expect("serialize pool"),
+    )
+    .expect("write pool");
 
     // The pool is only useful if the engine accepts it.
     let written = ti4_sim::MapPool::load(Path::new(&output)).expect("reload written pool");

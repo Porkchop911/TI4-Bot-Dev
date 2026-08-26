@@ -51,15 +51,20 @@ fn main() {
     for epochs in [1_usize, 2, 4, 8] {
         let mut working = profiles.clone();
         let started = Instant::now();
-        let report = ppo::update(&mut working, &batch, &reward, PpoStep {
-            learning_rate: 0.03,
-            entropy: 0.05,
-            gradient_clip: 1.0,
-            clip: 0.2,
-            epochs,
-            positive_only: false,
-            draft_entropy: 0.0,
-        });
+        let report = ppo::update(
+            &mut working,
+            &batch,
+            &reward,
+            PpoStep {
+                learning_rate: 0.03,
+                entropy: 0.05,
+                gradient_clip: 1.0,
+                clip: 0.2,
+                epochs,
+                positive_only: false,
+                draft_entropy: 0.0,
+            },
+        );
         let spent = started.elapsed().as_secs_f64();
         #[expect(clippy::cast_precision_loss, reason = "epoch counts are tiny")]
         let each = spent / epochs as f64;

@@ -28,10 +28,7 @@ fn main() {
     let mut listed: BTreeMap<String, usize> = BTreeMap::new();
 
     for (id, record) in &catalogue {
-        let source = sources
-            .get(*id)
-            .cloned()
-            .unwrap_or_else(|| "?".to_owned());
+        let source = sources.get(*id).cloned().unwrap_or_else(|| "?".to_owned());
         let entry = by_source.entry(source).or_default();
         entry.0 += 1;
         if !record.traits().is_empty() {

@@ -20,8 +20,10 @@ fn main() {
         .map(|name| FactionId::new(*name))
         .collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     // Seating must match the run being analysed: card preference IS a function of draft order, so
     // reading a scrambled run through rotated seating would report a preference that never existed.
@@ -123,8 +125,18 @@ fn main() {
         })
         .collect();
     println!("checkpoints: {}", paths.join(", "));
-    println!("seating: {}", if scramble { "scrambled" } else { "fixed rotation" });
-    println!("{} games, strategy-phase picks on held-out boards\n", games.len());
+    println!(
+        "seating: {}",
+        if scramble {
+            "scrambled"
+        } else {
+            "fixed rotation"
+        }
+    );
+    println!(
+        "{} games, strategy-phase picks on held-out boards\n",
+        games.len()
+    );
 
     let show = |title: &str, table: &BTreeMap<String, BTreeMap<String, usize>>| {
         println!("{title}");
@@ -150,7 +162,10 @@ fn main() {
         }
         println!();
     };
-    show("PICKED, by faction (% of that faction's picks)", &by_faction);
+    show(
+        "PICKED, by faction (% of that faction's picks)",
+        &by_faction,
+    );
     // Faction x seat, for the factions whose first choice is contested.
     println!("FACTION x SEAT: what each faction takes from each seat (% of that cell)");
     print!("{:<18}", "faction / seat");
@@ -164,7 +179,11 @@ fn main() {
         for (card, _) in &cards {
             let count = row.get(card).copied().unwrap_or(0);
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
-            let share = if total == 0 { 0.0 } else { 100.0 * count as f64 / total as f64 };
+            let share = if total == 0 {
+                0.0
+            } else {
+                100.0 * count as f64 / total as f64
+            };
             print!("{share:>7.1}");
         }
         println!();

@@ -917,7 +917,9 @@ fn main() -> Result<(), String> {
     // Self-imitation: reinforce what beat the batch mean, punish nothing.
     let positive_advantage = flag("--positive-advantage");
     if ppo_epochs > 1 && ppo_clip <= 0.0 {
-        return Err("--ppo-clip must be positive; the trust region is what makes reuse safe".to_owned());
+        return Err(
+            "--ppo-clip must be positive; the trust region is what makes reuse safe".to_owned(),
+        );
     }
     if ppo_epochs > 1 && (pipeline || rollout_depth > 1) {
         return Err(
@@ -1047,7 +1049,10 @@ fn main() -> Result<(), String> {
         ("r1_bonus".to_owned(), r1_bonus.to_string()),
         ("r1_shaping".to_owned(), r1_shaping.to_string()),
         ("ppo_clip".to_owned(), ppo_clip.to_string()),
-        ("positive_advantage".to_owned(), positive_advantage.to_string()),
+        (
+            "positive_advantage".to_owned(),
+            positive_advantage.to_string(),
+        ),
         ("pipeline".to_owned(), pipeline.to_string()),
         ("rollout_depth".to_owned(), rollout_depth.to_string()),
         ("rounds".to_owned(), plan.rounds.to_string()),
@@ -1128,10 +1133,16 @@ fn main() -> Result<(), String> {
     if ppo_epochs > 1 {
         println!(
             "  algorithm: PPO -- {ppo_epochs} clipped-surrogate epochs per retained batch, clip {ppo_clip:.2}{}",
-            if positive_advantage { ", positive advantages only (self-imitation)" } else { "" }
+            if positive_advantage {
+                ", positive advantages only (self-imitation)"
+            } else {
+                ""
+            }
         );
     } else {
-        println!("  algorithm: REINFORCE -- one step per batch, trajectories reduced on the workers");
+        println!(
+            "  algorithm: REINFORCE -- one step per batch, trajectories reduced on the workers"
+        );
     }
     if clearance_weight > 0.0 {
         println!(

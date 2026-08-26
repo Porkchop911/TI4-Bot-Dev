@@ -109,7 +109,10 @@ fn main() {
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let per = *count as f64 / n.max(1) as f64;
             if name.ends_with(":*") {
-                println!("  {name:<34} {per:>7.1} per decision   {} distinct", members.len());
+                println!(
+                    "  {name:<34} {per:>7.1} per decision   {} distinct",
+                    members.len()
+                );
             } else {
                 println!("  {name:<34} {per:>7.1} per decision");
             }

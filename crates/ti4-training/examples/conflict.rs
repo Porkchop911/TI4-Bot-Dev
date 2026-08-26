@@ -117,21 +117,29 @@ fn argument(name: &str) -> Option<String> {
         .cloned()
 }
 
-#[expect(clippy::too_many_lines, reason = "one probe, the reporting kept visible")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one probe, the reporting kept visible"
+)]
 fn main() {
     let content = ContentStore::embedded();
     let checkpoint = argument("--checkpoint").expect("--checkpoint");
-    let rounds: u32 = argument("--rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
-    let seeds: u64 = argument("--seeds").and_then(|v| v.parse().ok()).unwrap_or(20);
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let rounds: u32 = argument("--rounds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let seeds: u64 = argument("--seeds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
 
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&checkpoint).expect("read")).expect("parse");
     let loaded: BTreeMap<String, Profile> =
         serde_json::from_value(document["profiles"].clone()).expect("profiles");
-    let pool =
-        std::sync::Arc::new(ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"));
+    let pool = std::sync::Arc::new(
+        ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"),
+    );
 
     let mut games = 0usize;
     let mut games_with_conquest = 0usize;
@@ -225,13 +233,18 @@ fn main() {
         100.0 * total_conquest as f64 / (total_conquest + total_expansion).max(1) as f64;
     println!("PLANET CONTROL CHANGES");
     println!("  expansion (uncontrolled -> a player): {total_expansion}");
-    println!("  conquest  (player -> player):         {total_conquest}  ({conquest_share:.1}% of all takes)");
+    println!(
+        "  conquest  (player -> player):         {total_conquest}  ({conquest_share:.1}% of all takes)"
+    );
     #[expect(clippy::cast_precision_loss, reason = "small counts")]
     let with = 100.0 * games_with_conquest as f64 / games.max(1) as f64;
     println!("  games with any conquest at all:       {games_with_conquest} ({with:.1}%)");
 
     println!("\nPER FACTION (per seat)");
-    println!("{:<10}{:>10}{:>10}{:>10}{:>12}", "faction", "expand", "took", "lost", "unit-losses");
+    println!(
+        "{:<10}{:>10}{:>10}{:>10}{:>12}",
+        "faction", "expand", "took", "lost", "unit-losses"
+    );
     for faction in FACTIONS {
         let n = seats.get(faction).copied().unwrap_or(0).max(1);
         let took: usize = conquest
@@ -266,8 +279,10 @@ fn main() {
         let per = combat_steps.get(faction).copied().unwrap_or(0) as f64 / n as f64;
         println!("    {faction:<10} {per:>6.2} per seat");
     }
-    println!("
-  all decision heads, per game:");
+    println!(
+        "
+  all decision heads, per game:"
+    );
     let mut rows: Vec<_> = all_heads.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1));
     for (head, count) in rows {

@@ -109,7 +109,9 @@ fn catalogue(file: &str) -> BTreeMap<String, (String, i64, String)> {
                 o.get("alias")?.as_str()?.to_owned(),
                 (
                     o.get("name")?.as_str()?.to_owned(),
-                    o.get("points").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                    o.get("points")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(1),
                     o.get("text")?.as_str()?.replace('\n', " "),
                 ),
             ))
@@ -117,14 +119,21 @@ fn catalogue(file: &str) -> BTreeMap<String, (String, i64, String)> {
         .collect()
 }
 
-#[expect(clippy::too_many_lines, reason = "one probe, three tables, kept visible")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one probe, three tables, kept visible"
+)]
 fn main() {
     let content = ContentStore::embedded();
     let checkpoint = argument("--checkpoint").expect("--checkpoint");
-    let rounds: u32 = argument("--rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
-    let seeds: u64 = argument("--seeds").and_then(|v| v.parse().ok()).unwrap_or(25);
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let rounds: u32 = argument("--rounds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let seeds: u64 = argument("--seeds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(25);
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
 
     let publics = catalogue(include_str!(
         "../../ti4-content/content/public_objectives.json"
@@ -137,8 +146,9 @@ fn main() {
         serde_json::from_slice(&std::fs::read(&checkpoint).expect("read")).expect("parse");
     let loaded: BTreeMap<String, Profile> =
         serde_json::from_value(document["profiles"].clone()).expect("profiles");
-    let pool =
-        std::sync::Arc::new(ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"));
+    let pool = std::sync::Arc::new(
+        ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"),
+    );
 
     let mut games = 0usize;
     let mut seats = 0usize;
@@ -225,15 +235,28 @@ fn main() {
 
     // A public revealed in one game is an opportunity for all six seats, so the rate is scored
     // seats over revealed-games x 6, not over revealed-games.
-    println!("PUBLIC OBJECTIVES  (revealed = games face up; scored = seats; rate = of the 6 seats per revealed game)");
-    println!("{:<28}{:>4}{:>10}{:>9}{:>8}  {}", "objective", "pts", "revealed", "scored", "per-rev", "condition");
+    println!(
+        "PUBLIC OBJECTIVES  (revealed = games face up; scored = seats; rate = of the 6 seats per revealed game)"
+    );
+    println!(
+        "{:<28}{:>4}{:>10}{:>9}{:>8}  {}",
+        "objective", "pts", "revealed", "scored", "per-rev", "condition"
+    );
     let mut rows: Vec<_> = publics.iter().collect();
-    rows.sort_by_key(|(alias, (_, points, _))| (*points, usize::MAX - revealed.get(*alias).copied().unwrap_or(0)));
+    rows.sort_by_key(|(alias, (_, points, _))| {
+        (
+            *points,
+            usize::MAX - revealed.get(*alias).copied().unwrap_or(0),
+        )
+    });
     for (alias, (name, points, text)) in rows {
         let shown = revealed.get(alias).copied().unwrap_or(0);
         let got = scored.get(alias).copied().unwrap_or(0);
         if shown == 0 && got == 0 {
-            println!("{name:<28}{points:>4}{:>10}{:>9}{:>8}  {text}", "-", "-", "-");
+            println!(
+                "{name:<28}{points:>4}{:>10}{:>9}{:>8}  {text}",
+                "-", "-", "-"
+            );
         } else {
             println!(
                 "{name:<28}{points:>4}{shown:>10}{got:>9}{:>7.0}%  {text}",
@@ -243,7 +266,10 @@ fn main() {
     }
 
     println!("\nSECRET OBJECTIVES  (drawn = seats that held it; scored = seats that took it)");
-    println!("{:<30}{:>4}{:>8}{:>9}{:>9}  {}", "objective", "pts", "drawn", "scored", "per-draw", "condition");
+    println!(
+        "{:<30}{:>4}{:>8}{:>9}{:>9}  {}",
+        "objective", "pts", "drawn", "scored", "per-draw", "condition"
+    );
     let mut rows: Vec<_> = secrets.iter().collect();
     rows.sort_by_key(|(alias, _)| usize::MAX - held.get(*alias).copied().unwrap_or(0));
     for (alias, (name, points, text)) in rows {
@@ -259,12 +285,24 @@ fn main() {
     }
 
     println!("\nIMPERIAL PRIMARY");
-    println!("  scoring windows opened:        {imp_offered}  ({:.2} per game)", {
-        #[expect(clippy::cast_precision_loss, reason = "small counts")]
-        let per = imp_offered as f64 / games.max(1) as f64;
-        per
-    });
-    println!("  scored an objective:           {imp_scored}  ({:.0}% of windows)", pct(imp_scored, imp_offered));
-    println!("  declined:                      {imp_declined}  ({:.0}%)", pct(imp_declined, imp_offered));
-    println!("  held Mecatol at that moment:   {imp_mecatol}  ({:.0}% -- these gain the extra point, the rest draw a secret)", pct(imp_mecatol, imp_offered));
+    println!(
+        "  scoring windows opened:        {imp_offered}  ({:.2} per game)",
+        {
+            #[expect(clippy::cast_precision_loss, reason = "small counts")]
+            let per = imp_offered as f64 / games.max(1) as f64;
+            per
+        }
+    );
+    println!(
+        "  scored an objective:           {imp_scored}  ({:.0}% of windows)",
+        pct(imp_scored, imp_offered)
+    );
+    println!(
+        "  declined:                      {imp_declined}  ({:.0}%)",
+        pct(imp_declined, imp_offered)
+    );
+    println!(
+        "  held Mecatol at that moment:   {imp_mecatol}  ({:.0}% -- these gain the extra point, the rest draw a secret)",
+        pct(imp_mecatol, imp_offered)
+    );
 }

@@ -205,7 +205,10 @@ fn main() {
                 print!("{rate:>6.0} ");
             }
             let asked = offers.get(&(faction.clone(), round)).copied().unwrap_or(0);
-            let no = declines.get(&(faction.clone(), round)).copied().unwrap_or(0);
+            let no = declines
+                .get(&(faction.clone(), round))
+                .copied()
+                .unwrap_or(0);
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let per_seat = asked as f64 / count as f64;
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]

@@ -64,10 +64,14 @@ fn argument(name: &str) -> Option<String> {
 fn main() {
     let content = ContentStore::embedded();
     let checkpoint = argument("--checkpoint").expect("--checkpoint");
-    let rounds: u32 = argument("--rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
-    let seeds: u64 = argument("--seeds").and_then(|v| v.parse().ok()).unwrap_or(25);
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let rounds: u32 = argument("--rounds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let seeds: u64 = argument("--seeds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(25);
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
 
     let catalogue: BTreeMap<String, (String, i64)> = {
         let raw = include_str!("../../ti4-content/content/public_objectives.json");
@@ -78,7 +82,9 @@ fn main() {
                     o.get("alias")?.as_str()?.to_owned(),
                     (
                         o.get("name")?.as_str()?.to_owned(),
-                        o.get("points").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                        o.get("points")
+                            .and_then(serde_json::Value::as_i64)
+                            .unwrap_or(1),
                     ),
                 ))
             })
@@ -89,8 +95,9 @@ fn main() {
         serde_json::from_slice(&std::fs::read(&checkpoint).expect("read")).expect("parse");
     let loaded: BTreeMap<String, Profile> =
         serde_json::from_value(document["profiles"].clone()).expect("profiles");
-    let pool =
-        std::sync::Arc::new(ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"));
+    let pool = std::sync::Arc::new(
+        ti4_sim::MapPool::load(std::path::Path::new(&pool_path)).expect("pool"),
+    );
 
     let mut games = 0usize;
     let mut revealed: BTreeMap<String, usize> = BTreeMap::new();
@@ -164,9 +171,14 @@ fn main() {
     println!("checkpoint {checkpoint}");
     println!("\n{per_game:.2} public objectives revealed per game\n");
 
-    println!("{:<28} {:>4} {:>10} {:>10} {:>9}", "objective", "pts", "revealed", "scored", "hit rate");
+    println!(
+        "{:<28} {:>4} {:>10} {:>10} {:>9}",
+        "objective", "pts", "revealed", "scored", "hit rate"
+    );
     let mut rows: Vec<_> = catalogue.iter().collect();
-    rows.sort_by_key(|(alias, (_, points))| (*points, revealed.get(*alias).map_or(0, |n| usize::MAX - n)));
+    rows.sort_by_key(|(alias, (_, points))| {
+        (*points, revealed.get(*alias).map_or(0, |n| usize::MAX - n))
+    });
     for (alias, (name, points)) in rows {
         let shown = revealed.get(alias).copied().unwrap_or(0);
         let got = scored.get(alias).copied().unwrap_or(0);
@@ -179,7 +191,10 @@ fn main() {
         #[expect(clippy::cast_precision_loss, reason = "small counts")]
         let share = 100.0 * shown as f64 / games.max(1) as f64;
         if shown == 0 {
-            println!("{name:<28} {points:>4} {shown:>10} {got:>10} {:>9}", "never shown");
+            println!(
+                "{name:<28} {points:>4} {shown:>10} {got:>10} {:>9}",
+                "never shown"
+            );
         } else {
             println!("{name:<28} {points:>4} {shown:>6} ({share:>3.0}%) {got:>10} {rate:>8.0}%");
         }

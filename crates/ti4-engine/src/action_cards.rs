@@ -2163,14 +2163,12 @@ mod tests {
             .iter()
             .find_map(|(id, planet)| {
                 let system = planet.system_id()?;
-                planet
-                    .has_trait("hazardous")
-                    .then(|| {
-                        (
-                            ti4_model::id::SystemId::new(system),
-                            ti4_model::id::PlanetId::new(*id),
-                        )
-                    })
+                planet.has_trait("hazardous").then(|| {
+                    (
+                        ti4_model::id::SystemId::new(system),
+                        ti4_model::id::PlanetId::new(*id),
+                    )
+                })
             });
         let Some((system, planet)) = hazardous else {
             return; // no hazardous planet in this corpus

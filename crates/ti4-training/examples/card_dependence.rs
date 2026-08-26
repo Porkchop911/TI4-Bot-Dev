@@ -43,12 +43,17 @@ fn main() {
         .map(|name| FactionId::new(*name))
         .collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     ti4_training::rollout::set_seat_scramble(true);
 
-    let paths: Vec<String> = std::env::args().skip(1).filter(|a| a.ends_with(".json")).collect();
+    let paths: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| a.ends_with(".json"))
+        .collect();
     let seeds: Vec<u64> = (98_000_000..98_000_150).collect();
     let mut games = Vec::new();
     for path in &paths {
@@ -61,9 +66,15 @@ fn main() {
             .map(|f| (f.clone(), loaded[f.as_str()].clone()))
             .collect();
         games.extend(play_rotated_save54_pool_batch(
-            store, &factions, &profiles, FULL, &seeds,
-            Horizon::opening(), ti4_engine::opening::DEFAULT_REQUIREMENT,
-            Arc::clone(&pool), 20_000_000,
+            store,
+            &factions,
+            &profiles,
+            FULL,
+            &seeds,
+            Horizon::opening(),
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            Arc::clone(&pool),
+            20_000_000,
         ));
     }
 
@@ -91,7 +102,9 @@ fn main() {
                 }
             }
             let cleared = usize::from(seat.episode.cleared);
-            let row = by_card.entry((seat.faction.to_string(), card)).or_insert((0, 0));
+            let row = by_card
+                .entry((seat.faction.to_string(), card))
+                .or_insert((0, 0));
             row.0 += 1;
             row.1 += cleared;
             let up = by_uptake.entry(taken.min(5)).or_insert((0, 0));

@@ -13,8 +13,10 @@ use ti4_model::content_types::FULL;
 fn main() {
     let store = ContentStore::embedded();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     let names: Vec<String> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
         .iter()
@@ -85,7 +87,10 @@ fn main() {
                 {
                     legendary += 1;
                 }
-                if let Some(list) = record.get("techSpecialties").and_then(serde_json::Value::as_array) {
+                if let Some(list) = record
+                    .get("techSpecialties")
+                    .and_then(serde_json::Value::as_array)
+                {
                     if !list.is_empty() {
                         specialty_planets += 1;
                     }
@@ -108,19 +113,37 @@ fn main() {
     };
 
     println!("over {boards} held-out boards, NON-HOME planets only\n");
-    println!("  gainable planets        {:.1}  ({:.2} per seat if split six ways)", per_board(non_home), per_board(non_home) / 6.0);
+    println!(
+        "  gainable planets        {:.1}  ({:.2} per seat if split six ways)",
+        per_board(non_home),
+        per_board(non_home) / 6.0
+    );
     #[expect(clippy::cast_precision_loss, reason = "small counts")]
     let res = resources as f64 / n;
     #[expect(clippy::cast_precision_loss, reason = "small counts")]
     let inf = influence as f64 / n;
-    println!("  total resources         {res:.1}  ({:.2} per seat)", res / 6.0);
-    println!("  total influence         {inf:.1}  ({:.2} per seat)", inf / 6.0);
+    println!(
+        "  total resources         {res:.1}  ({:.2} per seat)",
+        res / 6.0
+    );
+    println!(
+        "  total influence         {inf:.1}  ({:.2} per seat)",
+        inf / 6.0
+    );
     println!("  legendary planets       {:.2}", per_board(legendary));
-    println!("  planets with a tech specialty  {:.1}  ({:.2} per seat)", per_board(specialty_planets), per_board(specialty_planets) / 6.0);
+    println!(
+        "  planets with a tech specialty  {:.1}  ({:.2} per seat)",
+        per_board(specialty_planets),
+        per_board(specialty_planets) / 6.0
+    );
 
     println!("\n  by trait (per board):");
     for (kind, count) in &traits {
-        println!("    {kind:<12} {:.1}   ({:.2} per seat)", per_board(*count), per_board(*count) / 6.0);
+        println!(
+            "    {kind:<12} {:.1}   ({:.2} per seat)",
+            per_board(*count),
+            per_board(*count) / 6.0
+        );
     }
     println!("\n  planets carrying no trait, most common (per board):");
     let mut rows: Vec<_> = untyped.iter().collect();
@@ -131,6 +154,10 @@ fn main() {
 
     println!("\n  tech specialties by colour (per board):");
     for (colour, count) in &specialties {
-        println!("    {colour:<12} {:.2}  ({:.3} per seat)", per_board(*count), per_board(*count) / 6.0);
+        println!(
+            "    {colour:<12} {:.2}  ({:.3} per seat)",
+            per_board(*count),
+            per_board(*count) / 6.0
+        );
     }
 }

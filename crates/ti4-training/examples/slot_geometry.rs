@@ -13,8 +13,10 @@ use ti4_model::content_types::FULL;
 fn main() {
     let store = ContentStore::embedded();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     let names: Vec<String> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
         .iter()
@@ -68,7 +70,10 @@ fn main() {
     #[expect(clippy::cast_precision_loss, reason = "small counts")]
     let n = boards as f64;
     println!("mean over {boards} held-out boards, per home slot (= physical seat)\n");
-    println!("{:<7} {:>14} {:>14} {:>16}", "slot", "planets <=1 hex", "planets <=2 hex", "adjacent anomalies");
+    println!(
+        "{:<7} {:>14} {:>14} {:>16}",
+        "slot", "planets <=1 hex", "planets <=2 hex", "adjacent anomalies"
+    );
     println!("{}", "-".repeat(56));
     let unique: BTreeSet<&str> = borrowed.iter().copied().collect();
     for slot in 0..6 {

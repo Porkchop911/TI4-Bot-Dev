@@ -11,8 +11,10 @@ use ti4_model::content_types::FULL;
 fn main() {
     let store = ContentStore::embedded();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     let names: Vec<String> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
         .iter()

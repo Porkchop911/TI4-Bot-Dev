@@ -28,8 +28,10 @@ fn main() {
     let names = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
     let factions: Vec<FactionId> = names.iter().map(|n| FactionId::new(*n)).collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     // Draft order is a property of seating, not of the policy, so blank weights are enough.
     let profiles: BTreeMap<FactionId, Profile> = factions
@@ -41,7 +43,11 @@ fn main() {
     println!(
         "seating mode: {}
 ",
-        if scramble { "SCRAMBLED per seed" } else { "fixed cyclic rotation" }
+        if scramble {
+            "SCRAMBLED per seed"
+        } else {
+            "fixed cyclic rotation"
+        }
     );
     // More seeds under scrambling: the balance is across seeds, not within one.
     let span = if scramble { 600 } else { 30 };
@@ -73,16 +79,17 @@ fn main() {
                 let (Some(pa), Some(pb)) = (position.get(a), position.get(b)) else {
                     continue;
                 };
-                let row = before
-                    .entry((a.to_owned(), b.to_owned()))
-                    .or_insert((0, 0));
+                let row = before.entry((a.to_owned(), b.to_owned())).or_insert((0, 0));
                 row.0 += 1;
                 row.1 += usize::from(pa < pb);
             }
         }
     }
 
-    println!("{} games. Row drafts BEFORE column, as a percentage.", games.len());
+    println!(
+        "{} games. Row drafts BEFORE column, as a percentage.",
+        games.len()
+    );
     println!("A scramble would put every off-diagonal cell at 50.0%.\n");
     print!("{:<9}", "");
     for b in names {

@@ -118,24 +118,22 @@ fn main() {
                 // agenda vote target). Only the research head counts, and every other head that
                 // offers a "research" option is reported separately so gating here cannot hide a
                 // second research path.
-                let option_words: Vec<String> = step.legal.get(&step.chosen).map_or_else(
-                    Vec::new,
-                    |vector| {
-                        vector
-                            .iter()
-                            .filter_map(|(slot, _)| {
-                                ti4_policy::intern::name_of(*slot)
-                                    .strip_prefix("option:")
-                                    .map(str::to_owned)
-                            })
-                            .collect()
-                    },
-                );
+                let option_words: Vec<String> =
+                    step.legal
+                        .get(&step.chosen)
+                        .map_or_else(Vec::new, |vector| {
+                            vector
+                                .iter()
+                                .filter_map(|(slot, _)| {
+                                    ti4_policy::intern::name_of(*slot)
+                                        .strip_prefix("option:")
+                                        .map(str::to_owned)
+                                })
+                                .collect()
+                        });
                 if let Some(name) = tech_names.get(&step.chosen) {
                     if head == "development" {
-                        *techs
-                            .entry((faction.clone(), name.clone()))
-                            .or_default() += 1;
+                        *techs.entry((faction.clone(), name.clone())).or_default() += 1;
                     } else {
                         *rejected_matches
                             .entry(format!("{head}/{} {:?}", step.chosen, option_words))
@@ -148,8 +146,11 @@ fn main() {
                         .entry(format!("{head}/{}", step.chosen))
                         .or_default() += 1;
                 }
-                if head.contains("transact") || head.contains("trade") || head.contains("deal")
-                    || head.contains("commod") || head.contains("exchange")
+                if head.contains("transact")
+                    || head.contains("trade")
+                    || head.contains("deal")
+                    || head.contains("commod")
+                    || head.contains("exchange")
                 {
                     *offered.entry(head.to_owned()).or_default() += 1;
                     if !matches!(step.chosen.as_str(), "no" | "refuse" | "decline" | "cancel") {
@@ -216,7 +217,9 @@ fn main() {
                     if let Some(vector) = step.legal.get(&step.chosen) {
                         let entry = dev_words.entry(step.chosen.clone()).or_default();
                         for (slot, _) in vector {
-                            if let Some(name) = ti4_policy::intern::name_of(*slot).strip_prefix("option:") {
+                            if let Some(name) =
+                                ti4_policy::intern::name_of(*slot).strip_prefix("option:")
+                            {
                                 *entry.entry(name.to_owned()).or_default() += 1;
                             }
                         }
@@ -225,9 +228,14 @@ fn main() {
             }
         }
     }
-    println!("
-RESEARCH DECISIONS vs TECHNOLOGY-SECONDARY FOLLOWS, by round");
-    println!("{:<8}{:>14}{:>18}", "round", "development", "tech-secondary");
+    println!(
+        "
+RESEARCH DECISIONS vs TECHNOLOGY-SECONDARY FOLLOWS, by round"
+    );
+    println!(
+        "{:<8}{:>14}{:>18}",
+        "round", "development", "tech-secondary"
+    );
     for round in 1..=4 {
         println!(
             "{round:<8}{:>14}{:>18}",
@@ -242,18 +250,31 @@ RESEARCH DECISIONS vs TECHNOLOGY-SECONDARY FOLLOWS, by round");
         tech_follow.values().sum::<usize>()
     );
 
-    println!("
-PER FACTION: technology-secondary follows against research decisions raised");
-    println!("{:<10}{:>10}{:>12}{:>14}", "faction", "follows", "research", "unresolved");
+    println!(
+        "
+PER FACTION: technology-secondary follows against research decisions raised"
+    );
+    println!(
+        "{:<10}{:>10}{:>12}{:>14}",
+        "faction", "follows", "research", "unresolved"
+    );
     for faction in ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"] {
         let f = follow_by_faction.get(faction).copied().unwrap_or(0);
         let d = dev_by_faction.get(faction).copied().unwrap_or(0);
-        println!("{faction:<10}{f:>10}{d:>12}{:>14}", i64::try_from(f).unwrap_or(0) - i64::try_from(d).unwrap_or(0));
+        println!(
+            "{faction:<10}{f:>10}{d:>12}{:>14}",
+            i64::try_from(f).unwrap_or(0) - i64::try_from(d).unwrap_or(0)
+        );
     }
 
-    println!("
-DEVELOPMENT HEAD: offered vs chosen ({dev_decisions} research decisions)");
-    println!("{:<12}{:>10}{:>10}{:>10}   {}", "option", "offered", "chosen", "take-rate", "name");
+    println!(
+        "
+DEVELOPMENT HEAD: offered vs chosen ({dev_decisions} research decisions)"
+    );
+    println!(
+        "{:<12}{:>10}{:>10}{:>10}   {}",
+        "option", "offered", "chosen", "take-rate", "name"
+    );
     {
         let mut rows: Vec<_> = dev_offered.iter().collect();
         rows.sort_by(|a, b| b.1.cmp(a.1));
@@ -266,8 +287,10 @@ DEVELOPMENT HEAD: offered vs chosen ({dev_decisions} research decisions)");
         }
     }
 
-    println!("
-DEVELOPMENT HEAD: chosen option ids");
+    println!(
+        "
+DEVELOPMENT HEAD: chosen option ids"
+    );
     let mut rows: Vec<_> = dev.iter().collect();
     rows.sort_by(|a, b| b.1.cmp(a.1));
     for (choice, n) in rows.into_iter().take(12) {
@@ -304,13 +327,17 @@ DEVELOPMENT HEAD: chosen option ids");
         }
     }
 
-    println!("
-ALIAS HITS DISCARDED (matched a tech alias outside the research head)");
+    println!(
+        "
+ALIAS HITS DISCARDED (matched a tech alias outside the research head)"
+    );
     for (key, n) in &rejected_matches {
         println!("  {n:>6}  {key}");
     }
-    println!("
-RESEARCH OPTIONS OUTSIDE THE RESEARCH HEAD");
+    println!(
+        "
+RESEARCH OPTIONS OUTSIDE THE RESEARCH HEAD"
+    );
     if other_research.is_empty() {
         println!("  none -- development is the only path");
     } else {
@@ -319,8 +346,10 @@ RESEARCH OPTIONS OUTSIDE THE RESEARCH HEAD");
         }
     }
 
-    println!("
-SUSPECT SHORT ALIASES (head/choice + option words)");
+    println!(
+        "
+SUSPECT SHORT ALIASES (head/choice + option words)"
+    );
     for (key, n) in &suspect {
         println!("  {n:>6}  {key}");
     }

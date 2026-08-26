@@ -53,13 +53,13 @@ fn main() {
     let rounds: u32 = std::env::args()
         .find_map(|a| a.strip_prefix("--rounds=").and_then(|v| v.parse().ok()))
         .unwrap_or(4);
-    let only_round: Option<u32> = std::env::args()
-        .find_map(|a| a.strip_prefix("--round=").and_then(|v| v.parse().ok()));
+    let only_round: Option<u32> =
+        std::env::args().find_map(|a| a.strip_prefix("--round=").and_then(|v| v.parse().ok()));
     let seeds: u64 = std::env::args()
         .find_map(|a| a.strip_prefix("--seeds=").and_then(|v| v.parse().ok()))
         .unwrap_or(40);
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     ti4_training::rollout::set_seat_scramble(true);
 
     let document: serde_json::Value =

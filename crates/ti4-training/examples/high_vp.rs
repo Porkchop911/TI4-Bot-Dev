@@ -68,7 +68,11 @@ fn main() {
         );
         for seat in &state.players {
             seats += 1;
-            let scored = state.scored_objectives.get(&seat.id).cloned().unwrap_or_default();
+            let scored = state
+                .scored_objectives
+                .get(&seat.id)
+                .cloned()
+                .unwrap_or_default();
             for objective in &scored {
                 *all_objectives.entry(objective.to_string()).or_default() += 1;
             }
@@ -100,13 +104,22 @@ fn main() {
                     "--- seed {seed}: {} scored {} VP",
                     seat.faction, seat.victory_points
                 );
-                println!("      objectives: {}",
-                    scored.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "));
+                println!(
+                    "      objectives: {}",
+                    scored
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
                 println!(
                     "      {planets:.0} planets, {} technologies, {} relics, cards {:?}",
                     seat.technologies.len(),
                     seat.relics.len(),
-                    seat.strategy_cards.iter().map(ToString::to_string).collect::<Vec<_>>()
+                    seat.strategy_cards
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
                 );
             }
         }

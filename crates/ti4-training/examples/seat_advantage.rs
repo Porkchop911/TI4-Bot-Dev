@@ -26,8 +26,10 @@ fn main() {
         .map(|name| FactionId::new(*name))
         .collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     let path = std::env::args()
         .nth(1)
@@ -69,7 +71,9 @@ fn main() {
     let mut cleared: BTreeMap<String, (usize, usize, f64)> = BTreeMap::new();
     for game in &games {
         for seat in &game.seats {
-            let row = cleared.entry(seat.player.to_string()).or_insert((0, 0, 0.0));
+            let row = cleared
+                .entry(seat.player.to_string())
+                .or_insert((0, 0, 0.0));
             row.0 += 1;
             let cell = grid
                 .entry((seat.faction.to_string(), seat.player.to_string()))
@@ -85,29 +89,49 @@ fn main() {
     println!("checkpoint: {path}");
     println!("{} games, {} seats each\n", games.len(), factions.len());
     println!("seat0 is ALWAYS the speaker, and always occupies map slot 0.\n");
-    println!("{:<8} {:>7} {:>10} {:>9}   {}", "seat", "games", "clearance", "planets", "role");
+    println!(
+        "{:<8} {:>7} {:>10} {:>9}   {}",
+        "seat", "games", "clearance", "planets", "role"
+    );
     println!("{}", "-".repeat(56));
     for (seat, (games_played, wins, planets)) in &cleared {
         #[expect(clippy::cast_precision_loss, reason = "small counts")]
         let n = *games_played as f64;
         #[expect(clippy::cast_precision_loss, reason = "small counts")]
         let w = *wins as f64;
-        let role = if seat == "seat0" { "SPEAKER + map slot 0" } else { "" };
-        println!("{seat:<8} {games_played:>7} {:>10.4} {:>9.2}   {role}", w / n, planets / n);
+        let role = if seat == "seat0" {
+            "SPEAKER + map slot 0"
+        } else {
+            ""
+        };
+        println!(
+            "{seat:<8} {games_played:>7} {:>10.4} {:>9.2}   {role}",
+            w / n,
+            planets / n
+        );
     }
-    println!("
-CLEARANCE, faction x seat");
+    println!(
+        "
+CLEARANCE, faction x seat"
+    );
     let seats: Vec<String> = cleared.keys().cloned().collect();
     print!("{:<9}", "faction");
-    for s in &seats { print!("{s:>9}"); }
+    for s in &seats {
+        print!("{s:>9}");
+    }
     println!();
     let mut current = String::new();
     for ((faction, _), _) in &grid {
-        if *faction == current { continue; }
+        if *faction == current {
+            continue;
+        }
         current.clone_from(faction);
         print!("{faction:<9}");
         for s in &seats {
-            let (n, w) = grid.get(&(faction.clone(), s.clone())).copied().unwrap_or((0, 0));
+            let (n, w) = grid
+                .get(&(faction.clone(), s.clone()))
+                .copied()
+                .unwrap_or((0, 0));
             #[expect(clippy::cast_precision_loss, reason = "small counts")]
             let share = if n == 0 { 0.0 } else { w as f64 / n as f64 };
             print!("{share:>9.3}");
@@ -125,7 +149,10 @@ CLEARANCE, faction x seat");
     let speaker = values.first().copied().unwrap_or(0.0);
     let rest: f64 = values.iter().skip(1).sum::<f64>()
         / f64::from(u32::try_from(values.len().saturating_sub(1).max(1)).unwrap_or(1));
-    println!("\nspeaker seat {speaker:.4} against non-speaker mean {rest:.4}  =>  {:+.4}", speaker - rest);
+    println!(
+        "\nspeaker seat {speaker:.4} against non-speaker mean {rest:.4}  =>  {:+.4}",
+        speaker - rest
+    );
     println!(
         "spread across seats: {:.4}",
         values.iter().copied().fold(0.0_f64, f64::max)

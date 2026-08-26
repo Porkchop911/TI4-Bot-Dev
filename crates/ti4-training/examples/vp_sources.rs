@@ -36,9 +36,15 @@ fn main() {
 
     let seeds: Vec<u64> = (98_000_000..98_000_100).collect();
     let games = play_rotated_save54_pool_batch(
-        store, &factions, &profiles, FULL, &seeds,
-        Horizon::rounds(4), ti4_engine::opening::DEFAULT_REQUIREMENT,
-        Arc::clone(&pool), 20_000_000,
+        store,
+        &factions,
+        &profiles,
+        FULL,
+        &seeds,
+        Horizon::rounds(4),
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        Arc::clone(&pool),
+        20_000_000,
     );
 
     // Progress is snapshotted at every decision, so VP, and what was scoreable when, can be read
@@ -59,7 +65,9 @@ fn main() {
             vp_total += vp;
             zero_vp += usize::from(final_vp == 0);
             *vp_hist.entry(final_vp).or_default() += 1;
-            let row = per_faction.entry(seat.faction.to_string()).or_insert((0.0, 0.0, 0));
+            let row = per_faction
+                .entry(seat.faction.to_string())
+                .or_insert((0.0, 0.0, 0));
             row.0 += vp;
             row.1 += seat.episode.shortfall;
             row.2 += 1;
@@ -80,29 +88,50 @@ fn main() {
     }
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
     let n = seats as f64;
-    println!("{} games, {seats} seats
-", games.len());
-    println!("mean {:.3} VP per seat over four rounds
-", vp_total / n);
+    println!(
+        "{} games, {seats} seats
+",
+        games.len()
+    );
+    println!(
+        "mean {:.3} VP per seat over four rounds
+",
+        vp_total / n
+    );
 
     println!("VP DISTRIBUTION across seats:");
     for (vp, count) in &vp_hist {
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let share = 100.0 * *count as f64 / n;
-        println!("  {vp} VP  {share:>5.1}%  {}", "#".repeat((share / 2.0) as usize));
+        println!(
+            "  {vp} VP  {share:>5.1}%  {}",
+            "#".repeat((share / 2.0) as usize)
+        );
     }
 
-    println!("
-BY ROUND -- closing VP, and what was scoreable at the time:");
-    println!("{:<7} {:>10} {:>18} {:>18}", "round", "mean VP", "scoreable public", "scoreable secret");
+    println!(
+        "
+BY ROUND -- closing VP, and what was scoreable at the time:"
+    );
+    println!(
+        "{:<7} {:>10} {:>18} {:>18}",
+        "round", "mean VP", "scoreable public", "scoreable secret"
+    );
     for (round, (vp, pub_, sec, count)) in &by_round {
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let c = *count as f64;
-        println!("{round:<7} {:>10.3} {:>18.2} {:>18.2}", vp / c, pub_ / c, sec / c);
+        println!(
+            "{round:<7} {:>10.3} {:>18.2} {:>18.2}",
+            vp / c,
+            pub_ / c,
+            sec / c
+        );
     }
 
-    println!("
-BY FACTION:");
+    println!(
+        "
+BY FACTION:"
+    );
     println!("{:<9} {:>9} {:>12}", "faction", "mean VP", "shortfall");
     let mut rows: Vec<(&String, &(f64, f64, usize))> = per_faction.iter().collect();
     rows.sort_by(|a, b| (b.1.0 / b.1.2 as f64).total_cmp(&(a.1.0 / a.1.2 as f64)));

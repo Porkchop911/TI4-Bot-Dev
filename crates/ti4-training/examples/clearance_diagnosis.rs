@@ -168,13 +168,17 @@ fn main() {
             } else {
                 "neither"
             };
-            let cell = by_route.entry((seat.faction.clone(), route)).or_insert((0, 0));
+            let cell = by_route
+                .entry((seat.faction.clone(), route))
+                .or_insert((0, 0));
             cell.0 += 1;
             cell.1 += cleared;
 
             *seats_seen.entry(seat.faction.clone()).or_default() += 1;
             for card in &followed {
-                *by_secondary.entry((seat.faction.clone(), *card)).or_default() += 1;
+                *by_secondary
+                    .entry((seat.faction.clone(), *card))
+                    .or_default() += 1;
             }
         }
     }
@@ -182,7 +186,10 @@ fn main() {
     println!("{} games, checkpoint {path}\n", games.len());
 
     println!("HOW FAR SHORT the failures were (shortfall, only seats that missed):");
-    println!("{:<9} {:>7} {:>8} {:>8} {:>8} {:>8}", "faction", "misses", "mean", "<=0.5", "<=1.0", ">2.0");
+    println!(
+        "{:<9} {:>7} {:>8} {:>8} {:>8} {:>8}",
+        "faction", "misses", "mean", "<=0.5", "<=1.0", ">2.0"
+    );
     for (faction, values) in &shortfalls {
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let n = values.len().max(1) as f64;
@@ -230,8 +237,10 @@ fn main() {
         println!();
     }
 
-    println!("
-ROUND-1 SECONDARIES FOLLOWED (% of that faction's seats)");
+    println!(
+        "
+ROUND-1 SECONDARIES FOLLOWED (% of that faction's seats)"
+    );
     let secondaries = ["Lead", "Dipl", "Cons", "Trad", "Warf", "Tech", "Draw"];
     print!("{:<9}", "faction");
     for card in secondaries {
@@ -242,7 +251,10 @@ ROUND-1 SECONDARIES FOLLOWED (% of that faction's seats)");
         print!("{:<9}", faction.as_str());
         let seats = seats_seen.get(faction).copied().unwrap_or(0).max(1);
         for card in secondaries {
-            let n = by_secondary.get(&(faction.clone(), card)).copied().unwrap_or(0);
+            let n = by_secondary
+                .get(&(faction.clone(), card))
+                .copied()
+                .unwrap_or(0);
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let rate = 100.0 * n as f64 / seats as f64;
             print!("{rate:>8.0}%");

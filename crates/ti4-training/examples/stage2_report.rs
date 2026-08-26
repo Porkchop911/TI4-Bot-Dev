@@ -10,9 +10,7 @@ use ti4_content::ContentStore;
 use ti4_model::content_types::FULL;
 use ti4_model::id::FactionId;
 use ti4_policy::learned::Profile;
-use ti4_training::rollout::{
-    Horizon, OpeningMap, audit_game, play_rotated_save54_pool_batch,
-};
+use ti4_training::rollout::{Horizon, OpeningMap, audit_game, play_rotated_save54_pool_batch};
 
 const POOL: &str = "D:/Projects/ti4-engine/data/map_pools/save52_e400_n8192.json.gz";
 

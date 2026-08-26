@@ -58,7 +58,10 @@ fn is_anomaly(raw: &serde_json::Value) -> bool {
     })
 }
 
-#[expect(clippy::too_many_lines, reason = "one pass, the reporting kept visible")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass, the reporting kept visible"
+)]
 fn main() {
     let store = ContentStore::embedded();
     let input = argument("--in").expect("--in");
@@ -97,8 +100,12 @@ fn main() {
             }
         }
     }
-    println!("board geometry: {} coordinates, {} home slots, {} non-home adjacencies",
-        coords.len(), slots.len(), edges.len());
+    println!(
+        "board geometry: {} coordinates, {} home slots, {} non-home adjacencies",
+        coords.len(),
+        slots.len(),
+        edges.len()
+    );
 
     // Anomaly and planet-count lookups, resolved once per distinct tile id.
     let raw: BTreeMap<String, serde_json::Value> = {
@@ -142,9 +149,7 @@ fn main() {
                 anomalies_seen.insert(tile.clone());
             }
         }
-        let touching = edges
-            .iter()
-            .any(|(a, b)| flags[*a].1 && flags[*b].1);
+        let touching = edges.iter().any(|(a, b)| flags[*a].1 && flags[*b].1);
         if touching {
             touching_boards += 1;
         }
@@ -164,20 +169,45 @@ fn main() {
     println!("\n{input}: {total} arrangements");
     println!("\nplanetless non-home systems per board:");
     for (count, boards) in &histogram {
-        let marker = if *count >= min && *count <= max { "  <-- in band" } else { "" };
-        println!("  {count:>3}  {boards:>6}  {:>5.1}%{marker}", share(*boards));
+        let marker = if *count >= min && *count <= max {
+            "  <-- in band"
+        } else {
+            ""
+        };
+        println!(
+            "  {count:>3}  {boards:>6}  {:>5.1}%{marker}",
+            share(*boards)
+        );
     }
     println!("\nanomaly tiles used off the home slots: {anomalies_seen:?}");
-    println!("boards with two anomalies adjacent: {touching_boards} ({:.1}%)", share(touching_boards));
-    println!("boards in the {min}..={max} band:        {band_only} ({:.1}%)", share(band_only));
-    println!("kept (band{}):            {} ({:.1}%)",
-        if allow_touching { "" } else { ", no touching anomalies" },
+    println!(
+        "boards with two anomalies adjacent: {touching_boards} ({:.1}%)",
+        share(touching_boards)
+    );
+    println!(
+        "boards in the {min}..={max} band:        {band_only} ({:.1}%)",
+        share(band_only)
+    );
+    println!(
+        "kept (band{}):            {} ({:.1}%)",
+        if allow_touching {
+            ""
+        } else {
+            ", no touching anomalies"
+        },
         kept.len(),
-        share(kept.len()));
-    assert!(!kept.is_empty(), "the filter keeps no boards; widen the band");
+        share(kept.len())
+    );
+    assert!(
+        !kept.is_empty(),
+        "the filter keeps no boards; widen the band"
+    );
 
     pool["arrangements"] = serde_json::to_value(&kept).expect("serialize arrangements");
-    std::fs::write(&output, serde_json::to_string(&pool).expect("serialize pool"))
-        .expect("write pool");
+    std::fs::write(
+        &output,
+        serde_json::to_string(&pool).expect("serialize pool"),
+    )
+    .expect("write pool");
     println!("wrote {output}");
 }

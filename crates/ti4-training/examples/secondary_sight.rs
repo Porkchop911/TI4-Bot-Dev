@@ -25,8 +25,10 @@ fn main() {
         .map(|name| FactionId::new(*name))
         .collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     ti4_training::rollout::set_seat_scramble(true);
     let head_name = std::env::args()
@@ -45,9 +47,15 @@ fn main() {
         .collect();
     let seeds: Vec<u64> = (98_000_000..98_000_020).collect();
     let games = play_rotated_save54_pool_batch(
-        store, &factions, &profiles, FULL, &seeds,
-        Horizon::opening(), ti4_engine::opening::DEFAULT_REQUIREMENT,
-        Arc::clone(&pool), 20_000_000,
+        store,
+        &factions,
+        &profiles,
+        FULL,
+        &seeds,
+        Horizon::opening(),
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        Arc::clone(&pool),
+        20_000_000,
     );
 
     // Four sample decisions, printed in full.
@@ -59,7 +67,10 @@ fn main() {
                     continue;
                 }
                 shown += 1;
-                println!("--- secondary decision {shown} (seat {}, chose {})", seat.player, step.chosen);
+                println!(
+                    "--- secondary decision {shown} (seat {}, chose {})",
+                    seat.player, step.chosen
+                );
                 for (option, vector) in &step.legal {
                     let mut names: Vec<String> = vector
                         .iter()
@@ -109,8 +120,10 @@ fn main() {
             }
         }
     }
-    println!("
-crossed seat facts at every {head_name} decision, and how often each value appears:");
+    println!(
+        "
+crossed seat facts at every {head_name} decision, and how often each value appears:"
+    );
     for (fact, counts) in &fact_values {
         let distinct = counts.len();
         let mut shown: Vec<String> = counts
@@ -119,7 +132,10 @@ crossed seat facts at every {head_name} decision, and how often each value appea
             .collect();
         shown.truncate(6);
         let flag = if distinct == 1 { "  <-- CONSTANT" } else { "" };
-        println!("  {fact:<20} {distinct:>3} distinct  {}{flag}", shown.join(" "));
+        println!(
+            "  {fact:<20} {distinct:>3} distinct  {}{flag}",
+            shown.join(" ")
+        );
     }
 
     // How many distinct vectors does the head ever see?
@@ -149,8 +165,14 @@ crossed seat facts at every {head_name} decision, and how often each value appea
         }
     }
     println!("\n{total} secondary decisions over {} games", games.len());
-    println!("distinct option vectors seen by the head: {}", distinct.len());
-    println!("distinct vectors for the 'yes' option    : {}", distinct_yes.len());
+    println!(
+        "distinct option vectors seen by the head: {}",
+        distinct.len()
+    );
+    println!(
+        "distinct vectors for the 'yes' option    : {}",
+        distinct_yes.len()
+    );
     println!(
         "\nIf 'yes' has only a handful of distinct vectors, the head cannot be answering\n\
          'is THIS secondary worth it' -- there are eight different secondaries."

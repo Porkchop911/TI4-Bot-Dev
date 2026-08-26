@@ -38,8 +38,10 @@ fn main() {
         .map(|name| FactionId::new(*name))
         .collect();
     let pool = Arc::new(
-        ti4_sim::MapPool::load(std::path::Path::new("out/pools/save52_e400_holdout.json.gz"))
-            .expect("pool"),
+        ti4_sim::MapPool::load(std::path::Path::new(
+            "out/pools/save52_e400_holdout.json.gz",
+        ))
+        .expect("pool"),
     );
     ti4_training::rollout::set_seat_scramble(true);
     let path = std::env::args()
@@ -55,9 +57,15 @@ fn main() {
         .collect();
     let seeds: Vec<u64> = (98_000_000..98_000_030).collect();
     let games = play_rotated_save54_pool_batch(
-        store, &factions, &profiles, FULL, &seeds,
-        Horizon::opening(), ti4_engine::opening::DEFAULT_REQUIREMENT,
-        Arc::clone(&pool), 20_000_000,
+        store,
+        &factions,
+        &profiles,
+        FULL,
+        &seeds,
+        Horizon::opening(),
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        Arc::clone(&pool),
+        20_000_000,
     );
 
     let mut heads: BTreeMap<String, Row> = BTreeMap::new();
@@ -138,8 +146,10 @@ fn main() {
             100.0 * state / n
         );
     }
-    println!("
-OPTION IDS of the heads that carry no state at all (sample):");
+    println!(
+        "
+OPTION IDS of the heads that carry no state at all (sample):"
+    );
     for (head, row) in &heads {
         if row.with_state * 100 < row.decisions && row.decisions > 100 {
             let sample: Vec<&str> = row.ids.iter().map(String::as_str).take(6).collect();

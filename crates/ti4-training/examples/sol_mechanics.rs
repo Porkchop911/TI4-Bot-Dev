@@ -43,8 +43,8 @@ fn main() {
     let seeds: u64 = std::env::args()
         .find_map(|a| a.strip_prefix("--seeds=").and_then(|v| v.parse().ok()))
         .unwrap_or(60);
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     ti4_training::rollout::set_seat_scramble(true);
 
     let document: serde_json::Value =
@@ -89,9 +89,7 @@ fn main() {
                     drop_offered += 1;
                     if step.chosen == "faction|orbital_drop" {
                         drop_taken += 1;
-                        *drop_by_round
-                            .entry(step.progress.round_number)
-                            .or_default() += 1;
+                        *drop_by_round.entry(step.progress.round_number).or_default() += 1;
                     }
                 }
                 // Promissory options are `pn{alias}:{faction}:{price}`.
@@ -101,9 +99,7 @@ fn main() {
                 if let Some(rest) = step.chosen.strip_prefix("pn") {
                     let mut parts = rest.split(':');
                     if let (Some(alias), Some(owner)) = (parts.next(), parts.next()) {
-                        *notes_taken
-                            .entry(format!("{alias}:{owner}"))
-                            .or_default() += 1;
+                        *notes_taken.entry(format!("{alias}:{owner}")).or_default() += 1;
                         if alias == "ms" && owner == "sol" {
                             *ms_taken_by.entry(faction.clone()).or_default() += 1;
                         }
@@ -120,8 +116,14 @@ fn main() {
     println!("checkpoint {path}\n");
 
     println!("ORBITAL DROP ({sol_seats} sol seats)");
-    println!("  offered      {drop_offered:>6}   ({:.2} per sol seat)", per_seat(drop_offered));
-    println!("  taken        {drop_taken:>6}   ({:.2} per sol seat)", per_seat(drop_taken));
+    println!(
+        "  offered      {drop_offered:>6}   ({:.2} per sol seat)",
+        per_seat(drop_offered)
+    );
+    println!(
+        "  taken        {drop_taken:>6}   ({:.2} per sol seat)",
+        per_seat(drop_taken)
+    );
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
     let rate = 100.0 * drop_taken as f64 / drop_offered.max(1) as f64;
     println!("  taken when offered: {rate:.1}%");
@@ -135,9 +137,7 @@ fn main() {
         per_seat(ms_total)
     );
     println!("  taken by: {ms_taken_by:?}");
-    println!(
-        "  -> sol loses a strategy token that many times, when it has one to lose"
-    );
+    println!("  -> sol loses a strategy token that many times, when it has one to lose");
 
     println!("\nALL PROMISSORY NOTES TAKEN (alias:owner)");
     let mut rows: Vec<_> = notes_taken.iter().collect();

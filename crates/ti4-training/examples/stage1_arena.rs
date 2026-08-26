@@ -109,7 +109,10 @@ fn report(update: usize, metrics: &BTreeMap<FactionId, OpeningMetrics>) {
     );
 }
 
-#[expect(clippy::too_many_lines, reason = "one block per phase, read as a report")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one block per phase, read as a report"
+)]
 fn main() -> Result<(), String> {
     let updates = number("--updates", 800);
     let every = number("--every", 100).max(1);
@@ -254,8 +257,12 @@ fn main() -> Result<(), String> {
         "  batch: {train_seeds} seeds x 6 rotations = {} games/update, seed base {train_seed_base}",
         train_seeds * 6
     );
-    println!("  maps: Python-compatible pool {}",
-        map_pool_path.as_ref().map_or_else(String::new, |path| path.display().to_string()));
+    println!(
+        "  maps: Python-compatible pool {}",
+        map_pool_path
+            .as_ref()
+            .map_or_else(String::new, |path| path.display().to_string())
+    );
     println!("  step: learning rate {learning_rate:.4} (entropy {entropy}, clip 1)");
     if discount < 1.0 {
         println!("  reward: returns discounted at gamma {discount:.3}");

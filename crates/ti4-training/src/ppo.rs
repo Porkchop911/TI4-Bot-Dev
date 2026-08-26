@@ -421,7 +421,11 @@ pub fn apply(
             .into_iter()
             .map(|slot| {
                 let entropy = step.entropy
-                    + if head == "strategy" { step.draft_entropy } else { 0.0 };
+                    + if head == "strategy" {
+                        step.draft_entropy
+                    } else {
+                        0.0
+                    };
                 let value = row.gradient.get(&slot).copied().unwrap_or(0.0)
                     + entropy * row.entropy_gradient.get(&slot).copied().unwrap_or(0.0);
                 (slot, value)
@@ -457,7 +461,8 @@ pub fn apply(
         )]
         let clipped = row.clipped as f64;
         let return_mean = row.return_sum / divisor;
-        let return_variance = (row.return_square_sum / divisor - return_mean * return_mean).max(0.0);
+        let return_variance =
+            (row.return_square_sum / divisor - return_mean * return_mean).max(0.0);
         told.insert(
             head.clone(),
             (

@@ -59,10 +59,14 @@ fn argument(name: &str) -> Option<String> {
 fn main() {
     let content = ContentStore::embedded();
     let checkpoint = argument("--checkpoint").expect("--checkpoint");
-    let rounds: u32 = argument("--rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
-    let seeds: u64 = argument("--seeds").and_then(|v| v.parse().ok()).unwrap_or(40);
-    let pool_path =
-        argument("--map-pool").unwrap_or_else(|| "out/pools/save52_e400_holdout.json.gz".to_owned());
+    let rounds: u32 = argument("--rounds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let seeds: u64 = argument("--seeds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let pool_path = argument("--map-pool")
+        .unwrap_or_else(|| "out/pools/save52_e400_holdout.json.gz".to_owned());
 
     let names: BTreeMap<String, String> = {
         let raw = include_str!("../../ti4-content/content/technologies.json");

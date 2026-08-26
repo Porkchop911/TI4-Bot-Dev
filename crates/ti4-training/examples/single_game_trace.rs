@@ -62,11 +62,9 @@ impl Decider for TraceBot {
         choice: &Choice,
         seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
-        let (features, probabilities) = self.inner.consider(
-            seen.observed(),
-            choice,
-            &seen.held_secret_progress(),
-        );
+        let (features, probabilities) =
+            self.inner
+                .consider(seen.observed(), choice, &seen.held_secret_progress());
         // Raw scores from the same public primitives `consider` uses internally.
         let requested_head = decision_head(choice);
         let resolved_head = self.inner.profile().resolved_head(requested_head);

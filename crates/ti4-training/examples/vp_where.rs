@@ -45,7 +45,9 @@ impl Decider for ScoreBot {
             .iter()
             .map(std::string::ToString::to_string)
             .collect();
-        let points = seen.seat(&self.player).map_or(0, |seat| seat.victory_points);
+        let points = seen
+            .seat(&self.player)
+            .map_or(0, |seat| seat.victory_points);
         self.secrets_held = seen
             .seat(&self.player)
             .map_or(0, |seat| seat.secret_objectives_held);
@@ -79,17 +81,27 @@ fn argument(name: &str) -> Option<String> {
 fn main() {
     let content = ContentStore::embedded();
     let checkpoint = argument("--checkpoint").expect("--checkpoint");
-    let rounds: u32 = argument("--rounds").and_then(|v| v.parse().ok()).unwrap_or(4);
-    let seeds: u64 = argument("--seeds").and_then(|v| v.parse().ok()).unwrap_or(40);
-    let pool_path =
-        argument("--map-pool").unwrap_or_else(|| "out/pools/save52_e400_holdout.json.gz".to_owned());
+    let rounds: u32 = argument("--rounds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let seeds: u64 = argument("--seeds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let pool_path = argument("--map-pool")
+        .unwrap_or_else(|| "out/pools/save52_e400_holdout.json.gz".to_owned());
     println!("pool {pool_path}");
 
     // Objective aliases -> (name, points), from both decks.
     let mut catalogue: BTreeMap<String, (String, i32)> = BTreeMap::new();
     for (deck, raw) in [
-        ("pub", include_str!("../../ti4-content/content/public_objectives.json")),
-        ("SEC", include_str!("../../ti4-content/content/secret_objectives.json")),
+        (
+            "pub",
+            include_str!("../../ti4-content/content/public_objectives.json"),
+        ),
+        (
+            "SEC",
+            include_str!("../../ti4-content/content/secret_objectives.json"),
+        ),
     ] {
         let list: Vec<serde_json::Value> = serde_json::from_str(raw).expect("objectives");
         for entry in list {
@@ -205,8 +217,10 @@ fn main() {
         }
     }
 
-    println!("objectives SCORED at the last observed decision, {rounds} rounds
-");
+    println!(
+        "objectives SCORED at the last observed decision, {rounds} rounds
+"
+    );
     for faction in FACTIONS {
         let seats = seats_seen.get(faction).copied().unwrap_or(0).max(1);
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]

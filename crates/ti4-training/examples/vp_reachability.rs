@@ -24,7 +24,10 @@ const SOURCES: [(&str, &[&str]); 9] = [
     ("Shard of the Throne", &["shard"]),
     ("Crown of Emphidia", &["emphidia", "crown"]),
     ("Imperial Rider", &["rider"]),
-    ("agenda VP (Mutiny/Seed/Censure)", &["mutiny", "seed of an empire", "censure"]),
+    (
+        "agenda VP (Mutiny/Seed/Censure)",
+        &["mutiny", "seed of an empire", "censure"],
+    ),
     ("Imperial (strategy card)", &["imperial"]),
 ];
 
@@ -53,9 +56,15 @@ fn main() {
 
     let seeds: Vec<u64> = (98_000_000..98_000_040).collect();
     let games = play_rotated_save54_pool_batch(
-        store, &factions, &profiles, FULL, &seeds,
-        Horizon::rounds(rounds), ti4_engine::opening::DEFAULT_REQUIREMENT,
-        Arc::clone(&pool), 20_000_000,
+        store,
+        &factions,
+        &profiles,
+        FULL,
+        &seeds,
+        Horizon::rounds(rounds),
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        Arc::clone(&pool),
+        20_000_000,
     );
 
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -76,7 +85,9 @@ fn main() {
                 for option in step.legal.keys() {
                     seen.insert(option.to_lowercase());
                     if option == "ss" {
-                        *heads.entry("[offered:support-swap]".to_owned()).or_default() += 1;
+                        *heads
+                            .entry("[offered:support-swap]".to_owned())
+                            .or_default() += 1;
                     }
                 }
                 if step.chosen == "ss" {
@@ -97,10 +108,20 @@ fn main() {
         let hit = seen
             .iter()
             .any(|text| needles.iter().any(|needle| text.contains(needle)));
-        println!("  {:<34} {}", label, if hit { "reachable" } else { "NEVER OFFERED" });
+        println!(
+            "  {:<34} {}",
+            label,
+            if hit { "reachable" } else { "NEVER OFFERED" }
+        );
     }
     println!("\nheads exercised: {}", heads.len());
     let mut rows: Vec<(&String, &usize)> = heads.iter().collect();
     rows.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
-    println!("  {}", rows.iter().map(|(h, c)| format!("{h}:{c}")).collect::<Vec<_>>().join("  "));
+    println!(
+        "  {}",
+        rows.iter()
+            .map(|(h, c)| format!("{h}:{c}"))
+            .collect::<Vec<_>>()
+            .join("  ")
+    );
 }

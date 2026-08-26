@@ -80,8 +80,12 @@ fn main() {
 
     println!("checkpoint: {checkpoint}");
     println!("panel: {seeds} seeds x 6 rotations on held-out boards\n");
-    println!("Each faction trained, played against FIVE TRAINED opponents (the usual measurement),");
-    println!("then against FIVE BLANK opponents. Same maps, same seeds; only the opposition moves.\n");
+    println!(
+        "Each faction trained, played against FIVE TRAINED opponents (the usual measurement),"
+    );
+    println!(
+        "then against FIVE BLANK opponents. Same maps, same seeds; only the opposition moves.\n"
+    );
     println!(
         "{:<9} {:>10} {:>10} {:>9}   {:>8} {:>8}",
         "faction", "vs trained", "vs blank", "lift", "plan.tr", "plan.bl"

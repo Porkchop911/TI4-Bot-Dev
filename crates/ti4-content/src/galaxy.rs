@@ -173,10 +173,9 @@ impl<'a> Planet<'a> {
     /// on them.
     #[must_use]
     pub fn planet_types(&self) -> Vec<&'a str> {
-        self.record.text("planetType").map_or_else(
-            || self.record.strings("planetTypes"),
-            |single| vec![single],
-        )
+        self.record
+            .text("planetType")
+            .map_or_else(|| self.record.strings("planetTypes"), |single| vec![single])
     }
 
     /// The planet's first trait, when it has one.

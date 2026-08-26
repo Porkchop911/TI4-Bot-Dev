@@ -4,8 +4,8 @@
 //! `_gain_fragment` and `_attach`, plus the fragment half of `engine/relics.py`.
 
 use ti4_content::ContentStore;
-use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_content::galaxy::Galaxy;
+use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlanetId, PlayerId, RelicId, SystemId};
 use ti4_model::state::GameState;
 
@@ -433,7 +433,11 @@ fn resolve_instant(
 /// Deep space and planetless anomalies both qualify: what matters is that there is nothing to
 /// land on, which is what makes the token the only reason to go there at all.
 #[must_use]
-pub fn frontier_systems(content: &ContentStore, sources: SourceSet, galaxy: &Galaxy) -> Vec<SystemId> {
+pub fn frontier_systems(
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &Galaxy,
+) -> Vec<SystemId> {
     let mut systems: Vec<SystemId> = galaxy
         .system_ids()
         .into_iter()

@@ -196,7 +196,10 @@ fn main() {
         failed.seats,
         games.len()
     );
-    println!("{:<26} {:>10} {:>10} {:>10}", "per seat", "cleared", "FAILED", "diff");
+    println!(
+        "{:<26} {:>10} {:>10} {:>10}",
+        "per seat", "cleared", "FAILED", "diff"
+    );
     println!("{}", "-".repeat(60));
     let rows: [(&str, fn(&Tally) -> f64); 17] = [
         ("planets gained", |t| t.mean(t.planets)),
