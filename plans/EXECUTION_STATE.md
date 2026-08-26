@@ -5764,3 +5764,29 @@ Full ledgers:
 No Rust source was changed by the reviewer.
 
 ---
+
+## Codex correction stretch: M09-029 accepted, M09-030 ready (2026-08-26)
+
+The earlier 1.329x corrected-harness claim was independently rejected: it left the deciding linear
+scorer in the reconstructed shared-engine term, subtracted an explicit extractor from a different
+MLP projection, and discarded MLP failures. Revision 7 was committed before rerunning and now pins
+the complete-scorer substitution protocol and unchanged bands.
+
+Clean commit `ad87ac5666701a2b95cefd19603e2960442ae943` ran one exact audit, five warm-up pairs, and
+twenty alternating timed pairs over 16 seeds x six rotations x four rounds. All batches reproduced
+the audited fingerprint/outcomes and exactly 132,722 successful non-forced MLP evaluations.
+
+**M09-029: ACCEPT width 256.** Median ratio **1.857x**, range **1.849–1.866x**, sample SD
+**0.004617**, exit 0. The width-128 fallback is not triggered. Raw samples are in
+`plans/evidence/M09-029.md`.
+
+The deferred M09-018 findings are also resolved before exit review: legacy schema-2/3/5 Python
+migrations are explicitly unsupported by the project-wide no-Python-parity scope decision, and the
+missing heuristic-isolation test now uses non-vacuous probes on both authored scorer/filter
+boundaries. M09-030 is dependency-ready and needs its two independent Tier-D passes.
+
+M10-034's first end-to-end PPO driver remains under changes-required review; see
+`plans/M10-034_PPO_DRIVER_OPEN_REVIEW_ITEMS.md` for the per-decision return, fail-closed behavior,
+persistent Adam, alignment, critic-mode baseline, and retained-checkpoint findings.
+
+---

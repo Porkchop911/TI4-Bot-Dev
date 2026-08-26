@@ -47,3 +47,26 @@ does not yet implement that form correctly.
 fixed-stream gate is disallowed, but because the submitted reconstruction contains the deciding
 linear scorer inside its purported shared-engine term. M09-030 remains blocked until a corrected
 committed harness produces fresh evidence and this recheck accepts it.
+
+---
+
+## R4–R6 correction and independent acceptance (2026-08-26)
+
+Resolved in `62e6472`, `323d6d2`, `a65272d`, and the pre-measurement revision-7 specification
+`ad87ac5`:
+
+- the denominator is now a separately executed, unwrapped ordinary linear rollout;
+- both complete, genuinely different scorer paths retain their own extraction/projection cost;
+- substitution is `(linear total - complete linear + complete MLP) / linear total`;
+- an untimed audit pins the exact non-forced decision fingerprint and outcomes, and every warm-up
+  and timed run must reproduce them;
+- conversion/inference failures propagate, and successful MLP evaluations must equal the exact
+  decision count.
+
+The clean committed width-256 run completed 5 warm-up and 20 timed pairs over the full workload:
+median **1.857x**, range **1.849–1.866x**, sample SD **0.004617**, 132,722 non-forced decisions per
+batch, exit 0. Raw samples and provenance are retained in `plans/evidence/M09-029.md`.
+
+**M09-029 verdict: accepted at width 256.** R4–R6 are closed and the earlier STOP is superseded by
+the preregistered revision-7 result. M09-030 is now dependency-ready, but still requires its two
+complete independent Tier-D passes.
