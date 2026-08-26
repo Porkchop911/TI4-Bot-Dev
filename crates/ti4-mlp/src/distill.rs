@@ -814,6 +814,7 @@ pub fn train(
                 // rather than one multiply per decision.
                 #[expect(
                     clippy::cast_precision_loss,
+                    clippy::cast_possible_truncation,
                     reason = "decision counts are exact in f64"
                 )]
                 let weights: Vec<f32> = samples

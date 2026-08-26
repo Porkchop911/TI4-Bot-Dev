@@ -388,7 +388,7 @@ fn run_linear_batch(
 fn median(values: &mut [f64]) -> f64 {
     values.sort_by(f64::total_cmp);
     let middle = values.len() / 2;
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         f64::midpoint(values[middle - 1], values[middle])
     } else {
         values[middle]
