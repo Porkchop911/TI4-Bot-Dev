@@ -2,8 +2,11 @@
 
 ## Goal
 
-Load supported learned-policy schemas 2–5 and implement schema-6 CPU MLP inference with factual,
-redacted features and no authored-heuristic leakage.
+Execute the retained schema-4 Rust champions and implement schema-6 CPU MLP inference with factual,
+redacted features and no authored-heuristic leakage. Schemas 2, 3, and 5 have no retained accepted
+artifact in this workspace and are not a compatibility promise: by the project decision recorded in
+`docs/MLP_PLAN.md` §11.3, Python parity is no longer an acceptance criterion. The historical rows
+below remain as provenance, not as authority to invent unused migration formats.
 
 ## Work packages
 
@@ -20,14 +23,14 @@ normative; Python parity is not an acceptance criterion.
 | M09-005 | Explicit sparse layout | 001 | `policy_linear.py` | Stable head/feature indexing, profile-to-vector and vector-to-profile validation. |
 | M09-006 | Decision-head router | M08 | `decision_head` | Current precedence and fallback behavior for every observed choice kind. |
 | M09-007 | Schema 3 explicit policy | 005,006 | `ExplicitHeadPolicy` | Sparse feature scoring and full legal-set softmax. |
-| M09-008 | Schema 3→4 economy migration | 007 | migration/economy split tests | Copy semantics and routing match Python; old checkpoints resume. |
-| M09-009 | Schema 4→5 other migration | 007 | other-head split tests | Scoring/agenda/exploration/ability/transit splits and precedence match. |
+| M09-008 | Schema 3→4 economy migration *(historical, out of current scope)* | 007 | migration/economy split tests | No retained schema-3 artifact; Python-compatible migration is not an acceptance criterion after the §11.3 decision. |
+| M09-009 | Schema 4→5 other migration *(historical, out of current scope)* | 007 | other-head split tests | Schema-4 fallback remains supported; no retained schema-5 artifact requires migration. |
 | M09-010 | Tactical structured features | 003,007 | learned tactical extractors | Origin/destination/route/cargo/unit/invasion/production factual features. |
 | M09-011 | Opening progress | M08 | `opening_progress` | Gate facts, caps, shortfall, potential calculations match. |
 | M09-012 | Horizon progress | M06 | `horizon_progress` | VP and scoreable-objective factual snapshots with cache invalidation semantics. |
 | M09-013 | Trajectory records | 006,011,012 | `trajectory_record` | Legal matrices, probabilities, chosen option, progress, metadata. |
 | M09-014 | Heuristic isolation | 003–013 | fully learned tests/review doc | Instrumented tests prove authored score/filter/playbook values cannot enter inference. |
-| M09-015 | Existing artifact import | 001–009 | branch checkpoints/profiles | Sample schema 2–5 files validate, migrate, score, and preserve fingerprints as specified. |
+| M09-015 | Existing artifact import *(historical scope corrected)* | 001–009 | branch checkpoints/profiles | Every retained accepted schema-4 profile validates and scores; schema-2/3/5 Python compatibility is out of scope. |
 | M09-016 | Full-round learned smoke | 010–015 | fully learned tests | Blank and trained policies complete 3p and 6p rounds deterministically. |
 | M09-017 | Numerical differential suite | 002–016 | learned-policy tests | Heads, features, logits, probabilities, and selected options meet tolerances. |
 | M09-018 | Frontier schema/math review | 001–017 | — | Review hashing, migrations, softmax stability, feature purity, and compatibility. |
@@ -47,6 +50,6 @@ normative; Python parity is not an acceptance criterion.
 
 ## Exit gate
 
-Existing supported profiles execute in Rust; schema migrations and schema-6 recovery are trustworthy;
+Every retained accepted schema-4 profile executes in Rust; schema-6 recovery is trustworthy;
 hidden information is typed/redacted; CPU MLP inference is deterministic, within its predeclared
 throughput band, and demonstrably free of authored utilities; M09-030 has no unresolved finding.

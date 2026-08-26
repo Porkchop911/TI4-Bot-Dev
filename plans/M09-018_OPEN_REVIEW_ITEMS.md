@@ -188,3 +188,25 @@ are explicitly superseded by later sections.
 findings. None blocks the schema-4-only M09-019 package; F-M09-018-1/2/3/7 remain mandatory before
 M09-030 can close the milestone. No Rust source changed, so the independently reproduced policy
 119/0, training 104/0, Clippy, and known rustfmt results remain applicable.
+
+---
+
+## Pre-M09-030 resolution of deferred findings (2026-08-26)
+
+- **F-M09-018-1, F-M09-018-2, F-M09-018-7 — closed by explicit scope decision.** Python parity is
+  no longer an acceptance criterion (`docs/MLP_PLAN.md` §11.3), and no retained accepted schema-2,
+  schema-3, or schema-5 artifact exists. `M09_LEARNED_POLICY.md` now states the operative goal and
+  exit gate in terms of retained schema-4 champions plus schema-6. These migrations/importers are
+  not silently claimed as implemented; they are explicitly unsupported and may only return through
+  a future reviewed compatibility package.
+- **F-M09-018-3 — resolved in `fda6516`.** Test-only thread-local probes sit on the authored score
+  dispatcher and shortlist boundary. The regression first calls `ScoredBot` and requires both probes
+  to fire (non-vacuity), resets them, executes learned inference over a real observed choice, and
+  requires exactly `(0, 0)` authored-path hits while every legal option is scored.
+
+Focused gate: `cargo test -p ti4-policy
+learned_inference_never_enters_the_authored_score_or_filter_paths` — **1 passed, 0 failed**;
+`cargo clippy -p ti4-policy --all-targets --no-deps -- -D warnings` — **exit 0**.
+
+**Deferred pre-exit findings are resolved.** This does not accept M09-029 or substitute for either
+independent M09-030 Tier-D pass.

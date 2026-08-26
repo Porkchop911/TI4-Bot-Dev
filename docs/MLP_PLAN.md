@@ -3,7 +3,7 @@
 Branch: `codex/mlp-policy`, cut from `605f1c0` on `codex/stage1-parity-fixes`
 (carries the planet-trait fix and the secondary-eligibility gates; 1271 tests green).
 
-Status: **revision 6**, approved as an implementation design after independent
+Status: **revision 7**, approved as an implementation design after independent
 Codex review. M06-021 is merged (`0d751a8`) but **failed its tier C
 review** and is not complete; M06-021a corrects it before any later package.
 Python parity is no longer an acceptance criterion by project decision; official
@@ -13,7 +13,9 @@ in this document is design, not implemented behavior.
 Review history: revisions 2–4 corrected the original design and recorded its
 protocol deviations. Revision 5 closed the remaining architecture, dependency,
 data-leakage, artifact, timing, and accelerator gaps. **Revision 6 resolves the
-M09-024 vocabulary overrun with the feature-compressed input ruling in §13.** Any implementation change
+M09-024 vocabulary overrun with the feature-compressed input ruling in §13. **Revision 7 replaces
+the invalid duplicate-extraction CPU shadow accounting with the predeclared fixed-stream scorer
+substitution in §7.1; its performance bands are unchanged.** Any implementation change
 to these decisions requires a recorded plan revision and the review tier in §11.2.
 
 ---
@@ -1108,17 +1110,38 @@ and advisories, records compiler/CPU/driver/runtime versions, and proves a CPU-o
 load. M10-037 may add the CUDA optimizer backend later; no CUDA-only dependency is
 allowed to block CPU inference.
 
-**CPU gate.** M09 has no MLP optimizer yet, so this gate measures the entire rollout
-batch, not a fictitious “update.” Under the M00 protocol on the same
-machine/workload, run five warm-up and at least twenty timed rollout batches
-(16 seeds × six rotations, four rounds, training pool, 32 threads) for the linear
-policy and a **shadow-MLP** arm in alternating order. In the shadow arm the same
-linear champion still chooses every action with the same RNG; the initialized MLP
-scores the identical legal set first and its logits are discarded. Assert decision
-fingerprints and outcomes match arm-for-arm. This isolates MLP overhead without
-timing two different game trajectories; the tiny linear lookup remains in both
-arms. Preserve raw samples and variance, and exclude checkpoint I/O/training from
-both arms. A separate smoke lets the MLP itself choose actions to prove legality:
+**CPU gate (revision 7).** M09 has no MLP optimizer yet, so this gate reconstructs the entire
+rollout batch cost, not a fictitious “update.” The original shadow arm is rejected historical
+evidence: on this implementation the linear scorer owns schema-4 extraction, while the MLP owns a
+different projection. Running the linear chooser after a shadow MLP therefore repeats extraction;
+the premise that only a tiny lookup remains in both arms is false, and the old shadow ratio cannot
+identify production MLP rollout cost.
+
+Before any fresh result is inspected, revision 7 fixes the replacement protocol. On the same idle
+machine/workload (16 seeds × six rotations, four rounds, training pool, 32 threads):
+
+1. Run one untimed audited linear batch and retain its exact non-forced decision fingerprint and
+   outcomes.
+2. Run five warm-up pairs and at least twenty timed pairs. Each pair contains an **unwrapped ordinary
+   linear rollout** and a probe rollout in alternating order. The ordinary rollout is the
+   uncontaminated denominator; no clocks, hashes, second scorer, or recording run inside its
+   decisions.
+3. In the probe, the same linear champion chooses with the same RNG. At every non-forced decision,
+   time the complete linear path (its actual explicit extraction plus score) and complete MLP path
+   (its actual projection, sparse conversion, and forward). Do not subtract one extractor from the
+   other. Refuse the first conversion or inference failure and require exactly one successful MLP
+   evaluation per fingerprinted decision.
+4. Require every probe and ordinary run to reproduce the audited decision fingerprint and outcomes.
+   Reconstruct the production rollout ratio only by scorer substitution:
+
+   ```text
+   ratio = (ordinary linear rollout total - complete linear scorer + complete MLP scorer)
+           / ordinary linear rollout total
+   ```
+
+Preserve every raw paired sample and variance; exclude checkpoint I/O/training. The initialized MLP
+is used for cost only, and a separate smoke lets the MLP itself choose actions to prove legality.
+The original bands remain fixed:
 
 | result | consequence |
 |---|---|
