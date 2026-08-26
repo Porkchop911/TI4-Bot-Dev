@@ -417,31 +417,78 @@ pub fn gather_reduce_batch(
     };
     let rows = i64::try_from(options.len()).unwrap_or(0);
 
-    // Per option, in the fixed order, with duplicates summed as they are met.
+    // Straight into the embedding-bag arrays, in the fixed order, with duplicates summed as they
+    // are met.
     //
-    // An earlier version also accumulated every column into a `distinct` vector and sorted and
-    // deduplicated it. That was left over from a gather that really did index distinct rows; the
-    // fused `embedding_bag` below walks the index list directly and never used the result. Its only
-    // remaining consumer was the emptiness test, which is a fold over the aggregates rather than a
-    // sort of every column in the batch — for a 4,096-decision minibatch that is hundreds of
-    // thousands of elements sorted, twice per minibatch, four times per update, to answer a
-    // question with a yes/no answer. Reported by an independent review of the training throughput.
-    let mut per_option: Vec<Vec<(i64, f32)>> = Vec::with_capacity(options.len());
-    let mut empty = true;
+    // An earlier version built a `Vec<Vec<(i64, f32)>>` of aggregates and then copied it into the
+    // flat arrays. That is one heap allocation per option — about 24,000 per PPO minibatch — plus
+    // another for the sorted pairs, to produce data that is written once and read once.
+    //
+    // It also sorted every option on every visit. PPO revisits a frozen batch four times per
+    // update, and `Batch::freeze` now leaves each option's columns strictly increasing, so the
+    // sorted path below simply appends. The unsorted fallback is kept in full for callers that
+    // have not canonicalised — inference reaches here straight from the projection — and reuses one
+    // scratch buffer instead of allocating per option.
+    let total: usize = options.iter().map(|(columns, _)| columns.len()).sum();
+    let mut flat: Vec<i64> = Vec::with_capacity(total);
+    let mut weights: Vec<f32> = Vec::with_capacity(total);
+    let mut offsets: Vec<i64> = Vec::with_capacity(options.len());
+    let mut scratch: Vec<(i64, f32)> = Vec::new();
+
     for (columns, values) in options {
-        let pairs = ordered_pairs(columns, values, capacity)?;
-        let mut aggregated: Vec<(i64, f32)> = Vec::with_capacity(pairs.len());
-        for (column, value) in pairs {
-            match aggregated.last_mut() {
-                Some((last, sum)) if *last == column => *sum += value,
-                _ => aggregated.push((column, value)),
+        offsets.push(i64::try_from(flat.len()).unwrap_or(0));
+        let start = flat.len();
+
+        if columns.len() != values.len() {
+            return Err(TensorError::Ragged {
+                indices: columns.len(),
+                values: values.len(),
+            });
+        }
+        if let Some(&bad) = columns
+            .iter()
+            .find(|column| **column < 0 || **column >= capacity)
+        {
+            return Err(TensorError::OutOfRange {
+                column: bad,
+                capacity,
+            });
+        }
+        if let Some(bad) = values.iter().copied().find(|value| !value.is_finite()) {
+            return Err(TensorError::NotFinite { value: bad });
+        }
+
+        // Strictly increasing means already in `ordered_pairs` order with no duplicates left to
+        // fold, so the aggregate is the input. Checking that is one linear pass over data the
+        // validation above has already walked; sorting to discover the same thing is not.
+        let sorted = columns.windows(2).all(|pair| pair[0] < pair[1]);
+        if sorted {
+            flat.extend_from_slice(columns);
+            weights.extend_from_slice(values);
+            continue;
+        }
+
+        scratch.clear();
+        scratch.extend(columns.iter().copied().zip(values.iter().copied()));
+        scratch.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| total_order_key(left.1).cmp(&total_order_key(right.1)))
+        });
+        for (column, value) in scratch.iter().copied() {
+            // Fold only within this option: `start` is where its entries begin, so the last
+            // element of a *previous* option can never be mistaken for a duplicate.
+            if flat.len() > start && flat[flat.len() - 1] == column {
+                let last = weights.len() - 1;
+                weights[last] += value;
+            } else {
+                flat.push(column);
+                weights.push(value);
             }
         }
-        empty &= aggregated.is_empty();
-        per_option.push(aggregated);
     }
 
-    if empty {
+    if flat.is_empty() {
         // Every option was empty — a decision whose every feature was out of vocabulary. The zero
         // rows are the answer, not an error: the same contract as `gather_reduce`.
         return Ok(Tensor::zeros([rows, width], (Kind::Float, table.device())));
@@ -462,22 +509,7 @@ pub fn gather_reduce_batch(
     // instead, which for a 512-decision micro-batch is around 268 MB and made a CPU epoch time out.
     //
     // `embedding_bag` materialises neither. It walks the index list once and accumulates straight
-    // into the output row, which is precisely the "embedding-bag calculation, not a materialized
-    // `[N, V_cap]` tensor" §4.3 asks for.
-    //
-    // `mode = 0` is sum. `sparse = false` keeps a dense gradient, because the Adam here indexes
-    // `.grad()` as an ordinary tensor; a sparse gradient is a later change that has to go with an
-    // optimiser that understands one.
-    let mut flat: Vec<i64> = Vec::new();
-    let mut weights: Vec<f32> = Vec::new();
-    let mut offsets: Vec<i64> = Vec::with_capacity(options.len());
-    for aggregated in &per_option {
-        offsets.push(i64::try_from(flat.len()).unwrap_or(0));
-        for (column, value) in aggregated {
-            flat.push(*column);
-            weights.push(*value);
-        }
-    }
+    // into the output row.
 
     // An empty bag is legal — a decision whose every feature was out of vocabulary — but
     // `embedding_bag` will not accept an empty index list at all, so that case is handled above.
@@ -507,7 +539,7 @@ pub fn matmul(left: &Tensor, right: &Tensor) -> Tensor {
 /// Flip the sign bit for non-negative values and invert everything for negative ones: the
 /// resulting `u32` orders exactly as the float does, and unlike `partial_cmp` it is *total*, which
 /// is what a sort comparator needs. Non-finite values never reach it.
-const fn total_order_key(value: f32) -> u32 {
+pub const fn total_order_key(value: f32) -> u32 {
     let bits = value.to_bits();
     if bits & 0x8000_0000 == 0 {
         bits ^ 0x8000_0000
@@ -574,6 +606,77 @@ mod emptiness_tests {
         assert!(
             values.iter().all(|value| *value == 0.0),
             "an all-empty batch produced {values:?}"
+        );
+    }
+
+    #[test]
+    fn the_sorted_fast_path_and_the_sorting_fallback_agree_bit_for_bit() {
+        // The contract that lets `Batch::freeze` canonicalise once instead of sorting on all four
+        // epochs. The fixture is deliberately hostile: columns out of order, a duplicate column
+        // whose two values must be folded in `ordered_pairs` order, and a negative value, so the
+        // total-order tie-break actually decides something.
+        let table = table();
+        let columns: [i64; 5] = [5, 1, 5, 3, 1];
+        let values: [f32; 5] = [0.5, -2.0, 0.25, 1.0, 3.0];
+
+        let unsorted: Vec<(&[i64], &[f32])> = vec![(columns.as_slice(), values.as_slice())];
+        let from_fallback = to_vec(
+            &gather_reduce_batch(&table, &unsorted).expect("the fallback path accepts this"),
+        )
+        .expect("readable");
+
+        // The same vector in canonical form, folded exactly as `ordered_pairs` orders it.
+        let mut pairs: Vec<(i64, f32)> = columns
+            .iter()
+            .copied()
+            .zip(values.iter().copied())
+            .collect();
+        pairs.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| total_order_key(left.1).cmp(&total_order_key(right.1)))
+        });
+        let mut canonical_columns: Vec<i64> = Vec::new();
+        let mut canonical_values: Vec<f32> = Vec::new();
+        for (column, value) in pairs {
+            if canonical_columns.last() == Some(&column) {
+                let last = canonical_values.len() - 1;
+                canonical_values[last] += value;
+            } else {
+                canonical_columns.push(column);
+                canonical_values.push(value);
+            }
+        }
+        assert!(
+            canonical_columns.windows(2).all(|pair| pair[0] < pair[1]),
+            "the fixture's canonical form is not strictly increasing, so the fast path would              not be the thing under test"
+        );
+        assert!(
+            canonical_columns.len() < columns.len(),
+            "the fixture folded no duplicate, so it does not exercise the tie-break"
+        );
+
+        let sorted: Vec<(&[i64], &[f32])> =
+            vec![(canonical_columns.as_slice(), canonical_values.as_slice())];
+        let from_fast_path =
+            to_vec(&gather_reduce_batch(&table, &sorted).expect("the fast path accepts this"))
+                .expect("readable");
+
+        assert_eq!(
+            from_fallback
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            from_fast_path
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            "canonicalising changed the gathered result"
+        );
+        // Non-vacuity: an all-zero result would compare equal for the wrong reason.
+        assert!(
+            from_fallback.iter().any(|value| *value != 0.0),
+            "the fixture gathered nothing, so the comparison proves nothing"
         );
     }
 

@@ -141,6 +141,86 @@ pub struct Batch {
     /// `normalise(returns − V_behaviour)`, computed once. Plain `f64`, holding no graph.
     advantages: Vec<f64>,
     mode: CriticMode,
+    /// The same constants a minibatch uploads, in the `f32` the model is built from.
+    ///
+    /// Every one of these was rebuilt per minibatch per epoch — the same values narrowed from `f64`
+    /// four times an update — although only the *selection* changes between epochs. They are
+    /// derived once here, in decision order, and gathered by index when a minibatch is packed.
+    constants: Constants,
+}
+
+/// Per-decision constants, derived once at freeze and indexed thereafter.
+#[derive(Debug)]
+struct Constants {
+    behaviour: Vec<f32>,
+    advantage: Vec<f32>,
+    returns: Vec<f32>,
+    /// Per-option expansion counts, so a minibatch can size its buffers exactly.
+    options: Vec<usize>,
+    heads: Vec<i64>,
+    rows: Vec<i64>,
+}
+
+/// Put one sparse vector into the canonical form `gather_reduce_batch`'s fast path expects.
+///
+/// Strictly increasing columns, each appearing once, duplicates folded. The fold order is exactly
+/// `ordered_pairs`': by column, then by the total order over the f32 bit pattern. That tie-break is
+/// not decoration -- summing two duplicate columns' values in the other order gives a different
+/// f32 -- so reproducing it here is what makes canonicalising once bit-identical to sorting on
+/// every visit, rather than merely close to it.
+///
+/// Done when a batch is frozen. PPO reads a frozen batch four times per update, and the four reads
+/// used to re-sort the same columns each time.
+fn canonicalise(option: &mut crate::SparseOption) {
+    let mut pairs: Vec<(i64, f32)> = option
+        .columns
+        .iter()
+        .copied()
+        .zip(option.values.iter().copied())
+        .collect();
+    pairs.sort_by(|left, right| {
+        left.0.cmp(&right.0).then_with(|| {
+            ti4_tensor::total_order_key(left.1).cmp(&ti4_tensor::total_order_key(right.1))
+        })
+    });
+    option.columns.clear();
+    option.values.clear();
+    for (column, value) in pairs {
+        if option.columns.last() == Some(&column) {
+            let last = option.values.len() - 1;
+            option.values[last] += value;
+        } else {
+            option.columns.push(column);
+            option.values.push(value);
+        }
+    }
+}
+
+impl Constants {
+    /// Derive every per-decision constant a minibatch will need, in decision order.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "behaviour quantities narrow to the f32 the model is built from"
+    )]
+    fn of(steps: &[Step], advantages: &[f64]) -> Self {
+        Constants {
+            behaviour: steps
+                .iter()
+                .map(|step| step.behaviour_log_prob as f32)
+                .collect(),
+            advantage: advantages.iter().map(|value| *value as f32).collect(),
+            returns: steps.iter().map(|step| step.return_to_go as f32).collect(),
+            options: steps.iter().map(|step| step.options.len()).collect(),
+            heads: steps
+                .iter()
+                .map(|step| i64::try_from(step.head).unwrap_or(0))
+                .collect(),
+            rows: steps
+                .iter()
+                .map(|step| i64::try_from(step.row.index()).unwrap_or(0))
+                .collect(),
+        }
+    }
 }
 
 impl Batch {
@@ -204,6 +284,18 @@ impl Batch {
                 }
             }
         }
+        // Canonicalise once, now that every step has been validated. Everything downstream reads
+        // these vectors four times per update and never writes them.
+        let mut steps = steps;
+        for step in &mut steps {
+            for option in &mut step.options {
+                canonicalise(option);
+            }
+            if let Some(critic) = step.critic.as_mut() {
+                canonicalise(critic.sparse_mut());
+            }
+        }
+
         #[expect(
             clippy::cast_precision_loss,
             reason = "decision counts are exact in f64"
@@ -240,10 +332,13 @@ impl Batch {
         if advantages.iter().any(|advantage| !advantage.is_finite()) {
             return Err("normalised PPO advantages are non-finite".to_owned());
         }
+        let constants = Constants::of(&steps, &advantages);
+
         Ok(Self {
             steps,
             advantages,
             mode,
+            constants,
         })
     }
 
@@ -428,14 +523,20 @@ fn score_minibatch(
     }
 
     // ---- flatten every decision's options into one gather ----
-    let mut parts: Vec<(&[i64], &[f32])> = Vec::new();
-    let mut heads: Vec<i64> = Vec::new();
-    let mut rows: Vec<i64> = Vec::new();
+    // Sized exactly before filling: these are the largest host allocations in the loop, and their
+    // final length is known from the frozen batch's per-decision option counts.
+    let expansion: usize = minibatch
+        .iter()
+        .map(|index| batch.constants.options[*index])
+        .sum();
+    let mut parts: Vec<(&[i64], &[f32])> = Vec::with_capacity(expansion);
+    let mut heads: Vec<i64> = Vec::with_capacity(expansion);
+    let mut rows: Vec<i64> = Vec::with_capacity(expansion);
     let mut widest = 0usize;
     for index in minibatch {
         let step = &batch.steps[*index];
-        let head = i64::try_from(step.head).map_err(|_| "head index does not fit i64")?;
-        let row = i64::try_from(step.row.index()).map_err(|_| "faction row does not fit i64")?;
+        let head = batch.constants.heads[*index];
+        let row = batch.constants.rows[*index];
         if step.chosen >= step.options.len() {
             return Err("chosen option is outside the legal set".to_owned());
         }
@@ -456,8 +557,9 @@ fn score_minibatch(
     // ---- scatter the ragged logits into a padded rectangle ----
     // Padding slots index position 0, a real logit, and are then overwritten with `-inf`. Pointing
     // them at a valid position keeps `index_select` in bounds; the mask is what makes them harmless.
-    let mut gather: Vec<i64> = Vec::with_capacity(count * usize::try_from(widest).unwrap_or(0));
-    let mut padding: Vec<bool> = Vec::with_capacity(count * usize::try_from(widest).unwrap_or(0));
+    let rectangle_cells = count * usize::try_from(widest).unwrap_or(0);
+    let mut gather: Vec<i64> = Vec::with_capacity(rectangle_cells);
+    let mut padding: Vec<bool> = Vec::with_capacity(rectangle_cells);
     let mut chosen: Vec<i64> = Vec::with_capacity(count);
     let mut offset = 0i64;
     for index in minibatch {
@@ -504,11 +606,11 @@ fn score_minibatch(
     // requires expressed as data rather than as a call.
     let behaviour: Vec<f32> = minibatch
         .iter()
-        .map(|index| batch.steps[*index].behaviour_log_prob as f32)
+        .map(|index| batch.constants.behaviour[*index])
         .collect();
     let advantage: Vec<f32> = minibatch
         .iter()
-        .map(|index| batch.advantages[*index] as f32)
+        .map(|index| batch.constants.advantage[*index])
         .collect();
     let behaviour = Tensor::from_slice(&behaviour).to_device(device);
     let advantage = Tensor::from_slice(&advantage).to_device(device);
@@ -537,17 +639,14 @@ fn score_minibatch(
                     .as_ref()
                     .ok_or_else(|| "critic mode has no critic input".to_owned())?,
             );
-            critic_rows.push(
-                i64::try_from(step.row.index())
-                    .map_err(|_| "faction row does not fit i64".to_owned())?,
-            );
+            critic_rows.push(batch.constants.rows[*index]);
         }
         let value = actor
             .value_batch(&critics, &critic_rows)
             .map_err(|error| format!("critic scoring failed: {error}"))?;
         let returns: Vec<f32> = minibatch
             .iter()
-            .map(|index| batch.steps[*index].return_to_go as f32)
+            .map(|index| batch.constants.returns[*index])
             .collect();
         let returns = Tensor::from_slice(&returns).to_device(device);
         let squared = (value - returns).square();

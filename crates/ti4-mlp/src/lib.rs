@@ -298,6 +298,11 @@ impl CriticInput {
         seen.len()
     }
 
+    /// The canonical form the frozen PPO batch puts this into, once, before training reads it.
+    pub(crate) const fn sparse_mut(&mut self) -> &mut SparseOption {
+        &mut self.sparse
+    }
+
     pub(crate) const fn sparse(&self) -> &SparseOption {
         &self.sparse
     }
