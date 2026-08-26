@@ -408,8 +408,16 @@ pub fn gather_reduce_batch(
     let rows = i64::try_from(options.len()).unwrap_or(0);
 
     // Per option, in the fixed order, with duplicates summed as they are met.
+    //
+    // An earlier version also accumulated every column into a `distinct` vector and sorted and
+    // deduplicated it. That was left over from a gather that really did index distinct rows; the
+    // fused `embedding_bag` below walks the index list directly and never used the result. Its only
+    // remaining consumer was the emptiness test, which is a fold over the aggregates rather than a
+    // sort of every column in the batch — for a 4,096-decision minibatch that is hundreds of
+    // thousands of elements sorted, twice per minibatch, four times per update, to answer a
+    // question with a yes/no answer. Reported by an independent review of the training throughput.
     let mut per_option: Vec<Vec<(i64, f32)>> = Vec::with_capacity(options.len());
-    let mut distinct: Vec<i64> = Vec::new();
+    let mut empty = true;
     for (columns, values) in options {
         let pairs = ordered_pairs(columns, values, capacity)?;
         let mut aggregated: Vec<(i64, f32)> = Vec::with_capacity(pairs.len());
@@ -418,22 +426,19 @@ pub fn gather_reduce_batch(
                 Some((last, sum)) if *last == column => *sum += value,
                 _ => aggregated.push((column, value)),
             }
-            distinct.push(column);
         }
+        empty &= aggregated.is_empty();
         per_option.push(aggregated);
     }
-    distinct.sort_unstable();
-    distinct.dedup();
 
-    if distinct.is_empty() {
+    if empty {
         // Every option was empty — a decision whose every feature was out of vocabulary. The zero
         // rows are the answer, not an error: the same contract as `gather_reduce`.
         return Ok(Tensor::zeros([rows, width], (Kind::Float, table.device())));
     }
 
-    // The one random-access gather, now over distinct rows only.
     // One host-to-device move per gather, not per option: the flat buffers are assembled on the
-    // host as before and transferred once. Per-decision transfers would dominate a GPU run.
+    // host and transferred once. Per-decision transfers would dominate a GPU run.
     let device = table.device();
 
     // One fused embedding-bag: gather, scale and reduce in a single kernel.

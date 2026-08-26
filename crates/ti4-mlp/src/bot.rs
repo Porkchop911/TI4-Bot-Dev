@@ -83,7 +83,7 @@ pub struct InferenceFailed {
 /// property of the API rather than of each caller remembering (F-M09-026-10): reporting a
 /// successful campaign without consuming the status is not something a caller can express.
 pub struct MlpBot {
-    actor: Actor,
+    actor: std::rc::Rc<Actor>,
     vocabulary: Vocabulary,
     row: FactionRow,
     temperature: f64,
@@ -131,6 +131,27 @@ impl MlpBot {
     /// Seat an actor behind a vocabulary.
     #[must_use]
     pub fn new(actor: Actor, vocabulary: Vocabulary, row: FactionRow, stream: u64) -> Self {
+        Self::sharing(&std::rc::Rc::new(actor), vocabulary, row, stream)
+    }
+
+    /// A bot that reads an actor someone else owns.
+    ///
+    /// Inference never mutates the model, so the six seats of a game — and every game one rollout
+    /// worker plays — can read one copy. [`Self::new`] gives each bot its own, which for a PPO
+    /// update meant 96 games x 6 seats of deep tensor copies per update on top of one per worker:
+    /// gigabytes of pure allocation churn to produce identical read-only weights.
+    ///
+    /// `Rc` rather than `Arc` on purpose. `tch::Tensor` is `Send` but not `Sync`, so an actor must
+    /// not be shared *across* threads; confining the handle to one thread is the property that
+    /// makes this safe, and `Rc` is that property written down.
+    #[must_use]
+    pub fn sharing(
+        actor: &std::rc::Rc<Actor>,
+        vocabulary: Vocabulary,
+        row: FactionRow,
+        stream: u64,
+    ) -> Self {
+        let actor = std::rc::Rc::clone(actor);
         Self {
             actor,
             vocabulary,
@@ -160,12 +181,6 @@ impl MlpBot {
     pub const fn at_temperature(mut self, temperature: f64) -> Self {
         self.temperature = temperature;
         self
-    }
-
-    /// The actor, for a caller that wants to inspect or load weights.
-    #[must_use]
-    pub const fn actor_mut(&mut self) -> &mut Actor {
-        &mut self.actor
     }
 
     /// Turn one option's feature vector into dense columns.

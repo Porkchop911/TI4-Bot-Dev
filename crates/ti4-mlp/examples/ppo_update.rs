@@ -72,7 +72,7 @@ fn refuse(reason: &str) -> ! {
     reason = "a game's inputs; bundling them into a struct would move the list, not shorten it"
 )]
 fn play_one(
-    actor: &ti4_mlp::Actor,
+    actor: &std::rc::Rc<ti4_mlp::Actor>,
     content: &ContentStore,
     players: &[PlayerId],
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
@@ -128,16 +128,12 @@ fn play_one(
                 let stream = seed
                     .wrapping_mul(1_000_003)
                     .wrapping_add(u64::try_from(index).unwrap_or(0));
-                // One detached copy per seat, from this worker's actor. Reading the bundle here
-                // instead — which the first version did — SHA-256 verifies ~17 MB of tensors and
-                // reparses a 1.1 MB slots.json per seat per game: 576 verifications an update, 14
-                // minutes measuring nothing but that mistake.
-                let bot = ti4_mlp::bot::MlpBot::new(
-                    actor.inference_copy(),
-                    vocabulary.clone(),
-                    row,
-                    stream,
-                )
+                // The seats share this worker's one actor. Inference never mutates it, and a
+                // per-seat `inference_copy` meant 96 games x 6 seats of deep tensor copies per
+                // update — gigabytes of allocation to produce identical read-only weights.
+                // Reading the *bundle* here, which the first version did, was worse still: an
+                // SHA-256 over ~17 MB and a reparse of 1.1 MB of slots.json per seat per game.
+                let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
                 .recording_ppo(critic_mode)
                 .from_setup(baseline);
                 if handles.insert(player.clone(), bot.ppo_records()).is_some() {
@@ -487,6 +483,8 @@ fn main() {
         let harvest: Vec<Result<Vec<Played>, String>> = chunks
             .into_par_iter()
             .map(|(local, chunk)| {
+                // One handle per worker, shared by every game it plays and every seat in them.
+                let local = std::rc::Rc::new(local);
                 chunk
                     .iter()
                     .map(|(seed, rotation)| {
