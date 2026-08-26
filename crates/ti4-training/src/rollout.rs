@@ -830,10 +830,43 @@ fn finish_game(
     let mut game = Game::with_table(state, content, table)
         .with_sources(sources)
         .with_galaxy(galaxy);
-    let error = game
-        .run(horizon.rounds, horizon.steps)
-        .err()
-        .map(|error| error.to_string());
+
+    // Round one is run on its own so the opening can be measured where the opening ends.
+    //
+    // `opening::measure` compares a state against the setup snapshot and has no notion of a round,
+    // so measuring it after the horizon answered "did this seat ever reach the bar", not "did its
+    // opening clear". Under a four-round horizon those differ by about sixteen points, and the
+    // second is what `Episode::cleared` is read as everywhere: Stage 1 pays `clear_bonus` for it,
+    // Stage 2 credits `r1_bonus` for it at the last round-one decision on the stated grounds that
+    // "a round-three decision cannot change whether round one cleared" — which was not true of the
+    // quantity being computed. See `plans/M10-034_CLEARANCE_MEASUREMENT_FINDING.md`.
+    //
+    // `Game::run` targets `state.round + rounds`, so this is the same game played in two calls, not
+    // two games. `horizon.steps` guards each call: it is a runaway limit rather than a budget, and
+    // a real four-round game uses a small fraction of it.
+    let opening_error = game.run(1, horizon.steps).err().map(|e| e.to_string());
+    let openings = ti4_engine::opening::measure(
+        &game.state,
+        &baselines
+            .iter()
+            .map(|(player, baseline)| (player.clone(), (baseline.planets, baseline.units)))
+            .collect(),
+        &factions
+            .values()
+            .map(|faction| (faction.to_string(), requirement))
+            .collect(),
+    );
+
+    // The remaining rounds. A game that already finished or errored in round one runs no further,
+    // and keeps the opening that was measured before it stopped.
+    let error = opening_error.or_else(|| {
+        if horizon.rounds <= 1 || game.state.finished {
+            return None;
+        }
+        game.run(horizon.rounds - 1, horizon.steps)
+            .err()
+            .map(|error| error.to_string())
+    });
 
     // Measured once at the end, against the same baselines, so the final snapshot and the
     // per-decision ones are the same measurement taken at different times.
@@ -853,18 +886,6 @@ fn finish_game(
             })
             .collect()
     };
-
-    let openings = ti4_engine::opening::measure(
-        &game.state,
-        &baselines
-            .iter()
-            .map(|(player, baseline)| (player.clone(), (baseline.planets, baseline.units)))
-            .collect(),
-        &factions
-            .values()
-            .map(|faction| (faction.to_string(), requirement))
-            .collect(),
-    );
 
     let seats = players
         .iter()
@@ -2380,6 +2401,98 @@ mod tests {
         );
         assert_eq!(waved.len(), 2);
         assert!(waved[1].statistics.is_empty());
+    }
+
+    #[test]
+    fn the_opening_is_measured_at_the_end_of_round_one_however_long_the_game_runs() {
+        // F-M10-034-C1. `opening::measure` compares a state against the setup snapshot and has no
+        // notion of a round, so measuring it after the horizon answered "did this seat ever reach
+        // the bar" rather than "did its opening clear". On the trained MLP those differed by about
+        // sixteen points, and `Episode::cleared` is read as the opening everywhere -- Stage 1 pays
+        // `clear_bonus` for it and Stage 2 credits `r1_bonus` for it at the last round-one
+        // decision, on the stated grounds that a later decision cannot change it.
+        //
+        // Nothing in the suite pinned this, which is why the semantics could drift in the first
+        // place: the change that fixed it broke no test.
+        let factions: Vec<FactionId> = ["letnev", "jolnar", "sol"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let profiles: BTreeMap<FactionId, Profile> = factions
+            .iter()
+            .map(|faction| {
+                (
+                    faction.clone(),
+                    ti4_policy::learned::blank_explicit_profile(faction.as_str()),
+                )
+            })
+            .collect();
+        let content = ContentStore::embedded();
+        let seeds = vec![11u64, 12u64];
+
+        let one_round = play_rotated_batch(
+            content,
+            &factions,
+            &profiles,
+            POK,
+            &seeds,
+            Horizon::opening(),
+            DEFAULT_REQUIREMENT,
+        );
+        let four_rounds = play_rotated_batch(
+            content,
+            &factions,
+            &profiles,
+            POK,
+            &seeds,
+            Horizon {
+                rounds: 4,
+                steps: 200_000,
+            },
+            DEFAULT_REQUIREMENT,
+        );
+
+        assert_eq!(one_round.len(), four_rounds.len());
+        let mut compared = 0usize;
+        for (short, long) in one_round.iter().zip(four_rounds.iter()) {
+            assert_eq!(short.seed, long.seed);
+            assert_eq!(short.seats.len(), long.seats.len());
+            for (a, b) in short.seats.iter().zip(long.seats.iter()) {
+                assert_eq!(a.player, b.player);
+                assert_eq!(
+                    a.episode.cleared, b.episode.cleared,
+                    "seat {} on seed {}: the opening changed when the game ran longer",
+                    a.player, short.seed
+                );
+                assert!(
+                    (a.episode.shortfall - b.episode.shortfall).abs() < 1e-9,
+                    "seat {} on seed {}: shortfall {} against {}",
+                    a.player,
+                    short.seed,
+                    a.episode.shortfall,
+                    b.episode.shortfall
+                );
+                compared += 1;
+            }
+        }
+        assert!(compared >= 6, "only {compared} seats compared");
+
+        // Non-vacuity: the longer games must actually have gone further, or the two runs would be
+        // the same game and the comparison would prove nothing.
+        assert!(
+            four_rounds
+                .iter()
+                .zip(one_round.iter())
+                .any(|(long, short)| {
+                    long.seats.iter().zip(short.seats.iter()).any(|(b, a)| {
+                        b.episode.final_progress.victory_points
+                            > a.episode.final_progress.victory_points
+                            || b.episode.final_progress.planets_gained
+                                > a.episode.final_progress.planets_gained
+                    })
+                }),
+            "four rounds produced no more progress than one, so the horizons did not differ"
+        );
     }
 
     #[test]
