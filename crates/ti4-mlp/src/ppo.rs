@@ -555,34 +555,51 @@ fn score_minibatch(
         .map_err(|error| format!("policy scoring failed: {error}"))?;
 
     // ---- scatter the ragged logits into a padded rectangle ----
-    // Padding slots index position 0, a real logit, and are then overwritten with `-inf`. Pointing
-    // them at a valid position keeps `index_select` in bounds; the mask is what makes them harmless.
-    let rectangle_cells = count * usize::try_from(widest).unwrap_or(0);
-    let mut gather: Vec<i64> = Vec::with_capacity(rectangle_cells);
-    let mut padding: Vec<bool> = Vec::with_capacity(rectangle_cells);
+    //
+    // The rectangle is `[decisions, widest]`, so most of it is padding: option counts average
+    // around six and the widest decision in a minibatch sets the width. The earlier version built
+    // two host vectors of that full size — an `i64` gather index and a `bool` padding mask — and
+    // uploaded both. What is uploaded now is one slot index per *real* option, which is the ragged
+    // total rather than the rectangle, and both the `-inf` ground and the mask are made on device.
+    //
+    // The mask is derived from the slot list rather than from `padded.eq(-inf)`. Testing the values
+    // would be shorter and would also swallow a genuine `-inf` logit in a real slot, turning a
+    // malformed distribution into a silently zeroed entropy term. Deriving it from the layout keeps
+    // "this cell is padding" and "this cell is bad" distinguishable, so the non-finite refusals
+    // downstream still fire.
+    let mut slots: Vec<i64> = Vec::with_capacity(expansion);
     let mut chosen: Vec<i64> = Vec::with_capacity(count);
     let mut offset = 0i64;
-    for index in minibatch {
+    for (position, index) in minibatch.iter().enumerate() {
         let step = &batch.steps[*index];
         let options = i64::try_from(step.options.len()).map_err(|_| "option count overflow")?;
-        for slot in 0..widest {
-            let real = slot < options;
-            gather.push(if real { offset + slot } else { 0 });
-            padding.push(!real);
+        let row_start =
+            i64::try_from(position).map_err(|_| "minibatch position overflow")? * widest;
+        for slot in 0..options {
+            slots.push(row_start + slot);
         }
         chosen.push(i64::try_from(step.chosen).map_err(|_| "chosen index overflow")?);
         offset += options;
     }
+    debug_assert_eq!(
+        offset,
+        i64::try_from(expansion).unwrap_or(0),
+        "the slot walk and the gather disagree about how many options there are"
+    );
 
     let device = flat.device();
-    let gather_index = Tensor::from_slice(&gather).to_device(device);
-    let mask = Tensor::from_slice(&padding)
-        .to_device(device)
+    let cells = rectangle * widest;
+    let slot_index = Tensor::from_slice(&slots).to_device(device);
+    let padded = Tensor::full(
+        [cells],
+        f64::NEG_INFINITY,
+        (ti4_tensor::Kind::Float, device),
+    )
+    .index_copy(0, &slot_index, &flat)
+    .view([rectangle, widest]);
+    let mask = Tensor::ones([cells], (ti4_tensor::Kind::Bool, device))
+        .index_fill(0, &slot_index, 0)
         .view([rectangle, widest]);
-    let padded = flat
-        .index_select(0, &gather_index)
-        .view([rectangle, widest])
-        .masked_fill(&mask, f64::NEG_INFINITY);
     let log_probs = padded.log_softmax(1, ti4_tensor::Kind::Float);
 
     // `H = -sum p log p` over each decision's own options. `p` is already zero in the padding
