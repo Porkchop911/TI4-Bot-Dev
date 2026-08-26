@@ -38,6 +38,7 @@
 
 pub mod bot;
 pub mod bundle;
+pub mod critic_warmup;
 pub mod distill;
 
 use thiserror::Error;
@@ -270,6 +271,17 @@ impl CriticInput {
         Self {
             sparse: SparseOption { columns, values },
         }
+    }
+
+    /// Wrap an already-verified critic vector.
+    ///
+    /// `pub(crate)` on purpose. Making this public would hand back exactly the escape hatch
+    /// F-M09-027-2 closed: a caller could wrap a policy option's `SparseOption` and feed the value
+    /// head option-derived columns. Training code inside this crate reaches it through
+    /// [`crate::critic_warmup::CriticSample`], which checks that every name belongs to the critic
+    /// namespace before it gets here.
+    pub(crate) const fn from_sparse(sparse: SparseOption) -> Self {
+        Self { sparse }
     }
 
     /// How many distinct columns this input actually occupies.
@@ -600,11 +612,7 @@ impl Actor {
     /// [`ActorError::NotUsable`] if the resulting value is not finite, plus anything the gather
     /// raises.
     pub fn value(&self, critic: &CriticInput, row: FactionRow) -> Result<f64, ActorError> {
-        // The same trunk, one row. `trunk` refuses an empty batch, and a position with no critic
-        // facts at all is a malformed extraction rather than a legal state.
-        let z = self.trunk(std::slice::from_ref(&critic.sparse), row)?;
-        let scalar = z.matmul(&self.w_value) + &self.b_value;
-        let value = scalar.double_value(&[0]);
+        let value = self.value_tensor(critic, row)?.double_value(&[0]);
         if !value.is_finite() {
             return Err(ActorError::NotUsable {
                 what: "the value estimate",
@@ -612,6 +620,26 @@ impl Actor {
             });
         }
         Ok(value)
+    }
+
+    /// `V(s)` as a tensor, so a critic loss can be differentiated through it.
+    ///
+    /// [`Self::value`] reads a number out of this and checks it is finite; a warm-up needs the
+    /// graph instead. Kept as one implementation so the number the critic optimises and the number
+    /// inference reports cannot drift apart.
+    ///
+    /// # Errors
+    /// Anything the gather raises. Unlike [`Self::value`] this does **not** check finiteness — the
+    /// caller is differentiating and will see a non-finite loss.
+    pub fn value_tensor(
+        &self,
+        critic: &CriticInput,
+        row: FactionRow,
+    ) -> Result<Tensor, ActorError> {
+        // The same trunk, one row. `trunk` refuses an empty batch, and a position with no critic
+        // facts at all is a malformed extraction rather than a legal state.
+        let z = self.trunk(std::slice::from_ref(&critic.sparse), row)?;
+        Ok(z.matmul(&self.w_value) + &self.b_value)
     }
 
     /// Probabilities over one decision's options.
