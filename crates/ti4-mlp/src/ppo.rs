@@ -184,9 +184,15 @@ impl Batch {
                         || critic.sparse().columns.is_empty()
                         || critic.sparse().columns.len() != critic.sparse().values.len()
                         || critic.sparse().columns.iter().any(|column| *column < 0)
-                        || critic.sparse().values.iter().any(|value| !value.is_finite())
+                        || critic
+                            .sparse()
+                            .values
+                            .iter()
+                            .any(|value| !value.is_finite())
                     {
-                        return Err(format!("PPO step {index} has malformed critic behavior data"));
+                        return Err(format!(
+                            "PPO step {index} has malformed critic behavior data"
+                        ));
                     }
                 }
                 CriticMode::BatchMean => {
@@ -198,7 +204,10 @@ impl Batch {
                 }
             }
         }
-        #[expect(clippy::cast_precision_loss, reason = "decision counts are exact in f64")]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "decision counts are exact in f64"
+        )]
         let return_mean =
             steps.iter().map(|step| step.return_to_go).sum::<f64>() / steps.len() as f64;
         // The loop above already refused a missing behaviour value in the critic modes, so this
@@ -916,11 +925,14 @@ mod tests {
 
     #[test]
     fn advantages_are_frozen_and_normalised_once() {
-        let batch = Batch::freeze(vec![
-            step(0, 2, 3.0, 1.0),
-            step(1, 3, 1.0, 1.0),
-            step(0, 2, 2.0, 4.0),
-        ], CriticMode::Shared)
+        let batch = Batch::freeze(
+            vec![
+                step(0, 2, 3.0, 1.0),
+                step(1, 3, 1.0, 1.0),
+                step(0, 2, 2.0, 4.0),
+            ],
+            CriticMode::Shared,
+        )
         .expect("valid batch");
         let advantages = batch.advantages().to_vec();
 
@@ -942,11 +954,14 @@ mod tests {
     fn the_advantage_uses_the_behaviour_value_not_the_current_one() {
         // `return − V_behaviour`, so a batch whose returns all equal their behaviour values has no
         // signal at all — whatever the current critic would now say about those positions.
-        let batch = Batch::freeze(vec![
-            step(0, 2, 2.0, 2.0),
-            step(0, 2, 5.0, 5.0),
-            step(0, 2, 1.0, 1.0),
-        ], CriticMode::Shared)
+        let batch = Batch::freeze(
+            vec![
+                step(0, 2, 2.0, 2.0),
+                step(0, 2, 5.0, 5.0),
+                step(0, 2, 1.0, 1.0),
+            ],
+            CriticMode::Shared,
+        )
         .expect("valid batch");
         for advantage in batch.advantages() {
             assert!(
@@ -1173,12 +1188,15 @@ mod tests {
     fn the_same_update_twice_produces_the_same_numbers() {
         // §6.3's deterministic reduction. Two updates from the same start, same batch and same
         // shuffle seed must agree exactly — not nearly.
-        let batch = Batch::freeze(vec![
-            batch_mean_step(0, 2, 3.0),
-            batch_mean_step(1, 3, 1.0),
-            batch_mean_step(0, 4, 5.0),
-            batch_mean_step(2, 3, 2.0),
-        ], CriticMode::BatchMean)
+        let batch = Batch::freeze(
+            vec![
+                batch_mean_step(0, 2, 3.0),
+                batch_mean_step(1, 3, 1.0),
+                batch_mean_step(0, 4, 5.0),
+                batch_mean_step(2, 3, 2.0),
+            ],
+            CriticMode::BatchMean,
+        )
         .expect("valid batch");
         let run = || {
             let mut actor = trainable_actor();
@@ -1325,7 +1343,11 @@ mod tests {
             .expect("update");
         }
         let carried = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
-        assert_eq!(retained.steps(), 2, "the retained cursor did not advance twice");
+        assert_eq!(
+            retained.steps(),
+            2,
+            "the retained cursor did not advance twice"
+        );
 
         let mut actor = trainable_actor();
         for batch in [&first, &second] {
@@ -1340,7 +1362,11 @@ mod tests {
                 &mut fresh,
             )
             .expect("update");
-            assert_eq!(fresh.steps(), 1, "a fresh optimiser is meant to start at one");
+            assert_eq!(
+                fresh.steps(),
+                1,
+                "a fresh optimiser is meant to start at one"
+            );
         }
         let restarted = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
 
@@ -1363,9 +1389,8 @@ mod tests {
         // The specific refusal, not merely "some error": an `is_err` here would also pass if the
         // fixture were malformed for an unrelated reason, which is the failure mode this milestone
         // kept producing.
-        let refusal = carries_a_value.expect_err(
-            "batch-mean accepted a stored behaviour value it is defined not to use",
-        );
+        let refusal = carries_a_value
+            .expect_err("batch-mean accepted a stored behaviour value it is defined not to use");
         assert!(
             refusal.contains("unused critic data in batch-mean mode"),
             "batch-mean refused for the wrong reason: {refusal}"
@@ -1410,8 +1435,11 @@ mod tests {
     fn batch_mean_mode_trains_no_critic() {
         // §6.3: "set critic loss to zero, and do not update/store unused value tensors".
         let mut actor = trainable_actor();
-        let batch =
-            Batch::freeze(vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 2, 1.0)], CriticMode::BatchMean).expect("valid batch");
+        let batch = Batch::freeze(
+            vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 2, 1.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
 
         let settings = Settings {
             epochs: 1,
@@ -1447,11 +1475,14 @@ mod tests {
     fn every_epoch_sees_the_same_advantages_however_the_order_changes() {
         // The freeze, end to end. Four epochs shuffle the records differently; the advantage vector
         // is one object and is never recomputed.
-        let batch = Batch::freeze(vec![
-            batch_mean_step(0, 2, 3.0),
-            batch_mean_step(1, 2, 1.0),
-            batch_mean_step(0, 3, 5.0),
-        ], CriticMode::BatchMean)
+        let batch = Batch::freeze(
+            vec![
+                batch_mean_step(0, 2, 3.0),
+                batch_mean_step(1, 2, 1.0),
+                batch_mean_step(0, 3, 5.0),
+            ],
+            CriticMode::BatchMean,
+        )
         .expect("valid batch");
         let before = batch.advantages().to_vec();
 
@@ -1489,13 +1520,21 @@ mod tests {
         let mut invalid = batch_mean_step(0, 2, 1.0);
         invalid.chosen = 2;
         assert!(
-            Batch::freeze(vec![batch_mean_step(0, 2, 1.0), invalid], CriticMode::BatchMean).is_err(),
+            Batch::freeze(
+                vec![batch_mean_step(0, 2, 1.0), invalid],
+                CriticMode::BatchMean
+            )
+            .is_err(),
             "one invalid record among valid records was accepted"
         );
 
         let mut outside = batch_mean_step(0, 2, 1.0);
         outside.options[0].columns[0] = 9_999;
-        let batch = Batch::freeze(vec![outside, batch_mean_step(1, 2, 2.0)], CriticMode::BatchMean).expect("structural batch");
+        let batch = Batch::freeze(
+            vec![outside, batch_mean_step(1, 2, 2.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("structural batch");
         let mut actor = trainable_actor();
         let settings = Settings {
             epochs: 1,
@@ -1525,8 +1564,11 @@ mod tests {
     #[test]
     fn shared_mode_really_updates_the_value_head() {
         let mut actor = trainable_actor();
-        let batch = Batch::freeze(vec![distinguishable_step(0, 3), distinguishable_step(1, 3)], CriticMode::Shared)
-            .expect("batch");
+        let batch = Batch::freeze(
+            vec![distinguishable_step(0, 3), distinguishable_step(1, 3)],
+            CriticMode::Shared,
+        )
+        .expect("batch");
         let settings = Settings {
             epochs: 1,
             minibatch: 2,

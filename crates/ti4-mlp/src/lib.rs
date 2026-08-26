@@ -1217,7 +1217,10 @@ mod mixed_tests {
     fn option(seed: i64) -> SparseOption {
         SparseOption {
             columns: vec![seed % 97 + 1, (seed * 7) % 97 + 1],
-            values: vec![f32::from(u8::try_from(seed % 3).unwrap_or(0)).mul_add(0.25, 1.0), 0.5],
+            values: vec![
+                f32::from(u8::try_from(seed % 3).unwrap_or(0)).mul_add(0.25, 1.0),
+                0.5,
+            ],
         }
     }
 

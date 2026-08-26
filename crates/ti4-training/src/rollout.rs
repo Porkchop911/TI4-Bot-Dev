@@ -579,7 +579,9 @@ pub fn play_with_decider_factory<F>(
     factory: F,
 ) -> Rollout
 where
-    F: FnOnce(&BTreeMap<PlayerId, Baseline>) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
     let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
         Ok(seated) => seated,

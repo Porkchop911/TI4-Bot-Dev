@@ -134,8 +134,8 @@ fn play_one(
                 // Reading the *bundle* here, which the first version did, was worse still: an
                 // SHA-256 over ~17 MB and a reparse of 1.1 MB of slots.json per seat per game.
                 let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
-                .recording_ppo(critic_mode)
-                .from_setup(baseline);
+                    .recording_ppo(critic_mode)
+                    .from_setup(baseline);
                 if handles.insert(player.clone(), bot.ppo_records()).is_some() {
                     return Err(format!("{player} was seated twice"));
                 }
@@ -265,7 +265,9 @@ fn report(
 ) {
     let first = update.saturating_sub(span) + 1;
     let seats: usize = window.values().map(|tally| tally.games).sum();
-    println!("\n  ===== report after update {update} (updates {first}-{update}, {seats} seat-games) =====");
+    println!(
+        "\n  ===== report after update {update} (updates {first}-{update}, {seats} seat-games) ====="
+    );
     println!("  faction      games   stage-1 clearance        mean VP");
 
     let mut table = FactionTally::default();
@@ -323,9 +325,8 @@ fn publish(
     expected: &[u32],
 ) {
     let cpu = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
-    let bundle =
-        ti4_mlp::bundle::write(destination, &cpu, slots_text, critic_mode, provenance)
-            .unwrap_or_else(|error| refuse(&format!("writing the checkpoint: {error}")));
+    let bundle = ti4_mlp::bundle::write(destination, &cpu, slots_text, critic_mode, provenance)
+        .unwrap_or_else(|error| refuse(&format!("writing the checkpoint: {error}")));
     let reloaded = ti4_mlp::bundle::read(&bundle.directory)
         .unwrap_or_else(|error| refuse(&format!("the checkpoint does not load: {error}")));
     let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&reloaded.actor, reloaded.critic_mode)
@@ -333,7 +334,10 @@ fn publish(
     if fingerprint != expected {
         refuse("the reloaded checkpoint does not match the weights that were trained");
     }
-    println!("  checkpoint  {} (reloaded, identical)", bundle.directory.display());
+    println!(
+        "  checkpoint  {} (reloaded, identical)",
+        bundle.directory.display()
+    );
 }
 
 fn main() {
@@ -533,8 +537,8 @@ fn main() {
         }
 
         // ---- optimise ----
-        let batch =
-            Batch::freeze(steps, critic_mode).unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
+        let batch = Batch::freeze(steps, critic_mode)
+            .unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
         if batch.steps().len() != seated_decisions {
             refuse(&format!(
                 "freezing changed the decision count from {seated_decisions} to {}",
@@ -612,7 +616,9 @@ fn main() {
         .state_fingerprint()
         .unwrap_or_else(|error| refuse(&format!("fingerprinting Adam: {error}")));
     if after_parameters == before_parameters {
-        refuse("the run moved no parameter; the losses above describe an update that never applied");
+        refuse(
+            "the run moved no parameter; the losses above describe an update that never applied",
+        );
     }
     if after_state == before_state {
         refuse("Adam's moments and step cursor did not advance");

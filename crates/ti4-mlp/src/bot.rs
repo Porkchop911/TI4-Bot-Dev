@@ -308,10 +308,8 @@ impl MlpBot {
         let (critic, behaviour_value) = if matches!(mode, crate::bundle::CriticMode::BatchMean) {
             (None, None)
         } else {
-            let vector = ti4_policy::critic::critic_vector(
-                seen,
-                ti4_policy::critic::CriticFeatures::full(),
-            );
+            let vector =
+                ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full());
             let critic = crate::CriticInput::new(&vector, &self.vocabulary);
             let value = self
                 .actor
@@ -323,7 +321,10 @@ impl MlpBot {
             (Some(critic), Some(value))
         };
         let probability = probabilities.get(chosen).copied().ok_or_else(|| {
-            self.refuse(choice, "sampled option has no behavior probability".to_owned())
+            self.refuse(
+                choice,
+                "sampled option has no behavior probability".to_owned(),
+            )
         })?;
         if !probability.is_finite() || probability <= 0.0 {
             return Err(self.refuse(
@@ -332,20 +333,16 @@ impl MlpBot {
             ));
         }
         self.records.borrow_mut().push(PpoRecord {
-            progress: ti4_policy::progress::measure(
-                seen.observed(),
-                &choice.player,
-                self.baseline,
-            ),
+            progress: ti4_policy::progress::measure(seen.observed(), &choice.player, self.baseline),
             step: crate::ppo::Step {
-            row: self.row,
-            head: head_index,
-            options,
-            chosen,
-            behaviour_log_prob: probability.ln(),
-            behaviour_value,
-            return_to_go: 0.0,
-            critic,
+                row: self.row,
+                head: head_index,
+                options,
+                chosen,
+                behaviour_log_prob: probability.ln(),
+                behaviour_value,
+                return_to_go: 0.0,
+                critic,
             },
         });
 
@@ -449,9 +446,97 @@ impl MlpBot {
         if let Some(mode) = self.ppo_mode
             && choice.options.len() >= 2
         {
-            self.record(choice, seen, mode, &probabilities, options, head_index, chosen)?;
+            self.record(
+                choice,
+                seen,
+                mode,
+                &probabilities,
+                options,
+                head_index,
+                chosen,
+            )?;
         }
 
         Ok(choice.options[chosen].clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Six bots reading one actor keep the state that must stay theirs.
+    ///
+    /// Sharing the model is safe because inference does not mutate it, but the *bot* owns three
+    /// things that must not be shared: its sampling stream, its counters, and its PPO record
+    /// buffer. If `sharing` ever aliased one of those, seats would sample identically or record
+    /// into each other's batches, and the loss telemetry would look entirely normal while it
+    /// happened.
+    #[test]
+    fn seats_sharing_one_actor_do_not_share_their_streams_counters_or_records() {
+        let actor = std::rc::Rc::new(Actor::zeros(crate::Width::W128, 4_096));
+        let vocabulary = ti4_policy::vocabulary::Vocabulary::build(["seat-state:vp"])
+            .expect("a one-name vocabulary");
+        let row = FactionRow::of("sol").expect("roster");
+
+        let seats: Vec<MlpBot> = (0..6)
+            .map(|seat| MlpBot::sharing(&actor, vocabulary.clone(), row, 1_000 + seat))
+            .collect();
+
+        // The actor really is one object, not six copies that happen to be equal.
+        assert_eq!(
+            std::rc::Rc::strong_count(&actor),
+            7,
+            "six seats and the local handle should hold the same actor"
+        );
+
+        // Distinct record buffers: writing through one must not be visible through another.
+        seats[0].records.borrow_mut().push(PpoRecord {
+            progress: ti4_policy::progress::Progress::default(),
+            step: crate::ppo::Step {
+                row,
+                head: 0,
+                options: Vec::new(),
+                chosen: 0,
+                behaviour_log_prob: 0.0,
+                behaviour_value: None,
+                return_to_go: 0.0,
+                critic: None,
+            },
+        });
+        assert_eq!(seats[0].records.borrow().len(), 1);
+        for seat in &seats[1..] {
+            assert!(
+                seat.records.borrow().is_empty(),
+                "a record written by one seat was visible to another"
+            );
+        }
+
+        // Distinct counters.
+        seats[0].counters.decisions.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(seats[0].counters.decisions.load(Ordering::Relaxed), 1);
+        for seat in &seats[1..] {
+            assert_eq!(
+                seat.counters.decisions.load(Ordering::Relaxed),
+                0,
+                "counters are shared between seats"
+            );
+        }
+
+        // Distinct sampling streams: seeded per seat, so no two draw the same sequence.
+        let draws: Vec<u64> = (0..6u64)
+            .map(|seat| {
+                let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1_000 + seat);
+                rand::Rng::random::<u64>(&mut rng)
+            })
+            .collect();
+        let mut unique = draws.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            draws.len(),
+            "two seats share a sampling stream"
+        );
     }
 }

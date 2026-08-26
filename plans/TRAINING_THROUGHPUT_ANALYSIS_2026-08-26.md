@@ -158,3 +158,111 @@ identical rollout fingerprints and decision counts for semantics-preserving chan
 optimizer packing changes, also compare losses, parameter deltas, and optimizer state under
 the repository's accepted numerical tolerance. Measure process-specific GPU utilization;
 total desktop GPU utilization is not sufficient evidence.
+
+## Follow-up after `944bc53`
+
+The first optimization pass reduced the measured update mean from 12.10 s to 9.72 s. The new
+split is approximately 3.99 s rollout plus 5.73 s optimization. The following are the next
+semantics-preserving candidates, ordered by implementation effort and confidence.
+
+### A. Finish canonicalizing sparse options at batch freeze — easiest likely win
+
+The removed global `distinct` sort was valuable, but `gather_reduce_batch` still calls
+`ordered_pairs` for every option. It copies and sorts the same policy and critic columns every time
+the frozen batch is revisited across four epochs.
+
+At `Batch::freeze`, validate, deterministically sort, and duplicate-fold every policy option and
+critic vector once. Give the batched gather a checked canonical fast path that appends already
+sorted unique pairs directly to its flat embedding-bag arrays. Retain the general public path for
+untrusted callers. Verify bit-identical gather output, gradients, losses, and parameter deltas.
+
+This mostly removes host work rather than adding GPU work, but that is precisely useful when the
+GPU is being paced by one host core. It is smaller and safer than redesigning the whole minibatch
+format.
+
+### B. Split `prepare_minibatch` from GPU scoring and prepare one batch ahead
+
+Host packing and GPU execution are currently serialized inside `score_minibatch`. A bounded
+single-item producer can construct the next minibatch's vectors while the current minibatch runs
+forward, backward, and Adam. Consumption must remain in the fixed shuffled order, so this does not
+alter optimizer semantics.
+
+Start with ordinary owned buffers and measure. This alone may hide most remaining sort/vector work.
+Only then add pinned staging tensors; `tch 0.22` exposes `Tensor::pin_memory` and
+`Tensor::to_device_(..., non_blocking, ...)`, but pinned buffers must remain alive until their
+asynchronous copy completes.
+
+### C. Consolidate the minibatch uploads
+
+In shared-critic mode, one minibatch currently performs approximately sixteen separate
+`Tensor::from_slice(...).to_device(device)` paths:
+
+- three for policy embedding-bag indices, offsets, and weights;
+- two for per-option head and faction rows;
+- three for padding/gather/chosen metadata;
+- three for behavior log-probability, advantage, and entropy coefficient;
+- three for critic embedding-bag indices, offsets, and weights;
+- one critic row tensor and one return tensor.
+
+At roughly 33 minibatches × 4 epochs, this is about 2,100 host-to-device copy calls per update.
+Pack integer metadata into one or a few contiguous staging tensors and floating constants into
+another, upload once, then obtain typed/narrowed views on device. The total byte count remains, but
+copy setup and host stalls fall sharply. A more complete version packs an entire epoch, uploads each
+field once, and narrows per-minibatch ranges; that is higher payoff but more engineering.
+
+Pinned/non-blocking transfer alone is not enough if the code immediately waits on the same work.
+It belongs with producer prepacking and retained staging-buffer lifetimes.
+
+### D. Remove the host-built padded mask
+
+The PPO path uploads both a full rectangle of gather indices and a full Boolean padding rectangle.
+The distillation path already demonstrates the alternative shape: allocate a device rectangle
+filled with `-inf` and `index_copy` only real logits into their slots. Entropy can use `xlogy` or an
+on-device `where(probability > 0, p * log_p, 0)` so zero-probability padding contributes exactly
+zero without uploading a mask.
+
+This removes one large host vector, one transfer, and the gather-then-masked-fill sequence. It needs
+explicit tests for real-logit underflow, padded entropy, gradients through `index_copy`, and NaN
+refusal so the optimization does not hide genuine non-finite values.
+
+### E. Avoid materializing the zero-padded identity matrix
+
+`trunk_mixed` gathers a 16-wide identity embedding, allocates a zero tensor for the remaining
+240 columns, concatenates the two into `[options, 256]`, and then adds the full matrix. For a large
+policy option batch this is tens of megabytes of zeros and memory traffic per forward pass.
+
+Compute the first 16 preactivation columns with `x + identity + b1`, the remaining columns with
+`x + b1`, concatenate once, and apply ReLU. Preserve the existing floating-point addition order in
+the first 16 columns and test exact forward/gradient equivalence. This is a compact experiment, but
+benchmark it: extra narrow/cat dispatches can offset the bandwidth saved.
+
+### F. Small, easy host cleanups
+
+These are unlikely to move wall time individually but are safe to bundle behind measurements:
+
+- reserve exact or estimated capacity for `parts`, `heads`, `rows`, embedding-bag `flat`, and
+  `weights`;
+- precompute f32 behavior values, advantages, returns, entropy coefficients, and validated row/head
+  indices at batch freeze instead of converting them four times;
+- reuse the per-decision faction-row tensor between the policy metadata and critic path where the
+  layout permits it;
+- stop reconstructing shallow parameter-handle vectors on every Adam step if a retained validated
+  handle list can preserve the leaf/gradient checks.
+
+### Why the GPU cannot simply work during rollout
+
+With the post-change split, optimization occupies only about 59% of wall time. Even if optimizer
+GPU utilization were 100%, whole-run GPU utilization would therefore top out near 59% while rollout
+remains CPU-only. The observed approximately 40% optimizer utilization predicts only about 24%
+whole-run utilization, matching the apparent low duty cycle.
+
+Keeping the GPU active during rollout would require either centrally batching inference across
+many concurrently paused games or collecting the next update under a stale policy while the current
+one optimizes. The first conflicts with the current CPU-inference boundary and is a substantial
+scheduler redesign; the second changes on-policy PPO semantics. Neither is an easy throughput fix.
+
+### Expected ceiling from this round
+
+At 3.99 s rollout and 5.73 s optimization, making the optimizer 30% faster produces approximately
+8.40 s/update (1.16x overall); halving optimizer time produces approximately 6.86 s/update (1.42x).
+Further gains then require rollout improvement too.

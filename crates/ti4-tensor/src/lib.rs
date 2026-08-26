@@ -379,24 +379,34 @@ fn ordered_pairs(
 /// options and **528.8 gathered rows of which only 131.9 are distinct** — every row is fetched about
 /// four times, once per option that mentions it.
 ///
-/// This gathers each distinct row **once** — §4.3's "aggregate duplicate feature names first" — into
-/// a `[distinct, width]` block small enough to stay in cache, and then combines it into per-option
-/// sums with one `[options, distinct] x [distinct, width]` matmul.
+/// So the lever is the number of rows fetched, and this aggregates duplicate columns *within* each
+/// option first — §4.3's "aggregate duplicate feature names first" — then hands one flat index list,
+/// one offset list and one weight list to a fused `embedding_bag`, which walks the indices once and
+/// accumulates straight into each option's output row.
+///
+/// # What this used to say, and why it changed
+///
+/// Two earlier shapes are recorded here because their measurements are the reason for the current
+/// one, and because the rustdoc went on describing the first of them after it had been replaced.
+///
+/// The first gathered each distinct row once into a `[distinct, width]` block and combined it with
+/// an `[options, distinct] x [distinct, width]` matmul. That is fine at inference scale and becomes
+/// a 34-million-float combination matrix for a training minibatch — measured at 0.11x, slower than
+/// not batching at all. The second replaced the matrix with a segment sum, which materialises a
+/// `[total_entries, width]` intermediate instead: about 268 MB for a 512-decision micro-batch, and
+/// it made a CPU epoch time out. `embedding_bag` materialises neither.
 ///
 /// # Determinism
 ///
 /// Duplicate columns *within* an option are aggregated in the fixed order [`ordered_pairs`] defines,
-/// which is the contract F-M09-025-3 established and the reason that order exists. What remains is a
-/// sum across *distinct* columns, which the previous implementation left to `sum_dim_intlist` and
-/// this one leaves to the matmul: unspecified in both, and identical for a fixed build and thread
-/// count.
+/// which is the contract F-M09-025-3 established and the reason that order exists. The accumulation
+/// `embedding_bag` performs across an option's entries is unspecified, as `sum_dim_intlist` and the
+/// matmul were before it, and identical for a fixed build, device and thread count. On CUDA its
+/// **backward** uses atomics and is not reproducible run to run; see
+/// `plans/M10-032_DETERMINISM_FINDING.md`.
 ///
 /// # Errors
 /// As [`gather_reduce`]: ragged input, an out-of-range column, or a non-finite value.
-///
-/// # Panics
-/// Never in practice: the only `expect` looks up a column that was inserted into `distinct` a few
-/// lines earlier, so a failure would mean the sort or dedup lost an element.
 pub fn gather_reduce_batch(
     table: &Tensor,
     options: &[(&[i64], &[f32])],
@@ -527,6 +537,81 @@ pub fn to_vec(tensor: &Tensor) -> Result<Vec<f32>, TensorError> {
 #[must_use]
 pub fn to_vec_or_panic(tensor: &Tensor) -> Vec<f32> {
     to_vec(tensor).expect("tensor converts to f32 values")
+}
+
+#[cfg(test)]
+mod emptiness_tests {
+    use super::*;
+
+    fn table() -> Tensor {
+        // Row `i` is the constant `i`, so a gathered sum is legible as arithmetic rather than noise.
+        let width = 4i64;
+        let capacity = 8i64;
+        let mut values: Vec<f32> = Vec::new();
+        for row in 0..capacity {
+            for _ in 0..width {
+                values.push(f32::from(u8::try_from(row).expect("a small fixture row")));
+            }
+        }
+        Tensor::from_slice(&values).view([capacity, width])
+    }
+
+    #[test]
+    fn a_batch_in_which_every_option_is_empty_gathers_zero_rows() {
+        // The emptiness test that replaced the sorted `distinct` vector. Its contract is the same
+        // as `gather_reduce`'s: a decision whose every feature fell out of vocabulary is answered
+        // with zero rows, not an error.
+        let table = table();
+        let empty: [i64; 0] = [];
+        let weights: [f32; 0] = [];
+        let options: Vec<(&[i64], &[f32])> = vec![
+            (empty.as_slice(), weights.as_slice()),
+            (empty.as_slice(), weights.as_slice()),
+        ];
+        let out = gather_reduce_batch(&table, &options).expect("an empty batch is legal");
+        assert_eq!(out.size(), vec![2, 4]);
+        let values = to_vec(&out).expect("readable");
+        assert!(
+            values.iter().all(|value| *value == 0.0),
+            "an all-empty batch produced {values:?}"
+        );
+    }
+
+    #[test]
+    fn an_empty_option_keeps_its_own_row_and_leaves_its_neighbours_alone() {
+        // The risk in folding emptiness per option rather than over the whole batch is an
+        // off-by-one in which a zero row displaces a real one. The empty option sits in the middle
+        // precisely so that a shift in either direction shows up.
+        let table = table();
+        let empty: [i64; 0] = [];
+        let no_weights: [f32; 0] = [];
+        let first: [i64; 2] = [1, 2];
+        let first_weights: [f32; 2] = [1.0, 1.0];
+        let last: [i64; 1] = [5];
+        let last_weights: [f32; 1] = [2.0];
+        let options: Vec<(&[i64], &[f32])> = vec![
+            (first.as_slice(), first_weights.as_slice()),
+            (empty.as_slice(), no_weights.as_slice()),
+            (last.as_slice(), last_weights.as_slice()),
+        ];
+        let out = gather_reduce_batch(&table, &options).expect("a mixed batch is legal");
+        let values = to_vec(&out).expect("readable");
+        assert_eq!(out.size(), vec![3, 4]);
+        // Row 1 + row 2 = 1 + 2 = 3 in every column.
+        assert!(
+            values[0..4].iter().all(|value| (value - 3.0).abs() < 1e-6),
+            "{values:?}"
+        );
+        // The empty option: zeros, and still in position one.
+        assert!(values[4..8].iter().all(|value| *value == 0.0), "{values:?}");
+        // Row 5 scaled by 2 = 10.
+        assert!(
+            values[8..12]
+                .iter()
+                .all(|value| (value - 10.0).abs() < 1e-6),
+            "{values:?}"
+        );
+    }
 }
 
 #[cfg(test)]
