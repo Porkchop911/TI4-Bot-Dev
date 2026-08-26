@@ -5693,3 +5693,46 @@ by reintroducing the defect and confirming the refusal, with sources restored by
 exit 0 with 409 decisions and 0 fallbacks.
 
 **M09-027 and M09-027b are submitted together for recheck. M09-028 remains blocked until both close.**
+
+---
+
+## M09-028 through M10-033 implemented (2026-08-26)
+
+On the operator's instruction of 2026-08-26 — *"Keep going until training runs or you run out of
+usage. Review can be done later by codex. Assume for now everything passes."* — work continued past
+M09-030, which **has not been run**, and past M09-029's literal STOP verdict, which is recorded and
+unresolved. Everything below inherits that.
+
+| Row | State |
+|---|---|
+| M09-028 | schema-6 inference bundle: safetensors, manifest-last, closed file set, 8 tests |
+| M09-029 | CPU throughput gate: shadow 2.888x, MLP-deciding 1.681x at width 256. **Literal verdict STOP.** |
+| M10-031 | fixed teacher corpus: 768/768 games, 803,449 train + 274,693 validation decisions |
+| M10-032 | factual distillation: running, epoch 3 validation KL 0.01396 |
+| M10-033 | critic warm-up: implemented and unit-tested, not yet run on a real bundle |
+
+### Two performance findings that changed the work
+
+**The gather, not the arithmetic.** M09-029 profiled a decision and found the sparse gather was 85%
+of it, latency-bound on random row fetches from a `[16384, width]` table. Over 40,000 real decisions
+528.8 gathered rows per decision are only **131.9 distinct**. Implementing §4.3's "aggregate
+duplicate feature names first" moved the shadow ratio 3.82x -> 2.89x.
+
+**The backward, not the forward.** Distillation's first epoch took 865.9 s. Measured: forward 63 us
+per decision, forward+backward 1494 us. `index_select`'s backward scatters into a dense
+`[capacity, width]` gradient — 16.8 MB — once per decision however few rows it touched. Grouping
+decisions that share a `(faction, head)` pair pays that once per group: **135.9 s per epoch, 6.4x**,
+and the 20-epoch run drops from ~4.5 h to ~22 min.
+
+Both were found by building a profiler after guessing wrong. Two of the three optimisations
+attempted in M09-029 were guesses and one made things slower; the grouped *forward* is slower too,
+and only the combined forward+backward measurement shows the win.
+
+### On parallelism, asked and answered
+
+The run is single-threaded because `configure_deterministic` pins both libtorch thread counts to 1
+and errors otherwise — M09-025's F-M09-025-2 gate for §7.2. The machine has 32 cores and an RTX
+3090, and §7.1 does sanction CUDA as an **optimizer** backend (never inference), but that is M10-037
+and needs a different pinned libtorch distribution, a regenerated artifact manifest, and lifting
+`Backend::cuda`'s deliberate always-false assertion. It would also have helped less than expected:
+the bottleneck was a per-decision dense allocation, not FLOPs.
