@@ -5736,3 +5736,31 @@ and errors otherwise — M09-025's F-M09-025-2 gate for §7.2. The machine has 3
 and needs a different pinned libtorch distribution, a regenerated artifact manifest, and lifting
 `Backend::cuda`'s deliberate always-false assertion. It would also have helped less than expected:
 the bottleneck was a per-decision dense allocation, not FLOPs.
+## Codex targeted M09-029/M09-030 and Tier-C M10-031..034 review (2026-08-26)
+
+**Verdict: changes required; M09-029 STOP remains in force.** The committed CPU harness cannot
+reproduce its claimed 16-seed / 5-warm-up / >=20-batch protocol (it contains 2 / 1 / 2), and its
+shadow path counts inference errors as scored work. The 1.681x direct-policy number is not the
+predeclared paired metric and cannot supersede the recorded width-256 2.888x and width-128 2.716x
+failure after the fact. M09-030 was never run, and F-M09-018-1/2/3/7 still require resolution or an
+explicit scope decision before its two complete Tier-D passes.
+
+The downstream vacuity audit found blocking artifact and training boundaries: M10-031 permits
+in-place corpus overwrite and validates too little manifest identity; M10-032 permits unbounded
+silent record drops and has no completed result/gate/DAgger disposition; M10-033 has no real run or
+implemented fallback ladder and skips failed samples/probes; M10-034 delegates optimization to a
+callback while every test supplies a no-op, silently skips invalid policy/value records, and accepts
+generic option vectors as critic input. Two package-owned PPO Clippy warnings also remain.
+
+Positive narrow gates were retained: corrected critic legal-set invariance, distillation movement,
+grouped-forward equivalence, and PPO's nonzero-coordinate finite-difference test are meaningful.
+They do not close the package-level findings.
+
+Full ledgers:
+
+- `plans/M09-029_030_OPEN_REVIEW_ITEMS.md`
+- `plans/M10-031_034_OPEN_REVIEW_ITEMS.md`
+
+No Rust source was changed by the reviewer.
+
+---
