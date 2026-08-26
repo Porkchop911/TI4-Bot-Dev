@@ -1965,6 +1965,7 @@ dependencies = [
  "ti4-policy",
  "ti4-sim",
  "tracing",
+ "zstd 0.13.3",
 ]
 
 [[package]]

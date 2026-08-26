@@ -128,6 +128,14 @@ pub struct LearnedBot {
     /// the same handle, so a rollout takes it before seating and reads it after the game.
     trajectory: Rc<RefCell<Vec<TrajectoryStep>>>,
     recording: bool,
+    /// The option-free critic vector at each recorded decision, when the corpus asks for one.
+    ///
+    /// Kept beside the trajectory rather than inside [`TrajectoryStep`] because the step is a
+    /// serialized type the linear trainer already consumes, and the critic vector is wanted by
+    /// exactly one caller (M10-031's teacher corpus). Pushed under the same `recording` branch, so
+    /// index `i` here is index `i` there or the vector is absent entirely.
+    critic: Rc<RefCell<Vec<FeatureVector>>>,
+    critic_features: Option<crate::critic::CriticFeatures>,
     /// What this seat held at setup, so progress is a gain rather than a total.
     baseline: Baseline,
 }
@@ -151,6 +159,8 @@ impl LearnedBot {
             rng: ChaCha8Rng::seed_from_u64(seed),
             trajectory: Rc::new(RefCell::new(Vec::new())),
             recording: false,
+            critic: Rc::new(RefCell::new(Vec::new())),
+            critic_features: None,
             baseline: Baseline::default(),
         }
     }
@@ -176,6 +186,22 @@ impl LearnedBot {
     #[must_use]
     pub fn profile(&self) -> &Profile {
         &self.profile
+    }
+
+    /// Also record the option-free critic vector at every decision (M10-031).
+    ///
+    /// Only meaningful together with [`Self::recording`]; without it nothing is pushed to either
+    /// buffer, which is what keeps the two aligned.
+    #[must_use]
+    pub const fn recording_critic(mut self, features: crate::critic::CriticFeatures) -> Self {
+        self.critic_features = Some(features);
+        self
+    }
+
+    /// A handle on the critic vectors this bot records, aligned with [`Self::trajectory`].
+    #[must_use]
+    pub fn critic_vectors(&self) -> Rc<RefCell<Vec<FeatureVector>>> {
+        Rc::clone(&self.critic)
     }
 
     /// A handle on the decisions this bot takes.
@@ -292,6 +318,14 @@ impl Decider for LearnedBot {
         }
 
         if self.recording {
+            if let Some(features) = self.critic_features {
+                // Built from the bound view, like everything else on this path: the critic takes
+                // the capability, so a corpus cannot capture a seat's position from omniscient
+                // state by accident.
+                self.critic
+                    .borrow_mut()
+                    .push(crate::critic::critic_vector(seen, features).facts().clone());
+            }
             self.trajectory.borrow_mut().push(TrajectoryStep {
                 player: choice.player.clone(),
                 head: self.profile.resolved_head(decision_head(choice)).to_owned(),

@@ -176,7 +176,6 @@ where
     ReducedBatch { errors, statistics }
 }
 
-
 /// Whether the faction-to-seat assignment scrambles its cyclic order per seed.
 ///
 /// Off by default, which reproduces every checkpoint and parity fixture in the repository.
@@ -557,6 +556,83 @@ pub fn play_with_deciders(
     )
 }
 
+/// Play one game recording both the trajectory and the option-free critic vector per decision.
+///
+/// M10-031's capture path. Separate from [`play_assigned_on_map_shared`] rather than another
+/// boolean on it, because it returns something extra and only one caller wants it.
+///
+/// The returned map is keyed by player and aligned index-for-index with that seat's trajectory:
+/// `LearnedBot` pushes to both buffers under the same branch, so decision `i` in one is decision
+/// `i` in the other.
+#[must_use]
+pub fn play_capturing(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    profiles: &BTreeMap<PlayerId, Arc<Profile>>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    critic: ti4_policy::critic::CriticFeatures,
+) -> (
+    Rollout,
+    BTreeMap<PlayerId, Vec<ti4_policy::features::FeatureVector>>,
+) {
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+        Ok(seated) => seated,
+        Err(error) => return (failed(seed, error), BTreeMap::new()),
+    };
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+
+    let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+    let mut handles: BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>> =
+        BTreeMap::new();
+    let mut critic_handles: BTreeMap<
+        PlayerId,
+        std::rc::Rc<std::cell::RefCell<Vec<ti4_policy::features::FeatureVector>>>,
+    > = BTreeMap::new();
+    for (index, player) in players.iter().enumerate() {
+        let profile = profiles.get(player).cloned().unwrap_or_else(|| {
+            Arc::new(ti4_policy::learned::blank_explicit_profile(
+                &factions
+                    .get(player)
+                    .map_or_else(String::new, ToString::to_string),
+            ))
+        });
+        let stream = seed
+            .wrapping_mul(1_000_003)
+            .wrapping_add(u64::try_from(index).unwrap_or(0));
+        let bot = LearnedBot::from_shared(profile, stream)
+            .recording()
+            .recording_critic(critic)
+            .from_setup(baselines.get(player).copied().unwrap_or_default());
+        handles.insert(player.clone(), bot.trajectory());
+        critic_handles.insert(player.clone(), bot.critic_vectors());
+        deciders.insert(player.clone(), Box::new(bot));
+    }
+
+    let rollout = finish_game(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        Some(&handles),
+    );
+    let captured = critic_handles
+        .into_iter()
+        .map(|(player, handle)| (player, handle.borrow().clone()))
+        .collect();
+    (rollout, captured)
+}
+
 fn play_assigned_on_map_shared(
     content: &ContentStore,
     players: &[PlayerId],
@@ -774,9 +850,10 @@ pub fn audit_game(
             .get(player)
             .cloned()
             .unwrap_or_else(|| FactionId::new(""));
-        let profile = profiles.get(&faction).cloned().unwrap_or_else(|| {
-            ti4_policy::learned::blank_explicit_profile(faction.as_str())
-        });
+        let profile = profiles
+            .get(&faction)
+            .cloned()
+            .unwrap_or_else(|| ti4_policy::learned::blank_explicit_profile(faction.as_str()));
         let stream = seed
             .wrapping_mul(1_000_003)
             .wrapping_add(u64::try_from(index).unwrap_or(0));
