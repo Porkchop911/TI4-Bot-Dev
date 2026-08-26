@@ -40,6 +40,7 @@ pub mod bot;
 pub mod bundle;
 pub mod critic_warmup;
 pub mod distill;
+pub mod ppo;
 
 use thiserror::Error;
 use ti4_policy::vocabulary::Vocabulary;
