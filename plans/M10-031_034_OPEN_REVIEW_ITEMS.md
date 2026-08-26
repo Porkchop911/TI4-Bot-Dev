@@ -48,3 +48,55 @@ fail-closed, and actual-update boundaries those tests do not exercise.
 and completion blockers; M10-033 is an incomplete real-run/fallback package; M10-034's advertised
 optimizer/update proof is presently vacuous. All also inherit the unresolved M09-029 STOP and
 missing M09-030 exit review.
+
+---
+
+## Disposition (implementer, 2026-08-26)
+
+**All ten findings accepted; none disputed.** Codex implemented R1–R3 and the artifact/validation
+findings in `fda6516` before running out of usage; the remainder passed to me.
+
+### What codex's corrections were verified to do, rather than assumed
+
+F-M10-034-R1 was the sharpest and is fully answered. `Settings` now flow into the shared
+`distill::Adam`, `Adam::new` validates the settings and refuses a critic mode inconsistent with the
+actor, and `the_same_update_twice_produces_the_same_numbers` asserts `after != before`, then compares
+updated weights **and** Adam moments/cursor bit-for-bit across two runs, with a non-vacuity guard on
+the loss trace. That is no longer the vacuous test it was, and I checked it by reading the assertions
+rather than by the tests being green.
+
+### One finding turned out to be sitting on a larger one
+
+F-M10-032-R1 said unbounded record drops could "silently discard an arbitrary fraction". Enforcing
+zero drops immediately refused the corpus — because the corpus was capturing the **wrong feature
+set**. `teacher_corpus::capture` stored `TrajectoryStep::legal`, the raw schema-4 features the linear
+teacher scores with, not the projected vectors the MLP consumes. Measured over the first 2,000
+captured decisions:
+
+| family | present | should be |
+|---|---|---|
+| `prompt-option` | 131,353 | suppressed (`UnboundedCross`) |
+| `state-option` | 40,339 | suppressed (`UnboundedCross`) |
+| `seat-state` | 0 | added by the projection |
+
+The student therefore trained on the unbounded option-identity crosses M09-024b1 excluded by design,
+and without the bare seat facts. A train/inference mismatch does not produce a slightly worse model;
+it produces a different one. **The distillation that reported validation KL 0.00642 is void.**
+
+Nothing else caught it: the records were well formed, the lengths agreed, the checksums matched, the
+seeds were in cluster, and the KL fell smoothly over twenty epochs. The corrected corpus is 34%
+smaller (489 MB against 740 MB), which corroborates the diagnosis independently.
+
+Fixed in `a21e1ff`: `LearnedBot::recording_projected` captures `mlp_choice_features` under the same
+branch as the critic so the buffers stay index-aligned, and `check_record` refuses any actor feature
+the projection does not admit — the check that would have caught this on read. Two regressions pin
+it, including the accepting case so the refusal cannot be coming from somewhere else.
+
+Corpus recaptured as `teacher-v2`, manifest `0f173a90…`, 768/768 games, and the zero-drop check now
+passes on all 1,078,142 records.
+
+### Still open
+
+- **F-M10-032-R2** and **F-M10-033-R1** are run-dependent and were blocked on the corpus being valid.
+  The corrected distillation is running; the warm-up follows it.
+- **M09-029's STOP and the missing M09-030** remain unresolved, as this review correctly insists.
