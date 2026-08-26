@@ -514,6 +514,192 @@ mod tests {
         assert!(settings.entropy_for("strategy") > settings.entropy_for("production"));
     }
 
+    /// A step whose options the model can actually tell apart.
+    ///
+    /// `step` gives every option the same feature value, so their trunk outputs are identical, the
+    /// policy is exactly uniform, and the surrogate's gradient at ratio 1 is identically zero —
+    /// `d log p_chosen / dw = z_chosen − Σ p_i z_i = 0` when every `z_i` is the same vector. That is
+    /// the right fixture for the entropy test, which wants exactly `ln n`, and a useless one for a
+    /// gradient check.
+    fn distinguishable_step(chosen: usize, options: usize) -> Step {
+        Step {
+            row: FactionRow::of("sol").expect("roster"),
+            head: 0,
+            options: (0..options)
+                .map(|index| SparseOption {
+                    columns: vec![
+                        i64::try_from(index).unwrap_or(0) + 1,
+                        i64::try_from(index).unwrap_or(0) + 40,
+                    ],
+                    values: vec![1.0 + index as f32 * 0.7, 0.3 - index as f32 * 0.2],
+                })
+                .collect(),
+            chosen,
+            // Deliberately not the current policy's log-prob, so the ratio is away from 1 and the
+            // clip's branch is exercised rather than sitting on its boundary.
+            behaviour_log_prob: -1.4,
+            behaviour_value: 1.0,
+            return_to_go: 4.0,
+            critic: SparseOption {
+                columns: vec![7],
+                values: vec![1.0],
+            },
+        }
+    }
+
+    /// The scalar PPO objective for one step, with no graph — the thing a finite difference
+    /// perturbs.
+    fn objective(actor: &Actor, step: &Step, advantage: f64, settings: Settings) -> f64 {
+        tch::no_grad(|| {
+            let scored = score(actor, step).expect("scored");
+            let actor_term = surrogate(
+                &scored.log_prob,
+                step.behaviour_log_prob,
+                advantage,
+                settings.clip_epsilon,
+            );
+            let head = crate::heads().get(step.head).copied().unwrap_or("other");
+            (actor_term - &scored.entropy * settings.entropy_for(head)).double_value(&[])
+        })
+    }
+
+    #[test]
+    fn the_analytic_gradient_matches_a_finite_difference() {
+        // What this does and does not cover, established by probing it.
+        //
+        // It catches a term present in the objective but missing from the differentiated loss:
+        // removing the entropy term from the analytic side alone gives analytic 0.0345 against
+        // numeric 0.0371, and the check fails.
+        //
+        // It does **not** catch a globally flipped surrogate sign, because the finite difference is
+        // taken through the same objective — both sides flip together and still agree. A gradient
+        // check verifies that the gradient matches the loss, never that the loss is the right loss.
+        // `the_surrogate_clips_and_the_clip_binds_on_the_right_side` is what covers that, and the
+        // two are not interchangeable.
+        let settings = Settings {
+            entropy: 0.01,
+            ..Settings::default()
+        };
+        let mut actor = trainable_actor();
+        let step = distinguishable_step(0, 3);
+        let advantage = 0.75;
+
+        // Analytic.
+        let scored = score(&actor, &step).expect("scored");
+        let actor_term = surrogate(
+            &scored.log_prob,
+            step.behaviour_log_prob,
+            advantage,
+            settings.clip_epsilon,
+        );
+        let head = crate::heads().first().copied().unwrap_or("other");
+        let loss = actor_term - &scored.entropy * settings.entropy_for(head);
+        loss.backward();
+        let grad = actor.shared_readout().grad();
+        assert!(grad.defined(), "no gradient reached the shared readout");
+        let analytic = ti4_tensor::to_vec(&grad).expect("vec");
+
+        // Finite difference on a few coordinates of the shared readout. Central difference, so the
+        // error is O(h^2) rather than O(h); h = 1e-3 in f32 is the usual compromise between
+        // truncation and cancellation.
+        let h = 1e-3f64;
+        let width = usize::try_from(actor.width()).expect("fits");
+        let mut checked = 0usize;
+        for coordinate in [0usize, 5, width + 3] {
+            let index = i64::try_from(coordinate).expect("fits");
+            let base = tch::no_grad(|| {
+                ti4_tensor::to_vec(actor.shared_readout())
+                    .expect("vec")
+                    .clone()
+            });
+            let mut bump = |delta: f64| -> f64 {
+                let mut values = base.clone();
+                #[expect(clippy::cast_possible_truncation, reason = "weights are f32")]
+                {
+                    values[coordinate] += delta as f32;
+                }
+                let heads = i64::try_from(crate::heads().len()).expect("fits");
+                tch::no_grad(|| {
+                    *actor.shared_readout_mut() =
+                        Tensor::from_slice(&values).view([heads, actor.width()]);
+                });
+                objective(&actor, &step, advantage, settings)
+            };
+            let up = bump(h);
+            let down = bump(-h);
+            let _ = index;
+            let numeric = (up - down) / (2.0 * h);
+            let exact = f64::from(analytic[coordinate]);
+
+            // Restore before the next coordinate.
+            let heads = i64::try_from(crate::heads().len()).expect("fits");
+            tch::no_grad(|| {
+                *actor.shared_readout_mut() =
+                    Tensor::from_slice(&base).view([heads, actor.width()]);
+            });
+
+            // Only coordinates with real signal are informative; a zero gradient matches a zero
+            // difference trivially.
+            if exact.abs() > 1e-4 {
+                let relative = (numeric - exact).abs() / exact.abs().max(1e-6);
+                assert!(
+                    relative < 5e-2,
+                    "coordinate {coordinate}: analytic {exact}, numeric {numeric}"
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 0,
+            "every probed coordinate had a zero gradient, so nothing was compared"
+        );
+    }
+
+    #[test]
+    fn the_same_update_twice_produces_the_same_numbers() {
+        // §6.3's deterministic reduction. Two updates from the same start, same batch and same
+        // shuffle seed must agree exactly — not nearly.
+        let batch = Batch::freeze(vec![
+            step(0, 2, 3.0, 1.0),
+            step(1, 3, 1.0, 2.0),
+            step(0, 4, 5.0, 0.5),
+            step(2, 3, 2.0, 1.5),
+        ]);
+        let run = || {
+            let mut actor = trainable_actor();
+            update(
+                &mut actor,
+                &batch,
+                CriticMode::BatchMean,
+                Settings {
+                    epochs: 2,
+                    minibatch: 2,
+                    ..Settings::default()
+                },
+                7,
+                |_| {},
+            )
+        };
+        let first = run();
+        let second = run();
+        assert_eq!(first.len(), second.len());
+        for (a, b) in first.iter().zip(&second) {
+            assert!(
+                (a.actor_loss - b.actor_loss).abs() < f64::EPSILON,
+                "actor loss differed: {} against {}",
+                a.actor_loss,
+                b.actor_loss
+            );
+            assert!((a.kl - b.kl).abs() < f64::EPSILON, "kl differed");
+            assert_eq!(a.entropy, b.entropy, "per-head entropy differed");
+        }
+        // Non-vacuity: the run must actually have produced numbers.
+        assert!(
+            first.iter().any(|stats| stats.actor_loss != 0.0),
+            "every actor loss was zero, so the comparison proves nothing"
+        );
+    }
+
     #[test]
     fn batch_mean_mode_trains_no_critic() {
         // §6.3: "set critic loss to zero, and do not update/store unused value tensors".
