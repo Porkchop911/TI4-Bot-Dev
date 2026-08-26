@@ -87,6 +87,7 @@ struct Split {
     mlp: Duration,
     decisions: usize,
     evaluations: usize,
+    fingerprint: u64,
 }
 
 impl Split {
@@ -101,6 +102,25 @@ impl Split {
         }
         Ok((total - linear + self.mlp.as_secs_f64()) / total)
     }
+}
+
+fn fingerprint_choice(mut fingerprint: u64, choice: &Choice, chosen: &ChoiceOption) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    if fingerprint == 0 {
+        fingerprint = OFFSET;
+    }
+    let fields = std::iter::once(choice.player.as_str())
+        .chain(std::iter::once(choice.prompt.as_str()))
+        .chain(choice.options.iter().map(|option| option.id.as_str()))
+        .chain(std::iter::once(chosen.id.as_str()));
+    for field in fields {
+        for byte in field.len().to_le_bytes().into_iter().chain(field.bytes()) {
+            fingerprint ^= u64::from(byte);
+            fingerprint = fingerprint.wrapping_mul(PRIME);
+        }
+    }
+    fingerprint
 }
 
 /// Times both scorers on the identical legal set, and lets the linear one decide.
@@ -182,15 +202,41 @@ impl Decider for Paired {
         std::hint::black_box(&probabilities);
         let mlp_cost = started.elapsed();
 
+        let chosen = self.inner.choose_seeing(choice, seen)?;
         {
             let mut split = self.split.borrow_mut();
             split.linear += linear_cost;
             split.mlp += mlp_cost;
             split.decisions += 1;
             split.evaluations += 1;
+            split.fingerprint = fingerprint_choice(split.fingerprint, choice, &chosen);
         }
+        Ok(chosen)
+    }
+}
 
-        self.inner.choose_seeing(choice, seen)
+struct AuditedLinear {
+    inner: ti4_policy::inference::LearnedBot,
+    identity: std::rc::Rc<std::cell::RefCell<(usize, u64)>>,
+}
+
+impl Decider for AuditedLinear {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        self.inner.choose(choice)
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        let chosen = self.inner.choose_seeing(choice, seen)?;
+        if choice.options.len() >= 2 {
+            let mut identity = self.identity.borrow_mut();
+            identity.0 += 1;
+            identity.1 = fingerprint_choice(identity.1, choice, &chosen);
+        }
+        Ok(chosen)
     }
 }
 
@@ -274,6 +320,7 @@ fn run_linear_batch(
     content: &'static ContentStore,
     pool: &Arc<ti4_sim::MapPool>,
     champions: &BTreeMap<String, ti4_policy::learned::Profile>,
+    identity: Option<&std::rc::Rc<std::cell::RefCell<(usize, u64)>>>,
 ) -> (Duration, Vec<ti4_training::rollout::Rollout>) {
     let players: Vec<PlayerId> = (0..FACTIONS.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
@@ -300,9 +347,15 @@ fn run_linear_batch(
                     let stream = seed
                         .wrapping_mul(1_000_003)
                         .wrapping_add(u64::try_from(index).unwrap_or(0));
-                    let decider: Box<dyn Decider> = Box::new(
-                        ti4_policy::inference::LearnedBot::from_shared(Arc::new(profile), stream),
-                    );
+                    let inner =
+                        ti4_policy::inference::LearnedBot::from_shared(Arc::new(profile), stream);
+                    let decider: Box<dyn Decider> = match identity {
+                        None => Box::new(inner),
+                        Some(identity) => Box::new(AuditedLinear {
+                            inner,
+                            identity: std::rc::Rc::clone(identity),
+                        }),
+                    };
                     (player.clone(), decider)
                 })
                 .collect();
@@ -400,15 +453,29 @@ fn main() {
         "  bands      accept <= {ACCEPT_RATIO}x, review > {REVIEW_RATIO}x (§7.1, unchanged)\n"
     );
 
+    // One untimed audit run pins the exact non-forced decision stream. The timed denominator below
+    // stays completely unwrapped, so this proof cannot make the reported ratio look faster.
+    let audit_identity = std::rc::Rc::new(std::cell::RefCell::new((0usize, 0u64)));
+    let (_, audit_outcomes) = run_linear_batch(content, &pool, &champions, Some(&audit_identity));
+    let (audit_decisions, audit_fingerprint) = *audit_identity.borrow();
+    if audit_decisions == 0 || audit_fingerprint == 0 {
+        refuse("the decision-stream audit recorded nothing");
+    }
+
     for _ in 0..WARMUPS {
         let (probe, probed_outcomes) =
             run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
-        let (_, linear_outcomes) = run_linear_batch(content, &pool, &champions);
+        let (_, linear_outcomes) = run_linear_batch(content, &pool, &champions, None);
         if probe.decisions == 0
             || probe.evaluations != probe.decisions
+            || probe.decisions != audit_decisions
+            || probe.fingerprint != audit_fingerprint
+            || probed_outcomes != audit_outcomes
             || probed_outcomes != linear_outcomes
         {
-            refuse("a warm-up did not reproduce identical outcomes and exact model evaluations");
+            refuse(
+                "a warm-up did not reproduce the audited decisions/outcomes and exact evaluations",
+            );
         }
     }
 
@@ -419,18 +486,22 @@ fn main() {
         // Alternate which full batch runs first to prevent monotonic machine drift favouring one.
         let (split, probed_outcomes, linear_total, linear_outcomes) = if index % 2 == 0 {
             let (split, probed) = run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
-            let (total, linear) = run_linear_batch(content, &pool, &champions);
+            let (total, linear) = run_linear_batch(content, &pool, &champions, None);
             (split, probed, total, linear)
         } else {
-            let (total, linear) = run_linear_batch(content, &pool, &champions);
+            let (total, linear) = run_linear_batch(content, &pool, &champions, None);
             let (split, probed) = run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
             (split, probed, total, linear)
         };
         if split.decisions == 0 || split.evaluations != split.decisions {
             refuse("the probe did not complete exactly one MLP evaluation per decision");
         }
-        if probed_outcomes != linear_outcomes {
-            refuse("probe and uncontaminated linear runs produced different outcomes");
+        if split.decisions != audit_decisions
+            || split.fingerprint != audit_fingerprint
+            || probed_outcomes != audit_outcomes
+            || probed_outcomes != linear_outcomes
+        {
+            refuse("probe and uncontaminated linear runs did not reproduce the audited stream");
         }
         let ratio = split
             .ratio(linear_total)
