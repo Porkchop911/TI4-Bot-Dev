@@ -45,7 +45,17 @@ const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// §6.3: "Each update is 16 game seeds × six rotations."
 const SEEDS_PER_UPDATE: u64 = 16;
-const ROUNDS: u32 = 4;
+/// Rounds per self-play game, by stage.
+///
+/// Stage 2 pays for victory points and needs the four-round horizon §6.1 defines. Stage 1 pays for
+/// the opening, which is decided in round one — playing three more rounds would add three rounds of
+/// noise to a signal that is already complete, and cost four times the compute to do it.
+const fn rounds_for(stage: ti4_training::reward::Stage) -> u32 {
+    match stage {
+        ti4_training::reward::Stage::One => 1,
+        ti4_training::reward::Stage::Two => 4,
+    }
+}
 /// §6.3's pilot seed base, so a run is reproducible from its update number alone.
 const SEED_BASE: u64 = 650_000_000;
 
@@ -79,6 +89,7 @@ fn play_one(
     pool: &Arc<ti4_sim::MapPool>,
     reward: &ti4_training::reward::Reward,
     critic_mode: ti4_mlp::bundle::CriticMode,
+    rounds: u32,
     seed: u64,
     rotation: usize,
 ) -> Result<Played, String> {
@@ -108,7 +119,7 @@ fn play_one(
         DEFAULT,
         seed,
         ti4_training::rollout::Horizon {
-            rounds: ROUNDS,
+            rounds,
             steps: 10_000,
         },
         ti4_engine::opening::DEFAULT_REQUIREMENT,
@@ -488,9 +499,37 @@ fn main() {
     let cadence = Cadence::parse(&argument("--report-every").unwrap_or_else(|| "100".to_owned()))
         .unwrap_or_else(|error| refuse(&error));
     let settings = Settings::default();
+    let stage = match argument("--stage").as_deref() {
+        None | Some("2") => ti4_training::reward::Stage::Two,
+        Some("1") => ti4_training::reward::Stage::One,
+        Some(other) => refuse(&format!("--stage {other}: expected 1 or 2")),
+    };
+    let rounds = argument("--rounds").map_or_else(
+        || rounds_for(stage),
+        |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--rounds expects a positive integer"))
+        },
+    );
+    if rounds == 0 {
+        refuse("--rounds 0 plays no game");
+    }
+    let reward = ti4_training::reward::Reward::for_stage(stage);
+    reward
+        .validate()
+        .unwrap_or_else(|error| refuse(&format!("the reward is not self-consistent: {error}")));
+
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
     println!("  critic mode {critic_mode:?}");
+    println!(
+        "  reward      {stage:?} ({}) | {rounds} round(s) per game",
+        match stage {
+            ti4_training::reward::Stage::One => "the opening bar",
+            ti4_training::reward::Stage::Two => "victory points",
+        }
+    );
     println!("  optimiser   {device:?}   (rollouts always CPU, §7.1)");
     println!(
         "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{}",
@@ -509,7 +548,6 @@ fn main() {
     let players: Vec<PlayerId> = (0..FACTIONS.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
-    let reward = ti4_training::reward::Reward::for_stage(ti4_training::reward::Stage::Two);
 
     // F-M10-034-D3: **once**, for the whole run. Constructing this inside the loop discarded the
     // moments and the step counter on every update after the first, which turns Adam into a
@@ -597,6 +635,7 @@ fn main() {
                             &pool,
                             &reward,
                             critic_mode,
+                            rounds,
                             *seed,
                             *rotation,
                         )
