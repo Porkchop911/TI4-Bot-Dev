@@ -565,6 +565,23 @@ pub fn play_with_deciders(
 /// `LearnedBot` pushes to both buffers under the same branch, so decision `i` in one is decision
 /// `i` in the other.
 #[must_use]
+/// What one seat's capture produced beyond its trajectory.
+///
+/// Both buffers are pushed under the same `recording` branch as the trajectory, so index `i` in
+/// each is decision `i` in the others.
+#[derive(Debug, Clone, Default)]
+pub struct SeatCapture {
+    /// The option-free critic vector at each decision.
+    pub critic: Vec<ti4_policy::features::FeatureVector>,
+    /// The projected per-option vectors the MLP consumes, with their option ids, at each decision.
+    ///
+    /// **Not** `TrajectoryStep::legal`, which holds the raw schema-4 features the linear policy
+    /// scores with. The projection drops the unbounded `state-option:`/`prompt-option:` crosses and
+    /// adds the bare `seat-state:` facts, so a corpus built from `legal` trains an MLP on inputs it
+    /// never sees at inference.
+    pub projected: ti4_policy::inference::ProjectedOptions,
+}
+
 pub fn play_capturing(
     content: &ContentStore,
     players: &[PlayerId],
@@ -576,10 +593,7 @@ pub fn play_capturing(
     requirement: Requirement,
     map: &OpeningMap,
     critic: ti4_policy::critic::CriticFeatures,
-) -> (
-    Rollout,
-    BTreeMap<PlayerId, Vec<ti4_policy::features::FeatureVector>>,
-) {
+) -> (Rollout, BTreeMap<PlayerId, SeatCapture>) {
     let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
         Ok(seated) => seated,
         Err(error) => return (failed(seed, error), BTreeMap::new()),
@@ -592,6 +606,10 @@ pub fn play_capturing(
     let mut critic_handles: BTreeMap<
         PlayerId,
         std::rc::Rc<std::cell::RefCell<Vec<ti4_policy::features::FeatureVector>>>,
+    > = BTreeMap::new();
+    let mut projected_handles: BTreeMap<
+        PlayerId,
+        std::rc::Rc<std::cell::RefCell<ti4_policy::inference::ProjectedOptions>>,
     > = BTreeMap::new();
     for (index, player) in players.iter().enumerate() {
         let profile = profiles.get(player).cloned().unwrap_or_else(|| {
@@ -607,9 +625,11 @@ pub fn play_capturing(
         let bot = LearnedBot::from_shared(profile, stream)
             .recording()
             .recording_critic(critic)
+            .recording_projected()
             .from_setup(baselines.get(player).copied().unwrap_or_default());
         handles.insert(player.clone(), bot.trajectory());
         critic_handles.insert(player.clone(), bot.critic_vectors());
+        projected_handles.insert(player.clone(), bot.projected_vectors());
         deciders.insert(player.clone(), Box::new(bot));
     }
 
@@ -628,7 +648,19 @@ pub fn play_capturing(
     );
     let captured = critic_handles
         .into_iter()
-        .map(|(player, handle)| (player, handle.borrow().clone()))
+        .map(|(player, handle)| {
+            let projected = projected_handles
+                .get(&player)
+                .map(|handle| handle.borrow().clone())
+                .unwrap_or_default();
+            (
+                player,
+                SeatCapture {
+                    critic: handle.borrow().clone(),
+                    projected,
+                },
+            )
+        })
         .collect();
     (rollout, captured)
 }

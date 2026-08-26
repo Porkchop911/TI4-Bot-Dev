@@ -491,14 +491,32 @@ pub fn capture(
                     }
                     // Positional agreement between options, vectors and probabilities is what a
                     // consumer will rely on, so it is built once here and checked on load.
-                    let options: Vec<String> = step.legal.keys().cloned().collect();
-                    let actor: Vec<Vec<(String, f64)>> = step.legal.values().map(named).collect();
+                    //
+                    // The vectors are the **projected** ones the MLP consumes, not
+                    // `TrajectoryStep::legal`. `legal` holds the raw schema-4 features the linear
+                    // teacher scores with, and the two are different feature sets: the projection
+                    // drops the unbounded `state-option:`/`prompt-option:` crosses and adds the bare
+                    // `seat-state:` facts. The first capture used `legal` and so trained the student
+                    // on inputs it never sees at inference — measured at 131,353 `prompt-option` and
+                    // 40,339 `state-option` features present that should not have been, and zero
+                    // `seat-state` features that should have been.
+                    let projected = seat_critics
+                        .and_then(|capture| capture.projected.get(order))
+                        .ok_or_else(|| {
+                            CorpusError::Invalid(format!(
+                                "no projected vectors for decision {order} of {} at seed {seed}",
+                                seat.player
+                            ))
+                        })?;
+                    let options: Vec<String> = projected.iter().map(|(id, _)| id.clone()).collect();
+                    let actor: Vec<Vec<(String, f64)>> =
+                        projected.iter().map(|(_, vector)| named(vector)).collect();
                     let teacher: Vec<f64> = options
                         .iter()
                         .map(|id| step.probabilities.get(id).copied().unwrap_or(0.0))
                         .collect();
                     let critic = seat_critics
-                        .and_then(|vectors| vectors.get(order))
+                        .and_then(|capture| capture.critic.get(order))
                         .map(named)
                         .ok_or_else(|| {
                             CorpusError::Invalid(format!(
@@ -777,6 +795,28 @@ fn check_record(
             "{name} line {line}: a forced decision reached the corpus"
         )));
     }
+    // Every actor feature must be one the MLP projection admits.
+    //
+    // This is the check that would have caught the first capture, which stored
+    // `TrajectoryStep::legal` — the raw schema-4 features the *linear* teacher scores with — instead
+    // of the projected vectors the MLP consumes. Nothing else noticed: the records were well formed,
+    // the lengths agreed, the checksums matched, and distillation produced a falling KL. What it was
+    // actually training on carried 131,353 `prompt-option` and 40,339 `state-option` features per
+    // 2,000 decisions — the unbounded memorisation crosses M09-024b1 excluded by design — and none
+    // of the `seat-state` facts the projection adds.
+    //
+    // A feature set that differs from the one the model sees at inference is not a subtler kind of
+    // corpus; it trains a different model.
+    for (option, vector) in decision.actor.iter().enumerate() {
+        for (feature, _) in vector {
+            if !ti4_policy::projection::admits(feature) {
+                return Err(CorpusError::Invalid(format!(
+                    "{name} line {line}: option {option} carries {feature}, which the MLP \
+                     projection suppresses — this corpus stores unprojected features"
+                )));
+            }
+        }
+    }
     if decision.rotation >= FIXED_FACTIONS.len()
         || !FIXED_FACTIONS.contains(&decision.faction.as_str())
         || !ti4_policy::learned::STAGE1_DECISION_HEADS.contains(&decision.head.as_str())
@@ -1016,6 +1056,47 @@ mod tests {
             error.to_string().contains("not in the train cluster"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn an_unprojected_actor_vector_is_refused() {
+        // The regression for the defect the first capture shipped: it stored
+        // `TrajectoryStep::legal`, the raw schema-4 features the linear teacher scores with, rather
+        // than the projected vectors the MLP consumes. The record is otherwise perfect — lengths
+        // agree, seeds are in cluster, nothing is forced — so only this check catches it.
+        let scratch = Scratch::new("unprojected");
+        let mut raw = decision(202_608_210, 0);
+        // `state-option` is `FamilyRole::UnboundedCross`: the option-identity cross the projection
+        // suppresses before lookup, and precisely what leaked into the first corpus.
+        raw.actor[0].push((
+            "state-option:pok1leadership:faction-start-tech:nm".to_owned(),
+            1.0,
+        ));
+        let _ = written(&scratch, vec![raw], Cluster::Train);
+
+        let error = read_shard(&scratch.0, Cluster::Train, &expected())
+            .expect_err("an unprojected feature must be refused");
+        assert!(
+            error.to_string().contains("suppresses"),
+            "wrong refusal: {error}"
+        );
+    }
+
+    #[test]
+    fn a_projected_actor_vector_is_accepted() {
+        // Non-vacuity for the check above: the same record without the suppressed feature must pass,
+        // or the refusal could be coming from something else entirely.
+        let scratch = Scratch::new("projected");
+        let _ = written(&scratch, vec![decision(202_608_210, 0)], Cluster::Train);
+        let read =
+            read_shard(&scratch.0, Cluster::Train, &expected()).expect("a projected record reads");
+        assert_eq!(read.len(), 1);
+        for (feature, _) in &read[0].actor[0] {
+            assert!(
+                ti4_policy::projection::admits(feature),
+                "{feature} is not admitted"
+            );
+        }
     }
 
     #[test]

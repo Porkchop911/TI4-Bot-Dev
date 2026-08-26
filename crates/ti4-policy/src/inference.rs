@@ -117,6 +117,12 @@ pub fn probabilities(scores: &BTreeMap<String, f64>, temperature: f64) -> BTreeM
 }
 
 /// A bot that plays from a fitted profile and nothing else.
+/// Per-decision projected option vectors with their option ids.
+///
+/// Named because the shape is nested three deep and appears in a field, a getter and a rollout
+/// return type; spelling it out at each site is how one of them ends up subtly different.
+pub type ProjectedOptions = Vec<Vec<(String, FeatureVector)>>;
+
 pub struct LearnedBot {
     profile: Arc<Profile>,
     rng: ChaCha8Rng,
@@ -136,6 +142,16 @@ pub struct LearnedBot {
     /// index `i` here is index `i` there or the vector is absent entirely.
     critic: Rc<RefCell<Vec<FeatureVector>>>,
     critic_features: Option<crate::critic::CriticFeatures>,
+    /// The **projected** per-option vectors — what the MLP actually consumes — with their option
+    /// ids, in the engine's option order.
+    ///
+    /// Recorded separately from [`TrajectoryStep::legal`], which holds the raw schema-4 features
+    /// the linear policy scores with. The two are not the same feature set: the projection drops
+    /// the unbounded `state-option:`/`prompt-option:` crosses and *adds* the bare `seat-state:`
+    /// facts. A corpus built from `legal` therefore trains an MLP on inputs it will never see at
+    /// inference — which is exactly the defect M10-031 shipped.
+    projected: Rc<RefCell<ProjectedOptions>>,
+    record_projected: bool,
     /// What this seat held at setup, so progress is a gain rather than a total.
     baseline: Baseline,
 }
@@ -161,6 +177,8 @@ impl LearnedBot {
             recording: false,
             critic: Rc::new(RefCell::new(Vec::new())),
             critic_features: None,
+            projected: Rc::new(RefCell::new(Vec::new())),
+            record_projected: false,
             baseline: Baseline::default(),
         }
     }
@@ -202,6 +220,22 @@ impl LearnedBot {
     #[must_use]
     pub fn critic_vectors(&self) -> Rc<RefCell<Vec<FeatureVector>>> {
         Rc::clone(&self.critic)
+    }
+
+    /// Also record the projected per-option vectors the MLP consumes (M10-031).
+    ///
+    /// Only meaningful together with [`Self::recording`]; without it nothing is pushed to either
+    /// buffer, which is what keeps them aligned.
+    #[must_use]
+    pub const fn recording_projected(mut self) -> Self {
+        self.record_projected = true;
+        self
+    }
+
+    /// A handle on the projected option vectors, aligned with [`Self::trajectory`].
+    #[must_use]
+    pub fn projected_vectors(&self) -> Rc<RefCell<ProjectedOptions>> {
+        Rc::clone(&self.projected)
     }
 
     /// A handle on the decisions this bot takes.
@@ -318,6 +352,23 @@ impl Decider for LearnedBot {
         }
 
         if self.recording {
+            if self.record_projected {
+                // The MLP's own view of this decision, built from the same bound capability.
+                let vectors = crate::projection::mlp_choice_features(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    &seen.held_secret_progress(),
+                );
+                self.projected.borrow_mut().push(
+                    choice
+                        .options
+                        .iter()
+                        .map(|option| option.id.clone())
+                        .zip(vectors)
+                        .collect(),
+                );
+            }
             if let Some(features) = self.critic_features {
                 // Built from the bound view, like everything else on this path: the critic takes
                 // the capability, so a corpus cannot capture a seat's position from omniscient
