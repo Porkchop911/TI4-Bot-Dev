@@ -81,7 +81,7 @@ fn play_one(
     critic_mode: ti4_mlp::bundle::CriticMode,
     seed: u64,
     rotation: usize,
-) -> Result<Vec<Step>, String> {
+) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
         .enumerate()
@@ -157,7 +157,13 @@ fn play_one(
     // skipped: silently dropping a seat shrinks the batch and nothing downstream would notice
     // (F-M10-034-D4).
     let mut steps: Vec<Step> = Vec::new();
+    let mut outcomes: Vec<SeatOutcome> = Vec::new();
     for seat in &rollout.seats {
+        outcomes.push(SeatOutcome {
+            faction: seat.faction.to_string(),
+            cleared: seat.episode.cleared,
+            victory_points: seat.episode.final_progress.victory_points,
+        });
         let handle = handles.get(&seat.player).ok_or_else(|| {
             format!(
                 "seed {seed} rotation {rotation}: {} has no recording handle",
@@ -194,7 +200,144 @@ fn play_one(
         }
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
-    Ok(steps)
+    Ok((steps, outcomes))
+}
+
+/// One played game: the decisions it contributed and what each seat ended with.
+type Played = (Vec<Step>, Vec<SeatOutcome>);
+
+/// What one seat's game produced, beyond the decisions it contributed to the batch.
+///
+/// Taken from the training games themselves rather than a separate evaluation pass: those games are
+/// already being played, already sampled from the current policy, and 96 games an update is 9,600
+/// per hundred-update report. A dedicated eval would cost compute and see fewer games.
+#[derive(Clone)]
+struct SeatOutcome {
+    faction: String,
+    cleared: bool,
+    victory_points: i64,
+}
+
+/// Faction-level totals accumulated across a reporting window.
+#[derive(Clone, Copy, Default)]
+struct FactionTally {
+    games: usize,
+    cleared: usize,
+    victory_points: i64,
+}
+
+impl FactionTally {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "game counts are exact in f64 far beyond any run length"
+    )]
+    fn clearance(self) -> f64 {
+        if self.games == 0 {
+            return 0.0;
+        }
+        self.cleared as f64 / self.games as f64 * 100.0
+    }
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "game counts and points are exact in f64"
+    )]
+    fn mean_points(self) -> f64 {
+        if self.games == 0 {
+            return 0.0;
+        }
+        self.victory_points as f64 / self.games as f64
+    }
+
+    fn add(&mut self, outcome: &SeatOutcome) {
+        self.games += 1;
+        self.cleared += usize::from(outcome.cleared);
+        self.victory_points += outcome.victory_points;
+    }
+}
+
+/// Print a window's stage-one clearance and victory points per faction, against the window before.
+///
+/// The deltas are what make this readable as progress rather than as a snapshot; the first report
+/// has nothing to compare against and says so instead of printing a zero, which would read as "no
+/// movement" rather than "no baseline".
+fn report(
+    update: usize,
+    window: &BTreeMap<String, FactionTally>,
+    previous: Option<&BTreeMap<String, FactionTally>>,
+    span: usize,
+) {
+    let first = update.saturating_sub(span) + 1;
+    let seats: usize = window.values().map(|tally| tally.games).sum();
+    println!("\n  ===== report after update {update} (updates {first}-{update}, {seats} seat-games) =====");
+    println!("  faction      games   stage-1 clearance        mean VP");
+
+    let mut table = FactionTally::default();
+    let mut previous_table = FactionTally::default();
+    for (faction, tally) in window {
+        table.games += tally.games;
+        table.cleared += tally.cleared;
+        table.victory_points += tally.victory_points;
+        let before = previous.and_then(|earlier| earlier.get(faction)).copied();
+        if let Some(before) = before {
+            previous_table.games += before.games;
+            previous_table.cleared += before.cleared;
+            previous_table.victory_points += before.victory_points;
+        }
+        print_row(faction, *tally, before);
+    }
+    println!("  {:-<58}", "");
+    print_row(
+        "table",
+        table,
+        (previous_table.games > 0).then_some(previous_table),
+    );
+}
+
+fn print_row(name: &str, tally: FactionTally, previous: Option<FactionTally>) {
+    let clearance = tally.clearance();
+    let points = tally.mean_points();
+    match previous {
+        Some(before) => println!(
+            "  {:<10} {:>6}   {:>6.2}%  ({:+.2})   {:>6.3}  ({:+.3})",
+            name,
+            tally.games,
+            clearance,
+            clearance - before.clearance(),
+            points,
+            points - before.mean_points(),
+        ),
+        None => println!(
+            "  {:<10} {:>6}   {:>6.2}%      (--)   {:>6.3}      (--)",
+            name, tally.games, clearance, points
+        ),
+    }
+}
+
+/// Write a checkpoint and verify it loads back to the weights that were trained.
+///
+/// A multi-day run with no resume (M10-035 is not built) would otherwise keep every update's work
+/// in one process's memory. Publishing at each report bounds what a crash costs to one window.
+fn publish(
+    actor: &ti4_mlp::Actor,
+    destination: &std::path::Path,
+    slots_text: &str,
+    critic_mode: ti4_mlp::bundle::CriticMode,
+    provenance: &ti4_mlp::bundle::Provenance,
+    expected: &[u32],
+) {
+    let cpu = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
+    let bundle =
+        ti4_mlp::bundle::write(destination, &cpu, slots_text, critic_mode, provenance)
+            .unwrap_or_else(|error| refuse(&format!("writing the checkpoint: {error}")));
+    let reloaded = ti4_mlp::bundle::read(&bundle.directory)
+        .unwrap_or_else(|error| refuse(&format!("the checkpoint does not load: {error}")));
+    let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&reloaded.actor, reloaded.critic_mode)
+        .unwrap_or_else(|error| refuse(&format!("fingerprinting the reload: {error}")));
+    if fingerprint != expected {
+        refuse("the reloaded checkpoint does not match the weights that were trained");
+    }
+    println!("  checkpoint  {} (reloaded, identical)", bundle.directory.display());
 }
 
 fn main() {
@@ -241,6 +384,13 @@ fn main() {
     );
 
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/mlp-ppo".to_owned());
+    let report_every: usize = argument("--report-every")
+        .map_or(100, |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--report-every expects a positive integer"))
+        })
+        .max(1);
     let settings = Settings::default();
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
@@ -283,6 +433,17 @@ fn main() {
         .state_fingerprint()
         .unwrap_or_else(|error| refuse(&format!("fingerprinting Adam: {error}")));
 
+    // §4.4: weights are stored on CPU, so a checkpoint from a CUDA run loads on a CPU-only machine.
+    // Read once here rather than per publish: it is 1.1 MB of JSON and does not change.
+    let slots_text = std::fs::read_to_string(std::path::Path::new(&bundle_path).join("slots.json"))
+        .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
+
+    // Stage-one clearance and victory points accumulate across a reporting window and are compared
+    // against the window before it. Per update the numbers are noise -- 96 games, six seats -- but a
+    // hundred updates is 9,600 seat-games, which is enough to read a trend from.
+    let mut window: BTreeMap<String, FactionTally> = BTreeMap::new();
+    let mut previous: Option<BTreeMap<String, FactionTally>> = None;
+
     for update in 0..updates {
         // ---- rollout, on CPU ----
         //
@@ -323,7 +484,7 @@ fn main() {
         // not depend on which worker finished first. Determinism here is not decoration: §6.3's
         // shuffle is seeded, and a batch assembled in scheduling order would make every downstream
         // fingerprint irreproducible.
-        let harvest: Vec<Result<Vec<Vec<Step>>, String>> = chunks
+        let harvest: Vec<Result<Vec<Played>, String>> = chunks
             .into_par_iter()
             .map(|(local, chunk)| {
                 chunk
@@ -346,10 +507,16 @@ fn main() {
             .collect();
 
         for chunk in harvest {
-            for game in chunk.unwrap_or_else(|error| refuse(&error)) {
+            for (game, outcomes) in chunk.unwrap_or_else(|error| refuse(&error)) {
                 games += 1;
                 seated_decisions += game.len();
                 steps.extend(game);
+                for outcome in &outcomes {
+                    window
+                        .entry(outcome.faction.clone())
+                        .or_default()
+                        .add(outcome);
+                }
             }
         }
         let rollout_time = rolled.elapsed();
@@ -417,6 +584,28 @@ fn main() {
         if matches!(critic_mode, CriticMode::BatchMean) && last.critic_loss != 0.0 {
             refuse("batch_mean mode reported a critic loss");
         }
+
+        // ---- the periodic report ----
+        let done = update + 1;
+        if done % report_every == 0 || done == updates {
+            report(done, &window, previous.as_ref(), report_every);
+            let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
+                .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
+            publish(
+                &actor,
+                &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
+                &slots_text,
+                critic_mode,
+                &ti4_mlp::bundle::Provenance {
+                    source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
+                    git_commit: std::env::var("GIT_COMMIT")
+                        .unwrap_or_else(|_| "unrecorded".to_owned()),
+                    update: u64::try_from(optimizer.steps()).unwrap_or(0),
+                },
+                &fingerprint,
+            );
+            previous = Some(std::mem::take(&mut window));
+        }
     }
 
     let after_parameters = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
@@ -432,36 +621,6 @@ fn main() {
     }
     println!("\n  parameters  moved");
     println!("  adam state  advanced, {} steps", optimizer.steps());
-
-    // §4.4: weights are stored on CPU, so a checkpoint from a CUDA run loads on a CPU-only machine.
-    let actor = actor.to_device(ti4_tensor::Device::Cpu);
-    let destination = std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps()));
-    let slots_text = std::fs::read_to_string(std::path::Path::new(&bundle_path).join("slots.json"))
-        .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
-    let bundle = ti4_mlp::bundle::write(
-        &destination,
-        &actor,
-        &slots_text,
-        critic_mode,
-        &ti4_mlp::bundle::Provenance {
-            source: format!("M10-034 PPO, {updates} update(s) from {bundle_path}"),
-            git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
-            update: u64::try_from(optimizer.steps()).unwrap_or(0),
-        },
-    )
-    .unwrap_or_else(|error| refuse(&format!("writing the checkpoint: {error}")));
-    println!("  checkpoint  {}", bundle.directory.display());
-
-    // Read it back before claiming it exists.
-    let reloaded = ti4_mlp::bundle::read(&bundle.directory)
-        .unwrap_or_else(|error| refuse(&format!("the checkpoint does not load: {error}")));
-    let reloaded_fingerprint =
-        ti4_mlp::ppo::parameter_fingerprint(&reloaded.actor, reloaded.critic_mode)
-            .unwrap_or_else(|error| refuse(&format!("fingerprinting the reload: {error}")));
-    if reloaded_fingerprint != after_parameters {
-        refuse("the reloaded checkpoint does not match the weights that were trained");
-    }
-    println!("  reloaded    parameters identical");
 
     println!(
         "\n  done. Rollouts are CPU-bound and sequential here; the optimiser honoured --device."
