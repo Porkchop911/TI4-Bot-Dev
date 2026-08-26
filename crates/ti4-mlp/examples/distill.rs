@@ -221,6 +221,26 @@ fn main() {
     let corpus = std::path::Path::new(&corpus);
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/mlp".to_owned());
 
+    // Pre-flight. `bundle::write` refuses to overwrite a bundle directory, and rightly so, but it
+    // does that check last -- after twenty epochs and a 1,200-game paired gate. A run that cannot
+    // publish should say so in the first second, not the thirty-fifth minute. The training is
+    // deterministic, so an occupied output directory means the very same name will collide again.
+    //
+    // The guard checks for an occupied `checkpoint-*` directory rather than a *complete* bundle:
+    // `latest_complete` skips bundles the loader rejects, and it was precisely such a stale bundle
+    // that blocked the write. A guard that only sees valid bundles would have missed this one.
+    if let Ok(entries) = std::fs::read_dir(std::path::Path::new(&out)) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("checkpoint-") {
+                refuse(&format!(
+                    "{out} already holds {name}; archive it before publishing another (bundles are                      immutable, so this run could not commit its result at the end)"
+                ));
+            }
+        }
+    }
+
     let backend = ti4_tensor::configure_deterministic(20_260_821)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
 

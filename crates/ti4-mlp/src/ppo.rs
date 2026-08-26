@@ -484,6 +484,26 @@ pub fn update(
     if optimizer.mode != critic_mode || optimizer.settings != settings {
         return Err("PPO optimizer mode/settings do not match the update".to_owned());
     }
+    // Every trainable parameter must still be a leaf that requires a gradient.
+    //
+    // `backward` populates `.grad` on the leaf a tensor was derived from. If the actor's parameters
+    // have been replaced by non-leaf views -- which is exactly what `Tensor::to_device` returns for
+    // a tensor that requires a gradient -- the gradients land on the tensors left behind, Adam
+    // receives none, and the update applies nothing while every loss in the telemetry looks
+    // healthy. The symptom surfaces three layers down as "0 defined gradients"; this names the
+    // cause instead.
+    for (index, parameter) in parameters(actor, critic_mode)?.iter().enumerate() {
+        if !parameter.requires_grad() {
+            return Err(format!(
+                "PPO parameter {index} does not require a gradient, so this update would train                  nothing"
+            ));
+        }
+        if !parameter.is_leaf() {
+            return Err(format!(
+                "PPO parameter {index} is not a leaf tensor, so backward would populate the                  gradient of the tensor it was derived from and this update would apply nothing;                  the usual cause is moving the actor to another device after Adam::new opened it"
+            ));
+        }
+    }
     if batch.steps.iter().any(|step| {
         step.options
             .iter()
@@ -981,6 +1001,58 @@ mod tests {
         assert_eq!(
             first.2, second.2,
             "Adam moments/cursor differed bit-for-bit"
+        );
+    }
+
+    #[test]
+    fn an_actor_whose_parameters_stopped_being_leaves_is_refused() {
+        // The defect this guards against cost a CUDA run: `Adam::new` opens the actor's parameters
+        // as leaves, a later `to_device` replaces them with non-leaf views, and every gradient then
+        // lands on the tensors left behind. On CPU `to_device` is a no-op, so the only way to
+        // reproduce it here is to derive a parameter explicitly -- which is the same thing a device
+        // move does.
+        let batch = Batch::freeze(
+            vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 3, 1.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 2,
+            ..Settings::default()
+        };
+        let mut actor = trainable_actor();
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+
+        // Control: the update works before the parameters stop being leaves, so the refusal below
+        // is about leaf-ness and not about the fixture.
+        update(
+            &mut actor,
+            &batch,
+            CriticMode::BatchMean,
+            settings,
+            7,
+            &mut optimizer,
+        )
+        .expect("the actor trains while its parameters are leaves");
+
+        let derived = actor.input() + 0.0;
+        assert!(!derived.is_leaf(), "the fixture did not produce a non-leaf");
+        *actor.input_mut() = derived;
+
+        let refusal = update(
+            &mut actor,
+            &batch,
+            CriticMode::BatchMean,
+            settings,
+            7,
+            &mut optimizer,
+        )
+        .expect_err("a non-leaf parameter was accepted and would have trained nothing");
+        assert!(
+            refusal.contains("is not a leaf tensor"),
+            "refused for the wrong reason: {refusal}"
         );
     }
 

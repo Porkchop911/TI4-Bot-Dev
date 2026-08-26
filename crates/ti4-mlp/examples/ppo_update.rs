@@ -144,7 +144,16 @@ fn main() {
 
     for update in 0..updates {
         // ---- rollout, on CPU ----
-        actor = actor.to_device(ti4_tensor::Device::Cpu);
+        //
+        // §7.1 pins inference to the CPU, so self-play needs CPU weights. It takes a *copy* rather
+        // than moving the training actor: `Adam::new` established the parameters as leaf tensors,
+        // and `to_device` on a tensor that requires a gradient returns a non-leaf view of the move.
+        // Backward then populates `.grad` on the leaves that were left behind, Adam sees none, and
+        // the update silently applies nothing. On CPU the move is a no-op so the bug is invisible;
+        // on CUDA it is fatal, which is how it was found.
+        //
+        // One transfer per update, not one per seat: the per-seat copies are made from this.
+        let inference = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
         let rolled = Instant::now();
         let mut steps: Vec<Step> = Vec::new();
         let mut seated_decisions = 0usize;
@@ -201,7 +210,7 @@ fn main() {
                             // reparses a 1.1 MB slots.json per seat per game: 576 verifications an
                             // update, 14 minutes measuring nothing but that mistake.
                             let bot = ti4_mlp::bot::MlpBot::new(
-                                actor.inference_copy(),
+                                inference.inference_copy(),
                                 vocabulary.clone(),
                                 row,
                                 stream,
@@ -290,7 +299,6 @@ fn main() {
                 batch.steps().len()
             ));
         }
-        actor = actor.to_device(device);
         let optimised = Instant::now();
         let stats = ti4_mlp::ppo::update(
             &mut actor,
