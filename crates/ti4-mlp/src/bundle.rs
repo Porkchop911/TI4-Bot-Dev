@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 use sha2::Digest;
 use ti4_tensor::Tensor;
 
-use crate::{Actor, EMBED_DIM, FACTION_ROSTER, Width, heads};
+use crate::{Actor, EMBED_DIM, FACTION_ROSTER, SeparateCritic, Width, heads};
 
 /// The schema this module reads and writes. Distinct from the linear schemas 2–5 so a wrong loader
 /// fails loudly rather than misreading a field it recognises.
@@ -230,8 +230,8 @@ pub fn write(
         &[("embedding", actor.embedding())],
         &mut digests,
     )?;
-    if critic_mode.needs_value_file() {
-        write_tensors(
+    match critic_mode {
+        CriticMode::Shared => write_tensors(
             &staging,
             "value.safetensors",
             &[
@@ -239,7 +239,19 @@ pub fn write(
                 ("b_value", actor.b_value()),
             ],
             &mut digests,
-        )?;
+        )?,
+        CriticMode::Separate => {
+            let critic = actor.separate_critic().ok_or_else(|| {
+                BundleError::Invalid("separate mode has no separate critic tensors".to_owned())
+            })?;
+            write_tensors(
+                &staging,
+                "value.safetensors",
+                &critic.tensors(),
+                &mut digests,
+            )?;
+        }
+        CriticMode::BatchMean => {}
     }
 
     let slots_path = staging.join("slots.json");
@@ -566,9 +578,20 @@ fn check_shapes(
             ("b_delta", vec![factions, heads_count]),
             ("embedding", vec![factions, EMBED_DIM]),
         ];
-        if critic_mode.needs_value_file() {
-            expected.push(("w_value", vec![w]));
-            expected.push(("b_value", vec![1]));
+        match critic_mode {
+            CriticMode::Shared => {
+                expected.push(("w_value", vec![w]));
+                expected.push(("b_value", vec![1]));
+            }
+            CriticMode::Separate => {
+                expected.push(("critic_W1", vec![capacity, 128]));
+                expected.push(("critic_b1", vec![128]));
+                expected.push(("critic_W2", vec![128, 128]));
+                expected.push(("critic_b2", vec![128]));
+                expected.push(("critic_readout", vec![128]));
+                expected.push(("critic_bias", vec![1]));
+            }
+            CriticMode::BatchMean => {}
         }
         expected
     };
@@ -610,9 +633,20 @@ fn install(actor: &mut Actor, named: &BTreeMap<String, Tensor>, critic_mode: Cri
     *actor.delta_mut() = named["delta"].shallow_clone();
     *actor.b_delta_mut() = named["b_delta"].shallow_clone();
     *actor.embedding_mut() = named["embedding"].shallow_clone();
-    if critic_mode.needs_value_file() {
-        *actor.value_readout_mut() = named["w_value"].shallow_clone();
-        *actor.b_value_mut() = named["b_value"].shallow_clone();
+    match critic_mode {
+        CriticMode::Shared => {
+            *actor.value_readout_mut() = named["w_value"].shallow_clone();
+            *actor.b_value_mut() = named["b_value"].shallow_clone();
+        }
+        CriticMode::Separate => actor.set_separate_critic(Some(SeparateCritic::new(
+            named["critic_W1"].shallow_clone(),
+            named["critic_b1"].shallow_clone(),
+            named["critic_W2"].shallow_clone(),
+            named["critic_b2"].shallow_clone(),
+            named["critic_readout"].shallow_clone(),
+            named["critic_bias"].shallow_clone(),
+        ))),
+        CriticMode::BatchMean => {}
     }
 }
 
@@ -876,6 +910,45 @@ mod tests {
             "the fixture is all zeros, so the comparison proves nothing"
         );
         let _ = text;
+    }
+
+    #[test]
+    fn a_separate_critic_round_trips_as_six_distinct_tensors() {
+        let scratch = Scratch::new("separate");
+        let text = slots();
+        let capacity: i64 = ti4_policy::vocabulary::Vocabulary::from_json(&text)
+            .expect("loads")
+            .capacity()
+            .try_into()
+            .expect("fits");
+        let mut model = actor(capacity);
+        let opts = (ti4_tensor::Kind::Float, ti4_tensor::Device::Cpu);
+        model.set_separate_critic(Some(SeparateCritic::new(
+            Tensor::ones([capacity, 128], opts),
+            Tensor::ones([128], opts) * 2.0,
+            Tensor::ones([128, 128], opts) * 3.0,
+            Tensor::ones([128], opts) * 4.0,
+            Tensor::ones([128], opts) * 5.0,
+            Tensor::ones([1], opts) * 6.0,
+        )));
+        let destination = scratch.0.join("checkpoint-8");
+        write(
+            &destination,
+            &model,
+            &text,
+            CriticMode::Separate,
+            &provenance(),
+        )
+        .expect("writes");
+        let loaded = read(&destination).expect("loads");
+        assert_eq!(loaded.critic_mode, CriticMode::Separate);
+        let critic = loaded.actor.separate_critic().expect("separate tensors");
+        let means: Vec<f64> = critic
+            .tensors()
+            .iter()
+            .map(|(_, tensor)| tensor.mean(ti4_tensor::Kind::Float).double_value(&[]))
+            .collect();
+        assert_eq!(means, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
     }
 
     #[test]

@@ -297,6 +297,95 @@ impl CriticInput {
         seen.dedup();
         seen.len()
     }
+
+    pub(crate) const fn sparse(&self) -> &SparseOption {
+        &self.sparse
+    }
+}
+
+/// The fixed fallback critic: an independent two-layer, width-128 trunk and scalar readout.
+#[derive(Debug)]
+pub struct SeparateCritic {
+    input: Tensor,
+    b1: Tensor,
+    hidden: Tensor,
+    b2: Tensor,
+    readout: Tensor,
+    bias: Tensor,
+}
+
+impl SeparateCritic {
+    /// Build a separate critic from already initialised tensors.
+    #[must_use]
+    pub fn new(
+        input: Tensor,
+        b1: Tensor,
+        hidden: Tensor,
+        b2: Tensor,
+        readout: Tensor,
+        bias: Tensor,
+    ) -> Self {
+        Self {
+            input,
+            b1,
+            hidden,
+            b2,
+            readout,
+            bias,
+        }
+    }
+
+    /// Named tensors in stable bundle order.
+    pub fn tensors(&self) -> [(&'static str, &Tensor); 6] {
+        [
+            ("critic_W1", &self.input),
+            ("critic_b1", &self.b1),
+            ("critic_W2", &self.hidden),
+            ("critic_b2", &self.b2),
+            ("critic_readout", &self.readout),
+            ("critic_bias", &self.bias),
+        ]
+    }
+
+    /// Shallow parameter handles for an optimizer; mutations update this critic's tensors.
+    #[must_use]
+    pub fn parameters(&self) -> Vec<Tensor> {
+        self.tensors()
+            .iter()
+            .map(|(_, tensor)| (*tensor).shallow_clone())
+            .collect()
+    }
+
+    pub(crate) fn open_for_training(&mut self) {
+        self.input = self.input.detach().copy().set_requires_grad(true);
+        self.b1 = self.b1.detach().copy().set_requires_grad(true);
+        self.hidden = self.hidden.detach().copy().set_requires_grad(true);
+        self.b2 = self.b2.detach().copy().set_requires_grad(true);
+        self.readout = self.readout.detach().copy().set_requires_grad(true);
+        self.bias = self.bias.detach().copy().set_requires_grad(true);
+    }
+
+    fn value_tensor(&self, critic: &CriticInput) -> Result<Tensor, ActorError> {
+        let batch = [(
+            critic.sparse.columns.as_slice(),
+            critic.sparse.values.as_slice(),
+        )];
+        let x = ti4_tensor::gather_reduce_batch(&self.input, &batch)?;
+        let first = (x + &self.b1).relu();
+        let second = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
+        Ok(second.matmul(&self.readout) + &self.bias)
+    }
+
+    fn copied(&self) -> Self {
+        Self {
+            input: self.input.detach().copy(),
+            b1: self.b1.detach().copy(),
+            hidden: self.hidden.detach().copy(),
+            b2: self.b2.detach().copy(),
+            readout: self.readout.detach().copy(),
+            bias: self.bias.detach().copy(),
+        }
+    }
 }
 
 /// The actor: one shared trunk, one shared readout, and a thin per-faction residual.
@@ -324,9 +413,91 @@ pub struct Actor {
     w_value: Tensor,
     /// Scalar value bias.
     b_value: Tensor,
+    /// Present only when the fixed shared-critic fallback selected the separate trunk.
+    separate_critic: Option<SeparateCritic>,
 }
 
 impl Actor {
+    /// A detached inference copy with independent tensor storage.
+    ///
+    /// This exists so a multi-seat evaluation can give each consuming bot its own actor without
+    /// sharing mutable tensor storage between deciders.
+    #[must_use]
+    pub fn inference_copy(&self) -> Self {
+        Self {
+            width: self.width,
+            capacity: self.capacity,
+            input: self.input.detach().copy(),
+            b1: self.b1.detach().copy(),
+            hidden: self.hidden.detach().copy(),
+            b2: self.b2.detach().copy(),
+            w_shared: self.w_shared.detach().copy(),
+            b_shared: self.b_shared.detach().copy(),
+            delta: self.delta.detach().copy(),
+            b_delta: self.b_delta.detach().copy(),
+            embedding: self.embedding.detach().copy(),
+            w_value: self.w_value.detach().copy(),
+            b_value: self.b_value.detach().copy(),
+            separate_critic: self.separate_critic.as_ref().map(SeparateCritic::copied),
+        }
+    }
+
+    /// Install or clear the separately trained fallback critic.
+    pub fn set_separate_critic(&mut self, critic: Option<SeparateCritic>) {
+        self.separate_critic = critic;
+    }
+
+    /// The separate fallback critic, when selected.
+    #[must_use]
+    pub const fn separate_critic(&self) -> Option<&SeparateCritic> {
+        self.separate_critic.as_ref()
+    }
+
+    /// Mutable access for the bounded separate-critic warm-up and PPO optimizer.
+    pub const fn separate_critic_mut(&mut self) -> Option<&mut SeparateCritic> {
+        self.separate_critic.as_mut()
+    }
+
+    pub(crate) fn open_main_for_training(&mut self, include_value: bool) {
+        macro_rules! open {
+            ($field:ident) => {
+                self.$field = self.$field.detach().copy().set_requires_grad(true);
+            };
+        }
+        open!(input);
+        open!(b1);
+        open!(hidden);
+        open!(b2);
+        open!(w_shared);
+        open!(b_shared);
+        open!(delta);
+        open!(b_delta);
+        open!(embedding);
+        if include_value {
+            open!(w_value);
+            open!(b_value);
+        }
+    }
+
+    pub(crate) fn main_parameters(&self, include_value: bool) -> Vec<Tensor> {
+        let mut parameters = vec![
+            self.input.shallow_clone(),
+            self.b1.shallow_clone(),
+            self.hidden.shallow_clone(),
+            self.b2.shallow_clone(),
+            self.w_shared.shallow_clone(),
+            self.b_shared.shallow_clone(),
+            self.delta.shallow_clone(),
+            self.b_delta.shallow_clone(),
+            self.embedding.shallow_clone(),
+        ];
+        if include_value {
+            parameters.push(self.w_value.shallow_clone());
+            parameters.push(self.b_value.shallow_clone());
+        }
+        parameters
+    }
+
     /// A zero-initialised actor.
     ///
     /// Everything starts at zero here. §6.1 fixes the real initialisation — a pinned RNG domain and
@@ -362,6 +533,7 @@ impl Actor {
             embedding: Tensor::zeros([factions_dim, EMBED_DIM], opts),
             w_value: Tensor::zeros([w], opts),
             b_value: Tensor::zeros([1], opts),
+            separate_critic: None,
         }
     }
 
@@ -637,6 +809,9 @@ impl Actor {
         critic: &CriticInput,
         row: FactionRow,
     ) -> Result<Tensor, ActorError> {
+        if let Some(separate) = &self.separate_critic {
+            return separate.value_tensor(critic);
+        }
         // The same trunk, one row. `trunk` refuses an empty batch, and a position with no critic
         // facts at all is a malformed extraction rather than a legal state.
         let z = self.trunk(std::slice::from_ref(&critic.sparse), row)?;

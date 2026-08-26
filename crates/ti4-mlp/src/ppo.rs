@@ -32,13 +32,13 @@ use std::collections::BTreeMap;
 
 use ti4_tensor::Tensor;
 
-use crate::{Actor, FactionRow, SparseOption, bundle::CriticMode};
+use crate::{Actor, CriticInput, FactionRow, SparseOption, bundle::CriticMode};
 
 /// §6.3's fixed PPO settings.
 ///
 /// The learning rate is **not** fixed here: §6.3 defers it to M10-036a's six pre-registered pilots
 /// over `{1e-4, 3e-4, 1e-3} × {0, 1e-5}`, and picking one now would pre-empt that selection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     /// Adam learning rate. Chosen by M10-036a, not here.
     pub learning_rate: f64,
@@ -102,6 +102,14 @@ impl Settings {
 }
 
 /// One decision as it was actually played, recorded **before** optimisation begins.
+///
+/// The critic field is typed: a policy [`SparseOption`] cannot be substituted.
+///
+/// ```compile_fail,E0308
+/// # use ti4_mlp::{CriticInput, SparseOption};
+/// let option = SparseOption { columns: vec![1], values: vec![1.0] };
+/// let _: CriticInput = option;
+/// ```
 #[derive(Debug, Clone)]
 pub struct Step {
     /// The faction row that acted.
@@ -119,7 +127,7 @@ pub struct Step {
     /// The accepted return from this decision.
     pub return_to_go: f64,
     /// The option-free critic vector for this position.
-    pub critic: SparseOption,
+    pub critic: CriticInput,
 }
 
 /// One update's data, with the advantage already frozen.
@@ -140,8 +148,45 @@ impl Batch {
     /// `A = returns − V_behaviour`, then normalised — both **once**, here. The values are `f64` and
     /// not tensors: there is no graph to detach because none was ever built, which is a stronger
     /// guarantee than calling `.detach()` and hoping every later path respects it.
-    #[must_use]
-    pub fn freeze(steps: Vec<Step>) -> Self {
+    ///
+    /// # Errors
+    /// Returns an error when the batch or any step is empty, malformed, or non-finite.
+    pub fn freeze(steps: Vec<Step>) -> Result<Self, String> {
+        if steps.is_empty() {
+            return Err("a PPO batch is empty".to_owned());
+        }
+        for (index, step) in steps.iter().enumerate() {
+            if step.head >= crate::heads().len()
+                || step.options.len() < 2
+                || step.chosen >= step.options.len()
+                || !step.behaviour_log_prob.is_finite()
+                || step.behaviour_log_prob > 0.0
+                || !step.behaviour_value.is_finite()
+                || !step.return_to_go.is_finite()
+                || step.critic.sparse().columns.is_empty()
+                || step.critic.sparse().columns.len() != step.critic.sparse().values.len()
+                || step
+                    .critic
+                    .sparse()
+                    .columns
+                    .iter()
+                    .any(|column| *column < 0)
+                || step
+                    .critic
+                    .sparse()
+                    .values
+                    .iter()
+                    .any(|value| !value.is_finite())
+                || step.options.iter().any(|option| {
+                    option.columns.is_empty()
+                        || option.columns.len() != option.values.len()
+                        || option.columns.iter().any(|column| *column < 0)
+                        || option.values.iter().any(|value| !value.is_finite())
+                })
+            {
+                return Err(format!("PPO step {index} is malformed or non-finite"));
+            }
+        }
         let raw: Vec<f64> = steps
             .iter()
             .map(|step| step.return_to_go - step.behaviour_value)
@@ -154,11 +199,14 @@ impl Batch {
         let mean = raw.iter().sum::<f64>() / count;
         let variance = raw.iter().map(|a| (a - mean).powi(2)).sum::<f64>() / count;
         let deviation = variance.sqrt();
-        let advantages = raw
+        let advantages: Vec<f64> = raw
             .iter()
             .map(|a| (a - mean) / (deviation + 1e-8))
             .collect();
-        Self { steps, advantages }
+        if advantages.iter().any(|advantage| !advantage.is_finite()) {
+            return Err("normalised PPO advantages are non-finite".to_owned());
+        }
+        Ok(Self { steps, advantages })
     }
 
     /// The recorded decisions.
@@ -212,18 +260,22 @@ struct Scored {
 /// Score one decision under the current weights.
 ///
 /// The softmax is over exactly this decision's options — the segment — so no padding can enter it.
-fn score(actor: &Actor, step: &Step) -> Option<Scored> {
-    let head = crate::heads().get(step.head)?;
-    let logits = actor.logits(&step.options, head, step.row).ok()?;
+fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
+    let head = crate::heads()
+        .get(step.head)
+        .ok_or_else(|| format!("head index {} is out of range", step.head))?;
+    let logits = actor
+        .logits(&step.options, head, step.row)
+        .map_err(|error| format!("policy scoring failed: {error}"))?;
     let log_probs = logits.log_softmax(0, ti4_tensor::Kind::Float);
-    let chosen = i64::try_from(step.chosen).ok()?;
-    if chosen >= i64::try_from(step.options.len()).ok()? {
-        return None;
+    let chosen = i64::try_from(step.chosen).map_err(|_| "chosen index does not fit i64")?;
+    if chosen >= i64::try_from(step.options.len()).map_err(|_| "option count does not fit i64")? {
+        return Err("chosen option is outside the legal set".to_owned());
     }
     let log_prob = log_probs.narrow(0, chosen, 1).squeeze();
     // H = −Σ p log p, over this decision's options only.
     let entropy = -(log_probs.exp() * &log_probs).sum(ti4_tensor::Kind::Float);
-    Some(Scored { log_prob, entropy })
+    Ok(Scored { log_prob, entropy })
 }
 
 /// The clipped surrogate for one decision.
@@ -238,25 +290,166 @@ fn surrogate(log_prob: &Tensor, behaviour_log_prob: f64, advantage: f64, epsilon
     -unclipped_term.minimum(&clipped_term)
 }
 
+/// Stateful Adam over the exact parameter set selected by the critic mode.
+pub struct Adam {
+    inner: crate::distill::Adam,
+    mode: CriticMode,
+    settings: Settings,
+}
+
+impl Adam {
+    /// Open the selected trainables and create zeroed moments.
+    ///
+    /// # Errors
+    /// Returns an error for invalid settings or a critic mode incompatible with the actor.
+    pub fn new(actor: &mut Actor, mode: CriticMode, settings: Settings) -> Result<Self, String> {
+        validate_settings(settings)?;
+        match mode {
+            CriticMode::Shared if actor.separate_critic().is_some() => {
+                return Err("shared mode was given an actor with a separate critic".to_owned());
+            }
+            CriticMode::Separate if actor.separate_critic().is_none() => {
+                return Err("separate mode has no separate critic".to_owned());
+            }
+            CriticMode::BatchMean if actor.separate_critic().is_some() => {
+                return Err("batch-mean mode must not carry separate critic tensors".to_owned());
+            }
+            _ => {}
+        }
+        actor.open_main_for_training(matches!(mode, CriticMode::Shared));
+        if matches!(mode, CriticMode::Separate) {
+            actor
+                .separate_critic_mut()
+                .ok_or_else(|| "separate critic disappeared while opening PPO".to_owned())?
+                .open_for_training();
+        }
+        let parameters = parameters(actor, mode)?;
+        let optimizer_settings = crate::distill::Settings {
+            learning_rate: settings.learning_rate,
+            beta1: settings.beta1,
+            beta2: settings.beta2,
+            eps: settings.eps,
+            weight_decay: settings.weight_decay,
+            clip: settings.grad_clip,
+            ..crate::distill::Settings::default()
+        };
+        Ok(Self {
+            inner: crate::distill::Adam::new(optimizer_settings, &parameters),
+            mode,
+            settings,
+        })
+    }
+
+    fn step(&mut self, actor: &Actor) -> Result<(), String> {
+        let mut parameters = parameters(actor, self.mode)?;
+        self.inner.step(&mut parameters, 1.0)
+    }
+
+    /// Exact moments and step-counter fingerprint.
+    ///
+    /// # Errors
+    /// Returns an error when an optimizer tensor cannot be read.
+    pub fn state_fingerprint(&self) -> Result<Vec<u32>, String> {
+        self.inner.state_fingerprint()
+    }
+}
+
+fn validate_settings(settings: Settings) -> Result<(), String> {
+    let positive = [
+        settings.learning_rate,
+        settings.beta1,
+        settings.beta2,
+        settings.eps,
+        settings.clip_epsilon,
+        settings.grad_clip,
+        settings.value_coefficient,
+    ];
+    if settings.epochs == 0
+        || settings.minibatch == 0
+        || positive
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
+        || !settings.weight_decay.is_finite()
+        || settings.weight_decay < 0.0
+        || !settings.entropy.is_finite()
+        || settings.entropy < 0.0
+        || !settings.strategy_entropy.is_finite()
+        || settings.strategy_entropy < 0.0
+        || settings.beta1 >= 1.0
+        || settings.beta2 >= 1.0
+        || settings.clip_epsilon >= 1.0
+    {
+        return Err("PPO settings are empty, non-finite, or outside their valid ranges".to_owned());
+    }
+    Ok(())
+}
+
+fn parameters(actor: &Actor, mode: CriticMode) -> Result<Vec<Tensor>, String> {
+    let mut parameters = actor.main_parameters(matches!(mode, CriticMode::Shared));
+    if matches!(mode, CriticMode::Separate) {
+        parameters.extend(
+            actor
+                .separate_critic()
+                .ok_or_else(|| "separate PPO mode has no separate critic".to_owned())?
+                .parameters(),
+        );
+    }
+    Ok(parameters)
+}
+
+/// Exact trainable-parameter fingerprint for deterministic-update tests and evidence.
+///
+/// # Errors
+/// Returns an error for an invalid critic mode or when a parameter tensor cannot be read.
+pub fn parameter_fingerprint(actor: &Actor, mode: CriticMode) -> Result<Vec<u32>, String> {
+    let mut bits = Vec::new();
+    for tensor in parameters(actor, mode)? {
+        bits.extend(
+            ti4_tensor::to_vec(&tensor)
+                .map_err(|error| format!("reading PPO parameter: {error}"))?
+                .iter()
+                .map(|value| value.to_bits()),
+        );
+    }
+    Ok(bits)
+}
+
 /// One PPO update over a frozen batch.
 ///
 /// Returns one [`EpochStats`] per epoch. The advantages are the batch's, unchanged, in every epoch;
 /// `shuffle` only changes the order decisions are visited in.
 ///
-/// # Panics
-/// If `settings.epochs` is zero, which would make an update that trains nothing.
+/// # Errors
+/// Returns an error for an empty or malformed batch, incompatible settings or critic mode, or any
+/// failed model or optimizer operation. Validation occurs before the first mutation.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the fixed PPO epoch protocol auditable"
+)]
 pub fn update(
     actor: &mut Actor,
     batch: &Batch,
     critic_mode: CriticMode,
     settings: Settings,
     shuffle_seed: u64,
-    mut step_optimiser: impl FnMut(&mut Actor),
-) -> Vec<EpochStats> {
-    assert!(
-        settings.epochs > 0,
-        "an update with no epochs trains nothing"
-    );
+    optimizer: &mut Adam,
+) -> Result<Vec<EpochStats>, String> {
+    validate_settings(settings)?;
+    if batch.is_empty() {
+        return Err("a PPO update batch is empty".to_owned());
+    }
+    if optimizer.mode != critic_mode || optimizer.settings != settings {
+        return Err("PPO optimizer mode/settings do not match the update".to_owned());
+    }
+    if batch.steps.iter().any(|step| {
+        step.options
+            .iter()
+            .flat_map(|option| &option.columns)
+            .chain(&step.critic.sparse().columns)
+            .any(|column| *column >= actor.capacity())
+    }) {
+        return Err("a PPO feature column is outside the actor capacity".to_owned());
+    }
     let mut out = Vec::with_capacity(settings.epochs);
 
     for epoch in 0..settings.epochs {
@@ -280,9 +473,7 @@ pub fn update(
             for index in minibatch {
                 let step = &batch.steps[*index];
                 let advantage = batch.advantages[*index];
-                let Some(scored) = score(actor, step) else {
-                    continue;
-                };
+                let scored = score(actor, step)?;
 
                 let actor_term = surrogate(
                     &scored.log_prob,
@@ -296,12 +487,12 @@ pub fn update(
 
                 // The critic's own path to the trunk, per §6.3, and only in the modes that have one.
                 if !matches!(critic_mode, CriticMode::BatchMean) {
-                    let input = crate::CriticInput::from_sparse(step.critic.clone());
-                    if let Ok(value) = actor.value_tensor(&input, step.row) {
-                        let critic_term = (value - step.return_to_go).square().squeeze();
-                        stats.critic_loss += tch::no_grad(|| critic_term.double_value(&[]));
-                        term += critic_term * settings.value_coefficient;
-                    }
+                    let value = actor
+                        .value_tensor(&step.critic, step.row)
+                        .map_err(|error| format!("critic scoring failed: {error}"))?;
+                    let critic_term = (value - step.return_to_go).square().squeeze();
+                    stats.critic_loss += tch::no_grad(|| critic_term.double_value(&[]));
+                    term += critic_term * settings.value_coefficient;
                 }
 
                 tch::no_grad(|| {
@@ -321,19 +512,22 @@ pub fn update(
 
                 loss = Some(loss.map_or_else(|| term.shallow_clone(), |sum| sum + &term));
             }
-            if let Some(loss) = loss {
-                #[expect(clippy::cast_precision_loss, reason = "minibatch sizes are small")]
-                let mean = loss / minibatch.len() as f64;
-                mean.backward();
-                step_optimiser(actor);
-            }
+            let loss = loss.ok_or_else(|| "a PPO minibatch produced no loss".to_owned())?;
+            #[expect(clippy::cast_precision_loss, reason = "minibatch sizes are small")]
+            let mean = loss / minibatch.len() as f64;
+            mean.backward();
+            optimizer.step(actor)?;
+        }
+
+        if seen != batch.len() {
+            return Err(format!("PPO evaluated {seen} of {} decisions", batch.len()));
         }
 
         #[expect(
             clippy::cast_precision_loss,
             reason = "decision counts are exact in f64"
         )]
-        let denominator = seen.max(1) as f64;
+        let denominator = seen as f64;
         stats.actor_loss /= denominator;
         stats.critic_loss /= denominator;
         stats.kl /= denominator;
@@ -354,7 +548,7 @@ pub fn update(
             .collect();
         out.push(stats);
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -400,10 +594,10 @@ mod tests {
             behaviour_log_prob: -(f64::from(u32::try_from(options).unwrap_or(1))).ln(),
             behaviour_value: value,
             return_to_go: ret,
-            critic: SparseOption {
+            critic: CriticInput::from_sparse(SparseOption {
                 columns: vec![7],
                 values: vec![1.0],
-            },
+            }),
         }
     }
 
@@ -413,7 +607,8 @@ mod tests {
             step(0, 2, 3.0, 1.0),
             step(1, 3, 1.0, 1.0),
             step(0, 2, 2.0, 4.0),
-        ]);
+        ])
+        .expect("valid batch");
         let advantages = batch.advantages().to_vec();
 
         // Normalised: mean zero, unit deviation.
@@ -438,7 +633,8 @@ mod tests {
             step(0, 2, 2.0, 2.0),
             step(0, 2, 5.0, 5.0),
             step(0, 2, 1.0, 1.0),
-        ]);
+        ])
+        .expect("valid batch");
         for advantage in batch.advantages() {
             assert!(
                 advantage.abs() < 1e-6,
@@ -531,7 +727,12 @@ mod tests {
                         i64::try_from(index).unwrap_or(0) + 1,
                         i64::try_from(index).unwrap_or(0) + 40,
                     ],
-                    values: vec![1.0 + index as f32 * 0.7, 0.3 - index as f32 * 0.2],
+                    // `f32::from(u8)` is lossless, so no cast lint and no precision question:
+                    // option counts here are single digits.
+                    values: vec![
+                        1.0 + f32::from(u8::try_from(index).unwrap_or(0)) * 0.7,
+                        0.3 - f32::from(u8::try_from(index).unwrap_or(0)) * 0.2,
+                    ],
                 })
                 .collect(),
             chosen,
@@ -540,10 +741,10 @@ mod tests {
             behaviour_log_prob: -1.4,
             behaviour_value: 1.0,
             return_to_go: 4.0,
-            critic: SparseOption {
+            critic: CriticInput::from_sparse(SparseOption {
                 columns: vec![7],
                 values: vec![1.0],
-            },
+            }),
         }
     }
 
@@ -664,26 +865,40 @@ mod tests {
             step(1, 3, 1.0, 2.0),
             step(0, 4, 5.0, 0.5),
             step(2, 3, 2.0, 1.5),
-        ]);
+        ])
+        .expect("valid batch");
         let run = || {
             let mut actor = trainable_actor();
-            update(
+            let settings = Settings {
+                epochs: 2,
+                minibatch: 2,
+                ..Settings::default()
+            };
+            let mut optimizer =
+                Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+            let before = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
+            let stats = update(
                 &mut actor,
                 &batch,
                 CriticMode::BatchMean,
-                Settings {
-                    epochs: 2,
-                    minibatch: 2,
-                    ..Settings::default()
-                },
+                settings,
                 7,
-                |_| {},
+                &mut optimizer,
             )
+            .expect("update");
+            let after = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
+            let state = optimizer.state_fingerprint().expect("Adam state");
+            assert_ne!(after, before, "the PPO update moved no parameter");
+            assert!(
+                state.iter().any(|bits| *bits != 0),
+                "Adam state stayed zero"
+            );
+            (stats, after, state)
         };
         let first = run();
         let second = run();
-        assert_eq!(first.len(), second.len());
-        for (a, b) in first.iter().zip(&second) {
+        assert_eq!(first.0.len(), second.0.len());
+        for (a, b) in first.0.iter().zip(&second.0) {
             assert!(
                 (a.actor_loss - b.actor_loss).abs() < f64::EPSILON,
                 "actor loss differed: {} against {}",
@@ -695,8 +910,13 @@ mod tests {
         }
         // Non-vacuity: the run must actually have produced numbers.
         assert!(
-            first.iter().any(|stats| stats.actor_loss != 0.0),
+            first.0.iter().any(|stats| stats.actor_loss != 0.0),
             "every actor loss was zero, so the comparison proves nothing"
+        );
+        assert_eq!(first.1, second.1, "updated weights differed bit-for-bit");
+        assert_eq!(
+            first.2, second.2,
+            "Adam moments/cursor differed bit-for-bit"
         );
     }
 
@@ -704,25 +924,36 @@ mod tests {
     fn batch_mean_mode_trains_no_critic() {
         // §6.3: "set critic loss to zero, and do not update/store unused value tensors".
         let mut actor = trainable_actor();
-        let batch = Batch::freeze(vec![step(0, 2, 3.0, 1.0), step(1, 2, 1.0, 2.0)]);
+        let batch =
+            Batch::freeze(vec![step(0, 2, 3.0, 1.0), step(1, 2, 1.0, 2.0)]).expect("valid batch");
 
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 8,
+            ..Settings::default()
+        };
+        let value_before = ti4_tensor::to_vec(actor.value_readout()).expect("value");
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
         let stats = update(
             &mut actor,
             &batch,
             CriticMode::BatchMean,
-            Settings {
-                epochs: 1,
-                minibatch: 8,
-                ..Settings::default()
-            },
+            settings,
             1,
-            |_| {},
-        );
+            &mut optimizer,
+        )
+        .expect("update");
         assert_eq!(stats.len(), 1);
         assert!(
             stats[0].critic_loss.abs() < f64::EPSILON,
             "batch_mean mode reported a critic loss of {}",
             stats[0].critic_loss
+        );
+        assert_eq!(
+            ti4_tensor::to_vec(actor.value_readout()).expect("value"),
+            value_before,
+            "batch-mean mode moved an unused value tensor"
         );
     }
 
@@ -734,27 +965,103 @@ mod tests {
             step(0, 2, 3.0, 1.0),
             step(1, 2, 1.0, 2.0),
             step(0, 3, 5.0, 0.5),
-        ]);
+        ])
+        .expect("valid batch");
         let before = batch.advantages().to_vec();
 
         let mut actor = trainable_actor();
+        let settings = Settings {
+            epochs: 4,
+            minibatch: 2,
+            ..Settings::default()
+        };
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
         let stats = update(
             &mut actor,
             &batch,
             CriticMode::BatchMean,
-            Settings {
-                epochs: 4,
-                minibatch: 2,
-                ..Settings::default()
-            },
+            settings,
             42,
-            |_| {},
-        );
+            &mut optimizer,
+        )
+        .expect("update");
         assert_eq!(stats.len(), 4, "four epochs did not run");
         assert_eq!(
             batch.advantages(),
             before.as_slice(),
             "the advantages changed during the update"
+        );
+    }
+
+    #[test]
+    fn malformed_batches_and_out_of_capacity_columns_fail_before_any_update() {
+        assert!(
+            Batch::freeze(Vec::new()).is_err(),
+            "an empty batch was accepted"
+        );
+        let mut invalid = step(0, 2, 1.0, 0.0);
+        invalid.chosen = 2;
+        assert!(
+            Batch::freeze(vec![step(0, 2, 1.0, 0.0), invalid]).is_err(),
+            "one invalid record among valid records was accepted"
+        );
+
+        let mut outside = step(0, 2, 1.0, 0.0);
+        outside.options[0].columns[0] = 9_999;
+        let batch = Batch::freeze(vec![outside, step(1, 2, 2.0, 0.0)]).expect("structural batch");
+        let mut actor = trainable_actor();
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 1,
+            ..Settings::default()
+        };
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+        let before = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
+        let error = update(
+            &mut actor,
+            &batch,
+            CriticMode::BatchMean,
+            settings,
+            5,
+            &mut optimizer,
+        )
+        .expect_err("out-of-capacity input must fail");
+        assert!(error.contains("outside"), "{error}");
+        assert_eq!(
+            parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters"),
+            before,
+            "validation failed only after mutating parameters"
+        );
+    }
+
+    #[test]
+    fn shared_mode_really_updates_the_value_head() {
+        let mut actor = trainable_actor();
+        let batch = Batch::freeze(vec![distinguishable_step(0, 3), distinguishable_step(1, 3)])
+            .expect("batch");
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 2,
+            ..Settings::default()
+        };
+        let mut optimizer = Adam::new(&mut actor, CriticMode::Shared, settings).expect("optimizer");
+        let before = ti4_tensor::to_vec(actor.value_readout()).expect("value head");
+        let stats = update(
+            &mut actor,
+            &batch,
+            CriticMode::Shared,
+            settings,
+            11,
+            &mut optimizer,
+        )
+        .expect("update");
+        assert!(stats[0].critic_loss > 0.0, "critic loss is vacuous");
+        assert_ne!(
+            ti4_tensor::to_vec(actor.value_readout()).expect("value head"),
+            before,
+            "shared PPO did not update the value head"
         );
     }
 }

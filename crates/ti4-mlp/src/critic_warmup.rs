@@ -26,9 +26,10 @@
 
 use std::collections::BTreeSet;
 
+use rand::{Rng, SeedableRng};
 use ti4_tensor::Tensor;
 
-use crate::{Actor, FactionRow, SparseOption, distill::Sample};
+use crate::{Actor, FactionRow, SeparateCritic, SparseOption, distill::Sample};
 
 /// §6.2's optimiser settings.
 #[derive(Debug, Clone, Copy)]
@@ -97,6 +98,12 @@ pub enum SampleError {
     /// The vector was empty, which is a malformed capture rather than a legal position.
     #[error("the critic vector is empty")]
     Empty,
+    /// A feature or target is non-finite, or a feature is absent from the accepted vocabulary.
+    #[error("invalid critic value or unassigned feature {name}")]
+    Invalid {
+        /// The offending feature, or `target`.
+        name: String,
+    },
 }
 
 impl CriticSample {
@@ -127,15 +134,29 @@ impl CriticSample {
             if ti4_policy::vocabulary::family_of(name) != ti4_policy::critic::CRITIC_FAMILY {
                 return Err(SampleError::NotCritic { name: name.clone() });
             }
+            if !value.is_finite() || !vocabulary.is_assigned(name) {
+                return Err(SampleError::Invalid { name: name.clone() });
+            }
             columns.push(i64::try_from(vocabulary.column_of(name)).unwrap_or(0));
             #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
             values.push(*value as f32);
+        }
+        if !target.is_finite() {
+            return Err(SampleError::Invalid {
+                name: "target".to_owned(),
+            });
         }
         Ok(Self {
             row,
             critic: SparseOption { columns, values },
             target,
         })
+    }
+
+    /// The typed critic input for PPO or inference.
+    #[must_use]
+    pub fn input(&self) -> crate::CriticInput {
+        crate::CriticInput::from_sparse(self.critic.clone())
     }
 }
 
@@ -217,38 +238,61 @@ pub fn explained_variance(targets: &[f64], predictions: &[f64]) -> f64 {
 /// Every policy logit for a fixed probe set, as raw bits.
 ///
 /// Bits rather than values so the comparison is exact and cannot be quietly widened later.
-#[must_use]
-pub fn logit_fingerprint(actor: &Actor, probes: &[Sample]) -> Vec<u32> {
+///
+/// # Errors
+/// Returns an error for an empty or malformed probe set, an invalid head, or a failed model read.
+pub fn logit_fingerprint(actor: &Actor, probes: &[Sample]) -> Result<Vec<u32>, String> {
+    if probes.is_empty() {
+        return Err("the policy probe set is empty".to_owned());
+    }
     let mut bits = Vec::new();
-    tch::no_grad(|| {
+    tch::no_grad(|| -> Result<(), String> {
         for probe in probes {
-            let Some(head) = crate::heads().get(probe.head) else {
-                continue;
-            };
-            let Ok(logits) = actor.logits(&probe.options, head, probe.row) else {
-                continue;
-            };
-            if let Ok(values) = ti4_tensor::to_vec(&logits) {
-                bits.extend(values.iter().map(|value| value.to_bits()));
+            let head = crate::heads()
+                .get(probe.head)
+                .ok_or_else(|| format!("probe head {} is out of range", probe.head))?;
+            if probe.options.is_empty() {
+                return Err("a policy probe has no options".to_owned());
             }
+            let logits = actor
+                .logits(&probe.options, head, probe.row)
+                .map_err(|error| format!("policy probe failed: {error}"))?;
+            let values = ti4_tensor::to_vec(&logits)
+                .map_err(|error| format!("reading policy probe logits: {error}"))?;
+            bits.extend(values.iter().map(|value| value.to_bits()));
         }
-    });
-    bits
+        Ok(())
+    })?;
+    let expected: usize = probes.iter().map(|probe| probe.options.len()).sum();
+    if bits.len() != expected || bits.is_empty() {
+        return Err(format!(
+            "policy fingerprint contains {} logits, expected {expected}",
+            bits.len()
+        ));
+    }
+    Ok(bits)
 }
 
 /// `V(s)` for one sample, with a graph.
-fn value_of(actor: &Actor, sample: &CriticSample) -> Option<Tensor> {
+fn value_of(actor: &Actor, sample: &CriticSample) -> Result<Tensor, String> {
     let input = crate::CriticInput::from_sparse(sample.critic.clone());
-    actor.value_tensor(&input, sample.row).ok()
+    actor
+        .value_tensor(&input, sample.row)
+        .map_err(|error| format!("critic evaluation failed: {error}"))
 }
 
 /// Predictions for a set of samples, without a graph.
-#[must_use]
-pub fn predict(actor: &Actor, samples: &[CriticSample]) -> Vec<f64> {
-    tch::no_grad(|| {
+///
+/// # Errors
+/// Returns an error when the sample set is empty or any critic evaluation fails.
+pub fn predict(actor: &Actor, samples: &[CriticSample]) -> Result<Vec<f64>, String> {
+    if samples.is_empty() {
+        return Err("prediction sample set is empty".to_owned());
+    }
+    tch::no_grad(|| -> Result<Vec<f64>, String> {
         samples
             .iter()
-            .map(|sample| value_of(actor, sample).map_or(f64::NAN, |value| value.double_value(&[])))
+            .map(|sample| value_of(actor, sample).map(|value| value.double_value(&[])))
             .collect()
     })
 }
@@ -424,8 +468,13 @@ fn open_critic_only(actor: &mut Actor) {
 /// `probes` is a fixed set of policy decisions whose logits are fingerprinted before and after; it
 /// should come from the same corpus, and a few hundred is plenty.
 ///
-/// # Panics
-/// If the actor's width does not fit an `i64`, which the type system already bounds.
+/// # Errors
+/// Returns an error for empty inputs, invalid settings, missing critic rows, or any failed model,
+/// optimizer, or fingerprint operation.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the fixed warm-up protocol auditable"
+)]
 pub fn warm_up(
     actor: &mut Actor,
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
@@ -434,9 +483,20 @@ pub fn warm_up(
     probes: &[Sample],
     settings: Settings,
     mut progress: impl FnMut(&Epoch),
-) -> WarmUp {
-    let before = logit_fingerprint(actor, probes);
+) -> Result<WarmUp, String> {
+    if train_samples.is_empty()
+        || validation_samples.is_empty()
+        || settings.batch == 0
+        || settings.micro_batch == 0
+        || settings.max_epochs == 0
+    {
+        return Err("warm-up settings or sample splits are empty".to_owned());
+    }
+    let before = logit_fingerprint(actor, probes)?;
     let rows = critic_rows(vocabulary);
+    if rows.is_empty() {
+        return Err("the vocabulary has no assigned critic rows".to_owned());
+    }
     open_critic_only(actor);
     let mut adam = RowAdam::new(settings, &rows, actor.width());
     let start = tch::no_grad(|| {
@@ -457,9 +517,7 @@ pub fn warm_up(
             for micro in batch.chunks(settings.micro_batch) {
                 let mut loss: Option<Tensor> = None;
                 for sample in micro {
-                    let Some(value) = value_of(actor, sample) else {
-                        continue;
-                    };
+                    let value = value_of(actor, sample)?;
                     let error = value - sample.target;
                     squared += tch::no_grad(|| error.square().double_value(&[0]));
                     seen += 1;
@@ -472,10 +530,18 @@ pub fn warm_up(
                     mean.backward();
                 }
             }
-            adam.step(actor);
+            if !adam.step(actor) {
+                return Err("critic Adam received no defined gradients".to_owned());
+            }
+        }
+        if seen != train_samples.len() {
+            return Err(format!(
+                "warm-up evaluated {seen} of {} training samples",
+                train_samples.len()
+            ));
         }
 
-        let predictions = predict(actor, validation_samples);
+        let predictions = predict(actor, validation_samples)?;
         #[expect(clippy::cast_precision_loss, reason = "sample counts are exact in f64")]
         let validation_mse = targets
             .iter()
@@ -521,12 +587,196 @@ pub fn warm_up(
         (rows_moved + head_moved).sqrt()
     });
 
-    WarmUp {
+    Ok(WarmUp {
         epochs,
         selected,
-        logits_unchanged: logit_fingerprint(actor, probes) == before,
+        logits_unchanged: logit_fingerprint(actor, probes)? == before,
         parameter_movement: movement,
+    })
+}
+
+/// Run the one permitted fallback with an independent 2 x 128 critic trunk.
+///
+/// # Errors
+/// Returns an error for empty inputs, invalid settings, missing critic rows, or any failed model,
+/// optimizer, or fingerprint operation.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the fixed fallback protocol auditable"
+)]
+pub fn warm_up_separate(
+    actor: &mut Actor,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    train_samples: &[CriticSample],
+    validation_samples: &[CriticSample],
+    probes: &[Sample],
+    settings: Settings,
+    mut progress: impl FnMut(&Epoch),
+) -> Result<WarmUp, String> {
+    const WIDTH: usize = 128;
+    const WIDTH_I64: i64 = 128;
+    const WIDTH_F64: f64 = 128.0;
+    if train_samples.is_empty()
+        || validation_samples.is_empty()
+        || settings.batch == 0
+        || settings.micro_batch == 0
+        || settings.max_epochs == 0
+    {
+        return Err("separate warm-up settings or sample splits are empty".to_owned());
     }
+    let rows = critic_rows(vocabulary);
+    if rows.is_empty() {
+        return Err("the vocabulary has no assigned critic rows".to_owned());
+    }
+    let before = logit_fingerprint(actor, probes)?;
+    let capacity = usize::try_from(actor.capacity()).map_err(|_| "capacity does not fit usize")?;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(20_260_833);
+    let input_bound = (6.0f64 / 32.0).sqrt();
+    let hidden_bound = (6.0f64 / WIDTH_F64).sqrt();
+    let readout_bound = 1.0 / WIDTH_F64.sqrt();
+    #[allow(clippy::cast_possible_truncation)]
+    let mut draw = |bound: f64| rng.random_range(-bound..bound) as f32;
+    let mut input = vec![0.0f32; capacity * WIDTH];
+    for row in &rows {
+        let row = usize::try_from(*row).map_err(|_| "critic row does not fit usize")?;
+        for value in &mut input[row * WIDTH..(row + 1) * WIDTH] {
+            *value = draw(input_bound);
+        }
+    }
+    let separate = SeparateCritic::new(
+        Tensor::from_slice(&input)
+            .view([actor.capacity(), WIDTH_I64])
+            .set_requires_grad(true),
+        Tensor::zeros(
+            [WIDTH_I64],
+            (ti4_tensor::Kind::Float, ti4_tensor::Device::Cpu),
+        )
+        .set_requires_grad(true),
+        Tensor::from_slice(
+            &(0..WIDTH * WIDTH)
+                .map(|_| draw(hidden_bound))
+                .collect::<Vec<_>>(),
+        )
+        .view([WIDTH_I64, WIDTH_I64])
+        .set_requires_grad(true),
+        Tensor::zeros(
+            [WIDTH_I64],
+            (ti4_tensor::Kind::Float, ti4_tensor::Device::Cpu),
+        )
+        .set_requires_grad(true),
+        Tensor::from_slice(&(0..WIDTH).map(|_| draw(readout_bound)).collect::<Vec<_>>())
+            .set_requires_grad(true),
+        Tensor::zeros([1], (ti4_tensor::Kind::Float, ti4_tensor::Device::Cpu))
+            .set_requires_grad(true),
+    );
+    actor.set_separate_critic(Some(separate));
+    let installed = actor
+        .separate_critic()
+        .ok_or_else(|| "separate critic installation failed".to_owned())?;
+    let start: Vec<Tensor> = installed
+        .parameters()
+        .iter()
+        .map(|tensor| tensor.detach().copy())
+        .collect();
+    let adam_settings = crate::distill::Settings {
+        learning_rate: settings.learning_rate,
+        beta1: settings.beta1,
+        beta2: settings.beta2,
+        eps: settings.eps,
+        weight_decay: settings.weight_decay,
+        batch: settings.batch,
+        micro_batch: settings.micro_batch,
+        clip: settings.clip,
+        max_epochs: settings.max_epochs,
+        ..crate::distill::Settings::default()
+    };
+    let mut adam = crate::distill::Adam::new(adam_settings, &installed.parameters());
+    let targets: Vec<f64> = validation_samples
+        .iter()
+        .map(|sample| sample.target)
+        .collect();
+    let mut epochs = Vec::new();
+    let mut selected = None;
+
+    for number in 1..=settings.max_epochs {
+        let mut squared = 0.0;
+        let mut seen = 0usize;
+        for batch in train_samples.chunks(settings.batch) {
+            for micro in batch.chunks(settings.micro_batch) {
+                let mut loss: Option<Tensor> = None;
+                for sample in micro {
+                    let value = value_of(actor, sample)?;
+                    let error = value - sample.target;
+                    squared += tch::no_grad(|| error.square().double_value(&[0]));
+                    seen += 1;
+                    let term = error.square();
+                    loss = Some(loss.map_or_else(|| term.shallow_clone(), |sum| sum + &term));
+                }
+                let loss =
+                    loss.ok_or_else(|| "separate micro-batch produced no loss".to_owned())?;
+                #[expect(clippy::cast_precision_loss, reason = "micro-batch sizes are small")]
+                let mean = loss / micro.len() as f64;
+                mean.backward();
+            }
+            let mut parameters = actor
+                .separate_critic()
+                .ok_or_else(|| "separate critic disappeared during warm-up".to_owned())?
+                .parameters();
+            adam.step(&mut parameters, 1.0)?;
+        }
+        if seen != train_samples.len() {
+            return Err(format!(
+                "separate warm-up evaluated {seen} of {} training samples",
+                train_samples.len()
+            ));
+        }
+        let predictions = predict(actor, validation_samples)?;
+        #[expect(clippy::cast_precision_loss, reason = "sample counts are exact in f64")]
+        let validation_mse = targets
+            .iter()
+            .zip(&predictions)
+            .map(|(target, prediction)| (target - prediction).powi(2))
+            .sum::<f64>()
+            / targets.len() as f64;
+        #[expect(clippy::cast_precision_loss, reason = "sample counts are exact in f64")]
+        let epoch = Epoch {
+            number,
+            train_mse: squared / seen as f64,
+            validation_mse,
+            explained_variance: explained_variance(&targets, &predictions),
+        };
+        progress(&epoch);
+        if epoch.explained_variance >= settings.threshold {
+            selected = Some(number);
+        }
+        epochs.push(epoch);
+        if selected.is_some() {
+            break;
+        }
+    }
+    let now = actor
+        .separate_critic()
+        .ok_or_else(|| "separate critic disappeared after warm-up".to_owned())?
+        .parameters();
+    let movement = tch::no_grad(|| {
+        start
+            .iter()
+            .zip(&now)
+            .map(|(before, after)| {
+                (after - before)
+                    .square()
+                    .sum(ti4_tensor::Kind::Float)
+                    .double_value(&[])
+            })
+            .sum::<f64>()
+            .sqrt()
+    });
+    Ok(WarmUp {
+        epochs,
+        selected,
+        logits_unchanged: logit_fingerprint(actor, probes)? == before,
+        parameter_movement: movement,
+    })
 }
 
 #[cfg(test)]
@@ -653,7 +903,7 @@ mod tests {
                 teacher: vec![0.5, 0.5],
             })
             .collect();
-        let before = logit_fingerprint(&actor, &probes);
+        let before = logit_fingerprint(&actor, &probes).expect("fingerprint");
         assert!(
             before.iter().any(|bits| *bits != 0),
             "the probes produce only zero logits, so a drift could not be detected"
@@ -679,7 +929,8 @@ mod tests {
             &probes,
             settings,
             |_| {},
-        );
+        )
+        .expect("warm-up");
 
         assert!(
             result.parameter_movement > 0.0,
@@ -687,7 +938,7 @@ mod tests {
         );
         assert!(result.logits_unchanged, "the warm-up moved a policy logit");
         assert_eq!(
-            logit_fingerprint(&actor, &probes),
+            logit_fingerprint(&actor, &probes).expect("fingerprint"),
             before,
             "the policy logits are not bit-identical after the warm-up"
         );
@@ -697,6 +948,34 @@ mod tests {
         assert!(
             last < first,
             "validation MSE did not improve: {first} then {last}"
+        );
+
+        let separate = warm_up_separate(
+            &mut actor,
+            &vocabulary,
+            &train,
+            &validation,
+            &probes,
+            settings,
+            |_| {},
+        )
+        .expect("separate warm-up");
+        assert!(
+            actor.separate_critic().is_some(),
+            "separate trunk was not installed"
+        );
+        assert!(
+            separate.parameter_movement > 0.0,
+            "separate critic did not move"
+        );
+        assert!(
+            separate.logits_unchanged,
+            "separate critic changed policy logits"
+        );
+        assert_eq!(
+            logit_fingerprint(&actor, &probes).expect("fingerprint"),
+            before,
+            "separate fallback changed policy logits"
         );
     }
 
@@ -753,7 +1032,7 @@ mod tests {
             teacher: vec![0.5, 0.5],
         }];
 
-        let before = logit_fingerprint(&actor, &probe);
+        let before = logit_fingerprint(&actor, &probe).expect("fingerprint");
         assert!(!before.is_empty(), "the probe produced no logits");
         // And they must not all be zero, or a "changed" readout could still leave them at zero.
         assert!(
@@ -764,7 +1043,7 @@ mod tests {
         // Moving the value head must not move a policy logit — that is the whole guarantee.
         *actor.value_readout_mut() = actor.value_readout().f_add_scalar(1.0).expect("add");
         assert_eq!(
-            logit_fingerprint(&actor, &probe),
+            logit_fingerprint(&actor, &probe).expect("fingerprint"),
             before,
             "the value head changed a policy logit"
         );
@@ -772,7 +1051,7 @@ mod tests {
         // And the fingerprint must actually be sensitive, or the equality above proves nothing.
         *actor.shared_readout_mut() = actor.shared_readout().f_add_scalar(1.0).expect("add");
         assert_ne!(
-            logit_fingerprint(&actor, &probe),
+            logit_fingerprint(&actor, &probe).expect("fingerprint"),
             before,
             "the fingerprint did not notice a changed readout"
         );

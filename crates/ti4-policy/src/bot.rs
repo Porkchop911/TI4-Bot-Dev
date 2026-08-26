@@ -36,6 +36,32 @@ use ti4_model::id::SystemId;
 
 use crate::scoring::{Components, Decision};
 
+#[cfg(test)]
+std::thread_local! {
+    static AUTHORED_SCORE_HITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static AUTHORED_FILTER_HITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn instrument_authored_score() {
+    AUTHORED_SCORE_HITS.set(AUTHORED_SCORE_HITS.get() + 1);
+}
+
+#[cfg(test)]
+fn instrument_authored_filter() {
+    AUTHORED_FILTER_HITS.set(AUTHORED_FILTER_HITS.get() + 1);
+}
+
+#[cfg(test)]
+pub(crate) fn authored_path_hits(reset: bool) -> (usize, usize) {
+    let hits = (AUTHORED_SCORE_HITS.get(), AUTHORED_FILTER_HITS.get());
+    if reset {
+        AUTHORED_SCORE_HITS.set(0);
+        AUTHORED_FILTER_HITS.set(0);
+    }
+    hits
+}
+
 /// How sharply the bot prefers its best option.
 ///
 /// Sampled rather than taken outright, deliberately: an argmax bot is solvable, plays the same
@@ -97,6 +123,8 @@ impl ScoredBot {
     /// has taught the bot to judge.
     #[must_use]
     pub fn raw_score(&self, choice: &Choice, option: &ChoiceOption) -> Components {
+        #[cfg(test)]
+        instrument_authored_score();
         match option.kind.as_str() {
             // Scoring is the only thing that wins a game, so it dominates every other reason.
             // When two legal objectives are available, their printed points decide which score
@@ -741,6 +769,8 @@ impl ScoredBot {
         choice: &'a Choice,
         scores: &BTreeMap<String, Components>,
     ) -> Vec<&'a ChoiceOption> {
+        #[cfg(test)]
+        instrument_authored_filter();
         let _ = self;
         let all: Vec<&ChoiceOption> = choice.options.iter().collect();
         if all.len() <= 1 {

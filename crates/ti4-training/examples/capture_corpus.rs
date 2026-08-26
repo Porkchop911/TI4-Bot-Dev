@@ -15,7 +15,7 @@ use std::sync::Arc;
 use sha2::Digest;
 use ti4_content::ContentStore;
 use ti4_model::content_types::DEFAULT;
-use ti4_training::teacher_corpus::{Cluster, capture};
+use ti4_training::teacher_corpus::{Cluster, ExpectedCorpus, capture};
 
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
@@ -135,14 +135,20 @@ fn main() {
     // Read both shards back through the verifying loader before claiming success. A corpus that
     // cannot be read is not a corpus, and finding that out here costs one pass rather than a
     // distillation run.
+    let expected_corpus = ExpectedCorpus {
+        teacher_sha256: &teacher_sha256,
+        pool_sha256: &pool_sha256,
+        slots_sha256: &slots_sha256,
+    };
     for cluster in [Cluster::Train, Cluster::Validation] {
-        let decisions = ti4_training::teacher_corpus::read_shard(directory, cluster)
-            .unwrap_or_else(|error| {
-                refuse(&format!(
-                    "re-reading the {} shard: {error}",
-                    cluster.as_str()
-                ))
-            });
+        let decisions =
+            ti4_training::teacher_corpus::read_shard(directory, cluster, &expected_corpus)
+                .unwrap_or_else(|error| {
+                    refuse(&format!(
+                        "re-reading the {} shard: {error}",
+                        cluster.as_str()
+                    ))
+                });
         let by_faction: BTreeMap<&str, usize> =
             decisions.iter().fold(BTreeMap::new(), |mut counts, d| {
                 *counts.entry(d.faction.as_str()).or_default() += 1;

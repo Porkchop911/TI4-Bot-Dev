@@ -438,6 +438,35 @@ mod tests {
     }
 
     #[test]
+    fn learned_inference_never_enters_the_authored_score_or_filter_paths() {
+        let state = table();
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let choice = asked(&[("18", "activate"), ("26", "activate"), ("31", "activate")]);
+
+        // First prove the probes are attached to real authored boundaries. A zero-vs-zero check
+        // would merely restate the desired architecture and was the defect in the old evidence.
+        let _ = crate::bot::authored_path_hits(true);
+        let mut authored = crate::bot::ScoredBot::new(1);
+        authored.choose(&choice).expect("authored fixture is legal");
+        let (scores, filters) = crate::bot::authored_path_hits(true);
+        assert!(
+            scores >= choice.options.len(),
+            "score probe is vacuous: {scores}"
+        );
+        assert!(filters > 0, "filter probe is vacuous");
+
+        let learned = LearnedBot::new(blank_profile("sol", DEFAULT_DIMENSIONS), 1);
+        let (legal, chances) = learned.consider(&seen, &choice, &held(&state));
+        assert_eq!(legal.len(), choice.options.len());
+        assert_eq!(chances.len(), choice.options.len());
+        assert_eq!(
+            crate::bot::authored_path_hits(true),
+            (0, 0),
+            "learned inference crossed an authored utility boundary"
+        );
+    }
+
+    #[test]
     fn the_probabilities_are_a_distribution() {
         let scores: BTreeMap<String, f64> = [("a", 3.0), ("b", -1.0), ("c", 0.5)]
             .into_iter()

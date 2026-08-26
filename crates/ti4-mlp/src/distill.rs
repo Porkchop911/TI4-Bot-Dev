@@ -125,6 +125,19 @@ pub struct Epoch {
     pub steps: usize,
 }
 
+/// The complete §6.1 imitation validation result.
+#[derive(Debug, Clone)]
+pub struct Validation {
+    /// Mean of the six faction KL means.
+    pub mean_kl: f64,
+    /// Fraction of decisions whose highest-probability option matches the teacher's.
+    pub top1_agreement: f64,
+    /// Validation KL by faction.
+    pub per_faction: BTreeMap<String, f64>,
+    /// Validation KL by schema-4 head.
+    pub per_head: BTreeMap<String, f64>,
+}
+
 /// Initialise a student exactly as §6.1 specifies.
 ///
 /// # Why the RNG is ours and not libtorch's
@@ -221,20 +234,53 @@ impl Adam {
         self.t
     }
 
+    /// Exact optimizer-state fingerprint for repeatability and resume tests.
+    ///
+    /// # Errors
+    /// Returns an error when an optimizer tensor cannot be read.
+    pub fn state_fingerprint(&self) -> Result<Vec<u32>, String> {
+        let mut bits = Vec::new();
+        for tensor in self.m.iter().chain(&self.v) {
+            bits.extend(
+                ti4_tensor::to_vec(tensor)
+                    .map_err(|error| format!("reading Adam state: {error}"))?
+                    .iter()
+                    .map(|value| value.to_bits()),
+            );
+        }
+        bits.extend(
+            self.t
+                .to_le_bytes()
+                .chunks_exact(4)
+                .map(|word| u32::from_le_bytes([word[0], word[1], word[2], word[3]])),
+        );
+        Ok(bits)
+    }
+
     /// One update from the gradients currently on `parameters`, then zero them.
     ///
     /// The clip is on the **global** norm across every parameter, not per tensor: clipping each
     /// tensor separately would change the update's direction, not just its length.
-    pub fn step(&mut self, parameters: &mut [Tensor], scale: f64) {
+    ///
+    /// # Errors
+    /// Returns an error when gradients are absent or non-finite, or an update cannot be applied.
+    pub fn step(&mut self, parameters: &mut [Tensor], scale: f64) -> Result<(), String> {
         let mut total = 0.0f64;
+        let mut defined = 0usize;
         for parameter in parameters.iter() {
             let grad = parameter.grad();
             if grad.defined() {
+                defined += 1;
                 total += (&grad * scale)
                     .square()
                     .sum(ti4_tensor::Kind::Float)
                     .double_value(&[]);
             }
+        }
+        if defined == 0 || !total.is_finite() {
+            return Err(format!(
+                "Adam received {defined} defined gradients with squared norm {total}"
+            ));
         }
         let norm = total.sqrt();
         let clip = if norm > self.settings.clip && norm > 0.0 {
@@ -281,6 +327,7 @@ impl Adam {
         for parameter in parameters.iter_mut() {
             parameter.zero_grad();
         }
+        Ok(())
     }
 }
 
@@ -300,22 +347,46 @@ impl Adam {
 ///
 /// The summed gradient is unchanged — addition is associative over the graph, whatever order the
 /// terms are built in. Returns one tensor per sample, in the order given.
-fn group_cross_entropy(actor: &Actor, samples: &[&Sample]) -> Option<Vec<Tensor>> {
-    let first = samples.first()?;
-    let head = crate::heads().get(first.head)?;
+struct GroupScore {
+    crosses: Vec<Tensor>,
+    choices: Vec<usize>,
+}
+
+fn group_score(actor: &Actor, samples: &[&Sample]) -> Result<GroupScore, String> {
+    let first = samples
+        .first()
+        .ok_or_else(|| "cross-entropy group is empty".to_owned())?;
+    let head = crate::heads()
+        .get(first.head)
+        .ok_or_else(|| format!("head index {} is out of range", first.head))?;
+    if samples.iter().any(|sample| {
+        sample.row != first.row
+            || sample.head != first.head
+            || sample.options.is_empty()
+            || sample.options.len() != sample.teacher.len()
+    }) {
+        return Err("a grouped sample has the wrong row/head or ragged/empty options".to_owned());
+    }
     let flat: Vec<SparseOption> = samples
         .iter()
         .flat_map(|sample| sample.options.iter().cloned())
         .collect();
-    let all = actor.logits(&flat, head, first.row).ok()?;
+    let all = actor
+        .logits(&flat, head, first.row)
+        .map_err(|error| format!("student logits failed: {error}"))?;
 
     let mut out = Vec::with_capacity(samples.len());
+    let mut choices = Vec::with_capacity(samples.len());
     let mut offset = 0i64;
     for sample in samples {
         let width = i64::try_from(sample.options.len()).unwrap_or(0);
         let slice = all.narrow(0, offset, width);
         offset += width;
         let log_q = slice.log_softmax(0, ti4_tensor::Kind::Float);
+        choices.push(
+            usize::try_from(slice.argmax(0, false).int64_value(&[]))
+                .map_err(|_| "student argmax does not fit usize".to_owned())?,
+        );
         #[expect(
             clippy::cast_possible_truncation,
             reason = "probabilities are f32-scale"
@@ -324,13 +395,23 @@ fn group_cross_entropy(actor: &Actor, samples: &[&Sample]) -> Option<Vec<Tensor>
         let p = Tensor::from_slice(&teacher);
         out.push(-(p * log_q).sum(ti4_tensor::Kind::Float));
     }
-    Some(out)
+    Ok(GroupScore {
+        crosses: out,
+        choices,
+    })
 }
 
-/// Mean KL over a set of samples, without building a graph.
-#[must_use]
-pub fn evaluate(actor: &Actor, samples: &[Sample]) -> BTreeMap<String, f64> {
+/// Complete imitation metrics over a set of samples, without building a graph.
+///
+/// # Errors
+/// Returns an error for an empty or malformed sample set or a failed model evaluation.
+pub fn validation_metrics(actor: &Actor, samples: &[Sample]) -> Result<Validation, String> {
+    if samples.is_empty() {
+        return Err("evaluation samples are empty".to_owned());
+    }
     let mut sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
+    let mut head_sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
+    let mut agreements = 0usize;
     // Grouped like training, for the same reason: this is a full pass over the validation shard
     // once per epoch.
     let mut groups: BTreeMap<(usize, usize), Vec<&Sample>> = BTreeMap::new();
@@ -340,24 +421,47 @@ pub fn evaluate(actor: &Actor, samples: &[Sample]) -> BTreeMap<String, f64> {
             .or_default()
             .push(sample);
     }
-    tch::no_grad(|| {
+    tch::no_grad(|| -> Result<(), String> {
         for members in groups.values() {
             for micro in members.chunks(512) {
-                let Some(crosses) = group_cross_entropy(actor, micro) else {
-                    continue;
-                };
-                for (sample, cross) in micro.iter().zip(&crosses) {
+                let scored = group_score(actor, micro)?;
+                for ((sample, cross), choice) in
+                    micro.iter().zip(&scored.crosses).zip(&scored.choices)
+                {
                     let kl = cross.double_value(&[]) + sample.teacher_entropy_term();
                     let entry = sums
                         .entry(crate::FACTION_ROSTER[sample.row.index()].to_owned())
                         .or_insert((0.0, 0));
                     entry.0 += kl;
                     entry.1 += 1;
+                    let head = crate::heads()
+                        .get(sample.head)
+                        .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
+                    let head_entry = head_sums.entry((*head).to_owned()).or_insert((0.0, 0));
+                    head_entry.0 += kl;
+                    head_entry.1 += 1;
+                    let teacher_choice = sample
+                        .teacher
+                        .iter()
+                        .enumerate()
+                        .max_by(|left, right| left.1.total_cmp(right.1))
+                        .map(|(index, _)| index)
+                        .ok_or_else(|| "teacher distribution is empty".to_owned())?;
+                    agreements += usize::from(*choice == teacher_choice);
                 }
             }
         }
-    });
-    sums.into_iter()
+        Ok(())
+    })?;
+    let evaluated: usize = sums.values().map(|(_, count)| *count).sum();
+    if evaluated != samples.len() {
+        return Err(format!(
+            "evaluated {evaluated} of {} validation samples",
+            samples.len()
+        ));
+    }
+    let per_faction: BTreeMap<String, f64> = sums
+        .into_iter()
         .map(|(faction, (sum, count))| {
             #[expect(
                 clippy::cast_precision_loss,
@@ -366,7 +470,37 @@ pub fn evaluate(actor: &Actor, samples: &[Sample]) -> BTreeMap<String, f64> {
             let mean = if count == 0 { 0.0 } else { sum / count as f64 };
             (faction, mean)
         })
-        .collect()
+        .collect();
+    let per_head = head_sums
+        .into_iter()
+        .map(|(head, (sum, count))| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "decision counts are exact in f64"
+            )]
+            let mean = sum / count as f64;
+            (head, mean)
+        })
+        .collect();
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "decision counts are exact in f64"
+    )]
+    let top1_agreement = agreements as f64 / samples.len() as f64;
+    Ok(Validation {
+        mean_kl: mean_of_means(&per_faction),
+        top1_agreement,
+        per_faction,
+        per_head,
+    })
+}
+
+/// Mean KL by faction, retained as the narrow compatibility view used by existing callers.
+///
+/// # Errors
+/// Returns an error for an empty or malformed sample set or a failed model evaluation.
+pub fn evaluate(actor: &Actor, samples: &[Sample]) -> Result<BTreeMap<String, f64>, String> {
+    Ok(validation_metrics(actor, samples)?.per_faction)
 }
 
 /// The mean of the per-faction means. The objective §6.1 names.
@@ -530,9 +664,8 @@ fn distance(before: &[Tensor], after: &[Tensor]) -> f64 {
 ///
 /// `progress` is called after each epoch so a long run reports as it goes rather than at the end.
 ///
-/// # Panics
-/// If `settings.max_epochs` is zero, since no epoch would run and there would be no weights to
-/// retain. A distillation of nothing is a configuration error, not a result to return.
+/// # Errors
+/// Returns an error for invalid settings or samples, or any failed model or optimizer operation.
 #[expect(
     clippy::too_many_lines,
     reason = "one epoch loop: shuffle, batches, evaluation and selection read in the order they run"
@@ -543,7 +676,15 @@ pub fn train(
     validation_samples: &[Sample],
     settings: Settings,
     mut progress: impl FnMut(&Epoch),
-) -> Distillation {
+) -> Result<Distillation, String> {
+    if settings.max_epochs == 0
+        || settings.batch == 0
+        || settings.micro_batch == 0
+        || train_samples.is_empty()
+        || validation_samples.is_empty()
+    {
+        return Err("distillation settings or sample splits are empty".to_owned());
+    }
     open_for_training(actor);
     let start = snapshot(actor);
     let trainable = trainable_rows(train_samples);
@@ -594,9 +735,7 @@ pub fn train(
                 for micro in members.chunks(settings.micro_batch) {
                     let samples: Vec<&Sample> =
                         micro.iter().map(|index| &train_samples[*index]).collect();
-                    let Some(crosses) = group_cross_entropy(actor, &samples) else {
-                        continue;
-                    };
+                    let crosses = group_score(actor, &samples)?.crosses;
                     let mut loss: Option<Tensor> = None;
                     for (sample, cross) in samples.iter().zip(&crosses) {
                         #[expect(
@@ -625,11 +764,15 @@ pub fn train(
                 }
             }
             let mut params = parameters(actor);
-            adam.step(&mut params, 1.0);
+            let before_steps = adam.steps();
+            adam.step(&mut params, 1.0)?;
+            if adam.steps() != before_steps + 1 {
+                return Err("Adam did not apply the completed batch gradient".to_owned());
+            }
             hold_untrained_rows_at_zero(actor, &trainable);
         }
 
-        let per_faction = evaluate(actor, validation_samples);
+        let per_faction = evaluate(actor, validation_samples)?;
         let validation_kl = mean_of_means(&per_faction);
         let train_kl = mean_of_means(
             &train_sums
@@ -672,16 +815,17 @@ pub fn train(
         }
     }
 
-    let (selected, _, state) = best.expect("at least one epoch runs");
+    let (selected, _, state) =
+        best.ok_or_else(|| "distillation completed without a selectable epoch".to_owned())?;
     restore(actor, &state);
     hold_untrained_rows_at_zero(actor, &trainable);
     let parameter_movement = distance(&start, &snapshot(actor));
-    Distillation {
+    Ok(Distillation {
         epochs,
         selected,
         stopped,
         parameter_movement,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -790,17 +934,27 @@ mod tests {
         let actor = Actor::zeros(Width::W128, capacity);
 
         let uniform = sample("sol", vec![0.5, 0.5]);
-        let matched = evaluate(&actor, std::slice::from_ref(&uniform));
+        let matched = evaluate(&actor, std::slice::from_ref(&uniform)).expect("evaluates");
         assert!(
             mean_of_means(&matched).abs() < 1e-6,
             "a matched student did not score zero: {matched:?}"
         );
 
         let skewed = sample("sol", vec![0.9, 0.1]);
-        let mismatched = evaluate(&actor, std::slice::from_ref(&skewed));
+        let mismatched = evaluate(&actor, std::slice::from_ref(&skewed)).expect("evaluates");
         assert!(
             mean_of_means(&mismatched) > 0.1,
             "a mismatched student scored as if matched: {mismatched:?}"
+        );
+
+        let aligned = sample("sol", vec![0.9, 0.1]);
+        let opposite = sample("sol", vec![0.1, 0.9]);
+        let metrics = validation_metrics(&actor, &[aligned, opposite]).expect("metrics");
+        assert_eq!(metrics.per_head.len(), 1, "head accounting is empty");
+        assert!(metrics.per_head.values().all(|kl| *kl > 0.0));
+        assert!(
+            (metrics.top1_agreement - 0.5).abs() < f64::EPSILON,
+            "top-1 accounting did not distinguish a matching and mismatching argmax"
         );
     }
 }

@@ -7,14 +7,21 @@
 //! Reads the fixed teacher corpus, compiles every decision to dense columns once, runs phase 0,
 //! and writes the selected epoch's weights as a schema-6 bundle.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use sha2::Digest;
+use ti4_content::ContentStore;
+use ti4_engine::choice::Decider;
 use ti4_mlp::bundle::{CriticMode, Provenance};
 use ti4_mlp::distill::{Sample, Settings, initialize, train};
 use ti4_mlp::{FactionRow, SparseOption, Width};
+use ti4_model::content_types::DEFAULT;
+use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::vocabulary::Vocabulary;
-use ti4_training::teacher_corpus::{Cluster, Decision, stream_shard};
+use ti4_training::teacher_corpus::{
+    Cluster, Decision, ExpectedCorpus, FIXED_POOL_SHA256, stream_shard,
+};
 
 fn argument(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
@@ -31,11 +38,14 @@ fn refuse(reason: &str) -> ! {
 
 /// Compile one captured decision into the column form training consumes.
 ///
-/// Returns `None` for a decision this build cannot represent — an unknown faction or head — rather
-/// than substituting a default. A silently redirected decision trains the wrong row.
-fn compile(decision: &Decision, vocabulary: &Vocabulary, heads: &[&str]) -> Option<Sample> {
-    let row = FactionRow::of(&decision.faction).ok()?;
-    let head = heads.iter().position(|name| *name == decision.head)?;
+/// A decision this build cannot represent is an error, never a record to drop.
+fn compile(decision: &Decision, vocabulary: &Vocabulary, heads: &[&str]) -> Result<Sample, String> {
+    let row = FactionRow::of(&decision.faction)
+        .map_err(|error| format!("unknown faction {}: {error}", decision.faction))?;
+    let head = heads
+        .iter()
+        .position(|name| *name == decision.head)
+        .ok_or_else(|| format!("unknown head {}", decision.head))?;
     let options = decision
         .actor
         .iter()
@@ -43,14 +53,19 @@ fn compile(decision: &Decision, vocabulary: &Vocabulary, heads: &[&str]) -> Opti
             let mut columns = Vec::with_capacity(vector.len());
             let mut values = Vec::with_capacity(vector.len());
             for (name, value) in vector {
+                if !vocabulary.is_assigned(name) {
+                    return Err(format!(
+                        "feature {name} is not assigned in the accepted vocabulary"
+                    ));
+                }
                 columns.push(i64::try_from(vocabulary.column_of(name)).unwrap_or(0));
                 #[allow(clippy::cast_possible_truncation)]
                 values.push(*value as f32);
             }
-            SparseOption { columns, values }
+            Ok(SparseOption { columns, values })
         })
-        .collect();
-    Some(Sample {
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(Sample {
         row,
         head,
         options,
@@ -63,17 +78,133 @@ fn load(
     cluster: Cluster,
     vocabulary: &Vocabulary,
     heads: &[&str],
-) -> (Vec<Sample>, usize) {
+    expected: &ExpectedCorpus<'_>,
+) -> Result<Vec<Sample>, String> {
     // Streamed: materialising the training shard would hold roughly 27 GB of feature *names*
     // that this function converts to columns and drops immediately.
     let mut samples: Vec<Sample> = Vec::new();
-    let total = stream_shard(directory, cluster, |decision| {
-        if let Some(sample) = compile(&decision, vocabulary, heads) {
-            samples.push(sample);
+    let mut first_error = None;
+    stream_shard(directory, cluster, expected, |decision| {
+        if first_error.is_none() {
+            match compile(&decision, vocabulary, heads) {
+                Ok(sample) => samples.push(sample),
+                Err(error) => first_error = Some(error),
+            }
         }
     })
-    .unwrap_or_else(|error| refuse(&format!("reading the {} shard: {error}", cluster.as_str())));
-    (samples, total)
+    .map_err(|error| format!("reading the {} shard: {error}", cluster.as_str()))?;
+    if let Some(error) = first_error {
+        return Err(format!(
+            "the {} shard contains an unrepresentable decision: {error}",
+            cluster.as_str()
+        ));
+    }
+    Ok(samples)
+}
+
+const GAMEPLAY_SEEDS: std::ops::Range<u64> = 380_000_000..380_000_200;
+const GAMEPLAY_ROUNDS: u32 = 4;
+const TILE_SEED_OFFSET: u64 = 20_000_000;
+const VALIDATION_POOL_SHA256: &str =
+    "aba33c81aa04cefb15857b8ed1d40173f6f3de5e9b6e9633a6855c1d5a4c27e5";
+const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+
+fn gameplay_mean_vp(
+    actor: Option<&ti4_mlp::Actor>,
+    vocabulary: &Vocabulary,
+    champions: &BTreeMap<String, ti4_policy::learned::Profile>,
+    pool: &Arc<ti4_sim::MapPool>,
+) -> Result<f64, String> {
+    let content = ContentStore::embedded();
+    let players: Vec<PlayerId> = (0..FACTIONS.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let mut total_vp = 0i64;
+    let mut seats = 0usize;
+
+    for seed in GAMEPLAY_SEEDS {
+        for rotation in 0..FACTIONS.len() {
+            let seated: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(index, player)| {
+                    (
+                        player.clone(),
+                        FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                    )
+                })
+                .collect();
+            let mut statuses = Vec::new();
+            let deciders: BTreeMap<PlayerId, Box<dyn Decider>> = players
+                .iter()
+                .enumerate()
+                .map(|(index, player)| {
+                    let stream = seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(u64::try_from(index).unwrap_or(0));
+                    let decider = if let Some(actor) = actor {
+                        let row = FactionRow::of(seated[player].as_str())
+                            .expect("fixed faction is in the roster");
+                        let (bot, status) = ti4_mlp::bot::MlpBot::new(
+                            actor.inference_copy(),
+                            vocabulary.clone(),
+                            row,
+                            stream,
+                        )
+                        .seat();
+                        statuses.push(status);
+                        bot
+                    } else {
+                        let profile = champions
+                            .get(seated[player].as_str())
+                            .ok_or_else(|| {
+                                format!("teacher has no profile for {}", seated[player])
+                            })?
+                            .clone();
+                        Box::new(ti4_policy::inference::LearnedBot::from_shared(
+                            Arc::new(profile),
+                            stream,
+                        )) as Box<dyn Decider>
+                    };
+                    Ok((player.clone(), decider))
+                })
+                .collect::<Result<_, String>>()?;
+            let rollout = ti4_training::rollout::play_with_deciders(
+                content,
+                &players,
+                &seated,
+                DEFAULT,
+                seed,
+                ti4_training::rollout::Horizon {
+                    rounds: GAMEPLAY_ROUNDS,
+                    steps: 10_000,
+                },
+                ti4_engine::opening::DEFAULT_REQUIREMENT,
+                &ti4_training::rollout::OpeningMap::PythonPool {
+                    pool: Arc::clone(pool),
+                    tile_seed_offset: TILE_SEED_OFFSET,
+                },
+                deciders,
+            );
+            if let Some(error) = rollout.error {
+                return Err(format!("game {seed}/{rotation} failed: {error}"));
+            }
+            for status in statuses {
+                status
+                    .into_result()
+                    .map_err(|error| format!("game {seed}/{rotation}: {error}"))?;
+            }
+            for seat in rollout.seats {
+                total_vp += seat.episode.final_progress.victory_points;
+                seats += 1;
+            }
+        }
+    }
+    if seats != GAMEPLAY_SEEDS.count() * FACTIONS.len() * FACTIONS.len() {
+        return Err(format!("gameplay panel produced {seats} seat results"));
+    }
+    #[expect(clippy::cast_precision_loss, reason = "panel totals are exact in f64")]
+    Ok(total_vp as f64 / seats as f64)
 }
 
 #[allow(
@@ -93,18 +224,6 @@ fn main() {
     let backend = ti4_tensor::configure_deterministic(20_260_821)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
 
-    // The corpus names the vocabulary it was captured against. Distilling against a different one
-    // would resolve every feature to a different column, which no later check would notice.
-    let manifest: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(corpus.join("manifest.json"))
-            .unwrap_or_else(|error| refuse(&format!("reading the corpus manifest: {error}"))),
-    )
-    .unwrap_or_else(|error| refuse(&format!("the corpus manifest is not JSON: {error}")));
-    let corpus_slots = manifest
-        .get("slots_sha256")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_else(|| refuse("the corpus manifest names no vocabulary"));
-
     let generation = ti4_training::vocabulary_corpus::accepted_generation(std::path::Path::new(
         "out/vocabulary",
     ))
@@ -112,12 +231,13 @@ fn main() {
     let slots_text = std::fs::read_to_string(&generation.slots)
         .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
     let slots_sha256 = format!("{:x}", sha2::Sha256::digest(slots_text.as_bytes()));
-    if slots_sha256 != corpus_slots {
-        refuse(&format!(
-            "the corpus was captured against vocabulary {corpus_slots}, the accepted one is \
-             {slots_sha256}"
-        ));
-    }
+    let expected_corpus = ExpectedCorpus {
+        teacher_sha256: ti4_sim::baseline::R6_CHECKPOINT_SHA256,
+        pool_sha256: FIXED_POOL_SHA256,
+        slots_sha256: &slots_sha256,
+    };
+    ti4_training::teacher_corpus::validate_manifest(corpus, &expected_corpus)
+        .unwrap_or_else(|error| refuse(&format!("validating the corpus manifest: {error}")));
     let vocabulary = Vocabulary::from_json(&slots_text)
         .unwrap_or_else(|error| refuse(&format!("slots.json does not load: {error}")));
     let capacity = i64::try_from(vocabulary.capacity()).unwrap_or(i64::MAX);
@@ -138,29 +258,41 @@ fn main() {
     let _ = std::io::Write::flush(&mut std::io::stdout());
 
     let started = std::time::Instant::now();
-    let (train_samples, train_total) = load(corpus, Cluster::Train, &vocabulary, heads);
-    let (validation_samples, validation_total) =
-        load(corpus, Cluster::Validation, &vocabulary, heads);
+    let train_samples = load(corpus, Cluster::Train, &vocabulary, heads, &expected_corpus)
+        .unwrap_or_else(|error| refuse(&error));
+    let validation_samples = load(
+        corpus,
+        Cluster::Validation,
+        &vocabulary,
+        heads,
+        &expected_corpus,
+    )
+    .unwrap_or_else(|error| refuse(&error));
     println!(
         "  loaded      {} train, {} validation decisions in {:.1?}",
         train_samples.len(),
         validation_samples.len(),
         started.elapsed()
     );
-    // A decision this build cannot represent is dropped by `compile`. Silence about that would let
-    // a head rename quietly shrink the corpus, so it is reported and bounded.
-    let dropped =
-        (train_total - train_samples.len()) + (validation_total - validation_samples.len());
-    if dropped > 0 {
-        println!("  WARNING     {dropped} decisions did not compile and were dropped");
-    }
     if train_samples.is_empty() || validation_samples.is_empty() {
         refuse("a split is empty, so distillation would measure nothing");
     }
     let _ = std::io::Write::flush(&mut std::io::stdout());
 
-    // Only rows a feature can actually reach are initialised; the rest stay zero.
-    let active: Vec<i64> = (0..i64::try_from(vocabulary.slot_count()).unwrap_or(0)).collect();
+    // Only rows the factual corpus actually reaches are initialised. Initialising every assigned
+    // slot would put random weights in objective/ability/critic rows before those phases are
+    // enabled, contradicting §6.1's explicit zero-extension contract.
+    let active: Vec<i64> = train_samples
+        .iter()
+        .chain(&validation_samples)
+        .flat_map(|sample| sample.options.iter())
+        .flat_map(|option| option.columns.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if active.is_empty() {
+        refuse("the factual corpus reaches no input rows");
+    }
     let mut actor = initialize(width, capacity, &active);
 
     let settings = Settings {
@@ -205,7 +337,8 @@ fn main() {
             // nothing at all until it exited. Flushed per epoch so progress is watchable.
             let _ = std::io::Write::flush(&mut std::io::stdout());
         },
-    );
+    )
+    .unwrap_or_else(|error| refuse(&format!("distillation failed: {error}")));
 
     // Non-vacuity for the whole run, checked rather than eyeballed: `Adam::step` skips a parameter
     // whose gradient is undefined, so a break anywhere between the loss and the leaf tensors would
@@ -242,6 +375,76 @@ fn main() {
         );
     }
 
+    let imitation = ti4_mlp::distill::validation_metrics(&actor, &validation_samples)
+        .unwrap_or_else(|error| refuse(&format!("imitation validation failed: {error}")));
+    println!(
+        "\n  imitation   mean KL {:.5}, top-1 {:.3}%",
+        imitation.mean_kl,
+        imitation.top1_agreement * 100.0
+    );
+    for (head, kl) in &imitation.per_head {
+        println!("    {head:<14} KL {kl:.5}");
+    }
+    if imitation.per_head.len() != heads.len() {
+        refuse(&format!(
+            "validation covers {} schema-4 heads, expected {}",
+            imitation.per_head.len(),
+            heads.len()
+        ));
+    }
+    if imitation.mean_kl > 0.02
+        || imitation.top1_agreement < 0.97
+        || imitation.per_head.values().any(|kl| *kl > 0.05)
+    {
+        refuse("the selected checkpoint fails a predeclared §6.1 imitation gate");
+    }
+
+    // The gameplay gate is part of selection, not post-publication commentary. Load only the
+    // logical validation pool and the exact accepted teacher, then compare both policies on the
+    // predeclared paired seeds before a bundle path is created.
+    let checkpoint_path =
+        argument("--teacher").unwrap_or_else(|| "out/stage2_r6/final10000.json".to_owned());
+    let checkpoint = std::fs::read(&checkpoint_path)
+        .unwrap_or_else(|error| refuse(&format!("reading {checkpoint_path}: {error}")));
+    let teacher_sha256 = format!("{:x}", sha2::Sha256::digest(&checkpoint));
+    if teacher_sha256 != ti4_sim::baseline::R6_CHECKPOINT_SHA256 {
+        refuse("the gameplay teacher is not the accepted r6 checkpoint");
+    }
+    let champions =
+        ti4_training::vocabulary_corpus::champion_profiles(&checkpoint, &checkpoint_path)
+            .unwrap_or_else(|error| refuse(&format!("loading gameplay teachers: {error}")));
+    let pool_path = argument("--validation-pool")
+        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_bytes = ti4_sim::artifacts::read_and_verify_pool_role(
+        std::path::Path::new(&pool_path),
+        &[ti4_sim::artifacts::ArtifactRole::Validation],
+    )
+    .unwrap_or_else(|error| refuse(&format!("reading validation pool: {error}")));
+    let pool_sha256 = format!("{:x}", sha2::Sha256::digest(&pool_bytes));
+    if pool_sha256 != VALIDATION_POOL_SHA256 {
+        refuse("the gameplay pool is not the pinned seed-777 validation pool");
+    }
+    let pool = Arc::new(
+        ti4_sim::MapPool::from_reader(std::io::Cursor::new(pool_bytes))
+            .unwrap_or_else(|error| refuse(&format!("parsing validation pool: {error}"))),
+    );
+    println!("\n  gameplay    running paired 200 seeds x 6 rotations");
+    let teacher_vp = gameplay_mean_vp(None, &vocabulary, &champions, &pool)
+        .unwrap_or_else(|error| refuse(&format!("teacher gameplay gate: {error}")));
+    let student_vp = gameplay_mean_vp(Some(&actor), &vocabulary, &champions, &pool)
+        .unwrap_or_else(|error| refuse(&format!("student gameplay gate: {error}")));
+    let vp_delta = (student_vp - teacher_vp).abs();
+    println!(
+        "  gameplay    teacher {teacher_vp:.4} VP, student {student_vp:.4} VP, |delta| {vp_delta:.4}"
+    );
+    if vp_delta > 0.1 {
+        refuse(
+            "the base pass fails the gameplay gate; do not publish or begin PPO (a predeclared \
+             DAgger round is required)",
+        );
+    }
+    println!("  DAgger      not required: the base pass cleared both exit gates");
+
     let destination = std::path::Path::new(&out).join(format!("checkpoint-{}", selected.steps));
     let bundle = ti4_mlp::bundle::write(
         &destination,
@@ -262,7 +465,8 @@ fn main() {
     let loaded = ti4_mlp::bundle::read(&bundle.directory)
         .unwrap_or_else(|error| refuse(&format!("the bundle does not load: {error}")));
     let reloaded: BTreeMap<String, f64> =
-        ti4_mlp::distill::evaluate(&loaded.actor, &validation_samples);
+        ti4_mlp::distill::evaluate(&loaded.actor, &validation_samples)
+            .unwrap_or_else(|error| refuse(&format!("reloaded evaluation failed: {error}")));
     let reloaded_kl = ti4_mlp::distill::mean_of_means(&reloaded);
     println!("  reloaded    validation KL {reloaded_kl:.5}");
     if (reloaded_kl - selected.validation_kl).abs() > 1e-6 {

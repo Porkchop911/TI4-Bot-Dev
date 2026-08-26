@@ -56,6 +56,16 @@ pub const VALIDATION_SEEDS: std::ops::Range<u64> = 202_608_306..202_608_338;
 pub const ROUNDS: u32 = 4;
 /// The cap a shard may not exceed, per §6.1.
 pub const SHARD_CAP_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+/// The only manifest schema this reader understands.
+pub const CORPUS_SCHEMA: &str = "ti4-teacher-corpus-v1";
+/// The accepted fixed training-pool bytes used by M10-031.
+pub const FIXED_POOL_SHA256: &str =
+    "106153d4384435b19bd27d7210140b4b46da84c72d7e5ce704ffc52083f2c6df";
+/// The six fixed training factions, in rotation order.
+pub const FIXED_FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+const TRAIN_SHARD: &str = "train.jsonl.zst";
+const VALIDATION_SHARD: &str = "validation.jsonl.zst";
+const MANIFEST_FILE: &str = "manifest.json";
 
 /// Which side of the split a game belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -133,6 +143,49 @@ pub struct Corpus {
     pub manifest_sha256: String,
 }
 
+/// The external artifacts a consumer expects this fixed corpus to name.
+#[derive(Debug, Clone, Copy)]
+pub struct ExpectedCorpus<'a> {
+    /// Accepted teacher checkpoint bytes.
+    pub teacher_sha256: &'a str,
+    /// Accepted training-pool bytes.
+    pub pool_sha256: &'a str,
+    /// Accepted feature-vocabulary bytes.
+    pub slots_sha256: &'a str,
+}
+
+/// The closed, typed corpus manifest.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Manifest {
+    /// Manifest schema.
+    pub schema: String,
+    /// Completed games.
+    pub games: usize,
+    /// Records in the training shard.
+    pub train_decisions: usize,
+    /// Records in the validation shard.
+    pub validation_decisions: usize,
+    /// Forced decisions deliberately excluded.
+    pub forced_dropped: usize,
+    /// Rollout horizon.
+    pub rounds: u32,
+    /// Exact training seed range.
+    pub train_seeds: String,
+    /// Exact validation seed range.
+    pub validation_seeds: String,
+    /// Teacher checkpoint identity.
+    pub teacher_sha256: String,
+    /// Training-pool identity.
+    pub pool_sha256: String,
+    /// Feature-vocabulary identity.
+    pub slots_sha256: String,
+    /// Fixed student temperature.
+    pub student_temperature: f64,
+    /// Closed shard-name to digest map.
+    pub shards: BTreeMap<String, String>,
+}
+
 /// Anything that stopped a capture.
 #[derive(Debug, thiserror::Error)]
 pub enum CorpusError {
@@ -167,6 +220,117 @@ fn io(context: impl Into<String>) -> impl FnOnce(std::io::Error) -> CorpusError 
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+fn digest_is_valid(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn expected_seed_range(range: &std::ops::Range<u64>) -> String {
+    format!("{}..{}", range.start, range.end)
+}
+
+fn manifest(directory: &Path, expected: &ExpectedCorpus<'_>) -> Result<Manifest, CorpusError> {
+    let bytes = std::fs::read(directory.join(MANIFEST_FILE)).map_err(io(
+        "reading manifest.json; a corpus without one is incomplete",
+    ))?;
+    let manifest: Manifest = serde_json::from_slice(&bytes)
+        .map_err(|error| CorpusError::Invalid(format!("manifest.json is invalid: {error}")))?;
+
+    let expected_games = (TRAIN_SEEDS.count() + VALIDATION_SEEDS.count()) * 6;
+    let expected_shards = BTreeSet::from([TRAIN_SHARD.to_owned(), VALIDATION_SHARD.to_owned()]);
+    let found_shards: BTreeSet<String> = manifest.shards.keys().cloned().collect();
+    let expected_files = BTreeSet::from([
+        MANIFEST_FILE.to_owned(),
+        TRAIN_SHARD.to_owned(),
+        VALIDATION_SHARD.to_owned(),
+    ]);
+    let found_files: BTreeSet<String> = std::fs::read_dir(directory)
+        .map_err(io("listing the corpus directory"))?
+        .map(|entry| {
+            let entry = entry.map_err(io("reading a corpus directory entry"))?;
+            entry.file_name().into_string().map_err(|_| {
+                CorpusError::Invalid("the corpus contains a non-UTF-8 file name".to_owned())
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    let invalid = |message: String| Err(CorpusError::Invalid(message));
+    if manifest.schema != CORPUS_SCHEMA {
+        return invalid(format!("unsupported schema {}", manifest.schema));
+    }
+    if manifest.games != expected_games || manifest.rounds != ROUNDS {
+        return invalid(format!(
+            "manifest describes {} games/{} rounds, expected {expected_games}/{ROUNDS}",
+            manifest.games, manifest.rounds
+        ));
+    }
+    if manifest.train_seeds != expected_seed_range(&TRAIN_SEEDS)
+        || manifest.validation_seeds != expected_seed_range(&VALIDATION_SEEDS)
+    {
+        return invalid("manifest seed ranges do not match the fixed split".to_owned());
+    }
+    if manifest.student_temperature.to_bits() != 1.0f64.to_bits() {
+        return invalid("student temperature is not exactly 1.0".to_owned());
+    }
+    if manifest.teacher_sha256 != expected.teacher_sha256
+        || manifest.pool_sha256 != expected.pool_sha256
+        || manifest.slots_sha256 != expected.slots_sha256
+    {
+        return invalid("manifest input identities do not match the accepted inputs".to_owned());
+    }
+    if manifest.train_decisions == 0 || manifest.validation_decisions == 0 {
+        return invalid("a manifest decision count is zero".to_owned());
+    }
+    if found_shards != expected_shards || found_files != expected_files {
+        return invalid(format!(
+            "corpus file set is not closed: manifest {found_shards:?}, directory {found_files:?}"
+        ));
+    }
+    if manifest
+        .shards
+        .values()
+        .any(|digest| !digest_is_valid(digest))
+    {
+        return invalid(
+            "a shard checksum is not a lowercase/uppercase hexadecimal SHA-256".to_owned(),
+        );
+    }
+    Ok(manifest)
+}
+
+/// Validate the complete fixed-corpus manifest and closed file set.
+///
+/// # Errors
+/// Returns [`CorpusError::Invalid`] for any unsupported layout or identity mismatch.
+pub fn validate_manifest(
+    directory: &Path,
+    expected: &ExpectedCorpus<'_>,
+) -> Result<Manifest, CorpusError> {
+    manifest(directory, expected)
+}
+
+fn staging_directory(directory: &Path) -> Result<PathBuf, CorpusError> {
+    if directory.exists() {
+        return Err(CorpusError::Invalid(format!(
+            "{} already exists; corpus generations are immutable",
+            directory.display()
+        )));
+    }
+    let parent = directory.parent().ok_or_else(|| {
+        CorpusError::Invalid(format!("{} has no parent directory", directory.display()))
+    })?;
+    std::fs::create_dir_all(parent).map_err(io("creating the corpus parent directory"))?;
+    let name = directory
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .ok_or_else(|| CorpusError::Invalid("the corpus directory name is not UTF-8".to_owned()))?;
+    let staging = parent.join(format!(".{name}.staging-{}", std::process::id()));
+    std::fs::create_dir(&staging).map_err(io(format!(
+        "creating fresh staging directory {}",
+        staging.display()
+    )))?;
+    Ok(staging)
 }
 
 /// The two seed clusters do not overlap.
@@ -228,6 +392,12 @@ pub fn capture(
     slots_sha256: &str,
 ) -> Result<Corpus, CorpusError> {
     clusters_are_disjoint()?;
+    if factions != FIXED_FACTIONS {
+        return Err(CorpusError::Invalid(format!(
+            "capture factions {factions:?} do not match the fixed roster {FIXED_FACTIONS:?}"
+        )));
+    }
+    let staging = staging_directory(directory)?;
 
     let players: Vec<PlayerId> = (0..factions.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
@@ -250,8 +420,7 @@ pub fn capture(
     // This is sound only because **the iteration order already is the deterministic order** the
     // shard requires: seeds ascending, then rotation, then seat, then the decision's index within
     // that seat. The ordering is re-checked on read rather than assumed.
-    std::fs::create_dir_all(directory).map_err(io("creating the corpus directory"))?;
-    let mut shards = Shards::open(directory);
+    let mut shards = Shards::open(&staging);
     let mut counts: BTreeMap<Cluster, usize> = BTreeMap::new();
 
     // Stage 2 is the reward the four-round horizon is defined against; the critic warm-up reads
@@ -365,9 +534,9 @@ pub fn capture(
         });
     }
 
-    let digests = shards.finish(directory)?;
-    write_manifest(
-        directory,
+    let digests = shards.finish(&staging)?;
+    let mut corpus = write_manifest(
+        &staging,
         &counts,
         &digests,
         completed,
@@ -375,7 +544,19 @@ pub fn capture(
         teacher_sha256,
         pool_sha256,
         slots_sha256,
-    )
+    )?;
+    let expected_identity = ExpectedCorpus {
+        teacher_sha256,
+        pool_sha256,
+        slots_sha256,
+    };
+    let _ = manifest(&staging, &expected_identity)?;
+    std::fs::rename(&staging, directory).map_err(io(format!(
+        "publishing corpus generation {}",
+        directory.display()
+    )))?;
+    directory.clone_into(&mut corpus.directory);
+    Ok(corpus)
 }
 
 /// One streaming zstd encoder per cluster, opened on first use.
@@ -505,46 +686,68 @@ fn write_manifest(
 pub fn stream_shard(
     directory: &Path,
     cluster: Cluster,
+    expected: &ExpectedCorpus<'_>,
     mut visit: impl FnMut(Decision),
 ) -> Result<usize, CorpusError> {
-    let text = verified_text(directory, cluster)?;
+    let (text, declared_count) = verified_text(directory, cluster, expected)?;
     let name = format!("{}.jsonl.zst", cluster.as_str());
     let mut seen = 0usize;
+    let mut previous: Option<(u64, usize, String, usize)> = None;
     for (line, record) in text.lines().enumerate() {
         let decision: Decision = serde_json::from_str(record)
             .map_err(|error| CorpusError::Invalid(format!("{name} line {line}: {error}")))?;
         check_record(&name, line, &decision, cluster)?;
+        let key = (
+            decision.seed,
+            decision.rotation,
+            decision.seat.clone(),
+            decision.order,
+        );
+        if previous.as_ref().is_some_and(|prior| &key <= prior) {
+            return Err(CorpusError::Invalid(format!(
+                "{name} line {line}: record key {key:?} is not strictly after {previous:?}"
+            )));
+        }
+        previous = Some(key);
         seen += 1;
         visit(decision);
+    }
+    if seen != declared_count {
+        return Err(CorpusError::Invalid(format!(
+            "{name} contains {seen} decisions, manifest declares {declared_count}"
+        )));
     }
     Ok(seen)
 }
 
 /// The shard's decompressed text, after its checksum agrees with the manifest.
-fn verified_text(directory: &Path, cluster: Cluster) -> Result<String, CorpusError> {
-    let manifest_bytes = std::fs::read(directory.join("manifest.json")).map_err(io(
-        "reading manifest.json; a corpus without one is incomplete",
-    ))?;
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
-        .map_err(|error| CorpusError::Invalid(format!("manifest.json is not JSON: {error}")))?;
-
+fn verified_text(
+    directory: &Path,
+    cluster: Cluster,
+    expected: &ExpectedCorpus<'_>,
+) -> Result<(String, usize), CorpusError> {
+    let manifest = manifest(directory, expected)?;
     let name = format!("{}.jsonl.zst", cluster.as_str());
     let declared = manifest
-        .get("shards")
-        .and_then(|shards| shards.get(&name))
-        .and_then(serde_json::Value::as_str)
+        .shards
+        .get(&name)
         .ok_or_else(|| CorpusError::Invalid(format!("the manifest has no checksum for {name}")))?;
+    let declared_count = match cluster {
+        Cluster::Train => manifest.train_decisions,
+        Cluster::Validation => manifest.validation_decisions,
+    };
 
     let bytes = std::fs::read(directory.join(&name)).map_err(io(format!("reading {name}")))?;
     let found = sha256(&bytes);
-    if found != declared {
+    if &found != declared {
         return Err(CorpusError::Invalid(format!(
             "{name} hashes {found}, the manifest says {declared}"
         )));
     }
     let plain = zstd::decode_all(bytes.as_slice()).map_err(io(format!("decompressing {name}")))?;
-    String::from_utf8(plain)
-        .map_err(|error| CorpusError::Invalid(format!("{name} is not UTF-8: {error}")))
+    let text = String::from_utf8(plain)
+        .map_err(|error| CorpusError::Invalid(format!("{name} is not UTF-8: {error}")))?;
+    Ok((text, declared_count))
 }
 
 /// Everything a record must satisfy to be usable, checked on the way in.
@@ -574,6 +777,53 @@ fn check_record(
             "{name} line {line}: a forced decision reached the corpus"
         )));
     }
+    if decision.rotation >= FIXED_FACTIONS.len()
+        || !FIXED_FACTIONS.contains(&decision.faction.as_str())
+        || !ti4_policy::learned::STAGE1_DECISION_HEADS.contains(&decision.head.as_str())
+    {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: invalid rotation/faction/head"
+        )));
+    }
+    let unique_options: BTreeSet<&str> = decision.options.iter().map(String::as_str).collect();
+    if unique_options.len() != decision.options.len()
+        || unique_options.iter().any(|option| option.is_empty())
+    {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: option ids are empty or duplicated"
+        )));
+    }
+    if !decision.value_target.is_finite()
+        || decision
+            .actor
+            .iter()
+            .flatten()
+            .chain(&decision.critic)
+            .any(|(feature, value)| feature.is_empty() || !value.is_finite())
+        || decision
+            .teacher
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: a target, feature, or probability is non-finite/invalid"
+        )));
+    }
+    let probability_sum: f64 = decision.teacher.iter().sum();
+    if (probability_sum - 1.0).abs() > 1e-6 {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: teacher probabilities sum to {probability_sum}, not 1"
+        )));
+    }
+    if decision
+        .critic
+        .iter()
+        .any(|(feature, _)| !feature.starts_with("critic-state:"))
+    {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: critic vector contains a non-critic feature"
+        )));
+    }
     // Every captured seed must be on the side of the split its shard claims. A decision on the
     // wrong side is the leak the seed split exists to prevent, and it is cheap to check.
     if Cluster::of(decision.seed) != Some(cluster) {
@@ -594,9 +844,15 @@ fn check_record(
 /// # Errors
 /// [`CorpusError::Invalid`] if the manifest is missing, the checksum disagrees, a record does not
 /// parse, or a record's option/vector/probability lengths do not agree.
-pub fn read_shard(directory: &Path, cluster: Cluster) -> Result<Vec<Decision>, CorpusError> {
+pub fn read_shard(
+    directory: &Path,
+    cluster: Cluster,
+    expected: &ExpectedCorpus<'_>,
+) -> Result<Vec<Decision>, CorpusError> {
     let mut decisions = Vec::new();
-    stream_shard(directory, cluster, |decision| decisions.push(decision))?;
+    stream_shard(directory, cluster, expected, |decision| {
+        decisions.push(decision);
+    })?;
     Ok(decisions)
 }
 
@@ -662,6 +918,14 @@ mod tests {
         }
     }
 
+    fn expected() -> ExpectedCorpus<'static> {
+        ExpectedCorpus {
+            teacher_sha256: "teacher",
+            pool_sha256: "pool",
+            slots_sha256: "slots",
+        }
+    }
+
     /// Write a shard the way `capture` does: streamed, in the order handed over.
     fn written(scratch: &Scratch, decisions: Vec<Decision>, cluster: Cluster) -> Corpus {
         let mut shards = Shards::open(&scratch.0);
@@ -681,6 +945,12 @@ mod tests {
             shards.write(cluster, decision).expect("writes");
             *counts.entry(cluster).or_default() += 1;
         }
+        let other = match cluster {
+            Cluster::Train => (Cluster::Validation, decision(202_608_306, 0)),
+            Cluster::Validation => (Cluster::Train, decision(202_608_210, 0)),
+        };
+        shards.write(other.0, &other.1).expect("writes other shard");
+        *counts.entry(other.0).or_default() += 1;
         let digests = shards.finish(&scratch.0).expect("finishes");
         write_manifest(
             &scratch.0, &counts, &digests, 768, 12, "teacher", "pool", "slots",
@@ -703,7 +973,7 @@ mod tests {
         );
         assert_eq!(corpus.decisions.get(&Cluster::Train), Some(&3));
 
-        let read = read_shard(&scratch.0, Cluster::Train).expect("reads");
+        let read = read_shard(&scratch.0, Cluster::Train, &expected()).expect("reads");
         let keys: Vec<(u64, usize)> = read.iter().map(|d| (d.seed, d.order)).collect();
         assert_eq!(
             keys,
@@ -727,7 +997,7 @@ mod tests {
         bytes[last] ^= 0xff;
         std::fs::write(&path, &bytes).expect("write");
 
-        let error = read_shard(&scratch.0, Cluster::Train).expect_err("must refuse");
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("must refuse");
         assert!(error.to_string().contains("hashes"), "{error}");
     }
 
@@ -741,7 +1011,7 @@ mod tests {
             vec![decision(202_608_210, 0), decision(202_608_310, 1)],
             Cluster::Train,
         );
-        let error = read_shard(&scratch.0, Cluster::Train).expect_err("must refuse");
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("must refuse");
         assert!(
             error.to_string().contains("not in the train cluster"),
             "{error}"
@@ -757,7 +1027,7 @@ mod tests {
         forced.teacher = vec![1.0];
         let _ = written(&scratch, vec![forced], Cluster::Train);
 
-        let error = read_shard(&scratch.0, Cluster::Train).expect_err("must refuse");
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("must refuse");
         assert!(error.to_string().contains("forced"), "{error}");
     }
 
@@ -768,7 +1038,7 @@ mod tests {
         ragged.teacher = vec![1.0];
         let _ = written(&scratch, vec![ragged], Cluster::Train);
 
-        let error = read_shard(&scratch.0, Cluster::Train).expect_err("must refuse");
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("must refuse");
         assert!(error.to_string().contains("probabilities"), "{error}");
     }
 
@@ -777,7 +1047,76 @@ mod tests {
         let scratch = Scratch::new("nomanifest");
         let _ = written(&scratch, vec![decision(202_608_210, 0)], Cluster::Train);
         std::fs::remove_file(scratch.0.join("manifest.json")).expect("remove");
-        let error = read_shard(&scratch.0, Cluster::Train).expect_err("must refuse");
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("must refuse");
         assert!(error.to_string().contains("incomplete"), "{error}");
+    }
+
+    #[test]
+    fn an_existing_generation_is_refused_before_any_payload_is_touched() {
+        let scratch = Scratch::new("immutable");
+        let destination = scratch.0.join("accepted");
+        std::fs::create_dir(&destination).expect("destination");
+        let marker = destination.join("train.jsonl.zst");
+        std::fs::write(&marker, b"accepted bytes").expect("marker");
+
+        let error = staging_directory(&destination).expect_err("must refuse existing destination");
+        assert!(error.to_string().contains("immutable"), "{error}");
+        assert_eq!(
+            std::fs::read(marker).expect("marker remains"),
+            b"accepted bytes"
+        );
+    }
+
+    #[test]
+    fn a_wrong_input_identity_and_an_extra_file_are_refused() {
+        let scratch = Scratch::new("identity");
+        let _ = written(&scratch, vec![decision(202_608_210, 0)], Cluster::Train);
+        let wrong = ExpectedCorpus {
+            teacher_sha256: "some-other-teacher",
+            ..expected()
+        };
+        let error = validate_manifest(&scratch.0, &wrong).expect_err("identity must be exact");
+        assert!(error.to_string().contains("identities"), "{error}");
+
+        std::fs::write(scratch.0.join("partial.tmp"), b"partial").expect("extra file");
+        let error = validate_manifest(&scratch.0, &expected()).expect_err("closed set");
+        assert!(error.to_string().contains("not closed"), "{error}");
+    }
+
+    #[test]
+    fn a_manifest_count_that_does_not_match_the_shard_is_refused() {
+        let scratch = Scratch::new("count");
+        let _ = written(&scratch, vec![decision(202_608_210, 0)], Cluster::Train);
+        let path = scratch.0.join(MANIFEST_FILE);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("manifest")).expect("json");
+        value["train_decisions"] = serde_json::json!(2);
+        std::fs::write(&path, serde_json::to_vec_pretty(&value).expect("json")).expect("write");
+
+        let error =
+            read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("count mismatch");
+        assert!(error.to_string().contains("manifest declares 2"), "{error}");
+    }
+
+    #[test]
+    fn out_of_order_records_are_refused_instead_of_sorted_by_the_test_fixture() {
+        let scratch = Scratch::new("order-refusal");
+        let mut shards = Shards::open(&scratch.0);
+        let later = decision(202_608_211, 0);
+        let earlier = decision(202_608_210, 0);
+        shards.write(Cluster::Train, &later).expect("later");
+        shards.write(Cluster::Train, &earlier).expect("earlier");
+        shards
+            .write(Cluster::Validation, &decision(202_608_306, 0))
+            .expect("validation");
+        let digests = shards.finish(&scratch.0).expect("finish");
+        let counts = BTreeMap::from([(Cluster::Train, 2), (Cluster::Validation, 1)]);
+        write_manifest(
+            &scratch.0, &counts, &digests, 768, 0, "teacher", "pool", "slots",
+        )
+        .expect("manifest");
+
+        let error = read_shard(&scratch.0, Cluster::Train, &expected()).expect_err("order");
+        assert!(error.to_string().contains("not strictly after"), "{error}");
     }
 }

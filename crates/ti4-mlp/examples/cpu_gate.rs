@@ -58,13 +58,13 @@ use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::vocabulary::Vocabulary;
 
 /// §7.1's workload: 16 seeds × six rotations, four rounds, training pool.
-const SEEDS: std::ops::Range<u64> = 900_000_000..900_000_002;
+const SEEDS: std::ops::Range<u64> = 900_000_000..900_000_016;
 const ROUNDS: u32 = 4;
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 /// §7.1: "five warm-up and at least twenty timed rollout batches".
-const WARMUPS: usize = 1;
-const DEFAULT_SAMPLES: usize = 2;
+const WARMUPS: usize = 5;
+const DEFAULT_SAMPLES: usize = 20;
 /// The accept band. Not a tuned number — §7.1 fixes it.
 const ACCEPT_RATIO: f64 = 2.0;
 /// The fallback band: above this at width 256, no 128-wide rerun is worth doing.
@@ -171,21 +171,34 @@ impl Decider for Shadow {
         if !options.is_empty() {
             let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
             // Discarded on purpose. The cost is the measurement; the value is not used.
-            if std::env::var("SKIP_MODEL").is_err() {
-                let _ = self.actor.probabilities(&options, head, self.row, 1.0);
+            let model_enabled = std::env::var("SKIP_MODEL").is_err();
+            if model_enabled {
+                self.actor
+                    .probabilities(&options, head, self.row, 1.0)
+                    .map_err(|error| IllegalChoice::DeciderFailed {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                        reason: format!("shadow policy inference failed: {error}"),
+                    })?;
             }
             if std::env::var("SKIP_CRITIC").is_ok() {
-                self.scored.set(self.scored.get() + 1);
+                if model_enabled {
+                    self.scored.set(self.scored.get() + 1);
+                }
                 return self.inner.choose_seeing(choice, seen);
             }
             let critic =
                 ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full());
-            if std::env::var("SKIP_MODEL").is_err() {
-                let _ = self
-                    .actor
-                    .value(&CriticInput::new(&critic, &self.vocabulary), self.row);
+            if model_enabled {
+                self.actor
+                    .value(&CriticInput::new(&critic, &self.vocabulary), self.row)
+                    .map_err(|error| IllegalChoice::DeciderFailed {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                        reason: format!("shadow critic inference failed: {error}"),
+                    })?;
+                self.scored.set(self.scored.get() + 1);
             }
-            self.scored.set(self.scored.get() + 1);
         }
         // The linear champion decides, with its own untouched RNG stream.
         self.inner.choose_seeing(choice, seen)
@@ -402,6 +415,11 @@ fn median(samples: &mut [f64]) -> f64 {
 }
 
 fn main() {
+    // These are acceptance-protocol constants, not tuning knobs. Keep the executable incapable of
+    // publishing evidence from a reduced profiling workload.
+    if SEEDS.end - SEEDS.start != 16 || WARMUPS != 5 || DEFAULT_SAMPLES < 20 {
+        refuse("the compiled workload does not match MLP plan §7.1");
+    }
     let width = match argument("--width").as_deref() {
         None | Some("256") => Width::W256,
         Some("128") => Width::W128,
@@ -544,6 +562,15 @@ fn main() {
         };
         let (linear, shadow) = (a, b);
 
+        if probes.is_empty() && shadow.scored != shadow.decisions {
+            refuse(&format!(
+                "shadow sample {} completed {} model evaluations for {} decisions",
+                index + 1,
+                shadow.scored,
+                shadow.decisions
+            ));
+        }
+
         // Arm-for-arm identity, asserted every sample rather than once.
         for batch in [&linear, &shadow] {
             match &reference {
@@ -596,7 +623,7 @@ fn main() {
         spread(&shadow_samples, shadow_median)
     );
     println!("  ratio          {ratio:.3}x");
-    if total_scored == 0 {
+    if probes.is_empty() && total_scored == 0 {
         refuse("the shadow arm scored no decisions, so it measured nothing");
     }
     println!("  MLP scored     {total_scored} decisions across the timed shadow batches");
@@ -609,10 +636,10 @@ fn main() {
     // charges the model for a duplicate the real thing would never perform. Measured: raw
     // extraction alone, with no tensor op at all, is already 1.53x.
     //
-    // So this arm measures the real thing. The MLP chooses, which means a different trajectory —
-    // exactly what §7.1 avoids by timing per batch — so it is compared **per decision** instead,
-    // which is immune to the trajectories differing. It doubles as the row's required legality
-    // smoke: every game must complete with the MLP deciding, or the batch refuses above.
+    // This arm is a legality smoke and diagnostic only. Because the MLP chooses, it follows a
+    // different trajectory with a different distribution of heads, option counts and states. Its
+    // per-decision number is therefore not the paired §7.1 acceptance metric and cannot affect the
+    // verdict below.
     let mut mlp_per_decision = Vec::with_capacity(samples);
     let mut linear_per_decision = Vec::with_capacity(samples);
     for _ in 0..WARMUPS {
@@ -638,7 +665,7 @@ fn main() {
     let real_ratio = mlp_cost / linear_cost;
     println!(
         "
-  MLP-choosing arm (legality smoke, and the per-decision comparison)"
+  MLP-choosing arm (diagnostic legality smoke; not an acceptance metric)"
     );
     println!("    linear   {:>8.1} us/decision", linear_cost * 1e6);
     println!("    mlp      {:>8.1} us/decision", mlp_cost * 1e6);
