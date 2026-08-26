@@ -11,8 +11,12 @@
 //! # Rollouts stay on the CPU
 //!
 //! §7.1 admits no CUDA inference backend, so every action is selected by the deterministic CPU
-//! path. `--device cuda` moves the model for the optimiser phase only, between rollouts, and the
-//! actor returns to CPU before the next game.
+//! path. `--device cuda` places the trained model on the device; self-play runs from a CPU
+//! inference *copy*, and the training actor is never moved — moving a tensor that requires a
+//! gradient replaces it with a non-leaf view, and the gradients then land on the leaves left
+//! behind.
+//!
+//! Games are played in parallel across rayon workers, one owned actor copy per worker.
 //!
 //! This exists to be measured as much as to run: every estimate of what M10-038's 30,000 updates
 //! would cost has so far been an extrapolation, and one real update replaces all of them.
@@ -23,6 +27,8 @@
     clippy::arc_with_non_send_sync,
     reason = "a driver: the phases read in the order they run"
 )]
+
+use rayon::prelude::*;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -54,6 +60,141 @@ fn argument(name: &str) -> Option<String> {
 fn refuse(reason: &str) -> ! {
     eprintln!("\nREFUSED: {reason}");
     std::process::exit(2);
+}
+
+/// One self-play game, recorded as PPO steps with §6.1's shaped per-decision returns.
+///
+/// Everything a game needs is passed in rather than captured, because this runs on a rayon worker:
+/// `tch::Tensor` is `Send` but **not** `Sync`, so the actor cannot be shared by reference across
+/// threads and each worker owns its own inference copy.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a game's inputs; bundling them into a struct would move the list, not shorten it"
+)]
+fn play_one(
+    actor: &ti4_mlp::Actor,
+    content: &ContentStore,
+    players: &[PlayerId],
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    pool: &Arc<ti4_sim::MapPool>,
+    reward: &ti4_training::reward::Reward,
+    critic_mode: ti4_mlp::bundle::CriticMode,
+    seed: u64,
+    rotation: usize,
+) -> Result<Vec<Step>, String> {
+    let seated: BTreeMap<PlayerId, FactionId> = players
+        .iter()
+        .enumerate()
+        .map(|(index, player)| {
+            (
+                player.clone(),
+                FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+            )
+        })
+        .collect();
+
+    // Deciders are built by a factory so each seat gets the **exact** post-deployment baseline the
+    // rollout will score its final progress against. Constructing them earlier cannot supply that,
+    // and a shaped return measured against a different baseline is not the return §6.1 defines
+    // (F-M10-034-D1).
+    //
+    // The handles are `Rc`, which is exactly why they are created, filled and drained inside this
+    // function: nothing thread-local ever crosses back to the caller.
+    let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
+    let rollout = ti4_training::rollout::play_with_decider_factory(
+        content,
+        players,
+        &seated,
+        DEFAULT,
+        seed,
+        ti4_training::rollout::Horizon {
+            rounds: ROUNDS,
+            steps: 10_000,
+        },
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        &ti4_training::rollout::OpeningMap::PythonPool {
+            pool: Arc::clone(pool),
+            tile_seed_offset: TILE_SEED_OFFSET,
+        },
+        |baselines| {
+            let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+            for (index, player) in players.iter().enumerate() {
+                let row = ti4_mlp::FactionRow::of(seated[player].as_str())
+                    .map_err(|error| format!("{player}: {error}"))?;
+                let baseline = baselines
+                    .get(player)
+                    .copied()
+                    .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                let stream = seed
+                    .wrapping_mul(1_000_003)
+                    .wrapping_add(u64::try_from(index).unwrap_or(0));
+                // One detached copy per seat, from this worker's actor. Reading the bundle here
+                // instead — which the first version did — SHA-256 verifies ~17 MB of tensors and
+                // reparses a 1.1 MB slots.json per seat per game: 576 verifications an update, 14
+                // minutes measuring nothing but that mistake.
+                let bot = ti4_mlp::bot::MlpBot::new(
+                    actor.inference_copy(),
+                    vocabulary.clone(),
+                    row,
+                    stream,
+                )
+                .recording_ppo(critic_mode)
+                .from_setup(baseline);
+                if handles.insert(player.clone(), bot.ppo_records()).is_some() {
+                    return Err(format!("{player} was seated twice"));
+                }
+                let (decider, _status) = bot.seat();
+                deciders.insert(player.clone(), decider);
+            }
+            Ok(deciders)
+        },
+    );
+    if let Some(error) = &rollout.error {
+        return Err(format!("self-play game {seed}/{rotation} failed: {error}"));
+    }
+
+    // The returns, matched to the seat that earned them. A missing handle is refused rather than
+    // skipped: silently dropping a seat shrinks the batch and nothing downstream would notice
+    // (F-M10-034-D4).
+    let mut steps: Vec<Step> = Vec::new();
+    for seat in &rollout.seats {
+        let handle = handles.get(&seat.player).ok_or_else(|| {
+            format!(
+                "seed {seed} rotation {rotation}: {} has no recording handle",
+                seat.player
+            )
+        })?;
+        let mut recorded = handle.borrow_mut();
+        // §6.1's shaped per-decision return. Each recorded decision carries the progress measured
+        // **at** that decision against the seat's own setup baseline, so `returns` can telescope
+        // them into a return-to-go per decision.
+        //
+        // The first version built a one-step episode from the final progress and gave every
+        // decision in the game the same number. The advantage is `return − V(s)`, so with a
+        // constant return the only thing separating decisions was the critic, and the within-game
+        // credit assignment §6.1's shaping exists for was gone. It trained; the objective was wrong.
+        let episode = ti4_training::reward::Episode {
+            steps: recorded.iter().map(|record| record.progress).collect(),
+            final_progress: seat.episode.final_progress,
+            cleared: seat.episode.cleared,
+            shortfall: seat.episode.shortfall,
+            traded_goods: seat.episode.traded_goods,
+        };
+        let per_decision = ti4_training::reward::returns(&episode, reward);
+        if per_decision.len() != recorded.len() {
+            return Err(format!(
+                "seed {seed} rotation {rotation} {}: {} returns for {} decisions",
+                seat.player,
+                per_decision.len(),
+                recorded.len()
+            ));
+        }
+        for (record, value) in recorded.iter_mut().zip(&per_decision) {
+            record.step.return_to_go = *value;
+        }
+        steps.extend(recorded.drain(..).map(|record| record.step));
+    }
+    Ok(steps)
 }
 
 fn main() {
@@ -159,120 +300,56 @@ fn main() {
         let mut seated_decisions = 0usize;
         let mut games = 0usize;
 
+        // §6.3's unit of work as a job list. Self-play is embarrassingly parallel — every game is
+        // an independent seed — and once the optimizer stopped being launch-bound it was 87% of an
+        // update's wall time.
+        //
+        // Work is split into one chunk per rayon thread rather than one job per thread, because
+        // each chunk carries an owned `Actor` copy: `tch::Tensor` is `Send` but not `Sync`, so the
+        // actor cannot be borrowed across threads. Per-job copies would allocate 96 actors instead
+        // of one per core.
         let base = SEED_BASE + SEEDS_PER_UPDATE * update as u64;
-        for seed in base..base + SEEDS_PER_UPDATE {
-            for rotation in 0..FACTIONS.len() {
-                let seated: BTreeMap<PlayerId, FactionId> = players
+        let jobs: Vec<(u64, usize)> = (base..base + SEEDS_PER_UPDATE)
+            .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
+            .collect();
+        let workers = rayon::current_num_threads().max(1);
+        let per_worker = jobs.len().div_ceil(workers);
+        let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
+            .chunks(per_worker)
+            .map(|chunk| (inference.inference_copy(), chunk.to_vec()))
+            .collect();
+
+        // Collected in chunk order and flattened in job order, so the batch a given update sees does
+        // not depend on which worker finished first. Determinism here is not decoration: §6.3's
+        // shuffle is seeded, and a batch assembled in scheduling order would make every downstream
+        // fingerprint irreproducible.
+        let harvest: Vec<Result<Vec<Vec<Step>>, String>> = chunks
+            .into_par_iter()
+            .map(|(local, chunk)| {
+                chunk
                     .iter()
-                    .enumerate()
-                    .map(|(index, player)| {
-                        (
-                            player.clone(),
-                            FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                    .map(|(seed, rotation)| {
+                        play_one(
+                            &local,
+                            content,
+                            &players,
+                            &vocabulary,
+                            &pool,
+                            &reward,
+                            critic_mode,
+                            *seed,
+                            *rotation,
                         )
                     })
-                    .collect();
+                    .collect()
+            })
+            .collect();
 
-                // Deciders are built by a factory so each seat gets the **exact** post-deployment
-                // baseline the rollout will score its final progress against. Constructing them
-                // earlier cannot supply that, and a shaped return measured against a different
-                // baseline is not the return §6.1 defines (F-M10-034-D1).
-                let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
-                let rollout = ti4_training::rollout::play_with_decider_factory(
-                    content,
-                    &players,
-                    &seated,
-                    DEFAULT,
-                    seed,
-                    ti4_training::rollout::Horizon {
-                        rounds: ROUNDS,
-                        steps: 10_000,
-                    },
-                    ti4_engine::opening::DEFAULT_REQUIREMENT,
-                    &ti4_training::rollout::OpeningMap::PythonPool {
-                        pool: Arc::clone(&pool),
-                        tile_seed_offset: TILE_SEED_OFFSET,
-                    },
-                    |baselines| {
-                        let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-                        for (index, player) in players.iter().enumerate() {
-                            let row = ti4_mlp::FactionRow::of(seated[player].as_str())
-                                .map_err(|error| format!("{player}: {error}"))?;
-                            let baseline = baselines
-                                .get(player)
-                                .copied()
-                                .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                            let stream = seed
-                                .wrapping_mul(1_000_003)
-                                .wrapping_add(u64::try_from(index).unwrap_or(0));
-                            // One detached copy per seat. Reading the bundle here instead — which
-                            // the first version did — SHA-256 verifies ~17 MB of tensors and
-                            // reparses a 1.1 MB slots.json per seat per game: 576 verifications an
-                            // update, 14 minutes measuring nothing but that mistake.
-                            let bot = ti4_mlp::bot::MlpBot::new(
-                                inference.inference_copy(),
-                                vocabulary.clone(),
-                                row,
-                                stream,
-                            )
-                            .recording_ppo(critic_mode)
-                            .from_setup(baseline);
-                            if handles.insert(player.clone(), bot.ppo_records()).is_some() {
-                                return Err(format!("{player} was seated twice"));
-                            }
-                            let (decider, _status) = bot.seat();
-                            deciders.insert(player.clone(), decider);
-                        }
-                        Ok(deciders)
-                    },
-                );
-                if let Some(error) = &rollout.error {
-                    refuse(&format!("self-play game {seed}/{rotation} failed: {error}"));
-                }
+        for chunk in harvest {
+            for game in chunk.unwrap_or_else(|error| refuse(&error)) {
                 games += 1;
-
-                // The returns, matched to the seat that earned them. A missing handle is refused
-                // rather than skipped: silently dropping a seat shrinks the batch and nothing
-                // downstream would notice (F-M10-034-D4).
-                for seat in &rollout.seats {
-                    let handle = handles.get(&seat.player).unwrap_or_else(|| {
-                        refuse(&format!(
-                            "seed {seed} rotation {rotation}: {} has no recording handle",
-                            seat.player
-                        ))
-                    });
-                    let mut recorded = handle.borrow_mut();
-                    // §6.1's shaped per-decision return. Each recorded decision carries the
-                    // progress measured **at** that decision against the seat's own setup
-                    // baseline, so `returns` can telescope them into a return-to-go per decision.
-                    //
-                    // The first version built a one-step episode from the final progress and gave
-                    // every decision in the game the same number. The advantage is `return − V(s)`,
-                    // so with a constant return the only thing separating decisions was the critic,
-                    // and the within-game credit assignment §6.1's shaping exists for was gone. It
-                    // trained; the objective was wrong.
-                    let episode = ti4_training::reward::Episode {
-                        steps: recorded.iter().map(|record| record.progress).collect(),
-                        final_progress: seat.episode.final_progress,
-                        cleared: seat.episode.cleared,
-                        shortfall: seat.episode.shortfall,
-                        traded_goods: seat.episode.traded_goods,
-                    };
-                    let per_decision = ti4_training::reward::returns(&episode, &reward);
-                    if per_decision.len() != recorded.len() {
-                        refuse(&format!(
-                            "seed {seed} rotation {rotation} {}: {} returns for {} decisions",
-                            seat.player,
-                            per_decision.len(),
-                            recorded.len()
-                        ));
-                    }
-                    for (record, value) in recorded.iter_mut().zip(&per_decision) {
-                        record.step.return_to_go = *value;
-                    }
-                    seated_decisions += recorded.len();
-                    steps.extend(recorded.drain(..).map(|record| record.step));
-                }
+                seated_decisions += game.len();
+                steps.extend(game);
             }
         }
         let rollout_time = rolled.elapsed();

@@ -279,6 +279,14 @@ pub struct EpochStats {
 }
 
 /// The per-decision quantities one forward pass produces.
+/// One decision's scored quantities, from the per-decision path.
+///
+/// Retained for the tests only. `score_minibatch` replaced this path in production, and the
+/// finite-difference gradient test now uses it as an **independent oracle**: the numeric side of
+/// that comparison is computed here, one decision at a time, while the analytic side comes from the
+/// batched implementation. Deleting it would leave the batched padding, gather, and softmax with no
+/// reference to disagree with.
+#[cfg(test)]
 struct Scored {
     /// `log pi_current(chosen | s)`, with a graph.
     log_prob: Tensor,
@@ -289,6 +297,7 @@ struct Scored {
 /// Score one decision under the current weights.
 ///
 /// The softmax is over exactly this decision's options — the segment — so no padding can enter it.
+#[cfg(test)]
 fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
     let head = crate::heads()
         .get(step.head)
@@ -307,10 +316,247 @@ fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
     Ok(Scored { log_prob, entropy })
 }
 
+/// Everything one scored minibatch hands back: a differentiable loss and already-reduced telemetry.
+struct ScoredMinibatch {
+    loss: Tensor,
+    telemetry: Telemetry,
+}
+
+/// Per-minibatch telemetry, reduced on the host from a single transfer.
+struct Telemetry {
+    actor_loss: f64,
+    critic_loss: f64,
+    kl: f64,
+    clipped: usize,
+    entropy: BTreeMap<String, (f64, usize)>,
+}
+
+/// Score a whole minibatch in one forward pass.
+///
+/// This function is the reason a PPO update is not launch-bound. The version it replaced scored one
+/// decision at a time — one `logits` call, one `log_softmax`, one critic pass, and five scalar reads
+/// back to the host *per decision* — then summed 4,096 separate subgraphs before a single
+/// `backward`. On CUDA that is thousands of kernel launches and thousands of synchronising stalls
+/// per optimizer step, which is why the GPU sat at 40% and the device bought only 1.36x over CPU.
+///
+/// Decisions have different option counts, so the ragged logits are scattered into a padded
+/// `[decisions, widest]` rectangle whose padding is `-inf` before the softmax and zeroed after it.
+/// The zeroing is not cosmetic: `exp(-inf) * -inf` is `0 * -inf`, which is `NaN`, and one `NaN`
+/// entering the sum poisons the whole minibatch's gradient. `distill::batch_cross_entropy` meets
+/// the same hazard the same way.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "behaviour quantities narrow to the f32 the model is built from"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one forward pass over a minibatch; splitting it would hide the padding contract \
+              that its correctness depends on"
+)]
+fn score_minibatch(
+    actor: &Actor,
+    batch: &Batch,
+    minibatch: &[usize],
+    critic_mode: CriticMode,
+    settings: Settings,
+) -> Result<ScoredMinibatch, String> {
+    let count = minibatch.len();
+    if count == 0 {
+        return Err("a PPO minibatch is empty".to_owned());
+    }
+
+    // ---- flatten every decision's options into one gather ----
+    let mut parts: Vec<(&[i64], &[f32])> = Vec::new();
+    let mut heads: Vec<i64> = Vec::new();
+    let mut rows: Vec<i64> = Vec::new();
+    let mut widest = 0usize;
+    for index in minibatch {
+        let step = &batch.steps[*index];
+        let head = i64::try_from(step.head).map_err(|_| "head index does not fit i64")?;
+        let row = i64::try_from(step.row.index()).map_err(|_| "faction row does not fit i64")?;
+        if step.chosen >= step.options.len() {
+            return Err("chosen option is outside the legal set".to_owned());
+        }
+        widest = widest.max(step.options.len());
+        for option in &step.options {
+            parts.push((option.columns.as_slice(), option.values.as_slice()));
+            heads.push(head);
+            rows.push(row);
+        }
+    }
+    let widest = i64::try_from(widest).map_err(|_| "option count does not fit i64")?;
+    let rectangle = i64::try_from(count).map_err(|_| "minibatch size does not fit i64")?;
+
+    let flat = actor
+        .logits_mixed_parts(&parts, &heads, &rows)
+        .map_err(|error| format!("policy scoring failed: {error}"))?;
+
+    // ---- scatter the ragged logits into a padded rectangle ----
+    // Padding slots index position 0, a real logit, and are then overwritten with `-inf`. Pointing
+    // them at a valid position keeps `index_select` in bounds; the mask is what makes them harmless.
+    let mut gather: Vec<i64> = Vec::with_capacity(count * usize::try_from(widest).unwrap_or(0));
+    let mut padding: Vec<bool> = Vec::with_capacity(count * usize::try_from(widest).unwrap_or(0));
+    let mut chosen: Vec<i64> = Vec::with_capacity(count);
+    let mut offset = 0i64;
+    for index in minibatch {
+        let step = &batch.steps[*index];
+        let options = i64::try_from(step.options.len()).map_err(|_| "option count overflow")?;
+        for slot in 0..widest {
+            let real = slot < options;
+            gather.push(if real { offset + slot } else { 0 });
+            padding.push(!real);
+        }
+        chosen.push(i64::try_from(step.chosen).map_err(|_| "chosen index overflow")?);
+        offset += options;
+    }
+
+    let device = flat.device();
+    let gather_index = Tensor::from_slice(&gather).to_device(device);
+    let mask = Tensor::from_slice(&padding)
+        .to_device(device)
+        .view([rectangle, widest]);
+    let padded = flat
+        .index_select(0, &gather_index)
+        .view([rectangle, widest])
+        .masked_fill(&mask, f64::NEG_INFINITY);
+    let log_probs = padded.log_softmax(1, ti4_tensor::Kind::Float);
+
+    // `H = -sum p log p` over each decision's own options. `p` is already zero in the padding
+    // (`exp(-inf)`), but `log p` is `-inf` there, so the product is `NaN` until the log is zeroed.
+    let safe_log = log_probs.masked_fill(&mask, 0.0);
+    let entropy = -(log_probs.exp() * &safe_log).sum_dim_intlist(
+        [1i64].as_slice(),
+        false,
+        ti4_tensor::Kind::Float,
+    );
+
+    let chosen_index = Tensor::from_slice(&chosen)
+        .to_device(device)
+        .view([rectangle, 1]);
+    let log_prob = log_probs.gather(1, &chosen_index, false).squeeze_dim(1);
+
+    // ---- the clipped surrogate, per decision, as one vector ----
+    // These narrow from f64 to f32 on purpose: every parameter in the model is f32, so a wider
+    // constant would only be rounded on first contact with the graph.
+    // Advantages and behaviour log-probabilities enter as constants, which is the detach §6.3
+    // requires expressed as data rather than as a call.
+    let behaviour: Vec<f32> = minibatch
+        .iter()
+        .map(|index| batch.steps[*index].behaviour_log_prob as f32)
+        .collect();
+    let advantage: Vec<f32> = minibatch
+        .iter()
+        .map(|index| batch.advantages[*index] as f32)
+        .collect();
+    let behaviour = Tensor::from_slice(&behaviour).to_device(device);
+    let advantage = Tensor::from_slice(&advantage).to_device(device);
+
+    let ratio = (&log_prob - &behaviour).exp();
+    let clipped_ratio = ratio.clamp(1.0 - settings.clip_epsilon, 1.0 + settings.clip_epsilon);
+    let actor_term = -(&ratio * &advantage).minimum(&(clipped_ratio * &advantage));
+
+    let coefficients: Vec<f32> = minibatch
+        .iter()
+        .map(|index| settings.entropy_for(head_of(batch, *index)) as f32)
+        .collect();
+    let coefficients = Tensor::from_slice(&coefficients).to_device(device);
+    let mut term = &actor_term - &entropy * &coefficients;
+
+    // ---- the critic's own path to the trunk, per §6.3, and only in the modes that have one ----
+    let critic_term = if matches!(critic_mode, CriticMode::BatchMean) {
+        None
+    } else {
+        let mut critics: Vec<&crate::CriticInput> = Vec::with_capacity(count);
+        let mut critic_rows: Vec<i64> = Vec::with_capacity(count);
+        for index in minibatch {
+            let step = &batch.steps[*index];
+            critics.push(
+                step.critic
+                    .as_ref()
+                    .ok_or_else(|| "critic mode has no critic input".to_owned())?,
+            );
+            critic_rows.push(
+                i64::try_from(step.row.index())
+                    .map_err(|_| "faction row does not fit i64".to_owned())?,
+            );
+        }
+        let value = actor
+            .value_batch(&critics, &critic_rows)
+            .map_err(|error| format!("critic scoring failed: {error}"))?;
+        let returns: Vec<f32> = minibatch
+            .iter()
+            .map(|index| batch.steps[*index].return_to_go as f32)
+            .collect();
+        let returns = Tensor::from_slice(&returns).to_device(device);
+        let squared = (value - returns).square();
+        term += &squared * settings.value_coefficient;
+        Some(squared)
+    };
+
+    let loss = term.mean(ti4_tensor::Kind::Float);
+
+    // ---- one transfer, then reduce on the host ----
+    let zeros = Tensor::zeros([rectangle], (ti4_tensor::Kind::Float, device));
+    let stacked = Tensor::stack(
+        &[
+            actor_term.detach(),
+            ratio.detach(),
+            entropy.detach(),
+            critic_term.map_or(zeros, |squared| squared.detach()),
+        ],
+        0,
+    );
+    let readings = ti4_tensor::to_vec(&stacked.view([-1]))
+        .map_err(|error| format!("reading PPO telemetry: {error}"))?;
+    if readings.len() != count * 4 {
+        return Err(format!(
+            "PPO telemetry returned {} values for {count} decisions",
+            readings.len()
+        ));
+    }
+    let (actor_values, rest) = readings.split_at(count);
+    let (ratios, rest) = rest.split_at(count);
+    let (entropies, criticals) = rest.split_at(count);
+
+    let mut telemetry = Telemetry {
+        actor_loss: 0.0,
+        critic_loss: 0.0,
+        kl: 0.0,
+        clipped: 0,
+        entropy: BTreeMap::new(),
+    };
+    for (position, index) in minibatch.iter().enumerate() {
+        telemetry.actor_loss += f64::from(actor_values[position]);
+        telemetry.critic_loss += f64::from(criticals[position]);
+        let ratio = f64::from(ratios[position]);
+        telemetry.kl += ratio.ln().abs();
+        if (ratio - 1.0).abs() > settings.clip_epsilon {
+            telemetry.clipped += 1;
+        }
+        let entry = telemetry
+            .entropy
+            .entry(head_of(batch, *index).to_owned())
+            .or_insert((0.0, 0));
+        entry.0 += f64::from(entropies[position]);
+        entry.1 += 1;
+    }
+
+    Ok(ScoredMinibatch { loss, telemetry })
+}
+
+/// The schema head a step belongs to, defaulting the way the per-decision loop did.
+fn head_of(batch: &Batch, index: usize) -> &'static str {
+    crate::heads()
+        .get(batch.steps[index].head)
+        .copied()
+        .unwrap_or("other")
+}
+
 /// The clipped surrogate for one decision.
 ///
 /// `−min( r·A , clip(r, 1−e, 1+e)·A )`, with `A` arriving as a plain `f64` — a constant in the
 /// graph, which is the detach §6.3 requires expressed as a type rather than a call.
+#[cfg(test)]
 fn surrogate(log_prob: &Tensor, behaviour_log_prob: f64, advantage: f64, epsilon: f64) -> Tensor {
     let ratio = (log_prob - behaviour_log_prob).exp();
     let clipped = ratio.clamp(1.0 - epsilon, 1.0 + epsilon);
@@ -462,10 +708,6 @@ pub fn parameter_fingerprint(actor: &Actor, mode: CriticMode) -> Result<Vec<u32>
 /// # Errors
 /// Returns an error for an empty or malformed batch, incompatible settings or critic mode, or any
 /// failed model or optimizer operation. Validation occurs before the first mutation.
-#[expect(
-    clippy::too_many_lines,
-    reason = "keeps the fixed PPO epoch protocol auditable"
-)]
 pub fn update(
     actor: &mut Actor,
     batch: &Batch,
@@ -537,58 +779,23 @@ pub fn update(
         let mut clipped = 0usize;
 
         for minibatch in order.chunks(settings.minibatch) {
-            let mut loss: Option<Tensor> = None;
-            for index in minibatch {
-                let step = &batch.steps[*index];
-                let advantage = batch.advantages[*index];
-                let scored = score(actor, step)?;
-
-                let actor_term = surrogate(
-                    &scored.log_prob,
-                    step.behaviour_log_prob,
-                    advantage,
-                    settings.clip_epsilon,
-                );
-                let head = crate::heads().get(step.head).copied().unwrap_or("other");
-                let entropy_coefficient = settings.entropy_for(head);
-                let mut term = &actor_term - &scored.entropy * entropy_coefficient;
-
-                // The critic's own path to the trunk, per §6.3, and only in the modes that have one.
-                if !matches!(critic_mode, CriticMode::BatchMean) {
-                    let critic = step
-                        .critic
-                        .as_ref()
-                        .ok_or_else(|| "critic mode has no critic input".to_owned())?;
-                    let value = actor
-                        .value_tensor(critic, step.row)
-                        .map_err(|error| format!("critic scoring failed: {error}"))?;
-                    let critic_term = (value - step.return_to_go).square().squeeze();
-                    stats.critic_loss += tch::no_grad(|| critic_term.double_value(&[]));
-                    term += critic_term * settings.value_coefficient;
-                }
-
-                tch::no_grad(|| {
-                    let ratio = (&scored.log_prob - step.behaviour_log_prob)
-                        .exp()
-                        .double_value(&[]);
-                    if (ratio - 1.0).abs() > settings.clip_epsilon {
-                        clipped += 1;
-                    }
-                    stats.kl += (ratio.ln()).abs();
-                    stats.actor_loss += actor_term.double_value(&[]);
-                    let entry = entropy_sums.entry(head.to_owned()).or_insert((0.0, 0));
-                    entry.0 += scored.entropy.double_value(&[]);
-                    entry.1 += 1;
-                });
-                seen += 1;
-
-                loss = Some(loss.map_or_else(|| term.shallow_clone(), |sum| sum + &term));
-            }
-            let loss = loss.ok_or_else(|| "a PPO minibatch produced no loss".to_owned())?;
-            #[expect(clippy::cast_precision_loss, reason = "minibatch sizes are small")]
-            let mean = loss / minibatch.len() as f64;
-            mean.backward();
+            let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+            scored.loss.backward();
             optimizer.step(actor)?;
+
+            // One host transfer for the whole minibatch. The per-decision version of this loop read
+            // five scalars per decision out of the graph; on CUDA each of those is a synchronising
+            // stall, and 4,096 decisions x 5 reads is what left the GPU at 40% utilisation.
+            stats.actor_loss += scored.telemetry.actor_loss;
+            stats.critic_loss += scored.telemetry.critic_loss;
+            stats.kl += scored.telemetry.kl;
+            clipped += scored.telemetry.clipped;
+            seen += minibatch.len();
+            for (head, (sum, count)) in scored.telemetry.entropy {
+                let entry = entropy_sums.entry(head).or_insert((0.0, 0));
+                entry.0 += sum;
+                entry.1 += count;
+            }
         }
 
         if seen != batch.len() {

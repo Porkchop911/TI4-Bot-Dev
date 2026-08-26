@@ -383,7 +383,14 @@ impl SeparateCritic {
             critic.sparse.columns.as_slice(),
             critic.sparse.values.as_slice(),
         )];
-        let x = ti4_tensor::gather_reduce_batch(&self.input, &batch)?;
+        self.value_batch(&batch)
+    }
+
+    /// `V(s)` for a whole batch of critic positions: `[n]`.
+    ///
+    /// The separate critic has no faction identity, so a batch is simply a wider gather.
+    fn value_batch(&self, batch: &[(&[i64], &[f32])]) -> Result<Tensor, ActorError> {
+        let x = ti4_tensor::gather_reduce_batch(&self.input, batch)?;
         let first = (x + &self.b1).relu();
         let second = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
         Ok(second.matmul(&self.readout) + &self.bias)
@@ -868,29 +875,46 @@ impl Actor {
                 ),
             });
         }
-        let device = self.input.device();
         let batch: Vec<(&[i64], &[f32])> = options
             .iter()
             .map(|option| (option.columns.as_slice(), option.values.as_slice()))
             .collect();
-        let x = ti4_tensor::gather_reduce_batch(&self.input, &batch)?;
+        self.logits_mixed_parts(&batch, heads, rows)
+    }
 
+    /// [`Self::logits_mixed`] over borrowed sparse parts.
+    ///
+    /// The public entry point builds its `(columns, values)` pairs from a `&[SparseOption]`. A PPO
+    /// minibatch already owns its options inside the frozen batch and would have to clone thousands
+    /// of vectors per step to call it, so it assembles the pairs itself and enters here.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement, plus anything the gather raises.
+    pub(crate) fn logits_mixed_parts(
+        &self,
+        batch: &[(&[i64], &[f32])],
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if batch.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != batch.len() || rows.len() != batch.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{} options, {} heads, {} rows",
+                    batch.len(),
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
         let head_index = Tensor::from_slice(heads).to_device(device);
         let row_index = Tensor::from_slice(rows).to_device(device);
-
-        // The identity embedding, per option, zero-padded to the trunk width and added before
-        // `b1`/ReLU exactly as the single-faction path does.
-        let identity = self.embedding.index_select(0, &row_index);
-        let padding = self.width - EMBED_DIM;
-        let identity = if padding > 0 {
-            let pad = Tensor::zeros([identity.size()[0], padding], (Kind::Float, device));
-            Tensor::cat(&[identity, pad], 1)
-        } else {
-            identity
-        };
-
-        let first = (x + identity + &self.b1).relu();
-        let z = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
+        let z = self.trunk_mixed(batch, &row_index)?;
 
         // w_effective[option] = w_shared[head] + delta[faction, head], gathered rather than looped.
         // `delta` is [factions, heads, width]; flattening to [factions*heads, width] turns the pair
@@ -906,6 +930,70 @@ impl Actor {
         // A row-wise dot product, which is what `z.matmul(w)` degenerates to when every row has its
         // own weight vector.
         Ok((z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b)
+    }
+
+    /// The two-layer trunk over a batch whose rows may each belong to a different faction.
+    ///
+    /// [`Self::trunk`] is the same computation with one faction for the whole batch. Both add the
+    /// identity embedding, zero-padded to the trunk width, to the first-layer preactivation before
+    /// `b1` and the `ReLU`.
+    fn trunk_mixed(
+        &self,
+        batch: &[(&[i64], &[f32])],
+        row_index: &Tensor,
+    ) -> Result<Tensor, ActorError> {
+        let device = self.input.device();
+        let x = ti4_tensor::gather_reduce_batch(&self.input, batch)?;
+        let identity = self.embedding.index_select(0, row_index);
+        let padding = self.width - EMBED_DIM;
+        let identity = if padding > 0 {
+            let pad = Tensor::zeros([identity.size()[0], padding], (Kind::Float, device));
+            Tensor::cat(&[identity, pad], 1)
+        } else {
+            identity
+        };
+        let first = (x + identity + &self.b1).relu();
+        Ok((first.matmul(&self.hidden.tr()) + &self.b2).relu())
+    }
+
+    /// `V(s)` for a batch of positions, each with its own faction row: `[n]`.
+    ///
+    /// [`Self::value_tensor`] is this for one position. A PPO minibatch evaluates thousands of
+    /// critic positions per optimizer step, and doing that one position at a time is what made the
+    /// update launch-bound rather than compute-bound.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement, plus anything the gather raises.
+    pub fn value_batch(
+        &self,
+        critics: &[&CriticInput],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if critics.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if rows.len() != critics.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-position faction rows",
+                detail: format!("{} positions, {} rows", critics.len(), rows.len()),
+            });
+        }
+        let batch: Vec<(&[i64], &[f32])> = critics
+            .iter()
+            .map(|critic| {
+                (
+                    critic.sparse.columns.as_slice(),
+                    critic.sparse.values.as_slice(),
+                )
+            })
+            .collect();
+        if let Some(separate) = &self.separate_critic {
+            return separate.value_batch(&batch);
+        }
+        let row_index = Tensor::from_slice(rows).to_device(self.input.device());
+        let z = self.trunk_mixed(&batch, &row_index)?;
+        Ok(z.matmul(&self.w_value) + &self.b_value)
     }
 
     /// `V(s)` for one position, from the canonical critic vector.
