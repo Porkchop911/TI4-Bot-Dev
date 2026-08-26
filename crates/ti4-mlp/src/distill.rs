@@ -272,18 +272,28 @@ impl Adam {
     /// # Errors
     /// Returns an error when gradients are absent or non-finite, or an update cannot be applied.
     pub fn step(&mut self, parameters: &mut [Tensor], scale: f64) -> Result<(), String> {
-        let mut total = 0.0f64;
+        // The global gradient norm, summed **on the device** and read back once.
+        //
+        // Reading each parameter's contribution separately cost one host synchronisation per
+        // parameter per step -- eleven per step, about 1,500 per PPO update -- and every one of
+        // them drains the CUDA pipeline. The arithmetic is unchanged; only the number of times the
+        // host asks for an answer is. One read survives on purpose: the finiteness check below is
+        // fail-closed and is what caught the non-leaf parameter bug, so it keeps a real value to
+        // test rather than a device tensor nobody looks at.
+        let mut squared: Option<Tensor> = None;
         let mut defined = 0usize;
         for parameter in parameters.iter() {
             let grad = parameter.grad();
             if grad.defined() {
                 defined += 1;
-                total += (&grad * scale)
-                    .square()
-                    .sum(ti4_tensor::Kind::Float)
-                    .double_value(&[]);
+                let contribution = (&grad * scale).square().sum(ti4_tensor::Kind::Float);
+                squared = Some(match squared {
+                    Some(sum) => sum + contribution,
+                    None => contribution,
+                });
             }
         }
+        let total = squared.map_or(0.0, |sum| sum.double_value(&[]));
         if defined == 0 || !total.is_finite() {
             return Err(format!(
                 "Adam received {defined} defined gradients with squared norm {total}"

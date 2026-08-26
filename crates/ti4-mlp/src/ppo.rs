@@ -316,19 +316,72 @@ fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
     Ok(Scored { log_prob, entropy })
 }
 
-/// Everything one scored minibatch hands back: a differentiable loss and already-reduced telemetry.
+/// Everything one scored minibatch hands back: a differentiable loss and undrained telemetry.
+///
+/// `readings` is `[4, decisions]` — surrogate, ratio, entropy, squared critic error — and stays on
+/// the device. Draining it here would cost one host synchronisation per minibatch; `update`
+/// concatenates a whole epoch's worth and reads them in one transfer instead.
 struct ScoredMinibatch {
     loss: Tensor,
-    telemetry: Telemetry,
+    readings: Tensor,
 }
 
-/// Per-minibatch telemetry, reduced on the host from a single transfer.
+/// Per-epoch telemetry, reduced on the host from a single transfer.
 struct Telemetry {
     actor_loss: f64,
     critic_loss: f64,
     kl: f64,
     clipped: usize,
     entropy: BTreeMap<String, (f64, usize)>,
+}
+
+/// Reduce a whole epoch's readings, in the order its minibatches were scored.
+///
+/// `readings` are the per-minibatch `[4, decisions]` blocks; `order` is the shuffled decision order
+/// they were scored in, so concatenating along dimension 1 lines the columns up with `order`.
+fn drain_epoch(
+    readings: &[Tensor],
+    order: &[usize],
+    batch: &Batch,
+    settings: Settings,
+) -> Result<Telemetry, String> {
+    let joined = Tensor::cat(readings, 1);
+    let flat = ti4_tensor::to_vec(&joined.view([-1]))
+        .map_err(|error| format!("reading PPO telemetry: {error}"))?;
+    let count = order.len();
+    if flat.len() != count * 4 {
+        return Err(format!(
+            "PPO telemetry returned {} values for {count} decisions",
+            flat.len()
+        ));
+    }
+    let (actor_values, rest) = flat.split_at(count);
+    let (ratios, rest) = rest.split_at(count);
+    let (entropies, criticals) = rest.split_at(count);
+
+    let mut telemetry = Telemetry {
+        actor_loss: 0.0,
+        critic_loss: 0.0,
+        kl: 0.0,
+        clipped: 0,
+        entropy: BTreeMap::new(),
+    };
+    for (position, index) in order.iter().enumerate() {
+        telemetry.actor_loss += f64::from(actor_values[position]);
+        telemetry.critic_loss += f64::from(criticals[position]);
+        let ratio = f64::from(ratios[position]);
+        telemetry.kl += ratio.ln().abs();
+        if (ratio - 1.0).abs() > settings.clip_epsilon {
+            telemetry.clipped += 1;
+        }
+        let entry = telemetry
+            .entropy
+            .entry(head_of(batch, *index).to_owned())
+            .or_insert((0.0, 0));
+        entry.0 += f64::from(entropies[position]);
+        entry.1 += 1;
+    }
+    Ok(telemetry)
 }
 
 /// Score a whole minibatch in one forward pass.
@@ -495,9 +548,9 @@ fn score_minibatch(
 
     let loss = term.mean(ti4_tensor::Kind::Float);
 
-    // ---- one transfer, then reduce on the host ----
+    // ---- telemetry stays on the device until the epoch ends ----
     let zeros = Tensor::zeros([rectangle], (ti4_tensor::Kind::Float, device));
-    let stacked = Tensor::stack(
+    let readings = Tensor::stack(
         &[
             actor_term.detach(),
             ratio.detach(),
@@ -506,42 +559,8 @@ fn score_minibatch(
         ],
         0,
     );
-    let readings = ti4_tensor::to_vec(&stacked.view([-1]))
-        .map_err(|error| format!("reading PPO telemetry: {error}"))?;
-    if readings.len() != count * 4 {
-        return Err(format!(
-            "PPO telemetry returned {} values for {count} decisions",
-            readings.len()
-        ));
-    }
-    let (actor_values, rest) = readings.split_at(count);
-    let (ratios, rest) = rest.split_at(count);
-    let (entropies, criticals) = rest.split_at(count);
 
-    let mut telemetry = Telemetry {
-        actor_loss: 0.0,
-        critic_loss: 0.0,
-        kl: 0.0,
-        clipped: 0,
-        entropy: BTreeMap::new(),
-    };
-    for (position, index) in minibatch.iter().enumerate() {
-        telemetry.actor_loss += f64::from(actor_values[position]);
-        telemetry.critic_loss += f64::from(criticals[position]);
-        let ratio = f64::from(ratios[position]);
-        telemetry.kl += ratio.ln().abs();
-        if (ratio - 1.0).abs() > settings.clip_epsilon {
-            telemetry.clipped += 1;
-        }
-        let entry = telemetry
-            .entropy
-            .entry(head_of(batch, *index).to_owned())
-            .or_insert((0.0, 0));
-        entry.0 += f64::from(entropies[position]);
-        entry.1 += 1;
-    }
-
-    Ok(ScoredMinibatch { loss, telemetry })
+    Ok(ScoredMinibatch { loss, readings })
 }
 
 /// The schema head a step belongs to, defaulting the way the per-decision loop did.
@@ -778,24 +797,27 @@ pub fn update(
         let mut seen = 0usize;
         let mut clipped = 0usize;
 
+        // One host transfer per *epoch*, not per minibatch and emphatically not per decision. The
+        // per-decision version of this loop read five scalars per decision out of the graph; each
+        // one drains the CUDA pipeline, and 4,096 decisions x 5 reads is what left the GPU at 40%.
+        let mut readings: Vec<Tensor> = Vec::new();
         for minibatch in order.chunks(settings.minibatch) {
             let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
             scored.loss.backward();
             optimizer.step(actor)?;
-
-            // One host transfer for the whole minibatch. The per-decision version of this loop read
-            // five scalars per decision out of the graph; on CUDA each of those is a synchronising
-            // stall, and 4,096 decisions x 5 reads is what left the GPU at 40% utilisation.
-            stats.actor_loss += scored.telemetry.actor_loss;
-            stats.critic_loss += scored.telemetry.critic_loss;
-            stats.kl += scored.telemetry.kl;
-            clipped += scored.telemetry.clipped;
+            readings.push(scored.readings);
             seen += minibatch.len();
-            for (head, (sum, count)) in scored.telemetry.entropy {
-                let entry = entropy_sums.entry(head).or_insert((0.0, 0));
-                entry.0 += sum;
-                entry.1 += count;
-            }
+        }
+
+        let telemetry = drain_epoch(&readings, &order, batch, settings)?;
+        stats.actor_loss += telemetry.actor_loss;
+        stats.critic_loss += telemetry.critic_loss;
+        stats.kl += telemetry.kl;
+        clipped += telemetry.clipped;
+        for (head, (sum, count)) in telemetry.entropy {
+            let entry = entropy_sums.entry(head).or_insert((0.0, 0));
+            entry.0 += sum;
+            entry.1 += count;
         }
 
         if seen != batch.len() {
