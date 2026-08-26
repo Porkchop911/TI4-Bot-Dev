@@ -57,6 +57,11 @@ const fn rounds_for(stage: ti4_training::reward::Stage) -> u32 {
     }
 }
 /// §6.3's pilot seed base, so a run is reproducible from its update number alone.
+/// Where a run's self-play seeds start. `--seed-base` moves it.
+///
+/// A run consumes `SEEDS_PER_UPDATE` seeds per update, so a later run that starts here replays the
+/// same maps and the same openings an earlier one already trained on. Fresh weights on stale seeds
+/// measure how well the policy does on games it has seen, which is not the question.
 const SEED_BASE: u64 = 650_000_000;
 
 fn argument(name: &str) -> Option<String> {
@@ -499,6 +504,11 @@ fn main() {
     let cadence = Cadence::parse(&argument("--report-every").unwrap_or_else(|| "100".to_owned()))
         .unwrap_or_else(|error| refuse(&error));
     let settings = Settings::default();
+    let seed_base: u64 = argument("--seed-base").map_or(SEED_BASE, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--seed-base expects an unsigned integer"))
+    });
     let stage = match argument("--stage").as_deref() {
         None | Some("2") => ti4_training::reward::Stage::Two,
         Some("1") => ti4_training::reward::Stage::One,
@@ -522,6 +532,7 @@ fn main() {
 
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
+    println!("  seeds       {seed_base}.. ({SEEDS_PER_UPDATE} per update)");
     println!("  critic mode {critic_mode:?}");
     println!(
         "  reward      {stage:?} ({}) | {rounds} round(s) per game",
@@ -604,7 +615,7 @@ fn main() {
         // each chunk carries an owned `Actor` copy: `tch::Tensor` is `Send` but not `Sync`, so the
         // actor cannot be borrowed across threads. Per-job copies would allocate 96 actors instead
         // of one per core.
-        let base = SEED_BASE + SEEDS_PER_UPDATE * update as u64;
+        let base = seed_base + SEEDS_PER_UPDATE * update as u64;
         let jobs: Vec<(u64, usize)> = (base..base + SEEDS_PER_UPDATE)
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
@@ -687,7 +698,7 @@ fn main() {
             &batch,
             critic_mode,
             settings,
-            SEED_BASE ^ update as u64,
+            seed_base ^ update as u64,
             &mut optimizer,
         )
         .unwrap_or_else(|error| refuse(&format!("update: {error}")));
