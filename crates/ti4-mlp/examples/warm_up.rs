@@ -244,6 +244,8 @@ fn main() {
             CriticMode::BatchMean => "batch-mean",
         }
     ));
+    let git_commit = std::env::var("GIT_COMMIT")
+        .unwrap_or_else(|_| refuse("GIT_COMMIT is required to publish a bundle"));
     let bundle = ti4_mlp::bundle::write(
         &destination,
         &actor,
@@ -251,7 +253,7 @@ fn main() {
         mode,
         &Provenance {
             source: "M10-033 critic warm-up and fixed fallback".to_owned(),
-            git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
+            git_commit,
             update: u64::try_from(epoch).unwrap_or(0),
         },
     )

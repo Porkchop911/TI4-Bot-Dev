@@ -266,7 +266,7 @@ pub fn write(
         critic_mode,
         provenance,
         &digests,
-    );
+    )?;
     let manifest_path = staging.join("manifest.json");
     write_synced(&manifest_path, manifest.as_bytes())?;
 
@@ -348,57 +348,51 @@ fn manifest_document(
     critic_mode: CriticMode,
     provenance: &Provenance,
     digests: &BTreeMap<String, String>,
-) -> String {
+) -> Result<String, BundleError> {
     let backend = ti4_tensor::backend();
-    let heads_json = heads()
-        .iter()
-        .map(|head| format!("\"{head}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let factions_json = FACTION_ROSTER
-        .iter()
-        .map(|faction| format!("\"{faction}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let checksums = digests
-        .iter()
-        .map(|(file, digest)| format!("  \"{file}\": \"{digest}\""))
-        .collect::<Vec<_>>()
-        .join(",\n");
+    validate_provenance(provenance)?;
+    let document = serde_json::json!({
+        "schema": SCHEMA,
+        "dtype": "f32",
+        "trunk": { "width": actor.width(), "depth": 2, "activation": "relu" },
+        "embed_dim": EMBED_DIM,
+        "factions": FACTION_ROSTER.as_slice(),
+        "heads": heads(),
+        "slot_count": slot_count,
+        "slot_capacity": actor.capacity(),
+        "slots_sha256": sha256(slots_text.as_bytes()),
+        "student_temperature": 1.0,
+        "critic_mode": critic_mode.as_str(),
+        "tch": ti4_tensor::TCH_VERSION,
+        "libtorch": ti4_tensor::LIBTORCH_VERSION,
+        "compiler": env!("TI4_RUSTC_VERSION"),
+        "threads": {
+            "intraop": backend.intra_op_threads,
+            "interop": backend.inter_op_threads,
+        },
+        "source": provenance.source,
+        "git_commit": provenance.git_commit,
+        "update": provenance.update,
+        "checksums": digests,
+    });
+    serde_json::to_string_pretty(&document)
+        .map(|text| format!("{text}\n"))
+        .map_err(|error| BundleError::Invalid(format!("manifest cannot be encoded: {error}")))
+}
 
-    format!(
-        "{{\n\
-         \"schema\": {SCHEMA},\n\
-         \"dtype\": \"f32\",\n\
-         \"trunk\": {{ \"width\": {}, \"depth\": 2, \"activation\": \"relu\" }},\n\
-         \"embed_dim\": {EMBED_DIM},\n\
-         \"factions\": [{factions_json}],\n\
-         \"heads\": [{heads_json}],\n\
-         \"slot_count\": {slot_count},\n\
-         \"slot_capacity\": {},\n\
-         \"slots_sha256\": \"{}\",\n\
-         \"student_temperature\": 1.0,\n\
-         \"critic_mode\": \"{}\",\n\
-         \"tch\": \"{}\",\n\
-         \"libtorch\": \"{}\",\n\
-         \"threads\": {{ \"intraop\": {}, \"interop\": {} }},\n\
-         \"source\": \"{}\",\n\
-         \"git_commit\": \"{}\",\n\
-         \"update\": {},\n\
-         \"checksums\": {{\n{checksums}\n }}\n\
-         }}\n",
-        actor.width(),
-        actor.capacity(),
-        sha256(slots_text.as_bytes()),
-        critic_mode.as_str(),
-        ti4_tensor::TCH_VERSION,
-        ti4_tensor::LIBTORCH_VERSION,
-        backend.intra_op_threads,
-        backend.inter_op_threads,
-        provenance.source,
-        provenance.git_commit,
-        provenance.update,
-    )
+fn validate_provenance(provenance: &Provenance) -> Result<(), BundleError> {
+    if provenance.source.trim().is_empty() {
+        return Err(BundleError::Invalid(
+            "provenance source is empty".to_owned(),
+        ));
+    }
+    let commit = provenance.git_commit.as_bytes();
+    if !(7..=64).contains(&commit.len()) || !commit.iter().all(u8::is_ascii_hexdigit) {
+        return Err(BundleError::Invalid(
+            "git_commit must be a recorded 7-64 digit hexadecimal commit".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// A validated schema-6 bundle, and the model it describes.
@@ -436,6 +430,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
     let manifest_bytes = read_bounded(&manifest_path, MAX_MANIFEST_BYTES)?;
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
         .map_err(|error| BundleError::Invalid(format!("manifest.json is not JSON: {error}")))?;
+    validate_manifest_keys(&manifest)?;
 
     let schema = manifest
         .get("schema")
@@ -451,6 +446,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         return Err(BundleError::Invalid(format!("dtype {dtype} is not f32")));
     }
     let critic_mode = CriticMode::parse(&string_field(&manifest, "critic_mode")?)?;
+    validate_fixed_manifest_fields(&manifest)?;
 
     inspect_directory(directory, critic_mode)?;
 
@@ -463,6 +459,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         .get("checksums")
         .and_then(serde_json::Value::as_object)
         .ok_or_else(|| BundleError::Invalid("manifest has no checksums".to_owned()))?;
+    validate_checksum_inventory(checksums, critic_mode)?;
 
     // slots.json first: it is what makes the weights mean anything.
     let slots_bytes = read_bounded(&directory.join("slots.json"), MAX_SLOTS_BYTES)?;
@@ -504,6 +501,11 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
             vocabulary.capacity()
         )));
     }
+    if slot_count > u64::try_from(capacity).unwrap_or(0) || capacity > 65_536 {
+        return Err(BundleError::Invalid(format!(
+            "slot bounds require slot_count <= slot_capacity <= 65536, got {slot_count} and {capacity}"
+        )));
+    }
 
     let named = load_tensors(directory, critic_mode, checksums)?;
 
@@ -517,8 +519,133 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         actor,
         vocabulary,
         critic_mode,
-        update: u64_field(&manifest, "update").unwrap_or(0),
+        update: u64_field(&manifest, "update")?,
     })
+}
+
+fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleError> {
+    const KEYS: [&str; 18] = [
+        "schema",
+        "dtype",
+        "trunk",
+        "embed_dim",
+        "factions",
+        "heads",
+        "slot_count",
+        "slot_capacity",
+        "slots_sha256",
+        "student_temperature",
+        "critic_mode",
+        "tch",
+        "libtorch",
+        "compiler",
+        "threads",
+        "source",
+        "git_commit",
+        "update",
+    ];
+    let object = manifest
+        .as_object()
+        .ok_or_else(|| BundleError::Invalid("manifest is not an object".to_owned()))?;
+    let expected: BTreeSet<&str> = KEYS.into_iter().chain(["checksums"]).collect();
+    let found: BTreeSet<&str> = object.keys().map(String::as_str).collect();
+    if found != expected {
+        return Err(BundleError::Invalid(format!(
+            "manifest fields do not match schema 6: {found:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_fixed_manifest_fields(manifest: &serde_json::Value) -> Result<(), BundleError> {
+    let trunk = manifest
+        .get("trunk")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| BundleError::Invalid("manifest has no trunk object".to_owned()))?;
+    if trunk.len() != 3
+        || trunk.get("depth").and_then(serde_json::Value::as_u64) != Some(2)
+        || trunk.get("activation").and_then(serde_json::Value::as_str) != Some("relu")
+    {
+        return Err(BundleError::Invalid(
+            "trunk must be exactly {width, depth: 2, activation: relu}".to_owned(),
+        ));
+    }
+    if u64_field(manifest, "embed_dim")? != u64::try_from(EMBED_DIM).unwrap_or(u64::MAX) {
+        return Err(BundleError::Invalid(
+            "embed_dim does not match this build".to_owned(),
+        ));
+    }
+    if manifest
+        .get("student_temperature")
+        .and_then(serde_json::Value::as_f64)
+        != Some(1.0)
+    {
+        return Err(BundleError::Invalid(
+            "student_temperature must be 1.0".to_owned(),
+        ));
+    }
+    for (field, expected) in [
+        ("tch", ti4_tensor::TCH_VERSION),
+        ("libtorch", ti4_tensor::LIBTORCH_VERSION),
+        ("compiler", env!("TI4_RUSTC_VERSION")),
+    ] {
+        if string_field(manifest, field)? != expected {
+            return Err(BundleError::Invalid(format!(
+                "{field} does not match this build"
+            )));
+        }
+    }
+    let backend = ti4_tensor::backend();
+    let threads = manifest
+        .get("threads")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| BundleError::Invalid("manifest has no threads object".to_owned()))?;
+    if threads.len() != 2
+        || threads.get("intraop").and_then(serde_json::Value::as_i64)
+            != Some(i64::from(backend.intra_op_threads))
+        || threads.get("interop").and_then(serde_json::Value::as_i64)
+            != Some(i64::from(backend.inter_op_threads))
+    {
+        return Err(BundleError::Invalid(
+            "thread settings do not match the deterministic backend".to_owned(),
+        ));
+    }
+    let provenance = Provenance {
+        source: string_field(manifest, "source")?,
+        git_commit: string_field(manifest, "git_commit")?,
+        update: u64_field(manifest, "update")?,
+    };
+    validate_provenance(&provenance)
+}
+
+fn validate_checksum_inventory(
+    checksums: &serde_json::Map<String, serde_json::Value>,
+    critic_mode: CriticMode,
+) -> Result<(), BundleError> {
+    let mut expected: BTreeSet<&str> = [
+        "trunk.safetensors",
+        "readout.safetensors",
+        "embedding.safetensors",
+        "slots.json",
+    ]
+    .into_iter()
+    .collect();
+    if critic_mode.needs_value_file() {
+        expected.insert("value.safetensors");
+    }
+    let found: BTreeSet<&str> = checksums.keys().map(String::as_str).collect();
+    if found != expected
+        || checksums.values().any(|value| {
+            value.as_str().is_none_or(|digest| {
+                digest.len() != 64 || !digest.as_bytes().iter().all(u8::is_ascii_hexdigit)
+            })
+        })
+    {
+        return Err(BundleError::Invalid(
+            "checksum inventory does not exactly match the bundle files".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// Checksum, then load, then collect — in that order, so a corrupt file is rejected before it is
@@ -778,8 +905,12 @@ fn expect_list(
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| BundleError::Invalid(format!("the manifest has no {field}")))?
         .iter()
-        .filter_map(serde_json::Value::as_str)
-        .collect();
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| BundleError::Invalid(format!("{field} contains a non-string entry")))
+        })
+        .collect::<Result<_, _>>()?;
     if found != expected {
         return Err(BundleError::Invalid(format!(
             "{field} does not match this build: {found:?}"
@@ -818,7 +949,14 @@ pub fn latest_complete(root: &Path) -> Result<Option<PathBuf>, BundleError> {
         let Ok(number) = number.parse::<u64>() else {
             continue;
         };
-        if !path.join("manifest.json").is_file() {
+        let manifest_path = path.join("manifest.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+        let Ok(bytes) = read_bounded(&manifest_path, MAX_MANIFEST_BYTES) else {
+            continue;
+        };
+        if serde_json::from_slice::<serde_json::Value>(&bytes).is_err() {
             continue;
         }
         if best.as_ref().is_none_or(|(best, _)| number > *best) {
@@ -886,6 +1024,21 @@ mod tests {
         (destination, text)
     }
 
+    fn manifest(directory: &Path) -> serde_json::Value {
+        serde_json::from_slice(
+            &std::fs::read(directory.join("manifest.json")).expect("read manifest"),
+        )
+        .expect("parse manifest")
+    }
+
+    fn replace_manifest(directory: &Path, document: &serde_json::Value) {
+        std::fs::write(
+            directory.join("manifest.json"),
+            serde_json::to_vec_pretty(document).expect("encode manifest"),
+        )
+        .expect("write manifest");
+    }
+
     #[test]
     fn a_written_bundle_round_trips_through_the_loader() {
         let scratch = Scratch::new("roundtrip");
@@ -910,6 +1063,87 @@ mod tests {
             "the fixture is all zeros, so the comparison proves nothing"
         );
         let _ = text;
+    }
+
+    #[test]
+    fn provenance_is_json_encoded_and_unrecorded_commits_are_refused() {
+        let scratch = Scratch::new("provenance");
+        let text = slots();
+        let capacity = ti4_policy::vocabulary::Vocabulary::from_json(&text)
+            .expect("loads")
+            .capacity()
+            .try_into()
+            .expect("fits");
+        let destination = scratch.0.join("checkpoint-9");
+        let quoted = Provenance {
+            source: "quoted \"source\"\nline".to_owned(),
+            git_commit: "abcdef0".to_owned(),
+            update: 9,
+        };
+        write(
+            &destination,
+            &actor(capacity),
+            &text,
+            CriticMode::Shared,
+            &quoted,
+        )
+        .expect("quoted provenance writes valid JSON");
+        assert_eq!(
+            manifest(&destination)["source"].as_str(),
+            Some(quoted.source.as_str())
+        );
+        read(&destination).expect("encoded provenance reloads");
+
+        let invalid = Provenance {
+            git_commit: "unrecorded".to_owned(),
+            ..provenance()
+        };
+        let error = write(
+            &scratch.0.join("checkpoint-10"),
+            &actor(capacity),
+            &text,
+            CriticMode::Shared,
+            &invalid,
+        )
+        .expect_err("an unrecorded commit must fail closed");
+        assert!(error.to_string().contains("git_commit"), "{error}");
+    }
+
+    #[test]
+    fn every_load_bearing_manifest_field_is_enforced() {
+        let scratch = Scratch::new("strict-manifest");
+        let (directory, _) = write_bundle(&scratch, CriticMode::Shared);
+        let original = manifest(&directory);
+
+        let mut corruptions: Vec<(&str, serde_json::Value)> = Vec::new();
+        let mut missing_update = original.clone();
+        missing_update
+            .as_object_mut()
+            .expect("object")
+            .remove("update");
+        corruptions.push(("missing update", missing_update));
+        let mut wrong_depth = original.clone();
+        wrong_depth["trunk"]["depth"] = serde_json::json!(3);
+        corruptions.push(("wrong depth", wrong_depth));
+        let mut wrong_temperature = original.clone();
+        wrong_temperature["student_temperature"] = serde_json::json!(0.5);
+        corruptions.push(("wrong temperature", wrong_temperature));
+        let mut mixed_heads = original.clone();
+        mixed_heads["heads"]
+            .as_array_mut()
+            .expect("heads")
+            .push(serde_json::json!(17));
+        corruptions.push(("non-string head", mixed_heads));
+        let mut extra_checksum = original.clone();
+        extra_checksum["checksums"]["ignored.bin"] = serde_json::json!("0".repeat(64));
+        corruptions.push(("extra checksum", extra_checksum));
+
+        for (name, corruption) in corruptions {
+            replace_manifest(&directory, &corruption);
+            assert!(read(&directory).is_err(), "{name} was accepted");
+        }
+        replace_manifest(&directory, &original);
+        read(&directory).expect("restored manifest loads");
     }
 
     #[test]
@@ -966,6 +1200,17 @@ mod tests {
         assert!(
             latest_complete(&scratch.0).expect("scan").is_none(),
             "an incomplete directory became the resume candidate"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_manifest_is_not_a_recovery_candidate() {
+        let scratch = Scratch::new("unreadable-manifest");
+        let (directory, _) = write_bundle(&scratch, CriticMode::Shared);
+        std::fs::write(directory.join("manifest.json"), b"not json").expect("corrupt");
+        assert!(
+            latest_complete(&scratch.0).expect("scan").is_none(),
+            "an unreadable manifest was treated as a committed checkpoint"
         );
     }
 

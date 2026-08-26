@@ -5790,3 +5790,22 @@ M10-034's first end-to-end PPO driver remains under changes-required review; see
 persistent Adam, alignment, critic-mode baseline, and retained-checkpoint findings.
 
 ---
+
+## M09-030 Tier-D pass 1: bundle correction pending independent recheck (2026-08-26)
+
+Codex completed one full pass over M09-019..029. Rows 019..027b and 029 have no open pass-1
+finding; this pass supplies the written fresh recheck missing from M09-019b's operator closure and
+accepts the corrected, non-vacuous M09-027/027b boundary.
+
+M09-028 had a HIGH fail-open manifest boundary: several pinned architecture/runtime/provenance
+fields were written but ignored, `update` defaulted to zero, list/checksum inventories were loose,
+provenance interpolation could emit invalid JSON, and recovery accepted unreadable manifests.
+The correction enforces the exact schema-6 contract and passes bundle **12/0** plus full ti4-mlp
+gates. Because Codex implemented that correction, this is a correction submission rather than an
+independent acceptance. M09-030 remains open for its independent correction recheck and second
+complete Tier-D pass. Existing retained MLP bundles omit the newly enforced compiler field and are
+invalid until immutably republished.
+
+Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
+
+---

@@ -479,6 +479,8 @@ fn main() {
     // §4.4: "Weights are always stored on CPU in the file and moved at load, so a checkpoint
     // written from a CUDA run loads on a CPU-only machine."
     let actor = actor.to_device(ti4_tensor::Device::Cpu);
+    let git_commit = std::env::var("GIT_COMMIT")
+        .unwrap_or_else(|_| refuse("GIT_COMMIT is required to publish a bundle"));
     let bundle = ti4_mlp::bundle::write(
         &destination,
         &actor,
@@ -486,7 +488,7 @@ fn main() {
         CriticMode::BatchMean,
         &Provenance {
             source: "M10-032 factual distillation".to_owned(),
-            git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
+            git_commit,
             update: u64::try_from(selected.steps).unwrap_or(0),
         },
     )
