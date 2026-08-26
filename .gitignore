@@ -22,6 +22,9 @@ __pycache__/
 # Local state
 .pi-control/
 /out/
+# A second target directory for the CUDA-linked build, so the CPU gate keeps working while
+# M10-037 iterates. Same reason /target/ is ignored: it is build output, not source.
+/target-cuda/
 *.log
 /.tmp-m00-*/
 /.tmp-m00-011/

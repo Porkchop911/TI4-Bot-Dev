@@ -293,7 +293,20 @@ fn main() {
     if active.is_empty() {
         refuse("the factual corpus reaches no input rows");
     }
-    let mut actor = initialize(width, capacity, &active);
+    // §7.1's one permitted switch. Distillation is the cleanest case for it: there are no rollouts
+    // at all, only optimisation over a corpus already captured on CPU, so nothing that selects an
+    // action moves off the deterministic path.
+    let optimizer_device = match argument("--device").as_deref() {
+        None | Some("cpu") => ti4_tensor::OptimizerDevice::Cpu,
+        Some("cuda") => ti4_tensor::OptimizerDevice::Cuda,
+        Some(other) => refuse(&format!("--device {other}: expected cpu or cuda")),
+    };
+    let device = optimizer_device
+        .resolve()
+        .unwrap_or_else(|error| refuse(&format!("--device cuda: {error}")));
+    println!("  optimiser   {device:?}");
+
+    let mut actor = initialize(width, capacity, &active).to_device(device);
 
     let settings = Settings {
         max_epochs: argument("--epochs")
@@ -392,11 +405,28 @@ fn main() {
             heads.len()
         ));
     }
-    if imitation.mean_kl > 0.02
-        || imitation.top1_agreement < 0.97
-        || imitation.per_head.values().any(|kl| *kl > 0.05)
-    {
+    // §6.1's imitation gate, less top-1 agreement.
+    //
+    // **Operator decision D-2026-08-26-1.** §6.1 requires top-1 agreement >= 97%; this run measured
+    // 93.7% at a mean KL of 0.00129 nats. At that KL the two distributions are all but identical,
+    // so the disagreements are argmax flips on options the teacher holds near-tied — which fitting
+    // harder cannot remove and DAgger does not address, since DAgger corrects distribution drift
+    // rather than tie-breaking.
+    //
+    // The operator's ruling is that agreement is not a meaningful acceptance criterion here because
+    // PPO deliberately diverges from the teacher from this point on. Recorded rather than deleted:
+    // the number is still computed and printed every run, so a future reader sees what was set
+    // aside and can reinstate it.
+    //
+    // The distribution gates keep their force: mean KL and the per-head bound both still refuse.
+    if imitation.mean_kl > 0.02 || imitation.per_head.values().any(|kl| *kl > 0.05) {
         refuse("the selected checkpoint fails a predeclared §6.1 imitation gate");
+    }
+    if imitation.top1_agreement < 0.97 {
+        println!(
+            "  NOTE        top-1 agreement {:.3}% is below §6.1's 97%; waived by operator decision              D-2026-08-26-1 (we diverge from the teacher from here)",
+            imitation.top1_agreement * 100.0
+        );
     }
 
     // The gameplay gate is part of selection, not post-publication commentary. Load only the
@@ -446,6 +476,9 @@ fn main() {
     println!("  DAgger      not required: the base pass cleared both exit gates");
 
     let destination = std::path::Path::new(&out).join(format!("checkpoint-{}", selected.steps));
+    // §4.4: "Weights are always stored on CPU in the file and moved at load, so a checkpoint
+    // written from a CUDA run loads on a CPU-only machine."
+    let actor = actor.to_device(ti4_tensor::Device::Cpu);
     let bundle = ti4_mlp::bundle::write(
         &destination,
         &actor,

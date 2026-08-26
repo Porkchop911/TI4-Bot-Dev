@@ -560,6 +560,44 @@ impl Actor {
         &mut self.input
     }
 
+    /// Move every tensor to `device`.
+    ///
+    /// # Why this is an optimiser-only facility
+    ///
+    /// MLP plan §7.1 permits exactly one device switch: *"after CPU rollouts produce a fixed batch,
+    /// the model and Adam state may move to CUDA for forward/backward/update and return to CPU
+    /// before the next decision."* Distillation is the cleanest case of that — there are no
+    /// rollouts at all, only optimisation over a corpus captured on CPU beforehand — so nothing
+    /// that selects an action is involved.
+    ///
+    /// A bundle is always written from CPU (§4.4), so a checkpoint produced on CUDA still loads on a
+    /// machine without one.
+    #[must_use]
+    pub fn to_device(mut self, device: ti4_tensor::Device) -> Self {
+        for tensor in [
+            &mut self.input,
+            &mut self.b1,
+            &mut self.hidden,
+            &mut self.b2,
+            &mut self.w_shared,
+            &mut self.b_shared,
+            &mut self.delta,
+            &mut self.b_delta,
+            &mut self.embedding,
+            &mut self.w_value,
+            &mut self.b_value,
+        ] {
+            *tensor = tensor.to_device(device);
+        }
+        self
+    }
+
+    /// Which device this actor's parameters live on.
+    #[must_use]
+    pub fn device(&self) -> ti4_tensor::Device {
+        self.input.device()
+    }
+
     /// The input table.
     pub const fn input(&self) -> &Tensor {
         &self.input
@@ -687,11 +725,11 @@ impl Actor {
         if padding <= 0 {
             selected
         } else {
+            // The pad follows the embedding's device: a CPU zero concatenated onto a CUDA row is
+            // a hard error in libtorch, not a silent copy.
+            let device = selected.device();
             Tensor::cat(
-                &[
-                    selected,
-                    Tensor::zeros([padding], (Kind::Float, Device::Cpu)),
-                ],
+                &[selected, Tensor::zeros([padding], (Kind::Float, device))],
                 0,
             )
         }
@@ -771,6 +809,87 @@ impl Actor {
         let w = self.w_shared.get(head_i) + self.delta.get(seat_i).get(head_i);
         let b = self.b_shared.get(head_i) + self.b_delta.get(seat_i).get(head_i);
         Ok(z.matmul(&w) + b)
+    }
+
+    /// Logits for options belonging to **different** decisions, factions and heads, in one pass.
+    ///
+    /// # Why this exists
+    ///
+    /// [`Self::logits`] takes one head and one faction, so a training minibatch has to be split into
+    /// `(faction, head)` groups — up to 6 × 14 of them — and each group issues its own kernels. On a
+    /// CPU that merely wastes dispatches; on a GPU it is fatal, because every group is a handful of
+    /// tiny launches and launch overhead swamps the arithmetic. Measured: a CUDA epoch structured
+    /// that way took 343.9 s against the CPU's 135.9 s.
+    ///
+    /// Here the whole minibatch is one gather, one trunk, and one row-wise dot product. The
+    /// per-option readout weight `w_shared[h] + delta[f, h]` is gathered by index rather than
+    /// selected in a loop, which is what removes the grouping.
+    ///
+    /// `heads` and `rows` are per **option**, not per decision — the caller repeats a decision's
+    /// head and faction across its options — so this function needs to know nothing about where one
+    /// decision ends and the next begins.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for no options, [`ActorError::NotUsable`] if the three slices
+    /// disagree in length, and anything the gather raises.
+    pub fn logits_mixed(
+        &self,
+        options: &[SparseOption],
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if options.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != options.len() || rows.len() != options.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{} options, {} heads, {} rows",
+                    options.len(),
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
+        let batch: Vec<(&[i64], &[f32])> = options
+            .iter()
+            .map(|option| (option.columns.as_slice(), option.values.as_slice()))
+            .collect();
+        let x = ti4_tensor::gather_reduce_batch(&self.input, &batch)?;
+
+        let head_index = Tensor::from_slice(heads).to_device(device);
+        let row_index = Tensor::from_slice(rows).to_device(device);
+
+        // The identity embedding, per option, zero-padded to the trunk width and added before
+        // `b1`/ReLU exactly as the single-faction path does.
+        let identity = self.embedding.index_select(0, &row_index);
+        let padding = self.width - EMBED_DIM;
+        let identity = if padding > 0 {
+            let pad = Tensor::zeros([identity.size()[0], padding], (Kind::Float, device));
+            Tensor::cat(&[identity, pad], 1)
+        } else {
+            identity
+        };
+
+        let first = (x + identity + &self.b1).relu();
+        let z = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
+
+        // w_effective[option] = w_shared[head] + delta[faction, head], gathered rather than looped.
+        // `delta` is [factions, heads, width]; flattening to [factions*heads, width] turns the pair
+        // into one index.
+        let heads_count = i64::try_from(crate::heads().len()).unwrap_or(0);
+        let pair_index = &row_index * heads_count + &head_index;
+        let delta_flat = self.delta.view([-1, self.width]);
+        let w =
+            self.w_shared.index_select(0, &head_index) + delta_flat.index_select(0, &pair_index);
+        let b = self.b_shared.index_select(0, &head_index)
+            + self.b_delta.view([-1]).index_select(0, &pair_index);
+
+        // A row-wise dot product, which is what `z.matmul(w)` degenerates to when every row has its
+        // own weight vector.
+        Ok((z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b)
     }
 
     /// `V(s)` for one position, from the canonical critic vector.
@@ -985,6 +1104,86 @@ pub fn stable_softmax(scores: &Tensor) -> Result<Vec<f64>, ActorError> {
         });
     }
     Ok(probabilities)
+}
+
+#[cfg(test)]
+mod mixed_tests {
+    use super::*;
+
+    fn option(seed: i64) -> SparseOption {
+        SparseOption {
+            columns: vec![seed % 97 + 1, (seed * 7) % 97 + 1],
+            values: vec![1.0 + (seed % 3) as f32 * 0.25, 0.5],
+        }
+    }
+
+    #[test]
+    fn the_mixed_path_agrees_with_the_single_faction_path() {
+        // `logits_mixed` exists only to be faster. If it computed something different the training
+        // numbers would change silently, so it is pinned against the path it replaces.
+        let mut actor = Actor::zeros(Width::W128, 4_096);
+        *actor.input_mut() = actor.input().f_add_scalar(0.05).expect("add");
+        *actor.hidden_mut() = actor.hidden().f_add_scalar(0.03).expect("add");
+        *actor.shared_readout_mut() = actor.shared_readout().f_add_scalar(0.2).expect("add");
+        *actor.b1_mut() = actor.b1().f_add_scalar(0.01).expect("add");
+        *actor.b_shared_mut() = actor.b_shared().f_add_scalar(0.02).expect("add");
+        // Non-zero residual and embedding, or the faction index would not matter and the test
+        // would pass for a version that ignored it.
+        *actor.delta_mut() = actor.delta().f_add_scalar(0.004).expect("add");
+        *actor.embedding_mut() = actor.embedding().f_add_scalar(0.03).expect("add");
+        *actor.b_delta_mut() = actor.b_delta().f_add_scalar(0.007).expect("add");
+
+        // Three decisions, deliberately different factions and heads.
+        let cases = [("sol", 0usize, 3usize), ("letnev", 5, 2), ("xxcha", 11, 4)];
+        let mut flat: Vec<SparseOption> = Vec::new();
+        let mut heads_idx: Vec<i64> = Vec::new();
+        let mut rows_idx: Vec<i64> = Vec::new();
+        let mut expected: Vec<f32> = Vec::new();
+        let mut seed = 0i64;
+
+        for (faction, head, count) in cases {
+            let row = FactionRow::of(faction).expect("roster");
+            let options: Vec<SparseOption> = (0..count)
+                .map(|_| {
+                    seed += 1;
+                    option(seed)
+                })
+                .collect();
+            let head_name = crate::heads()[head];
+            let single = actor.logits(&options, head_name, row).expect("logits");
+            expected.extend(ti4_tensor::to_vec(&single).expect("vec"));
+            for opt in &options {
+                flat.push(opt.clone());
+                heads_idx.push(i64::try_from(head).unwrap());
+                rows_idx.push(i64::try_from(row.index()).unwrap());
+            }
+        }
+
+        let mixed = actor
+            .logits_mixed(&flat, &heads_idx, &rows_idx)
+            .expect("mixed logits");
+        let got = ti4_tensor::to_vec(&mixed).expect("vec");
+        assert_eq!(got.len(), expected.len());
+        // Non-vacuity: constant logits would match trivially.
+        assert!(
+            expected.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-4),
+            "every expected logit is the same, so agreement proves nothing"
+        );
+        for (index, (a, b)) in got.iter().zip(&expected).enumerate() {
+            assert!(
+                (a - b).abs() < 2e-4,
+                "logit {index}: mixed {a} against single {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn ragged_index_slices_are_refused() {
+        let actor = Actor::zeros(Width::W128, 4_096);
+        let options = vec![option(1), option(2)];
+        assert!(actor.logits_mixed(&options, &[0], &[0, 0]).is_err());
+        assert!(actor.logits_mixed(&[], &[], &[]).is_err());
+    }
 }
 
 #[cfg(test)]

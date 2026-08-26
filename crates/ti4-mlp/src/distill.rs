@@ -331,77 +331,100 @@ impl Adam {
     }
 }
 
-/// Cross-entropy for a set of samples that share a faction row and head, from **one** forward pass.
+/// Cross-entropy per decision for an arbitrary mixed minibatch, in one forward pass.
 ///
-/// # Why grouping matters, measured
+/// # Why the padding is `-inf` and then masked
 ///
-/// One forward and backward per decision costs 1494 us at the corpus's shape, of which the forward
-/// is 63. The remainder is `index_select`'s backward, which scatters into a dense
-/// `[capacity, width]` gradient — 16.8 MB — once per decision however few rows that decision
-/// touched. Grouping pays it once per group instead: the same measurement, grouped, is 501 us per
-/// decision, a 3.0x speed-up.
+/// Decisions have different option counts, so the flat logits are scattered into a `[decisions,
+/// widest]` matrix to take one batched softmax. The empty slots are filled with `-inf`, which is
+/// exact rather than approximate: `exp(-inf)` is zero, so a padded slot takes no probability mass
+/// and cannot flatter the model.
 ///
-/// The forward alone is *slower* grouped, which is why this is worth writing down: the batched
-/// gather materialises a larger intermediate, and a reader optimising on forward timings alone
-/// would remove this.
+/// The log-probabilities at those slots are then `-inf`, and the teacher's probability is `0`. Their
+/// product is `0 * -inf = NaN`, which would silently poison the whole batch — so the padded slots
+/// are zeroed before the multiply. Both steps are needed: `-inf` for a correct softmax, zeroing for
+/// a correct product.
 ///
-/// The summed gradient is unchanged — addition is associative over the graph, whatever order the
-/// terms are built in. Returns one tensor per sample, in the order given.
-struct GroupScore {
-    crosses: Vec<Tensor>,
-    choices: Vec<usize>,
-}
-
-fn group_score(actor: &Actor, samples: &[&Sample]) -> Result<GroupScore, String> {
-    let first = samples
-        .first()
-        .ok_or_else(|| "cross-entropy group is empty".to_owned())?;
-    let head = crate::heads()
-        .get(first.head)
-        .ok_or_else(|| format!("head index {} is out of range", first.head))?;
-    if samples.iter().any(|sample| {
-        sample.row != first.row
-            || sample.head != first.head
-            || sample.options.is_empty()
-            || sample.options.len() != sample.teacher.len()
-    }) {
-        return Err("a grouped sample has the wrong row/head or ragged/empty options".to_owned());
+/// # Errors
+/// Anything the gather or the readout raises, and a head index outside the schema.
+fn batch_cross_entropy(actor: &Actor, samples: &[&Sample]) -> Result<Tensor, String> {
+    if samples.is_empty() {
+        return Err("cross-entropy batch is empty".to_owned());
     }
-    let flat: Vec<SparseOption> = samples
+    let widest = samples
         .iter()
-        .flat_map(|sample| sample.options.iter().cloned())
-        .collect();
-    let all = actor
-        .logits(&flat, head, first.row)
-        .map_err(|error| format!("student logits failed: {error}"))?;
-
-    let mut out = Vec::with_capacity(samples.len());
-    let mut choices = Vec::with_capacity(samples.len());
-    let mut offset = 0i64;
-    for sample in samples {
-        let width = i64::try_from(sample.options.len()).unwrap_or(0);
-        let slice = all.narrow(0, offset, width);
-        offset += width;
-        let log_q = slice.log_softmax(0, ti4_tensor::Kind::Float);
-        choices.push(
-            usize::try_from(slice.argmax(0, false).int64_value(&[]))
-                .map_err(|_| "student argmax does not fit usize".to_owned())?,
-        );
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "probabilities are f32-scale"
-        )]
-        let teacher: Vec<f32> = sample.teacher.iter().map(|p| *p as f32).collect();
-        let p = Tensor::from_slice(&teacher);
-        out.push(-(p * log_q).sum(ti4_tensor::Kind::Float));
+        .map(|sample| sample.options.len())
+        .max()
+        .unwrap_or(0);
+    if widest == 0 {
+        return Err("every decision in the batch has no options".to_owned());
     }
-    Ok(GroupScore {
-        crosses: out,
-        choices,
-    })
+    let decisions = samples.len();
+
+    let mut flat: Vec<SparseOption> = Vec::new();
+    let mut heads_idx: Vec<i64> = Vec::new();
+    let mut rows_idx: Vec<i64> = Vec::new();
+    let mut slots: Vec<i64> = Vec::new();
+    let mut teacher = vec![0.0f32; decisions * widest];
+    let mut padded = vec![1u8; decisions * widest];
+
+    for (index, sample) in samples.iter().enumerate() {
+        if crate::heads().get(sample.head).is_none() {
+            return Err(format!("head index {} is out of range", sample.head));
+        }
+        if sample.teacher.len() != sample.options.len() {
+            return Err(format!(
+                "decision {index}: {} options against {} teacher probabilities",
+                sample.options.len(),
+                sample.teacher.len()
+            ));
+        }
+        for (slot, option) in sample.options.iter().enumerate() {
+            flat.push(option.clone());
+            heads_idx.push(i64::try_from(sample.head).unwrap_or(0));
+            rows_idx.push(i64::try_from(sample.row.index()).unwrap_or(0));
+            let cell = index * widest + slot;
+            slots.push(i64::try_from(cell).unwrap_or(0));
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "probabilities are f32-scale"
+            )]
+            {
+                teacher[cell] = sample.teacher[slot] as f32;
+            }
+            padded[cell] = 0;
+        }
+    }
+
+    let logits = actor
+        .logits_mixed(&flat, &heads_idx, &rows_idx)
+        .map_err(|error| format!("mixed logits: {error}"))?;
+    let device = logits.device();
+
+    let rows = i64::try_from(decisions).unwrap_or(0);
+    let columns = i64::try_from(widest).unwrap_or(0);
+    let scattered = Tensor::full(
+        [rows * columns],
+        f64::NEG_INFINITY,
+        (ti4_tensor::Kind::Float, device),
+    )
+    .index_copy(0, &Tensor::from_slice(&slots).to_device(device), &logits)
+    .view([rows, columns]);
+
+    let log_q = scattered.log_softmax(1, ti4_tensor::Kind::Float);
+    let mask = Tensor::from_slice(&padded)
+        .to_device(device)
+        .view([rows, columns])
+        .to_kind(ti4_tensor::Kind::Bool);
+    let log_q = log_q.masked_fill(&mask, 0.0);
+    let p = Tensor::from_slice(&teacher)
+        .to_device(device)
+        .view([rows, columns]);
+
+    Ok(-(p * log_q).sum_dim_intlist([1i64].as_slice(), false, ti4_tensor::Kind::Float))
 }
 
-/// Complete imitation metrics over a set of samples, without building a graph.
+/// Every §6.1 imitation metric in one pass: mean KL, top-1 agreement, and KL by faction and head.
 ///
 /// # Errors
 /// Returns an error for an empty or malformed sample set or a failed model evaluation.
@@ -412,43 +435,44 @@ pub fn validation_metrics(actor: &Actor, samples: &[Sample]) -> Result<Validatio
     let mut sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
     let mut head_sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
     let mut agreements = 0usize;
-    // Grouped like training, for the same reason: this is a full pass over the validation shard
-    // once per epoch.
-    let mut groups: BTreeMap<(usize, usize), Vec<&Sample>> = BTreeMap::new();
-    for sample in samples {
-        groups
-            .entry((sample.row.index(), sample.head))
-            .or_default()
-            .push(sample);
-    }
+    // Batched like training, and for the same reason: this is a full pass over the validation shard
+    // once per epoch, so grouping it by `(row, head)` would issue the same storm of tiny kernels.
+    let flat: Vec<&Sample> = samples.iter().collect();
     tch::no_grad(|| -> Result<(), String> {
-        for members in groups.values() {
-            for micro in members.chunks(512) {
-                let scored = group_score(actor, micro)?;
-                for ((sample, cross), choice) in
-                    micro.iter().zip(&scored.crosses).zip(&scored.choices)
-                {
-                    let kl = cross.double_value(&[]) + sample.teacher_entropy_term();
-                    let entry = sums
-                        .entry(crate::FACTION_ROSTER[sample.row.index()].to_owned())
-                        .or_insert((0.0, 0));
-                    entry.0 += kl;
-                    entry.1 += 1;
-                    let head = crate::heads()
-                        .get(sample.head)
-                        .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
-                    let head_entry = head_sums.entry((*head).to_owned()).or_insert((0.0, 0));
-                    head_entry.0 += kl;
-                    head_entry.1 += 1;
-                    let teacher_choice = sample
-                        .teacher
-                        .iter()
-                        .enumerate()
-                        .max_by(|left, right| left.1.total_cmp(right.1))
-                        .map(|(index, _)| index)
-                        .ok_or_else(|| "teacher distribution is empty".to_owned())?;
-                    agreements += usize::from(*choice == teacher_choice);
-                }
+        for micro in flat.chunks(2_048) {
+            let crosses = batch_cross_entropy(actor, micro)?;
+            let choices = batch_choices(actor, micro)?;
+            let values = ti4_tensor::to_vec(&crosses)
+                .map_err(|error| format!("reading validation cross-entropy: {error}"))?;
+            if values.len() != micro.len() || choices.len() != micro.len() {
+                return Err(format!(
+                    "validation returned {} cross-entropies and {} choices for {} decisions",
+                    values.len(),
+                    choices.len(),
+                    micro.len()
+                ));
+            }
+            for ((sample, cross), choice) in micro.iter().zip(&values).zip(&choices) {
+                let kl = f64::from(*cross) + sample.teacher_entropy_term();
+                let entry = sums
+                    .entry(crate::FACTION_ROSTER[sample.row.index()].to_owned())
+                    .or_insert((0.0, 0));
+                entry.0 += kl;
+                entry.1 += 1;
+                let head = crate::heads()
+                    .get(sample.head)
+                    .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
+                let head_entry = head_sums.entry((*head).to_owned()).or_insert((0.0, 0));
+                head_entry.0 += kl;
+                head_entry.1 += 1;
+                let teacher_choice = sample
+                    .teacher
+                    .iter()
+                    .enumerate()
+                    .max_by(|left, right| left.1.total_cmp(right.1))
+                    .map(|(index, _)| index)
+                    .ok_or_else(|| "teacher distribution is empty".to_owned())?;
+                agreements += usize::from(*choice == teacher_choice);
             }
         }
         Ok(())
@@ -493,6 +517,56 @@ pub fn validation_metrics(actor: &Actor, samples: &[Sample]) -> Result<Validatio
         per_faction,
         per_head,
     })
+}
+
+/// The student's chosen option index per decision, for top-1 agreement.
+///
+/// Separate from [`batch_cross_entropy`] because it needs no graph and the argmax is taken over
+/// each decision's own options — the padded slots hold `-inf` and so can never win.
+///
+/// # Errors
+/// Anything the readout raises.
+fn batch_choices(actor: &Actor, samples: &[&Sample]) -> Result<Vec<usize>, String> {
+    let widest = samples
+        .iter()
+        .map(|sample| sample.options.len())
+        .max()
+        .unwrap_or(0);
+    if widest == 0 {
+        return Err("every decision in the batch has no options".to_owned());
+    }
+    let mut flat: Vec<SparseOption> = Vec::new();
+    let mut heads_idx: Vec<i64> = Vec::new();
+    let mut rows_idx: Vec<i64> = Vec::new();
+    let mut slots: Vec<i64> = Vec::new();
+    for (index, sample) in samples.iter().enumerate() {
+        for (slot, option) in sample.options.iter().enumerate() {
+            flat.push(option.clone());
+            heads_idx.push(i64::try_from(sample.head).unwrap_or(0));
+            rows_idx.push(i64::try_from(sample.row.index()).unwrap_or(0));
+            slots.push(i64::try_from(index * widest + slot).unwrap_or(0));
+        }
+    }
+    let logits = actor
+        .logits_mixed(&flat, &heads_idx, &rows_idx)
+        .map_err(|error| format!("mixed logits: {error}"))?;
+    let device = logits.device();
+    let rows = i64::try_from(samples.len()).unwrap_or(0);
+    let columns = i64::try_from(widest).unwrap_or(0);
+    let scattered = Tensor::full(
+        [rows * columns],
+        f64::NEG_INFINITY,
+        (ti4_tensor::Kind::Float, device),
+    )
+    .index_copy(0, &Tensor::from_slice(&slots).to_device(device), &logits)
+    .view([rows, columns]);
+    let picked = scattered.argmax(1, false);
+    let picked = Vec::<i64>::try_from(picked.to_device(ti4_tensor::Device::Cpu))
+        .map_err(|error| format!("reading argmax: {error}"))?;
+    Ok(picked
+        .into_iter()
+        .map(|index| usize::try_from(index).unwrap_or(0))
+        .collect())
 }
 
 /// Mean KL by faction, retained as the narrow compatibility view used by existing callers.
@@ -720,48 +794,60 @@ pub fn train(
             )]
             let factions = counts.len() as f64;
 
-            // Bucket by `(row, head)`, because one `logits` call takes one of each. Grouping
-            // changes only where the cost lands, never the summed gradient.
-            let mut groups: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
-            for index in batch {
-                let sample = &train_samples[*index];
-                groups
-                    .entry((sample.row.index(), sample.head))
-                    .or_default()
-                    .push(*index);
-            }
+            // No grouping by `(row, head)`. `logits_mixed` takes per-option head and faction
+            // indices, so an entire micro-batch is one gather, one trunk and one row-wise readout
+            // however many factions and heads it spans.
+            //
+            // The previous version split each batch into up to 6 x 14 groups and issued a separate
+            // forward and backward for each. On CPU that wasted dispatches; on CUDA it was fatal —
+            // an epoch took 343.9 s against the CPU's 135.9 s, because every group was a handful of
+            // tiny kernel launches and launch overhead dominated the arithmetic.
+            //
+            // The summed gradient is unchanged: addition is associative over the graph, and the
+            // per-decision weights below are the same numbers applied to the same terms.
+            for micro in batch.chunks(settings.micro_batch) {
+                let samples: Vec<&Sample> =
+                    micro.iter().map(|index| &train_samples[*index]).collect();
+                let crosses = batch_cross_entropy(actor, &samples)?;
 
-            for members in groups.values() {
-                for micro in members.chunks(settings.micro_batch) {
-                    let samples: Vec<&Sample> =
-                        micro.iter().map(|index| &train_samples[*index]).collect();
-                    let crosses = group_score(actor, &samples)?.crosses;
-                    let mut loss: Option<Tensor> = None;
-                    for (sample, cross) in samples.iter().zip(&crosses) {
-                        #[expect(
-                            clippy::cast_precision_loss,
-                            reason = "decision counts are exact in f64"
-                        )]
-                        let weight = 1.0
-                            / (factions
-                                * counts.get(&sample.row.index()).copied().unwrap_or(1) as f64);
-                        let scaled = cross * weight;
+                // The weights as a vector, so the whole micro-batch is scaled in one operation
+                // rather than one multiply per decision.
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "decision counts are exact in f64"
+                )]
+                let weights: Vec<f32> = samples
+                    .iter()
+                    .map(|sample| {
+                        (1.0 / (factions
+                            * counts.get(&sample.row.index()).copied().unwrap_or(1) as f64))
+                            as f32
+                    })
+                    .collect();
+                let weight_tensor = Tensor::from_slice(&weights).to_device(crosses.device());
 
-                        let reported = tch::no_grad(|| scaled.double_value(&[])) / weight
-                            + sample.teacher_entropy_term();
-                        let entry = train_sums
-                            .entry(crate::FACTION_ROSTER[sample.row.index()].to_owned())
-                            .or_insert((0.0, 0));
-                        entry.0 += reported;
-                        entry.1 += 1;
-
-                        loss =
-                            Some(loss.map_or_else(|| scaled.shallow_clone(), |sum| sum + &scaled));
-                    }
-                    if let Some(loss) = loss {
-                        loss.backward();
-                    }
+                // Reported before scaling: the KL a reader sees is the decision's own, not its
+                // contribution to the objective.
+                let reported = tch::no_grad(|| ti4_tensor::to_vec(&crosses))
+                    .map_err(|error| format!("reading the batch cross-entropy: {error}"))?;
+                if reported.len() != samples.len() {
+                    return Err(format!(
+                        "cross-entropy returned {} values for {} decisions",
+                        reported.len(),
+                        samples.len()
+                    ));
                 }
+                for (sample, cross) in samples.iter().zip(&reported) {
+                    let entry = train_sums
+                        .entry(crate::FACTION_ROSTER[sample.row.index()].to_owned())
+                        .or_insert((0.0, 0));
+                    entry.0 += f64::from(*cross) + sample.teacher_entropy_term();
+                    entry.1 += 1;
+                }
+
+                (crosses * weight_tensor)
+                    .sum(ti4_tensor::Kind::Float)
+                    .backward();
             }
             let mut params = parameters(actor);
             let before_steps = adam.steps();

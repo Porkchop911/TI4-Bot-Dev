@@ -22,8 +22,25 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Where the committed manifest lives, relative to this crate.
-const MANIFEST: &str = "../../plans/artifacts/libtorch-2.9.1-cpu.manifest.json";
+/// Where the committed manifests live, relative to this crate.
+const MANIFEST_DIR: &str = "../../plans/artifacts";
+
+/// The committed manifest for the distribution `LIBTORCH` points at.
+///
+/// Derived from the directory's own name rather than hardcoded, because M10-037 adds a second
+/// distribution: `out/libtorch-2.9.1-cpu` and `out/libtorch-2.9.1-cu128` each have their own pinned
+/// manifest, and pointing `LIBTORCH` at one while verifying against the other would report a clean
+/// gate over the wrong bytes.
+///
+/// An unrecognised directory name is a hard failure rather than a fallback to the CPU manifest, for
+/// the same reason: a distribution nobody pinned must not link.
+fn manifest_for(root: &Path) -> String {
+    let name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    format!("{MANIFEST_DIR}/{name}.manifest.json")
+}
 
 fn fail(message: &str) -> ! {
     println!("cargo:warning={message}");
@@ -59,18 +76,21 @@ fn pinned_files(text: &str) -> BTreeMap<String, String> {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=LIBTORCH");
-    println!("cargo:rerun-if-changed={MANIFEST}");
 
     let Ok(libtorch) = std::env::var("LIBTORCH") else {
         // Nothing to verify or stage; `torch-sys` produces the real diagnostic.
         return;
     };
     let root = PathBuf::from(&libtorch);
+    let manifest = manifest_for(&root);
+    println!("cargo:rerun-if-changed={manifest}");
 
-    let manifest_text = match std::fs::read_to_string(MANIFEST) {
+    let manifest_text = match std::fs::read_to_string(&manifest) {
         Ok(text) => text,
         Err(error) => fail(&format!(
-            "pinned libtorch manifest {MANIFEST} unreadable: {error}"
+            "no pinned manifest for {}: {manifest} unreadable ({error}). Every libtorch \
+             distribution this project links needs its own committed manifest.",
+            root.display()
         )),
     };
     let pinned = pinned_files(&manifest_text);

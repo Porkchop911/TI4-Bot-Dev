@@ -22,8 +22,37 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Where the committed manifest lives, relative to this crate.
-const MANIFEST: &str = "../../plans/artifacts/libtorch-2.9.1-cpu.manifest.json";
+/// Where the committed manifests live, relative to this crate.
+const MANIFEST_DIR: &str = "../../plans/artifacts";
+
+/// One real symbol from `torch_cuda`, forced into the link of every binary this crate produces.
+///
+/// # Why a binary needs this at all
+///
+/// `torch-sys` passes `torch_cuda.lib` to the linker, but MSVC drops an import nothing references,
+/// and `/WHOLEARCHIVE` only produces an import descriptor with no function thunks — which the
+/// Windows loader skips. Measured directly: with the descriptor present and no thunk, the process
+/// loaded `c10.dll`, `torch_cpu.dll` and `cudart64_12.dll` but **not** `torch_cuda.dll`.
+///
+/// `torch_cuda`'s static initialiser is what registers CUDA with `torch_cpu`, so without the DLL
+/// loaded `torch::cuda::device_count()` is 0 and CUDA looks absent on a machine that has it.
+/// Forcing one genuine symbol creates a real thunk, so the loader brings the DLL in.
+///
+/// `at::cuda::warp_size()` is the choice because it takes no arguments, returns an `int`, and is
+/// not going to be renamed.
+const CUDA_ANCHOR: &str = "?warp_size@cuda@at@@YAHXZ";
+
+/// The committed manifest for the distribution `LIBTORCH` points at.
+///
+/// Derived from the directory's own name rather than hardcoded: M10-037 adds a second distribution,
+/// and verifying one while linking the other would report a clean gate over the wrong bytes.
+fn manifest_for(root: &Path) -> String {
+    let name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    format!("{MANIFEST_DIR}/{name}.manifest.json")
+}
 
 fn fail(message: &str) -> ! {
     println!("cargo:warning={message}");
@@ -59,7 +88,7 @@ fn pinned_files(text: &str) -> BTreeMap<String, String> {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=LIBTORCH");
-    println!("cargo:rerun-if-changed={MANIFEST}");
+
 
     let Ok(libtorch) = std::env::var("LIBTORCH") else {
         // Nothing to verify or stage; `torch-sys` produces the real diagnostic.
@@ -67,12 +96,28 @@ fn main() {
     };
     let root = PathBuf::from(&libtorch);
 
-    let manifest_text = match std::fs::read_to_string(MANIFEST) {
+    let manifest = manifest_for(&root);
+    println!("cargo:rerun-if-changed={manifest}");
+    let manifest_text = match std::fs::read_to_string(&manifest) {
         Ok(text) => text,
         Err(error) => fail(&format!(
-            "pinned libtorch manifest {MANIFEST} unreadable: {error}"
+            "no pinned manifest for {}: {manifest} unreadable ({error}). Every libtorch \
+             distribution this project links needs its own committed manifest.",
+            root.display()
         )),
     };
+
+    // A CUDA distribution needs one real symbol reference in every binary, or the DLL that
+    // registers CUDA never loads. Emitted for the final artifacts only: a build script that does
+    // not link torch would fail on an unresolved symbol, which is what putting this in RUSTFLAGS
+    // does.
+    if root.join("lib").join("torch_cuda.dll").is_file() {
+        // Only the target kinds this crate actually has: cargo rejects an instruction naming a
+        // kind with no targets, so `bins` and `benches` are omitted rather than harmless.
+        for target in ["examples", "tests"] {
+            println!("cargo:rustc-link-arg-{target}=/INCLUDE:{CUDA_ANCHOR}");
+        }
+    }
     let pinned = pinned_files(&manifest_text);
     if pinned.is_empty() {
         fail("pinned libtorch manifest lists no files; refusing to link an unverified libtorch");

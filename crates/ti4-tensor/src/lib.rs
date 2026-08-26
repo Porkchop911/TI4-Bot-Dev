@@ -7,11 +7,16 @@
 //! beyond the floor is a function M09-026's review has to take on trust, so the floor is where it
 //! stops.
 //!
-//! # CPU only
+//! # CPU inference, and only CPU inference
 //!
-//! MLP plan §7.1 is explicit that CUDA is never an inference backend on this branch. This crate has
-//! no CUDA feature, no optional GPU dependency, and no device parameter. Everything runs on CPU
-//! because that is the only device it can name.
+//! MLP plan §7.1 is explicit that CUDA is never an inference *backend* on this branch: every action
+//! for rollout, validation and evaluation is selected by the deterministic CPU path.
+//!
+//! Until M10-037 that was enforced by the crate having no way to name another device at all. It now
+//! can — §7.1's one permitted switch moves the model and Adam state to CUDA for forward, backward
+//! and update between CPU rollouts — so the guarantee is carried by [`inference_device`], which
+//! takes no parameters and returns `Cpu`, and by [`OptimizerDevice`], which is the only thing that
+//! can say otherwise and applies only to an optimiser step.
 //!
 //! # The pin
 //!
@@ -38,6 +43,9 @@ pub const LIBTORCH_VERSION: &str = "2.9.1";
 /// Anything that stopped a tensor operation.
 #[derive(Debug, Error)]
 pub enum TensorError {
+    /// CUDA was requested for the optimiser and the linked libtorch has none.
+    #[error("CUDA was requested but the linked libtorch has no CUDA device")]
+    NoCuda,
     /// A sparse vector's index and value slices disagree in length.
     #[error("{indices} indices against {values} values")]
     Ragged { indices: usize, values: usize },
@@ -65,10 +73,15 @@ pub enum TensorError {
 /// What the process is running on, recorded rather than assumed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backend {
-    /// Always false on this branch. Recorded so a build that acquired CUDA fails a test rather
-    /// than quietly changing what produces a decision.
+    /// Whether the linked libtorch has a usable CUDA device.
+    ///
+    /// Recorded, not forbidden. Before M10-037 this was asserted false, because the branch linked a
+    /// CPU-only libtorch and a build that silently acquired CUDA could have changed what produced a
+    /// decision. That is now a deliberate configuration, so the guarantee moved to
+    /// [`inference_device`] — a strictly stronger statement, since it holds whether or not CUDA is
+    /// present — and this field's job is to make a manifest say which device a number came from.
     pub cuda: bool,
-    /// CUDA devices visible. Zero.
+    /// CUDA devices visible.
     pub cuda_devices: usize,
     /// Intra-op threads libtorch reports.
     pub intra_op_threads: i32,
@@ -138,6 +151,56 @@ pub fn configure_deterministic(seed: i64) -> Result<Backend, TensorError> {
     Ok(reported)
 }
 
+/// Where an optimiser step may run.
+///
+/// # Why this exists as a type rather than a flag someone remembers
+///
+/// MLP plan §7.1 is categorical: *"CUDA is never an inference backend in this branch. Every action
+/// for rollout, validation and evaluation is selected by the deterministic CPU path. The only
+/// switch is `--optimizer-device cpu|cuda`: after CPU rollouts produce a fixed batch, the model and
+/// Adam state may move to CUDA for forward/backward/update and return to CPU before the next
+/// decision."*
+///
+/// So there are two devices in play and exactly one of them is negotiable. Naming the negotiable
+/// one keeps the other from drifting: [`inference_device`] is a function with no parameters and one
+/// possible answer, and every tensor a decision is built from goes through it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizerDevice {
+    /// Everything on CPU. The default, and the only setting that needs no gate.
+    Cpu,
+    /// Forward, backward and the Adam update on CUDA, between CPU rollouts.
+    ///
+    /// Selected only after M10-037's gate: fixed-batch gradient agreement with CPU, repeatability,
+    /// and at least a 10% median end-to-end improvement whose paired 95% bootstrap interval has a
+    /// lower bound above zero. Otherwise M10-037 closes as a measured no-op.
+    Cuda,
+}
+
+impl OptimizerDevice {
+    /// The libtorch device this names.
+    ///
+    /// # Errors
+    /// [`TensorError::NoCuda`] if CUDA was asked for and the linked libtorch has none. Refused
+    /// rather than silently falling back: a run that believed it was on CUDA and quietly was not
+    /// would report a device in its manifest that never executed a gradient.
+    pub fn resolve(self) -> Result<Device, TensorError> {
+        match self {
+            Self::Cpu => Ok(Device::Cpu),
+            Self::Cuda if tch::Cuda::is_available() => Ok(Device::Cuda(0)),
+            Self::Cuda => Err(TensorError::NoCuda),
+        }
+    }
+}
+
+/// The device every decision is computed on, always.
+///
+/// Not a setting. §7.1 admits no CUDA inference backend, and the whole determinism argument in §7.2
+/// rests on the CPU path being the only one that ever selects an action.
+#[must_use]
+pub const fn inference_device() -> Device {
+    Device::Cpu
+}
+
 /// Serialises every global libtorch configuration change.
 static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -173,6 +236,12 @@ fn pin_interop_threads() {
 /// capacity headroom assumes and what M09-026/M09-028 must keep asserting.
 pub fn zeros_table(capacity: i64, width: i64) -> Tensor {
     Tensor::zeros([capacity, width], (Kind::Float, Device::Cpu))
+}
+
+/// The same table on a chosen device, for an optimiser that runs off the CPU.
+#[must_use]
+pub fn zeros_table_on(capacity: i64, width: i64, device: Device) -> Tensor {
+    Tensor::zeros([capacity, width], (Kind::Float, device))
 }
 
 /// Gather the rows a sparse feature vector names, scale each by its value, and sum them.
@@ -224,7 +293,7 @@ pub fn gather_reduce(
     if columns.is_empty() {
         // An empty vector is a legal input — a decision whose every feature was out of vocabulary.
         // It contributes the zero row, not an error and not a panic.
-        return Ok(Tensor::zeros([width], (Kind::Float, Device::Cpu)));
+        return Ok(Tensor::zeros([width], (Kind::Float, table.device())));
     }
 
     // Sorting by column alone is not enough. Rust's sort is stable, so duplicate columns kept the
@@ -240,8 +309,14 @@ pub fn gather_reduce(
     let sorted_columns: Vec<i64> = pairs.iter().map(|(column, _)| *column).collect();
     let sorted_values: Vec<f32> = pairs.iter().map(|(_, value)| *value).collect();
 
-    let index = Tensor::from_slice(&sorted_columns);
-    let scale = Tensor::from_slice(&sorted_values).unsqueeze(1);
+    // Indices and scales are built on the host and moved once, so the device follows the table
+    // rather than being assumed. An index on a different device than the tensor it selects from is
+    // an error in libtorch, not a silent copy.
+    let device = table.device();
+    let index = Tensor::from_slice(&sorted_columns).to_device(device);
+    let scale = Tensor::from_slice(&sorted_values)
+        .unsqueeze(1)
+        .to_device(device);
     let rows = table.index_select(0, &index) * scale;
     Ok(rows.sum_dim_intlist([0i64].as_slice(), false, Kind::Float))
 }
@@ -354,63 +429,59 @@ pub fn gather_reduce_batch(
     if distinct.is_empty() {
         // Every option was empty — a decision whose every feature was out of vocabulary. The zero
         // rows are the answer, not an error: the same contract as `gather_reduce`.
-        return Ok(Tensor::zeros([rows, width], (Kind::Float, Device::Cpu)));
+        return Ok(Tensor::zeros([rows, width], (Kind::Float, table.device())));
     }
 
     // The one random-access gather, now over distinct rows only.
-    let index = Tensor::from_slice(&distinct);
-    let block = table.index_select(0, &index);
+    // One host-to-device move per gather, not per option: the flat buffers are assembled on the
+    // host as before and transferred once. Per-decision transfers would dominate a GPU run.
+    let device = table.device();
 
-    // Two ways to combine the gathered rows into per-option sums, chosen by size.
+    // One fused embedding-bag: gather, scale and reduce in a single kernel.
     //
-    // The dense `[options, distinct]` weight matrix is the faster one at inference scale, where the
-    // measured shape is 6.2 options against 131.9 distinct rows — under a thousand floats. It does
-    // not survive being used at training scale: a 128-decision micro-batch is roughly 768 options
-    // against eleven thousand distinct rows, and the same matrix becomes 34 million floats. Built
-    // per forward pass that is slower than not batching at all — measured at 0.11x.
+    // # Why not do it by hand
     //
-    // Above the threshold the rows are combined by a segment sum instead, which costs one gathered
-    // row per (option, column) pair rather than one cell per option-by-distinct.
-    let stride = distinct.len();
-    if options.len().saturating_mul(stride) <= DENSE_WEIGHT_LIMIT {
-        let mut weights = vec![0.0f32; options.len() * stride];
-        for (option, aggregated) in per_option.iter().enumerate() {
-            for (column, value) in aggregated {
-                // `distinct` is sorted, so the position is a binary search rather than a scan.
-                let position = distinct
-                    .binary_search(column)
-                    .expect("every column was inserted into distinct");
-                weights[option * stride + position] = *value;
-            }
-        }
-        let weights = Tensor::from_slice(&weights).view([rows, i64::try_from(stride).unwrap_or(0)]);
-        return Ok(weights.matmul(&block));
-    }
-
-    let mut positions: Vec<i64> = Vec::new();
-    let mut scales: Vec<f32> = Vec::new();
-    let mut segments: Vec<i64> = Vec::new();
-    for (option, aggregated) in per_option.iter().enumerate() {
+    // Both hand-rolled shapes hit a wall. A dense `[options, distinct]` combination matrix is fine
+    // at inference scale (6.2 options against 131.9 distinct rows) and becomes 34 million floats for
+    // a training micro-batch — measured at 0.11x, slower than not batching. Replacing it with a
+    // segment sum removes that matrix but materialises a `[total_entries, width]` intermediate
+    // instead, which for a 512-decision micro-batch is around 268 MB and made a CPU epoch time out.
+    //
+    // `embedding_bag` materialises neither. It walks the index list once and accumulates straight
+    // into the output row, which is precisely the "embedding-bag calculation, not a materialized
+    // `[N, V_cap]` tensor" §4.3 asks for.
+    //
+    // `mode = 0` is sum. `sparse = false` keeps a dense gradient, because the Adam here indexes
+    // `.grad()` as an ordinary tensor; a sparse gradient is a later change that has to go with an
+    // optimiser that understands one.
+    let mut flat: Vec<i64> = Vec::new();
+    let mut weights: Vec<f32> = Vec::new();
+    let mut offsets: Vec<i64> = Vec::with_capacity(options.len());
+    for aggregated in &per_option {
+        offsets.push(i64::try_from(flat.len()).unwrap_or(0));
         for (column, value) in aggregated {
-            let position = distinct
-                .binary_search(column)
-                .expect("every column was inserted into distinct");
-            positions.push(i64::try_from(position).unwrap_or(0));
-            scales.push(*value);
-            segments.push(i64::try_from(option).unwrap_or(0));
+            flat.push(*column);
+            weights.push(*value);
         }
     }
-    let weighted = block.index_select(0, &Tensor::from_slice(&positions))
-        * Tensor::from_slice(&scales).unsqueeze(1);
-    let out = Tensor::zeros([rows, width], (Kind::Float, Device::Cpu));
-    Ok(out.index_add(0, &Tensor::from_slice(&segments), &weighted))
-}
 
-/// Above this many cells, the dense combination matrix costs more than the segment sum.
-///
-/// Four million floats — 16 MiB built per forward pass. Inference shapes sit three orders of
-/// magnitude below it; a training micro-batch sits above it.
-const DENSE_WEIGHT_LIMIT: usize = 4 * 1024 * 1024;
+    // An empty bag is legal — a decision whose every feature was out of vocabulary — but
+    // `embedding_bag` will not accept an empty index list at all, so that case is handled above.
+    let indices = Tensor::from_slice(&flat).to_device(device);
+    let offsets = Tensor::from_slice(&offsets).to_device(device);
+    let per_sample = Tensor::from_slice(&weights).to_device(device);
+    let (out, _, _, _) = Tensor::embedding_bag(
+        table,
+        &indices,
+        &offsets,
+        false,
+        0,
+        false,
+        Some(&per_sample),
+        false,
+    );
+    Ok(out)
+}
 
 /// A dense `[n, a] × [a, b]` product, for the hidden layer and the readouts.
 pub fn matmul(left: &Tensor, right: &Tensor) -> Tensor {
@@ -461,12 +532,63 @@ mod tests {
     const SEED: i64 = 20_260_821;
 
     #[test]
-    fn the_backend_is_cpu_only() {
-        // §7.1: CUDA is never an inference backend on this branch. A build that acquired one is a
-        // build that could produce a different decision, so this is a test rather than a comment.
+    fn inference_stays_on_cpu_whether_or_not_cuda_is_linked() {
+        // This assertion used to be `!backend.cuda` — CUDA must be *absent*. That was the right
+        // tripwire while the branch linked a CPU-only libtorch: a build that silently acquired one
+        // could produce a different decision, and M09-025 wanted that to fail loudly.
+        //
+        // M10-037 links a CUDA build on purpose, so absence is no longer the invariant. The
+        // invariant §7.1 actually states is that CUDA never selects an action, and that is what is
+        // checked here instead — a **stronger** claim than the old one, because it still holds in
+        // the configuration the old test simply could not run in.
+        assert_eq!(inference_device(), Device::Cpu);
+
+        // And the tensors a decision is actually built from land there.
+        let table = zeros_table(64, 8);
+        assert_eq!(table.device(), Device::Cpu);
+        let gathered = gather_reduce(&table, &[1, 2], &[1.0, 1.0]).expect("gather");
+        assert_eq!(
+            gathered.device(),
+            Device::Cpu,
+            "a gather escaped to another device"
+        );
+        let batched =
+            gather_reduce_batch(&table, &[(&[1, 2][..], &[1.0, 1.0][..])]).expect("batch");
+        assert_eq!(
+            batched.device(),
+            Device::Cpu,
+            "a batched gather escaped to another device"
+        );
+    }
+
+    #[test]
+    fn the_optimizer_device_refuses_cuda_it_does_not_have() {
+        // Fail-closed rather than falling back: a run that believed it was on CUDA and quietly was
+        // not would record a device in its manifest that never executed a gradient.
+        assert_eq!(
+            OptimizerDevice::Cpu.resolve().expect("cpu resolves"),
+            Device::Cpu
+        );
+        match OptimizerDevice::Cuda.resolve() {
+            Ok(device) => assert!(
+                tch::Cuda::is_available(),
+                "CUDA resolved to {device:?} on a build without it"
+            ),
+            Err(TensorError::NoCuda) => assert!(!tch::Cuda::is_available()),
+            Err(other) => panic!("wrong error: {other}"),
+        }
+    }
+
+    #[test]
+    fn the_backend_reports_what_is_linked() {
+        // Recorded, not forbidden. A manifest that says which device was available is what makes a
+        // later comparison between a CPU run and a CUDA run interpretable.
         let backend = backend();
-        assert!(!backend.cuda, "CUDA is available to a CPU-only branch");
-        assert_eq!(backend.cuda_devices, 0);
+        assert_eq!(backend.cuda, tch::Cuda::is_available());
+        assert_eq!(
+            backend.cuda_devices,
+            usize::try_from(tch::Cuda::device_count()).unwrap_or(0)
+        );
     }
 
     #[test]
