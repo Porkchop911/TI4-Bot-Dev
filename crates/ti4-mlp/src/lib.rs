@@ -365,6 +365,19 @@ impl SeparateCritic {
         self.bias = self.bias.detach().copy().set_requires_grad(true);
     }
 
+    fn move_to(&mut self, device: ti4_tensor::Device) {
+        for tensor in [
+            &mut self.input,
+            &mut self.b1,
+            &mut self.hidden,
+            &mut self.b2,
+            &mut self.readout,
+            &mut self.bias,
+        ] {
+            *tensor = tensor.to_device(device);
+        }
+    }
+
     fn value_tensor(&self, critic: &CriticInput) -> Result<Tensor, ActorError> {
         let batch = [(
             critic.sparse.columns.as_slice(),
@@ -588,6 +601,9 @@ impl Actor {
             &mut self.b_value,
         ] {
             *tensor = tensor.to_device(device);
+        }
+        if let Some(critic) = &mut self.separate_critic {
+            critic.move_to(device);
         }
         self
     }
@@ -1113,7 +1129,7 @@ mod mixed_tests {
     fn option(seed: i64) -> SparseOption {
         SparseOption {
             columns: vec![seed % 97 + 1, (seed * 7) % 97 + 1],
-            values: vec![1.0 + (seed % 3) as f32 * 0.25, 0.5],
+            values: vec![f32::from(u8::try_from(seed % 3).unwrap_or(0)).mul_add(0.25, 1.0), 0.5],
         }
     }
 

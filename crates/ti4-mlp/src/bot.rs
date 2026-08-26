@@ -89,6 +89,23 @@ pub struct MlpBot {
     temperature: f64,
     rng: rand_chacha::ChaCha8Rng,
     counters: Arc<Counters>,
+    /// PPO steps, when recording. Behind a shared handle for the same reason the linear bot's
+    /// trajectory is: the bot is moved into the decision table and cannot be borrowed back out.
+    records: std::rc::Rc<std::cell::RefCell<Vec<PpoRecord>>>,
+    ppo_mode: Option<crate::bundle::CriticMode>,
+    baseline: ti4_policy::progress::Baseline,
+}
+
+/// One PPO decision and the progress snapshot taken at that exact decision.
+///
+/// Keeping these in one record makes index alignment structural: neither side can be pushed or
+/// drained without the other.
+#[derive(Debug, Clone)]
+pub struct PpoRecord {
+    /// Behavior-policy inputs and outputs recorded before optimization.
+    pub step: crate::ppo::Step,
+    /// Shaped-reward state measured against the exact post-deployment baseline.
+    pub progress: ti4_policy::progress::Progress,
 }
 
 /// What a run saw, readable while the bot is inside a table.
@@ -121,6 +138,9 @@ impl MlpBot {
             temperature: 1.0,
             rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
             counters: Arc::new(Counters::default()),
+            records: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            ppo_mode: None,
+            baseline: ti4_policy::progress::Baseline::default(),
         }
     }
 
@@ -153,7 +173,10 @@ impl MlpBot {
     /// A name with no column of its own is **not dropped**: `column_of` routes it to its family's
     /// out-of-vocabulary column, or the global one. Dropping would make an unknown option word
     /// indistinguishable from its absence.
-    fn sparse_from(&mut self, vector: &ti4_policy::features::FeatureVector) -> SparseOption {
+    fn sparse_from(
+        &mut self,
+        vector: &ti4_policy::features::FeatureVector,
+    ) -> Result<SparseOption, String> {
         let mut columns = Vec::with_capacity(vector.len());
         let mut values = Vec::with_capacity(vector.len());
         for (key, value) in vector {
@@ -165,11 +188,18 @@ impl MlpBot {
                 self.counters.oov.fetch_add(1, Ordering::Relaxed);
             }
             let column = self.vocabulary.column_of_key(*key);
-            columns.push(i64::try_from(column).unwrap_or(0));
+            columns.push(
+                i64::try_from(column)
+                    .map_err(|_| format!("feature column {column} does not fit i64"))?,
+            );
             #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
-            values.push(*value as f32);
+            let value = *value as f32;
+            if !value.is_finite() {
+                return Err("a projected feature is not finite f32".to_owned());
+            }
+            values.push(value);
         }
-        SparseOption { columns, values }
+        Ok(SparseOption { columns, values })
     }
 }
 
@@ -199,6 +229,114 @@ impl Decider for SeatedBot {
 }
 
 impl MlpBot {
+    /// Record every decision as a PPO [`crate::ppo::Step`], for an update built from self-play.
+    ///
+    /// Off by default. §6.3 requires the behaviour log-probability and behaviour value to be stored
+    /// **before** optimisation, and the only moment they exist is the decision itself: once the
+    /// weights move, `V(s)` is a different number and the ratio `r` would no longer be measured
+    /// against the policy that actually played.
+    #[must_use]
+    pub const fn recording_ppo(mut self, mode: crate::bundle::CriticMode) -> Self {
+        self.ppo_mode = Some(mode);
+        self
+    }
+
+    /// Set the exact post-deployment progress baseline supplied by the rollout.
+    #[must_use]
+    pub const fn from_setup(mut self, baseline: ti4_policy::progress::Baseline) -> Self {
+        self.baseline = baseline;
+        self
+    }
+
+    /// A handle on the aligned records this bot produces. Taken before seating, read after the game.
+    #[must_use]
+    pub fn ppo_records(&self) -> std::rc::Rc<std::cell::RefCell<Vec<PpoRecord>>> {
+        std::rc::Rc::clone(&self.records)
+    }
+
+    fn refuse(&self, choice: &Choice, reason: String) -> IllegalChoice {
+        self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
+        IllegalChoice::DeciderFailed {
+            player: choice.player.clone(),
+            prompt: choice.prompt.clone(),
+            reason,
+        }
+    }
+
+    /// Record one decision as a PPO [`crate::ppo::Step`], at the only moment its behaviour
+    /// quantities exist.
+    ///
+    /// §6.3 requires the behaviour log-probability and behaviour value to be stored **before**
+    /// optimisation: once the weights move, `V(s)` is a different number and the ratio `r` would no
+    /// longer be measured against the policy that actually played.
+    ///
+    /// Every failure here refuses the decision rather than skipping the record. A skipped record is
+    /// a batch that is quietly smaller and biased toward whichever states happened not to fail, and
+    /// no downstream check could see it (F-M10-034-D2).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the behaviour quantities are only jointly meaningful; splitting them into a                   struct would move the coupling rather than remove it"
+    )]
+    fn record(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+        mode: crate::bundle::CriticMode,
+        probabilities: &[f64],
+        options: Vec<SparseOption>,
+        head_index: usize,
+        chosen: usize,
+    ) -> Result<(), IllegalChoice> {
+        // The behaviour quantities, taken here because here is the only place they exist. The
+        // critic vector comes from the same bound capability the policy used, so a PPO batch
+        // cannot acquire a value input the inference path would refuse.
+        let (critic, behaviour_value) = if matches!(mode, crate::bundle::CriticMode::BatchMean) {
+            (None, None)
+        } else {
+            let vector = ti4_policy::critic::critic_vector(
+                seen,
+                ti4_policy::critic::CriticFeatures::full(),
+            );
+            let critic = crate::CriticInput::new(&vector, &self.vocabulary);
+            let value = self
+                .actor
+                .value(&critic, self.row)
+                .map_err(|error| self.refuse(choice, format!("critic inference: {error}")))?;
+            if !value.is_finite() {
+                return Err(self.refuse(choice, "critic returned a non-finite value".to_owned()));
+            }
+            (Some(critic), Some(value))
+        };
+        let probability = probabilities.get(chosen).copied().ok_or_else(|| {
+            self.refuse(choice, "sampled option has no behavior probability".to_owned())
+        })?;
+        if !probability.is_finite() || probability <= 0.0 {
+            return Err(self.refuse(
+                choice,
+                format!("sampled option has invalid behavior probability {probability}"),
+            ));
+        }
+        self.records.borrow_mut().push(PpoRecord {
+            progress: ti4_policy::progress::measure(
+                seen.observed(),
+                &choice.player,
+                self.baseline,
+            ),
+            step: crate::ppo::Step {
+            row: self.row,
+            head: head_index,
+            options,
+            chosen,
+            behaviour_log_prob: probability.ln(),
+            behaviour_value,
+            return_to_go: 0.0,
+            critic,
+            },
+        });
+
+        Ok(())
+    }
+
     fn decide(
         &mut self,
         choice: &Choice,
@@ -220,9 +358,29 @@ impl MlpBot {
         let options: Vec<SparseOption> = vectors
             .iter()
             .map(|vector| self.sparse_from(vector))
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(|reason| self.refuse(choice, reason))?;
+        if options.len() != choice.options.len() {
+            return Err(self.refuse(
+                choice,
+                format!(
+                    "MLP projection produced {} vectors for {} legal options",
+                    options.len(),
+                    choice.options.len()
+                ),
+            ));
+        }
 
         let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        // `head_index` is fallible and returns `Result`; the schema is fixed, so a miss here is a
+        // build inconsistency rather than a runtime condition — but it refuses rather than
+        // defaulting to head 0, which would train the wrong readout (F-M10-034-D2).
+        let head_index = Actor::head_index(head).map_err(|error| {
+            self.refuse(
+                choice,
+                format!("resolved MLP head {head} is not in the schema: {error}"),
+            )
+        })?;
         let probabilities =
             match self
                 .actor
@@ -244,18 +402,41 @@ impl MlpBot {
                     });
                 }
             };
+        if probabilities.len() != choice.options.len()
+            || probabilities
+                .iter()
+                .any(|probability| !probability.is_finite() || *probability < 0.0)
+        {
+            return Err(self.refuse(
+                choice,
+                "MLP returned a malformed probability distribution".to_owned(),
+            ));
+        }
         self.counters.decisions.fetch_add(1, Ordering::Relaxed);
 
         // Sample. The cumulative walk is the same shape the linear bot uses, so a comparison
         // between them is about the policy rather than about the sampler.
         let draw: f64 = self.rng.random_range(0.0..1.0);
         let mut cumulative = 0.0;
+        let mut chosen = choice.options.len() - 1;
         for (index, probability) in probabilities.iter().enumerate() {
             cumulative += *probability;
             if draw < cumulative {
-                return Ok(choice.options[index].clone());
+                chosen = index;
+                break;
             }
         }
-        Ok(choice.options[choice.options.len() - 1].clone())
+
+        // Forced decisions are not recorded. With one legal option the policy's probability is
+        // 1.0 whatever it believes, so the ratio is identically 1 and the surrogate's gradient is
+        // identically zero — it would contribute nothing but weight to the per-batch means. The
+        // teacher corpus drops them for the same reason, and `Batch::freeze` refuses them outright.
+        if let Some(mode) = self.ppo_mode
+            && choice.options.len() >= 2
+        {
+            self.record(choice, seen, mode, &probabilities, options, head_index, chosen)?;
+        }
+
+        Ok(choice.options[chosen].clone())
     }
 }

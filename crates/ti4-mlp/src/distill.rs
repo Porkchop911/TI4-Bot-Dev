@@ -234,6 +234,13 @@ impl Adam {
         self.t
     }
 
+    /// Move both moment tables without resetting their values or the bias-correction cursor.
+    pub fn move_to(&mut self, device: ti4_tensor::Device) {
+        for tensor in self.m.iter_mut().chain(&mut self.v) {
+            *tensor = tensor.to_device(device);
+        }
+    }
+
     /// Exact optimizer-state fingerprint for repeatability and resume tests.
     ///
     /// # Errors

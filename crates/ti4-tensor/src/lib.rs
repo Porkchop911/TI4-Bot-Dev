@@ -239,7 +239,6 @@ pub fn zeros_table(capacity: i64, width: i64) -> Tensor {
 }
 
 /// The same table on a chosen device, for an optimiser that runs off the CPU.
-#[must_use]
 pub fn zeros_table_on(capacity: i64, width: i64, device: Device) -> Tensor {
     Tensor::zeros([capacity, width], (Kind::Float, device))
 }

@@ -556,6 +556,55 @@ pub fn play_with_deciders(
     )
 }
 
+/// Play one game with deciders constructed after deployment from the exact setup baselines.
+///
+/// A policy that records shaped per-decision returns must measure every snapshot against the same
+/// post-deployment baseline used for the rollout's final progress. Constructing deciders before
+/// [`seated`] cannot provide that value; guessing it from the first later decision can already be
+/// too late. This factory boundary exposes only the baselines, not mutable or omniscient state.
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a rollout's complete deterministic input"
+)]
+pub fn play_with_decider_factory<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    factory: F,
+) -> Rollout
+where
+    F: FnOnce(&BTreeMap<PlayerId, Baseline>) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+        Ok(seated) => seated,
+        Err(error) => return failed(seed, error),
+    };
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+    let deciders = match factory(&baselines) {
+        Ok(deciders) => deciders,
+        Err(error) => return failed(seed, format!("constructing deciders: {error}")),
+    };
+    finish_game(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        None,
+    )
+}
+
 /// Play one game recording both the trajectory and the option-free critic vector per decision.
 ///
 /// M10-031's capture path. Separate from [`play_assigned_on_map_shared`] rather than another

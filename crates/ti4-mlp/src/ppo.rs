@@ -123,11 +123,11 @@ pub struct Step {
     /// `log pi_behaviour(chosen | s)`, under the weights that played the game.
     pub behaviour_log_prob: f64,
     /// `V(s)` under those same weights.
-    pub behaviour_value: f64,
+    pub behaviour_value: Option<f64>,
     /// The accepted return from this decision.
     pub return_to_go: f64,
     /// The option-free critic vector for this position.
-    pub critic: CriticInput,
+    pub critic: Option<CriticInput>,
 }
 
 /// One update's data, with the advantage already frozen.
@@ -140,6 +140,7 @@ pub struct Batch {
     steps: Vec<Step>,
     /// `normalise(returns − V_behaviour)`, computed once. Plain `f64`, holding no graph.
     advantages: Vec<f64>,
+    mode: CriticMode,
 }
 
 impl Batch {
@@ -151,7 +152,7 @@ impl Batch {
     ///
     /// # Errors
     /// Returns an error when the batch or any step is empty, malformed, or non-finite.
-    pub fn freeze(steps: Vec<Step>) -> Result<Self, String> {
+    pub fn freeze(steps: Vec<Step>, mode: CriticMode) -> Result<Self, String> {
         if steps.is_empty() {
             return Err("a PPO batch is empty".to_owned());
         }
@@ -161,22 +162,7 @@ impl Batch {
                 || step.chosen >= step.options.len()
                 || !step.behaviour_log_prob.is_finite()
                 || step.behaviour_log_prob > 0.0
-                || !step.behaviour_value.is_finite()
                 || !step.return_to_go.is_finite()
-                || step.critic.sparse().columns.is_empty()
-                || step.critic.sparse().columns.len() != step.critic.sparse().values.len()
-                || step
-                    .critic
-                    .sparse()
-                    .columns
-                    .iter()
-                    .any(|column| *column < 0)
-                || step
-                    .critic
-                    .sparse()
-                    .values
-                    .iter()
-                    .any(|value| !value.is_finite())
                 || step.options.iter().any(|option| {
                     option.columns.is_empty()
                         || option.columns.len() != option.values.len()
@@ -186,11 +172,50 @@ impl Batch {
             {
                 return Err(format!("PPO step {index} is malformed or non-finite"));
             }
+            match mode {
+                CriticMode::Shared | CriticMode::Separate => {
+                    let value = step.behaviour_value.ok_or_else(|| {
+                        format!("PPO step {index} has no behavior value for {mode:?}")
+                    })?;
+                    let critic = step.critic.as_ref().ok_or_else(|| {
+                        format!("PPO step {index} has no critic input for {mode:?}")
+                    })?;
+                    if !value.is_finite()
+                        || critic.sparse().columns.is_empty()
+                        || critic.sparse().columns.len() != critic.sparse().values.len()
+                        || critic.sparse().columns.iter().any(|column| *column < 0)
+                        || critic.sparse().values.iter().any(|value| !value.is_finite())
+                    {
+                        return Err(format!("PPO step {index} has malformed critic behavior data"));
+                    }
+                }
+                CriticMode::BatchMean => {
+                    if step.behaviour_value.is_some() || step.critic.is_some() {
+                        return Err(format!(
+                            "PPO step {index} stores unused critic data in batch-mean mode"
+                        ));
+                    }
+                }
+            }
         }
+        #[expect(clippy::cast_precision_loss, reason = "decision counts are exact in f64")]
+        let return_mean =
+            steps.iter().map(|step| step.return_to_go).sum::<f64>() / steps.len() as f64;
+        // The loop above already refused a missing behaviour value in the critic modes, so this
+        // could `expect`. It does not: an `expect` here would make the invariant a panic that a
+        // later edit to the validation loop could reach, and the function already returns `Result`,
+        // so carrying the failure costs nothing.
         let raw: Vec<f64> = steps
             .iter()
-            .map(|step| step.return_to_go - step.behaviour_value)
-            .collect();
+            .enumerate()
+            .map(|(index, step)| match mode {
+                CriticMode::Shared | CriticMode::Separate => step
+                    .behaviour_value
+                    .map(|value| step.return_to_go - value)
+                    .ok_or_else(|| format!("PPO step {index} has no behaviour value for {mode:?}")),
+                CriticMode::BatchMean => Ok(step.return_to_go - return_mean),
+            })
+            .collect::<Result<Vec<f64>, String>>()?;
         #[expect(
             clippy::cast_precision_loss,
             reason = "decision counts are exact in f64"
@@ -206,7 +231,11 @@ impl Batch {
         if advantages.iter().any(|advantage| !advantage.is_finite()) {
             return Err("normalised PPO advantages are non-finite".to_owned());
         }
-        Ok(Self { steps, advantages })
+        Ok(Self {
+            steps,
+            advantages,
+            mode,
+        })
     }
 
     /// The recorded decisions.
@@ -352,6 +381,17 @@ impl Adam {
     pub fn state_fingerprint(&self) -> Result<Vec<u32>, String> {
         self.inner.state_fingerprint()
     }
+
+    /// Move Adam's moments to the optimizer device without resetting its step counter.
+    pub fn move_to(&mut self, device: ti4_tensor::Device) {
+        self.inner.move_to(device);
+    }
+
+    /// How many minibatch steps have advanced the bias-correction cursor.
+    #[must_use]
+    pub const fn steps(&self) -> i64 {
+        self.inner.steps()
+    }
 }
 
 fn validate_settings(settings: Settings) -> Result<(), String> {
@@ -438,6 +478,9 @@ pub fn update(
     if batch.is_empty() {
         return Err("a PPO update batch is empty".to_owned());
     }
+    if batch.mode != critic_mode {
+        return Err("PPO batch critic mode does not match the update".to_owned());
+    }
     if optimizer.mode != critic_mode || optimizer.settings != settings {
         return Err("PPO optimizer mode/settings do not match the update".to_owned());
     }
@@ -445,7 +488,12 @@ pub fn update(
         step.options
             .iter()
             .flat_map(|option| &option.columns)
-            .chain(&step.critic.sparse().columns)
+            .chain(
+                step.critic
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|critic| &critic.sparse().columns),
+            )
             .any(|column| *column >= actor.capacity())
     }) {
         return Err("a PPO feature column is outside the actor capacity".to_owned());
@@ -487,8 +535,12 @@ pub fn update(
 
                 // The critic's own path to the trunk, per §6.3, and only in the modes that have one.
                 if !matches!(critic_mode, CriticMode::BatchMean) {
+                    let critic = step
+                        .critic
+                        .as_ref()
+                        .ok_or_else(|| "critic mode has no critic input".to_owned())?;
                     let value = actor
-                        .value_tensor(&step.critic, step.row)
+                        .value_tensor(critic, step.row)
                         .map_err(|error| format!("critic scoring failed: {error}"))?;
                     let critic_term = (value - step.return_to_go).square().squeeze();
                     stats.critic_loss += tch::no_grad(|| critic_term.double_value(&[]));
@@ -580,6 +632,18 @@ mod tests {
         actor
     }
 
+    /// The same decision as [`step`], recorded the way `batch_mean` mode records one.
+    ///
+    /// `Batch::freeze` **refuses** a stored behaviour value or critic input in batch-mean mode
+    /// rather than ignoring it, so a fixture that carried them would be testing a configuration the
+    /// type system does not admit.
+    fn batch_mean_step(chosen: usize, options: usize, ret: f64) -> Step {
+        let mut built = step(chosen, options, ret, 0.0);
+        built.behaviour_value = None;
+        built.critic = None;
+        built
+    }
+
     fn step(chosen: usize, options: usize, ret: f64, value: f64) -> Step {
         Step {
             row: FactionRow::of("sol").expect("roster"),
@@ -592,12 +656,12 @@ mod tests {
                 .collect(),
             chosen,
             behaviour_log_prob: -(f64::from(u32::try_from(options).unwrap_or(1))).ln(),
-            behaviour_value: value,
+            behaviour_value: Some(value),
             return_to_go: ret,
-            critic: CriticInput::from_sparse(SparseOption {
+            critic: Some(CriticInput::from_sparse(SparseOption {
                 columns: vec![7],
                 values: vec![1.0],
-            }),
+            })),
         }
     }
 
@@ -607,7 +671,7 @@ mod tests {
             step(0, 2, 3.0, 1.0),
             step(1, 3, 1.0, 1.0),
             step(0, 2, 2.0, 4.0),
-        ])
+        ], CriticMode::Shared)
         .expect("valid batch");
         let advantages = batch.advantages().to_vec();
 
@@ -633,7 +697,7 @@ mod tests {
             step(0, 2, 2.0, 2.0),
             step(0, 2, 5.0, 5.0),
             step(0, 2, 1.0, 1.0),
-        ])
+        ], CriticMode::Shared)
         .expect("valid batch");
         for advantage in batch.advantages() {
             assert!(
@@ -739,12 +803,12 @@ mod tests {
             // Deliberately not the current policy's log-prob, so the ratio is away from 1 and the
             // clip's branch is exercised rather than sitting on its boundary.
             behaviour_log_prob: -1.4,
-            behaviour_value: 1.0,
+            behaviour_value: Some(1.0),
             return_to_go: 4.0,
-            critic: CriticInput::from_sparse(SparseOption {
+            critic: Some(CriticInput::from_sparse(SparseOption {
                 columns: vec![7],
                 values: vec![1.0],
-            }),
+            })),
         }
     }
 
@@ -861,11 +925,11 @@ mod tests {
         // §6.3's deterministic reduction. Two updates from the same start, same batch and same
         // shuffle seed must agree exactly — not nearly.
         let batch = Batch::freeze(vec![
-            step(0, 2, 3.0, 1.0),
-            step(1, 3, 1.0, 2.0),
-            step(0, 4, 5.0, 0.5),
-            step(2, 3, 2.0, 1.5),
-        ])
+            batch_mean_step(0, 2, 3.0),
+            batch_mean_step(1, 3, 1.0),
+            batch_mean_step(0, 4, 5.0),
+            batch_mean_step(2, 3, 2.0),
+        ], CriticMode::BatchMean)
         .expect("valid batch");
         let run = || {
             let mut actor = trainable_actor();
@@ -921,11 +985,132 @@ mod tests {
     }
 
     #[test]
+    fn adam_carries_its_moments_across_updates_instead_of_restarting() {
+        // F-M10-034-D3. The driver used to construct `Adam::new` inside the update loop, so every
+        // update after the first began from zeroed moments and `t = 1`. Adam's bias correction
+        // divides by `1 - beta^t`, so a restarted optimiser takes its largest, least-Adam-like step
+        // every time — and the loss telemetry looks perfectly healthy while it happens.
+        //
+        // The test is a falsification: a retained optimiser and a restarted one are run over the
+        // same two batches from the same weights, and their results must differ.
+        let first = Batch::freeze(
+            vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 3, 1.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+        let second = Batch::freeze(
+            vec![batch_mean_step(1, 3, 4.0), batch_mean_step(0, 4, 2.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 2,
+            ..Settings::default()
+        };
+
+        let mut actor = trainable_actor();
+        let mut retained =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+        for batch in [&first, &second] {
+            update(
+                &mut actor,
+                batch,
+                CriticMode::BatchMean,
+                settings,
+                7,
+                &mut retained,
+            )
+            .expect("update");
+        }
+        let carried = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
+        assert_eq!(retained.steps(), 2, "the retained cursor did not advance twice");
+
+        let mut actor = trainable_actor();
+        for batch in [&first, &second] {
+            let mut fresh =
+                Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+            update(
+                &mut actor,
+                batch,
+                CriticMode::BatchMean,
+                settings,
+                7,
+                &mut fresh,
+            )
+            .expect("update");
+            assert_eq!(fresh.steps(), 1, "a fresh optimiser is meant to start at one");
+        }
+        let restarted = parameter_fingerprint(&actor, CriticMode::BatchMean).expect("parameters");
+
+        assert_ne!(
+            carried, restarted,
+            "restarting Adam every update produced identical weights, so this test could not have              caught the defect it exists for"
+        );
+    }
+
+    #[test]
+    fn a_batch_mean_baseline_refuses_the_critic_data_it_would_not_use() {
+        // F-M10-034-D5. §6.3 says batch-mean mode "does not evaluate/store an unused value". The
+        // enforcement is stronger than ignoring such data: `freeze` refuses it, so a driver that
+        // evaluated a nominal critic anyway cannot quietly hand over a batch that merely looks
+        // right. Both halves are checked, because a rule that only ever fires one way is not one.
+        let carries_a_value = Batch::freeze(
+            vec![step(0, 2, 3.0, 0.5), step(1, 3, 1.0, 0.25)],
+            CriticMode::BatchMean,
+        );
+        // The specific refusal, not merely "some error": an `is_err` here would also pass if the
+        // fixture were malformed for an unrelated reason, which is the failure mode this milestone
+        // kept producing.
+        let refusal = carries_a_value.expect_err(
+            "batch-mean accepted a stored behaviour value it is defined not to use",
+        );
+        assert!(
+            refusal.contains("unused critic data in batch-mean mode"),
+            "batch-mean refused for the wrong reason: {refusal}"
+        );
+
+        // And the advantages it does produce are a function of the returns alone: centre on the
+        // batch mean, then normalise. Computed here independently rather than read back.
+        let returns = [3.0_f64, 1.0, 5.0, 2.0];
+        let batch = Batch::freeze(
+            returns
+                .iter()
+                .enumerate()
+                .map(|(index, value)| batch_mean_step(index % 2, 3, *value))
+                .collect(),
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+
+        let mean = returns.iter().sum::<f64>() / 4.0;
+        let centred: Vec<f64> = returns.iter().map(|value| value - mean).collect();
+        let centre = centred.iter().sum::<f64>() / 4.0;
+        let deviation = (centred.iter().map(|a| (a - centre).powi(2)).sum::<f64>() / 4.0).sqrt();
+        let expected: Vec<f64> = centred
+            .iter()
+            .map(|a| (a - centre) / (deviation + 1e-8))
+            .collect();
+
+        for (got, want) in batch.advantages().iter().zip(&expected) {
+            assert!(
+                (got - want).abs() < 1e-12,
+                "batch-mean advantage {got} is not the centred, normalised return {want}"
+            );
+        }
+        // Non-vacuity: constant advantages would satisfy the loop above by accident.
+        assert!(
+            expected.iter().any(|a| (a - expected[0]).abs() > 0.5),
+            "the fixture's returns did not spread, so the comparison proves nothing"
+        );
+    }
+
+    #[test]
     fn batch_mean_mode_trains_no_critic() {
         // §6.3: "set critic loss to zero, and do not update/store unused value tensors".
         let mut actor = trainable_actor();
         let batch =
-            Batch::freeze(vec![step(0, 2, 3.0, 1.0), step(1, 2, 1.0, 2.0)]).expect("valid batch");
+            Batch::freeze(vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 2, 1.0)], CriticMode::BatchMean).expect("valid batch");
 
         let settings = Settings {
             epochs: 1,
@@ -962,10 +1147,10 @@ mod tests {
         // The freeze, end to end. Four epochs shuffle the records differently; the advantage vector
         // is one object and is never recomputed.
         let batch = Batch::freeze(vec![
-            step(0, 2, 3.0, 1.0),
-            step(1, 2, 1.0, 2.0),
-            step(0, 3, 5.0, 0.5),
-        ])
+            batch_mean_step(0, 2, 3.0),
+            batch_mean_step(1, 2, 1.0),
+            batch_mean_step(0, 3, 5.0),
+        ], CriticMode::BatchMean)
         .expect("valid batch");
         let before = batch.advantages().to_vec();
 
@@ -997,19 +1182,19 @@ mod tests {
     #[test]
     fn malformed_batches_and_out_of_capacity_columns_fail_before_any_update() {
         assert!(
-            Batch::freeze(Vec::new()).is_err(),
+            Batch::freeze(Vec::new(), CriticMode::BatchMean).is_err(),
             "an empty batch was accepted"
         );
-        let mut invalid = step(0, 2, 1.0, 0.0);
+        let mut invalid = batch_mean_step(0, 2, 1.0);
         invalid.chosen = 2;
         assert!(
-            Batch::freeze(vec![step(0, 2, 1.0, 0.0), invalid]).is_err(),
+            Batch::freeze(vec![batch_mean_step(0, 2, 1.0), invalid], CriticMode::BatchMean).is_err(),
             "one invalid record among valid records was accepted"
         );
 
-        let mut outside = step(0, 2, 1.0, 0.0);
+        let mut outside = batch_mean_step(0, 2, 1.0);
         outside.options[0].columns[0] = 9_999;
-        let batch = Batch::freeze(vec![outside, step(1, 2, 2.0, 0.0)]).expect("structural batch");
+        let batch = Batch::freeze(vec![outside, batch_mean_step(1, 2, 2.0)], CriticMode::BatchMean).expect("structural batch");
         let mut actor = trainable_actor();
         let settings = Settings {
             epochs: 1,
@@ -1039,7 +1224,7 @@ mod tests {
     #[test]
     fn shared_mode_really_updates_the_value_head() {
         let mut actor = trainable_actor();
-        let batch = Batch::freeze(vec![distinguishable_step(0, 3), distinguishable_step(1, 3)])
+        let batch = Batch::freeze(vec![distinguishable_step(0, 3), distinguishable_step(1, 3)], CriticMode::Shared)
             .expect("batch");
         let settings = Settings {
             epochs: 1,
