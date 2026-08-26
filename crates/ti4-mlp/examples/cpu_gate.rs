@@ -35,6 +35,16 @@
 //! cargo run --release -p ti4-mlp --example cpu_gate -- [--width 256|128] [--samples 20]
 //! ```
 
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::type_complexity,
+    clippy::arc_with_non_send_sync,
+    clippy::missing_panics_doc,
+    clippy::manual_is_multiple_of,
+    reason = "a benchmark driver: counts are small, and each arm reads in the order it runs"
+)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -205,10 +215,6 @@ struct Batch {
     decisions: usize,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "a linear benchmark script: the workload is visible in the order it runs"
-)]
 fn run_batch(
     content: &'static ContentStore,
     pool: &Arc<ti4_sim::MapPool>,

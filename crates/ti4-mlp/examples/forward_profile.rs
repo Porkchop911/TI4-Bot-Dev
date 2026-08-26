@@ -4,6 +4,12 @@
 //! full-game measurement. This times the forward pass alone at realistic sizes, so a hypothesis
 //! costs seconds instead of minutes.
 
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    reason = "a synthetic fixture: the indices and values are small by construction"
+)]
+
 use ti4_mlp::{Actor, FactionRow, SparseOption, Width};
 use ti4_tensor::Tensor;
 

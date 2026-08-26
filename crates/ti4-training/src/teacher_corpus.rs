@@ -488,14 +488,41 @@ fn write_manifest(
     })
 }
 
-/// Read one cluster's shard back, verifying its checksum first.
+/// Stream one cluster's shard, handing each decision to `visit` and dropping it again.
+///
+/// # Why streaming is the default and `read_shard` is not
+///
+/// A decision carries every option's feature vector as `(String, f64)` pairs — around 529 of them.
+/// Materialising the training shard's 803,449 decisions at once needs roughly 27 GB, almost all of
+/// it feature *names* that the caller converts to column indices and throws away immediately.
+/// Streaming keeps one decision alive at a time, so peak memory is whatever the caller retains.
+///
+/// The checksum is verified over the whole shard before any record is handed out, so a caller
+/// cannot act on the first half of a corrupt file.
 ///
 /// # Errors
-/// [`CorpusError::Invalid`] if the manifest is missing, the checksum disagrees, a record does not
-/// parse, or a record's option/vector/probability lengths do not agree.
-pub fn read_shard(directory: &Path, cluster: Cluster) -> Result<Vec<Decision>, CorpusError> {
-    let manifest_path = directory.join("manifest.json");
-    let manifest_bytes = std::fs::read(&manifest_path).map_err(io(
+/// As [`read_shard`].
+pub fn stream_shard(
+    directory: &Path,
+    cluster: Cluster,
+    mut visit: impl FnMut(Decision),
+) -> Result<usize, CorpusError> {
+    let text = verified_text(directory, cluster)?;
+    let name = format!("{}.jsonl.zst", cluster.as_str());
+    let mut seen = 0usize;
+    for (line, record) in text.lines().enumerate() {
+        let decision: Decision = serde_json::from_str(record)
+            .map_err(|error| CorpusError::Invalid(format!("{name} line {line}: {error}")))?;
+        check_record(&name, line, &decision, cluster)?;
+        seen += 1;
+        visit(decision);
+    }
+    Ok(seen)
+}
+
+/// The shard's decompressed text, after its checksum agrees with the manifest.
+fn verified_text(directory: &Path, cluster: Cluster) -> Result<String, CorpusError> {
+    let manifest_bytes = std::fs::read(directory.join("manifest.json")).map_err(io(
         "reading manifest.json; a corpus without one is incomplete",
     ))?;
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
@@ -515,43 +542,61 @@ pub fn read_shard(directory: &Path, cluster: Cluster) -> Result<Vec<Decision>, C
             "{name} hashes {found}, the manifest says {declared}"
         )));
     }
-
     let plain = zstd::decode_all(bytes.as_slice()).map_err(io(format!("decompressing {name}")))?;
-    let text = String::from_utf8(plain)
-        .map_err(|error| CorpusError::Invalid(format!("{name} is not UTF-8: {error}")))?;
+    String::from_utf8(plain)
+        .map_err(|error| CorpusError::Invalid(format!("{name} is not UTF-8: {error}")))
+}
 
-    let mut decisions = Vec::new();
-    for (line, record) in text.lines().enumerate() {
-        let decision: Decision = serde_json::from_str(record)
-            .map_err(|error| CorpusError::Invalid(format!("{name} line {line}: {error}")))?;
-        // The positional agreement a consumer relies on, checked on the way in rather than
-        // discovered as a wrong gradient later.
-        if decision.actor.len() != decision.options.len()
-            || decision.teacher.len() != decision.options.len()
-        {
-            return Err(CorpusError::Invalid(format!(
-                "{name} line {line}: {} options, {} vectors, {} probabilities",
-                decision.options.len(),
-                decision.actor.len(),
-                decision.teacher.len()
-            )));
-        }
-        if decision.options.len() < 2 {
-            return Err(CorpusError::Invalid(format!(
-                "{name} line {line}: a forced decision reached the corpus"
-            )));
-        }
-        // Every captured seed must be on the side of the split its shard claims. A decision on the
-        // wrong side is the leak the seed split exists to prevent, and it is cheap to check.
-        if Cluster::of(decision.seed) != Some(cluster) {
-            return Err(CorpusError::Invalid(format!(
-                "{name} line {line}: seed {} is not in the {} cluster",
-                decision.seed,
-                cluster.as_str()
-            )));
-        }
-        decisions.push(decision);
+/// Everything a record must satisfy to be usable, checked on the way in.
+///
+/// Shared by both readers so a streamed corpus and a materialised one cannot disagree about what
+/// counts as valid.
+fn check_record(
+    name: &str,
+    line: usize,
+    decision: &Decision,
+    cluster: Cluster,
+) -> Result<(), CorpusError> {
+    // The positional agreement a consumer relies on, checked here rather than discovered as a
+    // wrong gradient later.
+    if decision.actor.len() != decision.options.len()
+        || decision.teacher.len() != decision.options.len()
+    {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: {} options, {} vectors, {} probabilities",
+            decision.options.len(),
+            decision.actor.len(),
+            decision.teacher.len()
+        )));
     }
+    if decision.options.len() < 2 {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: a forced decision reached the corpus"
+        )));
+    }
+    // Every captured seed must be on the side of the split its shard claims. A decision on the
+    // wrong side is the leak the seed split exists to prevent, and it is cheap to check.
+    if Cluster::of(decision.seed) != Some(cluster) {
+        return Err(CorpusError::Invalid(format!(
+            "{name} line {line}: seed {} is not in the {} cluster",
+            decision.seed,
+            cluster.as_str()
+        )));
+    }
+    Ok(())
+}
+
+/// Read one cluster's shard back in full, verifying its checksum first.
+///
+/// Convenience over [`stream_shard`] for tests and small corpora. A production consumer should
+/// stream: see that function for what materialising the training shard costs.
+///
+/// # Errors
+/// [`CorpusError::Invalid`] if the manifest is missing, the checksum disagrees, a record does not
+/// parse, or a record's option/vector/probability lengths do not agree.
+pub fn read_shard(directory: &Path, cluster: Cluster) -> Result<Vec<Decision>, CorpusError> {
+    let mut decisions = Vec::new();
+    stream_shard(directory, cluster, |decision| decisions.push(decision))?;
     Ok(decisions)
 }
 

@@ -319,6 +319,10 @@ fn ordered_pairs(
 ///
 /// # Errors
 /// As [`gather_reduce`]: ragged input, an out-of-range column, or a non-finite value.
+///
+/// # Panics
+/// Never in practice: the only `expect` looks up a column that was inserted into `distinct` a few
+/// lines earlier, so a failure would mean the sort or dedup lost an element.
 pub fn gather_reduce_batch(
     table: &Tensor,
     options: &[(&[i64], &[f32])],

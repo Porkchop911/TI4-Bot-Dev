@@ -38,6 +38,7 @@
 
 pub mod bot;
 pub mod bundle;
+pub mod distill;
 
 use thiserror::Error;
 use ti4_policy::vocabulary::Vocabulary;
