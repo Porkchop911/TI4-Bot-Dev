@@ -18,22 +18,21 @@
 //! The reviewer's own suggested remedy: *"replay one fixed captured decision stream through both
 //! scorers or otherwise share extraction while keeping inputs identical."*
 //!
-//! One rollout. At every decision, on **the identical legal set**, three things are timed
-//! separately:
+//! A probe rollout and an uncontaminated linear rollout use the same deterministic inputs and must
+//! produce identical outcomes. At every non-forced probe decision, two complete scorer paths are
+//! timed:
 //!
 //! | quantity | how |
 //! |---|---|
-//! | `raw` | `explicit_choice_features` alone — the extraction both scorers need |
-//! | `linear` | `consider` (extraction + linear scoring) minus `raw` |
-//! | `mlp` | projection + sparse conversion + forward, minus `raw` |
+//! | `linear` | explicit extraction plus linear scoring |
+//! | `mlp` | MLP projection, sparse conversion and forward |
 //!
-//! Extraction is therefore counted once and attributed to neither scorer, which is the whole
-//! correction. Engine time is whatever the batch took that none of the above accounts for.
-//!
-//! The rollout ratio §7.1's bands are stated in is then reconstructed from measured parts:
+//! Probe overhead never enters the uncontaminated rollout total. The rollout ratio §7.1's bands
+//! are stated in is reconstructed by replacing its complete linear scorer cost with the complete
+//! MLP scorer cost:
 //!
 //! ```text
-//! ratio = (engine + raw + mlp) / (engine + raw + linear)
+//! ratio = (linear rollout total - linear scorer + MLP scorer) / linear rollout total
 //! ```
 //!
 //! Nothing here is estimated and no arm plays a different game: both scorers see the same decisions
@@ -84,27 +83,23 @@ fn refuse(reason: &str) -> ! {
 /// What one batch cost, split by who is responsible for it.
 #[derive(Debug, Clone, Copy, Default)]
 struct Split {
-    total: Duration,
-    raw: Duration,
     linear: Duration,
     mlp: Duration,
     decisions: usize,
+    evaluations: usize,
 }
 
 impl Split {
-    /// Engine and everything else: whatever the batch took that no scorer accounts for.
-    fn engine(&self) -> f64 {
-        (self.total.as_secs_f64()
-            - self.raw.as_secs_f64()
-            - self.linear.as_secs_f64()
-            - self.mlp.as_secs_f64())
-        .max(0.0)
-    }
-
-    /// §7.1's rollout ratio, reconstructed from measured parts with extraction counted once.
-    fn ratio(&self) -> f64 {
-        let shared = self.engine() + self.raw.as_secs_f64();
-        (shared + self.mlp.as_secs_f64()) / (shared + self.linear.as_secs_f64())
+    /// §7.1's rollout ratio, replacing the complete linear scorer with the complete MLP scorer.
+    fn ratio(&self, linear_total: Duration) -> Result<f64, String> {
+        let total = linear_total.as_secs_f64();
+        let linear = self.linear.as_secs_f64();
+        if total <= 0.0 || linear >= total {
+            return Err(format!(
+                "linear scorer cost {linear:.3}s is not smaller than rollout total {total:.3}s"
+            ));
+        }
+        Ok((total - linear + self.mlp.as_secs_f64()) / total)
     }
 }
 
@@ -127,25 +122,25 @@ impl Decider for Paired {
         choice: &Choice,
         seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.len() < 2 {
+            return self.inner.choose_seeing(choice, seen);
+        }
         let held = seen.held_secret_progress();
         let observed = seen.observed();
 
-        // 1. The extraction both scorers need, timed alone and charged to neither.
-        let started = Instant::now();
-        let raw =
-            ti4_policy::features::explicit_choice_features(observed, choice, &choice.player, &held);
-        let raw_cost = started.elapsed();
-        std::hint::black_box(&raw);
-
-        // 2. The linear scorer, on that same decision. `consider` re-extracts, so its own cost is
-        //    what remains after subtracting an identical extraction.
+        // Complete production scorer costs: each owns its actual extraction/projection.
         let started = Instant::now();
         let scored = self.inner.consider(observed, choice, &held);
-        let consider_cost = started.elapsed();
+        let linear_cost = started.elapsed();
+        if scored.0.len() != choice.options.len() || scored.1.len() != choice.options.len() {
+            return Err(IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: "linear probe did not score every legal option".to_owned(),
+            });
+        }
         std::hint::black_box(&scored);
 
-        // 3. The MLP on the identical legal set: projection, sparse conversion, forward. Also
-        //    re-extracts, so the same subtraction applies and the two are treated alike.
         let started = Instant::now();
         let projected =
             ti4_policy::projection::mlp_choice_features(observed, choice, &choice.player, &held);
@@ -155,46 +150,63 @@ impl Decider for Paired {
                 let mut columns = Vec::with_capacity(vector.len());
                 let mut values = Vec::with_capacity(vector.len());
                 for (key, value) in vector {
-                    columns.push(i64::try_from(self.vocabulary.column_of_key(*key)).unwrap_or(0));
+                    columns.push(i64::try_from(self.vocabulary.column_of_key(*key)).map_err(
+                        |_| IllegalChoice::DeciderFailed {
+                            player: choice.player.clone(),
+                            prompt: choice.prompt.clone(),
+                            reason: "vocabulary column does not fit i64".to_owned(),
+                        },
+                    )?);
                     #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
                     values.push(*value as f32);
                 }
-                SparseOption { columns, values }
+                Ok(SparseOption { columns, values })
             })
-            .collect();
-        if !options.is_empty() {
-            let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
-            let _ = self.actor.probabilities(&options, head, self.row, 1.0);
+            .collect::<Result<Vec<_>, IllegalChoice>>()?;
+        let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let probabilities = self
+            .actor
+            .probabilities(&options, head, self.row, 1.0)
+            .map_err(|error| IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: format!("MLP probe failed on {head}: {error}"),
+            })?;
+        if probabilities.len() != choice.options.len() {
+            return Err(IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: "MLP probe did not score every legal option".to_owned(),
+            });
         }
+        std::hint::black_box(&probabilities);
         let mlp_cost = started.elapsed();
 
         {
             let mut split = self.split.borrow_mut();
-            split.raw += raw_cost;
-            // Saturating, because a subtraction of two independently noisy timings can go negative
-            // on a fast decision; letting it wrap would silently produce an enormous cost.
-            split.linear += consider_cost.saturating_sub(raw_cost);
-            split.mlp += mlp_cost.saturating_sub(raw_cost);
+            split.linear += linear_cost;
+            split.mlp += mlp_cost;
             split.decisions += 1;
+            split.evaluations += 1;
         }
 
         self.inner.choose_seeing(choice, seen)
     }
 }
 
-fn run_batch(
+fn run_probe_batch(
     content: &'static ContentStore,
     pool: &Arc<ti4_sim::MapPool>,
     champions: &BTreeMap<String, ti4_policy::learned::Profile>,
     actor: &Arc<Actor>,
     vocabulary: &Arc<Vocabulary>,
-) -> Split {
+) -> (Split, Vec<ti4_training::rollout::Rollout>) {
     let players: Vec<PlayerId> = (0..FACTIONS.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
     let split = std::rc::Rc::new(std::cell::RefCell::new(Split::default()));
 
-    let started = Instant::now();
+    let mut outcomes = Vec::new();
     for seed in SEEDS {
         for rotation in 0..FACTIONS.len() {
             let seated: BTreeMap<PlayerId, FactionId> = players
@@ -249,11 +261,75 @@ fn run_batch(
             if let Some(error) = &rollout.error {
                 refuse(&format!("game {seed}/{rotation} failed: {error}"));
             }
+            outcomes.push(rollout);
         }
     }
-    let mut out = *split.borrow();
-    out.total = started.elapsed();
-    out
+    let out = *split.borrow();
+    (out, outcomes)
+}
+
+/// The uncontaminated denominator: the ordinary linear champion rollout with no probes or timing
+/// calls inside its decisions.
+fn run_linear_batch(
+    content: &'static ContentStore,
+    pool: &Arc<ti4_sim::MapPool>,
+    champions: &BTreeMap<String, ti4_policy::learned::Profile>,
+) -> (Duration, Vec<ti4_training::rollout::Rollout>) {
+    let players: Vec<PlayerId> = (0..FACTIONS.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let mut outcomes = Vec::new();
+    let started = Instant::now();
+    for seed in SEEDS {
+        for rotation in 0..FACTIONS.len() {
+            let seated: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(index, player)| {
+                    (
+                        player.clone(),
+                        FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                    )
+                })
+                .collect();
+            let deciders: BTreeMap<PlayerId, Box<dyn Decider>> = players
+                .iter()
+                .enumerate()
+                .map(|(index, player)| {
+                    let profile = champions[seated[player].as_str()].clone();
+                    let stream = seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(u64::try_from(index).unwrap_or(0));
+                    let decider: Box<dyn Decider> = Box::new(
+                        ti4_policy::inference::LearnedBot::from_shared(Arc::new(profile), stream),
+                    );
+                    (player.clone(), decider)
+                })
+                .collect();
+            let rollout = ti4_training::rollout::play_with_deciders(
+                content,
+                &players,
+                &seated,
+                DEFAULT,
+                seed,
+                ti4_training::rollout::Horizon {
+                    rounds: ROUNDS,
+                    steps: 10_000,
+                },
+                ti4_engine::opening::DEFAULT_REQUIREMENT,
+                &ti4_training::rollout::OpeningMap::PythonPool {
+                    pool: Arc::clone(pool),
+                    tile_seed_offset: TILE_SEED_OFFSET,
+                },
+                deciders,
+            );
+            if let Some(error) = &rollout.error {
+                refuse(&format!("linear game {seed}/{rotation} failed: {error}"));
+            }
+            outcomes.push(rollout);
+        }
+    }
+    (started.elapsed(), outcomes)
 }
 
 fn median(values: &mut [f64]) -> f64 {
@@ -325,38 +401,67 @@ fn main() {
     );
 
     for _ in 0..WARMUPS {
-        let _ = run_batch(content, &pool, &champions, &actor, &vocabulary);
+        let (probe, probed_outcomes) =
+            run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
+        let (_, linear_outcomes) = run_linear_batch(content, &pool, &champions);
+        if probe.decisions == 0
+            || probe.evaluations != probe.decisions
+            || probed_outcomes != linear_outcomes
+        {
+            refuse("a warm-up did not reproduce identical outcomes and exact model evaluations");
+        }
     }
 
     let mut ratios = Vec::with_capacity(SAMPLES);
     let mut last = Split::default();
+    let mut last_linear_total = Duration::ZERO;
     for index in 0..SAMPLES {
-        let split = run_batch(content, &pool, &champions, &actor, &vocabulary);
-        if split.decisions == 0 {
-            refuse("no decision was timed, so the ratio is undefined");
+        // Alternate which full batch runs first to prevent monotonic machine drift favouring one.
+        let (split, probed_outcomes, linear_total, linear_outcomes) = if index % 2 == 0 {
+            let (split, probed) = run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
+            let (total, linear) = run_linear_batch(content, &pool, &champions);
+            (split, probed, total, linear)
+        } else {
+            let (total, linear) = run_linear_batch(content, &pool, &champions);
+            let (split, probed) = run_probe_batch(content, &pool, &champions, &actor, &vocabulary);
+            (split, probed, total, linear)
+        };
+        if split.decisions == 0 || split.evaluations != split.decisions {
+            refuse("the probe did not complete exactly one MLP evaluation per decision");
         }
-        ratios.push(split.ratio());
+        if probed_outcomes != linear_outcomes {
+            refuse("probe and uncontaminated linear runs produced different outcomes");
+        }
+        let ratio = split
+            .ratio(linear_total)
+            .unwrap_or_else(|error| refuse(&error));
+        ratios.push(ratio);
         last = split;
+        last_linear_total = linear_total;
+        let shared = linear_total.as_secs_f64() - split.linear.as_secs_f64();
         println!(
-            "  sample {:>2}   raw {:>6.3}s  linear {:>6.3}s  mlp {:>6.3}s  engine {:>6.3}s  ratio {:>5.3}x",
+            "  sample {:>2}   total {:>6.3}s  linear {:>6.3}s  mlp {:>6.3}s  shared {:>6.3}s  ratio {:>5.3}x",
             index + 1,
-            split.raw.as_secs_f64(),
+            linear_total.as_secs_f64(),
             split.linear.as_secs_f64(),
             split.mlp.as_secs_f64(),
-            split.engine(),
-            split.ratio()
+            shared,
+            ratio
         );
     }
 
     let ratio = median(&mut ratios.clone());
     let per = |d: Duration| d.as_secs_f64() * 1e6 / last.decisions as f64;
-    println!("\n  decisions per batch  {}", last.decisions);
-    println!("  extraction (shared)  {:>7.1} us/decision", per(last.raw));
+    println!("\n  non-forced decisions {}", last.decisions);
     println!(
-        "  linear scoring       {:>7.1} us/decision",
+        "  linear rollout total {:>7.3}s",
+        last_linear_total.as_secs_f64()
+    );
+    println!(
+        "  complete linear path {:>7.1} us/decision",
         per(last.linear)
     );
-    println!("  mlp scoring          {:>7.1} us/decision", per(last.mlp));
+    println!("  complete MLP path    {:>7.1} us/decision", per(last.mlp));
     println!("  median ratio         {ratio:.3}x");
 
     // Non-vacuity: if the MLP were never scored the ratio would be 1.0 and look like a pass.

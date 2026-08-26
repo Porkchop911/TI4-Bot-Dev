@@ -27,3 +27,23 @@ requires an idle machine for the eventual rerun.
 
 **Verdict: changes required; STOP.** M09-029 is rejected under the current plan. M09-030 is not
 started, M09 has not exited, and M10-031 onward remains provisional and mechanically invalidatable.
+
+---
+
+## Independent recheck of corrected paired harness `770568b` / evidence `8d1eb36` (2026-08-26)
+
+Reviewer: Codex, independent of the Claude Opus 5 implementation and measurement.
+
+The proposed fixed-stream form is permitted by F-M09-029-R3, but the submitted 1.329x accounting
+does not yet implement that form correctly.
+
+| ID | Severity | Finding | Required correction |
+|---|---|---|---|
+| F-M09-029-R4 | **BLOCKER** | `Paired::choose_seeing` executes four relevant paths per decision: an explicit extraction, `inner.consider` (another explicit extraction plus linear score), `mlp_choice_features` plus MLP score, and finally `inner.choose_seeing` (a third explicit extraction plus linear score and sampling). `Split::engine` subtracts only the first three timed buckets from total rollout time. It therefore assigns the final deciding linear extraction/score to “engine”, then includes that cost in both reconstructed arms. This is not shared engine time and biases the ratio toward 1. | Measure an uncontaminated ordinary linear rollout total separately. On the identical deterministic decision stream, measure complete linear and complete MLP scorer costs, then substitute them: `(linear_rollout_total - complete_linear_cost + complete_mlp_cost) / linear_rollout_total`. Keep probe overhead out of the rollout total and prove the probed and ordinary runs have identical outcomes/decision identities. |
+| F-M09-029-R5 | **HIGH** | The harness subtracts the duration of `explicit_choice_features` from `mlp_choice_features` even though these are different extraction/projection functions and the latter intentionally suppresses and remaps families. Their costs are not interchangeable. Per-decision `saturating_sub` hides rather than validates this mismatch. | Time the complete scorer paths used by each model, including each model's actual extraction/projection. Do not subtract one extractor from another. The substitution formula above needs complete costs and avoids this assumption. |
+| F-M09-029-R6 | **HIGH** | `Actor::probabilities` is discarded with `let _`, recreating the fail-open boundary fixed in F-M09-029-R2. A refusing actor can still contribute elapsed time and an accepting ratio. The MLP path also maps an impossible column conversion to column zero. | Refuse the first projection/conversion/inference failure and require the successful MLP evaluation count to equal the exact non-forced decision count. Retain a falsification proving a refusing input exits non-zero. |
+
+**Verdict: changes required; STOP remains.** The 1.329x evidence is rejected, not because a corrected
+fixed-stream gate is disallowed, but because the submitted reconstruction contains the deciding
+linear scorer inside its purported shared-engine term. M09-030 remains blocked until a corrected
+committed harness produces fresh evidence and this recheck accepts it.
