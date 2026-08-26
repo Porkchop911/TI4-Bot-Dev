@@ -261,9 +261,9 @@ fn report(
     update: usize,
     window: &BTreeMap<String, FactionTally>,
     previous: Option<&BTreeMap<String, FactionTally>>,
-    span: usize,
+    reported_at: usize,
 ) {
-    let first = update.saturating_sub(span) + 1;
+    let first = reported_at + 1;
     let seats: usize = window.values().map(|tally| tally.games).sum();
     println!(
         "\n  ===== report after update {update} (updates {first}-{update}, {seats} seat-games) ====="
@@ -340,6 +340,107 @@ fn publish(
     );
 }
 
+/// How often to report, allowing the cadence to loosen as a run gets longer.
+///
+/// Written `50:500,500` — every 50 updates until update 500, every 500 after that. Early windows
+/// are where a run either starts moving or does not, and that is worth watching closely; ten hours
+/// later the same cadence would be 700 reports nobody reads.
+///
+/// Each report resets the window, so a delta always compares consecutive windows. When the cadence
+/// changes, the first long window is compared against the last short one — rates and means stay
+/// comparable, the sample sizes do not, which is why every report prints its own span and seat-game
+/// count rather than leaving the reader to assume they match.
+struct Cadence {
+    /// `(every, until)`, in order. The last segment's `until` is open.
+    segments: Vec<(usize, Option<usize>)>,
+}
+
+impl Cadence {
+    fn parse(text: &str) -> Result<Self, String> {
+        let mut segments = Vec::new();
+        for (position, piece) in text.split(',').enumerate() {
+            let piece = piece.trim();
+            let (every, until) = match piece.split_once(':') {
+                Some((every, until)) => (
+                    every.trim(),
+                    Some(until.trim().parse::<usize>().map_err(|_| {
+                        format!("segment {position} of --report-every: '{until}' is not a number")
+                    })?),
+                ),
+                None => (piece, None),
+            };
+            let every: usize = every.parse().map_err(|_| {
+                format!("segment {position} of --report-every: '{every}' is not a number")
+            })?;
+            if every == 0 {
+                return Err("--report-every cannot report every 0 updates".to_owned());
+            }
+            segments.push((every, until));
+        }
+        if segments.is_empty() {
+            return Err("--report-every is empty".to_owned());
+        }
+        // A bounded segment after an unbounded one can never be reached.
+        if let Some(position) = segments
+            .iter()
+            .position(|(_, until)| until.is_none())
+            .filter(|position| *position + 1 < segments.len())
+        {
+            return Err(format!(
+                "--report-every segment {position} is unbounded, so the segments after it are dead"
+            ));
+        }
+        Ok(Self { segments })
+    }
+
+    /// The interval in force at `done`, and whether a report falls on it.
+    fn interval(&self, done: usize) -> usize {
+        self.segments
+            .iter()
+            .find(|(_, until)| until.is_none_or(|until| done <= until))
+            .or_else(|| self.segments.last())
+            .map_or(1, |(every, _)| *every)
+    }
+
+    fn due(&self, done: usize) -> bool {
+        done.is_multiple_of(self.interval(done))
+    }
+}
+
+#[cfg(test)]
+mod cadence_tests {
+    use super::Cadence;
+
+    #[test]
+    fn a_loosening_cadence_reports_where_it_says_it_will() {
+        let cadence = Cadence::parse("50:500,500").expect("a valid cadence");
+        let due: Vec<usize> = (1..=2_000).filter(|done| cadence.due(*done)).collect();
+        let mut expected: Vec<usize> = (1..=10).map(|n| n * 50).collect();
+        expected.extend([1_000, 1_500, 2_000]);
+        assert_eq!(due, expected);
+    }
+
+    #[test]
+    fn a_bare_interval_still_means_every_n() {
+        let cadence = Cadence::parse("100").expect("a valid cadence");
+        assert_eq!(
+            (1..=350)
+                .filter(|done| cadence.due(*done))
+                .collect::<Vec<_>>(),
+            vec![100, 200, 300]
+        );
+    }
+
+    #[test]
+    fn a_cadence_that_could_never_fire_is_refused() {
+        // Zero would divide by zero; a segment after an unbounded one is unreachable. Both are
+        // operator typos that would otherwise show up only as silence hours into a run.
+        assert!(Cadence::parse("0").is_err());
+        assert!(Cadence::parse("500,50:100").is_err());
+        assert!(Cadence::parse("50:x,500").is_err());
+    }
+}
+
 fn main() {
     let updates: usize = argument("--updates")
         .and_then(|value| value.parse().ok())
@@ -384,13 +485,8 @@ fn main() {
     );
 
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/mlp-ppo".to_owned());
-    let report_every: usize = argument("--report-every")
-        .map_or(100, |value| {
-            value
-                .parse()
-                .unwrap_or_else(|_| refuse("--report-every expects a positive integer"))
-        })
-        .max(1);
+    let cadence = Cadence::parse(&argument("--report-every").unwrap_or_else(|| "100".to_owned()))
+        .unwrap_or_else(|error| refuse(&error));
     let settings = Settings::default();
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
@@ -443,6 +539,7 @@ fn main() {
     // hundred updates is 9,600 seat-games, which is enough to read a trend from.
     let mut window: BTreeMap<String, FactionTally> = BTreeMap::new();
     let mut previous: Option<BTreeMap<String, FactionTally>> = None;
+    let mut reported_at = 0usize;
 
     for update in 0..updates {
         // ---- rollout, on CPU ----
@@ -589,8 +686,9 @@ fn main() {
 
         // ---- the periodic report ----
         let done = update + 1;
-        if done % report_every == 0 || done == updates {
-            report(done, &window, previous.as_ref(), report_every);
+        if cadence.due(done) || done == updates {
+            report(done, &window, previous.as_ref(), reported_at);
+            reported_at = done;
             let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
                 .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
             publish(
