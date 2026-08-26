@@ -361,21 +361,56 @@ pub fn gather_reduce_batch(
     let index = Tensor::from_slice(&distinct);
     let block = table.index_select(0, &index);
 
-    // `[options, distinct]`, dense and small: mean 6.2 x 131.9 in the measured workload.
+    // Two ways to combine the gathered rows into per-option sums, chosen by size.
+    //
+    // The dense `[options, distinct]` weight matrix is the faster one at inference scale, where the
+    // measured shape is 6.2 options against 131.9 distinct rows — under a thousand floats. It does
+    // not survive being used at training scale: a 128-decision micro-batch is roughly 768 options
+    // against eleven thousand distinct rows, and the same matrix becomes 34 million floats. Built
+    // per forward pass that is slower than not batching at all — measured at 0.11x.
+    //
+    // Above the threshold the rows are combined by a segment sum instead, which costs one gathered
+    // row per (option, column) pair rather than one cell per option-by-distinct.
     let stride = distinct.len();
-    let mut weights = vec![0.0f32; options.len() * stride];
+    if options.len().saturating_mul(stride) <= DENSE_WEIGHT_LIMIT {
+        let mut weights = vec![0.0f32; options.len() * stride];
+        for (option, aggregated) in per_option.iter().enumerate() {
+            for (column, value) in aggregated {
+                // `distinct` is sorted, so the position is a binary search rather than a scan.
+                let position = distinct
+                    .binary_search(column)
+                    .expect("every column was inserted into distinct");
+                weights[option * stride + position] = *value;
+            }
+        }
+        let weights = Tensor::from_slice(&weights).view([rows, i64::try_from(stride).unwrap_or(0)]);
+        return Ok(weights.matmul(&block));
+    }
+
+    let mut positions: Vec<i64> = Vec::new();
+    let mut scales: Vec<f32> = Vec::new();
+    let mut segments: Vec<i64> = Vec::new();
     for (option, aggregated) in per_option.iter().enumerate() {
         for (column, value) in aggregated {
-            // `distinct` is sorted, so the position is a binary search rather than a scan.
             let position = distinct
                 .binary_search(column)
                 .expect("every column was inserted into distinct");
-            weights[option * stride + position] = *value;
+            positions.push(i64::try_from(position).unwrap_or(0));
+            scales.push(*value);
+            segments.push(i64::try_from(option).unwrap_or(0));
         }
     }
-    let weights = Tensor::from_slice(&weights).view([rows, i64::try_from(stride).unwrap_or(0)]);
-    Ok(weights.matmul(&block))
+    let weighted = block.index_select(0, &Tensor::from_slice(&positions))
+        * Tensor::from_slice(&scales).unsqueeze(1);
+    let out = Tensor::zeros([rows, width], (Kind::Float, Device::Cpu));
+    Ok(out.index_add(0, &Tensor::from_slice(&segments), &weighted))
 }
+
+/// Above this many cells, the dense combination matrix costs more than the segment sum.
+///
+/// Four million floats — 16 MiB built per forward pass. Inference shapes sit three orders of
+/// magnitude below it; a training micro-batch sits above it.
+const DENSE_WEIGHT_LIMIT: usize = 4 * 1024 * 1024;
 
 /// A dense `[n, a] × [a, b]` product, for the hidden layer and the readouts.
 pub fn matmul(left: &Tensor, right: &Tensor) -> Tensor {

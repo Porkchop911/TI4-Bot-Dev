@@ -36,6 +36,8 @@
 //! ```
 
 #![allow(
+    clippy::collapsible_if,
+    clippy::ignored_unit_patterns,
     clippy::cast_precision_loss,
     clippy::too_many_lines,
     clippy::type_complexity,
