@@ -525,7 +525,23 @@ fn main() {
     if rounds == 0 {
         refuse("--rounds 0 plays no game");
     }
-    let reward = ti4_training::reward::Reward::for_stage(stage);
+    // The Stage-1 potential's coefficients, overridable so an experiment on them is recorded in
+    // the command line and the log rather than as an edit to a default nobody can see afterwards.
+    //
+    // They are pre-registered values: changing one changes what the policy is being paid for, and
+    // the run that results is not comparable to runs at the registered settings.
+    let weight = |name: &str, registered: f64| -> f64 {
+        argument(name).map_or(registered, |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse(&format!("{name} expects a number")))
+        })
+    };
+    let mut reward = ti4_training::reward::Reward::for_stage(stage);
+    reward.expansion_weight = weight("--expansion-weight", reward.expansion_weight);
+    reward.unit_weight = weight("--unit-weight", reward.unit_weight);
+    reward.conjunctive_weight = weight("--conjunctive-weight", reward.conjunctive_weight);
+    reward.clear_bonus = weight("--clear-bonus", reward.clear_bonus);
     reward
         .validate()
         .unwrap_or_else(|error| refuse(&format!("the reward is not self-consistent: {error}")));
@@ -534,6 +550,15 @@ fn main() {
     println!("  bundle      {bundle_path}");
     println!("  seeds       {seed_base}.. ({SEEDS_PER_UPDATE} per update)");
     println!("  critic mode {critic_mode:?}");
+    if matches!(stage, ti4_training::reward::Stage::One) {
+        println!(
+            "  potential   expansion {} | unit {} | conjunctive {} | clear bonus {}",
+            reward.expansion_weight,
+            reward.unit_weight,
+            reward.conjunctive_weight,
+            reward.clear_bonus
+        );
+    }
     println!(
         "  reward      {stage:?} ({}) | {rounds} round(s) per game",
         match stage {
