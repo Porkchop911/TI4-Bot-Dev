@@ -44,8 +44,12 @@ const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// namespace a reserved column, which shifts every ordinary column after the reserved block, and
 /// discovery now emits `critic-state:*` names — 10,997 slots became 11,118. Both changes make the
 /// previous generation a different artifact rather than a stale one, so the pin moves with it.
+///
+/// M10-035 replaces `8805cfdd…2b9d` for the same two reasons at once. The registry moved to v4 for
+/// the `action-plan` namespace, and discovery now emits ten opening-progress facts and nine
+/// action-feasibility ones — 11,118 slots became 11,138.
 const ACCEPTED_SLOTS_SHA256: &str =
-    "8805cfdd4fa459102e6c1d2adf165a476346e00f5031eb4762904d032ec69295";
+    "1b2221bea6d4df06979d0850cee19eec2cb0d74b553e790ce59b7013919c7a2d";
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {

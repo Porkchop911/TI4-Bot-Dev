@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 3;
+pub const OOV_REGISTRY_VERSION: u32 = 4;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -201,6 +201,22 @@ pub fn registry_fingerprint(families: &[&str]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// The version-4 registry: version 3 with the action-feasibility family appended.
+///
+/// M10-035. Appended rather than inserted, so every column a v3 vocabulary allocated keeps its
+/// index and the change is additive in the one way that matters -- an earlier generation's slots
+/// still mean what they meant.
+const OOV_FAMILIES_V4: [&str; 41] = {
+    let mut families = [""; 41];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V3.len() {
+        families[index] = OOV_FAMILIES_V3[index];
+        index += 1;
+    }
+    families[40] = crate::projection::ACTION_FAMILY;
+    families
+};
+
 /// The pinned fingerprint of the ordered version-1 registry.
 ///
 /// **Independent of how the list is built.** Pinning v2 against v1 alone proved nothing: v2 is
@@ -218,6 +234,10 @@ pub const OOV_FAMILIES_V2_FINGERPRINT: &str =
 pub const OOV_FAMILIES_V3_FINGERPRINT: &str =
     "f09ce17c5ef69e8a2a9ec3a2c74d4d94fada361665ee05bc4456037880f32b9d";
 
+/// The pinned fingerprint of the ordered version-4 registry.
+pub const OOV_FAMILIES_V4_FINGERPRINT: &str =
+    "e1fcb8f11f85c6a0c0a1c9331dacf0d0763c7dcc1c314c69e767f995d000234d";
+
 /// The frozen v1 list, for migration checks. Nothing routes by it.
 #[must_use]
 pub const fn oov_families_v1() -> &'static [&'static str] {
@@ -230,7 +250,7 @@ pub const fn oov_families_v1() -> &'static [&'static str] {
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V3
+    &OOV_FAMILIES_V4
 }
 
 /// Families whose reserved rows exist only to hold v1's indices in place.
@@ -275,6 +295,10 @@ pub fn live_grammar_families() -> Vec<String> {
     // coverage test would pass while `critic-state:*` names had no reserved column and pooled into
     // the global one — which is precisely how the defect F-M09-027-3 found came to exist.
     families.insert(crate::critic::CRITIC_FAMILY.to_owned());
+    // M10-035: the action-feasibility namespace, for the same reason. A family the projection emits
+    // but the registry does not know pools into the global out-of-vocabulary column, where every
+    // one of its names becomes the same feature.
+    families.insert(crate::projection::ACTION_FAMILY.to_owned());
     families.into_iter().collect()
 }
 
@@ -1195,9 +1219,15 @@ mod tests {
             OOV_FAMILIES_V3_FINGERPRINT,
             "the ordered v3 registry changed"
         );
-        // The three digests must differ, or pinning them separately proves nothing.
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V4),
+            OOV_FAMILIES_V4_FINGERPRINT,
+            "the ordered v4 registry changed"
+        );
+        // The four digests must differ, or pinning them separately proves nothing.
         assert_ne!(OOV_FAMILIES_V1_FINGERPRINT, OOV_FAMILIES_V2_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V2_FINGERPRINT, OOV_FAMILIES_V3_FINGERPRINT);
+        assert_ne!(OOV_FAMILIES_V3_FINGERPRINT, OOV_FAMILIES_V4_FINGERPRINT);
 
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {

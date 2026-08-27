@@ -79,7 +79,11 @@ pub enum FamilyRole {
 /// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
 /// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
 /// so the decision cannot be skipped.
-const FAMILY_ROLES: [(&str, FamilyRole); 40] = [
+const FAMILY_ROLES: [(&str, FamilyRole); 41] = [
+    // M10-035. Transferable: every action-feasibility fact is a bounded count or flag about the
+    // option under consideration -- "planets this activation could take" means the same thing in
+    // every game, on every map, for every faction.
+    (ACTION_FAMILY, FamilyRole::Transferable),
     ("*-unit", FamilyRole::Transferable),
     ("ability", FamilyRole::Transferable),
     ("card", FamilyRole::Transferable),
@@ -242,7 +246,150 @@ pub fn admits_key(key: crate::intern::FeatureKey) -> bool {
 /// Option-invariant by construction — the same eight values on every option of a choice — which is
 /// the point: MLP plan §4.1's nonlinear per-option trunk can let them interact with option facts,
 /// where a linear head would see a constant and ignore them.
-#[must_use]
+/// The family carrying what an option would achieve, as distinct from what the seat holds.
+///
+/// Separate from `seat-state` on purpose. A seat fact is the same for every option of a choice and
+/// says where the seat stands; an action fact differs *between* options and says what each one
+/// would do about it. Sharing a family would put them in one out-of-vocabulary column and make an
+/// unknown seat fact indistinguishable from an unknown action fact.
+pub const ACTION_FAMILY: &str = "action-plan";
+
+/// What one option would do about the opening deficit.
+///
+/// # Why this exists
+///
+/// `features::explicit_option_features_with` describes an option by tokenising its id and label and
+/// then dropping every all-digit token. Its own comment records the reason -- planet identities must
+/// not become features, "so that the policy learns about planets rather than about Archon Ren" --
+/// and the cost: system ids are numbers, so an activation option carries the *kind* of move and
+/// nothing about its destination.
+///
+/// The seat facts added in M10-034 tell a seat it holds two systems and needs a third. Nothing told
+/// it which offered move supplies one. A reachability search then measured the consequence: raising
+/// the search budget 3.75x moved recovery of failed openings from 64% to 65%, so for about a third
+/// of failures the clearing line has effectively zero probability under the policy at several
+/// decisions in a row. That is what being unable to see the option produces.
+///
+/// # What is emitted, and for which options
+///
+/// Only where the option's target actually resolves. Each head names its target differently and a
+/// guessed target would produce a confident feature describing the wrong square:
+///
+/// - **activation** (`ACTIVATE_KIND`) -- the option id *is* the destination system.
+/// - **movement** (`MOVE_KIND`) -- the destination is the already-activated system; the option's
+///   payload names the origin, the unit and its capacity.
+/// - **commit** (`COMMIT_KIND`) -- the payload names the planet being landed on.
+///
+/// Everything else gets nothing rather than a default, because a zero here would be a claim.
+///
+/// These are properties, never identities: "planets this would gain" rather than "system 72". That
+/// is the same rule the planet-id exclusion enforces, applied to the facts that replace it.
+fn action_facts(
+    seen: &Observed<'_>,
+    option: &ChoiceOption,
+    player: &PlayerId,
+) -> Vec<(String, f64)> {
+    let controlled = seen.controlled_planets(player);
+    let held_systems: std::collections::BTreeSet<&ti4_model::id::SystemId> =
+        controlled.iter().map(|(system, _)| *system).collect();
+
+    let name = |suffix: &str| format!("{ACTION_FAMILY}:{suffix}");
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "planet, system and unit counts are single digits"
+    )]
+    let count = |value: usize| -> f64 { value as f64 };
+
+    // How many planets in `system` this seat does not already control, and whether reaching it
+    // would add a system it holds nothing in.
+    let destination = |system: &ti4_model::id::SystemId| -> (usize, bool) {
+        let state = seen.system(system);
+        let mine: std::collections::BTreeSet<&ti4_model::id::PlanetId> = controlled
+            .iter()
+            .filter(|(held, _)| *held == system)
+            .map(|(_, planet)| *planet)
+            .collect();
+        let free = state
+            .planet_units
+            .keys()
+            .filter(|planet| !mine.contains(planet))
+            .count();
+        (free, !held_systems.contains(system))
+    };
+
+    match option.kind.as_str() {
+        kind if kind == ti4_engine::tactical::ACTIVATE_KIND => {
+            let system = ti4_model::id::SystemId::new(option.id.clone());
+            let (free, adds) = destination(&system);
+            vec![
+                (name("activate-free-planets"), count(free)),
+                (name("activate-adds-system"), f64::from(u8::from(adds))),
+            ]
+        }
+        kind if kind == ti4_engine::tactical::MOVE_KIND => {
+            // The destination is the active system: movement in a tactical action moves *into* it.
+            // Without one there is no destination to describe, and the option is left undescribed
+            // rather than described as zero.
+            let Some(active) = seen.active_system() else {
+                return Vec::new();
+            };
+            let (free, adds) = destination(active);
+            let capacity = option
+                .payload
+                .get("capacity")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "unit capacities are single digits"
+            )]
+            let capacity = capacity.max(0) as f64;
+            // Ground forces sitting at this unit's origin, which is what its capacity could carry.
+            let ground = option
+                .payload
+                .get("origin")
+                .and_then(serde_json::Value::as_str)
+                .map_or(0, |origin| {
+                    seen.system(&ti4_model::id::SystemId::new(origin.to_owned()))
+                        .planet_units
+                        .values()
+                        .flatten()
+                        .filter(|unit| &unit.owner == player)
+                        .count()
+                });
+            vec![
+                (name("move-free-planets"), count(free)),
+                (name("move-adds-system"), f64::from(u8::from(adds))),
+                (name("move-capacity"), capacity),
+                (name("move-ground-at-origin"), count(ground)),
+                (
+                    name("move-carries-ground"),
+                    f64::from(u8::from(capacity > 0.0 && ground > 0)),
+                ),
+            ]
+        }
+        kind if kind == ti4_engine::invasion::COMMIT_KIND => {
+            let Some(planet) = option
+                .payload
+                .get("planet")
+                .and_then(serde_json::Value::as_str)
+            else {
+                return Vec::new();
+            };
+            let planet = ti4_model::id::PlanetId::new(planet.to_owned());
+            let already = controlled.iter().any(|(_, held)| **held == planet);
+            let adds_system = seen
+                .active_system()
+                .is_some_and(|system| !held_systems.contains(system));
+            vec![
+                (name("commit-new-planet"), f64::from(u8::from(!already))),
+                (name("commit-adds-system"), f64::from(u8::from(adds_system))),
+            ]
+        }
+        _ => Vec::new(),
+    }
+}
+
 pub fn seat_state_facts(
     seen: &Observed<'_>,
     player: &PlayerId,
@@ -392,25 +539,24 @@ fn opening_facts(
 ///
 /// Suppression happens here, before any vocabulary lookup, so an excluded name never reaches a
 /// column at all.
+///
+/// Three sources meet: the extractor's own features after suppression, the seat facts shared by
+/// every option of the choice, and this option's action facts. The seat facts are interned by the
+/// caller, once per choice -- registering them per option meant a lock and a hash for each of them
+/// on every legal option (M09-029).
 fn project_vector(
     vector: &FeatureVector,
     seat_state: &[(crate::intern::FeatureKey, f64)],
+    action: &[(crate::intern::FeatureKey, f64)],
 ) -> FeatureVector {
     let kept = vector
         .iter()
         .filter(|(key, _)| admits_key(**key))
         .map(|(key, value)| (*key, *value));
-    // The bare seat facts are a restatement of a position fact, not a second contribution to an
-    // existing column: their family is disjoint from everything the extractor emits, so the
-    // duplicate-summing in `from_pairs` cannot reach them.
-    // `register`, not `FeatureKey::of`: the key alone puts a value in the vector but leaves it
-    // nameless, so `names_of` resolves it to an empty string and the discovery pass that builds
-    // the vocabulary from names would never see it. The agreement test between projected names
-    // and projected vectors is what catches that.
-    // Already interned by the caller, once per choice. Registering per option meant a lock and a
-    // hash for each of the eight seat facts on every one of the legal options (M09-029).
-    let added = seat_state.iter().copied();
-    FeatureVector::from_pairs(kept.chain(added))
+    FeatureVector::from_pairs(
+        kept.chain(seat_state.iter().copied())
+            .chain(action.iter().copied()),
+    )
 }
 
 /// Every option of a choice, as the MLP sees it.
@@ -428,9 +574,26 @@ pub fn mlp_choice_features(
     baseline: crate::progress::Baseline,
 ) -> Vec<FeatureVector> {
     let seat_state = interned_seat_state(seen, player, baseline);
-    crate::features::explicit_choice_features(seen, choice, player, held_secrets)
+    // Seat facts are shared by every option of the choice; action facts are not, and that is the
+    // point of them. Zipping by position is safe because `explicit_choice_features` returns one
+    // vector per option in the choice's own order -- a contract the length check below pins rather
+    // than trusts.
+    let vectors = crate::features::explicit_choice_features(seen, choice, player, held_secrets);
+    debug_assert_eq!(
+        vectors.len(),
+        choice.options.len(),
+        "one feature vector per option"
+    );
+    vectors
         .iter()
-        .map(|vector| project_vector(vector, &seat_state))
+        .zip(&choice.options)
+        .map(|(vector, option)| {
+            let action: Vec<(crate::intern::FeatureKey, f64)> = action_facts(seen, option, player)
+                .into_iter()
+                .map(|(name, value)| (crate::intern::register(&name), value))
+                .collect();
+            project_vector(vector, &seat_state, &action)
+        })
         .collect()
 }
 
@@ -464,7 +627,11 @@ pub fn mlp_option_features(
     let seat_state = interned_seat_state(seen, player, baseline);
     let vector =
         crate::features::explicit_option_features(seen, choice, option, player, held_secrets);
-    project_vector(&vector, &seat_state)
+    let action: Vec<(crate::intern::FeatureKey, f64)> = action_facts(seen, option, player)
+        .into_iter()
+        .map(|(name, value)| (crate::intern::register(&name), value))
+        .collect();
+    project_vector(&vector, &seat_state, &action)
 }
 
 /// The projection applied to a set of discovered names.
@@ -549,6 +716,100 @@ mod tests {
                     "{name} survived the projection: its family is an unbounded cross"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn an_action_fact_tells_two_activations_apart() {
+        // The gate this feature family exists to pass, and the one it could silently fail.
+        //
+        // A feature that is *constant across the options of a choice* cannot inform that choice. It
+        // would still appear in every vector, still take a column, still train a weight, and look
+        // from outside exactly like a working feature. The seat facts are deliberately
+        // option-invariant; these are the opposite, and only the difference is useful.
+        //
+        // So this asserts variation across options, not mere presence.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+
+        // The two destinations are built here rather than taken from the fixture, so the thing
+        // under test is a difference the test itself created: one system with two unheld planets,
+        // one with none. A fixture whose systems happened to be alike would pass this test by
+        // failing to distinguish anything.
+        let rich = ti4_model::id::SystemId::new("rich");
+        let bare = ti4_model::id::SystemId::new("bare");
+        let mut full = ti4_model::state::SystemState::default();
+        full.planet_units
+            .insert(ti4_model::id::PlanetId::new("alpha"), Vec::new());
+        full.planet_units
+            .insert(ti4_model::id::PlanetId::new("beta"), Vec::new());
+        state.board.insert(rich.clone(), full);
+        state
+            .board
+            .insert(bare.clone(), ti4_model::state::SystemState::default());
+        let seen = Observed::new(&state, content, POK, None);
+
+        let systems = [rich, bare];
+        assert_eq!(systems.len(), 2, "two destinations to tell apart");
+        let options: Vec<ChoiceOption> = systems
+            .iter()
+            .map(|system| {
+                ChoiceOption::labelled(
+                    system.to_string(),
+                    ti4_engine::tactical::ACTIVATE_KIND,
+                    format!("activate {system}"),
+                )
+            })
+            .collect();
+
+        let facts: Vec<Vec<(String, f64)>> = options
+            .iter()
+            .map(|option| action_facts(&seen, option, &player))
+            .collect();
+
+        for (option, emitted) in options.iter().zip(&facts) {
+            assert!(
+                !emitted.is_empty(),
+                "an activation option emitted no action facts: {}",
+                option.id
+            );
+            for (name, _) in emitted {
+                assert!(
+                    name.starts_with(ACTION_FAMILY),
+                    "{name} is not in the action family, so it has no reserved column"
+                );
+            }
+        }
+
+        // The discrimination itself: at least one fact must differ between the two destinations.
+        let differs = facts[0]
+            .iter()
+            .zip(&facts[1])
+            .any(|((left, a), (right, b))| left == right && (a - b).abs() > f64::EPSILON);
+        assert!(
+            differs,
+            "both activations produced identical action facts, so nothing here can tell them \
+             apart: {:?} against {:?}",
+            facts[0], facts[1]
+        );
+    }
+
+    #[test]
+    fn an_option_with_no_resolvable_target_is_described_by_nothing() {
+        // The other half of the contract. A strategy-card option has no destination, and inventing
+        // a zero for it would be a claim -- "this move gains no planets" -- about a move that gains
+        // nothing because it is not a move at all. An absent feature and a feature reading zero are
+        // different statements, and the model can only tell them apart if the absent one is absent.
+        let content = ti4_content::ContentStore::embedded();
+        let (state, player) = position();
+        let seen = Observed::new(&state, content, POK, None);
+        let choice = by_option_choice(&player);
+        for option in &choice.options {
+            assert!(
+                action_facts(&seen, option, &player).is_empty(),
+                "{} has no target but was given action facts",
+                option.id
+            );
         }
     }
 
@@ -816,7 +1077,7 @@ mod tests {
             "a registered family has no MLP role, or a role names a family nobody registers. \
              Admission is an architecture decision: classify it deliberately, do not default it."
         );
-        assert_eq!(FAMILY_ROLES.len(), 40, "one role per registered family");
+        assert_eq!(FAMILY_ROLES.len(), 41, "one role per registered family");
     }
 
     #[test]
