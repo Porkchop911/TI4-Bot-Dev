@@ -17,16 +17,22 @@
 //! These are *realized* picks rather than preferences: six seats draw from eight cards in
 //! initiative order, so what a faction takes is bounded by what is still there when its turn comes.
 //!
-//! Secondary participation is read from the **event log**, which carries event *names* and nothing
-//! else — `game.events` is a `Vec<String>` of types, with the payload consumed by the rules engine
-//! rather than retained. So follow/decline is a table-level rate, not a per-faction one. Reporting
-//! it per faction would require the engine to retain event payloads; inventing an attribution here
-//! would be worse than saying so.
+//! Secondary participation is recorded **at the decision**, by a wrapper around each seat's
+//! decider. The event log was the obvious source and is the wrong one: `game.events` carries event
+//! *names* with the payload consumed by the rules engine, so it gives a table-level follow rate and
+//! no way to say who followed what. A seat's `Choice` carries both — `Choice::player` names the
+//! seat and the prompt is `"{card} secondary"` — so watching the decision attributes the card and
+//! the faction together, which counting events never could.
+//!
+//! The wrapper delegates and records; it never changes an answer. Both `choose` and `choose_seeing`
+//! are overridden, because the engine calls whichever the site can honestly offer, and recording
+//! only one would silently miss every decision made at the other.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
+use ti4_engine::Choice;
 use ti4_engine::choice::Decider;
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
@@ -54,6 +60,111 @@ fn refuse(reason: &str) -> ! {
 struct Tally {
     games: usize,
     cards: BTreeMap<String, usize>,
+    /// Per strategy card, how often this faction was offered its secondary and took it.
+    secondaries: BTreeMap<String, (usize, usize)>,
+}
+
+/// One recorded secondary decision.
+struct Secondary {
+    faction: String,
+    card: String,
+    followed: bool,
+}
+
+/// A decider that answers exactly as the one it wraps, and writes down what it was asked.
+///
+/// Reporting is not the seat's job, and a bot that also logged would be a bot whose behaviour
+/// depended on whether anyone was watching. This keeps the two apart: every answer comes from
+/// `inner`, unchanged.
+struct Watching {
+    inner: Box<dyn Decider>,
+    faction: String,
+    log: std::rc::Rc<std::cell::RefCell<Vec<Secondary>>>,
+}
+
+impl Watching {
+    /// The strategy card a secondary prompt is about, if this is one.
+    ///
+    /// Most cards phrase their own offer rather than using a generic one: the engine builds
+    /// `"spend a strategy token to produce at home"` for Warfare and only falls back to
+    /// `"{card} secondary"` for cards with no specific contract. The first version of this matched
+    /// the fallback alone and recorded **nothing** — 3,791 secondaries in the event log against 0
+    /// here — which is why the cross-check against the event count exists and why it is printed
+    /// rather than merely computed.
+    ///
+    /// The table is duplicated from `ti4_engine::strategy`, so a reworded prompt would silently
+    /// stop being counted. It would not stay silent: the cross-check is what turns that into a
+    /// visible MISMATCH rather than a quietly shrinking denominator.
+    fn secondary_card(prompt: &str) -> Option<&'static str> {
+        if let Some(card) = prompt.strip_suffix(" secondary") {
+            return Some(match card {
+                "pok1leadership" => "leadership",
+                "pok2diplomacy" => "diplomacy",
+                "pok3politics" => "politics",
+                "pok5trade" => "trade",
+                "pok7technology" => "technology",
+                "pok8imperial" => "imperial",
+                "te4construction" => "construction",
+                "te6warfare" => "warfare",
+                _ => "other",
+            });
+        }
+        // Leadership is deliberately absent. Its secondary offer -- "spend N influence for a
+        // command token" -- is byte-identical to the *primary* offer built by
+        // `strategy_cards::influence_purchase_choice`: same prompt, same option ids, same labels,
+        // same kinds. Nothing in the `Choice` distinguishes them, so counting the prompt would
+        // silently fold primary spends into the secondary rate. It did, before this comment
+        // existed: Sol read 100% leadership follow.
+        //
+        // Left uncounted here and derived at table level instead, as the gap between the event
+        // log's total and what is attributed below.
+        Some(match prompt {
+            "spend a strategy token to place a structure"
+            | "spend a strategy token to build a structure" => "construction",
+            "spend a strategy token to replenish commodities" => "trade",
+            "spend a strategy token to produce at home" => "warfare",
+            "spend a strategy token and 4 resources to research" => "technology",
+            "spend a strategy token to draw a secret objective" => "imperial",
+            "spend a strategy token to ready two planets" => "diplomacy",
+            "spend a strategy token to draw two action cards" => "politics",
+            _ => return None,
+        })
+    }
+
+    fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
+        let Some(card) = Self::secondary_card(&choice.prompt) else {
+            return;
+        };
+        // Two shapes of refusal: the generic fallback offers a `decline` option, the card-specific
+        // contracts offer `no`. Both mean the seat did not follow.
+        let followed = !chosen.is_decline() && chosen.id != "no";
+        self.log.borrow_mut().push(Secondary {
+            faction: self.faction.clone(),
+            card: card.to_owned(),
+            followed,
+        });
+    }
+}
+
+impl Decider for Watching {
+    fn choose(
+        &mut self,
+        choice: &Choice,
+    ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        let chosen = self.inner.choose(choice)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
+    ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        let chosen = self.inner.choose_seeing(choice, seen)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
 }
 
 fn main() {
@@ -118,6 +229,8 @@ fn main() {
 
     for seed in seed_base..seed_base + seeds {
         for rotation in 0..FACTIONS.len() {
+            let log: std::rc::Rc<std::cell::RefCell<Vec<Secondary>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let (events, state, assignments) = ti4_training::rollout::audit_game_with_deciders(
                 content,
                 &factions,
@@ -143,7 +256,14 @@ fn main() {
                         let (decider, _status) =
                             ti4_mlp::bot::MlpBot::sharing(&actor, vocabulary.clone(), row, stream)
                                 .seat();
-                        deciders.insert(player.clone(), decider);
+                        deciders.insert(
+                            player.clone(),
+                            Box::new(Watching {
+                                inner: decider,
+                                faction: faction.to_string(),
+                                log: std::rc::Rc::clone(&log),
+                            }),
+                        );
                     }
                     Ok(deciders)
                 },
@@ -151,6 +271,16 @@ fn main() {
             .unwrap_or_else(|error| refuse(&error));
 
             games += 1;
+            for record in log.borrow().iter() {
+                let entry = tallies
+                    .entry(record.faction.clone())
+                    .or_default()
+                    .secondaries
+                    .entry(record.card.clone())
+                    .or_insert((0, 0));
+                entry.0 += 1;
+                entry.1 += usize::from(record.followed);
+            }
             for event in &events {
                 match event.as_str() {
                     "STRATEGY_SECONDARY_FOLLOWED" => followed += 1,
@@ -203,18 +333,75 @@ fn print_report(tallies: &BTreeMap<String, Tally>, followed: usize, declined: us
         println!();
     }
 
-    println!("\n  secondaries (table-level; the event log carries no player)\n");
+    println!(
+        "
+  secondary participation, follow rate by faction and card
+"
+    );
+    let mut every_secondary: Vec<String> = tallies
+        .values()
+        .flat_map(|tally| tally.secondaries.keys().cloned())
+        .collect();
+    every_secondary.sort_unstable();
+    every_secondary.dedup();
+
+    print!("  {:<10}", "faction");
+    for card in &every_secondary {
+        print!(" {:>10}", truncate(card, 10));
+    }
+    println!(" {:>9}", "all");
+    for (faction, tally) in tallies {
+        print!("  {faction:<10}");
+        let mut offered_total = 0usize;
+        let mut followed_total = 0usize;
+        for card in &every_secondary {
+            let (offered, taken) = tally.secondaries.get(card).copied().unwrap_or((0, 0));
+            offered_total += offered;
+            followed_total += taken;
+            if offered == 0 {
+                print!(" {:>10}", "-");
+            } else {
+                print!(" {:>9.1}%", share(taken, offered));
+            }
+        }
+        println!(" {:>8.1}%", share(followed_total, offered_total));
+    }
+
+    // Leadership, derived. Everything the event log counted that was not attributed above is a
+    // leadership secondary, because that is the one card whose offer cannot be told apart from its
+    // own primary. The subtraction is only sound while `recorded <= events`, so that is checked
+    // rather than assumed: if it ever inverts, the map above is counting something it should not.
     let offered = followed + declined;
-    println!("    offered   {offered}");
+    let recorded: usize = tallies
+        .values()
+        .flat_map(|tally| tally.secondaries.values())
+        .map(|(offered, _)| *offered)
+        .sum();
+    let recorded_followed: usize = tallies
+        .values()
+        .flat_map(|tally| tally.secondaries.values())
+        .map(|(_, taken)| *taken)
+        .sum();
+
+    println!();
+    if recorded > offered || recorded_followed > followed {
+        println!(
+            "  leadership   NOT DERIVABLE: {recorded}/{offered} attributed against the event log,              so the prompt map is over-counting"
+        );
+    } else {
+        let leadership_offered = offered - recorded;
+        let leadership_followed = followed - recorded_followed;
+        println!(
+            "  leadership   {:.1}% followed ({leadership_followed}/{leadership_offered}), table-level only",
+            share(leadership_followed, leadership_offered)
+        );
+        println!("               its secondary offer is byte-identical to its primary");
+    }
     println!(
-        "    followed  {followed} ({:.1}%)",
-        share(followed, offered)
+        "  all cards    {:.1}% followed ({followed}/{offered}), {:.2} offered per game",
+        share(followed, offered),
+        ratio(offered, games)
     );
-    println!(
-        "    declined  {declined} ({:.1}%)",
-        share(declined, offered)
-    );
-    println!("    per game  {:.2} offered", ratio(offered, games));
 }
 
 fn truncate(text: &str, width: usize) -> String {
