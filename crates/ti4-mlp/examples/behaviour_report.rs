@@ -231,44 +231,49 @@ fn main() {
         for rotation in 0..FACTIONS.len() {
             let log: std::rc::Rc<std::cell::RefCell<Vec<Secondary>>> =
                 std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-            let (events, state, assignments) = ti4_training::rollout::audit_game_with_deciders(
-                content,
-                &factions,
-                DEFAULT,
-                seed,
-                rotation,
-                ti4_training::rollout::Horizon {
-                    rounds,
-                    steps: 200_000,
-                },
-                &ti4_training::rollout::OpeningMap::PythonPool {
-                    pool: Arc::clone(&pool),
-                    tile_seed_offset: TILE_SEED_OFFSET,
-                },
-                |seated| {
-                    let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-                    for (index, (player, faction)) in seated.iter().enumerate() {
-                        let row = ti4_mlp::FactionRow::of(faction.as_str())
-                            .map_err(|error| format!("{player}: {error}"))?;
-                        let stream = seed
-                            .wrapping_mul(1_000_003)
-                            .wrapping_add(u64::try_from(index).unwrap_or(0));
-                        let (decider, _status) =
-                            ti4_mlp::bot::MlpBot::sharing(&actor, vocabulary.clone(), row, stream)
-                                .seat();
-                        deciders.insert(
-                            player.clone(),
-                            Box::new(Watching {
-                                inner: decider,
-                                faction: faction.to_string(),
-                                log: std::rc::Rc::clone(&log),
-                            }),
-                        );
-                    }
-                    Ok(deciders)
-                },
-            )
-            .unwrap_or_else(|error| refuse(&error));
+            let (events, state, assignments, _openings) =
+                ti4_training::rollout::audit_game_with_deciders(
+                    content,
+                    &factions,
+                    DEFAULT,
+                    seed,
+                    rotation,
+                    ti4_training::rollout::Horizon {
+                        rounds,
+                        steps: 200_000,
+                    },
+                    &ti4_training::rollout::OpeningMap::PythonPool {
+                        pool: Arc::clone(&pool),
+                        tile_seed_offset: TILE_SEED_OFFSET,
+                    },
+                    |seated| {
+                        let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                        for (index, (player, faction)) in seated.iter().enumerate() {
+                            let row = ti4_mlp::FactionRow::of(faction.as_str())
+                                .map_err(|error| format!("{player}: {error}"))?;
+                            let stream = seed
+                                .wrapping_mul(1_000_003)
+                                .wrapping_add(u64::try_from(index).unwrap_or(0));
+                            let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
+                                &actor,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            )
+                            .seat();
+                            deciders.insert(
+                                player.clone(),
+                                Box::new(Watching {
+                                    inner: decider,
+                                    faction: faction.to_string(),
+                                    log: std::rc::Rc::clone(&log),
+                                }),
+                            );
+                        }
+                        Ok(deciders)
+                    },
+                )
+                .unwrap_or_else(|error| refuse(&error));
 
             games += 1;
             for record in log.borrow().iter() {

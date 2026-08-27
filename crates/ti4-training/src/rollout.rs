@@ -973,11 +973,16 @@ pub fn audit_game(
     (game.events.clone(), game.state.clone())
 }
 
-/// What one audited game yields: the event log, a state snapshot, and who sat where.
+/// What one audited game yields.
+///
+/// The state snapshot is taken when the strategy phase ends, not at the end of the game, so the
+/// strategy cards are still in hand. The openings are measured at the end of the horizon, which for
+/// a one-round horizon is where the opening actually ends.
 pub type Audited = (
     Vec<String>,
     ti4_model::state::GameState,
     BTreeMap<PlayerId, FactionId>,
+    BTreeMap<PlayerId, ti4_engine::opening::Opening>,
 );
 
 /// [`audit_game`] for a policy that is not a [`Profile`].
@@ -1033,6 +1038,10 @@ where
         }
     }
 
+    // Taken before the game runs: every opening delta is measured against it, and a caller that
+    // forgot it would get absolute holdings reported as gains.
+    let baseline = ti4_engine::opening::snapshot(&state);
+
     let mut game = Game::with_table(state, content, table)
         .with_sources(sources)
         .with_galaxy(galaxy);
@@ -1064,7 +1073,20 @@ where
     // A game that never left the strategy phase has no pick to report; the final state is the
     // honest fallback rather than a fabricated one.
     let picks = after_strategy.unwrap_or_else(|| game.state.clone());
-    Ok((game.events.clone(), picks, assignments))
+    let openings = ti4_engine::opening::measure(
+        &game.state,
+        &baseline,
+        &assignments
+            .values()
+            .map(|faction| {
+                (
+                    faction.to_string(),
+                    ti4_engine::opening::DEFAULT_REQUIREMENT,
+                )
+            })
+            .collect(),
+    );
+    Ok((game.events.clone(), picks, assignments, openings))
 }
 
 /// Play every faction in every physical seat on every seed.
