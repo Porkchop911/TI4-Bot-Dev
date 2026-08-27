@@ -333,11 +333,14 @@ fn print_report(tallies: &BTreeMap<String, Tally>, followed: usize, declined: us
         println!();
     }
 
-    println!(
-        "
-  secondary participation, follow rate by faction and card
-"
-    );
+    // Per game, not per offer. A follow *rate* answers "when offered, how often" and hides how
+    // often a secondary is used at all: a card offered twice a game and followed both times reads
+    // the same 100% as one offered thirty times. The counts below are what a seat actually does in
+    // a game. The rate is kept beside them because a low count from a low offer rate means
+    // something different from a low count from declining.
+    println!();
+    println!("  secondaries used per game, by faction and card");
+    println!();
     let mut every_secondary: Vec<String> = tallies
         .values()
         .flat_map(|tally| tally.secondaries.keys().cloned())
@@ -349,7 +352,7 @@ fn print_report(tallies: &BTreeMap<String, Tally>, followed: usize, declined: us
     for card in &every_secondary {
         print!(" {:>10}", truncate(card, 10));
     }
-    println!(" {:>9}", "all");
+    println!(" {:>8} {:>9} {:>8}", "used", "offered", "follow");
     for (faction, tally) in tallies {
         print!("  {faction:<10}");
         let mut offered_total = 0usize;
@@ -358,13 +361,14 @@ fn print_report(tallies: &BTreeMap<String, Tally>, followed: usize, declined: us
             let (offered, taken) = tally.secondaries.get(card).copied().unwrap_or((0, 0));
             offered_total += offered;
             followed_total += taken;
-            if offered == 0 {
-                print!(" {:>10}", "-");
-            } else {
-                print!(" {:>9.1}%", share(taken, offered));
-            }
+            print!(" {:>10.2}", ratio(taken, tally.games));
         }
-        println!(" {:>8.1}%", share(followed_total, offered_total));
+        println!(
+            " {:>8.2} {:>9.2} {:>7.1}%",
+            ratio(followed_total, tally.games),
+            ratio(offered_total, tally.games),
+            share(followed_total, offered_total)
+        );
     }
 
     // Leadership, derived. Everything the event log counted that was not attributed above is a
