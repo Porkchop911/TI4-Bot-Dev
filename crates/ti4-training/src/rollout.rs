@@ -973,6 +973,100 @@ pub fn audit_game(
     (game.events.clone(), game.state.clone())
 }
 
+/// [`audit_game`] for a policy that is not a [`Profile`].
+///
+/// The MLP seats a `Box<dyn Decider>` built against a bundle rather than a shared profile, so it
+/// cannot use the profile-keyed path above. This exists for the same reason that one does: the
+/// training rollout keeps neither the event log nor the final state, which is correct for a batch
+/// of 96 games and useless for asking what the policy actually *did* — which strategy card each
+/// faction takes, how often it follows a secondary.
+///
+/// Returns the event log, the final state, and the seat-to-faction assignment, because the first
+/// two are meaningless for a per-faction report without the third.
+///
+/// # Errors
+/// Returns an error when seating fails or the factory refuses.
+pub fn audit_game_with_deciders<F>(
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    sources: SourceSet,
+    seed: u64,
+    rotation: usize,
+    horizon: Horizon,
+    map: &OpeningMap,
+    factory: F,
+) -> Result<
+    (
+        Vec<String>,
+        ti4_model::state::GameState,
+        BTreeMap<PlayerId, FactionId>,
+    ),
+    String,
+>
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, FactionId>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let players: Vec<PlayerId> = (0..factions.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let wanted: BTreeMap<PlayerId, FactionId> = players
+        .iter()
+        .enumerate()
+        .map(|(seat, player)| {
+            (
+                player.clone(),
+                seated_faction(factions, seed, rotation, seat),
+            )
+        })
+        .collect();
+    let (state, galaxy, assignments) = seated(content, &players, &wanted, sources, seed, map)
+        .map_err(|error| format!("seating {seed}/{rotation}: {error}"))?;
+
+    let mut deciders = factory(&assignments)?;
+    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    for player in &players {
+        match deciders.remove(player) {
+            Some(decider) => table.seat(player.clone(), decider),
+            None => return Err(format!("no decider seated for {player}")),
+        }
+    }
+
+    let mut game = Game::with_table(state, content, table)
+        .with_sources(sources)
+        .with_galaxy(galaxy);
+
+    // Stepped rather than `run`, to snapshot the state the moment the strategy phase ends.
+    //
+    // Strategy cards are returned to the common pool in the status phase, so a seat's
+    // `strategy_cards` is empty by the end of round one and an end-of-game snapshot answers "which
+    // card does this faction hold now", which is always "none". The pick itself is only visible
+    // between the strategy phase and the status phase that closes the round.
+    let mut after_strategy: Option<ti4_model::state::GameState> = None;
+    let target = game.state.round.saturating_add(horizon.rounds);
+    let mut steps = 0usize;
+    while game.state.round < target && !game.state.finished && steps < horizon.steps {
+        let was_strategy = game.state.phase == ti4_model::state::Phase::Strategy;
+        let result = game.step();
+        if result.error.is_some() {
+            break;
+        }
+        if was_strategy
+            && game.state.phase != ti4_model::state::Phase::Strategy
+            && after_strategy.is_none()
+        {
+            after_strategy = Some(game.state.clone());
+        }
+        steps += 1;
+    }
+
+    // A game that never left the strategy phase has no pick to report; the final state is the
+    // honest fallback rather than a fabricated one.
+    let picks = after_strategy.unwrap_or_else(|| game.state.clone());
+    Ok((game.events.clone(), picks, assignments))
+}
+
 /// Play every faction in every physical seat on every seed.
 ///
 /// Profiles are keyed by faction, not by seat. Each seed therefore yields `factions.len()` games
