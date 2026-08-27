@@ -39,16 +39,23 @@ fn refuse(reason: &str) -> ! {
 }
 
 fn main() {
-    let like = argument("--like").unwrap_or_else(|| {
-        refuse("--like is required: a bundle to copy the vocabulary, slots and critic mode from")
-    });
+    // `--like` is optional, and deliberately so.
+    //
+    // It used to be required, which made a blank bundle depend on a trained one -- and a registry
+    // bump makes every earlier bundle unreadable, so the moment a new family was added the tool for
+    // starting fresh stopped working. A blank bundle is defined by the architecture and the
+    // accepted vocabulary; a previous run is a convenience for copying dimensions, not a
+    // prerequisite.
+    let like = argument("--like");
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/blank".to_owned());
 
     ti4_tensor::configure_deterministic(20_260_821)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
 
-    let reference = ti4_mlp::bundle::read(std::path::Path::new(&like))
-        .unwrap_or_else(|error| refuse(&format!("reading {like}: {error}")));
+    let reference = like.as_ref().map(|path| {
+        ti4_mlp::bundle::read(std::path::Path::new(path))
+            .unwrap_or_else(|error| refuse(&format!("reading {path}: {error}")))
+    });
     // The slot map comes from the accepted vocabulary generation by default, not from `--like`.
     // A blank bundle exists to start a run, and a run should start on the vocabulary in force;
     // copying the reference bundle's slots would silently pin the new model to whatever generation
@@ -67,18 +74,47 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {}: {error}", slots_path.display())));
     println!("  slots       {}", slots_path.display());
 
-    let capacity = reference.actor.capacity();
-    let width = match reference.actor.width() {
+    // The design values from MLP plan §3, overridable, and taken from `--like` when it is given.
+    let capacity: i64 = argument("--capacity").map_or_else(
+        || {
+            reference
+                .as_ref()
+                .map_or(16_384, |bundle| bundle.actor.capacity())
+        },
+        |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--capacity expects an integer"))
+        },
+    );
+    let declared = argument("--width").map_or_else(
+        || {
+            reference
+                .as_ref()
+                .map_or(256, |bundle| bundle.actor.width())
+        },
+        |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--width expects 256 or 128"))
+        },
+    );
+    let width = match declared {
         256 => ti4_mlp::Width::W256,
         128 => ti4_mlp::Width::W128,
-        other => refuse(&format!(
-            "{like} has trunk width {other}, which is not a pinned width"
+        other => refuse(&format!("trunk width {other} is not a pinned width")),
+    };
+    let critic_mode = match argument("--critic-mode").as_deref() {
+        None => reference
+            .as_ref()
+            .map_or(CriticMode::Shared, |bundle| bundle.critic_mode),
+        Some("shared") => CriticMode::Shared,
+        Some("batch_mean") => CriticMode::BatchMean,
+        Some(other) => refuse(&format!(
+            "--critic-mode {other}: expected shared or batch_mean"
         )),
     };
-    if !matches!(
-        reference.critic_mode,
-        CriticMode::Shared | CriticMode::BatchMean
-    ) {
+    if !matches!(critic_mode, CriticMode::Shared | CriticMode::BatchMean) {
         refuse(
             "a blank bundle cannot be written for a separate critic: its tensors are trained, \
                 not initialised, so there is no untrained form of them to write",
@@ -86,12 +122,12 @@ fn main() {
     }
 
     println!("blank bundle");
-    println!("  like        {like}");
     println!(
-        "  width       {} | capacity {capacity}",
-        reference.actor.width()
+        "  like        {}",
+        like.as_deref().unwrap_or("(none: architecture from flags)")
     );
-    println!("  critic mode {:?}", reference.critic_mode);
+    println!("  width       {declared} | capacity {capacity}");
+    println!("  critic mode {critic_mode:?}");
 
     let every_row: Vec<i64> = (0..capacity).collect();
     let actor = ti4_mlp::distill::initialize(width, capacity, &every_row);
@@ -115,9 +151,12 @@ fn main() {
         destination,
         &actor,
         &slots_text,
-        reference.critic_mode,
+        critic_mode,
         &Provenance {
-            source: format!("untrained §6.1 initialisation, shaped like {like}"),
+            source: format!(
+                "untrained §6.1 initialisation, width {declared}, capacity {capacity}, slots {}",
+                slots_path.display()
+            ),
             git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
             update: 0,
         },
