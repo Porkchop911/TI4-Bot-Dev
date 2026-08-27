@@ -49,8 +49,23 @@ fn main() {
 
     let reference = ti4_mlp::bundle::read(std::path::Path::new(&like))
         .unwrap_or_else(|error| refuse(&format!("reading {like}: {error}")));
-    let slots_text = std::fs::read_to_string(std::path::Path::new(&like).join("slots.json"))
-        .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
+    // The slot map comes from the accepted vocabulary generation by default, not from `--like`.
+    // A blank bundle exists to start a run, and a run should start on the vocabulary in force;
+    // copying the reference bundle's slots would silently pin the new model to whatever generation
+    // that bundle happened to be trained against, which is the mistake this argument prevents.
+    let slots_path = argument("--slots").map_or_else(
+        || {
+            let accepted = ti4_training::vocabulary_corpus::accepted_generation(
+                std::path::Path::new("out/vocabulary"),
+            )
+            .unwrap_or_else(|error| refuse(&format!("no accepted vocabulary generation: {error}")));
+            accepted.slots
+        },
+        std::path::PathBuf::from,
+    );
+    let slots_text = std::fs::read_to_string(&slots_path)
+        .unwrap_or_else(|error| refuse(&format!("reading {}: {error}", slots_path.display())));
+    println!("  slots       {}", slots_path.display());
 
     let capacity = reference.actor.capacity();
     let width = match reference.actor.width() {
