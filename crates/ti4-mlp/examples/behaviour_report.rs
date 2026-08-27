@@ -250,7 +250,7 @@ fn main() {
                         pool: Arc::clone(&pool),
                         tile_seed_offset: TILE_SEED_OFFSET,
                     },
-                    |seated| {
+                    |seated, baselines| {
                         let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
                         for (index, (player, faction)) in seated.iter().enumerate() {
                             let row = ti4_mlp::FactionRow::of(faction.as_str())
@@ -258,12 +258,20 @@ fn main() {
                             let stream = seed
                                 .wrapping_mul(1_000_003)
                                 .wrapping_add(u64::try_from(index).unwrap_or(0));
+                            // Seated with its own setup baseline. Without it the bot reports
+                            // absolute holdings through features trained as gains since setup, and
+                            // the evaluation measures a different model than the one under test.
+                            let baseline = baselines
+                                .get(player)
+                                .copied()
+                                .ok_or_else(|| format!("{player} has no setup baseline"))?;
                             let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
                                 &actor,
                                 vocabulary.clone(),
                                 row,
                                 stream,
                             )
+                            .from_setup(baseline)
                             .seat();
                             deciders.insert(
                                 player.clone(),

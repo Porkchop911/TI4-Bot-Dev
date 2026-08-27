@@ -1012,6 +1012,7 @@ pub fn audit_game_with_deciders<F>(
 where
     F: FnOnce(
         &BTreeMap<PlayerId, FactionId>,
+        &BTreeMap<PlayerId, Baseline>,
     ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
     let players: Vec<PlayerId> = (0..factions.len())
@@ -1030,7 +1031,12 @@ where
     let (state, galaxy, assignments) = seated(content, &players, &wanted, sources, seed, map)
         .map_err(|error| format!("seating {seed}/{rotation}: {error}"))?;
 
-    let mut deciders = factory(&assignments)?;
+    // The setup baselines go to the factory as well as the assignment. Every opening-progress
+    // feature is a delta against them, so a bot seated without one reports absolute holdings where
+    // it was trained on gains -- an evaluation that silently measures a different model than the
+    // one under test.
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), &players);
+    let mut deciders = factory(&assignments, &baselines)?;
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
     for player in &players {
         match deciders.remove(player) {
