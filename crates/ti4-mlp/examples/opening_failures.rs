@@ -9,6 +9,18 @@
 //! A seat one planet short of three is a different failure from a seat that gained none: the first
 //! is a near miss, the second suggests the position never offered the planets. The report keeps
 //! them apart rather than averaging them into a shortfall.
+//!
+//! # Spread
+//!
+//! The bar wants three planets across *three distinct systems*, so a seat that concentrates its
+//! forces cannot clear it however much it moves. The operator's account of the usual failure is
+//! exactly that: both capacity ships sent to one system, or every infantry landed on one planet.
+//!
+//! That is measurable at the end of the round. `SystemState::units` is the space area, so distinct
+//! systems holding a seat's ships is where its fleet ended up; `planet_units` is ground forces, so
+//! distinct systems holding its infantry is where it can actually take planets. Concentration shows
+//! as a low count with a high maximum, and the report compares cleared seats against failed ones —
+//! an absolute number would say nothing without something to be high or low against.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -55,6 +67,63 @@ struct Failures {
     system_short: BTreeMap<usize, usize>,
     /// Planets gained in failures, so a near miss is distinguishable from a standstill.
     gained: BTreeMap<usize, usize>,
+    /// Force spread at the end of the round, kept separately for cleared and failed seats.
+    spread_cleared: Spread,
+    spread_failed: Spread,
+}
+
+/// Where a seat's forces ended up.
+#[derive(Default)]
+struct Spread {
+    seats: usize,
+    /// Distinct systems holding this seat's ships.
+    ship_systems: usize,
+    /// Distinct systems holding this seat's ground forces.
+    ground_systems: usize,
+    /// Ground forces in the single most crowded system.
+    biggest_stack: usize,
+    /// Seats whose ground forces all ended in one system.
+    ground_in_one: usize,
+    /// Seats whose ships all ended in one system.
+    ships_in_one: usize,
+}
+
+impl Spread {
+    fn add(&mut self, ships: usize, ground: usize, biggest: usize) {
+        self.seats += 1;
+        self.ship_systems += ships;
+        self.ground_systems += ground;
+        self.biggest_stack += biggest;
+        self.ground_in_one += usize::from(ground <= 1);
+        self.ships_in_one += usize::from(ships <= 1);
+    }
+}
+
+/// Where one seat's forces are, at the end of the round.
+///
+/// Ships and ground forces are counted apart because they fail differently: ships that all end in
+/// one system cannot reach planets elsewhere, and ground forces that all land on one planet cannot
+/// hold three.
+fn spread_of(state: &ti4_model::state::GameState, player: &PlayerId) -> (usize, usize, usize) {
+    let mut ship_systems = 0;
+    let mut ground_systems = 0;
+    let mut biggest = 0;
+    for system in state.board.values() {
+        if !system.units_of(player).is_empty() {
+            ship_systems += 1;
+        }
+        let ground = system
+            .planet_units
+            .values()
+            .flatten()
+            .filter(|unit| &unit.owner == player)
+            .count();
+        if ground > 0 {
+            ground_systems += 1;
+        }
+        biggest = biggest.max(ground);
+    }
+    (ship_systems, ground_systems, biggest)
 }
 
 fn main() {
@@ -111,7 +180,7 @@ fn main() {
 
     for seed in seed_base..seed_base + seeds {
         for rotation in 0..FACTIONS.len() {
-            let (_events, _picks, assignments, openings) =
+            let (_events, _picks, assignments, openings, final_state) =
                 ti4_training::rollout::audit_game_with_deciders(
                     content,
                     &factions,
@@ -154,10 +223,13 @@ fn main() {
                 };
                 let tally = tallies.entry(faction.to_string()).or_default();
                 tally.games += 1;
+                let (ships, ground, biggest) = spread_of(&final_state, player);
                 if opening.cleared() {
                     tally.cleared += 1;
+                    tally.spread_cleared.add(ships, ground, biggest);
                     continue;
                 }
+                tally.spread_failed.add(ships, ground, biggest);
                 let mut missed = 0;
                 if !opening.planets_ok() {
                     tally.missing_planets += 1;
@@ -190,6 +262,17 @@ fn main() {
     }
 
     report(&tallies);
+}
+
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "counts are exact in f64 far beyond any sample size"
+)]
+fn mean(total: usize, count: usize) -> f64 {
+    if count == 0 {
+        return 0.0;
+    }
+    total as f64 / count as f64
 }
 
 #[expect(
@@ -248,6 +331,34 @@ fn report(tallies: &BTreeMap<String, Failures>) {
         share(total.missed_one, failed),
         share(total.missed_two + total.missed_three, failed),
     );
+
+    println!();
+    println!("  where the forces ended up, cleared against failed (means per seat)");
+    println!();
+    println!(
+        "  {:<10} {:>19} {:>21} {:>19} {:>21}",
+        "faction", "ship systems", "ground systems", "biggest stack", "all ground in one"
+    );
+    println!(
+        "  {:<10} {:>9} {:>9} {:>10} {:>10} {:>9} {:>9} {:>10} {:>10}",
+        "", "cleared", "failed", "cleared", "failed", "cleared", "failed", "cleared", "failed"
+    );
+    for (faction, tally) in tallies {
+        let c = &tally.spread_cleared;
+        let f = &tally.spread_failed;
+        println!(
+            "  {:<10} {:>9.2} {:>9.2} {:>10.2} {:>10.2} {:>9.2} {:>9.2} {:>9.1}% {:>9.1}%",
+            faction,
+            mean(c.ship_systems, c.seats),
+            mean(f.ship_systems, f.seats),
+            mean(c.ground_systems, c.seats),
+            mean(f.ground_systems, f.seats),
+            mean(c.biggest_stack, c.seats),
+            mean(f.biggest_stack, f.seats),
+            share(c.ground_in_one, c.seats),
+            share(f.ground_in_one, f.seats),
+        );
+    }
 
     println!();
     println!("  planets gained in a failed opening (bar is 3; share of that faction's failures)");

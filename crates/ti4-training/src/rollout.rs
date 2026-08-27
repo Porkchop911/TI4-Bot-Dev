@@ -975,14 +975,15 @@ pub fn audit_game(
 
 /// What one audited game yields.
 ///
-/// The state snapshot is taken when the strategy phase ends, not at the end of the game, so the
-/// strategy cards are still in hand. The openings are measured at the end of the horizon, which for
-/// a one-round horizon is where the opening actually ends.
+/// Two states, because they answer different questions. The first is taken when the strategy phase
+/// ends, so the strategy cards are still in hand; the last is the end of the horizon, where the
+/// openings are measured and where a seat's forces have finished moving.
 pub type Audited = (
     Vec<String>,
     ti4_model::state::GameState,
     BTreeMap<PlayerId, FactionId>,
     BTreeMap<PlayerId, ti4_engine::opening::Opening>,
+    ti4_model::state::GameState,
 );
 
 /// [`audit_game`] for a policy that is not a [`Profile`].
@@ -1086,7 +1087,13 @@ where
             })
             .collect(),
     );
-    Ok((game.events.clone(), picks, assignments, openings))
+    Ok((
+        game.events.clone(),
+        picks,
+        assignments,
+        openings,
+        game.state.clone(),
+    ))
 }
 
 /// Play every faction in every physical seat on every seed.
