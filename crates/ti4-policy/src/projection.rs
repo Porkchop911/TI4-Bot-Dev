@@ -287,10 +287,35 @@ fn opening_facts(
     let progress = crate::progress::measure(seen, player, baseline);
 
     let controlled = seen.controlled_planets(player);
-    let controlled_systems: std::collections::BTreeSet<_> =
-        controlled.iter().map(|(system, _)| *system).collect();
     let ship_systems = seen.systems_with_units_of(player);
     let active = seen.active_system();
+
+    // Ground forces per system, over the systems this seat is present in at all.
+    //
+    // `progress.systems` already counts distinct systems holding a controlled planet, and a seat's
+    // ground forces are very nearly the same set -- an earlier version emitted both and they were
+    // duplicates. What the failure analysis actually separated cleared seats from failed ones on
+    // was *concentration*: how much is piled in one place, not how many places. 18.9% of Jol-Nar's
+    // failures ended with every ground force in a single system against 0.6% of its successes.
+    let mut ground: std::collections::BTreeMap<&ti4_model::id::SystemId, usize> =
+        std::collections::BTreeMap::new();
+    for system in controlled
+        .iter()
+        .map(|(system, _)| *system)
+        .chain(ship_systems.iter().copied())
+    {
+        if ground.contains_key(system) {
+            continue;
+        }
+        let held = seen
+            .system(system)
+            .planet_units
+            .values()
+            .flatten()
+            .filter(|unit| &unit.owner == player)
+            .count();
+        ground.insert(system, held);
+    }
 
     #[expect(
         clippy::cast_precision_loss,
@@ -344,8 +369,8 @@ fn opening_facts(
             count(ship_systems.len()),
         ),
         (
-            format!("{SEAT_STATE_FAMILY}:opening-controlled-systems"),
-            count(controlled_systems.len()),
+            format!("{SEAT_STATE_FAMILY}:opening-ground-forces"),
+            count(ground.values().sum::<usize>()),
         ),
         (
             format!("{SEAT_STATE_FAMILY}:opening-ship-systems-outside-active"),
@@ -357,13 +382,8 @@ fn opening_facts(
             ),
         ),
         (
-            format!("{SEAT_STATE_FAMILY}:opening-controlled-systems-outside-active"),
-            count(
-                controlled_systems
-                    .iter()
-                    .filter(|system| active.is_none_or(|current| **system != current))
-                    .count(),
-            ),
+            format!("{SEAT_STATE_FAMILY}:opening-largest-ground-stack"),
+            count(ground.values().copied().max().unwrap_or(0)),
         ),
     ]
 }
@@ -564,9 +584,9 @@ mod tests {
             "opening-systems-needed",
             "opening-units-needed",
             "opening-ship-systems",
-            "opening-controlled-systems",
+            "opening-ground-forces",
             "opening-ship-systems-outside-active",
-            "opening-controlled-systems-outside-active",
+            "opening-largest-ground-stack",
         ] {
             let name = format!("{SEAT_STATE_FAMILY}:{wanted}");
             assert!(
