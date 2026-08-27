@@ -973,6 +973,13 @@ pub fn audit_game(
     (game.events.clone(), game.state.clone())
 }
 
+/// What one audited game yields: the event log, a state snapshot, and who sat where.
+pub type Audited = (
+    Vec<String>,
+    ti4_model::state::GameState,
+    BTreeMap<PlayerId, FactionId>,
+);
+
 /// [`audit_game`] for a policy that is not a [`Profile`].
 ///
 /// The MLP seats a `Box<dyn Decider>` built against a bundle rather than a shared profile, so it
@@ -995,14 +1002,7 @@ pub fn audit_game_with_deciders<F>(
     horizon: Horizon,
     map: &OpeningMap,
     factory: F,
-) -> Result<
-    (
-        Vec<String>,
-        ti4_model::state::GameState,
-        BTreeMap<PlayerId, FactionId>,
-    ),
-    String,
->
+) -> Result<Audited, String>
 where
     F: FnOnce(
         &BTreeMap<PlayerId, FactionId>,

@@ -9,8 +9,13 @@
 //!
 //! # What is and is not attributable
 //!
-//! Strategy picks are read from the **final state**: `PlayerState::strategy_cards` holds what each
-//! seat took, and the seat-to-faction assignment turns that into a per-faction tally.
+//! Strategy picks are read from a snapshot taken **the moment the strategy phase ends**, not from
+//! the final state. Cards are returned to the common pool in the status phase, so by the end of a
+//! round `PlayerState::strategy_cards` is empty and a final-state reading answers "which card does
+//! this faction hold now" — always "none". The first version did that and printed an empty table.
+//!
+//! These are *realized* picks rather than preferences: six seats draw from eight cards in
+//! initiative order, so what a faction takes is bounded by what is still there when its turn comes.
 //!
 //! Secondary participation is read from the **event log**, which carries event *names* and nothing
 //! else — `game.events` is a `Vec<String>` of types, with the payload consumed by the rules engine
@@ -170,6 +175,11 @@ fn main() {
         refuse("no games were played");
     }
 
+    print_report(&tallies, followed, declined, games);
+}
+
+/// The two tables, once the games are played.
+fn print_report(tallies: &BTreeMap<String, Tally>, followed: usize, declined: usize, games: usize) {
     // Every card that appeared anywhere, so the table has stable columns.
     let mut every_card: Vec<String> = tallies
         .values()
@@ -184,7 +194,7 @@ fn main() {
         print!(" {:>10}", truncate(card, 10));
     }
     println!();
-    for (faction, tally) in &tallies {
+    for (faction, tally) in tallies {
         print!("  {faction:<10}");
         for card in &every_card {
             let count = tally.cards.get(card).copied().unwrap_or(0);
