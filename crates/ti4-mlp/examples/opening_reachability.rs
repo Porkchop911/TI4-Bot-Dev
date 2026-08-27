@@ -26,7 +26,7 @@
 //! would change the contention the failing seat faced, and a position cleared against different
 //! opponents is not the position that failed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
@@ -143,6 +143,10 @@ fn play(
         .collect()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one search over the sampled games; the replay loop and what counts as a recovery \n              belong together"
+)]
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| {
         refuse("--bundle is required: reachability is measured against a policy")
