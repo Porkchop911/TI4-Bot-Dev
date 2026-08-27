@@ -162,8 +162,13 @@ impl Decider for Paired {
         std::hint::black_box(&scored);
 
         let started = Instant::now();
-        let projected =
-            ti4_policy::projection::mlp_choice_features(observed, choice, &choice.player, &held);
+        let projected = ti4_policy::projection::mlp_choice_features(
+            observed,
+            choice,
+            &choice.player,
+            &held,
+            ti4_policy::progress::Baseline::default(),
+        );
         let options: Vec<SparseOption> = projected
             .iter()
             .map(|vector| {

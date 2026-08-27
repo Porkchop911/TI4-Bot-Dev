@@ -126,6 +126,10 @@ fn spread_of(state: &ti4_model::state::GameState, player: &PlayerId) -> (usize, 
     (ship_systems, ground_systems, biggest)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass over the sampled games; splitting the tally out would separate the counting from the definition of what is being counted"
+)]
 fn main() {
     let bundle_path = argument("--bundle")
         .unwrap_or_else(|| refuse("--bundle is required: failures belong to a specific policy"));

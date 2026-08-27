@@ -140,6 +140,7 @@ impl Decider for Shadow {
             choice,
             &choice.player,
             &held,
+            ti4_policy::progress::Baseline::default(),
         )
         .iter()
         .map(|vector| self.sparse(vector))

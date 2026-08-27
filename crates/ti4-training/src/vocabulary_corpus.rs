@@ -232,9 +232,16 @@ impl Decider for Collector {
             // names discovered here and the vectors the model is fed are the same set by
             // construction, rather than two lists someone has to keep in step.
             let mut names = self.names.borrow_mut();
-            for vector in
-                ti4_policy::projection::mlp_choice_features(observed, choice, &choice.player, &held)
-            {
+            // A default baseline is right here and nowhere else: this pass discovers feature
+            // *names*, and a name does not depend on the value behind it. Threading a real
+            // baseline through would change which numbers are emitted and none of which names.
+            for vector in ti4_policy::projection::mlp_choice_features(
+                observed,
+                choice,
+                &choice.player,
+                &held,
+                ti4_policy::progress::Baseline::default(),
+            ) {
                 names.extend(ti4_policy::features::names_of(&vector));
             }
 

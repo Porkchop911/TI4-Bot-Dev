@@ -64,6 +64,15 @@ pub struct Settings {
     pub entropy: f64,
     /// The `strategy` head's larger entropy bonus.
     pub strategy_entropy: f64,
+    /// The `movement` head's own entropy bonus.
+    ///
+    /// Movement is the lowest-entropy head on every update, and the measured failure is that seats
+    /// concentrate their forces — a settled, confident habit of sending everything to one system.
+    /// Raising exploration everywhere would also randomise production and scoring, which are not
+    /// the problem; this raises it where the local optimum is.
+    ///
+    /// Defaults to `entropy`, so leaving it alone changes nothing.
+    pub movement_entropy: f64,
 }
 
 impl Default for Settings {
@@ -81,6 +90,7 @@ impl Default for Settings {
             value_coefficient: 0.5,
             entropy: 0.01,
             strategy_entropy: 0.10,
+            movement_entropy: 0.01,
         }
     }
 }
@@ -93,10 +103,10 @@ impl Settings {
     /// collapsing a tactical head.
     #[must_use]
     pub fn entropy_for(&self, head: &str) -> f64 {
-        if head == "strategy" {
-            self.strategy_entropy
-        } else {
-            self.entropy
+        match head {
+            "strategy" => self.strategy_entropy,
+            "movement" => self.movement_entropy,
+            _ => self.entropy,
         }
     }
 }

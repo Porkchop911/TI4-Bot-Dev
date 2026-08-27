@@ -137,6 +137,7 @@ impl ti4_engine::choice::Decider for Decision {
             choice,
             seen.bound_seat(),
             &[],
+            ti4_policy::progress::Baseline::default(),
         )
         .iter()
         .map(|vector| sparse(vector, &self.vocabulary))
@@ -203,7 +204,13 @@ fn vocabulary_for_position(state: &ti4_model::state::GameState, player: &PlayerI
 
     let seen = Observed::new(state, ContentStore::embedded(), POK, None);
     let choice = Choice::new(player.clone(), "produce a unit", options(&BASE));
-    for vector in ti4_policy::projection::mlp_choice_features(&seen, &choice, player, &[]) {
+    for vector in ti4_policy::projection::mlp_choice_features(
+        &seen,
+        &choice,
+        player,
+        &[],
+        ti4_policy::progress::Baseline::default(),
+    ) {
         names.extend(ti4_policy::features::names_of(&vector));
     }
     Vocabulary::build(names).expect("builds")

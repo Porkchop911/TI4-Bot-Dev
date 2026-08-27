@@ -359,6 +359,7 @@ impl Decider for LearnedBot {
                     choice,
                     &choice.player,
                     &seen.held_secret_progress(),
+                    self.baseline,
                 );
                 self.projected.borrow_mut().push(
                     choice

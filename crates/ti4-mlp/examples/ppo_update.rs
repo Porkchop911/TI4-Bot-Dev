@@ -503,7 +503,12 @@ fn main() {
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/mlp-ppo".to_owned());
     let cadence = Cadence::parse(&argument("--report-every").unwrap_or_else(|| "100".to_owned()))
         .unwrap_or_else(|error| refuse(&error));
-    let settings = Settings::default();
+    let mut settings = Settings::default();
+    settings.movement_entropy = argument("--movement-entropy").map_or(settings.entropy, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--movement-entropy expects a number"))
+    });
     let seed_base: u64 = argument("--seed-base").map_or(SEED_BASE, |value| {
         value
             .parse()
@@ -568,13 +573,14 @@ fn main() {
     );
     println!("  optimiser   {device:?}   (rollouts always CPU, §7.1)");
     println!(
-        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{}",
+        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {})",
         settings.clip_epsilon,
         settings.epochs,
         settings.minibatch,
         settings.value_coefficient,
         settings.entropy,
-        settings.strategy_entropy
+        settings.strategy_entropy,
+        settings.movement_entropy
     );
     println!(
         "  update      {SEEDS_PER_UPDATE} seeds x {} rotations\n",

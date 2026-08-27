@@ -243,11 +243,129 @@ pub fn admits_key(key: crate::intern::FeatureKey) -> bool {
 /// the point: MLP plan §4.1's nonlinear per-option trunk can let them interact with option facts,
 /// where a linear head would see a constant and ignore them.
 #[must_use]
-pub fn seat_state_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
-    seat_facts(seen, player)
+pub fn seat_state_facts(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    baseline: crate::progress::Baseline,
+) -> Vec<(String, f64)> {
+    let mut facts: Vec<(String, f64)> = seat_facts(seen, player)
         .into_iter()
         .map(|(name, value)| (format!("{SEAT_STATE_FAMILY}:{name}"), value))
-        .collect()
+        .collect();
+    facts.extend(opening_facts(seen, player, baseline));
+    facts
+}
+
+/// What the opening bar asks for, and where this seat stands against it.
+///
+/// The reward has always known these; the policy did not. `seat_facts` offers *absolute* controlled
+/// planets and nothing about gains since setup, distinct systems, units built, or how far short each
+/// component is — so a decision could not be conditioned on "I hold two systems and this activation
+/// must reach a third", or "I have the planets and still owe a unit". The two measured failure
+/// classes are exactly those two sentences.
+///
+/// Both the level and the deficit are emitted. They are redundant given the requirement, but the
+/// requirement is a constant the model would have to learn to subtract, and a deficit that reaches
+/// zero is a far easier thing to condition on than a level that reaches three.
+///
+/// # Concentration
+///
+/// Ship and ground spread are here for the same reason. Failed openings finish with forces in fewer
+/// systems than cleared ones, and a seat cannot see that about itself from any existing fact. What
+/// is offered is the count, not a reward for raising it: paying directly for spread would teach
+/// ships to disperse to no purpose, while a fact lets the policy learn when spread is worth having.
+///
+/// `outside-active` is the resource a spreading decision actually spends — forces not already
+/// committed to the system being resolved. It is the difference between "I have three carriers" and
+/// "I have three carriers *left to send somewhere else*".
+fn opening_facts(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    baseline: crate::progress::Baseline,
+) -> Vec<(String, f64)> {
+    let requirement = ti4_engine::opening::DEFAULT_REQUIREMENT;
+    let progress = crate::progress::measure(seen, player, baseline);
+
+    let controlled = seen.controlled_planets(player);
+    let controlled_systems: std::collections::BTreeSet<_> =
+        controlled.iter().map(|(system, _)| *system).collect();
+    let ship_systems = seen.systems_with_units_of(player);
+    let active = seen.active_system();
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "planet, system and unit counts are single digits"
+    )]
+    let deficit = |held: i64, bar: usize| -> f64 {
+        let bar = i64::try_from(bar).unwrap_or(i64::MAX);
+        (bar - held).max(0) as f64
+    };
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "planet, system and unit counts are single digits"
+    )]
+    let level = |value: i64| -> f64 { value as f64 };
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "system counts are single digits"
+    )]
+    let count = |value: usize| -> f64 { value as f64 };
+
+    vec![
+        // Where this seat stands on each part of the bar.
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-planets-gained"),
+            level(progress.planets_gained),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-systems"),
+            level(progress.systems),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-units-gained"),
+            level(progress.units_gained),
+        ),
+        // And how much of each is still owed. Zero means that part is done.
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-planets-needed"),
+            deficit(progress.planets_gained, requirement.planets_gained),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-systems-needed"),
+            deficit(progress.systems, requirement.systems),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-units-needed"),
+            deficit(progress.units_gained, requirement.units_gained),
+        ),
+        // Where the forces are, which is what decides whether the deficits above can still close.
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-ship-systems"),
+            count(ship_systems.len()),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-controlled-systems"),
+            count(controlled_systems.len()),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-ship-systems-outside-active"),
+            count(
+                ship_systems
+                    .iter()
+                    .filter(|system| active.is_none_or(|current| **system != current))
+                    .count(),
+            ),
+        ),
+        (
+            format!("{SEAT_STATE_FAMILY}:opening-controlled-systems-outside-active"),
+            count(
+                controlled_systems
+                    .iter()
+                    .filter(|system| active.is_none_or(|current| **system != current))
+                    .count(),
+            ),
+        ),
+    ]
 }
 
 /// Project one already-extracted vector into the MLP input.
@@ -287,8 +405,9 @@ pub fn mlp_choice_features(
     choice: &Choice,
     player: &PlayerId,
     held_secrets: &[ti4_engine::objectives::CardProgress],
+    baseline: crate::progress::Baseline,
 ) -> Vec<FeatureVector> {
-    let seat_state = interned_seat_state(seen, player);
+    let seat_state = interned_seat_state(seen, player, baseline);
     crate::features::explicit_choice_features(seen, choice, player, held_secrets)
         .iter()
         .map(|vector| project_vector(vector, &seat_state))
@@ -304,8 +423,9 @@ pub fn mlp_choice_features(
 fn interned_seat_state(
     seen: &Observed<'_>,
     player: &PlayerId,
+    baseline: crate::progress::Baseline,
 ) -> Vec<(crate::intern::FeatureKey, f64)> {
-    seat_state_facts(seen, player)
+    seat_state_facts(seen, player, baseline)
         .into_iter()
         .map(|(name, value)| (crate::intern::register(&name), value))
         .collect()
@@ -319,8 +439,9 @@ pub fn mlp_option_features(
     option: &ChoiceOption,
     player: &PlayerId,
     held_secrets: &[ti4_engine::objectives::CardProgress],
+    baseline: crate::progress::Baseline,
 ) -> FeatureVector {
-    let seat_state = interned_seat_state(seen, player);
+    let seat_state = interned_seat_state(seen, player, baseline);
     let vector =
         crate::features::explicit_option_features(seen, choice, option, player, held_secrets);
     project_vector(&vector, &seat_state)
@@ -394,7 +515,13 @@ mod tests {
             "the fixture emits no excluded families: nothing to suppress"
         );
 
-        let after = mlp_choice_features(&seen, &choice, &player, &[]);
+        let after = mlp_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
         for vector in &after {
             for name in crate::features::names_of(vector) {
                 assert!(
@@ -408,7 +535,7 @@ mod tests {
     #[test]
     fn the_seat_facts_survive_by_option_under_the_bare_family() {
         // The correction the ruling required. `state_cross` puts a uniform-kind fixed-vocabulary
-        // choice on `ByOption`, where the eight facts previously rode `state-option:` alone; the
+        // choice on `ByOption`, where the seat facts previously rode `state-option:` alone; the
         // bare family is what keeps them after suppression.
         let content = ti4_content::ContentStore::embedded();
         let (state, player) = position();
@@ -420,8 +547,33 @@ mod tests {
             "the fixture must be a ByOption choice"
         );
 
-        let expected = seat_state_facts(&seen, &player);
-        assert_eq!(expected.len(), 8, "all eight acting-seat facts");
+        let expected = seat_state_facts(&seen, &player, crate::progress::Baseline::default());
+        assert_eq!(
+            expected.len(),
+            18,
+            "eight general seat facts and ten opening-progress ones"
+        );
+        // Named rather than counted alone. A count catches a fact that vanished; it does not catch
+        // a fact that was renamed, and a renamed feature is a new column with no trained weight
+        // behind it — which looks like nothing at all from outside.
+        for wanted in [
+            "opening-planets-gained",
+            "opening-systems",
+            "opening-units-gained",
+            "opening-planets-needed",
+            "opening-systems-needed",
+            "opening-units-needed",
+            "opening-ship-systems",
+            "opening-controlled-systems",
+            "opening-ship-systems-outside-active",
+            "opening-controlled-systems-outside-active",
+        ] {
+            let name = format!("{SEAT_STATE_FAMILY}:{wanted}");
+            assert!(
+                expected.iter().any(|(emitted, _)| *emitted == name),
+                "{name} is not emitted"
+            );
+        }
         // Non-vacuity: at least one of them is non-zero in this position, so an all-zero vector
         // could not pass the comparison below.
         assert!(
@@ -429,12 +581,18 @@ mod tests {
             "the fixture position has no non-zero seat fact"
         );
 
-        for vector in &mlp_choice_features(&seen, &choice, &player, &[]) {
+        for vector in &mlp_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        ) {
             for (name, value) in &expected {
                 assert_eq!(
                     crate::features::value_of(vector, name),
                     Some(*value),
-                    "{name} is missing from a ByOption option after projection"
+                    "{name} is missing from a ByOption option after projection",
                 );
             }
         }
@@ -473,15 +631,21 @@ mod tests {
             crate::features::StateCross::None
         );
 
-        let expected = seat_state_facts(&seen, &player);
+        let expected = seat_state_facts(&seen, &player, crate::progress::Baseline::default());
         for choice in [&mixed, &none] {
-            for vector in &mlp_choice_features(&seen, choice, &player, &[]) {
+            for vector in &mlp_choice_features(
+                &seen,
+                choice,
+                &player,
+                &[],
+                crate::progress::Baseline::default(),
+            ) {
                 for (name, value) in &expected {
                     assert_eq!(
                         crate::features::value_of(vector, name),
                         Some(*value),
                         "{name} missing under {:?}",
-                        crate::features::state_cross(choice)
+                        crate::features::state_cross(choice),
                     );
                 }
             }
@@ -498,7 +662,13 @@ mod tests {
         let choice = by_option_choice(&player);
 
         let before = crate::features::explicit_choice_features(&seen, &choice, &player, &[]);
-        let _ = mlp_choice_features(&seen, &choice, &player, &[]);
+        let _ = mlp_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
         let after = crate::features::explicit_choice_features(&seen, &choice, &player, &[]);
         assert_eq!(before, after, "the extractor's output moved");
 
@@ -528,7 +698,13 @@ mod tests {
                 ChoiceOption::labelled("decline", "decline", "decline"),
             ],
         );
-        let projected = mlp_choice_features(&seen, &mixed, &player, &[]);
+        let projected = mlp_choice_features(
+            &seen,
+            &mixed,
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
         assert!(
             projected
                 .iter()
@@ -554,11 +730,17 @@ mod tests {
         let choice = by_option_choice(&player);
         let held = ti4_engine::choice::held_secret_progress(&state, content, POK, None, &player);
 
-        for vector in &mlp_choice_features(&seen, &choice, &player, &held) {
+        for vector in &mlp_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &held,
+            crate::progress::Baseline::default(),
+        ) {
             for name in crate::features::names_of(vector) {
                 assert!(
                     !name.contains("mlp"),
-                    "{name}: an opponent secret alias reached the MLP input"
+                    "{name}: an opponent secret alias reached the MLP input",
                 );
             }
         }
@@ -580,12 +762,22 @@ mod tests {
                 .flat_map(crate::features::names_of)
                 .collect();
         let mut from_names = project_names(raw);
-        from_names.extend(seat_state_facts(&seen, &player).into_iter().map(|(n, _)| n));
+        from_names.extend(
+            seat_state_facts(&seen, &player, crate::progress::Baseline::default())
+                .into_iter()
+                .map(|(n, _)| n),
+        );
 
-        let from_vectors: BTreeSet<String> = mlp_choice_features(&seen, &choice, &player, &[])
-            .iter()
-            .flat_map(crate::features::names_of)
-            .collect();
+        let from_vectors: BTreeSet<String> = mlp_choice_features(
+            &seen,
+            &choice,
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        )
+        .iter()
+        .flat_map(crate::features::names_of)
+        .collect();
 
         assert!(!from_vectors.is_empty());
         assert_eq!(from_names, from_vectors);

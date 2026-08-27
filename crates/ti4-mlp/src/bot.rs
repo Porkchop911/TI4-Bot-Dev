@@ -361,11 +361,15 @@ impl MlpBot {
             });
         }
         let held = seen.held_secret_progress();
+        // The seat's own setup baseline goes in with the features: the opening-progress facts are
+        // deltas against it, and a bot that passed a default would report absolute holdings as
+        // gains — wrong in the flattering direction, and invisible.
         let vectors = ti4_policy::projection::mlp_choice_features(
             seen.observed(),
             choice,
             &choice.player,
             &held,
+            self.baseline,
         );
         let options: Vec<SparseOption> = vectors
             .iter()

@@ -167,6 +167,10 @@ impl Decider for Watching {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass over the sampled games; splitting the tally out would separate the counting from the definition of what is being counted"
+)]
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| {
         refuse("--bundle is required: the report describes a specific checkpoint")
@@ -231,7 +235,7 @@ fn main() {
         for rotation in 0..FACTIONS.len() {
             let log: std::rc::Rc<std::cell::RefCell<Vec<Secondary>>> =
                 std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-            let (events, state, assignments, _openings) =
+            let (events, state, assignments, _openings, _final) =
                 ti4_training::rollout::audit_game_with_deciders(
                     content,
                     &factions,
