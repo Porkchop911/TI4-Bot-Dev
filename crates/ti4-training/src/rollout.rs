@@ -855,6 +855,8 @@ fn finish_game(
             .values()
             .map(|faction| (faction.to_string(), requirement))
             .collect(),
+        content,
+        sources,
     );
 
     // The remaining rounds. A game that already finished or errored in round one runs no further,
@@ -1092,6 +1094,8 @@ where
                 )
             })
             .collect(),
+        content,
+        sources,
     );
     Ok((
         game.events.clone(),
@@ -1955,6 +1959,8 @@ fn play_assigned_on_map_authored(
             .values()
             .map(|faction| (faction.to_string(), requirement))
             .collect(),
+        content,
+        sources,
     );
 
     let seats = players
