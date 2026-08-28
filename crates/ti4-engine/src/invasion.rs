@@ -651,6 +651,10 @@ pub fn establish_control(
             .system_mut(system)
             .set_control(planet.clone(), invader.clone());
         state.exhaust_planet(planet.clone());
+        // Gain-control breakthroughs fire here, where control actually changes hands.
+        crate::breakthroughs::on_gain_control(
+            state, content, sources, invader, system, planet,
+        );
         captured.push((planet.clone(), previous));
     }
     captured

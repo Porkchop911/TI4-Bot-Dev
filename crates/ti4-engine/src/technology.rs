@@ -771,21 +771,20 @@ pub fn can_research(
         player,
         alias.as_str(),
     );
-    prerequisites(content, alias)
-        .into_iter()
-        .all(|(colour, need)| {
-            let have = held.get(colour).copied().unwrap_or(0)
-                + specialties.get(colour).copied().unwrap_or(0);
-            if have >= need {
-                return true;
-            }
-            let short = need - have;
-            if waivable >= short {
-                waivable -= short;
-                return true;
-            }
-            false
-        })
+    // Synergy rule 2: when researching, a technology owned or a specialty controlled that matches
+    // one colour of the synergy may be treated as either colour of it. Owned technologies and
+    // specialties are pooled first, because the rule names both and treats them alike.
+    let mut holdings: std::collections::BTreeMap<&'static str, usize> = held;
+    for (colour, count) in specialties {
+        *holdings.entry(colour).or_insert(0) += count;
+    }
+    let pair = crate::synergy::pair(state, content, sources, player);
+    crate::synergy::satisfies(
+        &prerequisites(content, alias),
+        &holdings,
+        pair.as_ref(),
+        waivable,
+    )
 }
 
 /// Everything this player could research now, in a stable order.
@@ -840,6 +839,44 @@ pub fn research(
 
 #[cfg(test)]
 mod tests {
+    /// Synergy rule 2, end to end through `can_research`.
+    ///
+    /// Transit Diodes needs two cybernetic. Jol-Nar's breakthrough joins biotic and cybernetic, so
+    /// two biotic technologies must be enough — and must *not* be enough without the breakthrough,
+    /// which is the half that proves the synergy is doing the work rather than the waiver.
+    #[test]
+    fn a_synergy_lets_one_colour_pay_for_the_other() {
+        use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        {
+            let seat = state.player_mut(&player).expect("seated");
+            seat.faction = ti4_model::id::FactionId::new("jolnar");
+            // Two biotic technologies, neither of them cybernetic.
+            seat.technologies = [TechnologyId::new("nm"), TechnologyId::new("pa")]
+                .into_iter()
+                .collect();
+        }
+        let wanted = TechnologyId::new("td");
+
+        assert!(
+            !can_research(&state, content, ALL_SOURCES, &player, &wanted),
+            "without the breakthrough, biotic cannot pay a cybernetic prerequisite"
+        );
+
+        state
+            .player_mut(&player)
+            .expect("seated")
+            .breakthrough = Some(ti4_model::id::BreakthroughId::new("jolnarbt"));
+
+        assert!(
+            can_research(&state, content, ALL_SOURCES, &player, &wanted),
+            "Specialist Compounds joins biotic and cybernetic (synergy rule 2)"
+        );
+    }
+
     use ti4_model::content_types::POK;
 
     use super::*;
