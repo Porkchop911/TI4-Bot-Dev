@@ -7,6 +7,46 @@ make connected decisions on it.
 Companion documents: `engine-rules-audit.md` (what is wrong or missing, all 109 rule topics),
 `plans/evidence/SPACE_STATIONS_AUDIT.md` (the one defect measured end to end).
 
+## Progress
+
+Updated 2026-08-29. Commits: `67b4315`, `fca2b92`, `e93cea7`, `8ac4748`.
+
+| phase | state | note |
+|---|---|---|
+| 0 — stop the bleeding | **done** | training paused; `coverage_report` landed |
+| 1 — correct what is wrong | **done** | all 8 verified defects fixed; clearance re-baselined 95.3% → 90.0% |
+| 2 — coexistence | **part** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 13 done; 7/7.1 and 9–12 outstanding |
+| 3 — neutral units | **blocked** | framework and ordering done; roster and combat values are missing content |
+| 4 — breakthroughs, synergy | **part** | synergy complete and wired; 3 of 6 breakthrough abilities done |
+| 5 — the Fracture | **blocked** | depends on phase 3's missing content |
+| 6 — entropic scars | **done** | suppression predicate + status-phase grant; wired to bombardment, production |
+| 7 — shared content | not started | the largest block: 142 action cards, 29 agendas, 19 relics, 10 objectives |
+| 8 — reaction windows | not started | redesign; depends on phase 7 |
+| 9 — verify the unverified | not started | 79 topics |
+| 10 — wiring | not started | must follow every decision-adding phase |
+| 11 — resume training | not started | |
+
+Workspace tests: 1,600 passing.
+
+### Two things are blocked on missing data, not on effort
+
+**The neutral unit reference card is not in the corpus** and is not published by any rules source.
+Its roster, combat values and hit order are game data. `units.json` carries no neutral records, so
+neutral units cannot be placed, and the Fracture — which places them when it enters play — cannot be
+built on top. `neutral_units::missing_content` reports this and `can_place` refuses rather than
+inventing statistics.
+
+Resolving it needs the card transcribed into `units.json` with a `neutral` faction tag, ordered as
+the card orders it. Everything else for both phases is written and tested.
+
+### What the remaining work actually weighs
+
+Phase 7 is the bulk and is mostly volume rather than difficulty: 142 action cards each with a small
+effect and a timing window, 29 agendas, 36 unenforced laws, 19 relics, 10 public objectives, 9
+exploration cards, 3 leaders. Phase 8 is the only remaining redesign. Phase 9 is 79 topics of
+verification whose defect rate is unknown — the one topic examined properly yielded nine defects, so
+it may expand the plan rather than close it.
+
 ## Scope
 
 **In.** Base + PoK + Codices 1–4 + Thunder's Edge. Six players. The six trained factions: sol,
