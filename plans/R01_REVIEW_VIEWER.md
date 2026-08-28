@@ -34,6 +34,9 @@ or mock/example game. A headless CLI remains available for automated verificatio
 - Native file-picker buttons select either a schema-6 MLP checkpoint bundle's `manifest.json` or
   `slots.json`, or a legacy JSON checkpoint/profile table, plus the JSON/JSON.GZ map pool. Selecting
   `slots.json` resolves and verifies the complete sibling bundle; it is never treated as weights.
+- Schema-6 MLP inference accepts the exact frozen vocabulary v3 and v4 layouts. V3 retains every
+  original column address; facts from v4's additional `action-plan` family route to global OOV.
+  Training/current vocabulary construction remains strict v4, and v1/v2/unknown layouts fail.
 - The seed is an unsigned 64-bit integer. Rotation is one of the six standard cyclic seat rotations.
 - For legacy linear checkpoints, a selector chooses current `learner_profiles`/`profiles` or
   `accepted` champion profiles. Schema-6 MLP bundles have one immutable actor and ignore that
@@ -94,11 +97,15 @@ cards, relics/fragments, leaders, plots, and breakthroughs. A legend explains al
 - Previous/next/timeline navigation is view-only. It never rewinds or branches the live engine.
 - A bounded autosave is updated during and after commands. `Save As` writes a portable omniscient
   review session; `Open Review` reopens it for view-only inspection without rerunning the game.
+- `Previous game` opens the last valid saved/autosaved review, falling back to the newest valid
+  review under `out/reviews`. The last checkpoint/profile-table selection and map-pool path are
+  stored atomically in bounded local settings and restored on the next application start.
 - A replay file contains normalized presentation snapshots and decision diagnostics, not a live
   resumable `Game`; reopening cannot continue simulation.
 - `Export HTML` writes a self-contained, read-only replay with no server or external assets.
 - Writes use an adjacent temporary file and replacement discipline. Checkpoint and map inputs are
-  read-only and their hashes are recorded in the session.
+  read-only and their hashes are recorded in the session. Reviewer settings are bounded to 64 KiB
+  and live under ignored `out/reviews/reviewer-settings.json`.
 
 ## Architecture
 
@@ -121,8 +128,10 @@ Permission class: P2 (P1 source/plan work plus crates.io dependency resolution a
 artifacts).
 
 - Writable: `Cargo.toml`, `Cargo.lock`, `crates/ti4-review/**`, the minimal additive setup boundary
-  and tests in `crates/ti4-training/src/rollout.rs`, `plans/R01_REVIEW_VIEWER.md`,
-  `plans/EXECUTION_STATE.md`, and `plans/evidence/R01-IMPLEMENTATION.md`.
+  and tests in `crates/ti4-training/src/rollout.rs`, the additive read-only v3 inference loader in
+  `crates/ti4-policy/src/vocabulary.rs` and `crates/ti4-mlp/src/bundle.rs`,
+  `plans/R01_REVIEW_VIEWER.md`, `plans/EXECUTION_STATE.md`, and
+  `plans/evidence/R01-IMPLEMENTATION.md`.
 - Read-only external paths: none. The historical Python repository is not used.
 - Network: crates.io metadata/downloads only for the pinned native GUI/file-dialog dependencies.
 - Processes/ports: bounded Cargo build/test processes; no server and no port.

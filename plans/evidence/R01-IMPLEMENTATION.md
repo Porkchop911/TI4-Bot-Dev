@@ -50,7 +50,8 @@ cargo fmt --all -- --check
 passed
 
 cargo clippy -p ti4-review --all-targets -- -D warnings \
-  -A clippy::too-many-lines -A clippy::type-complexity -A clippy::missing-panics-doc
+  -A clippy::too-many-lines -A clippy::type-complexity -A clippy::missing-panics-doc \
+  -A clippy::float-cmp
 passed
 
 cargo clippy -p ti4-training --lib -- -D warnings \
@@ -58,7 +59,7 @@ cargo clippy -p ti4-training --lib -- -D warnings \
 passed
 
 cargo test -p ti4-review
-3 passed; 0 failed
+6 passed; 0 failed
 
 cargo test --workspace
 passed; all crate, binary, example, and doc-test targets completed with exit code 0
@@ -151,3 +152,25 @@ technology-specialty, and 5 legendary planets. The two-frame session validated, 
 export was 90,998 bytes, and its embedded JavaScript passed `node --check`. Focused compilation and
 all four `ti4-review` tests passed. Browser-based visual inspection could not run because the
 desktop browser-control runtime failed to initialize; no browser-pass claim is made.
+
+## Active vocabulary-v3 and convenience follow-up
+
+The operator confirmed that current work returned to OOV registry v3. Inference loading now accepts
+the exact frozen v3 or v4 prefix through a dedicated read-only API. It does not change the stored
+version or tensor rows: assigned v3 columns retain their original indices, while the v4-only
+`action-plan` family falls back to global OOV. Ordinary vocabulary load/build remains v4-only;
+v1, v2, unknown versions, reordered prefixes, checksum failures, and malformed bundles still fail.
+
+The latest measured v3 bundle `out/checkpoints/run-003/checkpoint-532156` (update 532156) completed
+a real strategy decision: 2 frames, 1 step, 8/8 options scored, 8/8 probabilities, chosen
+`pok1leadership`, and the saved session validated. Focused vocabulary tests passed 28/28 (including
+v3 address preservation and v2 refusal); bundle tests passed 12/12.
+
+The complete workspace suite then passed with exit code 0, including all crate, binary, example,
+integration, and doc-test targets. Scoped Clippy passed for `ti4-review`, `ti4-policy`, and
+`ti4-mlp`, and the final formatting and whitespace checks passed.
+
+The native UI now writes bounded atomic settings to ignored
+`out/reviews/reviewer-settings.json`, restoring checkpoint/profile-table and map-pool selections on
+startup. `Previous game` first tries the remembered review and then newest review autosaves/saves.
+Settings serialization and review-file discovery have focused tests.

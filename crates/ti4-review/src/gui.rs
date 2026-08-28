@@ -1,9 +1,12 @@
 //! Native egui front end for live and saved reviews.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Sense, Shape, Stroke, Vec2};
+use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_model::content_types::FULL;
 use ti4_model::id::{PlayerId, SystemId};
@@ -15,6 +18,8 @@ use crate::{
 };
 
 const STEPS_PER_UI_FRAME: usize = 128;
+const SETTINGS_PATH: &str = "out/reviews/reviewer-settings.json";
+const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 
 const SEAT_COLORS: [Color32; 6] = [
     Color32::from_rgb(224, 66, 66),
@@ -257,6 +262,32 @@ enum RunTarget {
     End,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct ReviewerSettings {
+    checkpoint: String,
+    map_pool: String,
+    profile_table: ProfileTable,
+    last_review: Option<String>,
+}
+
+fn load_settings() -> std::result::Result<ReviewerSettings, String> {
+    let path = Path::new(SETTINGS_PATH);
+    if !path.is_file() {
+        return Ok(ReviewerSettings::default());
+    }
+    let metadata =
+        fs::metadata(path).map_err(|error| format!("read settings metadata: {error}"))?;
+    if metadata.len() > MAX_SETTINGS_BYTES {
+        return Err(format!(
+            "settings file is {} bytes, above the {MAX_SETTINGS_BYTES}-byte limit",
+            metadata.len()
+        ));
+    }
+    let bytes = fs::read(path).map_err(|error| format!("read settings: {error}"))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("parse settings: {error}"))
+}
+
 pub fn run() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -285,6 +316,7 @@ struct ReviewApp {
     run_target: Option<RunTarget>,
     command_steps: usize,
     autosave: Option<PathBuf>,
+    last_review: Option<PathBuf>,
     status: String,
     selected_tile: Option<String>,
 }
@@ -292,12 +324,16 @@ struct ReviewApp {
 impl ReviewApp {
     fn new(context: &eframe::CreationContext<'_>) -> Self {
         context.egui_ctx.set_visuals(egui::Visuals::dark());
+        let (settings, settings_error) = match load_settings() {
+            Ok(settings) => (settings, None),
+            Err(error) => (ReviewerSettings::default(), Some(error)),
+        };
         Self {
-            checkpoint: String::new(),
-            map_pool: String::new(),
+            checkpoint: settings.checkpoint,
+            map_pool: settings.map_pool,
             seed: "42".to_owned(),
             rotation: 0,
-            table: ProfileTable::Learner,
+            table: settings.profile_table,
             run_count: "10".to_owned(),
             run_unit: AdvanceUnit::Step,
             live: None,
@@ -306,7 +342,11 @@ impl ReviewApp {
             run_target: None,
             command_steps: 0,
             autosave: None,
-            status: "Choose a checkpoint and map pool, then load the starting table.".to_owned(),
+            last_review: settings.last_review.map(PathBuf::from),
+            status: settings_error.map_or_else(
+                || "Restored the last checkpoint/profile and map-pool selections.".to_owned(),
+                |error| format!("Settings were not restored: {error}"),
+            ),
             selected_tile: None,
         }
     }
@@ -321,6 +361,81 @@ impl ReviewApp {
     fn latest_index(&self) -> usize {
         self.session()
             .map_or(0, |session| session.frames.len().saturating_sub(1))
+    }
+
+    fn settings(&self) -> ReviewerSettings {
+        ReviewerSettings {
+            checkpoint: self.checkpoint.trim().to_owned(),
+            map_pool: self.map_pool.trim().to_owned(),
+            profile_table: self.table,
+            last_review: self
+                .last_review
+                .as_ref()
+                .map(|path| path.display().to_string()),
+        }
+    }
+
+    fn persist_settings(&mut self) {
+        let bytes = match serde_json::to_vec_pretty(&self.settings()) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.status = format!("Save settings failed: {error}");
+                return;
+            }
+        };
+        if let Err(error) = super::replace_file(Path::new(SETTINGS_PATH), &bytes) {
+            self.status = format!("Save settings failed: {error}");
+        }
+    }
+
+    fn install_replay(&mut self, path: &Path, session: ReviewSession) {
+        self.viewed = 0;
+        self.live = None;
+        self.replay = Some(session);
+        self.run_target = None;
+        self.autosave = None;
+        self.last_review = Some(path.to_path_buf());
+        self.status = format!("Opened {} in view-only mode", path.display());
+        self.persist_settings();
+    }
+
+    fn previous_candidates(&self) -> Vec<PathBuf> {
+        let mut candidates = Vec::new();
+        if let Some(path) = &self.last_review {
+            candidates.push(path.clone());
+        }
+        let mut discovered: Vec<(SystemTime, PathBuf)> = fs::read_dir("out/reviews")
+            .into_iter()
+            .flatten()
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| is_review(path))
+            .filter_map(|path| {
+                let modified = fs::metadata(&path).ok()?.modified().ok()?;
+                Some((modified, path))
+            })
+            .collect();
+        discovered.sort_by(|left, right| right.0.cmp(&left.0));
+        candidates.extend(discovered.into_iter().map(|(_, path)| path));
+        candidates.dedup();
+        candidates
+    }
+
+    fn open_previous(&mut self) {
+        let mut last_error = None;
+        for path in self.previous_candidates() {
+            match load_session(&path) {
+                Ok(session) => {
+                    self.install_replay(&path, session);
+                    return;
+                }
+                Err(error) => last_error = Some(format!("{}: {error}", path.display())),
+            }
+        }
+        self.status = last_error.map_or_else(
+            || "No previous saved or autosaved game was found.".to_owned(),
+            |error| format!("No valid previous game was found; last error: {error}"),
+        );
     }
 
     fn load_start(&mut self) {
@@ -354,6 +469,10 @@ impl ReviewApp {
                 self.run_target = None;
                 "Starting table loaded; no engine step has run.".clone_into(&mut self.status);
                 self.autosave_now();
+                if let Some(path) = &self.autosave {
+                    self.last_review = Some(path.clone());
+                }
+                self.persist_settings();
             }
             Err(error) => self.status = format!("Load failed: {error}"),
         }
@@ -384,7 +503,11 @@ impl ReviewApp {
             return;
         };
         match save_session(&path, session) {
-            Ok(()) => self.status = format!("Saved {}", path.display()),
+            Ok(()) => {
+                self.last_review = Some(path.clone());
+                self.status = format!("Saved {}", path.display());
+                self.persist_settings();
+            }
             Err(error) => self.status = format!("Save failed: {error}"),
         }
     }
@@ -397,14 +520,7 @@ impl ReviewApp {
             return;
         };
         match load_session(&path) {
-            Ok(session) => {
-                self.viewed = 0;
-                self.live = None;
-                self.replay = Some(session);
-                self.run_target = None;
-                self.autosave = None;
-                self.status = format!("Opened {} in view-only mode", path.display());
-            }
+            Ok(session) => self.install_replay(&path, session),
             Err(error) => self.status = format!("Open failed: {error}"),
         }
     }
@@ -530,6 +646,7 @@ impl ReviewApp {
                         .pick_file()
                 {
                     self.checkpoint = path.display().to_string();
+                    self.persist_settings();
                 }
                 ui.add(
                     egui::TextEdit::singleline(&mut self.checkpoint)
@@ -542,6 +659,7 @@ impl ReviewApp {
                         .pick_file()
                 {
                     self.map_pool = path.display().to_string();
+                    self.persist_settings();
                 }
                 ui.add(
                     egui::TextEdit::singleline(&mut self.map_pool)
@@ -560,7 +678,7 @@ impl ReviewApp {
                             ui.selectable_value(&mut self.rotation, rotation, rotation.to_string());
                         }
                     });
-                egui::ComboBox::from_id_salt("profile_table")
+                let profile_response = egui::ComboBox::from_id_salt("profile_table")
                     .selected_text(self.table.label())
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.table, ProfileTable::Learner, "Learner");
@@ -570,10 +688,16 @@ impl ReviewApp {
                             "Accepted champion",
                         );
                     });
+                if profile_response.response.changed() {
+                    self.persist_settings();
+                }
                 if ui.button("Load starting table").clicked() {
                     self.load_start();
                 }
                 ui.separator();
+                if ui.button("Previous game").clicked() {
+                    self.open_previous();
+                }
                 if ui.button("Open review…").clicked() {
                     self.open_review();
                 }
@@ -1273,9 +1397,36 @@ impl eframe::App for ReviewApp {
     }
 }
 
-#[allow(dead_code)]
-fn _is_review(path: &Path) -> bool {
+fn is_review(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.ends_with(".ti4review.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reviewer_settings_preserve_input_selections_and_previous_game() {
+        let settings = ReviewerSettings {
+            checkpoint: "out/checkpoints/run-003/checkpoint-532156/slots.json".to_owned(),
+            map_pool: "out/pools/save52_noadj_train.json".to_owned(),
+            profile_table: ProfileTable::Accepted,
+            last_review: Some("out/reviews/autosave.ti4review.json".to_owned()),
+        };
+        let bytes = serde_json::to_vec(&settings).unwrap();
+        let restored: ReviewerSettings = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(restored.checkpoint, settings.checkpoint);
+        assert_eq!(restored.map_pool, settings.map_pool);
+        assert_eq!(restored.profile_table, settings.profile_table);
+        assert_eq!(restored.last_review, settings.last_review);
+    }
+
+    #[test]
+    fn previous_game_discovery_accepts_only_review_sessions() {
+        assert!(is_review(Path::new("game.ti4review.json")));
+        assert!(!is_review(Path::new("reviewer-settings.json")));
+        assert!(!is_review(Path::new("game.html")));
+    }
 }

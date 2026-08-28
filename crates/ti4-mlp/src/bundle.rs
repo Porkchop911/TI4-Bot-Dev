@@ -473,7 +473,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
     }
     let slots_text = String::from_utf8(slots_bytes)
         .map_err(|error| BundleError::Invalid(format!("slots.json is not UTF-8: {error}")))?;
-    let vocabulary = ti4_policy::vocabulary::Vocabulary::from_json(&slots_text)
+    let vocabulary = ti4_policy::vocabulary::Vocabulary::from_json_for_inference(&slots_text)
         .map_err(|error| BundleError::Invalid(format!("slots.json does not load: {error}")))?;
     let slot_count = u64_field(&manifest, "slot_count")?;
     if slot_count != vocabulary.slot_count() as u64 {

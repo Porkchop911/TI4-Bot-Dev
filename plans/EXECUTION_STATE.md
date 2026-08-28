@@ -50,7 +50,14 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   classes use distinct geometric symbols with stack counts/damage/galvanize markers. Player holdings
   are grouped into human-readable illustrated sections. Native and standalone HTML renderers share
   this contract.
-- **Verification:** formatting, focused add-on and touched-training Clippy, 3 focused tests, the full
+- **Active v3 compatibility:** the operator confirmed the current models returned to frozen OOV
+  registry v3. Bundle inference accepts exact v3/v4 layouts without renumbering; v3 current-only
+  `action-plan` facts route to global OOV, while normal vocabulary load/build stays strict v4. A real
+  update-532156 v3 bundle resolved and recorded an 8-option strategy decision; v1/v2 remain refused.
+- **Startup convenience:** bounded atomic local settings restore the last checkpoint/profile-table
+  and map-pool selections. `Previous game` opens the remembered valid saved/autosaved review, with a
+  newest-review fallback under `out/reviews`.
+- **Verification:** formatting, focused add-on and touched-crate Clippy, 6 reviewer tests, the full
   workspace test suite, diff checks, both learner/accepted profile smokes, session validation, HTML
   rendering, and native GUI startup passed. A complete learned game produced 2,923 frames, 2,922
   steps, 3,233 decisions, and 1,754 actions with outcome `Completed`.

@@ -729,6 +729,25 @@ impl Vocabulary {
         Ok(vocabulary)
     }
 
+    /// Load a stored vocabulary for read-only model inference.
+    ///
+    /// In addition to the current registry, this accepts version 3 with its exact frozen reserved
+    /// prefix. Version 4 only appended the `action-plan` OOV family; a v3 actor therefore keeps
+    /// every stored column at its original address, while new action-plan facts safely fall back
+    /// to the global OOV row. This does not relabel, rewrite, append to, or train the vocabulary.
+    ///
+    /// # Errors
+    /// [`LoadError::Json`] for malformed input, or [`LoadError::Invalid`] if neither the exact v3
+    /// nor current frozen layout validates.
+    pub fn from_json_for_inference(text: &str) -> Result<Self, LoadError> {
+        let mut vocabulary: Self = serde_json::from_str(text).map_err(LoadError::Json)?;
+        vocabulary.reindex();
+        vocabulary
+            .validate_versioned(true)
+            .map_err(LoadError::Invalid)?;
+        Ok(vocabulary)
+    }
+
     /// Check the invariants a `slots.json` must satisfy before anything trusts its columns.
     ///
     /// A vocabulary this module built satisfies these by construction. A vocabulary read off disk
@@ -746,19 +765,26 @@ impl Vocabulary {
     /// [`VocabularyError::Collision`], [`VocabularyError::KeyMismatch`], or
     /// [`VocabularyError::AppendOverflow`] when the assigned columns exceed capacity.
     pub fn validate(&self) -> Result<(), VocabularyError> {
+        self.validate_versioned(false)
+    }
+
+    fn validate_versioned(&self, allow_v3_inference: bool) -> Result<(), VocabularyError> {
         // 1. Fail closed on a layout this build does not know. An unrecognised version means the
         //    reserved columns below are somebody else's, and nothing here can tell which.
-        if self.oov_registry_version != OOV_REGISTRY_VERSION {
-            return Err(VocabularyError::UnsupportedRegistry {
-                found: self.oov_registry_version,
-                supported: OOV_REGISTRY_VERSION,
-            });
-        }
+        let families: &[&str] = match self.oov_registry_version {
+            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V4,
+            3 if allow_v3_inference => &OOV_FAMILIES_V3,
+            _ => {
+                return Err(VocabularyError::UnsupportedRegistry {
+                    found: self.oov_registry_version,
+                    supported: OOV_REGISTRY_VERSION,
+                });
+            }
+        };
 
         // 2. The reserved prefix is checked element by element, not by length. A reordered or
         //    substituted reserved column is exactly the corruption that would silently re-point
         //    every trained OOV weight, and it preserves the count.
-        let families = oov_families();
         if self.oov_count != families.len() + 1 {
             return Err(VocabularyError::ReservedLayout {
                 column: self.oov_count,
@@ -1304,6 +1330,49 @@ mod tests {
             ),
             "wrong error: {error}"
         );
+    }
+
+    #[test]
+    fn version_three_loads_for_inference_without_renumbering_its_columns() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let action_column = 1 + OOV_FAMILIES_V3.len();
+        assert_eq!(
+            vocabulary.slots[action_column].name,
+            oov_name(crate::projection::ACTION_FAMILY)
+        );
+        vocabulary.slots.remove(action_column);
+        vocabulary.oov_registry_version = 3;
+        vocabulary.oov_count -= 1;
+        vocabulary.allocated_for -= 1;
+        vocabulary.reindex();
+        let assigned_name = vocabulary.slots[vocabulary.oov_count].name.clone();
+        let assigned_column = vocabulary.column_of(&assigned_name);
+        let text = vocabulary.to_json().expect("json");
+
+        assert!(
+            Vocabulary::from_json(&text).is_err(),
+            "training load must stay current"
+        );
+        let loaded = Vocabulary::from_json_for_inference(&text).expect("v3 inference loads");
+        assert_eq!(loaded.oov_registry_version(), 3);
+        assert_eq!(loaded.column_of(&assigned_name), assigned_column);
+        assert_eq!(
+            loaded.column_of("action-plan:new-current-only-fact"),
+            GLOBAL_OOV_COLUMN,
+            "the v4-only family must not alias an old trained row"
+        );
+    }
+
+    #[test]
+    fn version_two_remains_refused_for_inference() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.oov_registry_version = 2;
+        let error = Vocabulary::from_json_for_inference(&vocabulary.to_json().expect("json"))
+            .expect_err("v2 is not an inference-compatible layout");
+        assert!(matches!(
+            error,
+            LoadError::Invalid(VocabularyError::UnsupportedRegistry { .. })
+        ));
     }
 
     #[test]
