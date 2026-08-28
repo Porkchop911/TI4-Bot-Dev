@@ -174,3 +174,24 @@ The native UI now writes bounded atomic settings to ignored
 `out/reviews/reviewer-settings.json`, restoring checkpoint/profile-table and map-pool selections on
 startup. `Previous game` first tries the remembered review and then newest review autosaves/saves.
 Settings serialization and review-file discovery have focused tests.
+
+## Human action-period and objective follow-up
+
+`Action` now means one complete active-player period, bounded by the engine's canonical `turn_seq`
+handoff rather than by the top-level action prompt reappearing. This keeps free transactions,
+nested timing windows, and Fleet Logistics inside the same unit. Completed periods carry a durable
+summary derived from their full before/after state plus all captured decisions and events: action
+choice(s), activated system, unit moves/additions/losses, planet control, objective scoring, and
+transaction terms with aggregate outcomes. Old review files without summaries reconstruct the new
+boundaries and summaries in memory from their retained frames.
+
+Both native and standalone HTML views now show revealed public objectives with printed name, rules
+text, VP value, and scoring seats, plus the latest completed action summary. A real active-v3 smoke
+ran 8 action periods in 73 engine steps / 104 decisions and produced summaries for strategic,
+component, pass-capable, and multi-step tactical activity. The tactical summaries identified exact
+origins/destinations and captured planets; transaction summaries retained the offered terms.
+Reviewer tests passed 9/9, including old-session reconstruction. The existing 1,360-frame autosave
+loaded and validated through that upgrade path. Scoped formatting, Clippy, session validation, and
+HTML checks passed.
+The complete workspace suite also passed with exit code 0, including the newly present concurrent
+MLP example target; its warning is outside this add-on and its files were not staged.

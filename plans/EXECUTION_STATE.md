@@ -57,6 +57,11 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - **Startup convenience:** bounded atomic local settings restore the last checkpoint/profile-table
   and map-pool selections. `Previous game` opens the remembered valid saved/autosaved review, with a
   newest-review fallback under `out/reviews`.
+- **Human action review:** an action unit is now the whole active-player period, ending only on the
+  canonical turn handoff/phase boundary. Revealed public objectives and durable action summaries are
+  shown in native and HTML views; summaries cover choices, systems, unit movement/change, planet
+  control, scoring, and transaction terms/outcomes. Existing review files reconstruct the corrected
+  boundaries/summaries in memory from their retained frames.
 - **Verification:** formatting, focused add-on and touched-crate Clippy, 6 reviewer tests, the full
   workspace test suite, diff checks, both learner/accepted profile smokes, session validation, HTML
   rendering, and native GUI startup passed. A complete learned game produced 2,923 frames, 2,922

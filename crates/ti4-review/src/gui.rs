@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Sense, Shape, Stroke, Vec2};
 use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
-use ti4_model::content_types::FULL;
+use ti4_model::content_types::{ContentType, FULL};
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::units::Unit;
 
@@ -726,7 +726,10 @@ impl ReviewApp {
                     self.begin_count(AdvanceUnit::Decision, 1);
                 }
                 if ui
-                    .add_enabled(can_run, egui::Button::new("Next action"))
+                    .add_enabled(can_run, egui::Button::new("Next action (full turn)"))
+                    .on_hover_text(
+                        "Runs until the current active player hands off the turn; nested prompts, transactions, and Fleet Logistics stay inside it.",
+                    )
                     .clicked()
                 {
                     self.begin_count(AdvanceUnit::Action, 1);
@@ -739,7 +742,11 @@ impl ReviewApp {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.run_unit, AdvanceUnit::Step, "Steps");
                         ui.selectable_value(&mut self.run_unit, AdvanceUnit::Decision, "Decisions");
-                        ui.selectable_value(&mut self.run_unit, AdvanceUnit::Action, "Actions");
+                        ui.selectable_value(
+                            &mut self.run_unit,
+                            AdvanceUnit::Action,
+                            "Actions (full turns)",
+                        );
                     });
                 if ui
                     .add_enabled(can_run, egui::Button::new("Run N"))
@@ -819,6 +826,49 @@ impl ReviewApp {
                 ui.heading("Omniscient players");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let content = ContentStore::embedded();
+                    ui.heading("Open public objectives");
+                    if frame.state.revealed_objectives.is_empty() {
+                        ui.label("None revealed yet.");
+                    } else {
+                        for objective in &frame.state.revealed_objectives {
+                            let record =
+                                content.get(ContentType::PublicObjectives, objective.as_str());
+                            let name = record
+                                .as_ref()
+                                .and_then(|record| record.text("name"))
+                                .unwrap_or(objective.as_str());
+                            let points = record
+                                .as_ref()
+                                .and_then(|record| record.int("points"))
+                                .unwrap_or(0);
+                            let scored_by: Vec<String> = frame
+                                .state
+                                .scored_objectives
+                                .iter()
+                                .filter(|(_, scored)| scored.contains(objective))
+                                .map(|(player, _)| player.to_string())
+                                .collect();
+                            ui.group(|ui| {
+                                ui.strong(format!("{name} · {points} VP"));
+                                ui.small(format!(
+                                    "{} · scored by {}",
+                                    objective,
+                                    if scored_by.is_empty() {
+                                        "nobody".to_owned()
+                                    } else {
+                                        scored_by.join(", ")
+                                    }
+                                ));
+                                if let Some(text) =
+                                    record.as_ref().and_then(|record| record.text("text"))
+                                {
+                                    ui.label(text);
+                                }
+                            });
+                        }
+                    }
+                    ui.separator();
+                    ui.heading("Player sheets");
                     for player in &frame.state.players {
                         let color = player_color(&player.id);
                         egui::CollapsingHeader::new(format!(
@@ -1012,7 +1062,12 @@ impl ReviewApp {
             });
     }
 
-    fn decision_panel(&mut self, root: &mut egui::Ui, frame: &ReviewFrame) {
+    fn decision_panel(
+        &mut self,
+        root: &mut egui::Ui,
+        session: &ReviewSession,
+        frame: &ReviewFrame,
+    ) {
         egui::Panel::right("decision")
             .resizable(true)
             .default_size(410.0)
@@ -1032,6 +1087,24 @@ impl ReviewApp {
                     ui.colored_label(Color32::LIGHT_RED, error);
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    let action_summary = session.frames[..=frame.index]
+                        .iter()
+                        .rev()
+                        .find_map(|candidate| candidate.action_summary.as_ref());
+                    ui.heading("Latest completed action");
+                    if let Some(summary) = action_summary {
+                        ui.strong(&summary.headline);
+                        ui.small(format!(
+                            "frames {}–{} · active-player period",
+                            summary.start_frame, summary.end_frame
+                        ));
+                        for detail in &summary.details {
+                            ui.label(format!("• {detail}"));
+                        }
+                    } else {
+                        ui.label("No action-phase turn has completed yet.");
+                    }
+                    ui.separator();
                     if frame.decisions.is_empty() {
                         ui.label("This engine step resolved no policy choice.");
                     } else {
@@ -1390,7 +1463,7 @@ impl eframe::App for ReviewApp {
         self.viewed = self.viewed.min(session.frames.len().saturating_sub(1));
         let frame = session.frames[self.viewed].clone();
         Self::player_panel(root, &session, &frame);
-        self.decision_panel(root, &frame);
+        self.decision_panel(root, &session, &frame);
         self.board(root, &session, &frame);
         if self.run_target.is_some() {
             root.ctx().request_repaint();

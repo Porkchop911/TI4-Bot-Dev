@@ -54,8 +54,9 @@ Every attempted engine step produces a history frame, including automatic transi
 
 - **Step:** exactly one `Game::step()` call.
 - **Next decision:** advance until one generated policy choice resolves.
-- **Next action:** advance from the current point until one complete top-level action/pass resolves
-  and the next top-level action choice (or a phase/end boundary) is reached.
+- **Next action:** advance through one complete active-player period: from a player becoming active
+  until the engine hands the turn off, leaves the action phase, or ends. Transactions, nested timing
+  windows, and Fleet Logistics' additional action remain inside that same unit.
 - **Run N:** run a user-selected number of steps, decisions, or complete actions.
 - **End round:** stop at the next round boundary.
 - **End game:** run until natural completion or the declared safety limit.
@@ -73,6 +74,9 @@ This version is explicitly a referee/debug view, not a public or seat-redacted a
 - all players' score, economy, command tokens, strategy cards, technologies, objectives, action
   cards, relics, leaders, notes, and other engine-visible holdings;
 - round, phase, active seat/system, pending window, engine events, and terminal/error state;
+- every revealed public objective with printed name/text/value and the seats that have scored it;
+- the latest completed action-period summary: chosen action(s), activated systems, unit movement
+  and losses/additions, planet-control changes, scored objectives, and transaction offers/outcomes;
 - for every learned decision: acting seat/faction, prompt, requested/resolved head, temperature,
   every legal option and label, chosen option, raw score, probability, and projected feature
   values. Linear profiles also expose exact weights and value×weight contributions; nonlinear MLP
@@ -101,7 +105,8 @@ cards, relics/fragments, leaders, plots, and breakthroughs. A legend explains al
   review under `out/reviews`. The last checkpoint/profile-table selection and map-pool path are
   stored atomically in bounded local settings and restored on the next application start.
 - A replay file contains normalized presentation snapshots and decision diagnostics, not a live
-  resumable `Game`; reopening cannot continue simulation.
+  resumable `Game`; reopening cannot continue simulation. Older review files are upgraded in memory
+  by reconstructing full action periods and summaries from their retained frame history.
 - `Export HTML` writes a self-contained, read-only replay with no server or external assets.
 - Writes use an adjacent temporary file and replacement discipline. Checkpoint and map inputs are
   read-only and their hashes are recorded in the session. Reviewer settings are bounded to 64 KiB
