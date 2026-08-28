@@ -102,6 +102,21 @@ impl Settings {
     /// once-per-round decision with long-range consequences, so collapsing it early costs more than
     /// collapsing a tactical head.
     #[must_use]
+    /// Whether two settings describe the same optimizer.
+    ///
+    /// Exactly the six values `Adam::new` copies. A run may anneal entropy between updates; it may
+    /// not change its learning rate or clip under a retained optimizer, because those are what its
+    /// moments were accumulated against.
+    #[must_use]
+    pub fn optimizer_equivalent(&self, other: Self) -> bool {
+        self.learning_rate == other.learning_rate
+            && self.beta1 == other.beta1
+            && self.beta2 == other.beta2
+            && self.eps == other.eps
+            && self.weight_decay == other.weight_decay
+            && self.grad_clip == other.grad_clip
+    }
+
     pub fn entropy_for(&self, head: &str) -> f64 {
         match head {
             "strategy" => self.strategy_entropy,
@@ -877,8 +892,16 @@ pub fn update(
     if batch.mode != critic_mode {
         return Err("PPO batch critic mode does not match the update".to_owned());
     }
-    if optimizer.mode != critic_mode || optimizer.settings != settings {
-        return Err("PPO optimizer mode/settings do not match the update".to_owned());
+    if optimizer.mode != critic_mode {
+        return Err("PPO optimizer critic mode does not match the update".to_owned());
+    }
+    // Only the settings the optimizer is *made of*. Entropy coefficients are loss terms: they
+    // change the gradient's value, never Adam's moments, its step cursor or its clip. Comparing
+    // whole `Settings` refused an entropy schedule -- which is the one thing a long run should be
+    // able to change, since a bonus paid for keeping mass off the move the policy has learned is
+    // best is a floor on its error rate.
+    if !optimizer.settings.optimizer_equivalent(settings) {
+        return Err("PPO optimizer settings do not match the update".to_owned());
     }
     // Every trainable parameter must still be a leaf that requires a gradient.
     //
@@ -1425,6 +1448,59 @@ mod tests {
         .expect_err("a non-leaf parameter was accepted and would have trained nothing");
         assert!(
             refusal.contains("is not a leaf tensor"),
+            "refused for the wrong reason: {refusal}"
+        );
+    }
+
+    #[test]
+    fn entropy_may_be_annealed_under_a_retained_optimizer_but_the_learning_rate_may_not() {
+        // The distinction the guard now draws. Entropy is a loss term; the learning rate is what
+        // Adam's moments were accumulated against, and changing it under a retained optimizer
+        // would silently reinterpret every one of them.
+        let batch = Batch::freeze(
+            vec![batch_mean_step(0, 2, 3.0), batch_mean_step(1, 3, 1.0)],
+            CriticMode::BatchMean,
+        )
+        .expect("valid batch");
+        let settings = Settings {
+            epochs: 1,
+            minibatch: 2,
+            ..Settings::default()
+        };
+        let mut actor = trainable_actor();
+        let mut optimizer =
+            Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+
+        let annealed = Settings {
+            entropy: settings.entropy / 10.0,
+            movement_entropy: 0.0,
+            ..settings
+        };
+        update(
+            &mut actor,
+            &batch,
+            CriticMode::BatchMean,
+            annealed,
+            7,
+            &mut optimizer,
+        )
+        .expect("an annealed entropy is accepted");
+
+        let faster = Settings {
+            learning_rate: settings.learning_rate * 2.0,
+            ..settings
+        };
+        let refusal = update(
+            &mut actor,
+            &batch,
+            CriticMode::BatchMean,
+            faster,
+            7,
+            &mut optimizer,
+        )
+        .expect_err("a changed learning rate was accepted under a retained optimizer");
+        assert!(
+            refusal.contains("optimizer settings do not match"),
             "refused for the wrong reason: {refusal}"
         );
     }

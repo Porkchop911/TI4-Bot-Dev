@@ -503,6 +503,21 @@ fn main() {
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/mlp-ppo".to_owned());
     let cadence = Cadence::parse(&argument("--report-every").unwrap_or_else(|| "100".to_owned()))
         .unwrap_or_else(|error| refuse(&error));
+    // The entropy schedule. Coefficients are scaled from 1.0 at the first update down to this
+    // multiplier at the last, linearly.
+    //
+    // A constant bonus is right early, when the policy does not yet know which move is best, and
+    // is pure cost once it does: paying to keep probability mass off the chosen move puts a floor
+    // under the error rate, and an opening needs about four consecutive correct decisions. The
+    // champion trained at a constant bonus ranks 3.5 points better than it samples, which is that
+    // floor measured.
+    //
+    // Defaults to 1.0, which is no schedule at all.
+    let entropy_final: f64 = argument("--entropy-final").map_or(1.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--entropy-final expects a number"))
+    });
     let mut settings = Settings::default();
     settings.movement_entropy = argument("--movement-entropy").map_or(settings.entropy, |value| {
         value
@@ -573,7 +588,7 @@ fn main() {
     );
     println!("  optimiser   {device:?}   (rollouts always CPU, §7.1)");
     println!(
-        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {})",
+        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {}), x{entropy_final} by the end",
         settings.clip_epsilon,
         settings.epochs,
         settings.minibatch,
@@ -724,6 +739,24 @@ fn main() {
             ));
         }
         let optimised = Instant::now();
+        // Linear in the update index, so the last update trains at `entropy_final` times the
+        // configured bonus. Applied to every head at once: the three coefficients express a
+        // considered ratio between heads, and annealing them apart would change that ratio as a
+        // side effect of a schedule that is not about it.
+        #[expect(clippy::cast_precision_loss, reason = "update counts are exact in f64")]
+        let progress = if updates > 1 {
+            update as f64 / (updates - 1) as f64
+        } else {
+            1.0
+        };
+        let scale = entropy_final.mul_add(progress, 1.0 - progress);
+        let settings = Settings {
+            entropy: settings.entropy * scale,
+            strategy_entropy: settings.strategy_entropy * scale,
+            movement_entropy: settings.movement_entropy * scale,
+            ..settings
+        };
+
         let stats = ti4_mlp::ppo::update(
             &mut actor,
             &batch,
