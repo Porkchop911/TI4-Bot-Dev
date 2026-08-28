@@ -1146,7 +1146,8 @@ impl ReviewApp {
                 let point = Pos2::new(x, y);
                 let points: Vec<Pos2> = (0..6)
                     .map(|corner| {
-                        let angle = std::f32::consts::TAU * corner as f32 / 6.0;
+                        let angle = std::f32::consts::FRAC_PI_6
+                            + std::f32::consts::TAU * corner as f32 / 6.0;
                         point + Vec2::new(radius * angle.cos(), radius * angle.sin())
                     })
                     .collect();
