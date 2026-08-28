@@ -562,6 +562,30 @@ fn main() {
     reward.unit_weight = weight("--unit-weight", reward.unit_weight);
     reward.conjunctive_weight = weight("--conjunctive-weight", reward.conjunctive_weight);
     reward.clear_bonus = weight("--clear-bonus", reward.clear_bonus);
+    // The Stage-2 coefficients that price the opening. Same pre-registration argument as above:
+    // a run at other values is a different experiment and the command line has to say so.
+    //
+    // `r1_bonus` reaches only round-one decisions, by construction -- it is credited at the last
+    // round-one slot precisely so a round-three decision is not paid for something it could not
+    // affect. `clearance_weight` is the one that reaches every decision, because it is credited at
+    // the final slot and every return is a suffix sum. Raising the first alone sharpens round one
+    // and leaves the rest of the game indifferent to whether the opening held.
+    reward.r1_bonus = weight("--r1-bonus", reward.r1_bonus);
+    reward.r1_shaping = weight("--r1-shaping", reward.r1_shaping);
+    reward.clearance_weight = weight("--clearance-weight", reward.clearance_weight);
+    reward.high_vp_bonus = weight("--high-vp-bonus", reward.high_vp_bonus);
+    // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
+    // "off" and the run would silently not be the experiment its command line describes.
+    for (name, value) in [
+        ("--clearance-weight", reward.clearance_weight),
+        ("--high-vp-bonus", reward.high_vp_bonus),
+    ] {
+        if value < 0.0 {
+            refuse(&format!(
+                "{name} {value} is negative; the reward reads any value at or below zero as off"
+            ));
+        }
+    }
     reward
         .validate()
         .unwrap_or_else(|error| refuse(&format!("the reward is not self-consistent: {error}")));
@@ -577,6 +601,16 @@ fn main() {
             reward.unit_weight,
             reward.conjunctive_weight,
             reward.clear_bonus
+        );
+    }
+    if matches!(stage, ti4_training::reward::Stage::Two) {
+        println!(
+            "  opening     r1 bonus {} | r1 shaping {} | clearance {} | high-VP {}",
+            reward.r1_bonus, reward.r1_shaping, reward.clearance_weight, reward.high_vp_bonus
+        );
+        println!(
+            "  points      vp {} | objective {} | secret {}",
+            reward.vp_weight, reward.objective_weight, reward.secret_weight
         );
     }
     println!(

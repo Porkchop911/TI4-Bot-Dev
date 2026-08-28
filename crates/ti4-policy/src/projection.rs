@@ -312,20 +312,19 @@ fn action_facts(
     // That is not an unhelpful feature, it is an inverted one, and it is why two training runs on
     // this family measured flat: `activate-free-planets` was largest exactly where the seat should
     // not go.
-    let destination = |system: &ti4_model::id::SystemId| -> (usize, bool) {
+    let destination = |system: &ti4_model::id::SystemId| -> (Vec<ti4_model::id::PlanetId>, bool) {
         let mine: std::collections::BTreeSet<&ti4_model::id::PlanetId> = controlled
             .iter()
             .filter(|(held, _)| *held == system)
             .map(|(_, planet)| *planet)
             .collect();
         let free = ti4_content::galaxy::system(seen.content(), system.as_str(), seen.sources())
-            .map_or(0, |tile| {
+            .map_or_else(Vec::new, |tile| {
                 tile.planets()
                     .into_iter()
-                    .filter(|planet| {
-                        !mine.contains(&ti4_model::id::PlanetId::new((*planet).to_owned()))
-                    })
-                    .count()
+                    .map(|planet| ti4_model::id::PlanetId::new(planet.to_owned()))
+                    .filter(|planet| !mine.contains(planet))
+                    .collect()
             });
         (free, !held_systems.contains(system))
     };
@@ -334,9 +333,114 @@ fn action_facts(
         kind if kind == ti4_engine::tactical::ACTIVATE_KIND => {
             let system = ti4_model::id::SystemId::new(option.id.clone());
             let (free, adds) = destination(&system);
+
+            // What the system is worth taking for, beyond a bare planet count. A two-planet tile
+            // of one resource each and a two-planet tile of four are the same number and very
+            // different moves.
+            let planets = ti4_content::galaxy::all_planets(seen.content(), seen.sources());
+            let (resources, influence) = free.iter().fold((0i64, 0i64), |(r, i), planet| {
+                planets.get(planet.as_str()).map_or((r, i), |record| {
+                    (r + record.resources(), i + record.influence())
+                })
+            });
+
+            // What could actually get there.
+            //
+            // This is the fact whose absence was measurable: with only "how many planets are
+            // free" and "is it a new system" on an activation option, nothing told the policy
+            // whether a single one of its ships could reach the tile, and a quarter of every
+            // activation went to a system where the movement step then offered nothing at all.
+            //
+            // `movable_into` is the engine reachability search itself, so gravity drive,
+            // action-card effects and laws count exactly as the real movement step counts them.
+            let reachable = seen.movable_into(player, &system);
+            let hulls = reachable.len();
+            let capacity: i64 = reachable.iter().map(|hull| hull.capacity).sum();
+            // Ground this fleet would actually deliver, capacity matched against what waits at
+            // each origin. Summing capacity alone counts lift that has nothing to lift, and
+            // summing garrisons counts infantry with no ride.
+            let mut by_origin: std::collections::BTreeMap<&ti4_model::id::SystemId, i64> =
+                std::collections::BTreeMap::new();
+            for hull in &reachable {
+                *by_origin.entry(&hull.origin).or_default() += hull.capacity;
+            }
+            let load: i64 = by_origin
+                .into_iter()
+                .map(|(origin, lift)| {
+                    let waiting = seen
+                        .system(origin)
+                        .planet_units
+                        .values()
+                        .flatten()
+                        .filter(|unit| &unit.owner == player)
+                        .count();
+                    lift.min(i64::try_from(waiting).unwrap_or(i64::MAX))
+                })
+                .sum();
+
+            // Who is already there. An empty tile and a defended one read identically to a policy
+            // that cannot see the garrison, and the second is a fight rather than an expansion.
+            let occupants = seen.system(&system);
+            let enemy_ships = occupants
+                .units
+                .iter()
+                .filter(|unit| &unit.owner != player)
+                .count();
+            let enemy_ground = occupants
+                .planet_units
+                .values()
+                .flatten()
+                .filter(|unit| &unit.owner != player)
+                .count();
+
+            // Whether taking this tile would move a revealed objective, asked of the engine
+            // requirement functions against the position this action would produce -- not a
+            // reimplementation of what each card counts.
+            //
+            // Skipped when there is nothing to gain: the two positions are then identical by
+            // construction, so the answer is zero without computing it.
+            let (advances, completes) = if free.is_empty() {
+                (0usize, 0usize)
+            } else {
+                let before = seen.revealed_objective_progress(player);
+                let after = seen.revealed_objective_progress_gaining(player, &free);
+                let mut advances = 0usize;
+                let mut completes = 0usize;
+                for card in &after {
+                    let Some(was) = before.iter().find(|prior| prior.alias == card.alias) else {
+                        continue;
+                    };
+                    if was.satisfied {
+                        continue;
+                    }
+                    if card.have > was.have {
+                        advances += 1;
+                    }
+                    if card.satisfied {
+                        completes += 1;
+                    }
+                }
+                (advances, completes)
+            };
+
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "resources, influence and capacities are single digits"
+            )]
+            let amount = |value: i64| -> f64 { value as f64 };
             vec![
-                (name("activate-free-planets"), count(free)),
+                (name("activate-free-planets"), count(free.len())),
                 (name("activate-adds-system"), f64::from(u8::from(adds))),
+                (name("activate-gain-resources"), amount(resources)),
+                (name("activate-gain-influence"), amount(influence)),
+                (name("activate-reachable-hulls"), count(hulls)),
+                (name("activate-reachable-capacity"), amount(capacity)),
+                (name("activate-reachable-load"), amount(load)),
+                (name("activate-can-reach"), f64::from(u8::from(hulls > 0))),
+                (name("activate-enemy-ships"), count(enemy_ships)),
+                (name("activate-enemy-ground"), count(enemy_ground)),
+                (name("activate-objective-advances"), count(advances)),
+                (name("activate-objective-completes"), count(completes)),
             ]
         }
         kind if kind == ti4_engine::tactical::MOVE_KIND => {
@@ -865,6 +969,83 @@ mod tests {
         assert!(
             (free - expected).abs() < f64::EPSILON,
             "an empty tile with {printed} planets reported {free} free"
+        );
+    }
+
+    #[test]
+    fn reachability_agrees_with_the_movement_step_it_predicts() {
+        // The invariant the whole family rests on, checked against the engine rather than against
+        // a hand-built expectation.
+        //
+        // `activate-can-reach` exists to answer, before a command token is spent, the question the
+        // movement step answers after: is there any ship that can get there? If the two ever
+        // disagree the feature is not weak, it is wrong -- which is exactly how
+        // `activate-free-planets` shipped inverted twice, past tests that asserted against a
+        // fixture built to match the buggy reading instead of against the engine.
+        //
+        // So this activates each candidate for real and compares.
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::plain_hub();
+        let player = ti4_model::id::PlayerId::new("p1");
+        let mut state = ti4_engine::fixtures::game(&["p1"]);
+
+        // One carrier on the ring. From there the centre is reachable and the far side is not,
+        // so the fact has something to be right or wrong about.
+        let home = ti4_model::id::SystemId::new(hub.outer[0].clone());
+        ti4_engine::fixtures::put(&mut state, &home, "carrier", &player, 1);
+
+        let candidates: Vec<ti4_model::id::SystemId> = std::iter::once(hub.centre.clone())
+            .chain(hub.outer.iter().cloned())
+            .map(ti4_model::id::SystemId::new)
+            .collect();
+
+        let mut reachable_count = 0usize;
+        let mut unreachable_count = 0usize;
+
+        for system in &candidates {
+            let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+            let option = ChoiceOption::labelled(
+                system.to_string(),
+                ti4_engine::tactical::ACTIVATE_KIND,
+                format!("activate {system}"),
+            );
+            let facts = action_facts(&seen, &option, &player);
+            let predicted = facts
+                .iter()
+                .find(|(name, _)| name.ends_with("activate-can-reach"))
+                .map_or(-1.0, |(_, value)| *value);
+            assert!(predicted >= 0.0, "{system} emitted no reachability fact");
+
+            // What the movement step would actually offer, from the same position.
+            let mut activated = state.clone();
+            activated.active_system = Some(system.clone());
+            let actually = !ti4_engine::tactical::movable(
+                &activated,
+                content,
+                POK,
+                &hub.galaxy,
+                &player,
+            )
+            .is_empty();
+
+            assert!(
+                (predicted > 0.5) == actually,
+                "{system}: the feature says reachable={} and the movement step says {actually}",
+                predicted > 0.5
+            );
+            if actually {
+                reachable_count += 1;
+            } else {
+                unreachable_count += 1;
+            }
+        }
+
+        // A fact that is constant over the choice cannot separate the options it is asked about,
+        // which is the failure `an_action_fact_tells_two_movements_apart` was written for.
+        assert!(
+            reachable_count > 0 && unreachable_count > 0,
+            "the fixture must offer both reachable and unreachable destinations, \
+             got {reachable_count} reachable and {unreachable_count} unreachable"
         );
     }
 

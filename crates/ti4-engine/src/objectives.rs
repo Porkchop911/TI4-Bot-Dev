@@ -235,6 +235,43 @@ impl<'a> Position<'a> {
         }
     }
 
+    /// The position as it would stand if this player also controlled `extra`.
+    ///
+    /// Every objective predicate reads the board through `controlled`, so adding planets there and
+    /// re-running the engine's own progress functions gives the *exact* progress an action would
+    /// produce -- not an approximation of it, and not a reimplementation of the requirement.
+    ///
+    /// Planets already controlled are ignored rather than counted twice, which is what makes the
+    /// difference between two positions a clean delta. Requirements that ask about units,
+    /// technologies or the shape of the map are unaffected by construction: this changes control
+    /// and nothing else, so those report the same value on both sides and cancel.
+    #[must_use]
+    pub fn imagining(
+        state: &'a GameState,
+        content: &'a ContentStore,
+        sources: SourceSet,
+        player: &'a PlayerId,
+        extra: &[ti4_model::id::PlanetId],
+    ) -> Self {
+        let mut position = Self::new(state, content, sources, player);
+        if extra.is_empty() {
+            return position;
+        }
+        let catalogue = all_planets(content, sources);
+        let held: std::collections::BTreeSet<&str> = position
+            .controlled
+            .iter()
+            .filter_map(ti4_content::galaxy::Planet::name)
+            .collect();
+        let mut added: Vec<Planet<'a>> = extra
+            .iter()
+            .filter(|planet| !held.contains(planet.as_str()))
+            .filter_map(|planet| catalogue.get(planet.as_str()).copied())
+            .collect();
+        position.controlled.append(&mut added);
+        position
+    }
+
     /// The content records for every planet this player controls.
     fn controlled(&self) -> &[Planet<'a>] {
         &self.controlled

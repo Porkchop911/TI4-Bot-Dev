@@ -48,8 +48,17 @@ const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// M10-035 replaces `8805cfdd…2b9d` for the same two reasons at once. The registry moved to v4 for
 /// the `action-plan` namespace, and discovery now emits ten opening-progress facts and nine
 /// action-feasibility ones — 11,118 slots became 11,138.
+///
+/// M10-036 replaces `4456cf89…1421b` for the first reason only. The registry stays at v4: no new
+/// namespace, so no new reserved column. What changed is that an activation option now carries ten
+/// further facts — what could reach the tile, what the tile is worth, who already holds it, and
+/// whether taking it moves a revealed objective — and 11,137 slots became 11,147.
+///
+/// A vocabulary change with no registry change still makes earlier bundles unusable, which is
+/// worth stating plainly because the failure mode differs: the old bundles remain *readable*, and
+/// their weights are simply attached to the wrong columns. Only the pin catches that.
 const ACCEPTED_SLOTS_SHA256: &str =
-    "4456cf89db510724dff4183742aee0205e92ad7e7858ed012592044d7eb1421b";
+    "e30b9165ab7dffc1d62ae58b1ec8cb5ed97014d4f7ef22ac17931ba8f57d0a2a";
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {

@@ -518,6 +518,34 @@ impl<'a> Observed<'a> {
         .can_reach(origin.as_str(), move_value)
     }
 
+    /// Every ship of this player that could reach `destination` if it were activated.
+    ///
+    /// [`Self::can_reach`] answers this one hull at a time and needs the caller to know the hull's
+    /// effective movement; this answers it for the whole fleet, through the engine's own
+    /// `movable_into`, so gravity drive, action-card effects and laws are all accounted for
+    /// exactly as they would be during the real movement step.
+    ///
+    /// Public by the same argument as [`Self::can_reach`]: it reads only this seat's own units and
+    /// the public map.
+    #[must_use]
+    pub fn movable_into(
+        &self,
+        player: &PlayerId,
+        destination: &SystemId,
+    ) -> Vec<crate::tactical::Movable> {
+        let Some(galaxy) = self.galaxy else {
+            return Vec::new();
+        };
+        crate::tactical::movable_into(
+            self.state,
+            self.content,
+            self.sources,
+            galaxy,
+            player,
+            destination,
+        )
+    }
+
     /// `(system, planet)` for every planet a player controls.
     #[must_use]
     pub fn controlled_planets(&self, player: &PlayerId) -> Vec<(&'a SystemId, &'a PlanetId)> {
@@ -679,8 +707,32 @@ impl<'a> Observed<'a> {
         &self,
         player: &PlayerId,
     ) -> Vec<crate::objectives::CardProgress> {
-        let mut position =
-            crate::objectives::Position::new(self.state, self.content, self.sources, player);
+        self.revealed_objective_progress_gaining(player, &[])
+    }
+
+    /// The same, for the position this player would hold if it also controlled `gained`.
+    ///
+    /// This is what makes "would this action help an objective?" answerable without guessing: the
+    /// caller names the planets an action would take, and the engine's own requirement functions
+    /// report the progress that would result. Compared against the current progress it gives an
+    /// exact per-card delta.
+    ///
+    /// Only planet control is imagined. Requirements about units, technologies or map shape read
+    /// the real state on both sides and cancel out of the difference, so a caller that differences
+    /// two calls is never told an action helps a card it cannot touch.
+    #[must_use]
+    pub fn revealed_objective_progress_gaining(
+        &self,
+        player: &PlayerId,
+        gained: &[PlanetId],
+    ) -> Vec<crate::objectives::CardProgress> {
+        let mut position = crate::objectives::Position::imagining(
+            self.state,
+            self.content,
+            self.sources,
+            player,
+            gained,
+        );
         if let Some(galaxy) = self.galaxy {
             position = position.with_galaxy(galaxy);
         }

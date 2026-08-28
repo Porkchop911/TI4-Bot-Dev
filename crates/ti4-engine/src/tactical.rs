@@ -180,6 +180,28 @@ pub fn movable(
     let Some(active) = state.active_system.clone() else {
         return Vec::new();
     };
+    movable_into(state, content, sources, galaxy, player, &active)
+}
+
+/// The same question asked of a system that is **not** activated: what could reach it if it were?
+///
+/// [`movable`] answers this for `state.active_system`, which is the only system it can be asked
+/// about once a tactical action is under way. A policy choosing *which* system to activate needs
+/// it one step earlier, for each candidate, and the activation is not reversible enough to try.
+///
+/// Splitting it out rather than cloning and mutating the state keeps the answer exact: the same
+/// movement rules, the same action-card effects, the same gravity-drive fallback. The activation
+/// target enters `MovementRules` as a destination and nothing else, so asking about a hypothetical
+/// one is not a simulation — it is the same computation with a different argument.
+#[must_use]
+pub fn movable_into(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &Galaxy,
+    player: &PlayerId,
+    active: &SystemId,
+) -> Vec<Movable> {
     let types = catalogue(content, sources);
     let board = Board::for_player(state, content, sources, player);
     let mut rules = MovementRules::new(galaxy, content, sources, active.as_str(), board);
@@ -187,7 +209,7 @@ pub fn movable(
 
     let mut found = Vec::new();
     for origin in state.systems_with_units_of(player) {
-        if origin == &active {
+        if origin == active {
             continue;
         }
         for (index, hull) in state.ships_of(player, origin).into_iter().enumerate() {
