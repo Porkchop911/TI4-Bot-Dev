@@ -27,6 +27,7 @@ pub mod combat;
 pub mod deck;
 pub mod dice;
 pub mod draft;
+pub mod entropic_scars;
 pub mod event;
 pub mod exploration;
 pub mod faction_abilities;

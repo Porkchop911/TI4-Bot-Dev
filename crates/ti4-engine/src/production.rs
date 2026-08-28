@@ -1006,6 +1006,12 @@ pub fn placements(
     if kind.is_ship() {
         return vec![SPACE.to_owned()]; // 68.2
     }
+    // Entropic scars rule 2: PRODUCTION is a unit ability, so a space dock inside a scar produces
+    // nothing. Rule 2.2 covers the Space Dock II text that defines X for its Production ability --
+    // that text has no effect because the ability it modifies is gone.
+    if !crate::entropic_scars::abilities_usable(content, sources, system, None) {
+        return Vec::new();
+    }
     let made = producers(state, content, sources, player, system);
     let mut spots: Vec<String> = made
         .iter()

@@ -140,6 +140,12 @@ fn bombardment_at(
     invader: &PlayerId,
     occurrence: FeatOccurrence,
 ) -> (usize, bool) {
+    // Entropic scars rules 2 and 4: bombardment is a unit ability, so it cannot be used by ships
+    // in a scar, nor against ground forces in one. Both directions collapse to the same system
+    // here, since bombardment fires from the active system onto planets in it.
+    if !crate::entropic_scars::abilities_usable(content, sources, system, Some(system)) {
+        return (0, false);
+    }
     let types = catalogue(content, sources);
     let planets: Vec<PlanetId> = state
         .system_state(system)

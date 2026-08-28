@@ -99,6 +99,7 @@ impl<'a> System<'a> {
     pub fn is_anomaly(&self) -> bool {
         self.is_nebula()
             || self.is_supernova()
+            || self.is_scar()
             || self.is_asteroid_field()
             || self.is_gravity_rift()
             || self.is_scar()
