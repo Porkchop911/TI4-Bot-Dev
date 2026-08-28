@@ -49,7 +49,7 @@ const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// the `action-plan` namespace, and discovery now emits ten opening-progress facts and nine
 /// action-feasibility ones — 11,118 slots became 11,138.
 const ACCEPTED_SLOTS_SHA256: &str =
-    "1b2221bea6d4df06979d0850cee19eec2cb0d74b553e790ce59b7013919c7a2d";
+    "4456cf89db510724dff4183742aee0205e92ad7e7858ed012592044d7eb1421b";
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {
