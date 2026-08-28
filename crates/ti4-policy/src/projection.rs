@@ -327,24 +327,23 @@ fn action_facts(
             ]
         }
         kind if kind == ti4_engine::tactical::MOVE_KIND => {
-            // The destination is the active system: movement in a tactical action moves *into* it.
-            // Without one there is no destination to describe, and the option is left undescribed
-            // rather than described as zero.
-            let Some(active) = seen.active_system() else {
-                return Vec::new();
-            };
-            let (free, adds) = destination(active);
+            // No destination facts here, deliberately.
+            //
+            // Movement in a tactical action moves *into* the already-activated system, so every
+            // movement option in a choice shares one destination. An earlier version emitted the
+            // destination's free planets and whether it would add a system, and both took the same
+            // value for every option — features that cannot separate the things they are asked to
+            // choose between. They occupied columns, trained weights and added noise to the head
+            // where the diagnosed failure lives, and run-011 measured the cost.
+            //
+            // What varies per option is the *carrier*: how much this hull can lift, how much is
+            // waiting where it sits, and how much it would therefore actually deliver.
             let capacity = option
                 .payload
                 .get("capacity")
                 .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0);
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "unit capacities are single digits"
-            )]
-            let capacity = capacity.max(0) as f64;
-            // Ground forces sitting at this unit's origin, which is what its capacity could carry.
+                .unwrap_or(0)
+                .max(0);
             let ground = option
                 .payload
                 .get("origin")
@@ -357,15 +356,20 @@ fn action_facts(
                         .filter(|unit| &unit.owner == player)
                         .count()
                 });
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "unit capacities are single digits"
+            )]
+            let capacity_value = capacity as f64;
+            // What this move would actually deliver: a hull with capacity four sitting where there
+            // is one infantry lifts one, and an empty hull over three lifts none. Neither the
+            // capacity nor the garrison says that on its own.
+            let load = usize::try_from(capacity).unwrap_or(0).min(ground);
             vec![
-                (name("move-free-planets"), count(free)),
-                (name("move-adds-system"), f64::from(u8::from(adds))),
-                (name("move-capacity"), capacity),
+                (name("move-capacity"), capacity_value),
                 (name("move-ground-at-origin"), count(ground)),
-                (
-                    name("move-carries-ground"),
-                    f64::from(u8::from(capacity > 0.0 && ground > 0)),
-                ),
+                (name("move-effective-load"), count(load)),
+                (name("move-carries-ground"), f64::from(u8::from(load > 0))),
             ]
         }
         kind if kind == ti4_engine::invasion::COMMIT_KIND => {
@@ -796,6 +800,89 @@ mod tests {
             "both activations produced identical action facts, so nothing here can tell them \
              apart: {:?} against {:?}",
             facts[0], facts[1]
+        );
+    }
+
+    #[test]
+    fn an_action_fact_tells_two_movements_apart() {
+        // The test that should have existed before run-011 and did not.
+        //
+        // `an_action_fact_tells_two_activations_apart` proved discrimination for the activation
+        // head, and movement was assumed to inherit it. It did not: two of the five movement facts
+        // were computed from the active system, which every movement option in a choice shares, so
+        // they took one value for the whole choice. Six thousand updates measured the cost.
+        //
+        // A discrimination test belongs to a head, not to a family.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+        let origin = ti4_model::id::SystemId::new("origin");
+        let mut home = ti4_model::state::SystemState::default();
+        home.planet_units.insert(
+            ti4_model::id::PlanetId::new("garrison"),
+            vec![
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("infantry"),
+                    player.clone(),
+                ),
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("infantry"),
+                    player.clone(),
+                ),
+            ],
+        );
+        state.board.insert(origin.clone(), home);
+        state.board.insert(
+            ti4_model::id::SystemId::new("empty"),
+            ti4_model::state::SystemState::default(),
+        );
+        let seen = Observed::new(&state, content, POK, None);
+
+        // A carrier leaving the garrison, and an identical hull leaving an empty system. Same kind,
+        // same capacity; only what they can pick up differs.
+        let moves: Vec<ChoiceOption> = [("origin", 4), ("empty", 4)]
+            .into_iter()
+            .map(|(from, capacity)| {
+                ChoiceOption::labelled(
+                    format!("move|{from}|0"),
+                    ti4_engine::tactical::MOVE_KIND,
+                    format!("move a carrier from {from}"),
+                )
+                .with("origin", from)
+                .with("capacity", capacity)
+            })
+            .collect();
+
+        let facts: Vec<Vec<(String, f64)>> = moves
+            .iter()
+            .map(|option| action_facts(&seen, option, &player))
+            .collect();
+        for emitted in &facts {
+            assert!(!emitted.is_empty(), "a movement option emitted no facts");
+        }
+        let differs = facts[0]
+            .iter()
+            .zip(&facts[1])
+            .any(|((left, a), (right, b))| left == right && (a - b).abs() > f64::EPSILON);
+        assert!(
+            differs,
+            "two movements with different garrisons produced identical facts: {:?} against {:?}",
+            facts[0], facts[1]
+        );
+
+        // And specifically the fact that exists to say it: one hull can deliver, the other cannot.
+        let load = |emitted: &[(String, f64)]| -> f64 {
+            emitted
+                .iter()
+                .find(|(name, _)| name.ends_with("move-effective-load"))
+                .map_or(-1.0, |(_, value)| *value)
+        };
+        assert!(
+            (load(&facts[0]) - 2.0).abs() < f64::EPSILON,
+            "a carrier over two infantry lifts two"
+        );
+        assert!(
+            (load(&facts[1])).abs() < f64::EPSILON,
+            "a carrier over nothing lifts nothing"
         );
     }
 
