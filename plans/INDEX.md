@@ -23,3 +23,9 @@ Autonomous agents must follow [`../AGENTS.md`](../AGENTS.md), obey
 
 Milestones are sequential gates. Work packages inside a milestone may run in parallel only
 when their `Depends` entries are satisfied and their edit scopes do not overlap.
+
+## Operator-authorized independent tooling
+
+| Plan | Outcome | Relationship to migration milestones |
+|---|---|---|
+| [R01 — Offline game review viewer](R01_REVIEW_VIEWER.md) | Read-only offline game inspection from validated review artifacts | Optional; does not gate or depend on M10 training. |

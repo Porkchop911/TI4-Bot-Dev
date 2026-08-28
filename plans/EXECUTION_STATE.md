@@ -22,6 +22,24 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### R01 independent review-viewer track (2026-08-28)
+
+- **Authorization:** the operator explicitly requested an independent lightweight application for
+  human review of simulated games. It is separate from TTS and does not change M00–M13 sequencing
+  or M10 training acceptance.
+- **Completed package:** R01-001 — ReviewBundle v1 contract. The first independent Tier-C review
+  required corrections; its privacy, grammar, bounds, frame semantics, and replay-claim findings
+  were addressed. Mendel's independent Tier-C re-review accepted the result with no actionable
+  findings. No implementation has begun.
+- **Branch:** `wp/r01-review-viewer-contract` from `4d528ab`.
+- **Changed paths:** `plans/R01_REVIEW_VIEWER.md`, `plans/evidence/R01-001.md`, this file, and
+  `plans/INDEX.md` only.
+- **Decision:** offline, audience-specific HTML/SVG artifacts; no server/live watch or training
+  integration in MVP. `ti4-sim` replay remains a stub, so no capture/replay fidelity claim exists.
+- **Commit:** `0941c90` (`R01-001: define offline review bundle contract`); documentation checks
+  passed and no executable test applies to this package.
+- **Next action:** create a dedicated R01-002 branch for the pure bundle validator/types package.
+
 ### Codex Stage-1 parity repair checkpoint (2026-08-13)
 
 - Active branch: `codex/stage1-parity-fixes`; the pre-existing local edit to
