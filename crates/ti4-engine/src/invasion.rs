@@ -271,6 +271,15 @@ fn landable_planets(
                 .map(|_| PlanetId::new(name))
         })
         .filter(|planet| planet.as_str() != "mr" || state.custodians_removed)
+        // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
+        // a space station." They are listed in the system's `planets` array because they carry a
+        // planet card, so without this they were offered to every invasion like any other planet --
+        // and taking one was worth a planet *and* a system, since three of the four sit on tiles
+        // whose only other planet is real and the fourth has none. 6.2% of measured opening
+        // clearances depended on it. See `plans/evidence/SPACE_STATIONS_AUDIT.md`.
+        .filter(|planet| {
+            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
+        })
         .collect()
 }
 
@@ -1378,6 +1387,34 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::POK;
+    use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    /// Space stations rule 5: ground forces cannot be committed to a space station.
+    ///
+    /// Checked on real tiles rather than an invented one. 117 carries only The Watchtower, so the
+    /// whole tile must offer nothing; 109 carries Bellatrix *and* Tsion Station, so it must offer
+    /// exactly the real planet -- which is the case that distinguishes "filtered" from "skipped
+    /// the tile".
+    #[test]
+    fn ground_forces_cannot_land_on_a_space_station() {
+        let content = ti4_content::ContentStore::embedded();
+        let state = crate::fixtures::game(&["a"]);
+
+        let station_only =
+            landable_planets(&state, content, ALL_SOURCES, &SystemId::new("117"));
+        assert!(
+            station_only.is_empty(),
+            "The Watchtower is the only planet on 117 and is a station, so nothing may land: {station_only:?}"
+        );
+
+        let mixed = landable_planets(&state, content, ALL_SOURCES, &SystemId::new("109"));
+        assert_eq!(
+            mixed,
+            vec![PlanetId::new("bellatrix")],
+            "109 must offer its real planet and not Tsion Station"
+        );
+    }
+
     use ti4_model::id::UnitTypeId;
 
     use super::*;

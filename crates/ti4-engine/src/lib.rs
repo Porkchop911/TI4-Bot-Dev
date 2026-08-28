@@ -58,6 +58,7 @@ pub mod relics;
 pub mod rng;
 pub mod seating;
 pub mod secrets;
+pub mod space_stations;
 pub mod setup;
 pub mod status;
 pub mod strategy;

@@ -678,6 +678,10 @@ impl<'a> Game<'a> {
     /// Resolve one generated decision, or one choice-free phase/window transition.
     #[must_use]
     pub fn step(&mut self) -> StepResult {
+        // Space station control is a function of occupancy, not an event (rules 2, 2a, 2b), so it
+        // is recomputed once per step rather than at each of the dozen places a unit can move or
+        // die. Doing it here means a movement path added later cannot forget to.
+        crate::space_stations::reconcile_all(&mut self.state, self.content, self.sources);
         if self.state.finished {
             return self.result(false, None);
         }

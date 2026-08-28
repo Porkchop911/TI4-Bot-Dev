@@ -220,10 +220,16 @@ impl<'a> Position<'a> {
         player: &'a PlayerId,
     ) -> Self {
         let catalogue = all_planets(content, sources);
+        // Space stations rule 7: "Space Stations do not count as planets for the purpose of scoring
+        // objectives." `Position` is the scoring view and nothing else reads it, so excluding them
+        // here excludes them from every counting family at once, while leaving voting (rule 6) and
+        // exhausting for resources or influence (rule 4) untouched -- both of which read control
+        // directly and both of which are correct as they stand.
         let controlled = state
             .controlled_planets(player)
             .into_iter()
             .filter_map(|(_, planet)| catalogue.get(planet.as_str()).copied())
+            .filter(|planet| !planet.is_space_station())
             .collect();
         Self {
             galaxy: None,
@@ -267,6 +273,9 @@ impl<'a> Position<'a> {
             .iter()
             .filter(|planet| !held.contains(planet.as_str()))
             .filter_map(|planet| catalogue.get(planet.as_str()).copied())
+            // Rule 7 again: a hypothetical gain of a station moves no objective either, or the
+            // per-option "would this help an objective" fact would recommend taking one.
+            .filter(|planet| !planet.is_space_station())
             .collect();
         position.controlled.append(&mut added);
         position
@@ -508,11 +517,19 @@ fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
 /// two neighbours.
 fn weaker_neighbours_count(position: &Position<'_>) -> Option<usize> {
     let galaxy = position.galaxy?;
-    let mine = position.state.controlled_planets(position.player).len();
+    // Counted through the scoring view, not `state.controlled_planets`, so rule 7 applies to both
+    // sides of the comparison. Reading the raw state here would have counted stations for everyone
+    // and quietly re-admitted them to a planet-counting objective.
+    let planets_of = |who: &PlayerId| -> usize {
+        Position::new(position.state, position.content, position.sources, who)
+            .controlled()
+            .len()
+    };
+    let mine = position.controlled().len();
     Some(
         crate::transactions::neighbours(position.state, galaxy, position.player)
             .into_iter()
-            .filter(|other| position.state.controlled_planets(other).len() < mine)
+            .filter(|other| planets_of(other) < mine)
             .count(),
     )
 }
@@ -1835,6 +1852,35 @@ pub enum ScoringError {
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::POK;
+    use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    /// Space stations rule 7: they do not count as planets for scoring objectives.
+    ///
+    /// Counted through a real counting family rather than through the private view, so the test
+    /// fails if the exclusion is placed somewhere the scorer does not read.
+    #[test]
+    fn a_space_station_does_not_count_toward_a_planet_objective() {
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+
+        // One real planet and one station, both controlled.
+        state
+            .system_mut(&SystemId::new("109"))
+            .set_control(PlanetId::new("bellatrix"), player.clone());
+        state
+            .system_mut(&SystemId::new("117"))
+            .set_control(PlanetId::new("thewatchtower"), player.clone());
+
+        let position = Position::new(&state, content, ALL_SOURCES, &player);
+        let progress = counting_progress(&ObjectiveId::new("expand_borders"), &position)
+            .expect("expand_borders counts non-home planets");
+        assert_eq!(
+            progress.have, 1,
+            "only Bellatrix counts; The Watchtower is a space station"
+        );
+    }
+
     use ti4_model::id::{PlanetId, SystemId};
 
     use super::*;

@@ -472,7 +472,11 @@ fn structure_options(
 ) -> Vec<ChoiceOption> {
     state
         .controlled_planets(player)
+        // Space stations rule 5: no structures on a space station either.
         .into_iter()
+        .filter(|(_, planet)| {
+            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
+        })
         .flat_map(|(system, planet)| {
             ["pds", "spacedock"]
                 .into_iter()

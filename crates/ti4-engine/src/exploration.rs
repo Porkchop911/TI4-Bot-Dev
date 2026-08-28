@@ -442,8 +442,16 @@ pub fn frontier_systems(
         .system_ids()
         .into_iter()
         .filter(|id| {
-            ti4_content::galaxy::system(content, id, sources)
-                .is_none_or(|record| record.planets().is_empty())
+            ti4_content::galaxy::system(content, id, sources).is_none_or(|record| {
+                // Space stations rule 14: "If a system tile contains a space station, but no
+                // planets, then a frontier token will be placed in that system during game setup."
+                // A station is listed in `planets`, so a station-only tile read as "has planets"
+                // and got no token. The Watchtower (117) is the tile this affects.
+                record
+                    .planets()
+                    .into_iter()
+                    .all(|planet| ti4_content::galaxy::is_space_station(content, planet, sources))
+            })
         })
         .map(SystemId::new)
         .collect();
@@ -637,6 +645,27 @@ pub fn purge_for_relic(
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::POK;
+    use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    /// Space stations rule 14: a tile with a station but no planets still takes a frontier token.
+    ///
+    /// The Watchtower (117) is the only such tile in the corpus. Before this it read as "has a
+    /// planet" because the station is listed in the tile's `planets` array, so the token was never
+    /// placed and the frontier deck was unreachable from that system.
+    #[test]
+    fn a_station_only_system_takes_a_frontier_token() {
+        let content = ti4_content::ContentStore::embedded();
+        let ids = ["117", "18", "19", "20", "21", "22", "23"];
+        let galaxy = ti4_content::galaxy::Galaxy::build(content, &ids, ALL_SOURCES, 1)
+            .expect("a valid map");
+
+        let systems = frontier_systems(content, ALL_SOURCES, &galaxy);
+        assert!(
+            systems.contains(&SystemId::new("117")),
+            "117 holds only a space station, so rule 14 puts a frontier token there: {systems:?}"
+        );
+    }
+
 
     use super::*;
     use crate::fixtures::game;

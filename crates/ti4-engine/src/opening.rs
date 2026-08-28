@@ -185,8 +185,32 @@ impl Opening {
 }
 
 /// Controlled planets, and how many distinct systems they lie in.
-fn planets_of(state: &GameState, player: &PlayerId) -> (usize, usize) {
-    let controlled = state.controlled_planets(player);
+///
+/// Space stations are excluded, and the reason changed shape once station control was corrected.
+///
+/// Before, a station could be taken by landing an infantry on it, which is illegal (rule 5) and was
+/// worth a planet *and* a system to this bar -- 6.2% of measured clearances rested on it. Barring
+/// the landing removes that. But control is now by sole occupancy (rule 2), so a seat that flies a
+/// single ship into the Watchtower system gains the station without landing anything at all, which
+/// would make the bar *easier* than before rather than harder.
+///
+/// Neither reading is what this bar is for. It measures whether a seat expanded onto planets, and a
+/// space station is not a planet -- rule 7 says as much for scoring objectives, and nothing about
+/// this bar wants the opposite. Excluding them keeps "three planets in three systems" meaning what
+/// it says.
+fn planets_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> (usize, usize) {
+    let controlled: Vec<_> = state
+        .controlled_planets(player)
+        .into_iter()
+        .filter(|(_, planet)| {
+            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
+        })
+        .collect();
     let systems: BTreeSet<&ti4_model::id::SystemId> =
         controlled.iter().map(|(system, _)| *system).collect();
     (controlled.len(), systems.len())
@@ -258,14 +282,21 @@ fn fleet_of(
 /// Taken before the game runs. Both deltas are measured against this, so a caller that forgets it
 /// gets no deltas rather than wrong ones.
 #[must_use]
-pub fn snapshot(state: &GameState) -> BTreeMap<PlayerId, (usize, usize)> {
+pub fn snapshot(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+) -> BTreeMap<PlayerId, (usize, usize)> {
     state
         .players
         .iter()
         .map(|seat| {
             (
                 seat.id.clone(),
-                (planets_of(state, &seat.id).0, units_of(state, &seat.id)),
+                (
+                    planets_of(state, content, sources, &seat.id).0,
+                    units_of(state, &seat.id),
+                ),
             )
         })
         .collect()
@@ -287,7 +318,7 @@ pub fn measure(
         .players
         .iter()
         .map(|seat| {
-            let (planets, systems) = planets_of(state, &seat.id);
+            let (planets, systems) = planets_of(state, content, sources, &seat.id);
             let units = units_of(state, &seat.id);
             let (began_planets, began_units) = start.get(&seat.id).copied().unwrap_or((0, 0));
             let faction = seat.faction.to_string();
@@ -354,7 +385,7 @@ mod tests {
         hold(&mut state, &player, "26", "kamdorn");
 
         // Measured against a setup that already held all three: nothing was gained.
-        let start = snapshot(&state);
+        let start = snapshot(&state, ti4_content::ContentStore::embedded(), POK);
         let held = opening_of(&state, &start);
         assert_eq!(held.planets, 3, "three planets are held");
         assert_eq!(held.planets_gained, 0, "and none of them were taken");
@@ -555,7 +586,7 @@ mod tests {
         let faction = FactionId::new("sol");
         crate::seating::deploy(&mut state, content, &players[0], &faction, POK).unwrap();
 
-        let start = snapshot(&state);
+        let start = snapshot(&state, content, POK);
         let opening = measure(&state, &start, &BTreeMap::new(), content, POK)
             .remove(&players[0])
             .unwrap();

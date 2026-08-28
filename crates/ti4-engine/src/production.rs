@@ -992,6 +992,10 @@ pub fn placements(
     let mut spots: Vec<String> = made
         .iter()
         .filter_map(|(_, planet)| planet.clone())
+        // Space stations rule 5. Defensive: with structures barred from stations a station cannot
+        // hold a producer in the first place, so this should be unreachable -- but `placements` is
+        // the last gate before a unit is placed, and the rule belongs at the gate too.
+        .filter(|planet| !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources))
         .filter(|planet| {
             structure_allowed(state, content, sources, player, planet, kind.base_type())
         })

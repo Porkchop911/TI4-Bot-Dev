@@ -1095,7 +1095,7 @@ where
 
     // Taken before the game runs: every opening delta is measured against it, and a caller that
     // forgot it would get absolute holdings reported as gains.
-    let baseline = ti4_engine::opening::snapshot(&state);
+    let baseline = ti4_engine::opening::snapshot(&state, content, sources);
 
     let mut game = Game::with_table(state, content, table)
         .with_sources(sources)

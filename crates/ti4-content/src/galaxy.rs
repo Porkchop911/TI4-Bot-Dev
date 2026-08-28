@@ -214,6 +214,22 @@ impl<'a> Planet<'a> {
             .collect()
     }
 
+    /// Whether this record is a Thunder's Edge space station rather than a planet.
+    ///
+    /// Space stations appear in a system's `planets` array and carry a planet card, which is why
+    /// they are stored as planets at all. The rules treat them as a distinct thing: ground forces
+    /// and structures cannot be placed on them, control is by sole occupancy of the system rather
+    /// than by landing, and they do not count as planets for scoring objectives. They *do* count
+    /// for voting and may be exhausted for resources or influence, which is why they are not simply
+    /// removed from the catalogue.
+    ///
+    /// [`Self::traits`] already declined to treat `SPACESTATION` as a planet trait. This is the
+    /// same fact, named once so the rest of the engine stops re-deriving it.
+    #[must_use]
+    pub fn is_space_station(&self) -> bool {
+        self.has_trait("SPACESTATION")
+    }
+
     #[must_use]
     pub fn tech_specialties(&self) -> Vec<&'a str> {
         self.record.strings("techSpecialties")
@@ -238,6 +254,16 @@ pub fn all_systems(store: &ContentStore, sources: SourceSet) -> BTreeMap<&str, S
         .from_sources(ContentType::Systems, sources)
         .filter_map(|r| r.id().map(|id| (id, System::new(r))))
         .collect()
+}
+
+/// Whether `id` names a space station, in this source scope.
+///
+/// A point lookup, so it is safe to call per option in a choice. An unknown id is not a station:
+/// the caller is asking "may I land here", and an id nothing recognises is handled by whatever
+/// already rejects it.
+#[must_use]
+pub fn is_space_station(store: &ContentStore, id: &str, sources: SourceSet) -> bool {
+    planet(store, id, sources).is_some_and(|record| record.is_space_station())
 }
 
 /// The planet catalogue in a source scope, keyed by id.
