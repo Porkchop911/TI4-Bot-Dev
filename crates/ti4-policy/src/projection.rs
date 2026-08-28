@@ -302,18 +302,31 @@ fn action_facts(
 
     // How many planets in `system` this seat does not already control, and whether reaching it
     // would add a system it holds nothing in.
+    // Planets come from the **content**, not from `planet_units`.
+    //
+    // `SystemState::planet_units` holds an entry only where units were placed -- `seating` creates
+    // them for starting forces and nothing creates them for an empty planet. Counting its keys
+    // therefore counts planets somebody is already standing on, and reports **zero** for the
+    // untouched systems a seat most wants to take. Mecatol Rex reads as a system with no planets.
+    //
+    // That is not an unhelpful feature, it is an inverted one, and it is why two training runs on
+    // this family measured flat: `activate-free-planets` was largest exactly where the seat should
+    // not go.
     let destination = |system: &ti4_model::id::SystemId| -> (usize, bool) {
-        let state = seen.system(system);
         let mine: std::collections::BTreeSet<&ti4_model::id::PlanetId> = controlled
             .iter()
             .filter(|(held, _)| *held == system)
             .map(|(_, planet)| *planet)
             .collect();
-        let free = state
-            .planet_units
-            .keys()
-            .filter(|planet| !mine.contains(planet))
-            .count();
+        let free = ti4_content::galaxy::system(seen.content(), system.as_str(), seen.sources())
+            .map_or(0, |tile| {
+                tile.planets()
+                    .into_iter()
+                    .filter(|planet| {
+                        !mine.contains(&ti4_model::id::PlanetId::new((*planet).to_owned()))
+                    })
+                    .count()
+            });
         (free, !held_systems.contains(system))
     };
 
@@ -741,25 +754,30 @@ mod tests {
         let content = ti4_content::ContentStore::embedded();
         let (mut state, player) = position();
 
-        // The two destinations are built here rather than taken from the fixture, so the thing
-        // under test is a difference the test itself created: one system with two unheld planets,
-        // one with none. A fixture whose systems happened to be alike would pass this test by
-        // failing to distinguish anything.
-        let rich = ti4_model::id::SystemId::new("rich");
-        let bare = ti4_model::id::SystemId::new("bare");
-        let mut full = ti4_model::state::SystemState::default();
-        full.planet_units
-            .insert(ti4_model::id::PlanetId::new("alpha"), Vec::new());
-        full.planet_units
-            .insert(ti4_model::id::PlanetId::new("beta"), Vec::new());
-        state.board.insert(rich.clone(), full);
-        state
-            .board
-            .insert(bare.clone(), ti4_model::state::SystemState::default());
+        // Two real tiles carrying different numbers of planets, both untouched. They must be real:
+        // planets come from the corpus, so an invented id has none and two invented ids are alike.
+        // That is exactly the mistake this family shipped with, and a fixture that repeated it
+        // would pass by failing to distinguish anything.
+        let rich = ti4_model::id::SystemId::new("16");
+        let bare = ti4_model::id::SystemId::new("26");
+        let planets = |id: &str| {
+            ti4_content::galaxy::system(content, id, POK)
+                .expect("the tile is in the corpus")
+                .planets()
+                .len()
+        };
+        assert!(
+            planets("16") > planets("26"),
+            "the fixture tiles must differ in planets"
+        );
+        for tile in [&rich, &bare] {
+            state
+                .board
+                .insert(tile.clone(), ti4_model::state::SystemState::default());
+        }
         let seen = Observed::new(&state, content, POK, None);
 
         let systems = [rich, bare];
-        assert_eq!(systems.len(), 2, "two destinations to tell apart");
         let options: Vec<ChoiceOption> = systems
             .iter()
             .map(|system| {
@@ -800,6 +818,53 @@ mod tests {
             "both activations produced identical action facts, so nothing here can tell them \
              apart: {:?} against {:?}",
             facts[0], facts[1]
+        );
+    }
+
+    #[test]
+    fn a_destination_counts_the_planets_on_the_tile_not_the_ones_someone_stands_on() {
+        // The defect this feature family shipped with, twice.
+        //
+        // `SystemState::planet_units` holds an entry only where units were placed, so counting its
+        // keys reports zero planets for an untouched system -- the very systems worth taking. The
+        // feature was not weak, it was inverted, and two training runs measured flat because of it.
+        //
+        // The fixture is a real tile with real planets and nobody standing on any of them.
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+        let tile = ti4_model::id::SystemId::new("26");
+        let printed = ti4_content::galaxy::system(content, "26", POK)
+            .expect("tile 26 is in the corpus")
+            .planets()
+            .len();
+        assert!(printed > 0, "the fixture tile must carry planets");
+        state
+            .board
+            .insert(tile.clone(), ti4_model::state::SystemState::default());
+        let seen = Observed::new(&state, content, POK, None);
+        assert!(
+            seen.system(&tile).planet_units.is_empty(),
+            "the fixture must have nobody standing on it, or it proves nothing"
+        );
+
+        let option = ChoiceOption::labelled(
+            tile.to_string(),
+            ti4_engine::tactical::ACTIVATE_KIND,
+            "activate 26",
+        );
+        let facts = action_facts(&seen, &option, &player);
+        let free = facts
+            .iter()
+            .find(|(name, _)| name.ends_with("activate-free-planets"))
+            .map_or(-1.0, |(_, value)| *value);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a tile carries single-digit planets"
+        )]
+        let expected = printed as f64;
+        assert!(
+            (free - expected).abs() < f64::EPSILON,
+            "an empty tile with {printed} planets reported {free} free"
         );
     }
 

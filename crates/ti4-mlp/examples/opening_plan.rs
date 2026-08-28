@@ -265,11 +265,12 @@ fn main() {
 
             // How many planets each tile carries. A property of the tile, so the end-of-round board
             // reports it as faithfully as the start would.
+            // Planets come from the corpus, not from `planet_units`, which holds an entry only
+            // where units were placed and so reports zero for an untouched tile -- the tiles most
+            // worth taking. See F-M10-035-2.
             let planets_on = |system: &SystemId| -> usize {
-                final_state
-                    .board
-                    .get(system)
-                    .map_or(0, |state| state.planet_units.len())
+                ti4_content::galaxy::system(content, system.as_str(), DEFAULT)
+                    .map_or(0, |tile| tile.planets().len())
             };
 
             let recorded = logs.borrow();
