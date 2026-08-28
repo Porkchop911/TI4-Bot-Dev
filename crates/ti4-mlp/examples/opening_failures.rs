@@ -138,6 +138,15 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--seeds expects a positive integer"))
     });
+    // Sampling temperature. The default is the trained one, which is what the policy plays at --
+    // but a policy that ranks the right move first and still samples another is failing at
+    // *execution*, not at judgement, and the opening needs about four consecutive correct
+    // decisions. Lowering this separates the two.
+    let temperature: f64 = argument("--temperature").map_or(1.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--temperature expects a number"))
+    });
     let seed_base: u64 = argument("--seed-base").map_or(695_000_000, |value| {
         value
             .parse()
@@ -221,6 +230,7 @@ fn main() {
                                 stream,
                             )
                             .from_setup(baseline)
+                            .at_temperature(temperature)
                             .seat();
                             deciders.insert(player.clone(), decider);
                         }

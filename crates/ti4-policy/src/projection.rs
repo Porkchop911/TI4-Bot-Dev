@@ -361,7 +361,12 @@ fn opening_facts(
         ),
         (
             format!("{SEAT_STATE_FAMILY}:opening-units-needed"),
-            deficit(progress.units_gained, requirement.units_gained),
+            // The reward's shaping proxy, not the gate. The gate is now a fleet composition --
+            // two capacity ships and three ground forces -- and a `Progress` carries neither, so
+            // the policy cannot be shown the real deficit without carrying the composition on
+            // every decision. Recorded rather than papered over: this feature under-describes the
+            // bar it is named for.
+            deficit(progress.units_gained, 1),
         ),
         // Where the forces are, which is what decides whether the deficits above can still close.
         (

@@ -17,6 +17,8 @@
 //! the board.
 
 use std::collections::{BTreeMap, BTreeSet};
+use ti4_content::ContentStore;
+use ti4_model::content_types::SourceSet;
 
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
@@ -44,7 +46,21 @@ pub struct Requirement {
     /// PDS counts. Those are *constructed* rather than produced, so in principle this bar could be
     /// cleared without producing anything. Measured over 60 games it is not: every faction gains
     /// at least two ships on its own.
-    pub units_gained: usize,
+    pub capacity_ships: usize,
+    /// Ground forces the seat must hold, anywhere.
+    ///
+    /// This replaced "gained at least one unit". That version existed to give Jol-Nar a reason to
+    /// build, and priced it as an *outcome* — build something, anything — when what the opening
+    /// actually needs is a *composition*: enough hulls to split across two systems and enough
+    /// infantry to land on three planets.
+    ///
+    /// Measured over the six factions' starting fleets, this binds on exactly the two seats that
+    /// cannot execute the opening as dealt. Jol-Nar starts with three capacity ships and **two**
+    /// infantry, so it cannot put two on one planet and one on another. Xxcha starts with four
+    /// infantry and a single carrier — its two cruisers carry nothing. Everybody else already
+    /// satisfies it at setup and is unaffected, which is the point: a gate that binds on everyone
+    /// is measuring something other than the thing that is hard.
+    pub infantry: usize,
 }
 
 impl Default for Requirement {
@@ -57,7 +73,8 @@ impl Default for Requirement {
 pub const DEFAULT_REQUIREMENT: Requirement = Requirement {
     planets_gained: 3,
     systems: 3,
-    units_gained: 1,
+    capacity_ships: 2,
+    infantry: 3,
 };
 
 /// One seat's round-one position, and whether it cleared its bar.
@@ -77,6 +94,10 @@ pub struct Opening {
     pub planets_gained: usize,
     /// Units gained, likewise.
     pub units_gained: usize,
+    /// Ships this seat owns that can carry something.
+    pub capacity_ships: usize,
+    /// Ground forces this seat owns, in space or on a planet.
+    pub infantry: usize,
     /// The bar this seat was measured against.
     pub requirement: Requirement,
 }
@@ -94,10 +115,11 @@ impl Opening {
         self.systems >= self.requirement.systems
     }
 
-    /// Whether the seat built anything.
+    /// Whether the seat holds the fleet the opening needs.
     #[must_use]
     pub const fn units_ok(&self) -> bool {
-        self.units_gained >= self.requirement.units_gained
+        self.capacity_ships >= self.requirement.capacity_ships
+            && self.infantry >= self.requirement.infantry
     }
 
     /// Whether all three parts are met.
@@ -120,12 +142,17 @@ impl Opening {
         self.requirement.systems.saturating_sub(self.systems)
     }
 
-    /// Units short of the bar.
+    /// Hulls and infantry short of the bar, summed.
+    ///
+    /// One number because the two are interchangeable for the purpose the shortfall serves —
+    /// telling a caller how far from the composition this seat is — and because a seat short of
+    /// both is further away than one short of either.
     #[must_use]
     pub const fn unit_shortfall(&self) -> usize {
         self.requirement
-            .units_gained
-            .saturating_sub(self.units_gained)
+            .capacity_ships
+            .saturating_sub(self.capacity_ships)
+            + self.requirement.infantry.saturating_sub(self.infantry)
     }
 
     /// How far off the bar, summed over the three parts. Zero when cleared.
@@ -187,6 +214,45 @@ fn units_of(state: &GameState, player: &PlayerId) -> usize {
         .sum()
 }
 
+/// Ships that can carry something, and ground forces, for one player.
+///
+/// Capacity comes from the content rather than a list of hull names: Letnev and L1Z1X use a
+/// dreadnought as their second carrier, Sol's carrier is a faction variant, and a hardcoded set
+/// would quietly stop being true the moment content changed.
+///
+/// Ground forces are counted wherever they are. Infantry being transported sit in the space area,
+/// not on a planet, and a seat that has loaded its infantry onto a carrier has not stopped having
+/// them.
+fn fleet_of(
+    state: &GameState,
+    player: &PlayerId,
+    content: &ContentStore,
+    sources: SourceSet,
+) -> (usize, usize) {
+    let mut capacity_ships = 0;
+    let mut infantry = 0;
+    let ground = |unit: &ti4_model::units::Unit| -> bool {
+        let kind = unit.type_id.as_str();
+        kind.ends_with("infantry") || kind.ends_with("mech")
+    };
+    for system in state.board.values() {
+        for unit in system.units.iter().filter(|unit| &unit.owner == player) {
+            if ground(unit) {
+                infantry += 1;
+            } else if crate::transit::capacity_of(content, sources, unit) > 0 {
+                capacity_ships += 1;
+            }
+        }
+        infantry += system
+            .planet_units
+            .values()
+            .flatten()
+            .filter(|unit| &unit.owner == player && ground(unit))
+            .count();
+    }
+    (capacity_ships, infantry)
+}
+
 /// Planets held and units on the board per player, for use as a later baseline.
 ///
 /// Taken before the game runs. Both deltas are measured against this, so a caller that forgets it
@@ -214,6 +280,8 @@ pub fn measure(
     state: &GameState,
     start: &BTreeMap<PlayerId, (usize, usize)>,
     requirements: &BTreeMap<String, Requirement>,
+    content: &ContentStore,
+    sources: SourceSet,
 ) -> BTreeMap<PlayerId, Opening> {
     state
         .players
@@ -223,6 +291,7 @@ pub fn measure(
             let units = units_of(state, &seat.id);
             let (began_planets, began_units) = start.get(&seat.id).copied().unwrap_or((0, 0));
             let faction = seat.faction.to_string();
+            let (capacity_ships, infantry) = fleet_of(state, &seat.id, content, sources);
             let opening = Opening {
                 player: seat.id.clone(),
                 faction: faction.clone(),
@@ -231,6 +300,8 @@ pub fn measure(
                 units,
                 planets_gained: planets.saturating_sub(began_planets),
                 units_gained: units.saturating_sub(began_units),
+                capacity_ships,
+                infantry,
                 requirement: requirements
                     .get(&faction)
                     .copied()
@@ -259,9 +330,15 @@ mod tests {
     }
 
     fn opening_of(state: &GameState, start: &BTreeMap<PlayerId, (usize, usize)>) -> Opening {
-        measure(state, start, &BTreeMap::new())
-            .remove(&PlayerId::new("a"))
-            .expect("a is seated")
+        measure(
+            state,
+            start,
+            &BTreeMap::new(),
+            ContentStore::embedded(),
+            ti4_model::content_types::DEFAULT,
+        )
+        .remove(&PlayerId::new("a"))
+        .expect("a is seated")
     }
 
     #[test]
@@ -319,10 +396,27 @@ mod tests {
 
         let ground_only = opening_of(&state, &BTreeMap::new());
         assert_eq!(ground_only.units, 2, "troops on a planet are units");
-        assert!(ground_only.units_ok());
+        assert_eq!(
+            ground_only.infantry, 2,
+            "troops on a planet are ground forces"
+        );
 
         crate::fixtures::put(&mut state, &system, "cruiser", &player, 1);
-        assert_eq!(opening_of(&state, &BTreeMap::new()).units, 3);
+        let with_a_ship = opening_of(&state, &BTreeMap::new());
+        assert_eq!(with_a_ship.units, 3);
+        assert_eq!(
+            with_a_ship.capacity_ships, 0,
+            "a cruiser carries nothing, which is why Xxcha's two of them do not help it"
+        );
+
+        // Ground forces in transit sit in the space area, and a seat that has loaded its infantry
+        // onto a carrier has not stopped having them.
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 2);
+        crate::fixtures::put(&mut state, &system, "infantry", &player, 1);
+        let loaded = opening_of(&state, &BTreeMap::new());
+        assert_eq!(loaded.capacity_ships, 2, "carriers carry");
+        assert_eq!(loaded.infantry, 3, "two landed and one aboard");
+        assert!(loaded.units_ok(), "two hulls and three ground forces");
     }
 
     #[test]
@@ -369,7 +463,11 @@ mod tests {
         let player = PlayerId::new("a");
 
         let nothing = opening_of(&state, &BTreeMap::new());
-        assert_eq!(nothing.shortfall(), 3 + 3 + 1);
+        assert_eq!(
+            nothing.shortfall(),
+            3 + 3 + 2 + 3,
+            "three planets, three systems, two hulls and three ground forces"
+        );
 
         hold(&mut state, &player, "26", "arretze");
         let some = opening_of(&state, &BTreeMap::new());
@@ -389,7 +487,8 @@ mod tests {
             hold(&mut state, &player, system, planet);
         }
         let (system, planet) = crate::fixtures::a_placed_planet();
-        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, 3);
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 2);
 
         let cleared = opening_of(&state, &BTreeMap::new());
         assert!(cleared.cleared(), "{cleared:?}");
@@ -423,12 +522,19 @@ mod tests {
         let easier = Requirement {
             planets_gained: 0,
             systems: 0,
-            units_gained: 0,
+            capacity_ships: 0,
+            infantry: 0,
         };
         let bars: BTreeMap<String, Requirement> =
             [("sol".to_owned(), easier)].into_iter().collect();
 
-        let measured = measure(&state, &BTreeMap::new(), &bars);
+        let measured = measure(
+            &state,
+            &BTreeMap::new(),
+            &bars,
+            ContentStore::embedded(),
+            ti4_model::content_types::DEFAULT,
+        );
         assert!(measured[&PlayerId::new("a")].cleared(), "sol's bar is met");
         assert_eq!(
             measured[&PlayerId::new("b")].requirement,
@@ -450,7 +556,7 @@ mod tests {
         crate::seating::deploy(&mut state, content, &players[0], &faction, POK).unwrap();
 
         let start = snapshot(&state);
-        let opening = measure(&state, &start, &BTreeMap::new())
+        let opening = measure(&state, &start, &BTreeMap::new(), content, POK)
             .remove(&players[0])
             .unwrap();
 

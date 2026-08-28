@@ -37,6 +37,11 @@ use serde::{Deserialize, Serialize};
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
 pub use ti4_policy::progress::Progress;
 
+/// How many gained units the dense shaping pays for.
+///
+/// One, as the oracle trainer had it. This is not the gate — see [`potential`].
+const UNIT_SHAPING_CAP: usize = 1;
+
 /// Potential over exactly the three Stage-1 gate components.
 ///
 /// Capping each component at its requirement is what stops production or territory beyond the gate
@@ -61,7 +66,15 @@ pub fn potential(
     };
     let planets = capped(progress.planets_gained, requirement.planets_gained);
     let systems = capped(progress.systems, requirement.systems);
-    let units = capped(progress.units_gained, requirement.units_gained);
+    // A dense proxy for the fleet gate, not the gate itself, and deliberately unchanged by the
+    // move to a composition bar.
+    //
+    // `Opening::units_ok` now asks for two capacity ships and three ground forces. A per-decision
+    // `Progress` carries neither, so the shaping still pays for the first unit gained and no more.
+    // Raising the cap to match the composition would change every shaped return and break parity
+    // with the oracle trainer this was ported from -- a real regression, in exchange for a proxy
+    // that would still not be the gate.
+    let units = capped(progress.units_gained, UNIT_SHAPING_CAP);
 
     #[expect(clippy::cast_precision_loss, reason = "bars are single digits")]
     let planet_bar = requirement.planets_gained.max(1) as f64;

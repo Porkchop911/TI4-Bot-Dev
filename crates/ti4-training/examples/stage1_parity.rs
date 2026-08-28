@@ -489,9 +489,10 @@ fn report_component_pass_rates(rollouts: &[Rollout]) {
         );
         total.systems +=
             usize::from(progress.systems >= i64::try_from(requirement.systems).unwrap_or(i64::MAX));
-        total.units += usize::from(
-            progress.units_gained >= i64::try_from(requirement.units_gained).unwrap_or(i64::MAX),
-        );
+        // A `Progress` carries no fleet composition, so this reports the dense shaping proxy the
+        // reward uses -- units gained against the infantry the composition needs -- not the gate.
+        // `Opening::units_ok` is the gate.
+        total.units += usize::from(progress.units_gained >= 1);
     }
     println!("component pass rates (individual bars, before conjunction)");
     println!("faction       planets  systems   units");
