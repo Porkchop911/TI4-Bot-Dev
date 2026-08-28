@@ -421,18 +421,36 @@ fn sling_relay_candidates(
     let affordable = available(state, content, sources, player, Spend::Resources);
     let mut candidates = BTreeMap::new();
     for (system, board) in &state.board {
-        let has_dock = board.planet_units.values().flatten().any(|unit| {
-            unit.owner == *player
-                && types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(|kind| kind.base_type() == "spacedock")
+        let dock_planets: Vec<&ti4_model::id::PlanetId> = board
+            .planet_units
+            .iter()
+            .filter(|(_, units)| {
+                units.iter().any(|unit| {
+                    unit.owner == *player
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(|kind| kind.base_type() == "spacedock")
+                })
+            })
+            .map(|(planet, _)| planet)
+            .collect();
+        let has_dock = !dock_planets.is_empty();
+        // Coexistence rule 4: "A coexisting structure is always blockaded, regardless of what
+        // ships, if any, are in the system." A dock the player built while coexisting produces
+        // nothing even in a system they otherwise hold uncontested.
+        let coexisting_dock = dock_planets.iter().any(|planet| {
+            board
+                .coexisting
+                .get(*planet)
+                .is_some_and(|others| others.contains(player))
         });
-        let blockaded = board.units.iter().any(|unit| {
-            unit.owner != *player
-                && types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(ti4_content::units::UnitType::is_ship)
-        });
+        let blockaded = coexisting_dock
+            || board.units.iter().any(|unit| {
+                unit.owner != *player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ship)
+            });
         if !has_dock || blockaded {
             continue;
         }

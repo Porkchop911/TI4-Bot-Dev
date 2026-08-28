@@ -21,6 +21,7 @@ pub mod action_cards;
 pub mod agenda;
 pub mod agenda_effects;
 pub mod choice;
+pub mod coexistence;
 pub mod combat;
 pub mod deck;
 pub mod dice;

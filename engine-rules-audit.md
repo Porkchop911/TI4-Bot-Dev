@@ -94,20 +94,20 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Asteroid Field | ? | `movement.rs` |
 | Attach | ? | |
 | Attacker | ? | |
-| Blockaded | ? | `production.rs`, `movement.rs`; coexistence blockade rule 4 absent |
-| Bombardment | ? | `invasion.rs`; coexistence targeting rules 7/7.1/7.2 absent |
+| Blockaded | **PARTIAL** | coexisting structures always blockaded (rule 4) — phase 2; base rule unverified |
+| Bombardment | **PARTIAL** | hits grouped per unit, no spillover (7.2) — phase 2; 7/7.1 choice outstanding |
 | Breakthroughs | **PARTIAL** | 2 of 31 have effects; breakthrough roll (rule 3) absent |
 | Capacity | ? | `transit.rs`, `fleet.rs` |
 | Capture | ? | |
-| Coexistence | **ABSENT** | 13 rules, none implemented |
+| Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 13 done (phase 2); 7/7.1 target choice and 9-12 combat outstanding |
 | Combat | ? | `combat.rs`, 3110 lines |
 | Command Sheet | OK | `TokenPool`, `tactic_tokens` etc. in `state.rs` |
 | Command Tokens | ? | |
 | Commodities | **PARTIAL** | exists; space-station +1 (rule 8) and convert (rule 12) absent |
 | Component Action | ? | |
 | Component Limitations | OK | `supply.rs`, LRR 31.4, with the fighter/infantry exemption correct |
-| Construction | **WRONG** | offers PDS/space dock on space stations (`strategy_cards.rs:474`) |
-| Control | **WRONG** | space-station control is by landing, not sole occupancy |
+| Construction | OK | stations excluded (rule 5) — phase 1 |
+| Control | OK | station control is sole occupancy, reconciled per step — phase 1 |
 | Cost | ? | |
 | Custodians Token | ? | `invasion.rs` keeps Mecatol off the table until removed |
 | Deals | ? | |
@@ -123,18 +123,18 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Fighter Tokens | OK | intentionally uncapped, `supply.rs` documents why |
 | Fleet Pool | ? | `fleet.rs` |
 | The Fracture | **ABSENT** | 15 rules, none implemented |
-| Frontier Tokens | **WRONG** | station-only systems get no token (rule 14); tile 117 affected |
+| Frontier Tokens | OK | station-only tiles take a token (rule 14) — phase 1 |
 | Game Board | ? | |
 | Game Round | ? | |
 | Gravity Rift | ? | `movement.rs` |
 | Ground Combat | ? | `invasion.rs`; coexistence combat rules 9–12 absent |
-| Ground Forces | **WRONG** | can be committed to space stations (rule 5) |
+| Ground Forces | OK | cannot be committed to stations (rule 5) — phase 1 |
 | Hyperlanes | ? | |
 | Imperial | ? | |
 | Infantry Tokens | OK | as fighter tokens |
 | Influence | ? | |
 | Initiative Order | ? | |
-| Invasion | **WRONG** | `landable_planets` offers space stations |
+| Invasion | **PARTIAL** | stations excluded (phase 1); coexistence combat 9-12 outstanding |
 | Leader Sheet | ? | |
 | Leaders | **PARTIAL** | 3 unimplemented across the six trained factions |
 | Leadership | ? | |
@@ -147,10 +147,10 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Nebula | ? | |
 | Neighbors | **PARTIAL** | adjacency only; station-to-station transactions (rule 10) absent |
 | Neutral Units | **ABSENT** | 9 rules, none implemented |
-| Objective Cards | **PARTIAL** | 30 of 40 public registered; space stations wrongly counted |
+| Objective Cards | **PARTIAL** | 30 of 40 public registered; stations excluded and coexisters counted (rule 13) — phases 1-2 |
 | Opponent | ? | |
 | PDS | ? | |
-| Planets | **WRONG** | space stations treated as planets throughout |
+| Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
 | Planetary Shield | ? | `invasion.rs`, incl. L1Z1X commander override |
 | Politics | ? | |
 | Producing Units | ? | |
@@ -166,13 +166,13 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Space Cannon | ? | `combat.rs`; two reaction windows unsupported |
 | Space Combat | ? | |
 | Space Dock | ? | |
-| Space Stations | **WRONG** | 5 rules wrong, 4 missing — see the dedicated audit |
+| Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | ? | |
 | Status Phase | ? | `status.rs` |
 | Strategic Action | ? | |
 | Strategy Card | ? | |
 | Strategy Phase | ? | |
-| Structures | **WRONG** | placeable on space stations |
+| Structures | OK | not placeable on stations (rule 5) — phase 1 |
 | Supernova | ? | |
 | Sustain Damage | ? | applied inside hit assignment; 3 reaction windows unsupported |
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
@@ -191,7 +191,12 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
 | Wormholes | ? | |
 
-Totals: **8 wrong**, **6 absent**, **11 partial**, **4 verified correct**, **80 unverified**.
+Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
+**79 unverified**.
+
+Originally **8 wrong**, **6 absent**, **11 partial**, **4 verified**, **80 unverified**. Every
+verified defect is fixed; coexistence moved from absent to partial. Progress against
+`plans/ENGINE_COMPLETION_PLAN.md` is tracked there, not here.
 
 Of the six absent topics, five are Thunder's Edge (Coexistence, Entropic Scars, The Fracture,
 Synergy, Neutral Units) and one is base-game Elimination, which cannot arise at a four-round

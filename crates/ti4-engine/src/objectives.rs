@@ -225,10 +225,23 @@ impl<'a> Position<'a> {
         // here excludes them from every counting family at once, while leaving voting (rule 6) and
         // exhausting for resources or influence (rule 4) untouched -- both of which read control
         // directly and both of which are correct as they stand.
+        // Coexistence rule 13: "A player is considered to control a planet they are coexisting on
+        // solely when scoring an objective." `Position` is the scoring view and nothing else reads
+        // it, so this is exactly where that "solely" is honoured -- adding coexisters to
+        // `controlled_planets` instead would have let them spend and vote with the planet too.
+        let coexisting = state.board.iter().flat_map(|(_, record)| {
+            record
+                .coexisting
+                .iter()
+                .filter(|(_, others)| others.contains(player))
+                .map(|(planet, _)| planet)
+        });
         let controlled = state
             .controlled_planets(player)
             .into_iter()
-            .filter_map(|(_, planet)| catalogue.get(planet.as_str()).copied())
+            .map(|(_, planet)| planet)
+            .chain(coexisting)
+            .filter_map(|planet| catalogue.get(planet.as_str()).copied())
             .filter(|planet| !planet.is_space_station())
             .collect();
         Self {

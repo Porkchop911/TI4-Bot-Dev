@@ -146,6 +146,16 @@ pub struct SystemState {
     /// Planet to the units standing on it. Ground forces are always on a planet or in a
     /// system's space area (LRR 43.1), never anywhere else. Excluded from equality.
     pub planet_units: BTreeMap<PlanetId, Vec<Unit>>,
+    /// Planet to the players coexisting on it, one controller aside (Thunder's Edge coexistence 2).
+    ///
+    /// Coexistence is not derivable from occupancy. Two players with ground forces on one planet
+    /// normally means a ground combat that has not happened yet; coexistence is the state a
+    /// specific effect puts them in, in which combat is *not* triggered. So it is recorded rather
+    /// than inferred. The controller is never listed here: they are in planet_control.
+    ///
+    /// Excluded from equality, like the other two planet maps.
+    #[serde(default)]
+    pub coexisting: BTreeMap<PlanetId, BTreeSet<PlayerId>>,
 }
 
 /// Mirrors the oracle's `compare=False` on `planet_control` and `planet_units`.

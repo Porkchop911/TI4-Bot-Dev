@@ -165,7 +165,17 @@ fn bombardment_at(
             continue;
         }
 
-        let mut hits = 0;
+        // Hits are grouped by the unit that produced them, because coexistence prices them that
+        // way:
+        //
+        //   7.   the bombarding player chooses which player's units on that planet take the hits;
+        //   7.1  that choice is made independently for each bombarding unit;
+        //   7.2  surplus hits above the chosen player's unit count cannot go to a different player.
+        //
+        // Off a coexisting planet all three are invisible: there is only one defending player, so
+        // the choice is forced and 7.2 is the ordinary "extra hits are wasted". Grouping per unit
+        // costs nothing there and is what makes 7.2 true rather than accidentally true.
+        let mut groups: Vec<usize> = Vec::new();
         for unit in state.system_state(system).units_of(invader) {
             let Some(kind) = types.get(unit.type_id.as_str()) else {
                 continue;
@@ -183,8 +193,34 @@ fn bombardment_at(
                 "bombardment",
                 Some(u32::try_from(value).unwrap_or(u32::MAX)),
             );
-            hits += roll.hits();
+            let produced = roll.hits();
+            if produced > 0 {
+                groups.push(produced);
+            }
         }
+
+        // Who may be shot at. On a coexisting planet this is a real choice per bombarding unit
+        // (7, 7.1) and the engine has no one to ask: bombardment resolves when the invasion window
+        // opens, before any decision is taken, precisely because it never had a choice before.
+        //
+        // Rather than pick a target and call it a rule, an ambiguous case is announced and the
+        // bombardment is skipped for that planet. Coexistence is currently unreachable -- the three
+        // effects that grant it (`exchangeprogram`, `crashlanding`, `sdn`) are unimplemented -- so
+        // this cannot fire yet, and it must be turned into a real choice when they land.
+        let targets: std::collections::BTreeSet<PlayerId> =
+            defenders.iter().map(|unit| unit.owner.clone()).collect();
+        if targets.len() > 1 {
+            debug_assert!(
+                false,
+                "bombarding a coexisting planet needs a target choice per bombarding unit \
+                 (coexistence 7, 7.1); see plans/ENGINE_COMPLETION_PLAN.md phase 2.4"
+            );
+            continue;
+        }
+        // 7.2: each unit's hits are capped by the chosen player's units, and do not spill.
+        let standing = defenders.len();
+        let hits: usize = groups.iter().map(|produced| (*produced).min(standing)).sum();
+        let hits = hits.min(standing);
 
         // Make an Example of Their World asks for the last ground force on a planet and asks for
         // it during this step. Counted here rather than after the invasion, because ground

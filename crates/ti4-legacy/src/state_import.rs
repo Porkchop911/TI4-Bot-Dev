@@ -142,6 +142,9 @@ pub fn import_initial_public_state(snapshot: &Value) -> Result<GameState, Public
                     .into_iter()
                     .map(|(planet, units)| (planet, units.into_iter().map(import_unit).collect()))
                     .collect(),
+                // The oracle snapshot format predates Thunder's Edge coexistence and carries no
+                // record of it, so an imported position has nobody coexisting anywhere.
+                coexisting: std::collections::BTreeMap::new(),
             },
         );
     }
