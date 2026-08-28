@@ -4062,9 +4062,11 @@ dependencies = [
  "thiserror 2.0.20",
  "ti4-content",
  "ti4-engine",
+ "ti4-mlp",
  "ti4-model",
  "ti4-policy",
  "ti4-sim",
+ "ti4-tensor",
  "ti4-training",
 ]
 

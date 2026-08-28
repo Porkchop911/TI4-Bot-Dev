@@ -21,12 +21,16 @@ use thiserror::Error;
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
 use ti4_engine::game::Game;
+use ti4_mlp::bot::{InferenceStatus, MlpBot};
+use ti4_mlp::{Actor, FactionRow, SparseOption};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_model::state::{GameState, Phase};
 use ti4_policy::features::names_of;
 use ti4_policy::inference::LearnedBot;
 use ti4_policy::learned::{Profile, decision_head};
+use ti4_policy::progress::Baseline;
+use ti4_policy::vocabulary::Vocabulary;
 use ti4_sim::MapPool;
 use ti4_training::rollout::{OpeningMap, setup_game_with_decider_factory};
 
@@ -127,8 +131,10 @@ pub struct BoardTile {
 pub struct FeatureContribution {
     pub name: String,
     pub value: f64,
-    pub weight: f64,
-    pub contribution: f64,
+    /// Linear-policy weight. Nonlinear MLP inputs have no single fixed weight.
+    pub weight: Option<f64>,
+    /// Exact linear value × weight. Absent for nonlinear MLP inputs.
+    pub contribution: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,16 +348,17 @@ impl Decider for TraceBot {
                     FeatureContribution {
                         name,
                         value,
-                        weight,
-                        contribution: value * weight,
+                        weight: Some(weight),
+                        contribution: Some(value * weight),
                     }
                 })
                 .collect();
             row.features.sort_by(|left, right| {
                 right
                     .contribution
+                    .unwrap_or_default()
                     .abs()
-                    .total_cmp(&left.contribution.abs())
+                    .total_cmp(&left.contribution.unwrap_or_default().abs())
                     .then_with(|| left.name.cmp(&right.name))
             });
         }
@@ -369,6 +376,114 @@ impl Decider for TraceBot {
     }
 }
 
+struct MlpTraceBot {
+    inner: Box<dyn Decider>,
+    actor: Rc<Actor>,
+    vocabulary: Vocabulary,
+    row: FactionRow,
+    baseline: Baseline,
+    faction: String,
+    log: Rc<RefCell<Vec<DecisionDetail>>>,
+}
+
+impl MlpTraceBot {
+    fn push(
+        &self,
+        choice: &Choice,
+        path: &str,
+        head: &str,
+        chosen: &std::result::Result<ChoiceOption, IllegalChoice>,
+        options: Vec<OptionDetail>,
+    ) {
+        let sequence = self.log.borrow().len();
+        self.log.borrow_mut().push(DecisionDetail {
+            sequence,
+            player: choice.player.to_string(),
+            faction: self.faction.clone(),
+            prompt: choice.prompt.clone(),
+            path: path.to_owned(),
+            requested_head: head.to_owned(),
+            resolved_head: head.to_owned(),
+            temperature: Some(1.0),
+            chosen: chosen.as_ref().ok().map(|option| option.id.clone()),
+            options,
+        });
+    }
+}
+
+impl Decider for MlpTraceBot {
+    fn choose(&mut self, choice: &Choice) -> std::result::Result<ChoiceOption, IllegalChoice> {
+        let options = TraceBot::option_rows(choice);
+        let picked = self.inner.choose(choice);
+        self.push(choice, "blind", "other", &picked, options);
+        picked
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> std::result::Result<ChoiceOption, IllegalChoice> {
+        let vectors = ti4_policy::projection::mlp_choice_features(
+            seen.observed(),
+            choice,
+            &choice.player,
+            &seen.held_secret_progress(),
+            self.baseline,
+        );
+        let sparse: Vec<SparseOption> = vectors
+            .iter()
+            .map(|vector| SparseOption {
+                columns: vector
+                    .keys()
+                    .map(|key| {
+                        i64::try_from(self.vocabulary.column_of_key(*key)).unwrap_or_default()
+                    })
+                    .collect(),
+                values: vector.values().map(|value| *value as f32).collect(),
+            })
+            .collect();
+        let head = Actor::resolve_head(decision_head(choice));
+        let scores = self.actor.logits(&sparse, head, self.row).ok();
+        let probabilities = self.actor.probabilities(&sparse, head, self.row, 1.0).ok();
+        let mut options = TraceBot::option_rows(choice);
+        for (index, option) in options.iter_mut().enumerate() {
+            option.score = scores
+                .as_ref()
+                .map(|scores| scores.double_value(&[i64::try_from(index).unwrap_or_default()]));
+            option.probability = probabilities
+                .as_ref()
+                .and_then(|probabilities| probabilities.get(index).copied());
+            if let Some(vector) = vectors.get(index) {
+                option.features = names_of(vector)
+                    .into_iter()
+                    .zip(vector.values().copied())
+                    .map(|(name, value)| FeatureContribution {
+                        name,
+                        value,
+                        weight: None,
+                        contribution: None,
+                    })
+                    .collect();
+                option
+                    .features
+                    .sort_by(|left, right| left.name.cmp(&right.name));
+            }
+        }
+        let picked = self.inner.choose_seeing(choice, seen);
+        self.push(choice, "seeing-mlp", head, &picked, options);
+        picked
+    }
+}
+
+enum LoadedPolicy {
+    Linear(BTreeMap<String, Profile>),
+    Mlp {
+        actor: Rc<Actor>,
+        vocabulary: Vocabulary,
+    },
+}
+
 pub struct LiveReview {
     pub session: ReviewSession,
     game: Game<'static>,
@@ -378,6 +493,7 @@ pub struct LiveReview {
     engine_steps: usize,
     action_count: usize,
     action_in_progress: bool,
+    _mlp_statuses: Vec<InferenceStatus>,
 }
 
 impl LiveReview {
@@ -387,9 +503,9 @@ impl LiveReview {
                 "rotation must be 0 through 5".to_owned(),
             ));
         }
-        let checkpoint_bytes = read_bounded(&config.checkpoint)?;
+        let (checkpoint_path, checkpoint_bytes, policy) =
+            load_policy(&config.checkpoint, config.table)?;
         let pool_bytes = read_bounded(&config.map_pool)?;
-        let profiles = load_profiles(&checkpoint_bytes, config.table)?;
         let pool = MapPool::load_verified(&config.map_pool, &pool_bytes)
             .map_err(|error| ReviewError::Invalid(format!("map pool: {error}")))?;
         let content = ContentStore::embedded();
@@ -411,9 +527,10 @@ impl LiveReview {
             .collect();
         let decisions = Rc::new(RefCell::new(Vec::new()));
         let decision_sink = Rc::clone(&decisions);
-        let profile_table = profiles.clone();
         let decider_players = players.clone();
         let decider_factions = factions.clone();
+        let mlp_status_sink = Rc::new(RefCell::new(Vec::new()));
+        let status_sink = Rc::clone(&mlp_status_sink);
         let map = OpeningMap::PythonPool {
             pool: Arc::new(pool),
             tile_seed_offset: TILE_SEED_OFFSET,
@@ -432,24 +549,44 @@ impl LiveReview {
                         .get(player)
                         .expect("complete fixed seating")
                         .to_string();
-                    let profile = profile_table
-                        .get(&faction)
-                        .expect("profiles validated before setup")
-                        .clone();
                     let stream = config
                         .seed
                         .wrapping_mul(1_000_003)
                         .wrapping_add(index as u64);
-                    let bot = LearnedBot::from_shared(Arc::new(profile), stream)
-                        .from_setup(baselines.get(player).copied().unwrap_or_default());
-                    table.insert(
-                        player.clone(),
-                        Box::new(TraceBot {
-                            inner: bot,
-                            faction,
-                            log: Rc::clone(&decision_sink),
-                        }),
-                    );
+                    let baseline = baselines.get(player).copied().unwrap_or_default();
+                    let decider: Box<dyn Decider> = match &policy {
+                        LoadedPolicy::Linear(profiles) => {
+                            let profile = profiles
+                                .get(&faction)
+                                .expect("profiles validated before setup")
+                                .clone();
+                            let bot = LearnedBot::from_shared(Arc::new(profile), stream)
+                                .from_setup(baseline);
+                            Box::new(TraceBot {
+                                inner: bot,
+                                faction,
+                                log: Rc::clone(&decision_sink),
+                            })
+                        }
+                        LoadedPolicy::Mlp { actor, vocabulary } => {
+                            let row = FactionRow::of(&faction)
+                                .map_err(|error| format!("MLP faction: {error}"))?;
+                            let bot = MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+                                .from_setup(baseline);
+                            let (inner, status) = bot.seat();
+                            status_sink.borrow_mut().push(status);
+                            Box::new(MlpTraceBot {
+                                inner,
+                                actor: Rc::clone(actor),
+                                vocabulary: vocabulary.clone(),
+                                row,
+                                baseline,
+                                faction,
+                                log: Rc::clone(&decision_sink),
+                            })
+                        }
+                    };
+                    table.insert(player.clone(), decider);
                 }
                 Ok(table)
             },
@@ -458,7 +595,7 @@ impl LiveReview {
 
         let board = board_metadata(content, game.galaxy().expect("setup installs galaxy"));
         let manifest = SessionManifest {
-            checkpoint_path: config.checkpoint.display().to_string(),
+            checkpoint_path: checkpoint_path.display().to_string(),
             checkpoint_sha256: sha256(&checkpoint_bytes),
             map_pool_path: config.map_pool.display().to_string(),
             map_pool_sha256: sha256(&pool_bytes),
@@ -500,6 +637,7 @@ impl LiveReview {
             engine_steps: 0,
             action_count: 0,
             action_in_progress: false,
+            _mlp_statuses: mlp_status_sink.borrow_mut().drain(..).collect(),
         })
     }
 
@@ -635,6 +773,52 @@ impl LiveReview {
         }
         report
     }
+}
+
+fn load_policy(path: &Path, selection: ProfileTable) -> Result<(PathBuf, Vec<u8>, LoadedPolicy)> {
+    let bundle_directory = if path.is_dir() {
+        Some(path.to_path_buf())
+    } else if matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("manifest.json" | "slots.json")
+    ) && path
+        .parent()
+        .is_some_and(|parent| parent.join("manifest.json").is_file())
+    {
+        path.parent().map(Path::to_path_buf)
+    } else {
+        None
+    };
+
+    if let Some(directory) = bundle_directory {
+        ti4_tensor::configure_deterministic(20_260_821)
+            .map_err(|error| ReviewError::Invalid(format!("MLP runtime: {error}")))?;
+        let loaded = ti4_mlp::bundle::read(&directory)
+            .map_err(|error| ReviewError::Invalid(format!("MLP checkpoint bundle: {error}")))?;
+        let manifest_path = directory.join("manifest.json");
+        let manifest_bytes = read_bounded(&manifest_path)?;
+        return Ok((
+            directory,
+            manifest_bytes,
+            LoadedPolicy::Mlp {
+                actor: Rc::new(loaded.actor),
+                vocabulary: loaded.vocabulary,
+            },
+        ));
+    }
+
+    let bytes = read_bounded(path)?;
+    let profiles = load_profiles(&bytes, selection).map_err(|error| {
+        if path.file_name().and_then(|name| name.to_str()) == Some("slots.json") {
+            ReviewError::Invalid(
+                "slots.json is only one MLP bundle component; select it beside a valid manifest.json"
+                    .to_owned(),
+            )
+        } else {
+            error
+        }
+    })?;
+    Ok((path.to_path_buf(), bytes, LoadedPolicy::Linear(profiles)))
 }
 
 fn load_profiles(bytes: &[u8], selection: ProfileTable) -> Result<BTreeMap<String, Profile>> {

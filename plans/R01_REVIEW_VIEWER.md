@@ -17,7 +17,7 @@ requested product and must not be presented as one.
 `cargo run -p ti4-review` opens a native Windows application. Its primary workflow is:
 
 ```text
-Choose checkpoint + choose map pool + seed + rotation + learner/champion
+Choose checkpoint bundle/profile JSON + choose map pool + seed + rotation
     -> load a real six-faction learned-policy game at its starting table
     -> step or run the live engine
     -> inspect omniscient board, holdings, and learned decisions
@@ -31,10 +31,15 @@ or mock/example game. A headless CLI remains available for automated verificatio
 
 ### Inputs and setup
 
-- Native file-picker buttons select the existing JSON checkpoint/profile table and JSON.GZ map pool.
+- Native file-picker buttons select either a schema-6 MLP checkpoint bundle's `manifest.json` or
+  `slots.json`, or a legacy JSON checkpoint/profile table, plus the JSON/JSON.GZ map pool. Selecting
+  `slots.json` resolves and verifies the complete sibling bundle; it is never treated as weights.
 - The seed is an unsigned 64-bit integer. Rotation is one of the six standard cyclic seat rotations.
-- A selector chooses current `learner_profiles`/`profiles` or `accepted` champion profiles. Missing,
-  malformed, hashed/non-explicit, non-finite, or incomplete six-faction tables fail before setup.
+- For legacy linear checkpoints, a selector chooses current `learner_profiles`/`profiles` or
+  `accepted` champion profiles. Schema-6 MLP bundles have one immutable actor and ignore that
+  legacy-only selector. Missing/malformed bundle components, checksum or shape mismatches,
+  hashed/non-explicit legacy profiles, non-finite values, and incomplete six-faction tables fail
+  before setup.
 - The standard lineup is `sol`, `letnev`, `xxcha`, `hacan`, `jolnar`, and `l1z1x` under `FULL`
   content. The map uses the training path's `seed + 20,000,000` tile-seed rule.
 - A new session opens at the post-deployment starting table before the first engine step.
@@ -66,8 +71,9 @@ This version is explicitly a referee/debug view, not a public or seat-redacted a
   cards, relics, leaders, notes, and other engine-visible holdings;
 - round, phase, active seat/system, pending window, engine events, and terminal/error state;
 - for every learned decision: acting seat/faction, prompt, requested/resolved head, temperature,
-  every legal option and label, chosen option, raw score, probability, feature values, weights, and
-  per-feature contribution where the loaded profile exposes it.
+  every legal option and label, chosen option, raw score, probability, and projected feature
+  values. Linear profiles also expose exact weights and value×weight contributions; nonlinear MLP
+  inputs are labelled nonlinear rather than inventing a fixed per-feature weight.
 
 The main layout is board center, player panels left, decision/details right, timeline and controls
 below, and inputs/session actions above. Systems, planets, players, and history entries are
@@ -117,7 +123,9 @@ artifacts).
 
 ## Safety and bounds
 
-- Checkpoint and map pool are validated completely before creating a game. Inputs are never edited.
+- Checkpoint and map pool are validated completely before creating a game. An MLP bundle verifies
+  its manifest, inventory, checksums, vocabulary, tensor shapes, runtime, heads, and faction roster.
+  Inputs are never edited.
 - All numeric checkpoint parameters used for inference must be finite. Every required faction must
   resolve to an explicit supported profile.
 - A command may attempt at most 2,000,000 engine steps; configurable `Run N` is capped at 1,000,000.
@@ -132,8 +140,9 @@ artifacts).
 ## Acceptance
 
 1. Launch with no arguments opens the native app and exposes both input-picker buttons.
-2. A real accepted repository checkpoint and map pool create the six-player starting table without
-   executing the first choice.
+2. A real schema-6 MLP bundle (selected through either `manifest.json` or `slots.json`) and map pool
+   create the six-player starting table without executing the first choice; a legacy profile
+   checkpoint remains supported.
 3. Step, next-decision, next-action, Run N for all three units, end-round, end-game, and Stop obey
    their declared boundaries on the real `Game::step()` path.
 4. A learned decision capture contains all legal options, chosen option, scores, probabilities, and

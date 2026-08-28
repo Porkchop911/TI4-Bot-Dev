@@ -559,8 +559,14 @@ impl ReviewApp {
                                         for feature in &option.features {
                                             ui.label(&feature.name);
                                             ui.label(format!("{:.3}", feature.value));
-                                            ui.label(format!("{:.5}", feature.weight));
-                                            ui.label(format!("{:.5}", feature.contribution));
+                                            ui.label(feature.weight.map_or_else(
+                                                || "nonlinear".to_owned(),
+                                                |value| format!("{value:.5}"),
+                                            ));
+                                            ui.label(feature.contribution.map_or_else(
+                                                || "—".to_owned(),
+                                                |value| format!("{value:.5}"),
+                                            ));
                                             ui.end_row();
                                         }
                                     });

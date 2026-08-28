@@ -10,24 +10,29 @@ quality requirements remained in force.
 The requirements were confirmed interview-style before implementation. The locked behavior is:
 
 - select a learned checkpoint and map pool with native file-picker buttons;
-- select learner/accepted profiles, seed, and one of six faction rotations;
+- select a current MLP bundle or learner/accepted legacy profiles, seed, and one of six faction
+  rotations;
 - open on the real post-deployment starting table before the first simulator step;
 - advance by one `Game::step()`, next resolved decision, next top-level action, a bounded variable
   number of any of those units, end of round, or end of game;
 - stop long runs at a clean engine-step boundary;
 - expose the omniscient table, legal options, selected option, model scores/probabilities, and every
-  feature value/weight/contribution;
+  projected feature value (plus exact weight/contribution for linear profiles);
 - navigate captured history without mutating or branching simulation state;
 - autosave, reopen view-only sessions, and export a self-contained read-only HTML replay.
 
 ## Delivered architecture
 
-- `ti4-review` is a real adapter over `ti4-engine`, `ti4-sim`, `ti4-training`, `ti4-model`, and
-  `ti4-policy`; hand-authored review JSON is not the simulation path.
+- `ti4-review` is a real adapter over `ti4-engine`, `ti4-sim`, `ti4-training`, `ti4-model`,
+  `ti4-policy`, and `ti4-mlp`; hand-authored review JSON is not the simulation path.
 - `ti4-training::setup_game_with_decider_factory` exposes the exact established setup baseline
   without stepping it. The reviewer captures that state as frame zero.
 - A tracing learned decider records every choice resolved inside an engine step, including nested
   decisions. Each option contains its policy score, probability, and decomposed feature rows.
+- Schema-6 MLP input accepts the bundle directory, `manifest.json`, or `slots.json`. The latter two
+  resolve to the containing directory and pass through `ti4_mlp::bundle::read`, which verifies the
+  complete inventory, digests, vocabulary, shapes, runtime identity, heads, and faction roster.
+  MLP feature rows are honestly labelled nonlinear: there is no single fixed input weight to show.
 - The native Windows GUI uses `eframe`/`egui` with `rfd` common-controls file dialogs. Dependencies
   are pinned to versions compatible with the workspace's Rust 1.94.1 toolchain.
 - Long GUI commands execute in bounded slices (at most 128 engine steps per UI update), so Stop
@@ -67,6 +72,25 @@ training PPO type, and existing training panic-documentation findings. No `ti4-r
 suppressed by them.
 
 ## Real workflow smoke evidence
+
+The operator-reported failing input was reproduced with
+`out/checkpoints/run-011/checkpoint-154720/slots.json`. After the repair, that exact selection
+resolved its sibling bundle and completed a real MLP decision:
+
+```text
+cargo run -p ti4-review -- simulate \
+  --checkpoint out/checkpoints/run-011/checkpoint-154720/slots.json \
+  --map-pool out/pools/save52_noadj_train.json --seed 42 --rotation 0 \
+  --unit decision --count 1 --out out/reviews/r01-mlp-slots-smoke.ti4review.json
+
+saved 2 frames; steps=1 decisions=1 actions=0 target=true outcome=InProgress
+cargo run -p ti4-review -- validate out/reviews/r01-mlp-slots-smoke.ti4review.json
+valid: 2 frames, InProgress
+```
+
+The captured strategy decision contained 8/8 logits, 8/8 probabilities, the sampled option
+`pok5trade`, and 396 projected feature rows. The session records the normalized checkpoint bundle
+directory rather than misrepresenting `slots.json` as a profile table.
 
 The full-game smoke used the real repository artifacts
 `out/stage2_r6/final10000.json` and `out/pools/save52_noadj_train.json`, learner profiles, seed 44,

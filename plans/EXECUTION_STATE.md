@@ -29,15 +29,21 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   cadence for this add-on only. It remains separate from TTS and does not change M00–M13 sequencing
   or M10 training acceptance.
 - **Branch:** `wp/r01-review-viewer-contract`.
-- **Implementation:** `ti4-review` now loads an actual checkpoint and map pool, creates the exact
+- **Implementation:** `ti4-review` now loads a schema-6 MLP bundle or legacy profile checkpoint and
+  a map pool, creates the exact
   training-equivalent six-seat starting table, and drives the simulator directly. It can advance by
   engine step, resolved decision, top-level action, a bounded variable count, round, or whole game;
   Stop takes effect at a clean engine-step boundary. The default no-argument command opens a native
   GUI with input buttons, seed/rotation/profile selectors, omniscient board/player/decision panes,
   a view-only timeline, autosave/reopen, and standalone HTML export.
 - **Trace fidelity:** every decision resolved within an engine step is retained, including nested
-  choices, with all legal options, scores, probabilities, and feature contributions. Frame zero is
-  the post-deployment table before the first `Game::step()`.
+  choices, with all legal options, scores, probabilities, and projected feature values. Linear
+  profiles additionally expose exact weights/contributions; MLP rows are labelled nonlinear.
+  Frame zero is the post-deployment table before the first `Game::step()`.
+- **MLP checkpoint repair:** selecting either `manifest.json` or `slots.json` resolves the containing
+  schema-6 bundle and verifies its full inventory through `ti4_mlp::bundle::read`. The operator's
+  exact `run-011/checkpoint-154720/slots.json` path now produces a validated real decision with 8/8
+  scored options, 8/8 probabilities, and 396 projected feature rows.
 - **Verification:** formatting, focused add-on and touched-training Clippy, 3 focused tests, the full
   workspace test suite, diff checks, both learner/accepted profile smokes, session validation, HTML
   rendering, and native GUI startup passed. A complete learned game produced 2,923 frames, 2,922
