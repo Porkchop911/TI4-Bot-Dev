@@ -1,821 +1,907 @@
-//! A dependency-free-from-the-engine offline game-review viewer.
-//!
-//! The boundary is JSON data only: this crate deliberately cannot receive `GameState`, an event
-//! log, a decision log, a seed, or an RNG. Callers must construct an audience-projected bundle.
+//! Native, omniscient learned-game review sessions.
 
 #![allow(
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::collapsible_if,
+    clippy::cast_precision_loss,
     clippy::missing_errors_doc,
-    clippy::needless_pass_by_value,
-    clippy::needless_raw_string_hashes,
-    clippy::too_many_lines,
-    clippy::unnecessary_semicolon
+    clippy::too_many_lines
 )]
 
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
 
-use serde::{Deserialize, Deserializer, de};
-use serde_json::{Map, Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use unicode_normalization::UnicodeNormalization;
+use ti4_content::ContentStore;
+use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
+use ti4_engine::game::Game;
+use ti4_model::content_types::FULL;
+use ti4_model::id::{FactionId, PlayerId};
+use ti4_model::state::{GameState, Phase};
+use ti4_policy::features::names_of;
+use ti4_policy::inference::LearnedBot;
+use ti4_policy::learned::{Profile, decision_head};
+use ti4_sim::MapPool;
+use ti4_training::rollout::{OpeningMap, setup_game_with_decider_factory};
 
-pub const MAX_BUNDLE_BYTES: usize = 67_108_864;
-const MAX_MANIFEST_BYTES: usize = 65_536;
-const MAX_PAYLOAD_BYTES: usize = 66_060_288;
-const MAX_FRAME_BYTES: usize = 524_288;
-const MAX_TIMELINE_BYTES: usize = 16_384;
+pub mod gui;
+
+pub const SESSION_SCHEMA: &str = "ti4-review-session";
+pub const SESSION_VERSION: u32 = 2;
+pub const TILE_SEED_OFFSET: u64 = 20_000_000;
+pub const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_SESSION_BYTES: usize = 512 * 1024 * 1024;
+pub const MAX_HTML_BYTES: usize = 512 * 1024 * 1024;
+pub const MAX_FRAMES: usize = 1_000_001;
+pub const MAX_COMMAND_STEPS: usize = 2_000_000;
+pub const MAX_RUN_COUNT: usize = 1_000_000;
+pub const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+
+#[derive(Debug, Error)]
+pub enum ReviewError {
+    #[error("read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("write {path}: {source}")]
+    Write {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("{0}")]
+    Invalid(String),
+    #[error("session exceeds its {MAX_SESSION_BYTES}-byte limit")]
+    SessionTooLarge,
+    #[error("HTML export exceeds its {MAX_HTML_BYTES}-byte limit")]
+    HtmlTooLarge,
+}
+
+pub type Result<T> = std::result::Result<T, ReviewError>;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileTable {
+    #[default]
+    Learner,
+    Accepted,
+}
+
+impl ProfileTable {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Learner => "Learner",
+            Self::Accepted => "Accepted champion",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SimulationConfig {
+    pub checkpoint: PathBuf,
+    pub map_pool: PathBuf,
+    pub seed: u64,
+    pub rotation: usize,
+    pub table: ProfileTable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionManifest {
+    pub checkpoint_path: String,
+    pub checkpoint_sha256: String,
+    pub map_pool_path: String,
+    pub map_pool_sha256: String,
+    pub seed: u64,
+    pub tile_seed: u64,
+    pub rotation: usize,
+    pub profile_table: ProfileTable,
+    pub factions: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlanetMeta {
+    pub id: String,
+    pub label: String,
+    pub resources: i64,
+    pub influence: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BoardTile {
+    pub system: String,
+    pub label: String,
+    pub q: i32,
+    pub r: i32,
+    pub hyperlane: bool,
+    pub planets: Vec<PlanetMeta>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FeatureContribution {
+    pub name: String,
+    pub value: f64,
+    pub weight: f64,
+    pub contribution: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OptionDetail {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    pub score: Option<f64>,
+    pub probability: Option<f64>,
+    pub features: Vec<FeatureContribution>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DecisionDetail {
+    pub sequence: usize,
+    pub player: String,
+    pub faction: String,
+    pub prompt: String,
+    pub path: String,
+    pub requested_head: String,
+    pub resolved_head: String,
+    pub temperature: Option<f64>,
+    pub chosen: Option<String>,
+    pub options: Vec<OptionDetail>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReviewFrame {
+    pub index: usize,
+    pub engine_step: usize,
+    pub decision_count: usize,
+    pub action_count: usize,
+    pub round: u32,
+    pub phase: Phase,
+    pub active: Option<String>,
+    pub resolved_choice: bool,
+    pub action_completed: bool,
+    pub finished: bool,
+    pub error: Option<String>,
+    pub new_events: Vec<String>,
+    pub decisions: Vec<DecisionDetail>,
+    pub state: GameState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionOutcome {
+    InProgress,
+    Completed,
+    EngineFailed { error: String },
+    SafetyLimit { steps: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewSession {
+    pub schema: String,
+    pub version: u32,
+    pub manifest: SessionManifest,
+    pub board: Vec<BoardTile>,
+    pub frames: Vec<ReviewFrame>,
+    pub outcome: SessionOutcome,
+}
+
+impl ReviewSession {
+    pub fn validate(&self) -> Result<()> {
+        if self.schema != SESSION_SCHEMA || self.version != SESSION_VERSION {
+            return Err(ReviewError::Invalid(format!(
+                "unsupported review session {} v{}",
+                self.schema, self.version
+            )));
+        }
+        if self.frames.is_empty() || self.frames.len() > MAX_FRAMES {
+            return Err(ReviewError::Invalid("invalid frame count".to_owned()));
+        }
+        if self.manifest.factions != FACTIONS.map(str::to_owned) {
+            return Err(ReviewError::Invalid(
+                "session does not carry the standard six-faction lineup".to_owned(),
+            ));
+        }
+        for (index, frame) in self.frames.iter().enumerate() {
+            if frame.index != index {
+                return Err(ReviewError::Invalid(format!(
+                    "frame {} has non-contiguous index {}",
+                    index, frame.index
+                )));
+            }
+            if index == 0 && frame.engine_step != 0 {
+                return Err(ReviewError::Invalid(
+                    "initial frame is not engine step zero".to_owned(),
+                ));
+            }
+            if index > 0 && frame.engine_step != self.frames[index - 1].engine_step + 1 {
+                return Err(ReviewError::Invalid(format!(
+                    "frame {index} has a broken engine-step sequence"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn latest(&self) -> &ReviewFrame {
+        self.frames.last().expect("validated sessions have a frame")
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ErrorCode {
-    InvalidUtf8,
-    JsonSyntax,
-    DuplicateKey,
-    NoncanonicalJson,
-    RootShape,
-    UnknownField,
-    UnsupportedVersion,
-    InvalidValue,
-    LimitExceeded,
-    PayloadChecksumMismatch,
-    BadReference,
-    BadFrameOrder,
-    BadTimelineOrder,
-    PrivacyViolation,
-    TerminalConflict,
-    NotSupported,
+pub enum AdvanceUnit {
+    Step,
+    Decision,
+    Action,
 }
-impl ErrorCode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::InvalidUtf8 => "invalid_utf8",
-            Self::JsonSyntax => "json_syntax",
-            Self::DuplicateKey => "duplicate_key",
-            Self::NoncanonicalJson => "noncanonical_json",
-            Self::RootShape => "root_shape",
-            Self::UnknownField => "unknown_field",
-            Self::UnsupportedVersion => "unsupported_version",
-            Self::InvalidValue => "invalid_value",
-            Self::LimitExceeded => "limit_exceeded",
-            Self::PayloadChecksumMismatch => "payload_checksum_mismatch",
-            Self::BadReference => "bad_reference",
-            Self::BadFrameOrder => "bad_frame_order",
-            Self::BadTimelineOrder => "bad_timeline_order",
-            Self::PrivacyViolation => "privacy_violation",
-            Self::TerminalConflict => "terminal_conflict",
-            Self::NotSupported => "not_supported",
-        }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdvanceReport {
+    pub steps: usize,
+    pub decisions: usize,
+    pub actions: usize,
+    pub reached_target: bool,
+}
+
+struct TraceBot {
+    inner: LearnedBot,
+    faction: String,
+    log: Rc<RefCell<Vec<DecisionDetail>>>,
+}
+
+impl TraceBot {
+    fn option_rows(choice: &Choice) -> Vec<OptionDetail> {
+        choice
+            .options
+            .iter()
+            .map(|option| OptionDetail {
+                id: option.id.clone(),
+                kind: option.kind.clone(),
+                label: option.display().to_owned(),
+                score: None,
+                probability: None,
+                features: Vec::new(),
+            })
+            .collect()
+    }
+
+    fn push(
+        &self,
+        choice: &Choice,
+        path: &str,
+        requested_head: &str,
+        resolved_head: &str,
+        temperature: Option<f64>,
+        chosen: &std::result::Result<ChoiceOption, IllegalChoice>,
+        options: Vec<OptionDetail>,
+    ) {
+        let sequence = self.log.borrow().len();
+        self.log.borrow_mut().push(DecisionDetail {
+            sequence,
+            player: choice.player.to_string(),
+            faction: self.faction.clone(),
+            prompt: choice.prompt.clone(),
+            path: path.to_owned(),
+            requested_head: requested_head.to_owned(),
+            resolved_head: resolved_head.to_owned(),
+            temperature,
+            chosen: chosen.as_ref().ok().map(|option| option.id.clone()),
+            options,
+        });
     }
 }
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("{code}: {detail}", code = .code.as_str())]
-pub struct ReviewError {
-    pub code: ErrorCode,
-    pub detail: String,
-}
-type Result<T> = std::result::Result<T, ReviewError>;
-fn err(code: ErrorCode, detail: impl Into<String>) -> ReviewError {
-    ReviewError {
-        code,
-        detail: detail.into(),
+impl Decider for TraceBot {
+    fn choose(&mut self, choice: &Choice) -> std::result::Result<ChoiceOption, IllegalChoice> {
+        let options = Self::option_rows(choice);
+        let picked = self.inner.choose(choice);
+        self.push(choice, "blind", "other", "other", None, &picked, options);
+        picked
     }
-}
 
-/// A fully validated, canonical, audience-specific review artifact.
-#[derive(Clone, Debug)]
-pub struct ReviewBundle {
-    document: Value,
-}
-impl ReviewBundle {
-    pub fn document(&self) -> &Value {
-        &self.document
-    }
-}
-
-/// Parses and validates a v1 `.ti4review.json` file before a caller may render it.
-pub fn validate_bytes(bytes: &[u8]) -> Result<ReviewBundle> {
-    if bytes.len() > MAX_BUNDLE_BYTES {
-        return Err(err(ErrorCode::LimitExceeded, "bundle exceeds 64 MiB"));
-    }
-    std::str::from_utf8(bytes).map_err(|_| err(ErrorCode::InvalidUtf8, "bundle is not UTF-8"))?;
-    let strict: StrictValue = serde_json::from_slice(bytes).map_err(json_error)?;
-    let canonical = canonical(&strict.0)?;
-    if canonical != bytes {
-        return Err(err(
-            ErrorCode::NoncanonicalJson,
-            "input is not canonical JSON",
-        ));
-    }
-    validate_document(&strict.0)?;
-    Ok(ReviewBundle { document: strict.0 })
-}
-
-/// A complete public sample; useful for checking the graphical application without a simulator.
-pub fn canonical_example() -> Result<Vec<u8>> {
-    let state0 = json!({"phase":"setup","players":[player("seat-1","Hacan","hacan",3),player("seat-2","Jol-Nar","jolnar",2)],"round":1,"systems":[]});
-    let state1 = json!({"phase":"action","players":[player("seat-1","Hacan","hacan",3),player("seat-2","Jol-Nar","jolnar",2)],"round":2,"systems":[{"kind":"centre","planets":[{"exhausted":false,"id":"mecatol-rex","influence":6,"label":"Mecatol Rex","owner":"seat-1","resources":1}],"q":0,"r":0,"tile":{"count":1,"id":"mecatol","label":"Mecatol Rex"},"units":[{"count":3,"damaged":false,"kind":"infantry","owner":"seat-1"}]}]});
-    let payload = json!({"frames":[
-        {"cause":{"kind":"initial"},"id":0,"state":state0,"state_sha256":sha(&canonical(&json!({"phase":"setup","players":[player("seat-1","Hacan","hacan",3),player("seat-2","Jol-Nar","jolnar",2)],"round":1,"systems":[]}))?)},
-        {"cause":{"index":0,"kind":"timeline"},"id":1,"state":state1,"state_sha256":sha(&canonical(&json!({"phase":"action","players":[player("seat-1","Hacan","hacan",3),player("seat-2","Jol-Nar","jolnar",2)],"round":2,"systems":[{"kind":"centre","planets":[{"exhausted":false,"id":"mecatol-rex","influence":6,"label":"Mecatol Rex","owner":"seat-1","resources":1}],"q":0,"r":0,"tile":{"count":1,"id":"mecatol","label":"Mecatol Rex"},"units":[{"count":3,"damaged":false,"kind":"infantry","owner":"seat-1"}]}]}))?)}
-    ],"timeline":[{"facts":[{"label":"Capture","value":"Sample review frame"}],"frame":1,"index":0,"kind":"terminal"}]});
-    let document = json!({"manifest":{"audience":{"kind":"public"},"content_sha256":"0000000000000000000000000000000000000000000000000000000000000000","engine_revision":"0000000000000000000000000000000000000000","frame_count":2,"generator_version":"0.1.0","map_sha256":"0000000000000000000000000000000000000000000000000000000000000000","payload_sha256":sha(&canonical(&payload)?),"schema":"ti4-review-bundle","schema_version":1,"source_kind":"scripted","terminal":{"kind":"horizon_reached"},"timeline_count":1},"payload":payload});
-    let bytes = canonical(&document)?;
-    validate_bytes(&bytes)?;
-    Ok(bytes)
-}
-fn player(seat: &str, name: &str, faction: &str, score: u8) -> Value {
-    json!({"faction":faction,"influence":3,"items":[],"name":name,"resources":4,"score":score,"seat":seat,"strategy_cards":[],"trade_goods":1})
-}
-
-fn validate_document(document: &Value) -> Result<()> {
-    let root = object(document, ErrorCode::RootShape, "root must be an object")?;
-    keys(root, &["manifest", "payload"])?;
-    let manifest = object(
-        field(root, "manifest")?,
-        ErrorCode::RootShape,
-        "manifest must be an object",
-    )?;
-    keys(
-        manifest,
-        &[
-            "audience",
-            "content_sha256",
-            "engine_revision",
-            "frame_count",
-            "generator_version",
-            "map_sha256",
-            "payload_sha256",
-            "schema",
-            "schema_version",
-            "source_kind",
-            "terminal",
-            "timeline_count",
-        ],
-    )?;
-    if string(field(manifest, "schema")?)? != "ti4-review-bundle" {
-        return Err(err(ErrorCode::RootShape, "unsupported schema name"));
-    }
-    if integer(field(manifest, "schema_version")?)? != 1 {
-        return Err(err(
-            ErrorCode::UnsupportedVersion,
-            "only schema_version 1 is supported",
-        ));
-    }
-    text(string(field(manifest, "generator_version")?)?)?;
-    let version = string(field(manifest, "generator_version")?)?;
-    if !version.is_ascii()
-        || version.len() > 64
-        || version.split('.').count() != 3
-        || !version
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
-    {
-        return Err(err(
-            ErrorCode::InvalidValue,
-            "generator_version is not ASCII SemVer",
-        ));
-    }
-    hex(
-        string(field(manifest, "engine_revision")?)?,
-        40,
-        "engine_revision",
-    )?;
-    for name in ["content_sha256", "map_sha256", "payload_sha256"] {
-        hex(string(field(manifest, name)?)?, 64, name)?;
-    }
-    let manifest_bytes = canonical(&Value::Object(manifest.clone()))?;
-    if manifest_bytes.len() > MAX_MANIFEST_BYTES {
-        return Err(err(ErrorCode::LimitExceeded, "manifest exceeds 64 KiB"));
-    }
-    audience(field(manifest, "audience")?)?;
-    match string(field(manifest, "source_kind")?)? {
-        "audited" | "scripted" => (),
-        _ => return Err(err(ErrorCode::InvalidValue, "unknown source kind")),
-    }
-    terminal(field(manifest, "terminal")?)?;
-    let payload = object(
-        field(root, "payload")?,
-        ErrorCode::RootShape,
-        "payload must be an object",
-    )?;
-    keys(payload, &["frames", "timeline"])?;
-    let payload_bytes = canonical(&Value::Object(payload.clone()))?;
-    if payload_bytes.len() > MAX_PAYLOAD_BYTES {
-        return Err(err(ErrorCode::LimitExceeded, "payload exceeds 63 MiB"));
-    }
-    if sha(&payload_bytes) != string(field(manifest, "payload_sha256")?)? {
-        return Err(err(
-            ErrorCode::PayloadChecksumMismatch,
-            "payload SHA-256 mismatch",
-        ));
-    }
-    let frames = array(field(payload, "frames")?)?;
-    let timeline = array(field(payload, "timeline")?)?;
-    if frames.is_empty() || frames.len() > 4096 || timeline.is_empty() || timeline.len() > 4095 {
-        return Err(err(
-            ErrorCode::LimitExceeded,
-            "invalid frame/timeline count",
-        ));
-    }
-    if integer(field(manifest, "frame_count")?)? as usize != frames.len()
-        || integer(field(manifest, "timeline_count")?)? as usize != timeline.len()
-        || frames.len() != timeline.len() + 1
-    {
-        return Err(err(
-            ErrorCode::BadReference,
-            "manifest counts do not match payload",
-        ));
-    }
-    let mut seats = None;
-    for (index, frame) in frames.iter().enumerate() {
-        validate_frame(frame, index, &mut seats)?;
-    }
-    for (index, item) in timeline.iter().enumerate() {
-        validate_timeline(item, index, timeline.len())?;
-    }
-    let players = seats.ok_or_else(|| err(ErrorCode::BadReference, "missing player seats"))?;
-    references(manifest, &players)?;
-    Ok(())
-}
-
-fn validate_frame(value: &Value, index: usize, seats: &mut Option<BTreeSet<String>>) -> Result<()> {
-    if canonical(value)?.len() > MAX_FRAME_BYTES {
-        return Err(err(ErrorCode::LimitExceeded, "frame exceeds 512 KiB"));
-    }
-    let frame = object(value, ErrorCode::RootShape, "frame must be an object")?;
-    keys(frame, &["cause", "id", "state", "state_sha256"])?;
-    if integer(field(frame, "id")?)? as usize != index {
-        return Err(err(
-            ErrorCode::BadFrameOrder,
-            "frame IDs must be contiguous",
-        ));
-    }
-    let cause = object(
-        field(frame, "cause")?,
-        ErrorCode::RootShape,
-        "cause must be an object",
-    )?;
-    if index == 0 {
-        keys(cause, &["kind"])?;
-        if string(field(cause, "kind")?)? != "initial" {
-            return Err(err(ErrorCode::BadFrameOrder, "first frame must be initial"));
-        }
-    } else {
-        keys(cause, &["index", "kind"])?;
-        if string(field(cause, "kind")?)? != "timeline"
-            || integer(field(cause, "index")?)? as usize + 1 != index
-        {
-            return Err(err(
-                ErrorCode::BadFrameOrder,
-                "frame cause must reference prior timeline index",
-            ));
-        }
-    }
-    hex(string(field(frame, "state_sha256")?)?, 64, "state_sha256")?;
-    let state = field(frame, "state")?;
-    if sha(&canonical(state)?) != string(field(frame, "state_sha256")?)? {
-        return Err(err(
-            ErrorCode::PayloadChecksumMismatch,
-            "state SHA-256 mismatch",
-        ));
-    }
-    let found = validate_state(state)?;
-    match seats {
-        None => *seats = Some(found),
-        Some(previous) if *previous == found => (),
-        Some(_) => {
-            return Err(err(
-                ErrorCode::BadReference,
-                "player seats change between frames",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_state(value: &Value) -> Result<BTreeSet<String>> {
-    let state = object(value, ErrorCode::RootShape, "state must be an object")?;
-    keys(state, &["phase", "players", "round", "systems"])?;
-    if integer(field(state, "round")?)? > 1000 {
-        return Err(err(ErrorCode::LimitExceeded, "round exceeds 1000"));
-    }
-    match string(field(state, "phase")?)? {
-        "setup" | "strategy" | "action" | "status" | "agenda" | "finished" | "error" => (),
-        _ => return Err(err(ErrorCode::InvalidValue, "unknown phase")),
-    }
-    let players = array(field(state, "players")?)?;
-    if !(2..=8).contains(&players.len()) {
-        return Err(err(ErrorCode::LimitExceeded, "must have 2-8 players"));
-    }
-    let mut seats = BTreeSet::new();
-    let mut previous = "";
-    for player in players {
-        let player = object(player, ErrorCode::RootShape, "player must be object")?;
-        keys(
-            player,
-            &[
-                "faction",
-                "influence",
-                "items",
-                "name",
-                "resources",
-                "score",
-                "seat",
-                "strategy_cards",
-                "trade_goods",
-            ],
-        )?;
-        let seat = string(field(player, "seat")?)?;
-        id(seat)?;
-        if !previous.is_empty() && previous >= seat || !seats.insert(seat.to_owned()) {
-            return Err(err(
-                ErrorCode::BadFrameOrder,
-                "players must be uniquely sorted by seat",
-            ));
-        }
-        previous = seat;
-        id(string(field(player, "faction")?)?)?;
-        text(string(field(player, "name")?)?)?;
-        for n in ["influence", "resources", "trade_goods"] {
-            if integer(field(player, n)?)? > 999 {
-                return Err(err(ErrorCode::LimitExceeded, "player counter exceeds 999"));
-            }
-        }
-        if integer(field(player, "score")?)? > 20 {
-            return Err(err(ErrorCode::LimitExceeded, "score exceeds 20"));
-        }
-        sorted_ids(array(field(player, "strategy_cards")?)?)?;
-        display_items(array(field(player, "items")?)?)?;
-    }
-    let systems = array(field(state, "systems")?)?;
-    if systems.len() > 256 {
-        return Err(err(ErrorCode::LimitExceeded, "systems exceed 256"));
-    }
-    let mut coords = BTreeSet::new();
-    let mut planets = BTreeSet::new();
-    let mut prior = None;
-    for system in systems {
-        let system = object(system, ErrorCode::RootShape, "system must be object")?;
-        keys(system, &["kind", "planets", "q", "r", "tile", "units"])?;
-        let q = integer(field(system, "q")?)?;
-        let r = integer(field(system, "r")?)?;
-        if !(-32..=32).contains(&q)
-            || !(-32..=32).contains(&r)
-            || !coords.insert((q, r))
-            || prior.is_some_and(|p| p >= (q, r))
-        {
-            return Err(err(
-                ErrorCode::BadFrameOrder,
-                "systems must be uniquely sorted by axial coordinate",
-            ));
-        }
-        prior = Some((q, r));
-        match string(field(system, "kind")?)? {
-            "home" | "centre" | "normal" | "hyperlane" => (),
-            _ => return Err(err(ErrorCode::InvalidValue, "unknown system kind")),
-        };
-        display_item(field(system, "tile")?)?;
-        let ps = array(field(system, "planets")?)?;
-        let us = array(field(system, "units")?)?;
-        if ps.len() > 8 || us.len() > 256 {
-            return Err(err(
-                ErrorCode::LimitExceeded,
-                "system exceeds planet/unit bound",
-            ));
-        }
-        let mut prior_planet = "";
-        for planet in ps {
-            let planet = object(planet, ErrorCode::RootShape, "planet must object")?;
-            keys(
-                planet,
-                &[
-                    "exhausted",
-                    "id",
-                    "influence",
-                    "label",
-                    "owner",
-                    "resources",
-                ],
-            )?;
-            let pid = string(field(planet, "id")?)?;
-            id(pid)?;
-            if !prior_planet.is_empty() && prior_planet >= pid || !planets.insert(pid.to_owned()) {
-                return Err(err(
-                    ErrorCode::BadFrameOrder,
-                    "planets must be uniquely sorted",
-                ));
-            }
-            prior_planet = pid;
-            text(string(field(planet, "label")?)?)?;
-            if integer(field(planet, "influence")?)? > 99
-                || integer(field(planet, "resources")?)? > 99
-            {
-                return Err(err(ErrorCode::LimitExceeded, "planet value exceeds 99"));
-            }
-            if !field(planet, "exhausted")?.is_boolean() {
-                return Err(err(ErrorCode::InvalidValue, "exhausted must be boolean"));
-            }
-            if let Some(owner) = field(planet, "owner")?.as_str() {
-                id(owner)?;
-                if !seats.contains(owner) {
-                    return Err(err(ErrorCode::BadReference, "planet owner is not a player"));
-                }
-            } else if !field(planet, "owner")?.is_null() {
-                return Err(err(
-                    ErrorCode::InvalidValue,
-                    "planet owner must be ID or null",
-                ));
-            }
-        }
-        let mut prior_unit = None;
-        for unit in us {
-            let unit = object(unit, ErrorCode::RootShape, "unit must object")?;
-            keys(unit, &["count", "damaged", "kind", "owner"])?;
-            let owner = string(field(unit, "owner")?)?;
-            let kind = string(field(unit, "kind")?)?;
-            id(owner)?;
-            id(kind)?;
-            let count = integer(field(unit, "count")?)?;
-            if count == 0 || count > 999 || !seats.contains(owner) {
-                return Err(err(ErrorCode::BadReference, "invalid unit"));
-            }
-            let damaged = field(unit, "damaged")?
-                .as_bool()
-                .ok_or_else(|| err(ErrorCode::InvalidValue, "damaged must be boolean"))?;
-            let key = (owner, kind, damaged);
-            if prior_unit.is_some_and(|p| p >= key) {
-                return Err(err(ErrorCode::BadFrameOrder, "units must be sorted"));
-            }
-            prior_unit = Some(key);
-        }
-    }
-    Ok(seats)
-}
-
-fn validate_timeline(value: &Value, index: usize, len: usize) -> Result<()> {
-    if canonical(value)?.len() > MAX_TIMELINE_BYTES {
-        return Err(err(
-            ErrorCode::LimitExceeded,
-            "timeline item exceeds 16 KiB",
-        ));
-    }
-    let item = object(value, ErrorCode::RootShape, "timeline item must object")?;
-    keys(item, &["facts", "frame", "index", "kind"])?;
-    if integer(field(item, "index")?)? as usize != index
-        || integer(field(item, "frame")?)? as usize != index + 1
-    {
-        return Err(err(
-            ErrorCode::BadTimelineOrder,
-            "timeline must be contiguous",
-        ));
-    }
-    let terminal = string(field(item, "kind")?)? == "terminal";
-    if terminal != (index + 1 == len) {
-        return Err(err(
-            ErrorCode::TerminalConflict,
-            "only final timeline item may be terminal",
-        ));
-    }
-    match string(field(item, "kind")?)? {
-        "decision" | "event" | "phase" | "terminal" => (),
-        _ => return Err(err(ErrorCode::InvalidValue, "unknown timeline kind")),
-    }
-    let facts = array(field(item, "facts")?)?;
-    if facts.len() > 32 {
-        return Err(err(ErrorCode::LimitExceeded, "too many facts"));
-    }
-    for fact in facts {
-        let fact = object(fact, ErrorCode::RootShape, "fact must object")?;
-        keys(fact, &["label", "value"])?;
-        text(string(field(fact, "label")?)?)?;
-        text(string(field(fact, "value")?)?)?;
-    }
-    Ok(())
-}
-fn references(manifest: &Map<String, Value>, seats: &BTreeSet<String>) -> Result<()> {
-    let audience = object(
-        field(manifest, "audience")?,
-        ErrorCode::RootShape,
-        "audience must object",
-    )?;
-    if string(field(audience, "kind")?)? == "seat"
-        && !seats.contains(string(field(audience, "seat")?)?)
-    {
-        return Err(err(
-            ErrorCode::BadReference,
-            "seat audience not in player list",
-        ));
-    }
-    let terminal = object(
-        field(manifest, "terminal")?,
-        ErrorCode::RootShape,
-        "terminal must object",
-    )?;
-    if string(field(terminal, "kind")?)? == "completed" {
-        if let Some(winner) = field(terminal, "winner")?.as_str() {
-            id(winner)?;
-            if !seats.contains(winner) {
-                return Err(err(ErrorCode::BadReference, "winner not in player list"));
-            }
-        }
-    }
-    Ok(())
-}
-fn audience(value: &Value) -> Result<()> {
-    let a = object(value, ErrorCode::RootShape, "audience must object")?;
-    match string(field(a, "kind")?)? {
-        "public" | "referee" => keys(a, &["kind"]),
-        "seat" => {
-            keys(a, &["kind", "seat"])?;
-            id(string(field(a, "seat")?)?)
-        }
-        _ => Err(err(ErrorCode::InvalidValue, "unknown audience")),
-    }
-}
-fn terminal(value: &Value) -> Result<()> {
-    let t = object(value, ErrorCode::RootShape, "terminal must object")?;
-    match string(field(t, "kind")?)? {
-        "completed" => {
-            keys(t, &["kind", "winner"])?;
-            if !(field(t, "winner")?.is_null() || field(t, "winner")?.is_string()) {
-                return Err(err(ErrorCode::InvalidValue, "winner must be ID or null"));
-            }
-        }
-        "horizon_reached" => keys(t, &["kind"])?,
-        "capture_failed" => {
-            keys(t, &["code", "kind"])?;
-            match string(field(t, "code")?)? {
-                "capture_limit" | "export_failed" | "aborted" => (),
-                _ => return Err(err(ErrorCode::InvalidValue, "unknown capture failure")),
-            }
-        }
-        "engine_failed" => {
-            keys(t, &["code", "kind"])?;
-            match string(field(t, "code")?)? {
-                "engine_error" | "replay_error" => (),
-                _ => return Err(err(ErrorCode::InvalidValue, "unknown engine failure")),
-            }
-        }
-        _ => return Err(err(ErrorCode::InvalidValue, "unknown terminal")),
-    }
-    Ok(())
-}
-fn display_items(values: &[Value]) -> Result<()> {
-    if values.len() > 128 {
-        return Err(err(ErrorCode::LimitExceeded, "too many display items"));
-    }
-    let mut prior = "";
-    for value in values {
-        display_item(value)?;
-        let item = object(value, ErrorCode::RootShape, "display item must object")?;
-        let current = string(field(item, "id")?)?;
-        if !prior.is_empty() && prior >= current {
-            return Err(err(
-                ErrorCode::BadFrameOrder,
-                "display items must be sorted",
-            ));
-        }
-        prior = current;
-    }
-    Ok(())
-}
-fn display_item(value: &Value) -> Result<()> {
-    let item = object(value, ErrorCode::RootShape, "display item must object")?;
-    keys(item, &["count", "id", "label"])?;
-    id(string(field(item, "id")?)?)?;
-    text(string(field(item, "label")?)?)?;
-    if integer(field(item, "count")?)? > 999 {
-        return Err(err(ErrorCode::LimitExceeded, "display count exceeds 999"));
-    }
-    Ok(())
-}
-fn sorted_ids(values: &[Value]) -> Result<()> {
-    if values.len() > 128 {
-        return Err(err(ErrorCode::LimitExceeded, "too many IDs"));
-    }
-    let mut prior = "";
-    for value in values {
-        let current = string(value)?;
-        id(current)?;
-        if !prior.is_empty() && prior >= current {
-            return Err(err(ErrorCode::BadFrameOrder, "IDs must be sorted"));
-        }
-        prior = current;
-    }
-    Ok(())
-}
-fn keys(value: &Map<String, Value>, expected: &[&str]) -> Result<()> {
-    if value.len() != expected.len() {
-        return Err(err(ErrorCode::UnknownField, "wrong field count"));
-    }
-    for name in expected {
-        if !value.contains_key(*name) {
-            return Err(err(ErrorCode::RootShape, format!("missing field {name}")));
-        }
-    }
-    Ok(())
-}
-fn object<'a>(value: &'a Value, code: ErrorCode, detail: &str) -> Result<&'a Map<String, Value>> {
-    value.as_object().ok_or_else(|| err(code, detail))
-}
-fn array(value: &Value) -> Result<&Vec<Value>> {
-    value
-        .as_array()
-        .ok_or_else(|| err(ErrorCode::InvalidValue, "expected array"))
-}
-fn field<'a>(value: &'a Map<String, Value>, name: &str) -> Result<&'a Value> {
-    value
-        .get(name)
-        .ok_or_else(|| err(ErrorCode::RootShape, format!("missing field {name}")))
-}
-fn string(value: &Value) -> Result<&str> {
-    value
-        .as_str()
-        .ok_or_else(|| err(ErrorCode::InvalidValue, "expected string"))
-}
-fn integer(value: &Value) -> Result<i64> {
-    value
-        .as_i64()
-        .ok_or_else(|| err(ErrorCode::InvalidValue, "expected integer"))
-}
-fn id(value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.len() > 128
-        || !value.as_bytes()[0].is_ascii_alphanumeric()
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
-    {
-        return Err(err(ErrorCode::InvalidValue, "invalid review ID"));
-    }
-    Ok(())
-}
-fn text(value: &str) -> Result<()> {
-    if value.len() > 512 || value.nfc().collect::<String>() != value {
-        return Err(err(
-            ErrorCode::InvalidValue,
-            "text must be NFC and at most 512 bytes",
-        ));
-    }
-    Ok(())
-}
-fn hex(value: &str, length: usize, name: &str) -> Result<()> {
-    if value.len() != length
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
-        return Err(err(
-            ErrorCode::InvalidValue,
-            format!("{name} must be lowercase hexadecimal"),
-        ));
-    }
-    Ok(())
-}
-fn sha(value: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(value))
-}
-fn canonical(value: &Value) -> Result<Vec<u8>> {
-    serde_json::to_vec(value).map_err(json_error)
-}
-fn json_error(error: serde_json::Error) -> ReviewError {
-    let text = error.to_string();
-    let code = if text.contains("duplicate key") {
-        ErrorCode::DuplicateKey
-    } else {
-        ErrorCode::JsonSyntax
-    };
-    err(code, text)
-}
-
-struct StrictValue(Value);
-impl<'de> Deserialize<'de> for StrictValue {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
-        struct V;
-        impl<'de> de::Visitor<'de> for V {
-            type Value = StrictValue;
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("JSON")
-            }
-            fn visit_bool<E: de::Error>(self, v: bool) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::Bool(v)))
-            }
-            fn visit_i64<E: de::Error>(self, v: i64) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::Number(v.into())))
-            }
-            fn visit_u64<E: de::Error>(self, v: u64) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::Number(v.into())))
-            }
-            fn visit_f64<E: de::Error>(self, v: f64) -> std::result::Result<Self::Value, E> {
-                serde_json::Number::from_f64(v)
-                    .map(|n| StrictValue(Value::Number(n)))
-                    .ok_or_else(|| E::custom("non-finite number"))
-            }
-            fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::String(v.into())))
-            }
-            fn visit_string<E: de::Error>(self, v: String) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::String(v)))
-            }
-            fn visit_none<E: de::Error>(self) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::Null))
-            }
-            fn visit_unit<E: de::Error>(self) -> std::result::Result<Self::Value, E> {
-                Ok(StrictValue(Value::Null))
-            }
-            fn visit_seq<A: de::SeqAccess<'de>>(
-                self,
-                mut a: A,
-            ) -> std::result::Result<Self::Value, A::Error> {
-                let mut out = Vec::new();
-                while let Some(v) = a.next_element::<StrictValue>()? {
-                    out.push(v.0);
-                }
-                Ok(StrictValue(Value::Array(out)))
-            }
-            fn visit_map<A: de::MapAccess<'de>>(
-                self,
-                mut a: A,
-            ) -> std::result::Result<Self::Value, A::Error> {
-                let mut out = Map::new();
-                while let Some((k, v)) = a.next_entry::<String, StrictValue>()? {
-                    if out.insert(k.clone(), v.0).is_some() {
-                        return Err(de::Error::custom(format!("duplicate key {k}")));
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> std::result::Result<ChoiceOption, IllegalChoice> {
+        let (features, probabilities) =
+            self.inner
+                .consider(seen.observed(), choice, &seen.held_secret_progress());
+        let requested = decision_head(choice);
+        let resolved = self.inner.profile().resolved_head(requested).to_owned();
+        let temperature = self
+            .inner
+            .profile()
+            .head(&resolved)
+            .map(|head| head.temperature);
+        let mut options = Self::option_rows(choice);
+        for row in &mut options {
+            let Some(vector) = features.get(&row.id) else {
+                continue;
+            };
+            row.score = Some(self.inner.profile().score_vector(&resolved, vector));
+            row.probability = probabilities.get(&row.id).copied();
+            let names = names_of(vector);
+            let head = self.inner.profile().head(&resolved);
+            row.features = names
+                .into_iter()
+                .zip(vector.values().copied())
+                .map(|(name, value)| {
+                    let weight = head
+                        .and_then(|head| head.weights.get(&name))
+                        .copied()
+                        .unwrap_or(0.0);
+                    FeatureContribution {
+                        name,
+                        value,
+                        weight,
+                        contribution: value * weight,
                     }
-                }
-                Ok(StrictValue(Value::Object(out)))
-            }
+                })
+                .collect();
+            row.features.sort_by(|left, right| {
+                right
+                    .contribution
+                    .abs()
+                    .total_cmp(&left.contribution.abs())
+                    .then_with(|| left.name.cmp(&right.name))
+            });
         }
-        d.deserialize_any(V)
+        let picked = self.inner.choose_seeing(choice, seen);
+        self.push(
+            choice,
+            "seeing",
+            requested,
+            &resolved,
+            temperature,
+            &picked,
+            options,
+        );
+        picked
     }
 }
 
-/// Emits a self-contained HTML viewer with no external assets, network requests, or server.
-pub fn render_html(bundle: &ReviewBundle) -> Result<String> {
-    let payload = field(
-        object(&bundle.document, ErrorCode::RootShape, "root")?,
-        "payload",
-    )?;
-    let frames = array(field(
-        object(payload, ErrorCode::RootShape, "payload")?,
-        "frames",
-    )?)?;
-    let max_nodes = frames
-        .iter()
-        .map(|frame| {
-            let state = field(object(frame, ErrorCode::RootShape, "frame")?, "state")?;
-            let systems = array(field(
-                object(state, ErrorCode::RootShape, "state")?,
-                "systems",
-            )?)?;
-            systems
-                .iter()
-                .map(|s| {
-                    let o = object(s, ErrorCode::RootShape, "system")?;
-                    Ok(8 + array(field(o, "planets")?)?.len() * 2
-                        + array(field(o, "units")?)?.len() * 2)
-                })
-                .try_fold(0usize, |a, b: Result<usize>| b.map(|v| a + v))
+pub struct LiveReview {
+    pub session: ReviewSession,
+    game: Game<'static>,
+    decisions: Rc<RefCell<Vec<DecisionDetail>>>,
+    captured_decisions: usize,
+    captured_events: usize,
+    engine_steps: usize,
+    action_count: usize,
+    action_in_progress: bool,
+}
+
+impl LiveReview {
+    pub fn start(config: &SimulationConfig) -> Result<Self> {
+        if config.rotation >= FACTIONS.len() {
+            return Err(ReviewError::Invalid(
+                "rotation must be 0 through 5".to_owned(),
+            ));
+        }
+        let checkpoint_bytes = read_bounded(&config.checkpoint)?;
+        let pool_bytes = read_bounded(&config.map_pool)?;
+        let profiles = load_profiles(&checkpoint_bytes, config.table)?;
+        let pool = MapPool::load_verified(&config.map_pool, &pool_bytes)
+            .map_err(|error| ReviewError::Invalid(format!("map pool: {error}")))?;
+        let content = ContentStore::embedded();
+        pool.validate_systems(content, FULL)
+            .map_err(|error| ReviewError::Invalid(format!("map pool content: {error}")))?;
+
+        let players: Vec<PlayerId> = (0..FACTIONS.len())
+            .map(|index| PlayerId::new(format!("seat{index}")))
+            .collect();
+        let factions: BTreeMap<PlayerId, FactionId> = players
+            .iter()
+            .enumerate()
+            .map(|(index, player)| {
+                (
+                    player.clone(),
+                    FactionId::new(FACTIONS[(index + config.rotation) % FACTIONS.len()]),
+                )
+            })
+            .collect();
+        let decisions = Rc::new(RefCell::new(Vec::new()));
+        let decision_sink = Rc::clone(&decisions);
+        let profile_table = profiles.clone();
+        let decider_players = players.clone();
+        let decider_factions = factions.clone();
+        let map = OpeningMap::PythonPool {
+            pool: Arc::new(pool),
+            tile_seed_offset: TILE_SEED_OFFSET,
+        };
+        let game = setup_game_with_decider_factory(
+            content,
+            &players,
+            &factions,
+            FULL,
+            config.seed,
+            &map,
+            move |baselines| {
+                let mut table: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                for (index, player) in decider_players.iter().enumerate() {
+                    let faction = decider_factions
+                        .get(player)
+                        .expect("complete fixed seating")
+                        .to_string();
+                    let profile = profile_table
+                        .get(&faction)
+                        .expect("profiles validated before setup")
+                        .clone();
+                    let stream = config
+                        .seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(index as u64);
+                    let bot = LearnedBot::from_shared(Arc::new(profile), stream)
+                        .from_setup(baselines.get(player).copied().unwrap_or_default());
+                    table.insert(
+                        player.clone(),
+                        Box::new(TraceBot {
+                            inner: bot,
+                            faction,
+                            log: Rc::clone(&decision_sink),
+                        }),
+                    );
+                }
+                Ok(table)
+            },
+        )
+        .map_err(|error| ReviewError::Invalid(format!("game setup: {error}")))?;
+
+        let board = board_metadata(content, game.galaxy().expect("setup installs galaxy"));
+        let manifest = SessionManifest {
+            checkpoint_path: config.checkpoint.display().to_string(),
+            checkpoint_sha256: sha256(&checkpoint_bytes),
+            map_pool_path: config.map_pool.display().to_string(),
+            map_pool_sha256: sha256(&pool_bytes),
+            seed: config.seed,
+            tile_seed: config.seed.wrapping_add(TILE_SEED_OFFSET),
+            rotation: config.rotation,
+            profile_table: config.table,
+            factions: FACTIONS.map(str::to_owned).to_vec(),
+        };
+        let initial = ReviewFrame {
+            index: 0,
+            engine_step: 0,
+            decision_count: 0,
+            action_count: 0,
+            round: game.state.round,
+            phase: game.state.phase,
+            active: game.state.active.as_ref().map(ToString::to_string),
+            resolved_choice: false,
+            action_completed: false,
+            finished: game.state.finished,
+            error: None,
+            new_events: game.events.clone(),
+            decisions: Vec::new(),
+            state: game.state.clone(),
+        };
+        Ok(Self {
+            session: ReviewSession {
+                schema: SESSION_SCHEMA.to_owned(),
+                version: SESSION_VERSION,
+                manifest,
+                board,
+                frames: vec![initial],
+                outcome: SessionOutcome::InProgress,
+            },
+            captured_events: game.events.len(),
+            game,
+            decisions,
+            captured_decisions: 0,
+            engine_steps: 0,
+            action_count: 0,
+            action_in_progress: false,
         })
-        .try_fold(0usize, |a, b: Result<usize>| b.map(|v| a.max(v)))?;
-    if max_nodes > 100_000 {
-        return Err(err(
-            ErrorCode::LimitExceeded,
-            "render would exceed 100,000 SVG/DOM nodes",
-        ));
     }
-    let data = String::from_utf8(canonical(&bundle.document)?)
-        .map_err(|_| err(ErrorCode::InvalidUtf8, "canonical JSON is not UTF-8"))?
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026");
-    Ok(format!(
-        r##"<!doctype html><meta charset="utf-8"><title>TI4 review</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#101521;color:#e9edf5;font:14px system-ui,sans-serif}}header{{padding:16px 22px;border-bottom:1px solid #2a3448;display:flex;justify-content:space-between}}main{{display:grid;grid-template-columns:1fr 320px;min-height:calc(100vh - 62px)}}#board{{width:100%;height:100%;min-height:640px;background:#151d2b}}aside{{border-left:1px solid #2a3448;padding:14px;overflow:auto}}.card{{background:#1c2636;border:1px solid #324158;border-radius:8px;padding:10px;margin:8px 0}}button{{background:#273650;color:#eef;border:1px solid #405678;border-radius:5px;padding:7px;margin:3px;cursor:pointer}}button.active{{background:#7c4dff}}.hex{{fill:#263b5c;stroke:#8fa6ce;stroke-width:2}}.centre{{fill:#59452d}}.home{{fill:#2d5a51}}.label{{fill:white;text-anchor:middle;font-size:12px}}.unit{{fill:#f5c36a;font-size:11px}}#timeline{{max-height:38vh;overflow:auto}}small{{color:#a9b7ce}}</style><header><strong>TI4 game review</strong><span id="meta"></span></header><main><svg id="board" viewBox="-520 -380 1040 760" role="img" aria-label="TI4 board"></svg><aside><div id="players"></div><h3>Timeline</h3><div id="timeline"></div><div class="card" id="facts"></div></aside></main><script id="bundle" type="application/json">{data}</script><script>const B=JSON.parse(document.querySelector('#bundle').textContent),F=B.payload.frames,T=B.payload.timeline,S=document.querySelector('#board');let n=0;const color=['#ef8354','#4ea5d9','#a6c36f','#d66ba0','#f6bd60','#8d99ae','#70c1b3','#ff9f1c'];document.querySelector('#meta').textContent=`${{B.manifest.audience.kind}} · ${{B.manifest.terminal.kind}} · ${{F.length}} frames`;function esc(x){{return String(x).replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c]))}}function hex(x,y){{let p=[];for(let i=0;i<6;i++){{let a=Math.PI/3*i+Math.PI/6;p.push(`${{x+62*Math.cos(a)}},${{y+62*Math.sin(a)}}`)}}return p.join(' ')}}function draw(){{let s=F[n].state;S.innerHTML='';for(let x of s.systems){{let px=104*x.q+52*x.r,py=90*x.r,k=x.kind==='centre'?' centre':x.kind==='home'?' home':'';S.insertAdjacentHTML('beforeend',`<g><polygon class="hex${{k}}" points="${{hex(px,py)}}"/><text class="label" x="${{px}}" y="${{py-10}}">${{esc(x.tile.label)}}</text><text class="label" x="${{px}}" y="${{py+8}}">${{x.planets.map(p=>esc(p.label)).join(' · ')}}</text>${{x.units.map((u,i)=>`<text class="unit" x="${{px-45}}" y="${{py+28+i*14}}">${{esc(u.owner)}} ${{u.count}}× ${{esc(u.kind)}}${{u.damaged?' ⚠':''}}</text>`).join('')}}</g>`);}}document.querySelector('#players').innerHTML='<h3>Players</h3>'+s.players.map((p,i)=>`<div class="card" style="border-left:4px solid ${{color[i]}}"><b>${{esc(p.name)}}</b> <small>${{esc(p.faction)}}</small><br>VP ${{p.score}} · R ${{p.resources}} · I ${{p.influence}} · TG ${{p.trade_goods}}</div>`).join('');document.querySelector('#timeline').innerHTML=T.map((t,i)=>`<button class="${{i+1===n?'active':''}}" onclick="go(${{i+1}})">${{i+1}}. ${{t.kind}}</button>`).join('');let t=n?T[n-1]:null;document.querySelector('#facts').innerHTML=`<b>Round ${{s.round}} · ${{s.phase}}</b><br>${{t?t.facts.map(f=>`${{esc(f.label)}}: ${{esc(f.value)}}`).join('<br>'):'Initial state'}}`}}function go(i){{n=i;draw()}}draw();</script>"##
-    ))
+
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self.session.outcome,
+            SessionOutcome::Completed | SessionOutcome::EngineFailed { .. }
+        )
+    }
+
+    #[must_use]
+    pub fn step_once(&mut self) -> &ReviewFrame {
+        if self.is_terminal() || self.session.frames.len() >= MAX_FRAMES {
+            if self.session.frames.len() >= MAX_FRAMES {
+                self.session.outcome = SessionOutcome::SafetyLimit {
+                    steps: self.engine_steps,
+                };
+            }
+            return self.session.latest();
+        }
+        let before_top_action = self.is_top_action_choice();
+        let result = self.game.step();
+        self.engine_steps += 1;
+        if before_top_action && result.resolved_choice {
+            self.action_in_progress = true;
+        }
+        let after_top_action = self.is_top_action_choice();
+        let action_completed = self.action_in_progress
+            && (after_top_action || self.game.state.phase != Phase::Action || result.finished);
+        if action_completed {
+            self.action_in_progress = false;
+            self.action_count += 1;
+        }
+        let decisions = {
+            let log = self.decisions.borrow();
+            let found = log[self.captured_decisions..].to_vec();
+            self.captured_decisions = log.len();
+            found
+        };
+        let new_events = self.game.events[self.captured_events..].to_vec();
+        self.captured_events = self.game.events.len();
+        let error = result.error.as_ref().map(ToString::to_string);
+        if let Some(error) = &error {
+            self.session.outcome = SessionOutcome::EngineFailed {
+                error: error.clone(),
+            };
+        } else if result.finished {
+            self.session.outcome = SessionOutcome::Completed;
+        }
+        let frame = ReviewFrame {
+            index: self.session.frames.len(),
+            engine_step: self.engine_steps,
+            decision_count: self.game.table.log.len(),
+            action_count: self.action_count,
+            round: self.game.state.round,
+            phase: result.phase,
+            active: result.active.as_ref().map(ToString::to_string),
+            resolved_choice: result.resolved_choice || !decisions.is_empty(),
+            action_completed,
+            finished: result.finished,
+            error,
+            new_events,
+            decisions,
+            state: self.game.state.clone(),
+        };
+        self.session.frames.push(frame);
+        self.session.latest()
+    }
+
+    fn is_top_action_choice(&self) -> bool {
+        self.game.state.phase == Phase::Action
+            && self
+                .game
+                .legal_options()
+                .is_some_and(|choice| decision_head(&choice) == "turn")
+    }
+
+    pub fn advance(&mut self, unit: AdvanceUnit, count: usize) -> AdvanceReport {
+        let wanted = count.min(MAX_RUN_COUNT);
+        let mut report = AdvanceReport {
+            steps: 0,
+            decisions: 0,
+            actions: 0,
+            reached_target: wanted == 0,
+        };
+        while !report.reached_target && report.steps < MAX_COMMAND_STEPS && !self.is_terminal() {
+            let frame = self.step_once().clone();
+            report.steps += 1;
+            report.decisions += frame.decisions.len();
+            report.actions += usize::from(frame.action_completed);
+            report.reached_target = match unit {
+                AdvanceUnit::Step => report.steps >= wanted,
+                AdvanceUnit::Decision => report.decisions >= wanted,
+                AdvanceUnit::Action => report.actions >= wanted,
+            };
+        }
+        if !report.reached_target && !self.is_terminal() {
+            self.session.outcome = SessionOutcome::SafetyLimit {
+                steps: report.steps,
+            };
+        }
+        report
+    }
+
+    pub fn advance_to_next_round(&mut self) -> AdvanceReport {
+        let start = self.game.state.round;
+        self.advance_until(|review| review.game.state.round > start)
+    }
+
+    pub fn advance_to_end(&mut self) -> AdvanceReport {
+        self.advance_until(Self::is_terminal)
+    }
+
+    fn advance_until(&mut self, predicate: impl Fn(&Self) -> bool) -> AdvanceReport {
+        let mut report = AdvanceReport {
+            steps: 0,
+            decisions: 0,
+            actions: 0,
+            reached_target: predicate(self),
+        };
+        while !report.reached_target && report.steps < MAX_COMMAND_STEPS && !self.is_terminal() {
+            let frame = self.step_once().clone();
+            report.steps += 1;
+            report.decisions += frame.decisions.len();
+            report.actions += usize::from(frame.action_completed);
+            report.reached_target = predicate(self);
+        }
+        if !report.reached_target && !self.is_terminal() {
+            self.session.outcome = SessionOutcome::SafetyLimit {
+                steps: report.steps,
+            };
+        }
+        report
+    }
+}
+
+fn load_profiles(bytes: &[u8], selection: ProfileTable) -> Result<BTreeMap<String, Profile>> {
+    let document: Value = serde_json::from_slice(bytes)
+        .map_err(|error| ReviewError::Invalid(format!("checkpoint JSON: {error}")))?;
+    let table = match selection {
+        ProfileTable::Learner => document
+            .get("learner_profiles")
+            .or_else(|| document.get("profiles"))
+            .unwrap_or(&document),
+        ProfileTable::Accepted => document.get("accepted").ok_or_else(|| {
+            ReviewError::Invalid("checkpoint has no accepted champion table".to_owned())
+        })?,
+    };
+    let profiles: BTreeMap<String, Profile> = serde_json::from_value(table.clone())
+        .map_err(|error| ReviewError::Invalid(format!("profile table: {error}")))?;
+    for faction in FACTIONS {
+        let profile = profiles
+            .get(faction)
+            .ok_or_else(|| ReviewError::Invalid(format!("profile table has no {faction}")))?;
+        profile
+            .validate(Some(faction))
+            .map_err(|error| ReviewError::Invalid(format!("{faction} profile: {error}")))?;
+        if !profile.is_explicit() {
+            return Err(ReviewError::Invalid(format!(
+                "{faction} profile uses hashed schema {}; reviewer requires explicit profiles",
+                profile.schema
+            )));
+        }
+    }
+    Ok(profiles)
+}
+
+fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) -> Vec<BoardTile> {
+    let mut board: Vec<BoardTile> = galaxy
+        .system_ids()
+        .into_iter()
+        .filter_map(|id| {
+            let coord = galaxy.coord_of(id)?;
+            let system = ti4_content::galaxy::system(content, id, FULL)?;
+            let planets = system
+                .planets()
+                .into_iter()
+                .filter_map(|planet_id| ti4_content::galaxy::planet(content, planet_id, FULL))
+                .map(|planet| PlanetMeta {
+                    id: planet.id().to_owned(),
+                    label: planet.name().unwrap_or(planet.id()).to_owned(),
+                    resources: planet.resources(),
+                    influence: planet.influence(),
+                })
+                .collect();
+            Some(BoardTile {
+                system: id.to_owned(),
+                label: system.name().unwrap_or(id).to_owned(),
+                q: coord.q,
+                r: coord.r,
+                hyperlane: system.is_hyperlane(),
+                planets,
+            })
+        })
+        .collect();
+    board.sort_by_key(|tile| (tile.q, tile.r));
+    board
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>> {
+    let metadata = fs::metadata(path).map_err(|source| ReviewError::Read {
+        path: path.to_owned(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(ReviewError::Invalid(format!(
+            "{} is not a regular file",
+            path.display()
+        )));
+    }
+    if metadata.len() > MAX_INPUT_BYTES {
+        return Err(ReviewError::Invalid(format!(
+            "{} exceeds the input size limit",
+            path.display()
+        )));
+    }
+    fs::read(path).map_err(|source| ReviewError::Read {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+pub fn save_session(path: &Path, session: &ReviewSession) -> Result<()> {
+    session.validate()?;
+    let bytes = serde_json::to_vec(session)
+        .map_err(|error| ReviewError::Invalid(format!("serialize session: {error}")))?;
+    if bytes.len() > MAX_SESSION_BYTES {
+        return Err(ReviewError::SessionTooLarge);
+    }
+    replace_file(path, &bytes)
+}
+
+pub fn load_session(path: &Path) -> Result<ReviewSession> {
+    let bytes = read_bounded(path)?;
+    let session: ReviewSession = serde_json::from_slice(&bytes)
+        .map_err(|error| ReviewError::Invalid(format!("review session JSON: {error}")))?;
+    session.validate()?;
+    Ok(session)
+}
+
+fn replace_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|source| ReviewError::Write {
+            path: parent.to_owned(),
+            source,
+        })?;
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    let temp = path.with_extension(format!("{extension}.tmp"));
+    let backup = path.with_extension(format!("{extension}.bak"));
+    fs::write(&temp, bytes).map_err(|source| ReviewError::Write {
+        path: temp.clone(),
+        source,
+    })?;
+    if backup.exists() {
+        fs::remove_file(&backup).map_err(|source| ReviewError::Write {
+            path: backup.clone(),
+            source,
+        })?;
+    }
+    let had_old = path.exists();
+    if had_old {
+        fs::rename(path, &backup).map_err(|source| ReviewError::Write {
+            path: path.to_owned(),
+            source,
+        })?;
+    }
+    if let Err(source) = fs::rename(&temp, path) {
+        if had_old {
+            let _ = fs::rename(&backup, path);
+        }
+        return Err(ReviewError::Write {
+            path: path.to_owned(),
+            source,
+        });
+    }
+    if had_old {
+        fs::remove_file(&backup).map_err(|source| ReviewError::Write {
+            path: backup,
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+pub fn render_html(session: &ReviewSession) -> Result<String> {
+    session.validate()?;
+    let data = serde_json::to_string(session)
+        .map_err(|error| ReviewError::Invalid(format!("serialize HTML data: {error}")))?
+        .replace('<', "\\u003c");
+    let template = r#"<!doctype html><html><head><meta charset="utf-8"><title>TI4 Review</title><style>
+body{margin:0;background:#09111e;color:#e9f0fb;font:14px system-ui}header{padding:12px 18px;background:#111e31;position:sticky;top:0}
+main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{background:#101b2c;border:1px solid #29415f;border-radius:8px;padding:12px}
+#board{width:100%;height:650px}.tile{fill:#162b43;stroke:#7098bd;stroke-width:2}.hyper{fill:#342555}text{fill:#fff;text-anchor:middle;font-size:11px}
+button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
+</style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
+<main><section><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>State</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
+<script>const session=__SESSION_DATA__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;draw(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>`<p><b>${esc(p.id)} · ${esc(p.faction)}</b> VP ${p.victory_points} · TG ${p.trade_goods} · tokens ${p.tactic_tokens}/${p.fleet_tokens}/${p.strategic_tokens}</p>`).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
+function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r;const pts=[];for(let k=0;k<6;k++){const a=Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const ns='http://www.w3.org/2000/svg';const p=document.createElementNS(ns,'polygon');p.setAttribute('points',pts.join(' '));p.setAttribute('class',t.hyperlane?'tile hyper':'tile');svg.appendChild(p);const tx=document.createElementNS(ns,'text');tx.setAttribute('x',x);tx.setAttribute('y',y-15);tx.textContent=t.label;svg.appendChild(tx);const state=f.state.board[t.system];const units=state?state.units.map(u=>`${u.owner}:${u.type_id}${u.sustained_damage?'*':''}`).join(' '):'';const detail=document.createElementNS(ns,'text');detail.setAttribute('x',x);detail.setAttribute('y',y+5);detail.textContent=units.slice(0,34);svg.appendChild(detail);const planets=document.createElementNS(ns,'text');planets.setAttribute('x',x);planets.setAttribute('y',y+25);planets.textContent=t.planets.map(p=>p.label).join(', ').slice(0,38);svg.appendChild(planets)}}
+show(0);</script></body></html>"#;
+    let html = template.replace("__SESSION_DATA__", &data);
+    if html.len() > MAX_HTML_BYTES {
+        return Err(ReviewError::HtmlTooLarge);
+    }
+    Ok(html)
+}
+
+pub fn export_html(path: &Path, session: &ReviewSession) -> Result<()> {
+    replace_file(path, render_html(session)?.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn example_validates() {
-        let bytes = canonical_example().expect("example");
-        assert!(validate_bytes(&bytes).is_ok());
+
+    fn fixture_session() -> ReviewSession {
+        let players = (0..6)
+            .map(|index| PlayerId::new(format!("seat{index}")))
+            .collect::<Vec<_>>();
+        let state = GameState::new(&players, &[], BTreeMap::new(), None, 1);
+        let frame = ReviewFrame {
+            index: 0,
+            engine_step: 0,
+            decision_count: 0,
+            action_count: 0,
+            round: 1,
+            phase: Phase::Strategy,
+            active: None,
+            resolved_choice: false,
+            action_completed: false,
+            finished: false,
+            error: None,
+            new_events: vec![],
+            decisions: vec![],
+            state,
+        };
+        ReviewSession {
+            schema: SESSION_SCHEMA.to_owned(),
+            version: SESSION_VERSION,
+            manifest: SessionManifest {
+                checkpoint_path: "checkpoint.json".to_owned(),
+                checkpoint_sha256: "0".repeat(64),
+                map_pool_path: "pool.json.gz".to_owned(),
+                map_pool_sha256: "1".repeat(64),
+                seed: 42,
+                tile_seed: 20_000_042,
+                rotation: 0,
+                profile_table: ProfileTable::Learner,
+                factions: FACTIONS.map(str::to_owned).to_vec(),
+            },
+            board: vec![],
+            frames: vec![frame],
+            outcome: SessionOutcome::InProgress,
+        }
     }
+
     #[test]
-    fn duplicate_key_is_rejected() {
-        let bytes = br#"{"manifest":{},"manifest":{},"payload":{}}"#;
-        assert_eq!(
-            validate_bytes(bytes).expect_err("duplicate").code,
-            ErrorCode::DuplicateKey
-        );
+    fn session_round_trips_and_remains_incomplete() {
+        let session = fixture_session();
+        session.validate().unwrap();
+        let json = serde_json::to_vec(&session).unwrap();
+        let read: ReviewSession = serde_json::from_slice(&json).unwrap();
+        assert_eq!(read, session);
+        assert_eq!(read.outcome, SessionOutcome::InProgress);
     }
+
     #[test]
-    fn rendered_page_has_svg() {
-        let b = validate_bytes(&canonical_example().expect("example")).expect("read");
-        assert!(render_html(&b).expect("html").contains("<svg"));
+    fn broken_frame_sequence_is_refused() {
+        let mut session = fixture_session();
+        let mut second = session.frames[0].clone();
+        second.index = 2;
+        second.engine_step = 1;
+        session.frames.push(second);
+        assert!(session.validate().is_err());
+    }
+
+    #[test]
+    fn html_is_self_contained_and_marks_replay_data() {
+        let html = render_html(&fixture_session()).unwrap();
+        assert!(html.contains("<svg id=\"board\""));
+        assert!(html.contains(SESSION_SCHEMA));
+        assert!(!html.contains("<script src="));
+        assert!(!html.contains("<link rel="));
+        assert!(!html.contains("fetch("));
     }
 }

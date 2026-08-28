@@ -24,28 +24,29 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ### R01 independent review-viewer track (2026-08-28)
 
-- **Authorization:** the operator explicitly requested an independent lightweight application for
-  human review of simulated games. It is separate from TTS and does not change M00–M13 sequencing
+- **Authorization:** the operator requested a native, omniscient reviewer for real learned-policy
+  simulations, confirmed its requirements interview-style, and waived independent review/package
+  cadence for this add-on only. It remains separate from TTS and does not change M00–M13 sequencing
   or M10 training acceptance.
-- **Completed package:** R01-001 — ReviewBundle v1 contract. The first independent Tier-C review
-  required corrections; its privacy, grammar, bounds, frame semantics, and replay-claim findings
-  were addressed. Mendel's independent Tier-C re-review accepted the result with no actionable
-  findings. No implementation has begun.
-- **Branch:** `wp/r01-review-viewer-contract` from `4d528ab`.
-- **Changed paths:** `plans/R01_REVIEW_VIEWER.md`, `plans/evidence/R01-001.md`, this file, and
-  `plans/INDEX.md` only.
-- **Decision:** offline, audience-specific HTML/SVG artifacts; no server/live watch or training
-  integration in MVP. `ti4-sim` replay remains a stub, so no capture/replay fidelity claim exists.
-- **Commit:** `0941c90` (`R01-001: define offline review bundle contract`); documentation checks
-  passed and no executable test applies to this package.
-- **Implementation:** operator-directed one-pass graphical viewer is complete in the new
-  `ti4-review` crate. It validates canonical artifacts and writes self-contained HTML/SVG; it has
-  no engine/training/TTS dependency. The operator explicitly waived R01 review/package cadence.
-- **Commit:** `65ae501` (`R01: add offline graphical review viewer`). `cargo fmt --check`,
-  `cargo clippy -p ti4-review --all-targets -- -D warnings`, 3 focused tests, and the CLI
-  example/validate/render smoke commands passed; details are in `plans/evidence/R01-IMPLEMENTATION.md`.
-- **Next action:** optional engine capture remains a future independent adapter once M03 replay is
-  genuinely available; no R01 action is currently required for use of the graphical viewer.
+- **Branch:** `wp/r01-review-viewer-contract`.
+- **Implementation:** `ti4-review` now loads an actual checkpoint and map pool, creates the exact
+  training-equivalent six-seat starting table, and drives the simulator directly. It can advance by
+  engine step, resolved decision, top-level action, a bounded variable count, round, or whole game;
+  Stop takes effect at a clean engine-step boundary. The default no-argument command opens a native
+  GUI with input buttons, seed/rotation/profile selectors, omniscient board/player/decision panes,
+  a view-only timeline, autosave/reopen, and standalone HTML export.
+- **Trace fidelity:** every decision resolved within an engine step is retained, including nested
+  choices, with all legal options, scores, probabilities, and feature contributions. Frame zero is
+  the post-deployment table before the first `Game::step()`.
+- **Verification:** formatting, focused add-on and touched-training Clippy, 3 focused tests, the full
+  workspace test suite, diff checks, both learner/accepted profile smokes, session validation, HTML
+  rendering, and native GUI startup passed. A complete learned game produced 2,923 frames, 2,922
+  steps, 3,233 decisions, and 1,754 actions with outcome `Completed`.
+- **Commit and evidence:** packaged as `R01: build interactive learned-game reviewer`;
+  `plans/evidence/R01-IMPLEMENTATION.md` contains commands, measured bounds, and results. Unrelated
+  untracked sample artifacts remain untouched.
+- **Next action:** launch with `cargo run -p ti4-review`; there is no remaining R01 implementation
+  action in the confirmed scope.
 
 ### Codex Stage-1 parity repair checkpoint (2026-08-13)
 

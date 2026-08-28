@@ -556,6 +556,52 @@ pub fn play_with_deciders(
     )
 }
 
+/// Construct an unadvanced rollout game with deciders created from exact setup baselines.
+///
+/// This is the interactive counterpart of [`play_with_decider_factory`]. The factory runs after
+/// deployment, so learned bots receive the same baseline facts as training bots, but the caller
+/// retains the game and decides when each engine step occurs.
+///
+/// # Errors
+/// Returns setup, map, deployment, factory, missing-seat, or unknown-seat failures before a game
+/// is returned. No engine step is attempted on failure.
+pub fn setup_game_with_decider_factory<'a, F>(
+    content: &'a ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    map: &OpeningMap,
+    factory: F,
+) -> Result<Game<'a>, String>
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (state, galaxy, _) = seated(content, players, factions, sources, seed, map)?;
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+    let deciders = factory(&baselines)?;
+    let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
+    for player in players {
+        let decider = deciders
+            .get(player)
+            .ok_or_else(|| format!("no decider seated for {player}"));
+        if decider.is_err() {
+            return Err(format!("no decider seated for {player}"));
+        }
+    }
+    if let Some(extra) = deciders.keys().find(|player| !players.contains(player)) {
+        return Err(format!("decider supplied for unknown seat {extra}"));
+    }
+    for (player, decider) in deciders {
+        table.seat(player, decider);
+    }
+    Ok(Game::with_table(state, content, table)
+        .with_sources(sources)
+        .with_galaxy(galaxy))
+}
+
 /// Play one game with deciders constructed after deployment from the exact setup baselines.
 ///
 /// A policy that records shaped per-decision returns must measure every snapshot against the same

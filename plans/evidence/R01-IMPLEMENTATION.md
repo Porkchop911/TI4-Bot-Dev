@@ -1,42 +1,108 @@
-# R01 implementation evidence — offline graphical viewer
+# R01 implementation evidence — interactive learned-game reviewer
 
-## Scope
+## Scope and authorization
 
-Operator-directed one-pass implementation of the independent R01 review application. The operator
-explicitly waived R01 package sequencing and independent reviews. The migration milestones, M10
-training acceptance, TTS bridge, engine state, and historical Python reference are unaffected.
+The operator requested an overhaul of the failed offline-bundle plan and a one-pass implementation
+of a native, omniscient learned-game reviewer. The operator explicitly waived R01's independent
+review/package cadence for this add-on only. Normal safety, bounds, testing, evidence, and workspace
+quality requirements remained in force.
 
-## Delivered
+The requirements were confirmed interview-style before implementation. The locked behavior is:
 
-- New `ti4-review` workspace crate and `ti4-review` CLI.
-- Strict canonical JSON bundle validation before render: size bounds, duplicate keys, closed object
-  shapes, checksums, state/timeline references, bounded collections, IDs, NFC text, and terminal
-  status.
-- Self-contained local HTML/SVG output with a hex board, systems/planets/unit labels, player cards,
-  timeline controls, and frame facts. No web server, external assets, or network request is used.
-- `example`, `validate`, and `render` CLI commands, including a sample bundle for immediate use.
+- select a learned checkpoint and map pool with native file-picker buttons;
+- select learner/accepted profiles, seed, and one of six faction rotations;
+- open on the real post-deployment starting table before the first simulator step;
+- advance by one `Game::step()`, next resolved decision, next top-level action, a bounded variable
+  number of any of those units, end of round, or end of game;
+- stop long runs at a clean engine-step boundary;
+- expose the omniscient table, legal options, selected option, model scores/probabilities, and every
+  feature value/weight/contribution;
+- navigate captured history without mutating or branching simulation state;
+- autosave, reopen view-only sessions, and export a self-contained read-only HTML replay.
 
-## Commands and exact results
+## Delivered architecture
+
+- `ti4-review` is a real adapter over `ti4-engine`, `ti4-sim`, `ti4-training`, `ti4-model`, and
+  `ti4-policy`; hand-authored review JSON is not the simulation path.
+- `ti4-training::setup_game_with_decider_factory` exposes the exact established setup baseline
+  without stepping it. The reviewer captures that state as frame zero.
+- A tracing learned decider records every choice resolved inside an engine step, including nested
+  decisions. Each option contains its policy score, probability, and decomposed feature rows.
+- The native Windows GUI uses `eframe`/`egui` with `rfd` common-controls file dialogs. Dependencies
+  are pinned to versions compatible with the workspace's Rust 1.94.1 toolchain.
+- Long GUI commands execute in bounded slices (at most 128 engine steps per UI update), so Stop
+  remains responsive and always takes effect between `Game::step()` calls.
+- Session JSON and standalone HTML writes are bounded and adjacent-temp/backup based. The maximum
+  serialized artifact is 512 MiB; a command is capped at 2,000,000 engine steps and Run N at
+  1,000,000 requested units.
+
+## Verification results
+
+All commands ran from `D:\Projects\ti4-engine-rs` on 2026-08-28.
 
 ```text
-cargo fmt
-cargo clippy -p ti4-review --all-targets -- -D warnings
-Finished `dev` profile ...
+cargo fmt --all -- --check
+passed
+
+cargo clippy -p ti4-review --all-targets -- -D warnings \
+  -A clippy::too-many-lines -A clippy::type-complexity -A clippy::missing-panics-doc
+passed
+
+cargo clippy -p ti4-training --lib -- -D warnings \
+  -A clippy::too-many-lines -A clippy::type-complexity -A clippy::missing-panics-doc
+passed
 
 cargo test -p ti4-review
 3 passed; 0 failed
 
-cargo run -p ti4-review -- example target/r01-smoke/sample.ti4review.json
-cargo run -p ti4-review -- validate target/r01-smoke/sample.ti4review.json
-valid: target/r01-smoke/sample.ti4review.json
-cargo run -p ti4-review -- render target/r01-smoke/sample.ti4review.json target/r01-smoke/sample.html
+cargo test --workspace
+passed; all crate, binary, example, and doc-test targets completed with exit code 0
+
+git diff --check
+passed (Git emitted only its configured Cargo.lock LF-to-CRLF notice)
 ```
 
-The resulting sample bundle was 1,858 bytes and its self-contained viewer page was 5,047 bytes.
+The Clippy allowances cover existing findings outside the add-on: one long engine function, one
+training PPO type, and existing training panic-documentation findings. No `ti4-review` warning was
+suppressed by them.
 
-## Deliberate boundary
+## Real workflow smoke evidence
 
-This is a finished offline viewer for valid ReviewBundle input, not an engine capture adapter.
-`ti4-sim` replay remains a stub, so no claim is made that a current simulation can yet generate a
-complete safe review timeline. The viewer's crate has no dependency on `ti4-engine`, `ti4-sim`,
-`ti4-training`, or `ti4-bridge`.
+The full-game smoke used the real repository artifacts
+`out/stage2_r6/final10000.json` and `out/pools/save52_noadj_train.json`, learner profiles, seed 44,
+and rotation 2:
+
+```text
+cargo run -p ti4-review -- simulate --checkpoint out/stage2_r6/final10000.json \
+  --map-pool out/pools/save52_noadj_train.json --seed 44 --rotation 2 \
+  --table learner --until end --out out/reviews/r01-complete-smoke.ti4review.json
+
+saved 2923 frames; steps=2922 decisions=3233 actions=1754 target=true outcome=Completed
+
+cargo run -p ti4-review -- validate out/reviews/r01-complete-smoke.ti4review.json
+valid: 2923 frames, Completed
+
+cargo run -p ti4-review -- render out/reviews/r01-complete-smoke.ti4review.json \
+  out/reviews/r01-complete-smoke.html
+passed
+```
+
+The validated session was 349,290,465 bytes and the self-contained HTML was 349,283,551 bytes,
+both below the declared bound. Equality between the trace's 3,233 decisions and the engine table
+log proved nested choices were not discarded.
+
+A separate accepted-profile smoke used seed 42, rotation 5, and `--unit action --count 1`. It
+stopped after exactly one top-level action: 20 frames, 19 engine steps, 19 decisions, and 7,505
+feature-contribution rows; validation passed with `InProgress`, demonstrating resumable partial
+capture and the alternate profile-table selector.
+
+Finally, `target/debug/ti4-review.exe` was launched with no arguments. The native process remained
+healthy after the startup interval and was then stopped by exact PID; this verifies the default GUI
+entry path without leaving a background process.
+
+## Review disposition
+
+No independent R01 review was requested or performed, per the operator's explicit one-add-on
+waiver. The implementation itself was still exercised by focused tests, the full workspace suite,
+both policy-table smoke paths, complete-game simulation, session validation, HTML rendering, and
+native GUI startup.
