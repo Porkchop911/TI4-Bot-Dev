@@ -115,6 +115,12 @@ pub struct PlanetMeta {
     pub label: String,
     pub resources: i64,
     pub influence: i64,
+    #[serde(default)]
+    pub traits: Vec<String>,
+    #[serde(default)]
+    pub tech_specialties: Vec<String>,
+    #[serde(default)]
+    pub legendary: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -868,6 +874,13 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
                     label: planet.name().unwrap_or(planet.id()).to_owned(),
                     resources: planet.resources(),
                     influence: planet.influence(),
+                    traits: planet.traits().into_iter().map(str::to_owned).collect(),
+                    tech_specialties: planet
+                        .tech_specialties()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                    legendary: planet.is_legendary(),
                 })
                 .collect();
             Some(BoardTile {
@@ -991,17 +1004,27 @@ pub fn render_html(session: &ReviewSession) -> Result<String> {
         .map_err(|error| ReviewError::Invalid(format!("serialize HTML data: {error}")))?
         .replace('<', "\\u003c");
     let template = r#"<!doctype html><html><head><meta charset="utf-8"><title>TI4 Review</title><style>
-body{margin:0;background:#09111e;color:#e9f0fb;font:14px system-ui}header{padding:12px 18px;background:#111e31;position:sticky;top:0}
+body{margin:0;background:#09111e;color:#e9f0fb;font:14px system-ui}header{padding:12px 18px;background:#111e31;position:sticky;top:0;z-index:2}
 main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{background:#101b2c;border:1px solid #29415f;border-radius:8px;padding:12px}
-#board{width:100%;height:650px}.tile{fill:#162b43;stroke:#7098bd;stroke-width:2}.hyper{fill:#342555}text{fill:#fff;text-anchor:middle;font-size:11px}
+#board{width:100%;height:720px}.tile{fill:#162b43;stroke:#7098bd;stroke-width:2}.hyper{fill:#342555}svg text{fill:#fff;text-anchor:middle;font-size:11px}.legend{font-size:12px;color:#afbdd0;margin:6px}
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
+.player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>State</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
+<main><section><div class="legend">Thick hex edge = exclusive space control. Planet fill = planet owner. Planet labels: resources/influence · C cultural · H hazardous · I industrial · B/G/R/Y technology specialty · ★ legendary. Red unit slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
 <script>const session=__SESSION_DATA__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
+const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const colorOf=id=>colors[(+(String(id).replace('seat',''))||0)%6];
+const list=x=>Array.from(x||[],String);const objList=x=>Object.entries(x||{}).map(([k,v])=>`${k} ×${v}`);
+function chips(icon,title,values){values=list(values);return `<div class="sheet"><b>${icon} ${esc(title)} · ${values.length}</b><div class="chips">${values.length?values.map(v=>`<span class="chip">${esc(v)}</span>`).join(''):'<span class="chip">None</span>'}</div></div>`}
+function controlledPlanets(f,p){const held=[];for(const t of session.board){const s=f.state.board[t.system];if(!s)continue;for(const planet of t.planets)if(s.planet_control?.[planet.id]===p.id)held.push(`${planet.label} ${planet.resources}/${planet.influence}${f.state.exhausted_planets.includes(planet.id)?' · exhausted':''}`)}return held}
+function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]);const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${x} · used`:x);const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${x} · exhausted`:x);return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',p.secret_objectives)}${chips('▣','Action cards',p.action_cards)}${chips('✦','Relics / fragments',[...list(p.relics),...objList(p.relic_fragments)])}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${k} · ${v}`))}${chips('⌁','Plots',p.plots)}</article>`}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
-function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;draw(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>`<p><b>${esc(p.id)} · ${esc(p.faction)}</b> VP ${p.victory_points} · TG ${p.trade_goods} · tokens ${p.tactic_tokens}/${p.fleet_tokens}/${p.strategic_tokens}</p>`).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
-function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r;const pts=[];for(let k=0;k<6;k++){const a=Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const ns='http://www.w3.org/2000/svg';const p=document.createElementNS(ns,'polygon');p.setAttribute('points',pts.join(' '));p.setAttribute('class',t.hyperlane?'tile hyper':'tile');svg.appendChild(p);const tx=document.createElementNS(ns,'text');tx.setAttribute('x',x);tx.setAttribute('y',y-15);tx.textContent=t.label;svg.appendChild(tx);const state=f.state.board[t.system];const units=state?state.units.map(u=>`${u.owner}:${u.type_id}${u.sustained_damage?'*':''}`).join(' '):'';const detail=document.createElementNS(ns,'text');detail.setAttribute('x',x);detail.setAttribute('y',y+5);detail.textContent=units.slice(0,34);svg.appendChild(detail);const planets=document.createElementNS(ns,'text');planets.setAttribute('x',x);planets.setAttribute('y',y+25);planets.textContent=t.planets.map(p=>p.label).join(', ').slice(0,38);svg.appendChild(planets)}}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;draw(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
+const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
+function kind(id){id=String(id).toLowerCase();for(const k of ['war_sun','space_dock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
+function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='space_dock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='war_sun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
+function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[]};const groundKinds=['infantry','mech','pds','space_dock'];const owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);svg.appendChild(el('text',{x,y:y-53},t.label));const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}const pc=t.planets.length;for(let pi=0;pi<pc;pi++){const p=t.planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],c=owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${p.legendary?'★':''}${p.label}`));const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}))}}
 show(0);</script></body></html>"#;
     let html = template.replace("__SESSION_DATA__", &data);
     if html.len() > MAX_HTML_BYTES {
@@ -1083,9 +1106,26 @@ mod tests {
     fn html_is_self_contained_and_marks_replay_data() {
         let html = render_html(&fixture_session()).unwrap();
         assert!(html.contains("<svg id=\"board\""));
+        assert!(html.contains("Thick hex edge = exclusive space control"));
+        assert!(html.contains("function playerCard"));
+        assert!(html.contains("function unit(svg"));
         assert!(html.contains(SESSION_SCHEMA));
         assert!(!html.contains("<script src="));
         assert!(!html.contains("<link rel="));
         assert!(!html.contains("fetch("));
+    }
+
+    #[test]
+    fn old_planet_metadata_defaults_new_visual_fields() {
+        let planet: PlanetMeta = serde_json::from_value(serde_json::json!({
+            "id": "jord",
+            "label": "Jord",
+            "resources": 4,
+            "influence": 2
+        }))
+        .unwrap();
+        assert!(planet.traits.is_empty());
+        assert!(planet.tech_specialties.is_empty());
+        assert!(!planet.legendary);
     }
 }

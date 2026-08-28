@@ -79,6 +79,16 @@ The main layout is board center, player panels left, decision/details right, tim
 below, and inputs/session actions above. Systems, planets, players, and history entries are
 selectable for detail.
 
+The board uses one fixed high-contrast color per physical seat, stable across faction rotations and
+history. A thick colored hex edge means that seat exclusively controls the system's space area by
+ships; planet ownership is independent and fills each planet circle with its controller's color.
+Planets are placed inside their system and label name, resources/influence, traits, technology
+specialties, and legendary status. Space and planet units are aggregated by owner/base class and
+drawn with distinct geometric silhouettes; counts, sustained damage, and galvanize state remain
+visible. Player sheets use the same color and grouped visual cards for economy, command pools,
+strategy cards, controlled planets, board units, technologies, scored/secret objectives, action
+cards, relics/fragments, leaders, plots, and breakthroughs. A legend explains all abbreviations.
+
 ### History, persistence, and export
 
 - Previous/next/timeline navigation is view-only. It never rewinds or branches the live engine.
@@ -148,7 +158,9 @@ artifacts).
 4. A learned decision capture contains all legal options, chosen option, scores, probabilities, and
    non-vacuous feature/contribution detail where available.
 5. Board and omniscient player projections agree with the underlying state at initial setup and
-   after representative movement/economy/scoring changes.
+   after representative movement/economy/scoring changes. Seat colors, exclusive space-control
+   edges, independently owned planet fills, planet metadata, geometric unit classes, and illustrated
+   player-sheet groups remain consistent in the native view and HTML export.
 6. Engine failure, command bound, and unfinished/user-stopped sessions remain visibly incomplete.
 7. Save/reopen preserves every recorded frame and decision; reopened history is view-only.
 8. HTML export is self-contained, replay-only, and includes board, players, timeline, and decision

@@ -1,9 +1,13 @@
 //! Native egui front end for live and saved reviews.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Sense, Shape, Stroke, Vec2};
-use ti4_model::id::SystemId;
+use ti4_content::ContentStore;
+use ti4_model::content_types::FULL;
+use ti4_model::id::{PlayerId, SystemId};
+use ti4_model::units::Unit;
 
 use crate::{
     AdvanceUnit, LiveReview, MAX_COMMAND_STEPS, ProfileTable, ReviewFrame, ReviewSession,
@@ -11,6 +15,240 @@ use crate::{
 };
 
 const STEPS_PER_UI_FRAME: usize = 128;
+
+const SEAT_COLORS: [Color32; 6] = [
+    Color32::from_rgb(224, 66, 66),
+    Color32::from_rgb(66, 142, 235),
+    Color32::from_rgb(242, 198, 56),
+    Color32::from_rgb(54, 184, 116),
+    Color32::from_rgb(173, 103, 224),
+    Color32::from_rgb(238, 126, 49),
+];
+
+fn seat_index(player: &PlayerId) -> usize {
+    player
+        .to_string()
+        .strip_prefix("seat")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_default()
+        % SEAT_COLORS.len()
+}
+
+fn player_color(player: &PlayerId) -> Color32 {
+    SEAT_COLORS[seat_index(player)]
+}
+
+fn short_trait(value: &str) -> &'static str {
+    if value.eq_ignore_ascii_case("cultural") {
+        "C"
+    } else if value.eq_ignore_ascii_case("hazardous") {
+        "H"
+    } else if value.eq_ignore_ascii_case("industrial") {
+        "I"
+    } else {
+        "·"
+    }
+}
+
+fn short_specialty(value: &str) -> &'static str {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("biotic") || lower.contains("green") {
+        "G"
+    } else if lower.contains("cybernetic") || lower.contains("yellow") {
+        "Y"
+    } else if lower.contains("propulsion") || lower.contains("blue") {
+        "B"
+    } else if lower.contains("warfare") || lower.contains("red") {
+        "R"
+    } else {
+        "T"
+    }
+}
+
+fn item_section(ui: &mut egui::Ui, icon: &str, title: &str, items: Vec<String>, color: Color32) {
+    ui.horizontal(|ui| {
+        ui.colored_label(color, icon);
+        ui.strong(format!("{title} · {}", items.len()));
+    });
+    if items.is_empty() {
+        ui.weak("None");
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            for item in items {
+                ui.label(
+                    egui::RichText::new(item)
+                        .background_color(color.gamma_multiply(0.28))
+                        .color(Color32::WHITE),
+                );
+            }
+        });
+    }
+}
+
+fn stat_badge(ui: &mut egui::Ui, icon: &str, label: &str, value: impl std::fmt::Display) {
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.strong(icon);
+            ui.label(format!("{label} {value}"));
+        });
+    });
+}
+
+fn unit_base(content: &ContentStore, unit: &Unit) -> String {
+    ti4_content::units::unit_type(content, unit.type_id.as_str(), FULL).map_or_else(
+        || unit.type_id.to_string(),
+        |kind| kind.base_type().to_owned(),
+    )
+}
+
+fn polygon(center: Pos2, radius: f32, sides: usize, offset: f32) -> Vec<Pos2> {
+    (0..sides)
+        .map(|index| {
+            let angle = offset + std::f32::consts::TAU * index as f32 / sides as f32;
+            center + Vec2::angled(angle) * radius
+        })
+        .collect()
+}
+
+fn draw_unit_symbol(
+    painter: &egui::Painter,
+    center: Pos2,
+    base: &str,
+    color: Color32,
+    count: usize,
+    damaged: bool,
+    galvanized: bool,
+    scale: f32,
+) {
+    let size = 5.5 * scale.max(0.75);
+    let dark = Color32::from_rgb(12, 18, 27);
+    let stroke = Stroke::new(1.1 * scale.max(0.8), dark);
+    match base {
+        "fighter" => {
+            painter.add(Shape::convex_polygon(
+                polygon(center, size, 3, -std::f32::consts::FRAC_PI_2),
+                color,
+                stroke,
+            ));
+        }
+        "destroyer" => {
+            painter.add(Shape::convex_polygon(
+                polygon(center, size, 4, std::f32::consts::FRAC_PI_4),
+                color,
+                stroke,
+            ));
+        }
+        "cruiser" => {
+            painter.add(Shape::convex_polygon(
+                polygon(center, size, 4, 0.0),
+                color,
+                stroke,
+            ));
+        }
+        "carrier" => {
+            painter.add(Shape::convex_polygon(
+                vec![
+                    center + Vec2::new(-size * 1.3, -size * 0.6),
+                    center + Vec2::new(size * 1.3, -size * 0.6),
+                    center + Vec2::new(size, size * 0.6),
+                    center + Vec2::new(-size, size * 0.6),
+                ],
+                color,
+                stroke,
+            ));
+        }
+        "dreadnought" => {
+            painter.add(Shape::convex_polygon(
+                polygon(center, size, 6, 0.0),
+                color,
+                stroke,
+            ));
+        }
+        "flagship" => {
+            painter.circle_filled(center, size, color);
+            painter.circle_stroke(center, size, stroke);
+            painter.line_segment(
+                [
+                    center - Vec2::splat(size * 0.7),
+                    center + Vec2::splat(size * 0.7),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    center + Vec2::new(-size * 0.7, size * 0.7),
+                    center + Vec2::new(size * 0.7, -size * 0.7),
+                ],
+                stroke,
+            );
+        }
+        "war_sun" => {
+            painter.circle_filled(center, size * 1.15, color);
+            painter.circle_stroke(center, size * 1.15, Stroke::new(1.5, Color32::WHITE));
+        }
+        "infantry" => {
+            painter.circle_filled(center, size * 0.75, color);
+            painter.circle_stroke(center, size * 0.75, stroke);
+        }
+        "mech" => {
+            painter.add(Shape::convex_polygon(
+                polygon(center, size, 5, -std::f32::consts::FRAC_PI_2),
+                color,
+                stroke,
+            ));
+        }
+        "pds" => {
+            painter.rect_filled(
+                egui::Rect::from_center_size(center, Vec2::splat(size * 1.4)),
+                1.0,
+                color,
+            );
+            painter.line_segment(
+                [
+                    center + Vec2::new(0.0, -size),
+                    center + Vec2::new(0.0, size),
+                ],
+                stroke,
+            );
+        }
+        "space_dock" => {
+            painter.add(Shape::convex_polygon(
+                vec![
+                    center + Vec2::new(-size, size),
+                    center + Vec2::new(size, size),
+                    center + Vec2::new(size * 0.65, -size),
+                    center + Vec2::new(-size * 0.65, -size),
+                ],
+                color,
+                stroke,
+            ));
+        }
+        _ => {
+            painter.circle_filled(center, size, color);
+            painter.circle_stroke(center, size, stroke);
+        }
+    }
+    if damaged {
+        painter.line_segment(
+            [
+                center + Vec2::new(-size, size),
+                center + Vec2::new(size, -size),
+            ],
+            Stroke::new(1.6, Color32::RED),
+        );
+    }
+    if galvanized {
+        painter.circle_stroke(center, size * 1.45, Stroke::new(1.2, Color32::YELLOW));
+    }
+    let abbreviation: String = base.chars().take(2).collect();
+    painter.text(
+        center + Vec2::new(0.0, size + 4.0 * scale),
+        Align2::CENTER_TOP,
+        format!("{abbreviation}×{count}"),
+        FontId::monospace(5.8 * scale.max(0.9)),
+        Color32::WHITE,
+    );
+}
 
 #[derive(Clone, Debug)]
 enum RunTarget {
@@ -449,37 +687,196 @@ impl ReviewApp {
         });
     }
 
-    fn player_panel(root: &mut egui::Ui, frame: &ReviewFrame) {
+    fn player_panel(root: &mut egui::Ui, session: &ReviewSession, frame: &ReviewFrame) {
         egui::Panel::left("players")
             .resizable(true)
-            .default_size(310.0)
+            .default_size(340.0)
             .show(root, |ui| {
                 ui.heading("Omniscient players");
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    let content = ContentStore::embedded();
                     for player in &frame.state.players {
+                        let color = player_color(&player.id);
                         egui::CollapsingHeader::new(format!(
-                            "{} · {} · {} VP",
+                            "● {} · {} · {} VP",
                             player.id, player.faction, player.victory_points
                         ))
                         .default_open(true)
                         .show(ui, |ui| {
-                            ui.label(format!(
-                                "TG {} · commodities {} · tokens T/F/S {}/{}/{} · {}",
-                                player.trade_goods,
-                                player.commodities,
-                                player.tactic_tokens,
-                                player.fleet_tokens,
-                                player.strategic_tokens,
-                                if player.passed { "passed" } else { "active" }
-                            ));
-                            ui.label(format!("Strategy: {:?}", player.strategy_cards));
-                            ui.label(format!("Tech: {:?}", player.technologies));
-                            ui.label(format!("Secrets: {:?}", player.secret_objectives));
-                            ui.label(format!("Action cards: {:?}", player.action_cards));
-                            ui.label(format!("Relics: {:?}", player.relics));
-                            ui.label(format!("Leaders: {:?}", player.leaders));
-                            ui.label(format!("Fragments: {:?}", player.relic_fragments));
-                            ui.label(format!("Plots: {:?}", player.plots));
+                            ui.colored_label(
+                                color,
+                                format!(
+                                    "{} · {}",
+                                    player.faction,
+                                    if player.passed { "PASSED" } else { "ACTIVE" }
+                                ),
+                            );
+                            ui.horizontal_wrapped(|ui| {
+                                stat_badge(ui, "★", "VP", player.victory_points);
+                                stat_badge(ui, "◆", "TG", player.trade_goods);
+                                stat_badge(ui, "◇", "Com", player.commodities);
+                            });
+                            ui.horizontal_wrapped(|ui| {
+                                stat_badge(ui, "▲", "Tactic", player.tactic_tokens);
+                                stat_badge(ui, "⬟", "Fleet", player.fleet_tokens);
+                                stat_badge(ui, "●", "Strategy", player.strategic_tokens);
+                            });
+
+                            let strategy = player
+                                .strategy_cards
+                                .iter()
+                                .map(|card| {
+                                    if player.exhausted_strategy_cards.contains(card) {
+                                        format!("{card} · used")
+                                    } else {
+                                        card.to_string()
+                                    }
+                                })
+                                .collect();
+                            item_section(ui, "◆", "Strategy cards", strategy, color);
+
+                            let controlled_planets: Vec<String> = session
+                                .board
+                                .iter()
+                                .flat_map(|tile| {
+                                    let state = frame.state.board.get(&SystemId::new(&tile.system));
+                                    tile.planets
+                                        .iter()
+                                        .filter(move |planet| {
+                                            state.and_then(|state| {
+                                                state.planet_control.get(planet.id.as_str())
+                                            }) == Some(&player.id)
+                                        })
+                                        .map(|planet| {
+                                            let exhausted = frame
+                                                .state
+                                                .exhausted_planets
+                                                .contains(planet.id.as_str());
+                                            format!(
+                                                "{} {}/{}{}",
+                                                planet.label,
+                                                planet.resources,
+                                                planet.influence,
+                                                if exhausted { " · exhausted" } else { "" }
+                                            )
+                                        })
+                                })
+                                .collect();
+                            item_section(ui, "●", "Planets", controlled_planets, color);
+
+                            let mut unit_counts: BTreeMap<String, usize> = BTreeMap::new();
+                            for state in frame.state.board.values() {
+                                for unit in state.units.iter().chain(
+                                    state.planet_units.values().flat_map(|units| units.iter()),
+                                ) {
+                                    if unit.owner == player.id {
+                                        *unit_counts
+                                            .entry(unit_base(content, unit))
+                                            .or_default() += 1;
+                                    }
+                                }
+                            }
+                            item_section(
+                                ui,
+                                "⬡",
+                                "Units on board",
+                                unit_counts
+                                    .into_iter()
+                                    .map(|(kind, count)| format!("{kind} ×{count}"))
+                                    .collect(),
+                                color,
+                            );
+
+                            item_section(
+                                ui,
+                                "⚙",
+                                "Technologies",
+                                player
+                                    .technologies
+                                    .iter()
+                                    .map(|technology| {
+                                        if player.exhausted_technologies.contains(technology) {
+                                            format!("{technology} · exhausted")
+                                        } else {
+                                            technology.to_string()
+                                        }
+                                    })
+                                    .collect(),
+                                color,
+                            );
+                            item_section(
+                                ui,
+                                "✓",
+                                "Scored objectives",
+                                frame
+                                    .state
+                                    .scored_objectives
+                                    .get(&player.id)
+                                    .into_iter()
+                                    .flatten()
+                                    .map(ToString::to_string)
+                                    .collect(),
+                                color,
+                            );
+                            item_section(
+                                ui,
+                                "?",
+                                "Secret objectives",
+                                player
+                                    .secret_objectives
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .collect(),
+                                color,
+                            );
+                            item_section(
+                                ui,
+                                "▣",
+                                "Action cards",
+                                player
+                                    .action_cards
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .collect(),
+                                color,
+                            );
+                            item_section(
+                                ui,
+                                "✦",
+                                "Relics and fragments",
+                                player
+                                    .relics
+                                    .iter()
+                                    .map(ToString::to_string)
+                                    .chain(player.relic_fragments.iter().map(
+                                        |(trait_name, count)| {
+                                            format!("{trait_name} fragment ×{count}")
+                                        },
+                                    ))
+                                    .collect(),
+                                color,
+                            );
+                            item_section(
+                                ui,
+                                "♟",
+                                "Leaders",
+                                player
+                                    .leaders
+                                    .iter()
+                                    .map(|(leader, status)| format!("{leader} · {status:?}"))
+                                    .collect(),
+                                color,
+                            );
+                            item_section(ui, "⌁", "Plots", player.plots.clone(), color);
+                            if let Some(breakthrough) = &player.breakthrough {
+                                item_section(
+                                    ui,
+                                    "⚡",
+                                    "Breakthrough",
+                                    vec![breakthrough.to_string()],
+                                    color,
+                                );
+                            }
                             ui.collapsing("Complete player JSON", |ui| {
                                 let text = serde_json::to_string_pretty(player)
                                     .unwrap_or_else(|error| error.to_string());
@@ -599,6 +996,19 @@ impl ReviewApp {
 
     fn board(&mut self, root: &mut egui::Ui, session: &ReviewSession, frame: &ReviewFrame) {
         egui::CentralPanel::default().show(root, |ui| {
+            let content = ContentStore::embedded();
+            ui.horizontal_wrapped(|ui| {
+                ui.strong("Players:");
+                for player in &frame.state.players {
+                    ui.colored_label(
+                        player_color(&player.id),
+                        format!("● {} {}", player.id, player.faction),
+                    );
+                }
+            });
+            ui.small(
+                "Planet circle: resources/influence · traits C cultural, H hazardous, I industrial · tech B propulsion, G biotic, R warfare, Y cybernetic · ★ legendary. Unit labels show class×count; red slash = damaged, yellow ring = galvanized.",
+            );
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
             let center = response.rect.center();
@@ -627,48 +1037,203 @@ impl ReviewApp {
                 painter.add(Shape::convex_polygon(
                     points.clone(),
                     fill,
-                    Stroke::new(
-                        if selected { 3.0 } else { 1.5 },
-                        Color32::from_rgb(112, 152, 189),
-                    ),
+                    Stroke::new(1.4, Color32::from_rgb(112, 152, 189)),
                 ));
+                let system_state = frame.state.board.get(&SystemId::new(&tile.system));
+                let mut space_owners: Vec<&PlayerId> = system_state
+                    .into_iter()
+                    .flat_map(|state| state.units.iter())
+                    .filter(|unit| {
+                        ti4_content::units::unit_type(content, unit.type_id.as_str(), FULL)
+                            .is_some_and(|kind| kind.is_ship())
+                    })
+                    .map(|unit| &unit.owner)
+                    .collect();
+                space_owners.sort();
+                space_owners.dedup();
+                if let [owner] = space_owners.as_slice() {
+                    painter.add(Shape::closed_line(
+                        points.clone(),
+                        Stroke::new(5.0 * scale.max(0.75), player_color(owner)),
+                    ));
+                }
+                if selected {
+                    let inner: Vec<Pos2> = points
+                        .iter()
+                        .map(|corner| point + (*corner - point) * 0.91)
+                        .collect();
+                    painter.add(Shape::closed_line(inner, Stroke::new(2.5, Color32::WHITE)));
+                }
                 painter.text(
-                    point + Vec2::new(0.0, -22.0 * scale),
+                    point + Vec2::new(0.0, -45.0 * scale),
                     Align2::CENTER_CENTER,
                     &tile.label,
-                    FontId::proportional(11.0 * scale.max(0.8)),
+                    FontId::proportional(9.5 * scale.max(0.85)),
                     Color32::WHITE,
                 );
-                let system_state = frame.state.board.get(&SystemId::new(&tile.system));
-                let unit_count = system_state.map_or(0, |state| state.units.len());
-                let owners = system_state.map_or_else(String::new, |state| {
-                    let mut owners: Vec<String> = state
-                        .units
+
+                if let Some(state) = system_state {
+                    let mut groups: BTreeMap<(PlayerId, String, bool, bool), usize> =
+                        BTreeMap::new();
+                    for unit in &state.units {
+                        *groups
+                            .entry((
+                                unit.owner.clone(),
+                                unit_base(content, unit),
+                                unit.sustained_damage,
+                                unit.galvanized,
+                            ))
+                            .or_default() += 1;
+                    }
+                    for (index, ((owner, base, damaged, galvanized), count)) in
+                        groups.iter().enumerate()
+                    {
+                        let column = index % 5;
+                        let row = index / 5;
+                        let unit_center = point
+                            + Vec2::new(
+                                (column as f32 - 2.0) * 18.0 * scale,
+                                (-23.0 + row as f32 * 20.0) * scale,
+                            );
+                        draw_unit_symbol(
+                            &painter,
+                            unit_center,
+                            base,
+                            player_color(owner),
+                            *count,
+                            *damaged,
+                            *galvanized,
+                            scale,
+                        );
+                    }
+                    for (index, owner) in state.command_tokens.iter().enumerate() {
+                        painter.circle_filled(
+                            point + Vec2::new((-42.0 + index as f32 * 10.0) * scale, 42.0 * scale),
+                            3.5 * scale,
+                            player_color(owner),
+                        );
+                        painter.circle_stroke(
+                            point + Vec2::new((-42.0 + index as f32 * 10.0) * scale, 42.0 * scale),
+                            3.5 * scale,
+                            Stroke::new(1.0, Color32::WHITE),
+                        );
+                    }
+                }
+
+                let planet_count = tile.planets.len();
+                for (planet_index, planet) in tile.planets.iter().enumerate() {
+                    let offset_x = match planet_count {
+                        1 => 0.0,
+                        2 => (planet_index as f32 * 2.0 - 1.0) * 22.0,
+                        _ => (planet_index as f32 - (planet_count - 1) as f32 / 2.0) * 19.0,
+                    };
+                    let planet_center = point
+                        + Vec2::new(
+                            offset_x * scale,
+                            if planet_count > 2 { 24.0 } else { 27.0 } * scale,
+                        );
+                    let owner = system_state.and_then(|state| {
+                        state
+                            .planet_control
+                            .get(&ti4_model::id::PlanetId::new(&planet.id))
+                    });
+                    let planet_color =
+                        owner.map_or(Color32::from_rgb(91, 96, 105), player_color);
+                    let planet_radius = 14.5 * scale.max(0.72);
+                    painter.circle_filled(
+                        planet_center,
+                        planet_radius,
+                        planet_color.gamma_multiply(0.72),
+                    );
+                    painter.circle_stroke(
+                        planet_center,
+                        planet_radius,
+                        Stroke::new(2.0 * scale.max(0.8), planet_color),
+                    );
+                    let trait_label = planet
+                        .traits
                         .iter()
-                        .map(|unit| unit.owner.to_string())
-                        .collect();
-                    owners.sort();
-                    owners.dedup();
-                    owners.join(",")
-                });
-                painter.text(
-                    point,
-                    Align2::CENTER_CENTER,
-                    format!("{unit_count} space units {owners}"),
-                    FontId::proportional(9.0 * scale.max(0.8)),
-                    Color32::LIGHT_BLUE,
-                );
-                painter.text(
-                    point + Vec2::new(0.0, 20.0 * scale),
-                    Align2::CENTER_CENTER,
-                    tile.planets
-                        .iter()
-                        .map(|planet| planet.label.as_str())
+                        .map(|value| short_trait(value))
                         .collect::<Vec<_>>()
-                        .join(" · "),
-                    FontId::proportional(8.5 * scale.max(0.8)),
-                    Color32::LIGHT_GRAY,
-                );
+                        .join("");
+                    let tech_label = planet
+                        .tech_specialties
+                        .iter()
+                        .map(|value| short_specialty(value))
+                        .collect::<Vec<_>>()
+                        .join("");
+                    painter.text(
+                        planet_center + Vec2::new(0.0, -5.0 * scale),
+                        Align2::CENTER_CENTER,
+                        format!("{}/{}", planet.resources, planet.influence),
+                        FontId::monospace(7.2 * scale.max(0.85)),
+                        Color32::WHITE,
+                    );
+                    painter.text(
+                        planet_center + Vec2::new(0.0, 5.0 * scale),
+                        Align2::CENTER_CENTER,
+                        format!(
+                            "{}{}{}",
+                            trait_label,
+                            if trait_label.is_empty() || tech_label.is_empty() {
+                                ""
+                            } else {
+                                "·"
+                            },
+                            tech_label
+                        ),
+                        FontId::monospace(6.2 * scale.max(0.9)),
+                        Color32::WHITE,
+                    );
+                    painter.text(
+                        planet_center + Vec2::new(0.0, planet_radius + 1.0),
+                        Align2::CENTER_TOP,
+                        format!(
+                            "{}{}",
+                            if planet.legendary { "★" } else { "" },
+                            planet.label
+                        ),
+                        FontId::proportional(6.4 * scale.max(0.9)),
+                        Color32::LIGHT_GRAY,
+                    );
+
+                    if let Some(state) = system_state
+                        && let Some(units) = state
+                            .planet_units
+                            .get(&ti4_model::id::PlanetId::new(&planet.id))
+                    {
+                        let mut ground_groups: BTreeMap<(PlayerId, String, bool, bool), usize> =
+                            BTreeMap::new();
+                        for unit in units {
+                            *ground_groups
+                                .entry((
+                                    unit.owner.clone(),
+                                    unit_base(content, unit),
+                                    unit.sustained_damage,
+                                    unit.galvanized,
+                                ))
+                                .or_default() += 1;
+                        }
+                        for (unit_index, ((unit_owner, base, damaged, galvanized), count)) in
+                            ground_groups.iter().enumerate()
+                        {
+                            draw_unit_symbol(
+                                &painter,
+                                planet_center
+                                    + Vec2::new(
+                                        (-8.0 + unit_index as f32 * 12.0) * scale,
+                                        -planet_radius * 0.85,
+                                    ),
+                                base,
+                                player_color(unit_owner),
+                                *count,
+                                *damaged,
+                                *galvanized,
+                                scale * 0.72,
+                            );
+                        }
+                    }
+                }
                 if response.clicked()
                     && response
                         .interact_pointer_pos()
@@ -699,7 +1264,7 @@ impl eframe::App for ReviewApp {
         };
         self.viewed = self.viewed.min(session.frames.len().saturating_sub(1));
         let frame = session.frames[self.viewed].clone();
-        Self::player_panel(root, &frame);
+        Self::player_panel(root, &session, &frame);
         self.decision_panel(root, &frame);
         self.board(root, &session, &frame);
         if self.run_target.is_some() {

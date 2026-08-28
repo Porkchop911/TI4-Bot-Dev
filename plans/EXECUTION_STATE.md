@@ -44,6 +44,12 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   schema-6 bundle and verifies its full inventory through `ti4_mlp::bundle::read`. The operator's
   exact `run-011/checkpoint-154720/slots.json` path now produces a validated real decision with 8/8
   scored options, 8/8 probabilities, and 396 projected feature rows.
+- **Visual follow-up:** fixed seat colors now connect player sheets, planet ownership, space control,
+  and units. Exclusive ship control draws a thick colored system edge; planets are independently
+  colored circles with resources/influence, trait, specialty, and legendary labels. True unit base
+  classes use distinct geometric symbols with stack counts/damage/galvanize markers. Player holdings
+  are grouped into human-readable illustrated sections. Native and standalone HTML renderers share
+  this contract.
 - **Verification:** formatting, focused add-on and touched-training Clippy, 3 focused tests, the full
   workspace test suite, diff checks, both learner/accepted profile smokes, session validation, HTML
   rendering, and native GUI startup passed. A complete learned game produced 2,923 frames, 2,922

@@ -130,3 +130,24 @@ No independent R01 review was requested or performed, per the operator's explici
 waiver. The implementation itself was still exercised by focused tests, the full workspace suite,
 both policy-table smoke paths, complete-game simulation, session validation, HTML rendering, and
 native GUI startup.
+
+## Visual board and player-sheet follow-up
+
+The operator fixed the ownership semantics: a thick system edge represents exclusive **space**
+control, while every planet independently uses its controller's background color. The native and
+standalone HTML renderers now share a fixed six-seat palette and implement that distinction.
+Planets are circles inside their systems with name, resources/influence, trait, technology
+specialty, and legendary labels. Units are grouped by owner and true content `baseType`; fighters,
+destroyers, cruisers, carriers, dreadnoughts, flagships, war suns, infantry, mechs, PDS, and space
+docks use different geometric silhouettes with count, damage slash, and galvanize ring.
+
+Player sheets replace the former raw summary with colored stat badges and grouped cards for
+strategy cards, controlled planets, on-board unit classes, technology, scored and held secret
+objectives, action cards, relics/fragments, leaders, plots, and breakthroughs. Exact complete JSON
+remains available behind a disclosure control.
+
+A fresh schema-6 MLP smoke captured 37 tiles and 42 planets, including 29 trait-bearing, 9
+technology-specialty, and 5 legendary planets. The two-frame session validated, the enhanced HTML
+export was 90,998 bytes, and its embedded JavaScript passed `node --check`. Focused compilation and
+all four `ti4-review` tests passed. Browser-based visual inspection could not run because the
+desktop browser-control runtime failed to initialize; no browser-pass claim is made.
