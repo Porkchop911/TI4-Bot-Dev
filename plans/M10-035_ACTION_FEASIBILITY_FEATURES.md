@@ -121,3 +121,59 @@ Reproduce across a second training seed before promoting, per codex's evaluation
   representation fix, and only with evaluation seeds kept untouched.
 - **Larger models, longer runs, hyperparameter sweeps.** run-010 against run-009 was +0.3 held-out
   for 1,500 extra updates and a hotter movement head. This is not where the gap is.
+
+---
+
+## Result: the hypothesis failed
+
+run-011, 6,000 Stage-1 updates from blank on vocabulary `1b2221be`, movement entropy back to 0.01
+so the features were the only change from run-010. Judged against the predictions registered above,
+on identical held-out seeds.
+
+| prediction | required | measured | |
+|---|---|---|---|
+| 1. held-out clearance | > 90.7% | **90.2%** | ✗ |
+| 2. reachability recovery | > 65% | **56%** | ✗ |
+| 3. no faction regressing > 1 point | — | xxcha −1.6, jolnar −3.6 | ✗ |
+| 4. failure mix shifts off planets | < 77.8% | **85.9%** | ✗ |
+
+All four fail. The action-feasibility features as built do not help, and the feature family is not
+adopted.
+
+Prediction 2 is the informative one. Recovery **fell** from 65% to 56%: the clearing lines did not
+move into the policy's support, they moved further out of it. Whatever the nine columns changed, it
+was not the thing the plan claimed they would change.
+
+The failure mix moved the wrong way on every axis. Failures missing two or more parts of the bar
+rose from 53.9% to 73.9%, and systems-missing from 51.0% to 77.6%. The policy is not making
+near-misses it could be nudged out of; it is failing more comprehensively.
+
+### The defect that most likely explains it
+
+`move-free-planets` and `move-adds-system` are computed from the **active system**, because movement
+in a tactical action moves into the already-activated system. Every movement option in a choice
+therefore receives the *same* value for both. They cannot discriminate between moves — only between
+choices — which is the opposite of what the family exists for.
+
+Two of the five movement facts are provably non-discriminating within a choice, and movement is
+where the diagnosed failure lives. They occupy columns, train weights, and add gradient noise while
+carrying no per-option signal.
+
+This is the vacuity failure `an_action_fact_tells_two_activations_apart` was written to catch, and
+it did not catch it: **the test covers activation, and I assumed the property held for movement.**
+A per-head version of that test would have caught it before the run, in seconds rather than in two
+hours of training.
+
+### What survives
+
+The three movement facts that do vary per option — `move-capacity`, `move-ground-at-origin`,
+`move-carries-ground` — and the activation and commit facts. Five of nine are sound; the
+experiment cannot say whether they help, because it ran them alongside two that could not.
+
+### Disposition
+
+Best Stage-1 remains **run-010/checkpoint-151528 at 90.7% held-out**, which predates this family.
+
+Before another run: give every head its own discrimination test, delete the two non-discriminating
+facts, and replace them with per-option ones — what *this* move would add, not what the destination
+already is.
