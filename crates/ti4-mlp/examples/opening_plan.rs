@@ -56,13 +56,31 @@ fn refuse(reason: &str) -> ! {
 /// A decider that answers exactly as the one it wraps, and records which systems it activated.
 struct Watching {
     inner: Box<dyn Decider>,
-    log: std::rc::Rc<std::cell::RefCell<Vec<SystemId>>>,
+    log: std::rc::Rc<std::cell::RefCell<Vec<Activation>>>,
+}
+
+/// One activation: where the seat went, and everywhere it could have gone.
+///
+/// The offered set is what separates "chose badly" from "had nothing better". A seat that took a
+/// one-planet tile when a two-planet tile was on the menu made a mistake; one that took the best
+/// tile available did not, and no amount of training fixes the second.
+struct Activation {
+    chosen: SystemId,
+    offered: Vec<SystemId>,
 }
 
 impl Watching {
-    fn record(&self, chosen: &ti4_engine::choice::ChoiceOption) {
+    fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
         if chosen.kind == ti4_engine::tactical::ACTIVATE_KIND {
-            self.log.borrow_mut().push(SystemId::new(chosen.id.clone()));
+            self.log.borrow_mut().push(Activation {
+                chosen: SystemId::new(chosen.id.clone()),
+                offered: choice
+                    .options
+                    .iter()
+                    .filter(|option| option.kind == ti4_engine::tactical::ACTIVATE_KIND)
+                    .map(|option| SystemId::new(option.id.clone()))
+                    .collect(),
+            });
         }
     }
 }
@@ -73,7 +91,7 @@ impl Decider for Watching {
         choice: &Choice,
     ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
         let chosen = self.inner.choose(choice)?;
-        self.record(&chosen);
+        self.record(choice, &chosen);
         Ok(chosen)
     }
 
@@ -83,7 +101,7 @@ impl Decider for Watching {
         seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
         let chosen = self.inner.choose_seeing(choice, seen)?;
-        self.record(&chosen);
+        self.record(choice, &chosen);
         Ok(chosen)
     }
 }
@@ -103,6 +121,11 @@ struct Adherence {
     built: usize,
     /// All three: two tiles worth three planets, and a unit.
     followed: usize,
+    /// Seats whose activations could have carried three planets had they taken the best tiles on
+    /// offer -- so the shortfall was a choice.
+    could_have: usize,
+    /// Seats for which even the best offered tiles could not carry three planets.
+    nothing_better: usize,
 }
 
 #[expect(
@@ -182,7 +205,7 @@ fn main() {
         for rotation in 0..FACTIONS.len() {
             let logs: std::rc::Rc<
                 std::cell::RefCell<
-                    BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<SystemId>>>>,
+                    BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<Activation>>>>,
                 >,
             > = std::rc::Rc::new(std::cell::RefCell::new(BTreeMap::new()));
             let seated_logs = std::rc::Rc::clone(&logs);
@@ -254,11 +277,27 @@ fn main() {
                 let Some(faction) = assignments.get(player) else {
                     continue;
                 };
-                let activations: Vec<SystemId> = recorded
-                    .get(player)
-                    .map(|log| log.borrow().clone())
+                let log = recorded.get(player);
+                let activations: Vec<SystemId> = log
+                    .map(|log| log.borrow().iter().map(|a| a.chosen.clone()).collect())
                     .unwrap_or_default();
                 let distinct: BTreeSet<&SystemId> = activations.iter().collect();
+
+                // The best two tiles this seat was ever offered, across its activations. If those
+                // cannot carry three planets between them, no choice at these decisions could have
+                // reached the bar, and the failure is not a targeting mistake.
+                let mut best: Vec<usize> = log
+                    .map(|log| {
+                        let borrowed = log.borrow();
+                        let mut menu: BTreeSet<SystemId> = BTreeSet::new();
+                        for activation in borrowed.iter() {
+                            menu.extend(activation.offered.iter().cloned());
+                        }
+                        menu.iter().map(|system| planets_on(system)).collect()
+                    })
+                    .unwrap_or_default();
+                best.sort_unstable_by(|a: &usize, b: &usize| b.cmp(a));
+                let attainable = best.len() >= 2 && best.iter().take(2).sum::<usize>() >= 3;
 
                 let mut sizes: Vec<usize> =
                     distinct.iter().map(|system| planets_on(system)).collect();
@@ -280,6 +319,13 @@ fn main() {
                 tally.reached_three_planets += usize::from(reached_three);
                 tally.built += usize::from(built);
                 tally.followed += usize::from(reached_three && built);
+                if !reached_three {
+                    if attainable {
+                        tally.could_have += 1;
+                    } else {
+                        tally.nothing_better += 1;
+                    }
+                }
             }
         }
     }
@@ -289,27 +335,29 @@ fn main() {
         println!("  seats that {label}");
         println!();
         println!(
-            "  {:<10} {:>7} {:>9} {:>9} {:>10} {:>12} {:>10} {:>10}",
+            "  {:<10} {:>7} {:>9} {:>10} {:>12} {:>10} {:>8} {:>12} {:>13}",
             "faction",
             "seats",
-            "0 tiles",
             "1 tile",
             "2+ tiles",
             "hit a 2-tile",
             "3 planets",
-            "built"
+            "built",
+            "could have",
+            "nothing left"
         );
         for (faction, tally) in table {
             println!(
-                "  {:<10} {:>7} {:>8.1}% {:>8.1}% {:>9.1}% {:>11.1}% {:>9.1}% {:>9.1}%",
+                "  {:<10} {:>7} {:>8.1}% {:>9.1}% {:>11.1}% {:>9.1}% {:>9.1}% {:>12.1}% {:>11.1}%",
                 faction,
                 tally.seats,
-                share(tally.activated.get(&0).copied().unwrap_or(0), tally.seats),
                 share(tally.activated.get(&1).copied().unwrap_or(0), tally.seats),
                 share(tally.activated.get(&2).copied().unwrap_or(0), tally.seats),
                 share(tally.reached_a_double, tally.seats),
                 share(tally.reached_three_planets, tally.seats),
                 share(tally.built, tally.seats),
+                share(tally.could_have, tally.seats),
+                share(tally.nothing_better, tally.seats),
             );
         }
     }
