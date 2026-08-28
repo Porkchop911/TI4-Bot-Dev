@@ -38,7 +38,14 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   integration in MVP. `ti4-sim` replay remains a stub, so no capture/replay fidelity claim exists.
 - **Commit:** `0941c90` (`R01-001: define offline review bundle contract`); documentation checks
   passed and no executable test applies to this package.
-- **Next action:** create a dedicated R01-002 branch for the pure bundle validator/types package.
+- **Implementation:** operator-directed one-pass graphical viewer is complete in the new
+  `ti4-review` crate. It validates canonical artifacts and writes self-contained HTML/SVG; it has
+  no engine/training/TTS dependency. The operator explicitly waived R01 review/package cadence.
+- **Commit:** `65ae501` (`R01: add offline graphical review viewer`). `cargo fmt --check`,
+  `cargo clippy -p ti4-review --all-targets -- -D warnings`, 3 focused tests, and the CLI
+  example/validate/render smoke commands passed; details are in `plans/evidence/R01-IMPLEMENTATION.md`.
+- **Next action:** optional engine capture remains a future independent adapter once M03 replay is
+  genuinely available; no R01 action is currently required for use of the graphical viewer.
 
 ### Codex Stage-1 parity repair checkpoint (2026-08-13)
 

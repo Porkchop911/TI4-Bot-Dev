@@ -19,6 +19,24 @@ access, live-TTS integration, or training runtime dependency.
 The only integration point is an optional capture/export adapter. Training and simulation continue
 to work unchanged when capture is disabled; selected training games may use the adapter later.
 
+## Implementation status (2026-08-28)
+
+At the operator's direction, the independently usable viewer path was implemented in one pass
+without the migration project's package/review cadence. `ti4-review` is a new standalone Rust
+executable with no engine, simulator, training, bridge, browser, or server dependency. It validates
+one canonical `*.ti4review.json` bundle and renders a self-contained local HTML/SVG page with a
+hex board, unit/planet labels, player panels, timeline controls, and per-frame facts.
+
+```text
+ti4-review example sample.ti4review.json
+ti4-review validate sample.ti4review.json
+ti4-review render sample.ti4review.json sample.html
+```
+
+The optional engine capture adapter remains intentionally separate: the current M03 replay module
+is still a stub, and this viewer must not pretend raw engine records are a safe projection. Any
+future adapter feeds this completed viewer contract; it does not alter training or TTS behaviour.
+
 ## Architecture
 
 ```text
