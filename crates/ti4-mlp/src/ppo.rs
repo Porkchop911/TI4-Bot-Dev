@@ -96,12 +96,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// The entropy coefficient for one head.
-    ///
-    /// `strategy` gets its own larger bonus (§6.3's `--draft-entropy`): the strategy draft is a
-    /// once-per-round decision with long-range consequences, so collapsing it early costs more than
-    /// collapsing a tactical head.
-    #[must_use]
     /// Whether two settings describe the same optimizer.
     ///
     /// Exactly the six values `Adam::new` copies. A run may anneal entropy between updates; it may
@@ -117,6 +111,12 @@ impl Settings {
             && self.grad_clip == other.grad_clip
     }
 
+    /// The entropy coefficient for one head.
+    ///
+    /// `strategy` gets its own larger bonus (§6.3's `--draft-entropy`): the strategy draft is a
+    /// once-per-round decision with long-range consequences, so collapsing it early costs more than
+    /// collapsing a tactical head.
+    #[must_use]
     pub fn entropy_for(&self, head: &str) -> f64 {
         match head {
             "strategy" => self.strategy_entropy,
