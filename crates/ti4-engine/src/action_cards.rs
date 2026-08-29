@@ -1363,6 +1363,1195 @@ fn reveal_prototype(context: &mut crate::timing::TimingContext<'_>, player: &Pla
 }
 
 
+// -- component-action effects ------------------------------------------------------------------
+//
+// The cards whose printed window is "Action" are played on their owner's own turn (22.1):
+// `perform` discards one and announces it, and `announce` runs the effect below. There is no
+// window to wait for and no one else to react, so each effect runs straight out of the timing
+// context and asks the game's own table when a decision belongs to a player.
+
+/// The player's neighbours in seating order. A two-player table has one.
+fn neighbors(state: &GameState, player: &PlayerId) -> Vec<PlayerId> {
+    let order = &state.seating_order;
+    let Some(index) = order.iter().position(|seat| seat == player) else {
+        return Vec::new();
+    };
+    let before = order[(index + order.len() - 1) % order.len()].clone();
+    let after = order[(index + 1) % order.len()].clone();
+    let same = before == after;
+    let mut out = vec![before];
+    if !same {
+        out.push(after);
+    }
+    out
+}
+
+/// A system a pirate card may build in: not a homeworld, and no ship of any player's. Neutral
+/// ships do not block a pirate fleet (the cards forbid *non-neutral* ships), which is exactly
+/// what this tests: a unit owned by someone in `state.players`.
+fn pirate_systems(state: &GameState) -> Vec<ti4_model::id::SystemId> {
+    state
+        .board
+        .keys()
+        .filter(|system| {
+            !state
+                .system_state(system)
+                .units
+                .iter()
+                .any(|unit| state.players.iter().any(|seat| seat.id == unit.owner))
+        })
+        .cloned()
+        .collect()
+}
+
+/// A system a pirate card may build in that is also off the homeworlds, which the board may
+/// hold only as ids.
+fn pirate_systems_off_homes(
+    state: &GameState,
+    content: &ContentStore,
+    sources: ti4_model::content_types::SourceSet,
+) -> Vec<ti4_model::id::SystemId> {
+    let homes = ti4_content::galaxy::home_systems(content, sources);
+    pirate_systems(state)
+        .into_iter()
+        .filter(|system| !homes.contains(system.as_str()))
+        .collect()
+}
+
+/// Harness Energy: "After you activate an anomaly, replenish your commodities."
+///
+/// Replenishing is the same computation the strategy card uses: commodities fill back up to
+/// the faction's limit.
+fn harness_energy(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let limit = crate::strategy_cards::commodity_limit(context.state, context.content, player);
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.commodities = limit;
+    }
+}
+
+/// Economic Initiative: "Ready each cultural planet you control."
+fn economic_initiative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let owned: Vec<ti4_model::id::PlanetId> = context
+        .state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(_, planet)| planet.clone())
+        .collect();
+    for planet in owned {
+        let cultural = ti4_content::galaxy::planet(
+                context.content,
+                planet.as_str(),
+                context.sources,
+            )
+            .is_some_and(|planet| {
+                planet
+                    .planet_type()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
+            });
+        if cultural {
+            context.state.exhausted_planets.remove(&planet);
+        }
+    }
+}
+
+/// Industrial Initiative: "Gain 1 trade good for each industrial planet you control."
+fn industrial_initiative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let owned: Vec<ti4_model::id::PlanetId> = context
+        .state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(_, planet)| planet.clone())
+        .collect();
+    let count = owned
+        .iter()
+        .filter(|planet| {
+            ti4_content::galaxy::planet(
+                    context.content,
+                    planet.as_str(),
+                    context.sources,
+                )
+                .is_some_and(|planet| {
+                    planet
+                        .planet_type()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("industrial"))
+                })
+        })
+        .count();
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.trade_goods += i32::try_from(count).unwrap_or(i32::MAX);
+    }
+}
+
+/// Fighter Conscription: "Place 1 fighter from your reinforcements in each system that
+/// contains 1 or more of your space docks or units that have capacity. They cannot be placed
+/// in systems that contain other players' ships."
+///
+/// "Units that have capacity" are the cargo rules as printed: any of the player's space units
+/// whose type carries cargo space. A space dock is a structure, so it is looked for on the
+/// planet's unit list. The card forbids other *players'* ships; neutral units are not players',
+/// so they do not block the placement.
+fn fighter_conscription(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let seated: std::collections::BTreeSet<String> = context
+        .state
+        .players
+        .iter()
+        .map(|seat| seat.id.to_string())
+        .collect();
+    let fighter = ti4_model::id::UnitTypeId::new("fighter");
+    let mut eligible: Vec<ti4_model::id::SystemId> = Vec::new();
+    for (system, board) in &context.state.board {
+        let docked = board.planet_units.values().any(|units| {
+            units.iter().any(|unit| {
+                &unit.owner == player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() == "spacedock")
+            })
+        });
+        let has_capacity = board
+            .units
+            .iter()
+            .any(|unit| {
+                &unit.owner == player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.capacity() > 0)
+            });
+        if !docked && !has_capacity {
+            continue;
+        }
+        if board
+            .units
+            .iter()
+            .any(|unit| &unit.owner != player && seated.contains(&unit.owner.to_string()))
+        {
+            continue; // someone else's ship is in the system
+        }
+        eligible.push(system.clone());
+    }
+    for system in eligible {
+        if crate::supply::allowed(
+            context.state,
+            context.content,
+            context.sources,
+            player,
+            &fighter,
+            1,
+        ) == 0
+        {
+            break; // the box holds no more fighters
+        }
+        context
+            .state
+            .system_mut(&system)
+            .units
+            .push(ti4_model::units::Unit::new(fighter.clone(), player.clone()));
+    }
+}
+
+fn impersonation(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let paid = crate::production::pay(
+        context.state,
+        context.content,
+        context.sources,
+        context.table,
+        player,
+        3,
+        crate::production::Spend::Influence,
+    );
+    let Ok(paid) = paid else {
+        return;
+    };
+    if !paid {
+        return;
+    }
+    // A hand-limit answer the decider gives illegally leaves the objective drawn: the draw
+    // happened, and the limit question is the game's to refuse, not the card's to undo.
+    let _ = crate::secrets::draw(context.state, context.content, context.table, player);
+}
+
+/// Plagiarize: "Spend 5 influence and choose a non-faction technology owned by 1 of your
+/// neighbors. Gain that technology."
+///
+/// The five influence go first, for the same reason as Impersonation's. A faction technology
+/// is one the corpus tags with a `faction`; everything else a neighbour owns is fair prey, and
+/// gaining it leaves it no longer in the neighbour's play area.
+fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let paid = crate::production::pay(
+        context.state,
+        context.content,
+        context.sources,
+        context.table,
+        player,
+        5,
+        crate::production::Spend::Influence,
+    );
+    let Ok(paid) = paid else {
+        return;
+    };
+    if !paid {
+        return;
+    }
+    let mut options: Vec<(String, String, ti4_model::id::PlayerId, ti4_model::TechnologyId)> =
+        Vec::new();
+    for neighbour in neighbors(context.state, player) {
+        let Some(seat) = context.state.player(&neighbour) else {
+            continue;
+        };
+        for tech in &seat.technologies {
+            let non_faction = context
+                .content
+                .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                .is_some_and(|record| record.text("faction").is_none());
+            if !non_faction {
+                continue;
+            }
+            let name = context
+                .content
+                .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                .and_then(|record| record.text("name"))
+                .unwrap_or(tech.as_str());
+            options.push((
+                format!("{neighbour}|{tech}"),
+                format!("{neighbour}'s {name}"),
+                neighbour.clone(),
+                tech.clone(),
+            ));
+        }
+    }
+    if options.is_empty() {
+        return;
+    }
+    let options_only = options
+        .iter()
+        .map(|(id, label, _, _)| (id.clone(), label.clone()))
+        .collect::<Vec<_>>();
+    let Some(chosen) = pick(context, player, "Plagiarize: which technology to steal", "technology", &options_only)
+    else {
+        return;
+    };
+    let Some((_, _, owner, tech)) = options
+        .iter()
+        .find(|(id, _, _, _)| *id == chosen)
+        .cloned()
+    else {
+        return; // the answer named nothing on offer
+    };
+    crate::technology::grant(context.state, player, &tech);
+    if let Some(seat) = context.state.player_mut(&owner) {
+        seat.technologies.remove(&tech);
+    }
+}
+
+/// Archaeological Expedition: "Reveal the top 3 cards of an exploration deck that matches a
+/// planet you control; gain any relic fragments that you reveal and discard the rest."
+///
+/// The card reveals, it does not explore: attachments and instants go straight to the discard
+/// with nowhere to attach or fire at, and only fragments are kept. A planet whose trait names
+/// no deck in the corpus offers nothing and is not offered.
+fn archaeological_expedition(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let mut decks: Vec<(ti4_model::id::PlanetId, String)> = Vec::new();
+    for (_, planet) in context.state.controlled_planets(player) {
+        if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, planet)
+        {
+            decks.push((planet.clone(), deck));
+        }
+    }
+    if decks.is_empty() {
+        return;
+    }
+    let options = decks
+        .iter()
+        .map(|(planet, _)| (planet.to_string(), planet.to_string()))
+        .collect::<Vec<_>>();
+    let Some(planet_id) = pick(context, player, "Archaeological Expedition: which planet's deck", "planet", &options)
+    else {
+        return;
+    };
+    let deck = decks
+        .iter()
+        .find(|(planet, _)| planet.as_str() == planet_id)
+        .expect("offered")
+        .1
+        .clone();
+    for _ in 0..3 {
+        let Some(card) = crate::exploration::draw(context.state, &deck) else {
+            break; // the deck ran out before the third card
+        };
+        if crate::exploration::resolution(context.content, &card)
+            .is_some_and(|kind| kind == "Fragment")
+        {
+            let trait_name = context
+                .content
+                .get(ti4_model::content_types::ContentType::Explores, &card)
+                .and_then(|record| record.text("type"))
+                .unwrap_or(&deck)
+                .to_ascii_uppercase();
+            crate::exploration::gain_fragment(context.state, player, &trait_name);
+        }
+    }
+}
+
+/// Divert Funding: "Return a non-unit upgrade, non-faction technology that you own to your
+/// technology deck. Then, research another technology."
+///
+/// The engine does not track a technology deck, so the returned card leaves the player's play
+/// area and is not put back on any table: the research half still runs, and the deck half is
+/// the documented gap. The research itself is the engine's own: prerequisites still apply.
+fn divert_funding(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let mine = context
+        .state
+        .player(player)
+        .map(|seat| seat.technologies.clone())
+        .unwrap_or_default();
+    let options: Vec<(String, String)> = mine
+        .iter()
+        .filter(|alias| !crate::technology::is_unit_upgrade(context.content, alias))
+        .filter(|alias| {
+            context
+                .content
+                .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
+                .is_some_and(|record| record.text("faction").is_none())
+        })
+        .map(|alias| {
+            (
+                alias.as_str().to_owned(),
+                context
+                    .content
+                    .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
+                    .and_then(|record| record.text("name"))
+                    .unwrap_or(alias.as_str())
+                    .to_owned(),
+            )
+        })
+        .collect();
+    if options.is_empty() {
+        return;
+    }
+    let Some(alias) = pick(context, player, "Divert Funding: which technology to return", "technology", &options)
+    else {
+        return;
+    };
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.technologies.remove(&ti4_model::TechnologyId::new(&alias));
+    }
+    let open = crate::technology::researchable(
+        context.state, context.content, context.sources, player,
+    );
+    if open.is_empty() {
+        return;
+    }
+    let research_options = open
+        .iter()
+        .map(|tech| {
+            (
+                tech.as_str().to_owned(),
+                context
+                    .content
+                    .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                    .and_then(|record| record.text("name"))
+                    .unwrap_or(tech.as_str())
+                    .to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let Some(alias) = pick(context, player, "Divert Funding: what to research with the funding", "technology", &research_options)
+    else {
+        return;
+    };
+    crate::technology::research(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        &ti4_model::TechnologyId::new(&alias),
+    );
+}
+
+/// Exploration Probe: "Explore a frontier token that is in or adjacent to a system that
+/// contains 1 or more of your ships."
+///
+/// The frontier token is removed when its card is drawn; a deck that runs out before the draw
+/// keeps its token, because nothing was explored. Adjacency needs a map, so a game without one
+/// can only probe tokens in systems its ships already sit in.
+fn exploration_probe(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let mine = systems_with_my_ships(context.state, context.content, context.sources, player);
+    let mut eligible: BTreeSet<String> = mine.into_iter().collect();
+    if let Some(galaxy) = context.galaxy {
+        let mut adjacent = BTreeSet::new();
+        for system in &eligible {
+            adjacent.extend(galaxy.adjacent(system).into_iter().map(str::to_owned));
+        }
+        eligible.extend(adjacent);
+    }
+    let held: BTreeSet<String> = context
+        .state
+        .frontier_tokens
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let options: Vec<(String, String)> = eligible
+        .intersection(&held)
+        .map(|system| (system.clone(), system.clone()))
+        .collect();
+    if options.is_empty() {
+        return;
+    }
+    let Some(system) = pick(context, player, "Exploration Probe: which frontier token to explore", "system", &options)
+    else {
+        return;
+    };
+    let system = ti4_model::id::SystemId::new(&system);
+    if !context.state.frontier_tokens.remove(&system) {
+        return;
+    }
+    let mut ctx = crate::choice::Resolving {
+        content: context.content,
+        sources: context.sources,
+        dice: context.dice,
+        rng: context.rng,
+        table: context.table,
+        timing: None,
+    };
+    let _ = crate::exploration::explore_with(
+        context.state,
+        &mut ctx,
+        player,
+        crate::exploration::FRONTIER,
+        None,
+    );
+}
+
+/// Refit Troops: "Choose 1 or 2 of your infantry on the game board. Replace each of those
+/// infantry with mechs."
+///
+/// Infantry only stand on planets, so the search is the planet unit lists. "1 or 2" is a real
+/// choice when there is more than one infantry: the second is offered with a stop, the same
+/// way Decoy Operation offers its second pull. The mech is a fresh unit from the box, so the
+/// box must still hold it.
+#[allow(clippy::too_many_lines)]
+fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let mech = ti4_model::id::UnitTypeId::new("mech");
+    if crate::supply::allowed(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        &mech,
+        1,
+    ) == 0
+    {
+        return; // the box holds no more mechs
+    }
+    // `system|planet|index`, the index into that planet's unit list.
+    let mut found: Vec<(String, String, ti4_model::units::Unit)> = Vec::new();
+    for (system, board) in &context.state.board {
+        for (planet, units) in &board.planet_units {
+            for (index, unit) in units.iter().enumerate() {
+                if &unit.owner != player
+                    || types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.base_type() != "infantry")
+                {
+                    continue;
+                }
+                found.push((
+                    format!("{system}|{planet}|{index}"),
+                    format!("infantry in {system}"),
+                    unit.clone(),
+                ));
+            }
+        }
+    }
+    if found.is_empty() {
+        return;
+    }
+    let mut taken: Vec<usize> = Vec::new();
+    if found.len() == 1 {
+        taken.push(0);
+    } else {
+        let options = found
+            .iter()
+            .map(|(id, label, _)| (id.clone(), label.clone()))
+            .collect::<Vec<_>>();
+        let Some(first) = pick(context, player, "Refit Troops: which infantry to replace", "infantry", &options)
+        else {
+            return;
+        };
+        let Some(first_index) = found.iter().position(|(id, _, _)| id == &first) else {
+            return;
+        };
+        taken.push(first_index);
+        let rest: Vec<(String, String)> = found
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != first_index)
+            .map(|(_, (id, label, _))| (id.clone(), label.clone()))
+            .chain(std::iter::once((
+                "stop".to_owned(),
+                "stop after one".to_owned(),
+            )))
+            .collect();
+        let Some(second) = pick(context, player, "Refit Troops: another infantry or stop", "infantry", &rest)
+        else {
+            return;
+        };
+        if second != "stop" {
+            let Some(second_index) = found
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != first_index)
+                .find(|(_, (id, _, _))| id == &second)
+                .map(|(i, _)| i)
+            else {
+                return;
+            };
+            taken.push(second_index);
+        }
+    }
+    let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for position in taken {
+        let system_part = found[position]
+            .0
+            .split('|')
+            .next()
+            .expect("a system part");
+        by_source
+            .entry(system_part.to_owned())
+            .or_default()
+            .push(position);
+    }
+    for (source_system, mut positions) in by_source {
+        positions.sort_by(|a, b| {
+            let index_of = |position: &usize| -> usize {
+                found[*position]
+                    .0
+                    .rsplit_once('|')
+                    .expect("an index")
+                    .1
+                    .parse()
+                    .expect("numeric")
+            };
+            index_of(b).cmp(&index_of(a))
+        });
+        for position in positions {
+            let planet_part = found[position]
+                .0
+                .split('|')
+                .nth(1)
+                .and_then(|rest| rest.split('|').next())
+                .expect("system|planet|index");
+            let index = found[position]
+                .0
+                .rsplit_once('|')
+                .expect("an index")
+                .1
+                .parse::<usize>()
+                .expect("numeric");
+            let units = context
+                .state
+                .system_mut(&ti4_model::id::SystemId::new(&source_system))
+                .planet_units
+                .get_mut(&ti4_model::id::PlanetId::new(planet_part))
+                .expect("the infantry was there");
+            units.remove(index);
+            units.push(ti4_model::units::Unit::new(mech.clone(), player.clone()));
+        }
+    }
+}
+
+/// Scuttle: "Choose 1 or 2 of your non-fighter ships on the game board and return them to your
+/// reinforcements. Gain trade goods equal to the combined cost of those ships."
+///
+/// Non-fighter ships are the major ships in space: a fighter is excluded by its line, and
+/// structures are not ships at all, so the search is the space unit lists. The trade goods are
+/// the printed costs of the ships, which for every non-fighter are whole numbers.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn scuttle(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let mut found: Vec<(String, String, ti4_model::units::Unit)> = Vec::new();
+    for (system, board) in &context.state.board {
+        for (index, unit) in board.units.iter().enumerate() {
+            if &unit.owner != player
+                || types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| !kind.is_ship() || kind.is_fighter())
+            {
+                continue;
+            }
+            found.push((
+                format!("{system}|{index}"),
+                format!("{} in {system}", unit.type_id),
+                unit.clone(),
+            ));
+        }
+    }
+    if found.is_empty() {
+        return;
+    }
+    let mut taken: Vec<usize> = Vec::new();
+    if found.len() == 1 {
+        taken.push(0);
+    } else {
+        let options = found
+            .iter()
+            .map(|(id, label, _)| (id.clone(), label.clone()))
+            .collect::<Vec<_>>();
+        let Some(first) = pick(context, player, "Scuttle: which ship to scuttle", "ship", &options)
+        else {
+            return;
+        };
+        let Some(first_index) = found.iter().position(|(id, _, _)| id == &first) else {
+            return;
+        };
+        taken.push(first_index);
+        let rest: Vec<(String, String)> = found
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != first_index)
+            .map(|(_, (id, label, _))| (id.clone(), label.clone()))
+            .chain(std::iter::once((
+                "stop".to_owned(),
+                "stop after one".to_owned(),
+            )))
+            .collect();
+        let Some(second) = pick(context, player, "Scuttle: another ship or stop", "ship", &rest)
+        else {
+            return;
+        };
+        if second != "stop" {
+            let Some(second_index) = found
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != first_index)
+                .find(|(_, (id, _, _))| id == &second)
+                .map(|(i, _)| i)
+            else {
+                return;
+            };
+            taken.push(second_index);
+        }
+    }
+    let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for position in taken {
+        let system_part = found[position]
+            .0
+            .split('|')
+            .next()
+            .expect("a system part");
+        by_source
+            .entry(system_part.to_owned())
+            .or_default()
+            .push(position);
+    }
+    let mut goods = 0i32;
+    for (source_system, mut positions) in by_source {
+        positions.sort_by(|a, b| {
+            let index_of = |position: &usize| -> usize {
+                found[*position]
+                    .0
+                    .rsplit_once('|')
+                    .expect("an index")
+                    .1
+                    .parse()
+                    .expect("numeric")
+            };
+            index_of(b).cmp(&index_of(a))
+        });
+        for position in positions {
+            let index = found[position]
+                .0
+                .rsplit_once('|')
+                .expect("an index")
+                .1
+                .parse::<usize>()
+                .expect("numeric");
+            goods += types
+                .get(found[position].2.type_id.as_str())
+                .map_or(0, |kind| kind.cost().round() as i32);
+            context
+                .state
+                .system_mut(&ti4_model::id::SystemId::new(&source_system))
+                .units
+                .remove(index);
+        }
+    }
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.trade_goods += goods;
+    }
+}
+
+/// Seize Artifact: "Choose 1 of your neighbors that has 1 or more relic fragments. That player
+/// must give you 1 relic fragment of your choice."
+fn seize_artifact(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let victims: Vec<(String, String)> = neighbors(context.state, player)
+        .iter()
+        .filter_map(|neighbour| {
+            let seat = context.state.player(neighbour)?;
+            if seat.relic_fragments.values().sum::<i32>() > 0 {
+                Some((neighbour.to_string(), neighbour.to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if victims.is_empty() {
+        return;
+    }
+    let Some(victim) = pick(context, player, "Seize Artifact: which neighbor to take from", "player", &victims)
+    else {
+        return;
+    };
+    let victim_id = ti4_model::id::PlayerId::new(&victim);
+    let traits: Vec<(String, String)> = context
+        .state
+        .player(&victim_id)
+        .expect("the victim was on offer")
+        .relic_fragments
+        .iter()
+        .filter(|(_, count)| **count > 0)
+        .map(|(trait_name, _)| (trait_name.clone(), trait_name.clone()))
+        .collect();
+    if traits.is_empty() {
+        return;
+    }
+    let Some(trait_name) = pick(context, player, "Seize Artifact: which fragment to take", "fragment", &traits)
+    else {
+        return;
+    };
+    let Some(seat) = context.state.player_mut(&victim_id) else {
+        return;
+    };
+    let count = seat.relic_fragments.get(&trait_name).copied().unwrap_or(0);
+    if count <= 0 {
+        return;
+    }
+    seat.relic_fragments.insert(trait_name.clone(), count - 1);
+    if count - 1 == 0 {
+        seat.relic_fragments.remove(&trait_name);
+    }
+    if let Some(mine) = context.state.player_mut(player) {
+        *mine.relic_fragments.entry(trait_name).or_insert(0) += 1;
+    }
+}
+
+/// Exchange Program: "Choose another player. You and that player may agree to place 1 infantry
+/// from each of your reinforcements into coexistence on a planet the other player controls
+/// that contains their ground forces; if no agreement is reached, you each discard 1 token
+/// from your fleet pool."
+///
+/// The proposer names the planet, so the offer is a planet of the other player's that holds
+/// their ground forces, and the other player answers yes or no. Coexistence here means both
+/// infantry stand on the planet; the controller's control does not change hands, which is the
+/// case the controller-stepping-aside machinery does not model, so the two units on the planet
+/// are the whole record.
+fn exchange_program(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let others: Vec<(String, String)> = context
+        .state
+        .seating_order
+        .iter()
+        .filter(|other| *other != player)
+        .map(|other| (other.to_string(), other.to_string()))
+        .collect();
+    if others.is_empty() {
+        return;
+    }
+    let Some(other) = pick(context, player, "Exchange Program: which player to ask", "player", &others)
+    else {
+        return;
+    };
+    let other = ti4_model::id::PlayerId::new(&other);
+    // A planet the other player controls on which their ground forces stand.
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let mut offers: Vec<(String, String, ti4_model::id::SystemId, ti4_model::id::PlanetId)> =
+        Vec::new();
+    for (system, planet) in context.state.controlled_planets(&other) {
+        if context
+            .state
+            .system_state(system)
+            .planet_units
+            .get(planet)
+            .is_some_and(|units| {
+                units.iter().any(|unit| {
+                    unit.owner == other
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                })
+            })
+        {
+            offers.push((
+                format!("{system}|{planet}"),
+                format!("{planet} in {system}"),
+                system.clone(),
+                planet.clone(),
+            ));
+        }
+    }
+    if offers.is_empty() {
+        // Nothing to offer is a failed deal: both sides pay the fleet token.
+        refuse_exchange(context.state, player, &other);
+        return;
+    }
+    let offers_only = offers
+        .iter()
+        .map(|(id, label, _, _)| (id.clone(), label.clone()))
+        .collect::<Vec<_>>();
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Exchange Program: which planet to offer",
+        "planet",
+        &offers_only,
+    ) else {
+        return;
+    };
+    let Some((_, _, system, planet)) = offers
+        .iter()
+        .find(|(id, _, _, _)| *id == chosen)
+        .cloned()
+    else {
+        return;
+    };
+    let decision = crate::choice::Choice::new(
+        other.clone(),
+        "Exchange Program: accept the exchange?",
+        vec![
+            crate::choice::ChoiceOption::labelled("yes", "answer", "accept"),
+            crate::choice::ChoiceOption::labelled("no", "answer", "refuse"),
+        ],
+    );
+    let answer = context.table.ask_seeing(
+        &decision,
+        &crate::choice::Observed::new(
+            context.state,
+            context.content,
+            context.sources,
+            context.galaxy,
+        ),
+    );
+    let Ok(answer) = answer else {
+        return;
+    };
+    if answer.id != "yes" {
+        refuse_exchange(context.state, player, &other);
+        return;
+    }
+    let infantry = ti4_model::id::UnitTypeId::new("infantry");
+    let units = context
+        .state
+        .system_mut(&system)
+        .planet_units
+        .entry(planet)
+        .or_default();
+    units.push(ti4_model::units::Unit::new(infantry.clone(), other.clone()));
+    units.push(ti4_model::units::Unit::new(infantry, player.clone()));
+}
+
+/// The failed half of Exchange Program: both players discard 1 fleet token. A pool that is
+/// already empty simply has nothing to discard.
+fn refuse_exchange(state: &mut GameState, player: &PlayerId, other: &PlayerId) {
+    if let Some(seat) = state.player_mut(player) {
+        seat.spend_token(ti4_model::state::TokenPool::Fleet);
+    }
+    if let Some(seat) = state.player_mut(other) {
+        seat.spend_token(ti4_model::state::TokenPool::Fleet);
+    }
+}
+
+/// Mercenary Contract: "Spend 2 trade goods to place 2 neutral infantry on any non-home planet
+/// that contains no units; if that planet was owned by another player, they return its planet
+/// card to the planet card deck."
+///
+/// The planet itself must be bare: no ground forces, no structures. Ships in the system are
+/// not units on the planet. The planet-card half is not modelled: the engine does not track
+/// planet cards in hands, so an owned planet keeps its owner and the gap is recorded in the
+/// card's doc comment rather than invented state.
+fn mercenary_contract(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    if context
+        .state
+        .player(player)
+        .is_some_and(|seat| seat.trade_goods < 2)
+    {
+        return;
+    }
+    let homes = ti4_content::galaxy::home_systems(context.content, context.sources);
+    let all = ti4_content::galaxy::all_planets(context.content, context.sources);
+    let mut options: Vec<(String, String)> = Vec::new();
+    for (system, board) in &context.state.board {
+        if homes.contains(system.as_str()) {
+            continue;
+        }
+        for (planet, units) in &board.planet_units {
+            if !units.is_empty() {
+                continue;
+        }
+            if !all.contains_key(planet.as_str()) {
+                continue; // a planet the map does not know about is not on offer
+            }
+            options.push((
+                format!("{system}|{planet}"),
+                format!("{planet} in {system}"),
+            ));
+        }
+    }
+    if options.is_empty() {
+        return;
+    }
+    let Some(chosen) = pick(context, player, "Mercenary Contract: which planet the infantry land on", "planet", &options)
+    else {
+        return;
+    };
+    let (system_part, planet_part) = chosen
+        .split_once('|')
+        .map(|(s, p)| (s.to_owned(), p.to_owned()))
+        .unwrap_or_default();
+    let (system, planet) = (
+        ti4_model::id::SystemId::new(&system_part),
+        ti4_model::id::PlanetId::new(&planet_part),
+    );
+    let infantry = ti4_model::id::UnitTypeId::new("infantry");
+    let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
+    let units = context
+        .state
+        .system_mut(&system)
+        .planet_units
+        .entry(planet)
+        .or_default();
+    units.push(ti4_model::units::Unit::new(infantry.clone(), neutral.clone()));
+    units.push(ti4_model::units::Unit::new(infantry, neutral));
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.trade_goods -= 2;
+    }
+}
+
+/// Pirate Fleet: "Spend 3 resources to place 1 neutral carrier, 1 neutral cruiser, 1 neutral
+/// destroyer, and 2 neutral fighters in a non-home system that contains no non-neutral ships."
+fn pirate_fleet(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let paid = crate::production::pay(
+        context.state,
+        context.content,
+        context.sources,
+        context.table,
+        player,
+        3,
+        crate::production::Spend::Resources,
+    );
+    let Ok(paid) = paid else {
+        return;
+    };
+    if !paid {
+        return;
+    }
+    let systems = pirate_systems_off_homes(context.state, context.content, context.sources);
+    if systems.is_empty() {
+        return;
+    }
+    let options = systems
+        .iter()
+        .map(|system| (system.to_string(), system.to_string()))
+        .collect::<Vec<_>>();
+    let Some(system) = pick(context, player, "Pirate Fleet: which system the fleet enters", "system", &options)
+    else {
+        return;
+    };
+    let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
+    let fleet = [
+        "carrier",
+        "cruiser",
+        "destroyer",
+        "fighter",
+        "fighter",
+    ];
+    let system = ti4_model::id::SystemId::new(&system);
+    let board = context.state.system_mut(&system);
+    for kind in fleet {
+        board
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new(kind),
+                neutral.clone(),
+            ));
+    }
+}
+
+/// Pirate Contract: "Place 1 neutral destroyer in a non-home system that contains no
+/// non-neutral ships."
+fn pirate_contract(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let systems = pirate_systems_off_homes(context.state, context.content, context.sources);
+    if systems.is_empty() {
+        return;
+    }
+    let options = systems
+        .iter()
+        .map(|system| (system.to_string(), system.to_string()))
+        .collect::<Vec<_>>();
+    let Some(system) = pick(context, player, "Pirate Contract: which system the destroyer enters", "system", &options)
+    else {
+        return;
+    };
+    let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
+    context
+        .state
+        .system_mut(&ti4_model::id::SystemId::new(&system))
+        .units
+        .push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("destroyer"),
+            neutral,
+        ));
+}
+
+/// Brilliance: "Ready 1 of your planets that has a technology specialty or choose 1 player to
+/// gain their breakthrough."
+///
+/// The corpus does not mark which planets carry a technology specialty, so that half of the
+/// card is not offered: guessing which planets qualify would invent a rule the content does
+/// not state. The breakthrough half is the whole choice when any other player holds one, and
+/// gaining it takes it from them.
+fn brilliance(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let options: Vec<(String, String, ti4_model::id::PlayerId)> = context
+        .state
+        .seating_order
+        .iter()
+        .filter(|other| *other != player)
+        .filter_map(|other| {
+            let seat = context.state.player(other)?;
+            seat.breakthrough
+                .is_some()
+                .then(|| (other.to_string(), format!("gain {other}'s breakthrough"), other.clone()))
+        })
+        .collect();
+    if options.is_empty() {
+        return;
+    }
+    let options_only = options
+        .iter()
+        .map(|(id, label, _)| (id.clone(), label.clone()))
+        .collect::<Vec<_>>();
+    let Some(chosen) = pick(context, player, "Brilliance: which breakthrough to gain", "player", &options_only)
+    else {
+        return;
+    };
+    let Some((_, _, owner)) = options
+        .iter()
+        .find(|(id, _, _)| *id == chosen)
+        .cloned()
+    else {
+        return;
+    };
+    let Some(theirs) = context
+        .state
+        .player(&owner)
+        .and_then(|seat| seat.breakthrough.clone())
+    else {
+        return;
+    };
+    if let Some(seat) = context.state.player_mut(&owner) {
+        seat.breakthrough = None;
+    }
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.breakthrough = Some(theirs);
+    }
+}
+
+/// The strategy-card half of Overrule and Strategize: run the chosen card's ability through
+/// the engine's own strategy-card resolver, for the card player. The readied cards of the
+/// other players keep their owners: performing a card's ability does not move the card.
+type StrategyAbility = fn(
+    &mut GameState,
+    &ContentStore,
+    ti4_model::content_types::SourceSet,
+    Option<&Galaxy>,
+    &mut crate::choice::Table,
+    &PlayerId,
+    &str,
+) -> Result<crate::strategy_cards::Ability, crate::choice::IllegalChoice>;
+
+#[allow(clippy::match_same_arms)]
+fn perform_strategy_card(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    prompt: &str,
+    ability: StrategyAbility,
+) {
+    let mut options: Vec<(String, String)> = Vec::new();
+    for other in &context.state.seating_order {
+        if other == player {
+            continue;
+        }
+        let Some(seat) = context.state.player(other) else {
+            continue;
+        };
+        for card in &seat.strategy_cards {
+            if seat.exhausted_strategy_cards.contains(card) {
+                continue; // an exhausted card cannot be performed
+            }
+            options.push((
+                card.to_string(),
+                format!("{}'s {}", other, crate::strategy_cards::card_name(context.content, card.as_str()).unwrap_or_else(|| card.to_string())),
+            ));
+        }
+    }
+    for card in &context.state.unclaimed_strategy_cards {
+        options.push((
+            card.to_string(),
+            crate::strategy_cards::card_name(context.content, card.as_str())
+                .unwrap_or_else(|| card.to_string()),
+        ));
+    }
+    if options.is_empty() {
+        return;
+    }
+    let Some(alias) = pick(context, player, prompt, "strategy card", &options) else {
+        return;
+    };
+    let result = ability(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        context.table,
+        player,
+        &alias,
+    );
+    match result {
+        Ok(crate::strategy_cards::Ability::FreeTactical(system)) => {
+            // The ability is a free tactical action. The effect context carries the game's
+            // state but not its turn machinery, so the activation is recorded — the player is
+            // the active one, the system is the active system — while the move itself and the
+            // windows around it belong to the driver.
+            context.state.active = Some(player.clone());
+            context.state.active_system = Some(system);
+        }
+        Ok(_) => {}
+        Err(_) => {
+            // The decider answered the ability's own question in a way the ability does not
+            // accept; the card fizzles.
+        }
+    }
+}
+
+/// Overrule: "Perform the primary ability of a readied or unchosen strategy card."
+fn overrule(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    perform_strategy_card(
+        context,
+        player,
+        "Overrule: which card's primary ability to perform",
+        crate::strategy_cards::primary,
+    );
+}
+
+/// Strategize: "Perform the secondary ability of any readied or unchosen strategy card."
+fn strategize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    perform_strategy_card(
+        context,
+        player,
+        "Strategize: which card's secondary ability to perform",
+        crate::strategy_cards::secondary,
+    );
+}
 /// Ask this player to pick one of several things, or take the only one on offer.
 ///
 /// One is not a decision and none is not a question: asking either would put a line in the
@@ -2306,6 +3495,25 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "uprising" => Some(uprising),
         "war_effort" => Some(war_effort),
         "nav_suite" => Some(nav_suite),
+        "harness" => Some(harness_energy),
+        "economic_initiative" => Some(economic_initiative),
+        "industrial_initiative" => Some(industrial_initiative),
+        "f_conscription" => Some(fighter_conscription),
+        "impersonation" => Some(impersonation),
+        "plagiarize" => Some(plagiarize),
+        "arch_expedition" => Some(archaeological_expedition),
+        "divert_funding" => Some(divert_funding),
+        "probe" => Some(exploration_probe),
+        "refit" => Some(refit_troops),
+        "scuttle" => Some(scuttle),
+        "seize" => Some(seize_artifact),
+        "exchangeprogram" => Some(exchange_program),
+        "mercenarycontract" => Some(mercenary_contract),
+        "piratefleet" => Some(pirate_fleet),
+        "piratecontract1" | "piratecontract2" | "piratecontract3" | "piratecontract4" => Some(pirate_contract),
+        "brilliance" => Some(brilliance),
+        "overrule" => Some(overrule),
+        "strategize1" | "strategize2" | "strategize3" | "strategize4" => Some(strategize),
         "rally" => Some(rally),
         "fsb" => Some(forward_supply_base),
         "counterstroke" => Some(counterstroke),
@@ -2354,6 +3562,31 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "mb3",
         "mb4",
         "nav_suite",
+        "harness",
+        "economic_initiative",
+        "industrial_initiative",
+        "f_conscription",
+        "impersonation",
+        "plagiarize",
+        "arch_expedition",
+        "divert_funding",
+        "probe",
+        "refit",
+        "scuttle",
+        "seize",
+        "exchangeprogram",
+        "mercenarycontract",
+        "piratefleet",
+        "piratecontract1",
+        "piratecontract2",
+        "piratecontract3",
+        "piratecontract4",
+        "brilliance",
+        "overrule",
+        "strategize1",
+        "strategize2",
+        "strategize3",
+        "strategize4",
         "rally",
         "fsb",
         "counterstroke",
@@ -2709,8 +3942,7 @@ mod tests {
             .system_state(&system)
             .planet_units
             .get(&planet)
-            .map(Vec::len)
-            .unwrap_or(0);
+            .map_or(0, Vec::len);
         assert_eq!(docked, 1, "one dock on the one planet");
 
         let mut state = crate::fixtures::game(&["a"]);
@@ -2733,8 +3965,7 @@ mod tests {
             .system_state(&system)
             .planet_units
             .get(&planet)
-            .map(Vec::len)
-            .unwrap_or(0);
+            .map_or(0, Vec::len);
         assert_eq!(docked, 1, "a second dock has nowhere to go");
     }
 
@@ -2832,7 +4063,7 @@ mod tests {
                 .expect("a placed planet has a system"),
         );
         let barren_system = ti4_model::id::SystemId::new(
-            ti4_content::galaxy::planet(store, *barren_id, ti4_model::content_types::POK)
+            ti4_content::galaxy::planet(store, barren_id, ti4_model::content_types::POK)
                 .expect("in the galaxy")
                 .system_id()
                 .expect("a placed planet has a system"),
@@ -3020,15 +4251,13 @@ mod tests {
             .system_state(&active_system)
             .planet_units
             .get(&landing)
-            .map(Vec::len)
-            .unwrap_or(0);
+            .map_or(0, Vec::len);
         assert_eq!(landed, 3, "the pulled infantry landed beside its two");
         let abroad = state
             .system_state(&foreign_system)
             .planet_units
             .get(&foreign_planet)
-            .map(Vec::len)
-            .unwrap_or(0);
+            .map_or(0, Vec::len);
         assert_eq!(abroad, 0, "and is gone from where it stood");
 
         // A card with nowhere to land removes nothing: fizzle before the first removal.
@@ -3051,8 +4280,7 @@ mod tests {
                 .system_state(&foreign_system)
                 .planet_units
                 .get(&foreign_planet)
-                .map(Vec::len)
-                .unwrap_or(0),
+                .map_or(0, Vec::len),
             1,
             "the unit stays put"
         );
@@ -3063,7 +4291,6 @@ mod tests {
         let player = PlayerId::new("a");
         let rival = PlayerId::new("b");
         let (system, _) = crate::fixtures::a_placed_planet();
-        let store = ContentStore::embedded();
         let foreign = crate::fixtures::plain_systems(12)
             .into_iter()
             .find(|candidate| candidate.as_str() != system.as_str())
@@ -3162,7 +4389,7 @@ mod tests {
                 .system_state(&system)
                 .units
                 .iter()
-                .any(|unit| &unit.owner == &mover),
+                .any(|unit| unit.owner == mover),
             "the cruiser took the hits and is destroyed"
         );
 
@@ -3189,7 +4416,7 @@ mod tests {
                 .system_state(&system)
                 .units
                 .iter()
-                .filter(|unit| &unit.owner == &mover)
+                .filter(|unit| unit.owner == mover)
                 .count(),
             1,
             "no hits, no casualties"
@@ -3209,16 +4436,16 @@ mod tests {
         // The effect may only offer a technology the player can research now; find one whose
         // line is the cruiser's and drive the card with it. If none is open, the card fizzles
         // and the test says so rather than passing vacuously.
-        let open = crate::technology::researchable(&state, &store, POK, &player);
+        let open = crate::technology::researchable(&state, store, POK, &player);
         let candidates: Vec<ti4_model::TechnologyId> = open
             .iter()
-            .filter(|alias| crate::technology::is_unit_upgrade(&store, alias))
+            .filter(|alias| crate::technology::is_unit_upgrade(store, alias))
             .filter(|alias| {
                 let record = store
                     .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
                     .expect("in the corpus");
                 let base = record.text("baseUpgrade").unwrap_or_default().to_owned();
-                let types = ti4_content::units::catalogue(&store, POK);
+                let types = ti4_content::units::catalogue(store, POK);
                 if base.is_empty() {
                     let name = record
                         .text("name")
@@ -3287,20 +4514,21 @@ mod tests {
             .expect("the corpus has component-action cards")
     }
 
-    /// A component action this engine has *no* effect for.
+    /// Any action card in the corpus this engine does not model yet.
     ///
-    /// Chosen by asking rather than by taking the first: the first one gained an effect and a
-    /// test naming it silently became a test of something else.
-    fn an_unimplemented_component_action() -> ActionCardId {
+    /// The engine is not done: some cards' windows are still unmapped, and while any of them
+    /// remains, this is the card a test can use to exercise the "announced unresolved" path.
+    /// When the last unported card lands, this expect is the canary that says the premise is
+    /// stale.
+    fn an_unimplemented_action_card() -> ActionCardId {
         ContentStore::embedded()
             .from_sources(
                 ti4_model::content_types::ContentType::ActionCards,
                 ti4_model::content_types::POK,
             )
-            .filter(|record| record.text("window") == Some("Action"))
             .filter_map(|record| record.text("alias").map(ActionCardId::new))
             .find(|alias| effect_for(alias).is_none())
-            .expect("some component action is still unported")
+            .expect("some action card is still unported")
     }
 
     #[test]
@@ -3374,11 +4602,11 @@ mod tests {
     }
 
     #[test]
-    fn playing_a_component_action_spends_the_card_even_with_no_effect() {
-        // 22.3: it was genuinely played. Leaving an unmodelled card in hand would let a bot
-        // hold it for ever and would hide the gap behind a card that never leaves.
+    fn playing_a_component_action_spends_the_card() {
+        // 22.3: it was genuinely played. Leaving the card in hand would let a bot hold it for
+        // ever, and a card whose effect does nothing must spend just like one that works.
         let content = ContentStore::embedded();
-        let card = an_unimplemented_component_action();
+        let card = a_component_action_card();
         let player = PlayerId::new("a");
         let mut state = crate::fixtures::game(&["a"]);
         state.player_mut(&player).unwrap().action_cards = vec![card.clone()];
@@ -3415,8 +4643,46 @@ mod tests {
             resolver
                 .log()
                 .iter()
+                .any(|line| line.contains("ACTION_CARD_PLAYED")),
+            "and the play was announced: {:?}",
+            resolver.log()
+        );
+    }
+
+    #[test]
+    fn an_unmodelled_card_is_announced_unresolved() {
+        // A card with no registered effect is announced unresolved rather than passed off as
+        // having done something. That path is what keeps a gap visible on the table.
+        let content = ContentStore::embedded();
+        let card = an_unimplemented_action_card();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+
+        let mut table = crate::choice::Table::new();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut resolver = crate::timing::Resolver::default();
+        {
+            let mut context = crate::timing::TimingContext {
+                state: &mut state,
+                content,
+                sources: ti4_model::content_types::POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: None,
+            };
+            crate::reactions::announce(&mut context, &mut resolver, &player, &card).unwrap();
+        }
+
+        assert!(
+            resolver
+                .log()
+                .iter()
                 .any(|line| line.contains("ACTION_CARD_UNRESOLVED")),
-            "and said it had no effect: {:?}",
+            "the gap is said out loud: {:?}",
             resolver.log()
         );
     }
@@ -4601,6 +5867,730 @@ mod tests {
         assert!(
             !missing.is_empty() && missing.len() < every.len(),
             "some are done and some are not; both halves must be visible"
+        );
+    }
+/// Build a `SystemId` from a `&str` or `String` the same way every test below does.
+    fn sys(id: &str) -> ti4_model::id::SystemId {
+        ti4_model::id::SystemId::new(id)
+    }
+
+    fn planet(id: &str) -> ti4_model::id::PlanetId {
+        ti4_model::id::PlanetId::new(id)
+    }
+
+    /// The system a placed planet sits in.
+    fn system_of(store: &ContentStore, planet_id: &str) -> ti4_model::id::SystemId {
+        ti4_content::galaxy::planet(store, planet_id, POK)
+            .expect("a placed planet")
+            .system_id()
+            .map(sys)
+            .expect("in a system")
+    }
+
+    #[test]
+    fn harness_replenishes_commodities_to_the_faction_limit() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .player_mut(&player)
+            .unwrap()
+            .faction = ti4_model::id::FactionId::new("arborec");
+        state.player_mut(&player).unwrap().commodities = 0;
+
+        resolve_card(&mut state, "harness", &player, &[]);
+
+        let limit = crate::strategy_cards::commodity_limit(&state, store, &player);
+        assert!(limit > 0, "the fixture's faction holds commodities");
+        assert_eq!(
+            state.player(&player).unwrap().commodities,
+            limit,
+            "commodities are back to the faction's full complement"
+        );
+    }
+
+    #[test]
+    fn economic_initiative_readies_the_cultural_planets() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let cultural = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .find(|(_, p)| {
+                p.planet_type()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
+            })
+            .map(|(id, _)| id.to_string())
+            .expect("the corpus has a cultural planet");
+        let planet = planet(&cultural);
+        let system = system_of(store, &cultural);
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        state.exhausted_planets.insert(planet.clone());
+
+        resolve_card(&mut state, "economic_initiative", &player, &[]);
+
+        assert!(
+            !state.exhausted_planets.contains(&planet),
+            "the cultural planet is ready again"
+        );
+    }
+
+    #[test]
+    fn industrial_initiative_pays_one_good_per_industrial_planet() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let industrial: Vec<String> = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .filter(|(_, p)| {
+                p.planet_type()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("industrial"))
+            })
+            .map(|(id, _)| id.to_string())
+            .take(2)
+            .collect();
+        let mut state = crate::fixtures::game(&["a"]);
+        for planet_id in &industrial {
+            let system = system_of(store, planet_id);
+            state
+                .system_mut(&system)
+                .set_control(planet(planet_id), player.clone());
+        }
+        let before = state.player(&player).unwrap().trade_goods;
+
+        resolve_card(&mut state, "industrial_initiative", &player, &[]);
+
+        assert_eq!(
+            state.player(&player).unwrap().trade_goods,
+            before + 2,
+            "one good per industrial planet"
+        );
+    }
+
+    #[test]
+    fn fighter_conscription_fills_the_systems_that_call_for_it() {
+        let player = PlayerId::new("a");
+        let rival = PlayerId::new("b");
+        let (docked, docked_planet) = crate::fixtures::a_placed_planet();
+        let capacity_str = crate::fixtures::plain_systems(12)
+            .into_iter()
+            .find(|system| system.as_str() != docked.as_str())
+            .expect("more than one plain system");
+        let capacity = sys(&capacity_str);
+        let blocked_str = crate::fixtures::plain_systems(24)
+            .into_iter()
+            .find(|system| {
+                system.as_str() != docked.as_str() && system.as_str() != capacity.as_str()
+            })
+            .expect("three distinct plain systems");
+        let blocked = sys(&blocked_str);
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        // A dock on the player's planet in `docked`; a carrier (which has capacity) in
+        // `capacity`; a rival cruiser in `blocked`.
+        state.system_mut(&docked).set_control(docked_planet.clone(), player.clone());
+        state.system_mut(&docked).planet_units
+            .entry(docked_planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("spacedock"),
+                player.clone(),
+            ));
+        state.system_mut(&capacity).units.push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("carrier"),
+            player.clone(),
+        ));
+        state.system_mut(&blocked).units.push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("cruiser"),
+            rival.clone(),
+        ));
+        let fighters = |state: &GameState, system: &ti4_model::id::SystemId| {
+            state
+                .system_state(system)
+                .units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == "fighter")
+                .count()
+        };
+
+        resolve_card(&mut state, "f_conscription", &player, &[]);
+
+        assert_eq!(fighters(&state, &docked), 1, "the dock's system takes a fighter");
+        assert_eq!(
+            fighters(&state, &capacity),
+            1,
+            "the carrier's system takes a fighter"
+        );
+        assert_eq!(
+            fighters(&state, &blocked),
+            0,
+            "the rival's ship keeps its system fighter-free"
+        );
+    }
+
+    #[test]
+    fn impersonation_spends_influence_and_draws_a_secret() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let influence = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .find(|(_, p)| p.influence() >= 3)
+            .map(|(id, _)| id.to_string())
+            .expect("the corpus has an influence planet of 3 or more");
+        let planet = planet(&influence);
+        let system = system_of(store, &influence);
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        // The influence bill has exactly one source (the planet): no trade goods, no
+        // promissory notes, so the payment asks no question.
+        state.player_mut(&player).unwrap().trade_goods = 0;
+        state
+            .promissory_notes
+            .retain(|_, owner| *owner != player);
+        let drawn_before = state.player(&player).map(|s| s.secret_objectives.len());
+        let deck_before = state.secret_deck.len();
+
+        resolve_card(&mut state, "impersonation", &player, &[]);
+
+        assert_eq!(
+            state.player(&player).map(|s| s.secret_objectives.len()),
+            drawn_before.map(|n| n + 1),
+            "a secret objective is drawn"
+        );
+        assert_eq!(
+            state.secret_deck.len(),
+            deck_before.saturating_sub(1),
+        );
+    }
+
+    #[test]
+    fn plagiarize_steals_the_neighbor_non_faction_technology() {
+        let me = PlayerId::new("a");
+        let neighbor = PlayerId::new("b");
+        let store = ContentStore::embedded();
+        let tech = store
+            .records(ti4_model::content_types::ContentType::Technologies)
+            .iter()
+            .find(|record| record.text("faction").is_none() && record.id().is_some())
+            .and_then(|record| record.id().map(ti4_model::TechnologyId::new))
+            .expect("the corpus has a non-faction technology");
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&me).unwrap().trade_goods = 5;
+        state
+            .promissory_notes
+            .retain(|_, owner| *owner != me);
+        state.player_mut(&neighbor).unwrap().technologies.insert(tech.clone());
+
+        resolve_card(&mut state, "plagiarize", &me, &[]);
+
+        assert!(
+            state.player(&me).unwrap().technologies.contains(&tech),
+            "the technology is gained"
+        );
+        assert!(
+            !state.player(&neighbor).unwrap().technologies.contains(&tech),
+            "and it is gone from the neighbor"
+        );
+    }
+
+    #[test]
+    fn the_archaeological_expedition_reveals_three_and_keeps_the_fragments() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let trait_planet = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .find(|(id, _)| {
+            let id: &str = id;
+
+                crate::exploration::trait_of(store, POK, &planet(id)).is_some()
+            })
+            .map(|(id, _)| id.to_string())
+            .expect("the corpus has a planet with an exploration trait");
+        let planet = planet(&trait_planet);
+        let system = system_of(store, &trait_planet);
+        let deck = crate::exploration::trait_of(store, POK, &planet)
+            .expect("a deck for the trait");
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        let deck_before = state
+            .exploration_decks
+            .get(deck.as_str())
+            .map_or(0, Vec::len);
+        let fragments_before: i32 = state
+            .player(&player)
+            .map_or(0, |s| s.relic_fragments.values().sum::<i32>());
+
+        resolve_card(&mut state, "arch_expedition", &player, &[]);
+
+        let deck_after = state
+            .exploration_decks
+            .get(deck.as_str())
+            .map_or(0, Vec::len);
+        assert!(
+            deck_before.saturating_sub(3) == deck_after || deck_before < 3,
+            "three cards are revealed (or the deck ran out)"
+        );
+        let fragments_after: i32 = state
+            .player(&player)
+            .map_or(0, |s| s.relic_fragments.values().sum::<i32>());
+        assert!(
+            fragments_after >= fragments_before,
+            "every fragment revealed is kept"
+        );
+    }
+
+    #[test]
+    fn divert_funding_returns_a_technology_and_researches_another() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let give_back = ti4_model::TechnologyId::new("amd");
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::technology::grant(&mut state, &player, &give_back);
+        let research = crate::technology::researchable(&state, store, POK, &player)
+            .into_iter()
+            .find(|tech| *tech != give_back)
+            .expect("something else is researchable");
+
+        // A single returnable technology is not a question, so the only answer the card
+        // asks is which research to take.
+        resolve_card(&mut state, "divert_funding", &player, &[research.as_str()]);
+
+        assert!(
+            !state
+                .player(&player)
+                .unwrap()
+                .technologies
+                .contains(&give_back),
+            "the technology is returned"
+        );
+        assert!(
+            state
+                .player(&player)
+                .unwrap()
+                .technologies
+                .contains(&research),
+            "the other technology is researched"
+        );
+    }
+
+    #[test]
+    fn the_exploration_probe_explores_a_frontier_token_by_ship() {
+        let player = PlayerId::new("a");
+        let (system, _) = crate::fixtures::a_placed_planet();
+        let mut state = crate::fixtures::game(&["a"]);
+        state.system_mut(&system).units.push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("destroyer"),
+            player.clone(),
+        ));
+        let deck_before = state
+            .exploration_decks
+            .get(crate::exploration::FRONTIER)
+            .map_or(0, Vec::len);
+        assert!(deck_before > 0, "the frontier deck is dealt");
+        state.frontier_tokens.insert(system.clone());
+
+        resolve_card(&mut state, "probe", &player, &[]);
+
+        assert!(!state.frontier_tokens.contains(&system), "the token is gone");
+        let deck_after = state
+            .exploration_decks
+            .get(crate::exploration::FRONTIER)
+            .map_or(0, Vec::len);
+        assert_eq!(deck_before.saturating_sub(1), deck_after);
+    }
+
+    #[test]
+    fn refit_troops_trades_infantry_for_mechs() {
+        let player = PlayerId::new("a");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let infantry = ti4_model::id::UnitTypeId::new("infantry");
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        let units = state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default();
+        units.push(ti4_model::units::Unit::new(infantry.clone(), player.clone()));
+        units.push(ti4_model::units::Unit::new(infantry, player.clone()));
+        let mechs_before = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .map_or(0, |units| {
+                units
+                    .iter()
+                    .filter(|unit| unit.type_id.as_str() == "mech")
+                    .count()
+            });
+
+        // Two infantry: choose the first, stop after one.
+        let first = format!("{system}|{planet}|0");
+        resolve_card(&mut state, "refit", &player, &[&first, "stop"]);
+
+        let board = state.system_state(&system);
+        let units = board.planet_units.get(&planet).expect("the planet");
+        let mechs = units
+            .iter()
+            .filter(|unit| unit.type_id.as_str() == "mech")
+            .count();
+        let infantry_left = units
+            .iter()
+            .filter(|unit| unit.type_id.as_str() == "infantry")
+            .count();
+        assert_eq!(mechs, mechs_before + 1, "one mech replaces the chosen infantry");
+        assert_eq!(infantry_left, 1, "the other infantry is untouched");
+    }
+
+    #[test]
+    fn scuttle_returns_ships_and_pays_their_cost() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let (system, _) = crate::fixtures::a_placed_planet();
+        let destroyer = ti4_model::id::UnitTypeId::new("destroyer");
+        let cruiser = ti4_model::id::UnitTypeId::new("cruiser");
+        let types = ti4_content::units::catalogue(store, POK);
+        let cost_destroyer = {
+            let cost = types.get("destroyer").expect("the destroyer").cost().round();
+            #[allow(clippy::cast_possible_truncation)]
+            let cost_i32 = cost as i32;
+            cost_i32
+        };
+        let mut state = crate::fixtures::game(&["a"]);
+        let board = state.system_mut(&system);
+        board.units.push(ti4_model::units::Unit::new(destroyer, player.clone()));
+        board.units.push(ti4_model::units::Unit::new(cruiser, player.clone()));
+        let before = state.player(&player).unwrap().trade_goods;
+
+        // Two ships: the first is chosen, then the card stops.
+        resolve_card(&mut state, "scuttle", &player, &[&format!("{system}|0"), "stop"]);
+
+        let left = state
+            .system_state(&system)
+            .units
+            .iter()
+            .filter(|unit| {
+                unit.type_id.as_str() == "destroyer" || unit.type_id.as_str() == "cruiser"
+            })
+            .count();
+        assert_eq!(left, 1, "exactly one ship was scuttled");
+        assert_eq!(
+            state.player(&player).unwrap().trade_goods,
+            before + cost_destroyer,
+            "the destroyer's cost is paid back in goods"
+        );
+    }
+
+    #[test]
+    fn seize_artifact_takes_the_chosen_fragment() {
+        let me = PlayerId::new("a");
+        let victim = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&victim)
+            .unwrap()
+            .relic_fragments
+            .insert("four".to_owned(), 2);
+
+        resolve_card(&mut state, "seize", &me, &["b", "four"]);
+
+        assert_eq!(
+            state
+                .player(&victim)
+                .unwrap()
+                .relic_fragments
+                .get("four")
+                .copied()
+                .unwrap_or(0),
+            1,
+            "the victim loses the one fragment"
+        );
+        assert_eq!(
+            state
+                .player(&me)
+                .unwrap()
+                .relic_fragments
+                .get("four")
+                .copied()
+                .unwrap_or(0),
+            1,
+            "and gains it"
+        );
+    }
+
+    #[test]
+    fn the_exchange_program_places_both_infantry_on_agreement() {
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), other.clone());
+        state.system_mut(&system).planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                other.clone(),
+            ));
+
+        // Two players: the who question is not asked; the planet is the only offer; b agrees.
+        resolve_card(&mut state, "exchangeprogram", &me, &["yes"]);
+
+        let board = state.system_state(&system);
+        let units = board.planet_units.get(&planet).expect("the planet");
+        assert_eq!(
+            units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == "infantry")
+                .count(),
+            3,
+            "the original plus one from each side"
+        );
+        assert_eq!(
+            state
+                .system_state(&system)
+                .planet_control
+                .get(&planet)
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("b"),
+            "control does not change hands"
+        );
+    }
+
+    #[test]
+    fn the_exchange_program_costs_a_fleet_token_when_refused() {
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), other.clone());
+        state.system_mut(&system).planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                other.clone(),
+            ));
+        let fleet = |state: &GameState, player: &PlayerId| {
+            state
+                .player(player)
+                .map(|seat| seat.tokens(ti4_model::state::TokenPool::Fleet))
+        };
+        let mine_before = fleet(&state, &me).unwrap_or(0);
+        let theirs_before = fleet(&state, &other).unwrap_or(0);
+
+        resolve_card(&mut state, "exchangeprogram", &me, &["no"]);
+
+        assert_eq!(fleet(&state, &me), Some(mine_before.saturating_sub(1)));
+        assert_eq!(fleet(&state, &other), Some(theirs_before.saturating_sub(1)));
+    }
+
+    #[test]
+    fn the_mercenary_contract_lands_two_neutral_infantry() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let homes = ti4_content::galaxy::home_systems(store, POK);
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        // A non-home planet that is bare on the board, exactly the way the card's own
+        // eligibility check sees it.
+        let planet_id = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .find(|(id, pl)| {
+                if homes.contains(pl.system_id().unwrap_or("no system")) {
+                    return false;
+                }
+                let system = sys(pl.system_id().unwrap_or("no system"));
+                state
+                    .system_state(&system)
+                    .planet_units
+                    .get(&planet(id))
+                    .is_none_or(Vec::is_empty)
+            })
+            .map(|(id, _)| id.to_string())
+            .expect("a bare, non-home planet in the map");
+        let planet = planet(&planet_id);
+        let system = system_of(store, &planet_id);
+        // The card only offers planets the board already lists; register this one, empty.
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default();
+
+        resolve_card(&mut state, "mercenarycontract", &player, &[&format!("{system}|{planet}")]);
+
+        let board = state.system_state(&system);
+        let units = board.planet_units.get(&planet).expect("the planet");
+        let neutral = crate::neutral_units::NEUTRAL;
+        assert_eq!(
+            units
+                .iter()
+                .filter(|unit| {
+                    unit.type_id.as_str() == "infantry" && unit.owner.as_str() == neutral
+                })
+                .count(),
+            2,
+            "the two neutral infantry are on the planet"
+        );
+        assert_eq!(
+            state.player(&player).unwrap().trade_goods,
+            3,
+            "the two goods are spent"
+        );
+    }
+
+    #[test]
+    fn the_pirate_fleet_builds_its_crew_in_the_chosen_system() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let homes = ti4_content::galaxy::home_systems(store, POK);
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        // The setup board holds only homeworlds; open a plain system for the fleet to enter.
+        let target = crate::fixtures::plain_systems(40)
+            .into_iter()
+            .find(|system| !homes.contains(system.as_str()))
+            .map(|system| sys(&system))
+            .expect("a plain, non-home system in the map");
+        state.system_mut(&target);
+
+        resolve_card(&mut state, "piratefleet", &player, &[&target.to_string()]);
+
+        let board = state.system_state(&target);
+        let neutral = crate::neutral_units::NEUTRAL;
+        let count = |kind: &str| {
+            board
+                .units
+                .iter()
+                .filter(|unit| {
+                    unit.type_id.as_str() == kind && unit.owner.as_str() == neutral
+                })
+                .count()
+        };
+        assert_eq!(count("carrier"), 1);
+        assert_eq!(count("cruiser"), 1);
+        assert_eq!(count("destroyer"), 1);
+        assert_eq!(count("fighter"), 2);
+    }
+
+    #[test]
+    fn the_pirate_contract_drops_one_neutral_destroyer() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let homes = ti4_content::galaxy::home_systems(store, POK);
+        let mut state = crate::fixtures::game(&["a"]);
+        let target = crate::fixtures::plain_systems(40)
+            .into_iter()
+            .find(|system| !homes.contains(system.as_str()))
+            .map(|system| sys(&system))
+            .expect("a plain, non-home system in the map");
+        state.system_mut(&target);
+
+        resolve_card(&mut state, "piratecontract1", &player, &[&target.to_string()]);
+
+        let board = state.system_state(&target);
+        assert_eq!(
+            board
+                .units
+                .iter()
+                .filter(|unit| {
+                    unit.type_id.as_str() == "destroyer"
+                        && unit.owner.as_str() == crate::neutral_units::NEUTRAL
+                })
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn brilliance_takes_the_other_players_breakthrough() {
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let breakthrough = ti4_model::BreakthroughId::new("test_breakthrough");
+        state
+            .player_mut(&other)
+            .unwrap()
+            .breakthrough = Some(breakthrough.clone());
+
+        resolve_card(&mut state, "brilliance", &me, &[]);
+
+        assert_eq!(
+            state.player(&me).unwrap().breakthrough.as_ref(),
+            Some(&breakthrough),
+            "the breakthrough is gained"
+        );
+        assert!(
+            state.player(&other).unwrap().breakthrough.is_none(),
+            "and is taken from its owner"
+        );
+    }
+
+    #[test]
+    fn overrule_performs_the_chosen_cards_primary_ability() {
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&other)
+            .unwrap()
+            .strategy_cards
+            .push(ti4_model::StrategyCardId::new("pok5trade"));
+        let goods_before = state.player(&me).unwrap().trade_goods;
+
+        resolve_card(&mut state, "overrule", &me, &["pok5trade"]);
+
+        assert_eq!(
+            state.player(&me).unwrap().trade_goods,
+            goods_before + 3,
+            "the Trade primary pays its three goods to the card player"
+        );
+        assert!(
+            state
+                .player(&other)
+                .unwrap()
+                .strategy_cards
+                .contains(&ti4_model::StrategyCardId::new("pok5trade")),
+            "the card stays in its owner's hand"
+        );
+    }
+
+    #[test]
+    fn strategize_performs_the_chosen_cards_secondary_ability() {
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let store = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&other)
+            .unwrap()
+            .strategy_cards
+            .push(ti4_model::StrategyCardId::new("pok5trade"));
+        state
+            .player_mut(&me)
+            .unwrap()
+            .faction = ti4_model::id::FactionId::new("arborec");
+        state.player_mut(&me).unwrap().commodities = 0;
+
+        resolve_card(&mut state, "strategize1", &me, &["pok5trade"]);
+
+        let limit = crate::strategy_cards::commodity_limit(&state, store, &me);
+        assert!(limit > 0, "the fixture's faction holds commodities");
+        assert_eq!(
+            state.player(&me).unwrap().commodities,
+            limit,
+            "the Trade secondary replenishes commodities"
         );
     }
 }
