@@ -1333,6 +1333,10 @@ impl Window for InvasionWindow {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per invasion stage, read as a table; splitting them hides that each                   arm's job is to fall through to the next stage"
+    )]
     fn resolve(
         &mut self,
         state: &mut GameState,
@@ -1360,12 +1364,9 @@ impl Window for InvasionWindow {
                 //
                 // Declining therefore ends the chain outright rather than skipping one opponent:
                 // the rule offers *another* combat, not a queue to work through.
-                if option.is_decline() {
-                    self.stage = Stage::Advancing {
-                        planets,
-                        index: index + 1,
-                    };
-                } else if remaining.is_empty() {
+                // Declining and having nobody left are the same outcome: the chain ends and the
+                // planet is done. Rule 12 phrases them as two ways to stop, not two results.
+                if option.is_decline() || remaining.is_empty() {
                     self.stage = Stage::Advancing {
                         planets,
                         index: index + 1,

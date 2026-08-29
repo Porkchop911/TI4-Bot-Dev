@@ -274,7 +274,7 @@ mod tests {
         // record is edited, this says so rather than letting a silent change ride.
         let content = ti4_content::ContentStore::embedded();
         let types = ti4_content::units::catalogue(content, ALL_SOURCES);
-        let stat = |id: &str| types.get(id).expect("transcribed").clone();
+        let stat = |id: &str| *types.get(id).expect("transcribed");
 
         let flagship = stat("neutral_flagship");
         assert_eq!((flagship.combat_hits_on(), flagship.combat_dice()), (Some(7), 2));
