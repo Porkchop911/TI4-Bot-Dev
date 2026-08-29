@@ -147,10 +147,14 @@ pub fn available(
         .iter()
         .map(|planet| max_face_value(state, content, sources, player, planet, kind))
         .sum();
+    // The Triad is "readied and spent as if it were a planet card", so it adds a face here rather
+    // than needing a payment path of its own. It is not in `spendable_planets` because it is not a
+    // planet and must not appear anywhere planets are counted.
+    let from_triad = crate::relics::triad_value(state, player).unwrap_or(0);
     let goods = state.player(player).map_or(0, |seat| {
         i64::from(seat.trade_goods) * trade_good_worth(state, player)
     });
-    from_planets + goods
+    from_planets + from_triad + goods
 }
 
 /// The faces by which this planet can pay one bill.

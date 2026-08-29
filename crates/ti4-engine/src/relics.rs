@@ -31,6 +31,14 @@ pub enum Used {
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
     let mut all = action_aliases();
+    // Passive ability grants.
+    all.extend([
+        "emelpar",
+        "lightrailordnance",
+        "metalivoidarmaments",
+        "metalivoidshielding",
+        "thetriad",
+    ]);
     // Passive relics: they change a standing rule and are never *used* as an action. Keeping them
     // out of `action_aliases` is what stops them being offered as an action that does nothing --
     // `available_actions` offers exactly what `use_relic` can resolve.
@@ -54,6 +62,62 @@ pub fn registered_aliases() -> Vec<&'static str> {
 #[must_use]
 pub fn action_aliases() -> Vec<&'static str> {
     vec!["bookoflatvinia", "dynamiscore", "thesilverflame"]
+}
+
+/// The Triad: readied and spent as if it were a planet card.
+///
+/// "Its resource and influence values are equal to 3 plus the number of **different types** of
+/// relic fragments you own" — types, not fragments, so three cultural fragments are worth one, not
+/// three. Returns `None` when the holder does not have it, so a caller can tell "not held" from
+/// "held and worth three".
+#[must_use]
+pub fn triad_value(state: &GameState, player: &PlayerId) -> Option<i64> {
+    if !holds(state, player, &RelicId::new("thetriad")) {
+        return None;
+    }
+    let kinds = state.player(player).map_or(0, |seat| {
+        seat.relic_fragments
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .count()
+    });
+    Some(3 + i64::try_from(kinds).unwrap_or(0))
+}
+
+/// Scepter of Emelpar: a strategy-pool spend may come from reinforcements instead.
+///
+/// The card is exhausted to use it, and this engine has no exhausted-relic state, so — as with The
+/// Prophet's Tears — the substitution is available whenever the relic is held rather than once per
+/// round. Recorded where it is returned rather than left to be discovered.
+#[must_use]
+pub fn substitutes_strategy_token(state: &GameState, player: &PlayerId) -> bool {
+    holds(state, player, &RelicId::new("emelpar"))
+}
+
+/// Metali Void Shielding: a non-fighter ship may sustain as if it had the ability.
+///
+/// "Each time hits are produced against 1 or more of your non-fighter ships, **1 of those ships**
+/// may use SUSTAIN DAMAGE as if it had that ability." The card grants the ability to a ship that
+/// lacks it, so it is asked where sustain is offered rather than where the unit type is defined --
+/// a dreadnought already sustains, and this must not give it a second one.
+#[must_use]
+pub fn grants_sustain(state: &GameState, player: &PlayerId) -> bool {
+    holds(state, player, &RelicId::new("metalivoidshielding"))
+}
+
+/// Metali Void Armaments: ANTI-FIGHTER BARRAGE 6 (x3) during the barrage step.
+///
+/// Granted to the *player*, not to a unit: the card says "you may resolve ANTI-FIGHTER BARRAGE 6
+/// (x3) against your opponent's units", so it fires once for its holder rather than once per ship.
+#[must_use]
+pub fn extra_barrage(state: &GameState, player: &PlayerId) -> Option<(u32, usize)> {
+    holds(state, player, &RelicId::new("metalivoidarmaments")).then_some((6, 3))
+}
+
+/// Lightrail Ordnance: space docks gain SPACE CANNON 5 (x2).
+#[must_use]
+pub fn space_dock_cannon(state: &GameState, player: &PlayerId) -> Option<(i64, i64)> {
+    holds(state, player, &RelicId::new("lightrailordnance")).then_some((5, 2))
 }
 
 /// The Prophet's Tears: exhaust to ignore one research prerequisite.
@@ -504,6 +568,83 @@ mod tests {
                 &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
             ),
             printed + 2
+        );
+    }
+
+    /// The Triad is worth three plus the number of fragment *types*, not fragments.
+    ///
+    /// Driven through `production::available`, which is what a payment reads, so a value that
+    /// existed but reached no spending path would fail here.
+    #[test]
+    fn the_triad_spends_as_a_planet_worth_three_plus_its_fragment_types() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = holding("thetriad");
+
+        let base = crate::production::available(
+            &state,
+            content,
+            ALL_SOURCES,
+            &player,
+            crate::production::Spend::Resources,
+        );
+        assert!(base >= 3, "three even with no fragments, saw {base}");
+
+        // Three of one type is one type.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relic_fragments.insert("CULTURAL".to_owned(), 3);
+        }
+        let one_type = crate::production::available(
+            &state,
+            content,
+            ALL_SOURCES,
+            &player,
+            crate::production::Spend::Resources,
+        );
+        assert_eq!(one_type, base + 1, "three fragments of one type count once");
+
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relic_fragments.insert("HAZARDOUS".to_owned(), 1);
+        }
+        let two_types = crate::production::available(
+            &state,
+            content,
+            ALL_SOURCES,
+            &player,
+            crate::production::Spend::Resources,
+        );
+        assert_eq!(two_types, base + 2);
+    }
+
+    /// The Triad is not a planet, and must not be counted as one.
+    #[test]
+    fn the_triad_is_not_a_planet() {
+        let (state, player) = holding("thetriad");
+        assert!(
+            crate::production::spendable_planets(&state, &player).is_empty(),
+            "spending like a planet is not being one"
+        );
+    }
+
+    /// Metali Void Shielding grants sustain to a ship that lacks it, and to nobody else.
+    #[test]
+    fn metali_void_shielding_grants_sustain_only_to_its_holder() {
+        let (state, player) = holding("metalivoidshielding");
+        assert!(grants_sustain(&state, &player));
+        assert!(!grants_sustain(&state, &PlayerId::new("b")));
+    }
+
+    /// The two ability-granting relics report the values printed on them.
+    #[test]
+    fn the_ability_grants_carry_their_printed_numbers() {
+        let (state, player) = holding("metalivoidarmaments");
+        assert_eq!(extra_barrage(&state, &player), Some((6, 3)), "AFB 6 (x3)");
+        assert_eq!(extra_barrage(&state, &PlayerId::new("b")), None);
+
+        let (state, player) = holding("lightrailordnance");
+        assert_eq!(
+            space_dock_cannon(&state, &player),
+            Some((5, 2)),
+            "SPACE CANNON 5 (x2)"
         );
     }
 

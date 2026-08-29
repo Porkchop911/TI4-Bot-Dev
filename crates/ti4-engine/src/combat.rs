@@ -259,6 +259,12 @@ fn anti_fighter_barrage_at(
     let mut pending = Vec::new();
     for player in [attacker, defender] {
         let mut hits = 0;
+        // Metali Void Armaments fires once for its holder, not once per ship: the card grants the
+        // barrage to the player.
+        if let Some((value, count)) = crate::relics::extra_barrage(state, player) {
+            let roll = dice.roll(rng, count, "anti_fighter_barrage", Some(value));
+            hits += roll.hits();
+        }
         for unit in ships_of(state, content, sources, player, system) {
             let Some(kind) = types.get(unit.type_id.as_str()) else {
                 continue;
@@ -505,11 +511,18 @@ fn offer_sustain(
             .iter()
             .enumerate()
             .filter(|(_, unit)| {
+                let Some(kind) = types.get(unit.type_id.as_str()) else {
+                    return false;
+                };
                 &unit.owner == player
                     && !unit.sustained_damage
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(UnitType::sustain_damage)
+                    // Metali Void Shielding grants the ability to a non-fighter ship that lacks it.
+                    // Asked here rather than of the unit type, so a dreadnought is not given a
+                    // second sustain it never had.
+                    && (kind.sustain_damage()
+                        || (crate::relics::grants_sustain(state, player)
+                            && kind.is_ship()
+                            && !kind.is_fighter()))
             })
             .map(|(index, _)| index)
             .collect();
