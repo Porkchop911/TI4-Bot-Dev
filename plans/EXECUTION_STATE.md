@@ -22,6 +22,40 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — scoped roll modifiers + production window (2026-08-29)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` (this
+  session's commits) and `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced
+  back); both agree on `c18c276` before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **scoped roll modifiers + production reaction** group.
+  - `f_prototype` — `Player.fighter_bonus_round` (`ti4-model`), 2 per copy for the combat round,
+    fighter units only, consumed in `combat::effective_hits_on` and the anti-fighter barrage.
+  - `bunker` — `Player.bunker_invasion`, +4 per copy to the planet controller's bombardment
+    threshold for that invasion (`invasion::bombardment_at`).
+  - `war_machine1`–`4` — `Player.war_machine_use`, +4 value / −1 cost = 5 faces folded into
+    `production::capacity`/`available` for the activation played in.
+  - Production window timing: `PRODUCTION_USED` now fires **at step entry** (with player+system
+    payload) via `AftermathWindow::enter_production`, gated on `capacity > 0`, so a War Machine
+    played in the `After` window buys into the step it answers; the pending choice is refreshed
+    with the grown budget. `PRODUCTION_RESOLVED` still fires after the step. Random-batch wiring
+    guard updated (no producing unit ⇒ window never opens in that batch; the positive proof is
+    the `game.rs` driver test).
+- Tests: 990 `ti4-engine` lib tests pass (was 986), each effect probed (break the consumption
+  site → its test fails → revert: fleet threshold, AFB guard, bombardment penalty, production
+  budget). Coverage 89 → **95/142** action cards (coverage_report, release).
+- Workspace: all engine-line crates green; **ti4-sim's two suite tests are red on the
+  pre-change baseline `c18c276` too** (verified by running the clean work repo) and are tracked,
+  not new: the coexistence 7/7.1 bombardment target choice (`invasion.rs` announcement, phase
+  2.4 of `plans/ENGINE_COMPLETION_PLAN.md`) became reachable once `exchange_program` landed,
+  and the recorded sim baseline/fixture predate that trajectory shift.
+- Next safe action: the handoff's next group — thread a decision interface into
+  `bombardment_at`/`roll_ground` (coexistence 7, 7.1 target choice per bombarding unit; unblocks
+  `fire_team`, `scramble`), then re-record the ti4-sim baseline and fixture through their
+  versioned processes and re-run the workspace green. `plans/CARD_CONTENT_STATUS.md` updated
+  (coverage, remaining-card groups, verification state).
+
 ### R01 independent review-viewer track (2026-08-28)
 
 - **Authorization:** the operator requested a native, omniscient reviewer for real learned-policy

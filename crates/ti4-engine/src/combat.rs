@@ -126,7 +126,32 @@ pub fn effective_hits_on(
     // A faction shift applies to the *roll*, so it moves the threshold the other way: Sardakk's
     // Unrelenting adds one to each die, which is the same as needing one less.
     let faction = crate::faction_abilities::combat_modifier(state, content, player, "space");
-    Some(threshold - i64::from(morale_is_current) - faction)
+    // Fighter Prototype: "+2 to the result of each of your fighters' combat rolls". One entry
+    // per copy, so two cards played in the same round give four.
+    let fighter_bonus = if catalogue(content, sources)
+        .get(unit.type_id.as_str())
+        .is_some_and(UnitType::is_fighter)
+    {
+        fighter_bonus_now(state, player)
+    } else {
+        0
+    };
+    Some(threshold - i64::from(morale_is_current) - faction - fighter_bonus)
+}
+
+/// The roll bonus this seat's fighters carry in the current combat round (Fighter Prototype):
+/// two per copy held, counted only while the round the cards were played in is the live one.
+fn fighter_bonus_now(state: &GameState, player: &PlayerId) -> i64 {
+    state.player(player).map_or(0, |seat| {
+        2
+            * i64::try_from(
+                seat.fighter_bonus_round
+                    .iter()
+                    .filter(|round| **round == state.combat_round_seq)
+                    .count(),
+            )
+            .unwrap_or(i64::MAX)
+    })
 }
 
 /// Replace the missed dice in one space-combat batch when Munitions Reserves is current.
@@ -276,6 +301,13 @@ fn anti_fighter_barrage_at(
             if count == 0 {
                 continue;
             }
+            // Fighter Prototype names "each of your fighters' combat rolls": the barrage is a
+            // fighters' combat roll, so it gets the same +2 per copy as the fleet rolls do.
+            let value = if kind.is_fighter() {
+                value - fighter_bonus_now(state, player)
+            } else {
+                value
+            };
             let roll = dice.roll(
                 rng,
                 count,

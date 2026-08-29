@@ -132,6 +132,28 @@ pub fn trade_good_worth(state: &GameState, player: &PlayerId) -> i64 {
     }
 }
 
+/// War Machine: the faces of budget this step gains, per copy played in this activation.
+///
+/// Each card says "apply +4 to the total PRODUCTION value of your units and reduce the
+/// combined cost of the produced units by 1". The engine keeps one budget for a production
+/// step — produced units are paid out of the same faces the units' PRODUCTION value provides
+/// — so the +4 and the -1 land as five faces on it. The marker is keyed to the activation
+/// that played the card, and production happens once per tactical action, which is what
+/// keeps a later step from spending a bonus it never earned.
+#[must_use]
+pub fn war_machine_bonus(state: &GameState, player: &PlayerId) -> i64 {
+    state.player(player).map_or(0, |seat| {
+        5
+            * i64::try_from(
+                seat.war_machine_use
+                    .iter()
+                    .filter(|seq| **seq == state.activation_seq)
+                    .count(),
+            )
+            .unwrap_or(i64::MAX)
+    })
+}
+
 /// Spendable resources or influence, counting trade goods (LRR 75.3, 47.3).
 #[must_use]
 pub fn available(
@@ -154,7 +176,12 @@ pub fn available(
     let goods = state.player(player).map_or(0, |seat| {
         i64::from(seat.trade_goods) * trade_good_worth(state, player)
     });
-    from_planets + from_triad + goods
+    // War Machine's "reduce the combined cost of the produced units by 1" is spent from the
+    // same budget as its "+4 to the total PRODUCTION value", so it joins the faces here as
+    // well. Only resources: the card touches production, not influence bills such as the
+    // Custodians' removal fee.
+    let war_machine = (kind == Spend::Resources).then(|| war_machine_bonus(state, player)).unwrap_or(0);
+    from_planets + from_triad + goods + war_machine
 }
 
 /// The faces by which this planet can pay one bill.
@@ -977,7 +1004,8 @@ pub fn producers(
 /// 68.1a: the production values of all the player's producing units here, combined.
 ///
 /// A space dock's value depends on the resources of the planet it sits on, which is why the
-/// planet travels with the unit rather than the value being read from the unit alone.
+/// planet travels with the unit rather than the value being read from the unit alone. War
+/// Machines add to the total, so they ride along here as well.
 #[must_use]
 pub fn capacity(
     state: &GameState,
@@ -996,7 +1024,8 @@ pub fn capacity(
             });
             Some(kind.production(resources))
         })
-        .sum()
+        .sum::<i64>()
+        + war_machine_bonus(state, player)
 }
 
 /// How many of this structure the player already has on that planet.
@@ -1196,6 +1225,22 @@ impl ProductionWindow {
     pub fn into_report(mut self) -> ProductionReport {
         self.report.unused_capacity = self.remaining.max(0);
         self.report
+    }
+
+    /// Re-settle the budget once the step's reaction window has resolved.
+    ///
+    /// War Machine is played "when 1 or more of your units use PRODUCTION" — the driver opens
+    /// that window before the first choice is built, so any faces it adds must land in
+    /// `remaining` before the first offer. Re-deriving from [`capacity`] also re-opens a step
+    /// that would otherwise have been done: a player whose units total zero can still produce
+    /// with the machine's +4. Calling it mid-payment or mid-placement would rewrite a budget
+    /// the step has already spent against, so those stages decline it.
+    pub fn refresh(&mut self, state: &GameState, content: &ContentStore, sources: SourceSet) {
+        if matches!(self.stage, Stage::Paying { .. } | Stage::Placing { .. }) {
+            return;
+        }
+        self.remaining = capacity(state, content, sources, &self.player, &self.system);
+        self.stage = if self.remaining > 0 { Stage::Choosing } else { Stage::Done };
     }
 
     /// Options for what to build now: affordable, placeable, one per unit type.

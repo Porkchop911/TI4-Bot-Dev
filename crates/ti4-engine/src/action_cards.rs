@@ -1008,6 +1008,54 @@ fn intercept(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) 
     }
 }
 
+/// Fighter Prototype: "Apply +2 to the result of each of your fighters' combat rolls during
+/// this combat round."
+///
+/// The window (start of the first round of a space combat) fires before any round's rolls, so
+/// the marker is in place for every round of the combat; scoping it to `combat_round_seq` is
+/// what keeps it from improving the next combat. One entry per copy, so two copies in the same
+/// round give +4, and the fleet rolls and the anti-fighter barrage both read the marker.
+fn fighter_prototype(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let round = context.state.combat_round_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.fighter_bonus_round.push(round);
+    }
+}
+
+/// Bunker: "During this invasion, apply -4 to the result of each BOMBARDMENT roll against
+/// planets you control."
+///
+/// An invasion belongs to exactly one tactical action, so `activation_seq` is the invasion's
+/// identity and the marker cannot leak into a later activation's invasion. The window opens
+/// before the invasion window is constructed, and the invasion window bombards on its opening
+/// (49.1), so the marker is in place by the time the rolls are made. One entry per copy: two
+/// Bunkers give -8.
+fn bunker(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.bunker_invasion.push(activation);
+    }
+}
+
+/// War Machine (all four copies are identical): "Apply +4 to the total PRODUCTION value of
+/// your units and reduce the combined cost of the produced units by 1."
+///
+/// The window opens when the production step is about to happen, so both halves land on this
+/// step's budget: the engine pays produced units out of the same faces the units' PRODUCTION
+/// value provides, and +4 of value plus -1 of combined cost is five faces on it. The marker
+/// is keyed to the activation that played the card; production happens once per tactical
+/// action, so the step that spends the bonus is the one the window described. One entry per
+/// copy, so two machines add ten faces.
+///
+/// The WILD WILD Galaxy printing ("reduce the combined cost by 5") is not modelled: the engine
+/// plays the base rules.
+fn war_machine(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.war_machine_use.push(activation);
+    }
+}
+
 
 /// The player's ground forces on the board, wherever they stand, as `system|planet|index`
 /// options. A structure is not a ground force, and a unit whose type the catalogue does not
@@ -3608,6 +3656,9 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "bribery" => Some(bribery),
         "sh1" | "sh2" | "sh3" | "sh4" => Some(shields_holding),
         "intercept" => Some(intercept),
+        "f_prototype" => Some(fighter_prototype),
+        "bunker" => Some(bunker),
+        "war_machine1" | "war_machine2" | "war_machine3" | "war_machine4" => Some(war_machine),
         "decoy" => Some(decoy_operation),
         "emergency" => Some(emergency_repairs),
         "upgrade" => Some(upgrade_ship),
@@ -3688,6 +3739,12 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "sh3",
         "sh4",
         "intercept",
+        "f_prototype",
+        "bunker",
+        "war_machine1",
+        "war_machine2",
+        "war_machine3",
+        "war_machine4",
         "decoy",
         "emergency",
         "upgrade",
@@ -3748,6 +3805,7 @@ pub fn unimplemented(content: &ContentStore) -> Vec<ActionCardId> {
 
 #[cfg(test)]
 mod tests {
+    use crate::choice::Window;
 
     /// Resolve one card's effect against a state, through a real timing context.
     fn play_effect(state: &mut GameState, alias: &str, player: &PlayerId) {
@@ -4400,6 +4458,211 @@ mod tests {
 
         assert!(!crate::combat::retreat_barred(&state, &a));
         assert!(!crate::combat::retreat_barred(&state, &b));
+    }
+
+    #[test]
+    fn fighter_prototype_lifts_the_holders_fighter_thresholds_for_the_round() {
+        // Fighter I hits on a 9 with one die. The marker moves the threshold down by 2 per
+        // copy, for the combat round it was played in - and for fighters only.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_hub().centre.clone());
+        let store = ContentStore::embedded();
+        let mut rng = crate::rng::GameRng::new(1);
+
+        let arena = || {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state.active_system = Some(system.clone());
+            state.combat_round_seq = 3;
+            crate::fixtures::put(&mut state, &system, "fighter", &a, 1);
+            crate::fixtures::put(&mut state, &system, "destroyer", &b, 1);
+            state
+        };
+
+        // Baseline: a 6 is below the fighter's 9.
+        let mut state = arena();
+        let mut dice = crate::dice::Dice::from_faces([6]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+
+        // One copy: a 7 now hits the lowered 7 (the same 7 would have been a miss on the
+        // printed 9), while a 6 still falls short.
+        state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
+        let mut dice = crate::dice::Dice::from_faces([6]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        let mut dice = crate::dice::Dice::from_faces([7]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+
+        // Two copies: the threshold reaches 5, so a 4 misses and a 5 hits.
+        state.player_mut(&a).unwrap().fighter_bonus_round = vec![3, 3];
+        let mut dice = crate::dice::Dice::from_faces([4]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        let mut dice = crate::dice::Dice::from_faces([5]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+
+        // A marker for round 3 says nothing in round 4: the combat is over for it.
+        state.combat_round_seq = 4;
+        let mut dice = crate::dice::Dice::from_faces([8]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+
+        // The bonus is fighter-only. A destroyer holding the marker keeps its printed 9, so
+        // the same 8 that the boosted fighter turns into a hit stays a miss for it.
+        let mut state = arena();
+        state.combat_round_seq = 3;
+        state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        let mut dice = crate::dice::Dice::from_faces([8, 8]);
+        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+        let mut state = arena();
+        state.combat_round_seq = 3;
+        state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        let mut dice = crate::dice::Dice::from_faces([7, 8, 6, 6]);
+        let pending = crate::combat::anti_fighter_barrage(
+            &mut state, store, POK, &mut dice, &mut rng, &system, &a, &b,
+        );
+        assert_eq!(pending, Vec::<(PlayerId, usize)>::new());
+
+        // The card effect stamps the marker for the round it is played in.
+        let mut state = arena();
+        state.combat_round_seq = 5;
+        play_effect(&mut state, "f_prototype", &a);
+        assert_eq!(state.player(&a).unwrap().fighter_bonus_round, vec![5]);
+    }
+
+    #[test]
+    fn bunker_shields_its_planets_from_bombardment_for_the_invasion() {
+        // A dreadnought bombards on one die hitting 5. Bunker raises the threshold by 4 per
+        // copy for the invasion it was played in, so a face that used to kill does not.
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let store = ContentStore::embedded();
+        let mut rng = crate::rng::GameRng::new(2);
+
+        let mut arena = |markers: Vec<u32>, face: u32| {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state.active = Some(a.clone());
+            state.active_system = Some(system.clone());
+            state.activation_seq = 2;
+            state.system_mut(&system).set_control(planet.clone(), b.clone());
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+            crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+            state.player_mut(&b).unwrap().bunker_invasion = markers;
+            let mut dice = crate::dice::Dice::from_faces([face]);
+            let killed = crate::invasion::bombardment(
+                &mut state, store, POK, &mut dice, &mut rng, &system, &a,
+            );
+            (killed, state.system_state(&system).on_planet(&planet).len())
+        };
+
+        // Face 8: a bare 5 kills one of the two infantry; one Bunker (threshold 9) saves both.
+        assert_eq!(arena(vec![], 8), (1usize, 1));
+        assert_eq!(arena(vec![2], 8), (0, 2));
+
+        // Two Bunkers raise it to 13: the 10 that one Bunker still lets through stops there.
+        assert_eq!(arena(vec![2], 10), (1, 1));
+        assert_eq!(arena(vec![2, 2], 10), (0, 2));
+
+        // A marker from a different activation does not reach this one.
+        assert_eq!(arena(vec![3], 8), (1, 1));
+
+        // The card effect stamps the activation it was played in.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.activation_seq = 7;
+        play_effect(&mut state, "bunker", &b);
+        assert_eq!(state.player(&b).unwrap().bunker_invasion, vec![7]);
+    }
+
+    #[test]
+    fn war_machine_grows_the_activated_steps_production_budget() {
+        // War Machine is +4 of production value and -1 of combined cost, which on the engine's
+        // single production budget is five faces of it - for the activation the card was played
+        // in, and only for the budget: the machine does not add payment faces.
+        //
+        // Production in this engine is the PRODUCTION value of a player's own units (a system
+        // with no producing unit produces nothing), so the fixture uses a Hel-Titan I, whose
+        // value of 1 is independent of any planet, and trade goods that can pay for anything:
+        // the budget, not the wallet, is what binds.
+        let (system, _planet) = crate::fixtures::a_placed_planet();
+        let a = PlayerId::new("a");
+        let store = ContentStore::embedded();
+
+        let arena = |markers: Vec<u32>| {
+            let mut state = crate::fixtures::game(&["a"]);
+            state.activation_seq = 2;
+            crate::fixtures::put(&mut state, &system, "titans_pds", &a, 1);
+            state.player_mut(&a).unwrap().trade_goods = 10;
+            state.player_mut(&a).unwrap().war_machine_use = markers;
+            state
+        };
+
+        let bare = arena(vec![]);
+        assert_eq!(crate::production::capacity(&bare, store, POK, &a, &system), 1);
+        let boosted = arena(vec![2]);
+        assert_eq!(
+            crate::production::capacity(&boosted, store, POK, &a, &system),
+            6,
+            "+4 of value and -1 of cost is five faces",
+        );
+        // Both halves land: the value half grows the budget, and the cost half is spent from
+        // the same wallet, so the resource wallet gains the same five faces. The influence
+        // bill is untouched.
+        assert_eq!(
+            crate::production::available(&bare, store, POK, &a, crate::production::Spend::Resources),
+            10,
+        );
+        assert_eq!(
+            crate::production::available(&boosted, store, POK, &a, crate::production::Spend::Resources),
+            15,
+        );
+        assert_eq!(
+            crate::production::available(&bare, store, POK, &a, crate::production::Spend::Influence),
+            crate::production::available(&boosted, store, POK, &a, crate::production::Spend::Influence),
+        );
+
+        // A marker for another activation buys nothing here.
+        assert_eq!(
+            crate::production::capacity(&arena(vec![3]), store, POK, &a, &system),
+            1,
+        );
+
+        // The window: built before the card, refreshed after. The budget grows from 1 to 6,
+        // which turns the lone fighter the bare budget afforded into the full pair; the
+        // one-off builds it already afforded survive, and the prompt says so.
+        let mut state = arena(vec![]);
+        let mut window = crate::production::ProductionWindow::new(
+            &state, store, POK, &a, &system,
+        );
+        let before = window
+            .pending_choice(&state, store, POK)
+            .expect("one budget face can still buy a fighter");
+        assert!(before.prompt.ends_with("(1 left)"), "{}", before.prompt);
+        assert!(before.option("build|fighter|1").is_some());
+        assert!(before.option("build|fighter|2").is_none());
+
+        state.player_mut(&a).unwrap().war_machine_use = vec![2];
+        window.refresh(&state, store, POK);
+        let after = window
+            .pending_choice(&state, store, POK)
+            .expect("the refreshed budget can still produce");
+        assert!(after.prompt.ends_with("(6 left)"), "{}", after.prompt);
+        assert!(
+            after.option("build|fighter|2").is_some(),
+            "six faces now afford the full pair",
+        );
+        assert!(
+            after.option("build|destroyer|1").is_some(),
+            "a build the budget already afforded is not lost",
+        );
+
+        // The card effect stamps the activation it was played in; all four copies are the same
+        // effect.
+        for alias in ["war_machine1", "war_machine2", "war_machine3", "war_machine4"] {
+            let mut state = crate::fixtures::game(&["a"]);
+            state.activation_seq = 9;
+            play_effect(&mut state, alias, &a);
+            assert_eq!(state.player(&a).unwrap().war_machine_use, vec![9], "{alias}");
+        }
     }
 
     #[test]

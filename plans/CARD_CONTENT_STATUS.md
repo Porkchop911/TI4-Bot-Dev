@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 89/142 |
+| action cards  | 34/142 | 95/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 89 of 142
-(62.7%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 95 of 142
+(66.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -57,6 +57,23 @@ After the handoff, the engine-completion line (hook `873178e` + handoff `3f2d27b
 forwarded into this branch and continued here; `cc40c70` was merged back into
 `wp/engine-completion` (clean fast-forward) so both branches agree.
 
+- Scoped roll modifiers + production window timing: `f_prototype` (marker `fighter_bonus_round`,
+  consumed in `combat::effective_hits_on` and the anti-fighter barrage, fighter units only,
+  2 per copy), `bunker` (marker `bunker_invasion`, +4 per copy to the planet controller's
+  bombardment threshold for that invasion, `invasion::bombardment_at`), `war_machine1`–`4`
+  (marker `war_machine_use`, +4 value / −1 cost = 5 faces, folded into
+  `production::capacity`/`available` for the activation it was played in). The production window
+  now opens **before** the step spends (`AftermathWindow::enter_production`, event
+  `PRODUCTION_USED` at step entry with player+system payload, `After` relation), so a War Machine
+  played there buys into the step it answers; the window refreshes the pending choice with the
+  grown budget. `PRODUCTION_RESOLVED` still fires after the step. Model fields added on `Player`
+  in `ti4-model` (`fighter_bonus_round`, `bunker_invasion`, `war_machine_use`), each `Vec<u32>`
+  keyed by combat-round / activation seq so copies played in different rounds don't stack. Tests
+  drive the engine's own paths (`roll_fleet`, `anti_fighter_barrage`, `bombardment_at`,
+  `ProductionWindow` refresh, and a full `Game::step` driver for the reaction-to-window chain);
+  each effect probed (break → test fails → revert). The WILD WILD Galaxy variant ("reduce the
+  combined cost by 5") is not modelled; base text only.
+
 Every batch: effect + dispatch + a test driving the engine's own path (via
 `resolve_card[_loaded]` / `run`), rule text quoted in doc comments, and the gate probes
 (exchange A-side infantry, pirate-fleet crew placement, scuttle goods payment — each break makes
@@ -83,15 +100,17 @@ Each window below is mapped to an engine event (Phase 8: 0 unsupported windows);
 state or flow the effect needs, which lives in files outside the ownership scope.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
-  keeps per-round bookkeeping, not live dice or retreats): `f_prototype`, `rout`, `scramble`,
-  `sh1-4`, `dh1-4`, `fire_team`, `intercept`.
-- **Invasion flow** (`invasion.rs`): `blitz`, `bunker`, `disable`, `ghost_squad`, `parley`.
+  keeps per-round bookkeeping, not live dice or retreats): `rout`, `scramble`, `dh1-4`,
+  `fire_team`, `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
+  bookkeeping where the rule allows; the live-dice half stays unmodelled).
+- **Invasion flow** (`invasion.rs`): `blitz`, `disable`, `ghost_squad`, `parley` (bunker landed
+  with the scoped roll modifiers above).
 - **Movement rules / system activation** (`movement.rs`): `lost_star`, `solar_flare`.
 - **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
 - **Agenda outcome redirection / agenda queue** (`game.rs`): `confounding`, `confusing`,
   `deadly_plot`, `veto`, `veto3`, `veto4`.
 - **Turn / phase driver hooks** (`game.rs`): `coup`, `crisis`, `master_plan`.
-- **Production hook**: `war_machine1-4`.
+- **Production hook**: done — `war_machine1-4` (see the scoped roll modifiers batch above).
 - **Cancel an effect** (no cancel API exists): `sabo1-4`.
 - **Event payload only** (the fact the effect needs is not in `GameState`): `lieinwait`
   (no transaction-history field to know two neighbours transacted).
@@ -144,22 +163,28 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 986 passed, 0 failed.
-- `cargo test --release --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): **all crates
-  green**, including the ti4-policy campaign test (ledger fixed in `873178e`) and ti4-sim's
-  `the_suite_reproduces_and_stays_within_the_recorded_bounds` — the v5 rebaseline in
-  `plans/evidence/M08-021.md` (owner-approved 2026-08-29) covers the behavioural change, so the
-  handoff's "baseline is red" warning is resolved.
-- `cargo clippy -p ti4-engine --all-targets`: zero warnings in `action_cards.rs` and
-  `agenda_effects.rs`.
-- Every gate of the seven hook cards probed (break the effect → test fails → revert).
-- The 53 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- `cargo test -p ti4-engine --lib`: 990 passed, 0 failed.
+- `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate green
+  (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 50 non-suite tests); **ti4-sim's
+  two suite tests are red on the pre-change baseline `c18c276` too** and are tracked, not new:
+  - `the_suite_reproduces_and_stays_within_the_recorded_bounds` panics on the engine's
+    coexistence-7/7.1 gap: `bombardment_at` cannot ask *whose* units on a coexisting planet take
+    the hits (the debug announcement at `invasion.rs`), reached now that `exchange_program` makes
+    coexisting planets real; the recorded bounds (29 vs 30) shift with it.
+  - `fixture_capture_is_deterministic`: the recorded capture predates the trajectory shifts and
+    replays to a different terminal step; needs re-recording through its versioned process after
+    the engine gap is closed.
+  Both are the handoff's remaining group: thread a decision interface into
+  `bombardment_at`/`roll_ground` (coexistence 7, 7.1, fire_team, scramble), then re-record the
+  sim baseline.
+- `cargo clippy -p ti4-engine --all-targets`: zero warnings in the touched files.
+- Every effect of the scoped roll modifiers batch probed (break the consumption site → its test
+  fails → revert): fleet roll threshold, AFB guard, bombardment penalty, production budget.
+- The 47 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group:
-  - **Scoped roll modifiers** (6): `f_prototype`, `bunker`, `war_machine1`–`4` — need a
-    `(scope_seq, filter, delta)` field on `Player` (`ti4-model`).
   - **Reroll at the roll site** (2 cards + Jol-Nar's commander + coexistence 7/7.1): `fire_team`,
-    `scramble` — `bombardment_at`/`roll_ground` need `&mut Table` threaded in (`combat.rs`).
-  - **Invasion flow** (5): `blitz`, `disable`, `parley`, `ghost_squad`, `bunker` — need commit
+    `scramble` — `bombardment_at`/`roll_ground` need `&mut Table` threaded in (`combat.rs`/`invasion.rs`).
+  - **Invasion flow** (4): `blitz`, `disable`, `parley`, `ghost_squad` — need commit
     undo/modify (`invasion.rs`).
   - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.
   - **Movement** (2): `lost_star`, `solar_flare` — `wormholes_all_linked`-style galaxy scoping

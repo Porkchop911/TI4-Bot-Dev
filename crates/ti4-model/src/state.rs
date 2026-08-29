@@ -401,6 +401,24 @@ pub struct Player {
     /// ships may move through other players' ships. Both or neither.
     pub silence_activation: Option<u32>,
     pub silence_system: Option<SystemId>,
+    /// Fighter Prototype: one entry per copy, each the [`GameState::combat_round_seq`] of the
+    /// round in which each of this player's fighters' combat rolls gets +2. A Vec rather than
+    /// an `Option` because two copies of the card stack, and the round-robin reaction window
+    /// lets a player play both.
+    #[serde(default)]
+    pub fighter_bonus_round: Vec<u32>,
+    /// Bunker: one entry per copy, each the [`GameState::activation_seq`] of the tactical
+    /// action whose invasion applies -4 to every BOMBARDMENT roll made against planets this
+    /// player controls. An invasion belongs to exactly one activation, so the activation is
+    /// the invasion's identity.
+    #[serde(default)]
+    pub bunker_invasion: Vec<u32>,
+    /// War Machine: one entry per copy, each the [`GameState::activation_seq`] of the
+    /// production step that gains +4 total PRODUCTION value and -1 combined unit cost (five
+    /// faces of budget in the engine's budget model). Production happens once per tactical
+    /// action, so the activation scopes the marker to that step.
+    #[serde(default)]
+    pub war_machine_use: Vec<u32>,
 
     // -- returning and captured units ---------------------------------------------
     /// Generic Infantry II casualties waiting on their technology card.
@@ -469,6 +487,9 @@ impl PartialEq for Player {
             && self.anomalies_ignored_activation == other.anomalies_ignored_activation
             && self.silence_activation == other.silence_activation
             && self.silence_system == other.silence_system
+            && self.fighter_bonus_round == other.fighter_bonus_round
+            && self.bunker_invasion == other.bunker_invasion
+            && self.war_machine_use == other.war_machine_use
             && self.infantry_returning == other.infantry_returning
             && self.technology_units_returning == other.technology_units_returning
             && self.spec_ops_returning == other.spec_ops_returning
@@ -529,6 +550,9 @@ impl Player {
             anomalies_ignored_activation: None,
             silence_activation: None,
             silence_system: None,
+            fighter_bonus_round: Vec::new(),
+            bunker_invasion: Vec::new(),
+            war_machine_use: Vec::new(),
             infantry_returning: 0,
             technology_units_returning: Vec::new(),
             spec_ops_returning: 0,

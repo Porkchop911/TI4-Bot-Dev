@@ -611,9 +611,12 @@ fn the_windows_the_table_maps_are_windows_the_engine_opens() {
     // Only the windows a bare hub can reach. Nobody deploys a fleet here, so there is no
     // combat or invasion to announce, and nobody takes Mecatol Rex so no agenda is revealed —
     // `ti4-sim`'s seated batch covers those, because it is the fixture that produces them.
+    // PRODUCTION_USED is absent on purpose: the random players hold no producing unit, so the
+    // "when 1 or more of your units use PRODUCTION" window never opens for them. That the
+    // window opens at all when a step has a budget to spend is proven by
+    // `game::tests::a_war_machine_played_in_the_production_window_grows_that_steps_budget`.
     for event in [
         "SYSTEM_ACTIVATED",
-        "PRODUCTION_USED",
         "STRATEGY_CARD_CHOSEN",
     ] {
         assert!(

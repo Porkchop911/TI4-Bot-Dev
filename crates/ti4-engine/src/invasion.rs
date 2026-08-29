@@ -198,6 +198,27 @@ fn bombardment_at(
             if count == 0 {
                 continue;
             }
+            // Bunker: "during this invasion, apply -4 to the result of each BOMBARDMENT roll
+            // against planets you control." The window opened before the invasion window was
+            // constructed (the driver emits it, then builds the window that runs this step), so
+            // the marker is in place by the time these rolls are made. One entry per copy, so
+            // two Bunkers on the same planet give -8.
+            let bunker_penalty = state
+                .system_state(system)
+                .planet_control
+                .get(&planet)
+                .and_then(|controller| state.player(controller))
+                .map_or(0, |seat| {
+                    4
+                        * i64::try_from(
+                            seat.bunker_invasion
+                                .iter()
+                                .filter(|seq| **seq == state.activation_seq)
+                                .count(),
+                        )
+                        .unwrap_or(i64::MAX)
+                });
+            let value = value + bunker_penalty;
             let roll = dice.roll(
                 rng,
                 count,

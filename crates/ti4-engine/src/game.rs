@@ -247,6 +247,46 @@ impl AftermathWindow {
         self.pending_event_scoring.take()
     }
 
+    /// Open the production step for this activation.
+    ///
+    /// "When 1 or more of your units use PRODUCTION" is a *before* window: the driver opens it
+    /// once the step is built and before its first choice, so a War Machine changes this
+    /// production rather than one that already spent its budget. The step produces nothing for
+    /// a player with no budget at all, so the window stays shut for them (and a War Machine
+    /// cannot create the production it answers). Reactions resolve inside the emit; [`ProductionWindow::refresh`]
+    /// then re-derives the budget so faces a reaction added are spent, and a step that would
+    /// otherwise have been done re-opens.
+    fn enter_production(
+        &self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+    ) -> crate::production::ProductionWindow {
+        let mut window = crate::production::ProductionWindow::new(
+            state,
+            ctx.content,
+            ctx.sources,
+            &self.player,
+            &self.system,
+        );
+        if crate::production::capacity(state, ctx.content, ctx.sources, &self.player, &self.system)
+            == 0
+        {
+            return window;
+        }
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(self.player.to_string()),
+        );
+        payload.insert(
+            "system".to_owned(),
+            serde_json::Value::String(self.system.to_string()),
+        );
+        let _ = ctx.emit(state, "PRODUCTION_USED", payload);
+        window.refresh(state, ctx.content, ctx.sources);
+        window
+    }
+
     /// Move to the next step once the current one owes nothing.
     #[allow(
         clippy::too_many_lines,
@@ -348,13 +388,10 @@ impl AftermathWindow {
                             ),
                         ))
                     } else {
-                        Aftermath::Producing(Box::new(crate::production::ProductionWindow::new(
-                            state,
-                            ctx.content,
-                            ctx.sources,
-                            &self.player,
-                            &self.system,
-                        )))
+                        // No invasion: straight to production, and the production window opens
+                        // before the step makes its first choice (see `enter_production`).
+                        let window = self.enter_production(state, ctx);
+                        Aftermath::Producing(Box::new(window))
                     };
                 }
                 Aftermath::Invading(window) => {
@@ -391,14 +428,11 @@ impl AftermathWindow {
                         return;
                     }
                     self.log.push("INVASION_RESOLVED".to_owned());
-                    self.stage =
-                        Aftermath::Producing(Box::new(crate::production::ProductionWindow::new(
-                            state,
-                            ctx.content,
-                            ctx.sources,
-                            &self.player,
-                            &self.system,
-                        )));
+                    // The production window opens before the step makes its first choice, so a
+                    // reaction (War Machine) can change this step rather than one that has
+                    // already spent its budget.
+                    let window = self.enter_production(state, ctx);
+                    self.stage = Aftermath::Producing(Box::new(window));
                 }
                 Aftermath::Producing(window) => {
                     if window
@@ -407,18 +441,9 @@ impl AftermathWindow {
                     {
                         return;
                     }
-                    // "When 1 or more of your units use PRODUCTION" — after the step, which is
-                    // when the units have used it.
-                    let mut payload = BTreeMap::new();
-                    payload.insert(
-                        "player".to_owned(),
-                        serde_json::Value::String(self.player.to_string()),
-                    );
-                    payload.insert(
-                        "system".to_owned(),
-                        serde_json::Value::String(self.system.to_string()),
-                    );
-                    let _ = ctx.emit(state, "PRODUCTION_USED", payload);
+                    // The "when 1 or more of your units use PRODUCTION" window already opened
+                    // when the step began, before its first choice was built; nothing else is
+                    // owed once the step ends.
                     self.log.push("PRODUCTION_RESOLVED".to_owned());
                     self.stage = Aftermath::Done;
                     return;
@@ -3069,6 +3094,105 @@ mod tests {
         assert!(
             survivors.len() <= 1,
             "a combat does not end with both fleets standing"
+        );
+    }
+
+    /// Drive a tactical action through to the production step and report the budget the step
+    /// was offered. `reaction`, when set, is the answer to the one question the production
+    /// window asks the holder of a playable card (playing is optional, so even a single
+    /// playable card is offered with a decline); returns the prompt's "(n left)" figure.
+    fn drive_to_production(
+        state: GameState,
+        galaxy: ti4_content::galaxy::Galaxy,
+        ids: &[SystemId],
+        reaction: Option<&str>,
+    ) -> Option<u32> {
+        let answers: Vec<String> = match reaction {
+            Some(reaction) => vec![
+                TACTICAL_ACTION_ID.to_owned(),
+                ids[0].to_string(),
+                format!("move|{}|0", ids[1]),
+                "done_moving".to_owned(),
+                reaction.to_owned(),
+                "done_producing".to_owned(),
+            ],
+            None => vec![
+                TACTICAL_ACTION_ID.to_owned(),
+                ids[0].to_string(),
+                format!("move|{}|0", ids[1]),
+                "done_moving".to_owned(),
+                "done_producing".to_owned(),
+            ],
+        };
+        let table = Table::with_default(Box::new(Scripted::new(answers.into_iter())));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+        let mut budget: Option<u32> = None;
+        for _ in 0..80 {
+            if let Some(choice) = game.legal_options() {
+                if choice.prompt.starts_with("produce in ") {
+                    let figure = choice
+                        .prompt
+                        .rsplit(" (")
+                        .next()
+                        .expect("the prompt carries its budget")
+                        .strip_suffix(" left)")
+                        .expect("the prompt carries its budget")
+                        .parse()
+                        .expect("the budget is a plain integer");
+                    budget = Some(figure);
+                }
+            }
+            assert_eq!(game.step().error, None, "no tactical step should refuse");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        assert!(
+            game.events.iter().any(|event| event == "PRODUCTION_USED"),
+            "the window must have opened for a player with a budget to spend"
+        );
+        budget
+    }
+
+    #[test]
+    fn a_war_machine_played_in_the_production_window_grows_that_steps_budget() {
+        // The window opens when the step is about to happen, not after it spent its budget, so
+        // a War Machine played there buys into this step. The control game, running the same
+        // action without the card, spends the unboosted budget.
+        //
+        // The fixture producer is a Hel-Titan I (production 1, no planet involved) and trade
+        // goods pay for anything, so the only number the card can move is the step's budget.
+        let (mut base, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        crate::fixtures::put(&mut base, &ids[1], "destroyer", &a, 1);
+        crate::fixtures::put(&mut base, &ids[0], "titans_pds", &a, 1);
+        base.player_mut(&a).unwrap().trade_goods = 10;
+
+        let bare_state = base.clone();
+        base.player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("war_machine1"));
+
+        let plain_budget =
+            drive_to_production(bare_state, galaxy.clone(), &ids, None).expect("the step asks");
+        let boosted_budget = drive_to_production(
+            base,
+            galaxy,
+            &ids,
+            Some("reaction:generic:PRODUCTION_USED:after"),
+        )
+        .expect("the step asks");
+
+        assert_eq!(
+            boosted_budget,
+            plain_budget + 5,
+            "the machine played at the window buys five faces into the step it answers"
         );
     }
 
