@@ -100,7 +100,11 @@ pub fn enforce_hand_limit(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
-    while held_count(state, content, player) > HAND_LIMIT {
+    // The Obsidian: "You can have 1 additional scored or unscored secret objective." It raises the
+    // limit rather than exempting a card, which is why it is added to the bound here instead of
+    // being subtracted from the count.
+    let limit = HAND_LIMIT + crate::relics::secret_objective_bonus(state, player);
+    while held_count(state, content, player) > limit {
         let held: Vec<SecretObjectiveId> = state
             .player(player)
             .map(|seat| seat.secret_objectives.clone())

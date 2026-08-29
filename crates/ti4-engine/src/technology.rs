@@ -784,13 +784,12 @@ pub fn can_research(
     for colour in COLOURS {
         waivable += crate::laws::research_team_waivers(state, player, colour);
     }
-    let pair = crate::synergy::pair(state, content, sources, player);
-    crate::synergy::satisfies(
-        &prerequisites(content, alias),
-        &holdings,
-        pair.as_ref(),
-        waivable,
-    )
+    // The Prophet's Tears: exhaust to ignore one prerequisite. Same budget as the faction waivers
+    // and the Research Teams, for the same reason -- they are all "ignore a prerequisite" and the
+    // requirement is checked once.
+    waivable += crate::relics::prerequisite_waivers(state, player);
+    let joined = crate::synergy::joined(state, content, sources, player);
+    crate::synergy::satisfies(&prerequisites(content, alias), &holdings, &joined, waivable)
 }
 
 /// Everything this player could research now, in a stable order.

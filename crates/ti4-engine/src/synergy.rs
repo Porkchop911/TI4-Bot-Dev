@@ -68,10 +68,31 @@ pub fn pair(
     ])
 }
 
-/// Whether a colour is one of the two this player's synergy joins.
+/// Every colour this player's synergy joins into one pool.
+///
+/// Usually the breakthrough's two. The Quantumcore relic reads "you have SYNERGY for all technology
+/// types", which is the same rule over four colours rather than a different rule, so it widens the
+/// pool instead of needing its own path.
 #[must_use]
-pub fn joins(pair: Option<&[String; 2]>, colour: &str) -> bool {
-    pair.is_some_and(|[a, b]| a == colour || b == colour)
+pub fn joined(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<String> {
+    if crate::relics::holds(state, player, &ti4_model::id::RelicId::new("quantumcore")) {
+        return crate::technology::COLOURS
+            .iter()
+            .map(|colour| (*colour).to_owned())
+            .collect();
+    }
+    pair(state, content, sources, player).map_or_else(Vec::new, |pair| pair.to_vec())
+}
+
+/// Whether a colour is one of those this player's synergy joins.
+#[must_use]
+pub fn joins(joined: &[String], colour: &str) -> bool {
+    joined.iter().any(|held| held == colour)
 }
 
 /// Whether `holdings` satisfy `needs`, with a synergy pair pooled (rules 2, 3, 4, 6).
@@ -83,20 +104,22 @@ pub fn joins(pair: Option<&[String; 2]>, colour: &str) -> bool {
 pub fn satisfies(
     needs: &BTreeMap<&'static str, usize>,
     holdings: &BTreeMap<&'static str, usize>,
-    pair: Option<&[String; 2]>,
+    joined: &[String],
     mut waivable: usize,
 ) -> bool {
     let held = |colour: &str| -> usize { holdings.get(colour).copied().unwrap_or(0) };
 
-    // The pooled pair, checked once against the sum of what it is asked for.
-    if let Some([a, b]) = pair {
+    // The pool, checked once against the sum of everything asked of it. Two colours or four, the
+    // argument is the same: components inside the pool are interchangeable, so a requirement is
+    // satisfiable exactly when the pool holds as many as the requirement asks of it in total.
+    if !joined.is_empty() {
         let wanted: usize = needs
             .iter()
-            .filter(|(colour, _)| *colour == a || *colour == b)
+            .filter(|(colour, _)| joins(joined, colour))
             .map(|(_, need)| *need)
             .sum();
         if wanted > 0 {
-            let pooled = held(a) + held(b);
+            let pooled: usize = joined.iter().map(|colour| held(colour)).sum();
             if pooled < wanted {
                 let short = wanted - pooled;
                 if waivable < short {
@@ -108,7 +131,7 @@ pub fn satisfies(
     }
 
     needs.iter().all(|(colour, need)| {
-        if joins(pair, colour) {
+        if joins(joined, colour) {
             return true; // already accounted for above
         }
         let have = held(colour);
@@ -132,8 +155,8 @@ mod tests {
         pairs.iter().copied().collect()
     }
 
-    fn biotic_cybernetic() -> [String; 2] {
-        ["BIOTIC".to_owned(), "CYBERNETIC".to_owned()]
+    fn biotic_cybernetic() -> Vec<String> {
+        vec!["BIOTIC".to_owned(), "CYBERNETIC".to_owned()]
     }
 
     #[test]
@@ -141,7 +164,7 @@ mod tests {
         // Rule 2: two biotic satisfy a requirement for two cybernetic.
         let needs = counts(&[("CYBERNETIC", 2)]);
         let holdings = counts(&[("BIOTIC", 2)]);
-        assert!(satisfies(&needs, &holdings, Some(&biotic_cybernetic()), 0));
+        assert!(satisfies(&needs, &holdings, &biotic_cybernetic(), 0));
     }
 
     #[test]
@@ -151,11 +174,11 @@ mod tests {
         let needs = counts(&[("BIOTIC", 1), ("CYBERNETIC", 1)]);
         let one = counts(&[("BIOTIC", 1)]);
         assert!(
-            !satisfies(&needs, &one, Some(&biotic_cybernetic()), 0),
+            !satisfies(&needs, &one, &biotic_cybernetic(), 0),
             "one technology cannot fill both slots"
         );
         let two = counts(&[("BIOTIC", 2)]);
-        assert!(satisfies(&needs, &two, Some(&biotic_cybernetic()), 0));
+        assert!(satisfies(&needs, &two, &biotic_cybernetic(), 0));
     }
 
     #[test]
@@ -163,7 +186,7 @@ mod tests {
         let needs = counts(&[("WARFARE", 1)]);
         let holdings = counts(&[("BIOTIC", 3)]);
         assert!(
-            !satisfies(&needs, &holdings, Some(&biotic_cybernetic()), 0),
+            !satisfies(&needs, &holdings, &biotic_cybernetic(), 0),
             "synergy joins two colours, not all four"
         );
     }
@@ -172,7 +195,7 @@ mod tests {
     fn without_a_breakthrough_nothing_changes() {
         let needs = counts(&[("CYBERNETIC", 2)]);
         let holdings = counts(&[("BIOTIC", 2)]);
-        assert!(!satisfies(&needs, &holdings, None, 0));
+        assert!(!satisfies(&needs, &holdings, &[], 0));
     }
 
     #[test]
@@ -180,8 +203,8 @@ mod tests {
         let needs = counts(&[("CYBERNETIC", 2), ("WARFARE", 1)]);
         let holdings = counts(&[("BIOTIC", 1)]);
         // Short one in the pair and one outside it: two waivers cover exactly that.
-        assert!(satisfies(&needs, &holdings, Some(&biotic_cybernetic()), 2));
-        assert!(!satisfies(&needs, &holdings, Some(&biotic_cybernetic()), 1));
+        assert!(satisfies(&needs, &holdings, &biotic_cybernetic(), 2));
+        assert!(!satisfies(&needs, &holdings, &biotic_cybernetic(), 1));
     }
 
     #[test]

@@ -30,7 +30,55 @@ pub enum Used {
 /// Relics this engine can resolve.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["bookoflatvinia", "dynamiscore", "shard", "thesilverflame"]
+    vec![
+        "bookoflatvinia",
+        "circletofthevoid",
+        "dynamiscore",
+        "nanoforge",
+        "obsidian",
+        "prophetstears",
+        "quantumcore",
+        "shard",
+        "thesilverflame",
+    ]
+}
+
+/// The Prophet's Tears: exhaust to ignore one research prerequisite.
+///
+/// The card offers "ignore 1 prerequisite **or** draw 1 action card"; this is the first half. It
+/// feeds the same waiver budget the faction abilities and the Research Team laws use, because all
+/// three are the same sentence and the requirement is only checked once.
+#[must_use]
+pub fn prerequisite_waivers(state: &GameState, player: &PlayerId) -> usize {
+    let relic = RelicId::new("prophetstears");
+    if !holds(state, player, &relic) {
+        return 0;
+    }
+    // The card exhausts to use it. This engine has no exhausted-relic set -- relics are held or
+    // purged -- so the waiver is available whenever the card is held. Recorded rather than hidden:
+    // it makes the Tears usable once per *check* instead of once per round, which is more generous
+    // than the card, and closing it needs an exhaustion state relics do not yet have.
+    1
+}
+
+/// The Obsidian: one extra secret objective, scored or unscored.
+#[must_use]
+pub fn secret_objective_bonus(state: &GameState, player: &PlayerId) -> usize {
+    usize::from(holds(state, player, &RelicId::new("obsidian")))
+}
+
+/// Nano-Forge: the attached planet is worth two more of each, and is legendary.
+///
+/// Attached rather than held, so the bonus follows the planet and not the owner. Read through the
+/// same `planet_value_now` path the three attachment laws use.
+#[must_use]
+pub fn nanoforge_bonus(state: &GameState, planet: &ti4_model::id::PlanetId) -> i64 {
+    i64::from(
+        state
+            .planet_attachments
+            .get(planet)
+            .is_some_and(|attached| attached.iter().any(|card| card == "nanoforge")),
+    ) * 2
 }
 
 /// Whether a player holds a relic.
@@ -298,6 +346,114 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<RelicId>
 
 #[cfg(test)]
 mod tests {
+    use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    fn holding(alias: &str) -> (GameState, PlayerId) {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics.push(RelicId::new(alias));
+        }
+        (state, player)
+    }
+
+    /// The Prophet's Tears waives one research prerequisite.
+    ///
+    /// Driven through `can_research`, the function the rest of the engine reads, so a waiver that
+    /// fed a budget nobody consults would fail here.
+    #[test]
+    fn the_prophets_tears_pays_one_prerequisite() {
+        let content = ti4_content::ContentStore::embedded();
+        let wanted = ti4_model::id::TechnologyId::new("td"); // two cybernetic
+
+        let (mut state, player) = holding("prophetstears");
+        if let Some(seat) = state.player_mut(&player) {
+            // One cybernetic against a two-cybernetic requirement: exactly one short, so the
+            // waiver is the whole difference.
+            seat.technologies = [ti4_model::id::TechnologyId::new("st")]
+                .into_iter()
+                .collect();
+        }
+        let with_tears = crate::technology::can_research(
+            &state, content, ALL_SOURCES, &player, &wanted,
+        );
+
+        // The same seat without the relic is one prerequisite short.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics.clear();
+        }
+        let without = crate::technology::can_research(
+            &state, content, ALL_SOURCES, &player, &wanted,
+        );
+
+        assert!(
+            with_tears && !without,
+            "the Tears must be what closes the gap (with: {with_tears}, without: {without})"
+        );
+    }
+
+    /// The Quantumcore joins all four colours rather than a pair.
+    #[test]
+    fn the_quantumcore_joins_every_colour() {
+        let content = ti4_content::ContentStore::embedded();
+        let (state, player) = holding("quantumcore");
+        let joined = crate::synergy::joined(&state, content, ALL_SOURCES, &player);
+        assert_eq!(joined.len(), 4, "all four technology types: {joined:?}");
+
+        let (plain, other) = holding("shard");
+        assert!(
+            crate::synergy::joined(&plain, content, ALL_SOURCES, &other).is_empty(),
+            "and no other relic does that"
+        );
+    }
+
+    /// Nano-Forge adds two of each to the planet it is attached to, not to its holder.
+    #[test]
+    fn the_nano_forge_enriches_the_planet_it_is_attached_to() {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        let planet = ti4_model::id::PlanetId::new("bellatrix");
+        let printed = crate::production::planet_value(
+            content,
+            ALL_SOURCES,
+            &planet,
+            crate::production::Spend::Resources,
+        );
+
+        assert_eq!(
+            crate::production::planet_value_now(
+                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+            ),
+            printed,
+            "unattached, the planet is worth its printed value"
+        );
+
+        state
+            .planet_attachments
+            .entry(planet.clone())
+            .or_default()
+            .push("nanoforge".to_owned());
+
+        assert_eq!(
+            crate::production::planet_value_now(
+                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+            ),
+            printed + 2
+        );
+    }
+
+    /// The Obsidian raises the secret-objective limit rather than exempting a card.
+    #[test]
+    fn the_obsidian_raises_the_secret_limit_by_one() {
+        let (state, player) = holding("obsidian");
+        assert_eq!(secret_objective_bonus(&state, &player), 1);
+        assert_eq!(
+            secret_objective_bonus(&state, &PlayerId::new("b")),
+            0,
+            "and only for its holder"
+        );
+    }
+
     use ti4_model::content_types::POK;
 
     use super::*;

@@ -98,7 +98,11 @@ pub fn planet_value_now(
     planet: &PlanetId,
     kind: Spend,
 ) -> i64 {
-    planet_value(content, sources, planet, kind) + crate::laws::planet_value_bonus(state, planet, kind)
+    planet_value(content, sources, planet, kind)
+        + crate::laws::planet_value_bonus(state, planet, kind)
+        // Nano-Forge attaches to a planet and adds two of each, the same shape as the three
+        // attachment laws, so it belongs on the same path rather than a second one.
+        + crate::relics::nanoforge_bonus(state, planet)
 }
 
 /// Controlled planets whose cards are still readied (LRR 34, 75.2).
