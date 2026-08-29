@@ -178,6 +178,17 @@ impl AftermathWindow {
         let before_cannon =
             crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system);
         let gunners: Vec<PlayerId> = cannon.iter().map(|(who, _)| who.clone()).collect();
+        // "Before you assign hits produced by another player's SPACE CANNON roll." Emitted per
+        // firing player, before any of their hits are absorbed -- the window is what stands between
+        // the roll and the loss, and space cannon previously resolved straight through.
+        for (gunner, hits) in &cannon {
+            let mut payload = std::collections::BTreeMap::new();
+            payload.insert("system".to_owned(), system.to_string().into());
+            payload.insert("player".to_owned(), player.to_string().into());
+            payload.insert("gunner".to_owned(), gunner.to_string().into());
+            payload.insert("hits".to_owned(), i64::try_from(*hits).unwrap_or(0).into());
+            let _ = ctx.emit(state, "SPACE_CANNON_HITS", payload);
+        }
         for (_, hits) in cannon {
             crate::combat::absorb_hits_seeing(
                 state,
@@ -3936,21 +3947,22 @@ mod tests {
 
         // A For/Against law, so the vote has the ordinary two outcomes and passing it
         // leaves something behind on the table.
-        // Deliberately one with no registered effect, because the point of this test is that
-        // an agenda the engine cannot resolve still goes through the whole vote and says so.
-        let registered = crate::agenda_effects::registered_aliases();
+        // Any For/Against law: the point of this test is that a law passing goes through the whole
+        // vote and stays in play afterwards.
+        //
+        // It used to insist on one with *no* registered effect, to show that an unresolvable agenda
+        // still voted cleanly. Every agenda is registered now, so that premise no longer exists in
+        // the corpus and the search found nothing. A test whose fixture depends on the engine being
+        // incomplete expires the moment it is completed.
         let law = ContentStore::embedded()
             .records(ti4_model::content_types::ContentType::Agendas)
             .iter()
             .find(|record| {
                 record.text("type") == Some("Law")
                     && record.text("target") == Some("For/Against")
-                    && record
-                        .text("alias")
-                        .is_some_and(|alias| !registered.contains(&alias))
             })
             .and_then(|record| record.text("alias"))
-            .expect("the corpus has an unregistered For/Against law")
+            .expect("the corpus has a For/Against law")
             .to_owned();
         state.agenda_deck = vec![law.clone()];
 
@@ -3986,10 +3998,11 @@ mod tests {
             "the agenda was put to a vote and decided"
         );
         assert!(
-            game.events
+            !game
+                .events
                 .iter()
                 .any(|e| e.starts_with("AGENDA_EFFECT_UNRESOLVED:")),
-            "an unimplemented effect must be announced, not silently skipped"
+            "every agenda is registered now, so none may report itself unresolved"
         );
         assert_eq!(
             game.state.laws.get(&law).map(String::as_str),

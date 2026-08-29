@@ -216,6 +216,56 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             "When 1 or more of your units use PRODUCTION",
             guarded("PRODUCTION_USED", After, actor_is),
         ),
+        // The eleven windows that had no moment. Each event names the player the window is written
+        // from, so `actor_is` and `actor_is_not` divide one event between "yours" and "another
+        // player's" rather than needing two events.
+        //
+        // `When` for a window that must resolve *before* the event's ordinary effect -- assigning
+        // hits, losing the last ship -- and `After` for one that reacts to it having happened.
+        (
+            "After 1 of your ships is destroyed during a space combat",
+            guarded("SHIP_DESTROYED", After, actor_is),
+        ),
+        (
+            "When your last ship in the active system is destroyed",
+            guarded("SHIP_DESTROYED", When, actor_is),
+        ),
+        (
+            "When one of your ships uses SUSTAIN DAMAGE during combat",
+            guarded("SUSTAIN_DAMAGE_USED", When, actor_is),
+        ),
+        (
+            "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your units or abilities",
+            guarded("SUSTAIN_DAMAGE_USED", After, actor_is_not),
+        ),
+        (
+            "At the start of the strategy phase",
+            window("STRATEGY_PHASE_BEGAN", After),
+        ),
+        (
+            "Before you assign hits to your ships during a space combat",
+            guarded("HITS_TO_ASSIGN", When, actor_is),
+        ),
+        (
+            "Before you assign hits produced by another player's SPACE CANNON roll",
+            guarded("SPACE_CANNON_HITS", When, actor_is),
+        ),
+        (
+            "After your opponent declares a retreat during a space combat",
+            guarded("RETREAT_DECLARED", After, actor_is_not),
+        ),
+        (
+            "At the start of the 'Announce Retreats' step of space combat, if you are the defender",
+            guarded("RETREAT_STEP_STARTED", After, actor_is),
+        ),
+        (
+            "After your ground forces make combat rolls during a round of ground combat",
+            guarded("GROUND_ROLLS_MADE", After, actor_is),
+        ),
+        (
+            "After another player commits units to land on a planet you control",
+            guarded("UNITS_COMMITTED", After, actor_is_not),
+        ),
     ]
     .into_iter()
     .collect()
@@ -245,6 +295,12 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SHIP_DESTROYED",
     "STRATEGY_PHASE_BEGAN",
     "SUSTAIN_DAMAGE_USED",
+    "GROUND_ROLLS_MADE",
+    "HITS_TO_ASSIGN",
+    "RETREAT_DECLARED",
+    "RETREAT_STEP_STARTED",
+    "SPACE_CANNON_HITS",
+    "UNITS_COMMITTED",
 ];
 
 /// Printed windows that cannot yet be reacted to, with the reason.
@@ -265,58 +321,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
 ///   than moving it now for windows no implemented card can use.
 #[must_use]
 pub fn unsupported_windows() -> BTreeMap<&'static str, &'static str> {
-    [
-        (
-            "After 1 of your ships is destroyed during a space combat",
-            "SHIP_DESTROYED is emitted per casualty and carries the unit; binding deferred until \
-             an action card reads it, so the ti4-sim baseline moves once and under review",
-        ),
-        (
-            "When your last ship in the active system is destroyed",
-            "SHIP_DESTROYED carries `last`; binding deferred with the rest",
-        ),
-        (
-            "When one of your ships uses SUSTAIN DAMAGE during combat",
-            "SUSTAIN_DAMAGE_USED is emitted where the sustain is applied; binding deferred",
-        ),
-        (
-            "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your units or abilities",
-            "SUSTAIN_DAMAGE_USED names the owner, so actor_is_not divides it; binding deferred",
-        ),
-        (
-            "At the start of the strategy phase",
-            "STRATEGY_PHASE_BEGAN is emitted when a round opens; binding deferred",
-        ),
-        (
-            "Before you assign hits to your ships during a space combat",
-            "hits are assigned inside one step; there is no window between rolling and assigning",
-        ),
-        (
-            "Before you assign hits produced by another player's SPACE CANNON roll",
-            "space cannon resolves whole, with no window before its hits land",
-        ),
-
-
-        (
-            "After your opponent declares a retreat during a space combat",
-            "a retreat is resolved as part of the round rather than announced first",
-        ),
-        (
-            "After your ground forces make combat rolls during a round of ground combat",
-            "ground rolls are not emitted separately from the invasion",
-        ),
-        (
-            "After another player commits units to land on a planet you control",
-            "committing is a stage of the invasion window rather than an event",
-        ),
-
-        (
-            "At the start of the 'Announce Retreats' step of space combat, if you are the defender",
-            "the retreat step is inside the combat round and is not announced",
-        ),
-    ]
-    .into_iter()
-    .collect()
+    BTreeMap::new()
 }
 
 /// Where this card hooks, or `None` if it is not a reaction card at all.

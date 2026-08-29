@@ -1176,6 +1176,20 @@ impl CombatWindow {
                         self.stage = Stage::Sustaining { queue: rest, round };
                         continue;
                     }
+                    // "Before you assign hits to your ships during a space combat." Emitted as the
+                    // first of a player's hits is about to land: `front` still carries its full
+                    // count here and the stage has consumed none of it.
+                    if matches!(self.stage, Stage::Sustaining { .. }) {
+                        let mut payload = std::collections::BTreeMap::new();
+                        payload.insert("system".to_owned(), self.system.to_string().into());
+                        payload.insert("player".to_owned(), front.player.to_string().into());
+                        payload.insert(
+                            "hits".to_owned(),
+                            i64::try_from(front.hits).unwrap_or(0).into(),
+                        );
+                        payload.insert("round".to_owned(), i64::from(round).into());
+                        let _ = ctx.emit(state, "HITS_TO_ASSIGN", payload);
+                    }
                     // A sustain is only offered when something can take one.
                     if matches!(self.stage, Stage::Sustaining { .. })
                         && self
@@ -1213,6 +1227,16 @@ impl CombatWindow {
                     asking,
                     announced,
                 } => {
+                    // "At the start of the 'Announce Retreats' step of space combat, if you are the
+                    // defender." The defender is asked first (78.4b), so the step starts when they
+                    // are the one being asked and nobody has announced yet.
+                    if asking == self.defender && announced.is_empty() {
+                        let mut payload = std::collections::BTreeMap::new();
+                        payload.insert("system".to_owned(), self.system.to_string().into());
+                        payload.insert("player".to_owned(), self.defender.to_string().into());
+                        payload.insert("round".to_owned(), i64::from(round).into());
+                        let _ = ctx.emit(state, "RETREAT_STEP_STARTED", payload);
+                    }
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
                         return;
@@ -1412,6 +1436,13 @@ impl Window for CombatWindow {
             } => {
                 if option.id == "retreat" {
                     announced.push(asking.clone());
+                    // "After your opponent declares a retreat during a space combat." Named by the
+                    // declaring player, so `actor_is_not` gives it to the opponent.
+                    let mut payload = std::collections::BTreeMap::new();
+                    payload.insert("system".to_owned(), self.system.to_string().into());
+                    payload.insert("player".to_owned(), asking.to_string().into());
+                    payload.insert("round".to_owned(), i64::from(round).into());
+                    let _ = ctx.emit(state, "RETREAT_DECLARED", payload);
                 }
                 // 78.4b: the defender announcing silences the attacker.
                 let next = if asking == self.defender && !announced.contains(&self.defender) {

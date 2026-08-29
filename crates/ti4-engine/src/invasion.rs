@@ -966,6 +966,17 @@ impl InvasionWindow {
             &planet,
         );
         state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+        // "After your ground forces make combat rolls during a round of ground combat." Emitted
+        // between the rolls and the removals, which is what the window means: a card played here
+        // acts on the hits before anyone dies of them.
+        for (who, hits) in [(&self.invader, attacker_hits), (&defender, defender_hits)] {
+            let mut payload = std::collections::BTreeMap::new();
+            payload.insert("system".to_owned(), self.system.to_string().into());
+            payload.insert("planet".to_owned(), planet.to_string().into());
+            payload.insert("player".to_owned(), who.to_string().into());
+            payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
+            let _ = ctx.emit(state, "GROUND_ROLLS_MADE", payload);
+        }
         remove_ground(
             state,
             content,
@@ -1428,6 +1439,23 @@ impl Window for InvasionWindow {
                             .entry(planet.clone())
                             .or_default()
                             .push(unit);
+                        // "After another player commits units to land on a planet you control."
+                        // Emitted per landing, carrying the controller so `actor_is_not` can pick
+                        // out the player whose planet it is.
+                        let controller = state
+                            .system_state(&self.system)
+                            .planet_control
+                            .get(&planet)
+                            .cloned();
+                        let mut payload = std::collections::BTreeMap::new();
+                        payload.insert("system".to_owned(), self.system.to_string().into());
+                        payload.insert("planet".to_owned(), planet.to_string().into());
+                        payload.insert("player".to_owned(), self.invader.to_string().into());
+                        if let Some(holder) = controller {
+                            payload.insert("controller".to_owned(), holder.to_string().into());
+                        }
+                        let _ = ctx.emit(state, "UNITS_COMMITTED", payload);
+
                         if !self.report.committed.contains(&planet) {
                             self.report.committed.push(planet);
                         }
