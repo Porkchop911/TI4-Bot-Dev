@@ -1,6 +1,8 @@
 # Card content — completion status (second implementer, Phase 7)
 
-Status: **checkpointed** on `wp/r01-review-viewer-contract`, 2026-08-29.
+Status: **continuing the engine-completion plan** on `wp/engine-completion` (merged back to
+`wp/r01-review-viewer-contract` too), updated 2026-08-29 after the handoff in
+`plans/HANDOFF_ENGINE_COMPLETION.md` expanded this work past the two owned files.
 
 Mission per `plans/PI_BRIEF_CARD_CONTENT.md`: action-card effects (baseline 34/142) and agenda
 effects (baseline 51/63) in the two owned files only:
@@ -12,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 82/142 |
+| action cards  | 34/142 | 89/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 82 of 142
-(57.7%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 89 of 142
+(62.7%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -41,6 +43,19 @@ exploration/relics/objectives/leaders/abilities.
   `mercenary_contract`, `pirate_fleet`, `pirate_contract`, `brilliance`, `overrule`,
   `strategize`. The old "unmodelled" spend test was split into a spend test plus an
   `announce()` test for genuinely unimplemented cards.
+- `cc40c70` — the seven cards the hooks from `873178e` (on `wp/engine-completion`) unblock:
+  `distinguished`, `bribery` (via `vote::add_votes`, scoped by `agenda_seq` and read in
+  `vote::record`), `sh1`–`sh4` (via `combat::grant_hit_cancellation`, two cancellable hits per
+  copy, stacked across the round), `intercept` (via `combat::bar_retreat` on the declarant,
+  inferred as the other ship-bearing combatant of the active system). Documented gaps: a bonus
+  whose vote is already banked when `VOTES_CAST` fires counts for nothing (zero-planet voter /
+  abstainer), and the unguarded `VOTES_CAST` row also offers `bribery` after a non-speaker's
+  vote (a `Guard` sees the event and the holder but not the seating, so "the voter is the
+  speaker" is inexpressible in `reactions.rs`).
+
+After the handoff, the engine-completion line (hook `873178e` + handoff `3f2d27b`) was fast-
+forwarded into this branch and continued here; `cc40c70` was merged back into
+`wp/engine-completion` (clean fast-forward) so both branches agree.
 
 Every batch: effect + dispatch + a test driving the engine's own path (via
 `resolve_card[_loaded]` / `run`), rule text quoted in doc comments, and the gate probes
@@ -97,10 +112,10 @@ start + TG). These are reaction cards: each needs a full-game scripted scenario 
 window actually fires, so this is a separate session, not a continuation of the component-action
 batches.
 
-## FINDING — `ti4-policy` test ledger is now wrong (needs a `bot.rs` fix by its owner)
+## FINDING — `ti4-policy` test ledger was wrong; **resolved in `873178e`**
 
-`ti4-policy`'s `scored_games_stay_legal_and_deterministic_across_nested_windows` fails on
-`9a6fe0b` (passes on `647c404`): `bot p2 was offered the secret sb it does not own
+`ti4-policy`'s `scored_games_stay_legal_and_deterministic_across_nested_windows` failed on
+`9a6fe0b` (green on `647c404`): `bot p2 was offered the secret sb it does not own
 (ledger: ["faa", "pe", "syc"])`, seed 7777, rotation 0.
 
 Diagnosis (engine verified correct):
@@ -121,20 +136,39 @@ Diagnosis (engine verified correct):
    `impersonation`). Disabling `impersonation`'s draw does not make the test pass — the
    trajectory shift comes from the new cards as a whole.
 
-Suggested fix (owner: `crates/ti4-policy/src/bot.rs`, not in my ownership scope): extend the
-per-seat ledger with the secrets that seat **returned to the deck**, recoverable from the
-records (`prompt == "return a secret objective to the deck"`, the answer is the returned
-alias). Final hand ∪ scored ∪ returned is then exactly "ever held", and the hidden-info net
-keeps its meaning.
+Suggested fix (implemented by the engine implementer in `873178e`): extend the per-seat ledger
+with the secrets that seat **returned to the deck**, read from the
+`"return a secret objective to the deck"` records. Final hand ∪ scored ∪ returned is exactly
+"ever held", and the hidden-info net keeps its meaning. Verified: the campaign test passes
+again, and the engine offer paths were re-checked to offer only the seat's own hand.
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 973 passed, 0 failed.
-- `cargo test --release --workspace`: all crates green **except** the one `ti4-policy` test
-  above (pre-existing-shape test with an outdated ledger; see finding).
+- `cargo test -p ti4-engine --lib`: 986 passed, 0 failed.
+- `cargo test --release --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): **all crates
+  green**, including the ti4-policy campaign test (ledger fixed in `873178e`) and ti4-sim's
+  `the_suite_reproduces_and_stays_within_the_recorded_bounds` — the v5 rebaseline in
+  `plans/evidence/M08-021.md` (owner-approved 2026-08-29) covers the behavioural change, so the
+  handoff's "baseline is red" warning is resolved.
 - `cargo clippy -p ti4-engine --all-targets`: zero warnings in `action_cards.rs` and
-  `agenda_effects.rs`. Remaining warnings are in files outside this brief (`combat.rs`,
-  `invasion.rs`, `strategy.rs`, `fracture.rs`, `neutral_units.rs`, `game.rs`, `ti4-model`,
-  and the pre-existing `vote.rs` duplicate `#[must_use]`).
-- All probes reverted; tree clean of scratch except the untracked root files that predate this
-  work (`nul`, `sample.html`, `sample.ti4review.json`).
+  `agenda_effects.rs`.
+- Every gate of the seven hook cards probed (break the effect → test fails → revert).
+- The 53 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+  it does not group:
+  - **Scoped roll modifiers** (6): `f_prototype`, `bunker`, `war_machine1`–`4` — need a
+    `(scope_seq, filter, delta)` field on `Player` (`ti4-model`).
+  - **Reroll at the roll site** (2 cards + Jol-Nar's commander + coexistence 7/7.1): `fire_team`,
+    `scramble` — `bombardment_at`/`roll_ground` need `&mut Table` threaded in (`combat.rs`).
+  - **Invasion flow** (5): `blitz`, `disable`, `parley`, `ghost_squad`, `bunker` — need commit
+    undo/modify (`invasion.rs`).
+  - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.
+  - **Movement** (2): `lost_star`, `solar_flare` — `wormholes_all_linked`-style galaxy scoping
+    (`movement.rs`/`laws`).
+  - **Agenda and turn flow** (9): `veto`, `veto3`, `veto4`, `confusing`, `confounding`,
+    `deadly_plot`, `coup`, `crisis`, `master_plan` — agenda redirection + queue (`game.rs`).
+  - **Vote order** (1): `hack` — re-orderable vote sequence (`vote.rs`).
+  - **Not grouped by the handoff** (25, most blocked on movement/state the handoff's groups do
+    not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `dh1`–`4`, `disgrace`,
+    `extremeduress`, `infiltrate`, `investments`, `lieinwait`, `mjets1`–`4`,
+    `puppetsonastring`, `reflective`, `reparations`, `reverse_engineer`, `rout`, `salvage`,
+    `stability`, `summit`, `waylay`.
