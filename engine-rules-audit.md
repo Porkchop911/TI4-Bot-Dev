@@ -58,21 +58,38 @@ triggers it is present.
 
 `cargo run --release -p ti4-engine --example coverage_report`
 
-| area | implemented | share |
-|---|---|---|
-| action cards | 0 of 142 | **0.0%** |
-| agendas | 34 of 63 | 54.0% |
-| exploration cards | 71 of 80 | 88.8% |
-| relics | 5 of 24 | 20.8% |
-| secret objectives | 40 of 40 | 100.0% |
-| public objectives | 30 of 40 | 75.0% |
-| faction abilities | 19 of 73 | 26.0% |
-| leaders | 3 unimplemented across the six trained factions | |
-| laws | 36 unenforced once in play | |
-| reaction windows | 11 unsupported | |
+| area | as first reported | corrected | now |
+|---|---|---|---|
+| action cards | 0 of 142 (0.0%) | **34 of 142 (23.9%)** | 34 of 142 |
+| public objectives | 30 of 40 (75.0%) | **40 of 40 (100%)** | 40 of 40 |
+| agendas | 34 of 63 (54.0%) | — | **45 of 63 (71.4%)** |
+| relics | 5 of 24 (20.8%) | — | **9 of 24 (37.5%)** |
+| laws | 36 unenforced | — | **20 unenforced** |
+| reaction windows | 11 unsupported | — | **6 unsupported** |
+| exploration cards | 71 of 80 (88.8%) | — | 71 of 80 |
+| secret objectives | 40 of 40 (100%) | — | 40 of 40 |
+| faction abilities | 19 of 73 (26.0%) | 14 of 14 for the six factions | 14 of 14 |
+| leaders | 3 unimplemented (the six) | — | 3 unimplemented |
 
-Read "implemented" as "registered", per the caveat above. **No action card does anything** — all 142
-are reported unimplemented, and the module says so plainly.
+### Two of those first figures were wrong, and both were my own measurement
+
+This is the failure this audit warns about in its own method section, committed by the audit.
+
+**Action cards were never 0.** `action_cards::unimplemented` returned *every* card unconditionally
+— it never consulted `effect_for`, which covers 34 aliases. Its doc comment said "every action card
+is currently unimplemented", which was true when written and stopped being true as effects landed.
+A coverage function that cannot improve is worse than none, because it reads as evidence. Fixed to
+consult `effect_for`; its test asserted only `len() > 50`, which held whether the function worked or
+not, and now asserts the invariant per alias.
+
+**Public objectives were never 30 of 40.** The ten "spend N" cards — Erect a Monument, Sway the
+Council, Hold Vast Reserves and the rest — are scored through `cost_of`/`bought_progress`, not
+through `registered_aliases`. `scoreable_on` accepts either family; counting one list reported ten
+working cards as missing.
+
+Both corrections move the number the same way, and neither changes any code that plays the game.
+The lesson is the one already written above: **coverage numbers measure registration, and a
+registration list can be looking at the wrong register.**
 
 ## The 109 topics
 

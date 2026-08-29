@@ -62,9 +62,29 @@ fn main() {
     let missing_secrets = ti4_engine::secrets::unimplemented(content, sources).len();
     row("secret objectives", secrets.saturating_sub(missing_secrets), secrets);
 
-    let objectives = count_of(content, ContentType::PublicObjectives, sources);
-    let registered = ti4_engine::objectives::registered_aliases().len();
-    row("public objectives", registered.min(objectives), objectives);
+    // Two families, and counting only one of them was wrong. `registered_aliases` holds the
+    // counting and position objectives; the ten "spend N" cards are implemented through
+    // `bought_aliases`/`cost_of` instead, and reporting 30 of 40 said ten cards were missing when
+    // every one of them worked. `requirement_for` is the authority -- it is what the scorer asks --
+    // so the count is taken from it rather than from either list.
+    let objectives: Vec<String> = content
+        .records(ContentType::PublicObjectives)
+        .iter()
+        .filter(|record| record.in_sources(sources))
+        .filter_map(|record| record.text("alias").map(std::borrow::ToOwned::to_owned))
+        .collect();
+    // `scoreable_on` is the authority, and it accepts either family: a bought objective is offered
+    // when `cost_of` prices it, everything else when `requirement_for` can decide it. Counting
+    // either list alone reported ten working cards as missing.
+    let scored = objectives
+        .iter()
+        .filter(|alias| {
+            let id = ti4_model::id::ObjectiveId::new((*alias).clone());
+            ti4_engine::objectives::requirement_for(&id).is_some()
+                || ti4_engine::objectives::cost_of(&id).is_some()
+        })
+        .count();
+    row("public objectives", scored, objectives.len());
 
     let abilities_missing = ti4_engine::faction_abilities::unimplemented(content, sources).len();
     let abilities = count_of(content, ContentType::Abilities, sources);

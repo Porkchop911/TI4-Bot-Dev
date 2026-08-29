@@ -1465,8 +1465,14 @@ pub fn move_bonus(state: &GameState, player: &PlayerId, activation: u32) -> i32 
 
 /// Cards this engine has no effect for.
 ///
-/// Every action card is currently unimplemented; the list is exposed so the gap is queryable
-/// rather than implied, in the same way `unregistered_objectives` is.
+/// The list is exposed so the gap is queryable rather than implied, in the same way
+/// `unregistered_objectives` is.
+///
+/// It used to return *every* card unconditionally, with a doc comment saying every action card was
+/// unimplemented. That was true when written and stopped being true as effects landed, and because
+/// nothing consulted [`effect_for`], the coverage it reported never moved: thirty-four implemented
+/// aliases were reported missing. A coverage function that cannot improve is worse than none, since
+/// it reads as evidence.
 #[must_use]
 pub fn unimplemented(content: &ContentStore) -> Vec<ActionCardId> {
     content
@@ -1474,6 +1480,7 @@ pub fn unimplemented(content: &ContentStore) -> Vec<ActionCardId> {
         .iter()
         .filter_map(|record| record.text("alias"))
         .map(ActionCardId::new)
+        .filter(|alias| effect_for(alias).is_none())
         .collect()
 }
 
@@ -2866,9 +2873,34 @@ mod tests {
     }
 
     #[test]
-    fn every_action_card_is_reported_unimplemented() {
-        // The gap is queryable rather than implied: nothing plays an action card yet.
-        let all = unimplemented(ContentStore::embedded());
-        assert!(all.len() > 50, "the corpus has a full deck");
+    fn the_unimplemented_action_cards_are_the_ones_with_no_effect() {
+        // The invariant, not a size. The previous version asserted only `len() > 50`, which held
+        // whether the function consulted `effect_for` or ignored it entirely -- and it ignored it,
+        // so thirty-four implemented cards were reported missing and the number never moved.
+        let content = ContentStore::embedded();
+        let missing: std::collections::BTreeSet<String> = unimplemented(content)
+            .into_iter()
+            .map(|alias| alias.as_str().to_owned())
+            .collect();
+        let every: std::collections::BTreeSet<String> = content
+            .records(ContentType::ActionCards)
+            .iter()
+            .filter_map(|record| record.text("alias"))
+            .map(std::borrow::ToOwned::to_owned)
+            .collect();
+
+        for alias in &every {
+            let has_effect = effect_for(&ActionCardId::new(alias.clone())).is_some();
+            assert_eq!(
+                !missing.contains(alias),
+                has_effect,
+                "{alias}: reported implemented = {}, has an effect = {has_effect}",
+                !missing.contains(alias)
+            );
+        }
+        assert!(
+            !missing.is_empty() && missing.len() < every.len(),
+            "some are done and some are not; both halves must be visible"
+        );
     }
 }
