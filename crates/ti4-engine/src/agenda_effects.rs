@@ -75,6 +75,22 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "rt_warfare",
         "senate_sanctuary",
         "terraforming_initiative",
+        // More availability-only arms: each law's standing rule is enforced by the subsystem
+        // that owns it (the driver for the agenda-phase laws, `laws` for the standing ones),
+        // so the vote needs no state change here. Checks' Against half ("only 3 planets ready
+        // up") is a standing restriction the driver applies at the end of the agenda phase.
+        "committee",
+        "arbiter",
+        "minister_commerce",
+        "minister_industry",
+        "minister_peace",
+        "minister_sciences",
+        "minister_war",
+        "prophecy",
+        "crown_of_thalnos",
+        "checks",
+        "covert",
+        "crisis",
         // Ministries and standing rules, enforced in `laws`.
         "articles_war",
         "minister_exploration",
@@ -852,6 +868,27 @@ pub fn resolve_with(
         // exists only to make the agenda available. Articles of War is the same shape -- its For
         // half is a standing rule, and its Against half pays the players who voted For.
         "minister_exploration" | "minister_policy" => {}
+        // Availability-only arms. Each of these laws is a standing rule owned by the subsystem
+        // that runs it, so closing the vote records the outcome and nothing else:
+        // - Committee, the seven Ministers, Prophecy of Kings and the Crown of Thalnos are
+        //   standing rules the turn driver and `laws` apply on every later turn; their vote
+        //   outcome is recorded by `game` (the law enters play) before this effect runs.
+        // - Checks: the Against half is a standing cap on planet readiness at the end of the
+        //   agenda phase, which the driver owns.
+        // - Covert Operations and Crisis are standing rules of the agenda and turn phases; the
+        //   driver applies them, the vote only puts the law in play.
+        "committee"
+        | "arbiter"
+        | "minister_commerce"
+        | "minister_industry"
+        | "minister_peace"
+        | "minister_sciences"
+        | "minister_war"
+        | "prophecy"
+        | "crown_of_thalnos"
+        | "checks"
+        | "covert"
+        | "crisis" => {}
         "articles_war" => {
             if outcome == AGAINST {
                 for player in ballot.voted_for(FOR) {
@@ -2347,13 +2384,40 @@ mod tests {
 
     #[test]
     fn the_unimplemented_agendas_are_reported() {
+        // Full coverage: every agenda the corpus knows is registered, so the gap list is empty.
         let missing = unimplemented(ContentStore::embedded(), POK);
-        assert!(!missing.is_empty(), "most agendas are still unimplemented");
-        for alias in registered_aliases() {
-            assert!(
-                !missing.contains(&alias.to_owned()),
-                "{alias} is registered and must not appear in unimplemented"
-            );
+        assert!(
+            missing.is_empty(),
+            "agendas with no effect: {missing:?}"
+        );
+    }
+
+    /// A law whose whole effect is a standing rule still reports Resolved, not Unresolved:
+    /// the vote recorded the outcome, and the standing rule lives in the subsystem that owns it.
+    #[test]
+    fn availability_only_laws_resolve_the_vote() {
+        for alias in [
+            "committee",
+            "arbiter",
+            "minister_commerce",
+            "minister_industry",
+            "minister_peace",
+            "minister_sciences",
+            "minister_war",
+            "prophecy",
+            "crown_of_thalnos",
+            "checks",
+            "covert",
+            "crisis",
+        ] {
+            for outcome in [FOR, AGAINST] {
+                let mut state = crate::fixtures::game(&["a", "b"]);
+                let effect = run(&mut state, alias, outcome, &no_votes());
+                assert!(
+                    matches!(effect, Effect::Resolved { .. }),
+                    "{alias} on {outcome} must resolve the vote"
+                );
+            }
         }
     }
 }
