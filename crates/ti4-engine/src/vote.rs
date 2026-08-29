@@ -92,6 +92,33 @@ pub fn outcomes(
     Vec::new()
 }
 
+/// Votes a card has added to this seat's total for the agenda being voted on.
+///
+/// Distinguished Councilor casts five more; Bribery casts one per trade good spent. Both say "that
+/// outcome", meaning this agenda, so the bonus is stored against [`GameState::agenda_seq`] and is
+/// silently worth nothing once the next agenda is revealed. Read where votes are counted rather
+/// than applied at the card, so it cannot be honoured in one voting path and forgotten in another.
+#[must_use]
+pub fn extra_votes(state: &GameState, player: &PlayerId) -> i64 {
+    state
+        .player(player)
+        .and_then(|seat| seat.extra_votes_agenda)
+        .filter(|(agenda, _)| *agenda == state.agenda_seq)
+        .map_or(0, |(_, votes)| votes)
+}
+
+/// Add votes for the agenda currently being voted on, accumulating across cards.
+pub fn add_votes(state: &mut GameState, player: &PlayerId, votes: i64) {
+    let agenda = state.agenda_seq;
+    if let Some(seat) = state.player_mut(player) {
+        let running = match seat.extra_votes_agenda {
+            Some((held, had)) if held == agenda => had,
+            _ => 0,
+        };
+        seat.extra_votes_agenda = Some((agenda, running + votes));
+    }
+}
+
 /// Representative Government: each player casts exactly one vote, and exhausts nothing.
 ///
 /// Returned as an amount rather than a flag so a caller cannot honour "one vote" and forget "no
@@ -393,7 +420,9 @@ impl VoteWindow {
         if votes <= 0 {
             return;
         }
-        let votes = votes + crate::leaders::vote_bonus(state, &self.order[index]);
+        let votes = votes
+            + crate::leaders::vote_bonus(state, &self.order[index])
+            + extra_votes(state, &self.order[index]);
         self.ballot
             .votes
             .insert(self.order[index].clone(), outcome.to_owned());
@@ -481,6 +510,30 @@ impl VoteWindow {
 
 #[cfg(test)]
 mod tests {
+    /// Extra votes accumulate across cards and expire with the agenda.
+    #[test]
+    fn extra_votes_accumulate_and_expire_with_the_agenda() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.agenda_seq = 7;
+
+        assert_eq!(extra_votes(&state, &player), 0);
+        add_votes(&mut state, &player, 5); // Distinguished Councilor
+        add_votes(&mut state, &player, 2); // Bribery, two trade goods
+        assert_eq!(
+            extra_votes(&state, &player),
+            7,
+            "two cards on one agenda add up"
+        );
+
+        state.agenda_seq = 8;
+        assert_eq!(
+            extra_votes(&state, &player),
+            0,
+            "both cards said *that* outcome, meaning that agenda"
+        );
+    }
+
 
     #[test]
     fn a_player_who_predicted_the_outcome_does_not_vote_on_it() {

@@ -478,6 +478,61 @@ pub fn space_cannon_offense(
         .collect()
 }
 
+/// Hits a card has let this seat cancel in the current combat round (Shields Holding).
+///
+/// Consumed as they are used, so "cancel up to 2 hits" is two hits across the round rather than two
+/// per assignment. Scoped to the round the card names.
+#[must_use]
+pub fn cancellable_hits(state: &GameState, player: &PlayerId) -> usize {
+    state
+        .player(player)
+        .and_then(|seat| seat.cancel_hits_round)
+        .filter(|(round, _)| *round == state.combat_round_seq)
+        .map_or(0, |(_, hits)| hits)
+}
+
+/// Grant this seat cancellable hits for the current combat round.
+pub fn grant_hit_cancellation(state: &mut GameState, player: &PlayerId, hits: usize) {
+    let round = state.combat_round_seq;
+    if let Some(seat) = state.player_mut(player) {
+        let running = match seat.cancel_hits_round {
+            Some((held, had)) if held == round => had,
+            _ => 0,
+        };
+        seat.cancel_hits_round = Some((round, running + hits));
+    }
+}
+
+/// Spend up to `wanted` of this seat's cancellations, returning how many were spent.
+fn spend_cancellations(state: &mut GameState, player: &PlayerId, wanted: usize) -> usize {
+    let available = cancellable_hits(state, player);
+    let spent = available.min(wanted);
+    if spent > 0 {
+        let round = state.combat_round_seq;
+        if let Some(seat) = state.player_mut(player) {
+            seat.cancel_hits_round = Some((round, available - spent));
+        }
+    }
+    spent
+}
+
+/// Whether a card has barred this seat from retreating this combat round (Intercept).
+#[must_use]
+pub fn retreat_barred(state: &GameState, player: &PlayerId) -> bool {
+    state
+        .player(player)
+        .and_then(|seat| seat.retreat_barred_round)
+        .is_some_and(|round| round == state.combat_round_seq)
+}
+
+/// Bar this seat from retreating for the current combat round.
+pub fn bar_retreat(state: &mut GameState, player: &PlayerId) {
+    let round = state.combat_round_seq;
+    if let Some(seat) = state.player_mut(player) {
+        seat.retreat_barred_round = Some(round);
+    }
+}
+
 /// 87.1: each undamaged sustaining unit may cancel one hit. Always optional.
 ///
 /// Returns the hits still to be absorbed.
@@ -955,6 +1010,11 @@ impl CombatWindow {
         sources: SourceSet,
         player: &PlayerId,
     ) -> Vec<SystemId> {
+        // Intercept: "your opponent cannot retreat during this round of space combat." A seat with
+        // nowhere to go is not asked (78.4c), so barring is expressed as having nowhere to go.
+        if retreat_barred(state, player) {
+            return Vec::new();
+        }
         self.galaxy.as_ref().map_or_else(Vec::new, |galaxy| {
             eligible_retreats(state, content, sources, galaxy, player, &self.system)
         })
@@ -1187,6 +1247,19 @@ impl CombatWindow {
                         // 15.2a: hits beyond the units available have no effect.
                         let rest = queue[1..].to_vec();
                         self.stage = Stage::Sustaining { queue: rest, round };
+                        continue;
+                    }
+                    // Shields Holding and friends cancel hits before any are assigned. Spent here,
+                    // after the window that grants them has had its chance to fire and before the
+                    // sustain offer, because a cancelled hit is one nobody has to absorb.
+                    let cancelled = spend_cancellations(state, &front.player, front.hits);
+                    if cancelled > 0 {
+                        let mut rest = queue.clone();
+                        rest[0].hits -= cancelled;
+                        self.stage = match self.stage {
+                            Stage::Assigning { .. } => Stage::Assigning { queue: rest, round },
+                            _ => Stage::Sustaining { queue: rest, round },
+                        };
                         continue;
                     }
                     // "Before you assign hits to your ships during a space combat." Emitted as the
@@ -1921,6 +1994,57 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
+    /// Shields Holding cancels hits across the round, not per assignment.
+    ///
+    /// "Cancel up to 2 hits" is two hits in that combat round. Granting two and spending them one
+    /// at a time must leave none, which is what `spend_cancellations` returning the smaller of
+    /// wanted and available buys.
+    #[test]
+    fn granted_hit_cancellations_are_spent_once_each() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.combat_round_seq = 4;
+
+        grant_hit_cancellation(&mut state, &player, 2);
+        assert_eq!(cancellable_hits(&state, &player), 2);
+
+        assert_eq!(spend_cancellations(&mut state, &player, 1), 1);
+        assert_eq!(cancellable_hits(&state, &player), 1);
+        assert_eq!(spend_cancellations(&mut state, &player, 5), 1, "capped by what is left");
+        assert_eq!(cancellable_hits(&state, &player), 0);
+    }
+
+    /// A cancellation belongs to the round it was granted in.
+    #[test]
+    fn hit_cancellations_expire_with_their_round() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.combat_round_seq = 4;
+        grant_hit_cancellation(&mut state, &player, 2);
+
+        state.combat_round_seq = 5;
+        assert_eq!(
+            cancellable_hits(&state, &player),
+            0,
+            "the card names this combat round"
+        );
+    }
+
+    /// Intercept bars a retreat for its round and no longer.
+    #[test]
+    fn a_barred_retreat_lasts_one_round() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.combat_round_seq = 2;
+        assert!(!retreat_barred(&state, &player));
+
+        bar_retreat(&mut state, &player);
+        assert!(retreat_barred(&state, &player));
+
+        state.combat_round_seq = 3;
+        assert!(!retreat_barred(&state, &player));
+    }
+
 
     #[test]
     fn skilled_retreat_may_go_where_an_ordinary_retreat_may_not() {

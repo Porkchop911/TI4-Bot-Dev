@@ -344,6 +344,20 @@ pub struct Player {
     /// Morale Boost: the [`GameState::combat_round_seq`] during which this player's combat
     /// rolls get +1.
     pub combat_bonus_round: Option<u32>,
+    /// Extra votes this seat casts on the agenda numbered here (Distinguished Councilor, Bribery).
+    ///
+    /// Scoped by `agenda_seq` for the same reason `combat_bonus_round` is scoped by the round: the
+    /// cards say "that outcome", meaning this agenda, and an unscoped bonus would follow the seat
+    /// for the rest of the game.
+    #[serde(default)]
+    pub extra_votes_agenda: Option<(u32, i64)>,
+    /// Hits this seat may cancel before assigning them, in the combat round numbered here
+    /// (Shields Holding). Consumed as they are cancelled.
+    #[serde(default)]
+    pub cancel_hits_round: Option<(u32, usize)>,
+    /// This seat may not retreat during the combat round numbered here (Intercept).
+    #[serde(default)]
+    pub retreat_barred_round: Option<u32>,
     /// Evelyn `DeLouis` and Viscount Unlenn: the combat round in which one of this player's
     /// units rolls an extra die.
     pub extra_die_round: Option<u32>,
@@ -437,6 +451,9 @@ impl PartialEq for Player {
             && self.public_objectives_forbidden == other.public_objectives_forbidden
             && self.fleet_supply_unlimited_until == other.fleet_supply_unlimited_until
             && self.combat_bonus_round == other.combat_bonus_round
+            && self.extra_votes_agenda == other.extra_votes_agenda
+            && self.cancel_hits_round == other.cancel_hits_round
+            && self.retreat_barred_round == other.retreat_barred_round
             && self.extra_die_round == other.extra_die_round
             && self.extra_die_unit == other.extra_die_unit
             && self.munitions_round == other.munitions_round
@@ -494,6 +511,9 @@ impl Player {
             leaders: BTreeMap::new(),
             fleet_supply_unlimited_until: None,
             combat_bonus_round: None,
+            extra_votes_agenda: None,
+            cancel_hits_round: None,
+            retreat_barred_round: None,
             extra_die_round: None,
             extra_die_unit: None,
             munitions_round: None,
@@ -748,6 +768,9 @@ pub struct GameState {
     pub production_seq: u32,
     /// Increments on every system activation.
     pub activation_seq: u32,
+    /// Increments when an agenda is revealed, so a card scoped to "this agenda" can say which.
+    #[serde(default)]
+    pub agenda_seq: u32,
     /// Increments whenever an action-phase turn actually passes to a player. It does *not*
     /// increment between Fleet Logistics' first and second actions, because those are
     /// explicitly the same turn.
@@ -943,6 +966,7 @@ impl GameState {
             combat_round_seq: 0,
             production_seq: 0,
             activation_seq: 0,
+            agenda_seq: 0,
             turn_seq: 0,
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),

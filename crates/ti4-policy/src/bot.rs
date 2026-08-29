@@ -2327,8 +2327,14 @@ mod tests {
         game.run(5, 2_000_000).map_err(|error| error.to_string())?;
         let records = game.table.log.records.clone();
 
-        // Which secret aliases each seat may have been offered: everything it still holds or has
-        // scored. A secret never changes hands except by scoring (61.18), so this is exact.
+        // Which secret aliases each seat may have been offered, from the *end* state: everything it
+        // still holds or has scored.
+        //
+        // This is not the whole set. The comment here used to say "a secret never changes hands
+        // except by scoring (61.18), so this is exact", and that is false: 45.4 hands an unscored
+        // secret back to the deck when a seat goes over its hand limit, so a card can be held,
+        // offered, and then returned — leaving no trace in the final hand or the scored list. The
+        // caller reads the return records to cover that.
         let allowed: BTreeMap<String, Vec<String>> = game
             .state
             .players
@@ -2384,6 +2390,18 @@ mod tests {
                     "seed {seed} rotation {rotation}: identical replay record"
                 );
 
+                // Secrets handed back to the deck over the hand limit (45.4). The end-state
+                // ledger cannot see these: the seat held the card, was offered it, then returned
+                // it, so it appears in neither the final hand nor the scored list.
+                let mut returned: BTreeMap<String, Vec<String>> = BTreeMap::new();
+                for record in &first {
+                    if record.prompt == "return a secret objective to the deck" {
+                        returned
+                            .entry(record.player.to_string())
+                            .or_default()
+                            .extend(record.offered.iter().cloned());
+                    }
+                }
                 for record in &first {
                     // Every answer came from a seated bot.
                     assert!(seat_names.contains(&record.player.to_string()));
@@ -2395,6 +2413,9 @@ mod tests {
                         continue;
                     }
                     let allowed = &allowed[&record.player.to_string()];
+                    let handed_back = returned
+                        .get(&record.player.to_string())
+                        .map_or(&[][..], Vec::as_slice);
                     for offered in &record.offered {
                         if offered == "decline" {
                             continue;
@@ -2403,8 +2424,10 @@ mod tests {
                             .get(ContentType::SecretObjectives, offered)
                             .is_some();
                         assert!(
-                            !is_secret || allowed.contains(offered),
-                            "bot {} was offered the secret {offered} it does not own",
+                            !is_secret
+                                || allowed.contains(offered)
+                                || handed_back.contains(offered),
+                            "bot {} was offered the secret {offered} it never held",
                             record.player
                         );
                     }

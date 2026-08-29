@@ -2125,6 +2125,9 @@ impl<'a> Game<'a> {
     fn open_next_vote(&mut self, mut queue: Vec<String>) -> StepResult {
         while let Some(alias) = queue.first().cloned() {
             queue.remove(0);
+            // Cards scoped to "this agenda" hang off this counter, so it moves before the reveal
+            // window opens and any of them can be played.
+            self.state.agenda_seq = self.state.agenda_seq.saturating_add(1);
             self.emit(&format!("AGENDA_REVEALED:{alias}"));
             let choices = outcomes(&self.state, self.content, self.sources, &alias);
             if choices.is_empty() {
