@@ -375,12 +375,29 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v6): metric name → (lo, hi). Recorded at full double
-/// precision under protocol v1 — raw values and the v1→v2 old/new comparison in
+/// The current baseline bounds (v7): metric name → (lo, hi). Recorded at full double
+/// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v7 — recorded 2026-08-29. A change in *play*: Fire Team, Scramble Frequency, and the
+    // Aglnlan Oln commander reroll stopped being unimplemented placeholders and became real
+    // dice questions at the ground-combat, bombardment, space-cannon, and anti-fighter-barrage
+    // sites (the handoff's commit B).
+    //
+    // The bots now hold and play those cards, so rerolls they can win are taken. The visible
+    // shifts are modest and all in one direction: `faction_differentiation` narrows (its upper
+    // bound falls 1.021 -> 0.913, `score_spread` upper bound 1.989 -> 1.852) because the new
+    // cards give defenders a way to blunt the bombs that had been deciding some games, and
+    // the action-mix shares drift by a few thousandths either way. `completion` stays the
+    // strict 1.0 invariant — every game still ends cleanly, now with rerolls in the dice
+    // history. The protocol-integrity check is what forced the move: the recomputed bounds no
+    // longer match the v6 transcription.
+    //
+    // Approved by the project owner 2026-08-29 (the standing approval to re-baseline once when
+    // the reroll group lands); v6 values preserved side by side in plans/evidence/M08-021.md.
+    //
     // v6 — recorded 2026-08-29. A change in *play*: coexistence bombardment (rules 7, 7.1, 7.2)
     // became a real decider question instead of a skipped planet.
     //
@@ -446,43 +463,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.3777777777777778, 0.4345679012345679),
+        (0.386_419_753_086_419_9, 0.430_246_913_580_246_86),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.4978213810119856, 1.988578448770187),
+        (1.465_720_961_691_160_6, 1.851_519_969_357_205_8),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.4147362690186453, 1.021074234614013),
+        (0.467_756_663_550_928_2, 0.912_803_306_601_816_6),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027526346140123132, 0.02915790173900407),
+        (0.027_329_182_021_628_64, 0.028_945_640_785_253_416),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.0457303376062687, 0.046983485464914515),
+        (0.045_758_730_189_435_25, 0.046_853_277_881_847_24),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.06446631758170146, 0.06931296439058442),
+        (0.062_781_161_185_919_12, 0.067_200_477_290_605_92),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.007880342339843086, 0.008682482089389229),
+        (0.007_941_220_088_150_526, 0.008_846_272_966_008_277),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.0903563492636094, 0.0928960138891977),
+        (0.090_461_735_683_731_45, 0.092_548_231_109_134_74),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.04461790726584114, 0.0459011136298896),
+        (0.044_680_938_828_285_59, 0.045_703_506_963_199_03),
     );
     bounds
 }

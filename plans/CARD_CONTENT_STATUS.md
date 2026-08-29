@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 95/142 |
+| action cards  | 34/142 | 97/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 95 of 142
-(66.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 97 of 142
+(68.3%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -111,9 +111,10 @@ Each window below is mapped to an engine event (Phase 8: 0 unsupported windows);
 state or flow the effect needs, which lives in files outside the ownership scope.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
-  keeps per-round bookkeeping, not live dice or retreats): `rout`, `scramble`, `dh1-4`,
-  `fire_team`, `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
+  keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
+  `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
+  `fire_team` and `scramble` left this group with the reroll group below.
 - **Invasion flow** (`invasion.rs`): `blitz`, `disable`, `ghost_squad`, `parley` (bunker landed
   with the scoped roll modifiers above).
 - **Movement rules / system activation** (`movement.rs`): `lost_star`, `solar_flare`.
@@ -174,24 +175,24 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 991 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 994 passed, 0 failed.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 51 non-fixture tests);
-  **ti4-sim's behavioral suite is green after the v5 → v6 re-baseline** (`plans/evidence/M08-021.md`),
-  including the protocol-integrity check in the debug build. The one remaining red is
-  `fixture_capture_is_deterministic`: pre-existing and byte-identical on the pre-change tree
-  (seed `919_601`'s replay finishes at step 781 before any production-head menu of ≥3 options);
-  it belongs to the M09-019b profile module's own versioned process and is tracked, not new.
-- `cargo clippy -p ti4-engine`: zero warnings in the touched files (the rework also cleared
-  the long-function warning the previous batch left in `invasion.rs`).
+  **ti4-sim's behavioral suite is green after the v6 → v7 re-baseline** (commit B's reroll
+  cards became playable; `plans/evidence/M08-021.md`), including the protocol-integrity check
+  in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-existing
+  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 786
+  before any production-head menu of ≥3 options); it belongs to the M09-019b profile module's
+  own versioned process and is tracked, not new.
+- `cargo clippy -p ti4-model -p ti4-engine`: zero warnings in the touched files (the rework also
+  cleared the long-function warnings the previous batches left in `invasion.rs`; the one
+  remaining workspace warning is pre-existing in untouched `production.rs`).
 - Both coexistence behaviors probed (break → the new test fails → revert): a `resolve` that
   ignored the decider's answer (`ScriptDiverged` at the second unit), and a 7.2 cap that
   spilled hits across owners (4 kills instead of 3).
-- The 47 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
-  it does not group:
-  - **Reroll at the roll site** (2 cards + Jol-Nar's commander): `fire_team`, `scramble` — the
-    roll-site decision seam now exists (`ChoosingBombardment` proves the pause/answer pattern);
-    the cards themselves plus Jol-Nar's commander reroll are the next batch.
+- The 45 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+  it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
+  group in this batch):
   - **Invasion flow** (4): `blitz`, `disable`, `parley`, `ghost_squad` — need commit
     undo/modify (`invasion.rs`).
   - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.

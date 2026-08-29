@@ -172,6 +172,27 @@ impl AftermathWindow {
             system,
             player,
         );
+        // Reroll windows (Agnlan Oln, Scramble Frequency): one per firing player, opened
+        // between the rolls and the absorption. The hits are then read from the possibly
+        // rerolled dice.
+        for (gunner, _, _) in &cannon {
+            state.last_reroll_player = Some(gunner.clone());
+            crate::combat::open_reroll_windows(state, ctx, gunner);
+        }
+        let cannon: Vec<(PlayerId, usize)> = cannon
+            .iter()
+            .map(|(who, _, _)| {
+                (
+                    who.clone(),
+                    state
+                        .reroll_staging
+                        .get(who)
+                        .map_or(0, crate::combat::staged_hits),
+                )
+            })
+            .collect();
+        state.reroll_staging.clear();
+        state.last_reroll_player = None;
         // Turn Their Fleets to Dust names this step and no other, so the count is taken across
         // the absorption rather than after the combat: by then the ordinary rounds have taken
         // ships too, and nothing would say which step emptied the system.
@@ -1369,41 +1390,7 @@ impl<'a> Game<'a> {
                         return Ok(self.result(true, None));
                     }
                     let outcome = self.sail(&origin, &ship, &path, cargo);
-                    if matches!(outcome, MoveOutcome::Arrived { .. }) {
-                        // Three printed windows read "after a player moves ships into" a system.
-                        let mut payload = BTreeMap::new();
-                        payload.insert(
-                            "player".to_owned(),
-                            serde_json::Value::String(window.player.to_string()),
-                        );
-                        let _ = self.emit_typed("SHIP_MOVED", payload);
-
-                        // 35.5: ending movement on a frontier token explores it.
-                        let destination = self.state.active_system.clone();
-                        if let Some(system) = destination {
-                            let player = window.player.clone();
-                            let mut dice = crate::dice::Dice::new();
-                            let mut rng = crate::rng::GameRng::new(0);
-                            let mut ctx = crate::choice::Resolving {
-                                content: self.content,
-                                sources: self.sources,
-                                dice: &mut dice,
-                                rng: &mut rng,
-                                table: &mut self.table,
-                                timing: None,
-                            };
-                            if crate::exploration::explore_frontier(
-                                &mut self.state,
-                                &mut ctx,
-                                &player,
-                                &system,
-                            )
-                            .is_some()
-                            {
-                                self.emit("FRONTIER_EXPLORED");
-                            }
-                        }
-                    }
+                    self.note_arrival(&window.player, &outcome);
                     self.emit(match outcome {
                         MoveOutcome::Arrived { .. } => "SHIP_MOVED",
                         MoveOutcome::LostToGravityRift { .. } => "SHIP_LOST_TO_GRAVITY_RIFT",
@@ -1420,6 +1407,41 @@ impl<'a> Game<'a> {
                 self.tactical = Some(window);
                 Ok(self.result(true, None))
             }
+        }
+    }
+
+    /// "After a player moves ships into" a system, and the 35.5 frontier exploration when the
+    /// move ends on a frontier token. Non-arrivals announce nothing here.
+    fn note_arrival(&mut self, player: &PlayerId, outcome: &MoveOutcome) {
+        if !matches!(outcome, MoveOutcome::Arrived { .. }) {
+            return;
+        }
+        // Three printed windows read "after a player moves ships into" a system.
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(player.to_string()),
+        );
+        let _ = self.emit_typed("SHIP_MOVED", payload);
+
+        // 35.5: ending movement on a frontier token explores it.
+        let Some(system) = self.state.active_system.clone() else {
+            return;
+        };
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut ctx = crate::choice::Resolving {
+            content: self.content,
+            sources: self.sources,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut self.table,
+            timing: None,
+        };
+        if crate::exploration::explore_frontier(&mut self.state, &mut ctx, player, &system)
+            .is_some()
+        {
+            self.emit("FRONTIER_EXPLORED");
         }
     }
 
@@ -4085,8 +4107,7 @@ mod tests {
             .records(ti4_model::content_types::ContentType::Agendas)
             .iter()
             .find(|record| {
-                record.text("type") == Some("Law")
-                    && record.text("target") == Some("For/Against")
+                record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
             })
             .and_then(|record| record.text("alias"))
             .expect("the corpus has a For/Against law")
@@ -4257,7 +4278,14 @@ mod tests {
         // The round begins, and the strategy phase it opens with announces itself. Both, in that
         // order: cards read "at the start of the strategy phase" and must not fire on a round
         // transition that never reaches one.
-        assert_eq!(game.events, vec!["AGENDA_PHASE_RESOLVED", "ROUND_BEGAN", "STRATEGY_PHASE_BEGAN"]);
+        assert_eq!(
+            game.events,
+            vec![
+                "AGENDA_PHASE_RESOLVED",
+                "ROUND_BEGAN",
+                "STRATEGY_PHASE_BEGAN"
+            ]
+        );
     }
 
     #[test]

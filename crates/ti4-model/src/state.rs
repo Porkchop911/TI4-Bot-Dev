@@ -151,7 +151,7 @@ pub struct SystemState {
     /// Coexistence is not derivable from occupancy. Two players with ground forces on one planet
     /// normally means a ground combat that has not happened yet; coexistence is the state a
     /// specific effect puts them in, in which combat is *not* triggered. So it is recorded rather
-    /// than inferred. The controller is never listed here: they are in planet_control.
+    /// than inferred. The controller is never listed here: they are in `planet_control`.
     ///
     /// Excluded from equality, like the other two planet maps.
     #[serde(default)]
@@ -693,6 +693,46 @@ mod promise_map {
     }
 }
 
+/// One die roll of a unit, held between the roll and the window that may reroll it.
+///
+/// Fire Team, Scramble Frequency, and Aglnlan Oln all act on dice that have been rolled but
+/// not yet applied. The faces are retained from the moment of the roll so a reroll can re-draw
+/// specific dice and the roll site can recompute the hits before any unit is removed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerollEntry {
+    /// The unit type that made this roll.
+    pub unit: String,
+    /// The planet the roll was made on or against (ground combat, bombardment);
+    /// `None` for a system-wide roll.
+    pub planet: Option<PlanetId>,
+    /// The value this roll hits on, if it was a hit roll at all.
+    pub hits_on: Option<u32>,
+    /// The current faces; a reroll replaces specific positions in place.
+    pub faces: Vec<u32>,
+}
+
+/// Every roll one player made at one moment, the set a timing window can still reroll.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerollSet {
+    /// What was rolled: `"ground"`, `"bombardment"`, `"space_cannon"`, or
+    /// `"anti_fighter_barrage"`.
+    pub kind: String,
+    /// The system the roll was made in.
+    pub system: SystemId,
+    /// One entry per die roll the player made.
+    pub rolls: Vec<RerollEntry>,
+}
+
+impl RerollEntry {
+    /// The hits this entry currently produces from its (possibly rerolled) faces.
+    #[must_use]
+    pub fn hits(&self) -> usize {
+        self.hits_on.map_or(0, |on| {
+            self.faces.iter().filter(|face| **face >= on).count()
+        })
+    }
+}
+
 /// The whole game, as a value.
 ///
 /// `initiative_order` is derived from held strategy cards rather than stored, so it cannot
@@ -813,6 +853,17 @@ pub struct GameState {
     /// card overrides.
     pub combat_draw_round: Option<u32>,
 
+    // -- reroll windows (Fire Team, Scramble Frequency, Aglnlan Oln) -------------
+    /// Rolls made by each player at the moment currently open to a reroll window, keyed by
+    /// the roller. Set at the roll site, cleared when the window behind it closes. Not
+    /// compared: in-flight resolution data, like the production bookkeeping above.
+    #[serde(default)]
+    pub reroll_staging: BTreeMap<PlayerId, RerollSet>,
+    /// The roller named by the most recent roll-window emission — the "that player" of
+    /// Scramble Frequency. Cleared with the staging. Not compared.
+    #[serde(default)]
+    pub last_reroll_player: Option<PlayerId>,
+
     // -- production bookkeeping ----------------------------------------------------
     /// Fighters placed by the PRODUCTION use currently resolving. Prophecy of Ixth asks how
     /// many fighters were *produced*, which the board cannot answer — fighters already
@@ -915,7 +966,6 @@ impl PartialEq for GameState {
             && self.secret_deck == other.secret_deck
             && self.custodians_removed == other.custodians_removed
             && self.frontier_tokens == other.frontier_tokens
-
             && self.fracture_in_play == other.fracture_in_play
             && self.ingress_tokens == other.ingress_tokens
             && self.breach_tokens == other.breach_tokens
@@ -995,6 +1045,8 @@ impl GameState {
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),
             combat_draw_round: None,
+            reroll_staging: BTreeMap::new(),
+            last_reroll_player: None,
             fighters_produced_this_use: 0,
             nonfighter_ships_produced_this_use: 0,
             units_produced_this_use: 0,

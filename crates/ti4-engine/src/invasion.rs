@@ -133,8 +133,7 @@ pub fn bombardment(
 ) -> Result<usize, IllegalChoice> {
     let occurrence = state.begin_feat_occurrence();
     let plan = roll_bombard_plan(state, content, sources, dice, rng, system, invader);
-    apply_bombard_plan(state, table, system, invader, &plan, occurrence)
-        .map(|(killed, _)| killed)
+    apply_bombard_plan(state, table, system, invader, &plan, occurrence).map(|(killed, _)| killed)
 }
 
 /// What was rolled on one planet: each bombarding unit's hit total (roll order) and the
@@ -154,7 +153,7 @@ struct BombardPlan {
 /// wrapper call it, so a given seed makes the same bombardment rolls no matter how the hits
 /// are assigned afterwards.
 fn roll_bombard_plan(
-    state: &GameState,
+    state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
     dice: &mut Dice,
@@ -177,6 +176,9 @@ fn roll_bombard_plan(
         .collect();
 
     let mut plan = Vec::new();
+    // Every unit's roll, kept for the reroll windows the bombardment opens (Agnlan Oln,
+    // Scramble Frequency): one entry per bombarding unit, tagged with its planet.
+    let mut staged = Vec::new();
     for planet in planets {
         if !bombardable(state, content, sources, system, &planet, invader) {
             continue;
@@ -214,14 +216,13 @@ fn roll_bombard_plan(
                 .get(&planet)
                 .and_then(|controller| state.player(controller))
                 .map_or(0, |seat| {
-                    4
-                        * i64::try_from(
-                            seat.bunker_invasion
-                                .iter()
-                                .filter(|seq| **seq == state.activation_seq)
-                                .count(),
-                        )
-                        .unwrap_or(i64::MAX)
+                    4 * i64::try_from(
+                        seat.bunker_invasion
+                            .iter()
+                            .filter(|seq| **seq == state.activation_seq)
+                            .count(),
+                    )
+                    .unwrap_or(i64::MAX)
                 });
             let value = value + bunker_penalty;
             let roll = dice.roll(
@@ -234,6 +235,12 @@ fn roll_bombard_plan(
             if produced > 0 {
                 groups.push(produced);
             }
+            staged.push(ti4_model::state::RerollEntry {
+                unit: unit.type_id.to_string(),
+                planet: Some(planet.clone()),
+                hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
+                faces: roll.faces,
+            });
         }
         let victims: std::collections::BTreeSet<PlayerId> =
             defenders.iter().map(|unit| unit.owner.clone()).collect();
@@ -243,6 +250,17 @@ fn roll_bombard_plan(
             held: defenders.len(),
             victims,
         });
+    }
+    if staged.iter().any(|roll| !roll.faces.is_empty()) {
+        state.reroll_staging.insert(
+            invader.clone(),
+            ti4_model::state::RerollSet {
+                kind: "bombardment".into(),
+                system: system.clone(),
+                rolls: staged,
+            },
+        );
+        state.last_reroll_player = Some(invader.clone());
     }
     plan
 }
@@ -288,9 +306,7 @@ fn bombardment_target_question(
     }
     Some(Choice::new(
         invader.clone(),
-        format!(
-            "whose units on {planet} take the bombardment's next hits ({hits} hits)"
-        ),
+        format!("whose units on {planet} take the bombardment's next hits ({hits} hits)"),
         present
             .iter()
             .map(|player| {
@@ -423,9 +439,7 @@ fn landable_planets(
         // and taking one was worth a planet *and* a system, since three of the four sit on tiles
         // whose only other planet is real and the fourth has none. 6.2% of measured opening
         // clearances depended on it. See `plans/evidence/SPACE_STATIONS_AUDIT.md`.
-        .filter(|planet| {
-            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
-        })
+        .filter(|planet| !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources))
         // Demilitarized Zone: units cannot land on the elected planet.
         .filter(|planet| !crate::laws::planet_is_demilitarized(state, planet))
         .collect()
@@ -539,7 +553,7 @@ pub fn commit_ground_forces(
     reason = "one parameter per distinct input"
 )]
 fn roll_ground(
-    state: &GameState,
+    state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
     dice: &mut Dice,
@@ -559,6 +573,12 @@ fn roll_ground(
         };
         *fighting.entry(value).or_insert(0) += kind.combat_dice();
     }
+    // Ground rolls group dice by combat value, so each staged entry is one value's pool.
+    let mut set = ti4_model::state::RerollSet {
+        kind: "ground".into(),
+        system: system.clone(),
+        rolls: Vec::new(),
+    };
     let mut hits = 0;
     for (value, count) in fighting {
         let dice_count = usize::try_from(count).unwrap_or(0);
@@ -572,6 +592,16 @@ fn roll_ground(
             Some(u32::try_from(value).unwrap_or(u32::MAX)),
         );
         hits += roll.hits();
+        set.rolls.push(ti4_model::state::RerollEntry {
+            unit: format!("combat value {value}"),
+            planet: Some(planet.clone()),
+            hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
+            faces: roll.faces,
+        });
+    }
+    if set.rolls.iter().any(|roll| !roll.faces.is_empty()) {
+        state.reroll_staging.insert(player.clone(), set);
+        state.last_reroll_player = Some(player.clone());
     }
     hits
 }
@@ -765,9 +795,7 @@ pub fn establish_control(
         state.exhaust_planet(planet.clone());
         // Everything that reads "when you gain control of a planet" fires here, where control
         // actually changes hands: the L1Z1X breakthrough and the Minister of Exploration.
-        crate::breakthroughs::on_gain_control(
-            state, content, sources, invader, system, planet,
-        );
+        crate::breakthroughs::on_gain_control(state, content, sources, invader, system, planet);
         crate::laws::on_gain_control(state, invader);
         captured.push((planet.clone(), previous));
     }
@@ -892,6 +920,9 @@ pub struct InvasionWindow {
     /// Next entry of `bombard_plan` to assign or finish.
     bombard_index: usize,
     bombard_occurrence: FeatOccurrence,
+    /// The bombardment's reroll windows (Agnlan Oln, Scramble Frequency) have been opened,
+    /// so the hits were already recomputed from the possibly rerolled dice.
+    bombard_announced: bool,
 }
 
 impl InvasionWindow {
@@ -923,8 +954,12 @@ impl InvasionWindow {
         notes_at_tactical_start: crate::combat::NoteHoldings,
     ) -> Self {
         let occurrence = state.begin_feat_occurrence();
-        let bombard_plan =
-            roll_bombard_plan(state, content, sources, dice, rng, system, invader);
+        // A stale set left by the synchronous APIs can only name rolls that are not this
+        // bombardment's, so the window would react to the wrong dice; the roll below
+        // restages the invader's own rolls.
+        state.reroll_staging.clear();
+        state.last_reroll_player = None;
+        let bombard_plan = roll_bombard_plan(state, content, sources, dice, rng, system, invader);
         Self {
             invader: invader.clone(),
             system: system.clone(),
@@ -936,6 +971,7 @@ impl InvasionWindow {
             bombard_plan,
             bombard_index: 0,
             bombard_occurrence: occurrence,
+            bombard_announced: false,
         }
     }
 
@@ -972,7 +1008,12 @@ impl InvasionWindow {
                 }
                 self.report.bombardment_kills += taken;
                 self.complete_bombard_plan(
-                    state, &planet, taken, held, &victims, self.bombard_occurrence,
+                    state,
+                    &planet,
+                    taken,
+                    held,
+                    &victims,
+                    self.bombard_occurrence,
                 );
                 self.bombard_index += 1;
                 continue;
@@ -1018,14 +1059,43 @@ impl InvasionWindow {
                 Feat::BombardedOutTheLastGroundForces,
                 occurrence,
             );
-            self.pending_scoring_occurrences.push_back((occurrence, false));
+            self.pending_scoring_occurrences
+                .push_back((occurrence, false));
         }
+    }
+
+    /// The one-shot windows after the bombardment rolls: Aglnlan Oln rerolls first, then the
+    /// other players' Scramble Frequency. Every planet's groups are then recomputed from the
+    /// possibly rerolled dice — same order, same zero-skip, as the plan was built — and the
+    /// staging is spent.
+    fn announce_bombard_rerolls(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+        if !state.reroll_staging.contains_key(&self.invader) {
+            return;
+        }
+        crate::combat::open_reroll_windows(state, ctx, &self.invader);
+        if let Some(set) = state.reroll_staging.get(&self.invader).cloned() {
+            for entry in &mut self.bombard_plan {
+                entry.groups = set
+                    .rolls
+                    .iter()
+                    .filter(|roll| roll.planet.as_ref() == Some(&entry.planet))
+                    .map(ti4_model::state::RerollEntry::hits)
+                    .filter(|hits| *hits > 0)
+                    .collect();
+            }
+        }
+        state.reroll_staging.remove(&self.invader);
+        state.last_reroll_player = None;
     }
 
     pub fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         loop {
             match self.stage.clone() {
                 Stage::Bombarding => {
+                    if !self.bombard_announced {
+                        self.bombard_announced = true;
+                        self.announce_bombard_rerolls(state, ctx);
+                    }
                     self.step_bombardment(state);
                     // The stage moved on (a later bombardment step, the custodians stage, or
                     // the coexistence pause); re-match it.
@@ -1168,6 +1238,44 @@ impl InvasionWindow {
         }
     }
 
+    /// The event a Fire Team hooks: named by the roller, so the window is `actor_is`.
+    fn emit_ground_rolls_made(
+        &self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planet: &PlanetId,
+        player: &PlayerId,
+        hits: usize,
+    ) {
+        let mut payload = std::collections::BTreeMap::new();
+        payload.insert("system".to_owned(), self.system.to_string().into());
+        payload.insert("planet".to_owned(), planet.to_string().into());
+        payload.insert("player".to_owned(), player.to_string().into());
+        payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
+        let _ = ctx.emit(state, "GROUND_ROLLS_MADE", payload);
+    }
+
+    /// The hits the staged dice now show after the reroll windows at the roll site — else the
+    /// originals. The caller clears the staging after using these.
+    fn rerolled_ground_hits(
+        state: &GameState,
+        invader: &PlayerId,
+        invader_hits: usize,
+        defender: &PlayerId,
+        defender_hits: usize,
+    ) -> (usize, usize) {
+        (
+            state
+                .reroll_staging
+                .get(invader)
+                .map_or(invader_hits, crate::combat::staged_hits),
+            state
+                .reroll_staging
+                .get(defender)
+                .map_or(defender_hits, crate::combat::staged_hits),
+        )
+    }
+
     fn resolve_ground_round(
         &mut self,
         state: &mut GameState,
@@ -1204,13 +1312,19 @@ impl InvasionWindow {
         // between the rolls and the removals, which is what the window means: a card played here
         // acts on the hits before anyone dies of them.
         for (who, hits) in [(&self.invader, attacker_hits), (&defender, defender_hits)] {
-            let mut payload = std::collections::BTreeMap::new();
-            payload.insert("system".to_owned(), self.system.to_string().into());
-            payload.insert("planet".to_owned(), planet.to_string().into());
-            payload.insert("player".to_owned(), who.to_string().into());
-            payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
-            let _ = ctx.emit(state, "GROUND_ROLLS_MADE", payload);
+            self.emit_ground_rolls_made(state, ctx, &planet, who, hits);
         }
+        // Fire Team's window ("reroll any number of your dice") opened at those emits; the
+        // hits that remove units are what the possibly rerolled dice now show.
+        let (attacker_hits, defender_hits) = Self::rerolled_ground_hits(
+            state,
+            &self.invader,
+            attacker_hits,
+            &defender,
+            defender_hits,
+        );
+        state.reroll_staging.clear();
+        state.last_reroll_player = None;
         remove_ground(
             state,
             content,
@@ -1229,10 +1343,23 @@ impl InvasionWindow {
             &self.invader,
             defender_hits,
         );
+        self.finish_ground_round(state, ctx, planets, index, defender, &planet);
+    }
 
-        // 42.3: the fight ends when one side has no ground forces left on the planet — not
-        // when its last structure falls, because structures never fight (KD-2).
-        let owners = ground_force_owners(state, content, sources, &self.system, &planet);
+    /// 42.3: the fight ends when one side has no ground forces left on the planet — not when
+    /// its last structure falls, because structures never fight (KD-2). Both sides surviving
+    /// simply starts the next round on the same planet.
+    fn finish_ground_round(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planets: Vec<PlanetId>,
+        index: usize,
+        defender: PlayerId,
+        planet: &PlanetId,
+    ) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        let owners = ground_force_owners(state, content, sources, &self.system, planet);
         let invader_survives = owners.contains(&self.invader);
         let defender_survives = owners.contains(&defender);
         if invader_survives && defender_survives {
@@ -1313,12 +1440,8 @@ impl InvasionWindow {
                 .get(planet)
                 .cloned()
                 .filter(|holder| *holder != self.invader && owners.contains(holder));
-            let next = controller.or_else(|| {
-                owners
-                    .iter()
-                    .find(|owner| **owner != self.invader)
-                    .cloned()
-            });
+            let next =
+                controller.or_else(|| owners.iter().find(|owner| **owner != self.invader).cloned());
             if let Some(defender) = next {
                 self.current_ground_occurrence = Some(state.begin_feat_occurrence());
                 self.stage = Stage::Fighting {
@@ -1652,7 +1775,8 @@ impl Window for InvasionWindow {
                     .find(|&i| groups[i] > 0)
                     .expect("paused on a bombardment that had hits to assign");
                 let target = PlayerId::new(option.id);
-                let applied = take_bombard_hits(state, &self.system, &planet, &target, groups[next]);
+                let applied =
+                    take_bombard_hits(state, &self.system, &planet, &target, groups[next]);
                 self.report.bombardment_kills += applied;
                 let taken = taken + applied;
                 let exhausted = next + 1 >= groups.len()
@@ -1934,8 +2058,8 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
-    use ti4_model::content_types::POK;
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+    use ti4_model::content_types::POK;
 
     /// Space stations rule 5: ground forces cannot be committed to a space station.
     ///
@@ -1948,8 +2072,7 @@ mod tests {
         let content = ti4_content::ContentStore::embedded();
         let state = crate::fixtures::game(&["a"]);
 
-        let station_only =
-            landable_planets(&state, content, ALL_SOURCES, &SystemId::new("117"));
+        let station_only = landable_planets(&state, content, ALL_SOURCES, &SystemId::new("117"));
         assert!(
             station_only.is_empty(),
             "The Watchtower is the only planet on 117 and is a station, so nothing may land: {station_only:?}"
@@ -2244,10 +2367,7 @@ mod tests {
     }
 
     impl crate::choice::Decider for RecordingScripted {
-        fn choose(
-            &mut self,
-            choice: &Choice,
-        ) -> Result<ChoiceOption, IllegalChoice> {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
             self.seen
                 .borrow_mut()
                 .push(choice.ids().into_iter().map(String::from).collect());
@@ -2274,7 +2394,9 @@ mod tests {
         let content = ContentStore::embedded();
 
         let mut state = crate::fixtures::game(&["a", "b", "c"]);
-        state.system_mut(&system).set_control(planet.clone(), b.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
         on_planet(&mut state, &system, &planet, "infantry", &b, 1);
         on_planet(&mut state, &system, &planet, "infantry", &c, 2);
         in_space(&mut state, &system, "dreadnought", &a, 1);
@@ -2290,15 +2412,8 @@ mod tests {
         };
         let mut table = Table::with_default(Box::new(decider));
 
-        let mut window = InvasionWindow::new(
-            &mut state,
-            content,
-            POK,
-            &mut dice,
-            &mut rng,
-            &a,
-            &system,
-        );
+        let mut window =
+            InvasionWindow::new(&mut state, content, POK, &mut dice, &mut rng, &a, &system);
         let mut ctx = Resolving {
             content,
             sources: POK,
@@ -2311,7 +2426,9 @@ mod tests {
         // The window's own decisions run against the table, exactly as the public `resolve`
         // wrapper does, and the driver does through its step boundary.
         while !window.is_done() {
-            window.drive(&mut state, &mut ctx).expect("the script only picks what is offered");
+            window
+                .drive(&mut state, &mut ctx)
+                .expect("the script only picks what is offered");
             while window.take_scoring_occurrence().is_some() {}
             window.settle(&mut state, &mut ctx);
         }
@@ -2413,6 +2530,7 @@ mod tests {
             bombard_plan: Vec::new(),
             bombard_index: 0,
             bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
         };
         let mut dice = Dice::new();
         let mut rng = GameRng::new(1);
@@ -2478,6 +2596,7 @@ mod tests {
                 bombard_plan: Vec::new(),
                 bombard_index: 0,
                 bombard_occurrence: state.begin_feat_occurrence(),
+                bombard_announced: true,
             };
             let mut dice = Dice::new();
             let mut rng = GameRng::new(1);
@@ -2624,6 +2743,7 @@ mod tests {
             bombard_plan: Vec::new(),
             bombard_index: 0,
             bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
         };
         let mut dice = Dice::from_faces([10, 1, 10, 1]);
         let mut rng = GameRng::new(1);
@@ -3245,6 +3365,7 @@ mod tests {
             bombard_plan: Vec::new(),
             bombard_index: 0,
             bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
         };
         let choice = window
             .pending_choice(&state, content, POK)
@@ -3410,5 +3531,367 @@ mod tests {
                 .iter()
                 .all(|o| o.kind == "commit" || o.id == "done_committing")
         );
+    }
+
+    // -- reroll windows: Fire Team, Scramble Frequency, Aglnlan Oln ----------------
+    //
+    // These drive the real window machinery (armed reaction slots, staged dice, recompute
+    // after the window) rather than calling the card effects directly, so a reroll that only
+    // worked on the direct path cannot pass here.
+
+    /// A resolver armed exactly as the driver arms one: a standing slot per player per
+    /// window, the hand read at resolution time.
+    fn armed_resolver(state: &GameState, players: Vec<PlayerId>) -> crate::timing::Resolver {
+        let mut resolver = crate::timing::Resolver::new(
+            players,
+            Some(PlayerId::new("a")),
+            crate::choice::Table::default(),
+        );
+        crate::reactions::arm(&mut resolver, state);
+        resolver
+    }
+
+    #[test]
+    fn fire_team_rerolls_your_own_ground_dice_before_anyone_is_removed() {
+        // Fire Team: "After your ground forces make combat rolls during a round of ground
+        // combat: Reroll any number of your dice." One infantry each (both hit on 8): the
+        // invader's face 8 kills the defender's only infantry, and the defender's 3 kills
+        // nothing. The reroll draws from the seeded stream (seed 4's first DICE draw is an 8),
+        // so it kills the invader's only infantry too: both sides die in the same round and
+        // the defender holds the planet.
+        let a = invader();
+        let b = holder();
+        let (system, planet) = {
+            let (_, s, p) = arena();
+            (s, p)
+        };
+
+        let run = |with_card: bool| -> (Vec<Vec<String>>, GameState, Dice) {
+            let (mut state, system, planet) = arena();
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+            on_planet(&mut state, &system, &planet, "infantry", &a, 1);
+            on_planet(&mut state, &system, &planet, "infantry", &b, 1);
+            if with_card {
+                state.player_mut(&b).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("fire_team")];
+            }
+            let content = ContentStore::embedded();
+            // The preload feeds the two initial rolls only; a reroll re-draws from the seeded
+            // stream (see Dice::reroll), and seed 4's first DICE-domain draw is an 8.
+            let mut dice = Dice::from_faces([8u32, 3]);
+            let mut rng = GameRng::new(4);
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let script: Vec<String> = if with_card {
+                vec![
+                    "fight".to_owned(),
+                    "reaction:generic:GROUND_ROLLS_MADE:after".to_owned(),
+                    "reroll|0:0".to_owned(),
+                ]
+            } else {
+                vec!["fight".to_owned()]
+            };
+            let decider = RecordingScripted {
+                inner: crate::choice::Scripted::new(script),
+                seen: seen.clone(),
+            };
+            let mut table = Table::with_default(Box::new(decider));
+            let mut resolver = armed_resolver(&state, vec![a.clone(), b.clone()]);
+            let mut event_sequence = crate::event::EventSequence::new();
+            let mut window = InvasionWindow {
+                invader: a.clone(),
+                system: system.clone(),
+                stage: Stage::Fighting {
+                    planets: vec![planet.clone()],
+                    index: 0,
+                    defender: b.clone(),
+                },
+                report: InvasionReport {
+                    // The manual window models a committed landing, so a surviving invader can
+                    // establish control the way the Committing stage would record it.
+                    committed: vec![planet.clone()],
+                    ..InvasionReport::default()
+                },
+                pending_scoring_occurrences: std::collections::VecDeque::new(),
+                current_ground_occurrence: None,
+                notes_at_tactical_start: crate::combat::note_holdings(&state),
+                bombard_plan: Vec::new(),
+                bombard_index: 0,
+                bombard_occurrence: state.begin_feat_occurrence(),
+                bombard_announced: true,
+            };
+            let mut ctx = Resolving {
+                content,
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: Some(crate::choice::TimingHandle {
+                    resolver: &mut resolver,
+                    sequence: &mut event_sequence,
+                    galaxy: None,
+                }),
+            };
+            while !window.is_done() {
+                window
+                    .drive(&mut state, &mut ctx)
+                    .expect("the script only picks what is offered");
+                while window.take_scoring_occurrence().is_some() {}
+                window.settle(&mut state, &mut ctx);
+            }
+            let asks = seen.borrow().clone();
+            let _ = window;
+            (asks, state, dice)
+        };
+
+        // The card-less fight: the 8 kills the defender's only infantry, the 3 kills nothing,
+        // the invader takes the planet, and nothing was ever rerolled.
+        let (asks, state, dice) = run(false);
+        assert_eq!(
+            asks,
+            vec![vec!["fight".to_owned()]],
+            "no card in hand, so no reaction window opens; got {asks:?}"
+        );
+        let units: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(units.len(), 1, "the invader's infantry is all that is left");
+        assert_eq!(units[0].owner, a);
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&a),
+            "the surviving invader holds the planet"
+        );
+        assert!(dice.rolled("fire team").is_empty(), "no card, no reroll");
+
+        // With Fire Team: the defender rerolls the 3; the re-draw is an 8 (seed 4), so the
+        // defender kills the invader's only infantry as well. Both sides die in the same
+        // round, and the defender holds the planet.
+        let (asks, state, dice) = run(true);
+        assert_eq!(
+            asks,
+            vec![
+                vec!["fight".to_owned()],
+                vec![
+                    "reaction:generic:GROUND_ROLLS_MADE:after".to_owned(),
+                    "decline".to_owned()
+                ],
+                vec!["reroll|0:0".to_owned(), "decline".to_owned()],
+            ],
+            // The single playable card is auto-selected, so no inner card ask is recorded.
+            "the round ask, the reaction offer, then one die question; got {asks:?}"
+        );
+        assert!(
+            state.reroll_staging.is_empty(),
+            "the staging is spent with the round"
+        );
+        let units: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert!(
+            units.is_empty(),
+            "the reroll let the defender kill the invader's last infantry: both sides died"
+        );
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&b),
+            "the invader died, so the defender keeps the planet"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card was spent"
+        );
+        // The reroll ran through the game's own roller, recorded under the card's name.
+        assert_eq!(
+            dice.rolled("fire team").len(),
+            1,
+            "the die the decider named was the only one re-drawn"
+        );
+    }
+
+    #[test]
+    fn scramble_frequency_rerolls_all_of_the_rollers_dice() {
+        // Scramble Frequency: "After another player makes a BOMBARDMENT, SPACE CANNON, or
+        // ANTI-FIGHTER BARRAGE roll: That player rerolls all of their dice." The invader's
+        // dreadnought (hits on 5) rolls an 8 (one kill); the holder scrambles it, and the
+        // re-draw from the seeded stream (seed 1's first DICE draw is a 4) kills nothing.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+
+        let run = |play: bool| -> (Vec<Vec<String>>, GameState, Dice) {
+            let mut state = crate::fixtures::game(&["a", "b", "c"]);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+            crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+            state.player_mut(&c).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("scramble")];
+            let content = ContentStore::embedded();
+            let mut dice = Dice::from_faces([8u32, 2]);
+            let mut rng = GameRng::new(1);
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let script: Vec<String> = if play {
+                vec!["reaction:generic:UNIT_ABILITY_ROLLED:after".to_owned()]
+            } else {
+                vec!["decline".to_owned()]
+            };
+            let decider = RecordingScripted {
+                inner: crate::choice::Scripted::new(script),
+                seen: seen.clone(),
+            };
+            let mut table = Table::with_default(Box::new(decider));
+            let mut resolver = armed_resolver(&state, vec![a.clone(), b.clone(), c.clone()]);
+            let mut event_sequence = crate::event::EventSequence::new();
+            let mut window =
+                InvasionWindow::new(&mut state, content, POK, &mut dice, &mut rng, &a, &system);
+            let mut ctx = Resolving {
+                content,
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: Some(crate::choice::TimingHandle {
+                    resolver: &mut resolver,
+                    sequence: &mut event_sequence,
+                    galaxy: None,
+                }),
+            };
+            while !window.is_done() {
+                window
+                    .drive(&mut state, &mut ctx)
+                    .expect("the script only picks what is offered");
+                while window.take_scoring_occurrence().is_some() {}
+                window.settle(&mut state, &mut ctx);
+            }
+            let asks = seen.borrow().clone();
+            let _ = window;
+            (asks, state, dice)
+        };
+
+        // Declined: the 8 lands its one kill.
+        let (asks, state, dice) = run(false);
+        assert_eq!(
+            asks,
+            vec![vec![
+                "reaction:generic:UNIT_ABILITY_ROLLED:after".to_owned(),
+                "decline".to_owned()
+            ]],
+            "the roller is not offered the window, only the other players; got {asks:?}"
+        );
+        let left: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(left.len(), 1, "one of the two infantry was killed by the 8");
+        assert_eq!(dice.count(), 1, "a declined scramble consumes no dice");
+        assert!(dice.rolled("scramble frequency").is_empty());
+
+        // Played: every die the invader made is rerolled, and the 2 kills nothing.
+        let (asks, state, dice) = run(true);
+        assert_eq!(
+            asks,
+            vec![vec![
+                "reaction:generic:UNIT_ABILITY_ROLLED:after".to_owned(),
+                "decline".to_owned()
+            ]],
+            "one reaction offer; the lone card auto-plays and asks no die question, all dice reroll; got {asks:?}"
+        );
+        assert!(state.reroll_staging.is_empty());
+        let left: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(left.len(), 2, "the scramble saved both infantry");
+        assert_eq!(
+            dice.rolled("scramble frequency").len(),
+            1,
+            "the forced reroll ran through the game's roller"
+        );
+        assert!(
+            state.player(&c).unwrap().action_cards.is_empty(),
+            "the card was spent even though it saved the day"
+        );
+    }
+
+    #[test]
+    fn the_jolnar_commander_may_reroll_any_ability_die() {
+        // Aglnlan Oln's commander: "After you roll dice for a unit ability: You may reroll
+        // any of those dice." The invader's dreadnought (hits on 5) bombs with a 3 (no hits);
+        // rerolled, the re-draw from the seeded stream (seed 4's first DICE draw is an 8)
+        // takes one of the defender's two infantry. Declining rerolls nothing.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+
+        let run = |reroll: bool| -> (Vec<Vec<String>>, GameState, Dice) {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+            crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+            state.player_mut(&a).unwrap().leaders.insert(
+                ti4_model::id::LeaderId::new("jolnarcommander"),
+                ti4_model::state::LeaderStatus::Unlocked,
+            );
+            let content = ContentStore::embedded();
+            let mut dice = Dice::from_faces([3u32]);
+            let mut rng = GameRng::new(4);
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let script: Vec<String> = if reroll {
+                vec!["reroll|0:0".to_owned()]
+            } else {
+                vec!["decline".to_owned()]
+            };
+            let decider = RecordingScripted {
+                inner: crate::choice::Scripted::new(script),
+                seen: seen.clone(),
+            };
+            let mut table = Table::with_default(Box::new(decider));
+            let mut resolver = armed_resolver(&state, vec![a.clone(), b.clone()]);
+            let mut event_sequence = crate::event::EventSequence::new();
+            let mut window =
+                InvasionWindow::new(&mut state, content, POK, &mut dice, &mut rng, &a, &system);
+            let mut ctx = Resolving {
+                content,
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: Some(crate::choice::TimingHandle {
+                    resolver: &mut resolver,
+                    sequence: &mut event_sequence,
+                    galaxy: None,
+                }),
+            };
+            while !window.is_done() {
+                window
+                    .drive(&mut state, &mut ctx)
+                    .expect("the script only picks what is offered");
+                while window.take_scoring_occurrence().is_some() {}
+                window.settle(&mut state, &mut ctx);
+            }
+            let asks = seen.borrow().clone();
+            let _ = window;
+            (asks, state, dice)
+        };
+
+        // Rerolled: the 3 is re-drawn to an 8 (seed 4) and takes one infantry.
+        let (asks, state, dice) = run(true);
+        assert_eq!(
+            asks,
+            vec![vec!["reroll|0:0".to_owned(), "decline".to_owned()]],
+            "one optional die question, asked of the roller; got {asks:?}"
+        );
+        let left: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(left.len(), 1, "the reroll landed its one hit");
+        assert_eq!(dice.rolled("jolnar commander").len(), 1);
+        assert!(state.reroll_staging.is_empty());
+
+        // Declined: the 3 rolls no hits and nothing is rerolled.
+        let (asks, state, dice) = run(false);
+        assert_eq!(
+            asks,
+            vec![vec!["reroll|0:0".to_owned(), "decline".to_owned()]],
+            "the question is offered either way; got {asks:?}"
+        );
+        let left: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(left.len(), 2, "a declined reroll changes nothing");
+        assert!(dice.rolled("jolnar commander").is_empty());
+        assert_eq!(dice.count(), 1);
     }
 }

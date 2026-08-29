@@ -418,6 +418,7 @@ pub fn registered_abilities() -> Vec<&'static str> {
         "letnevagent",
         "letnevcommander",
         "letnevhero",
+        "jolnarcommander",
         "solagent",
         "solcommander",
         "solhero",

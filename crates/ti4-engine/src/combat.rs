@@ -9,10 +9,11 @@
 //! movement had before its driver landed, and recorded as an open finding.
 
 use ti4_content::ContentStore;
+use ti4_content::galaxy::Galaxy;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::{Feat, FeatOccurrence, GameState};
+use ti4_model::state::{Feat, FeatOccurrence, GameState, RerollEntry, RerollSet};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
@@ -143,14 +144,13 @@ pub fn effective_hits_on(
 /// two per copy held, counted only while the round the cards were played in is the live one.
 fn fighter_bonus_now(state: &GameState, player: &PlayerId) -> i64 {
     state.player(player).map_or(0, |seat| {
-        2
-            * i64::try_from(
-                seat.fighter_bonus_round
-                    .iter()
-                    .filter(|round| **round == state.combat_round_seq)
-                    .count(),
-            )
-            .unwrap_or(i64::MAX)
+        2 * i64::try_from(
+            seat.fighter_bonus_round
+                .iter()
+                .filter(|round| **round == state.combat_round_seq)
+                .count(),
+        )
+        .unwrap_or(i64::MAX)
     })
 }
 
@@ -179,6 +179,132 @@ fn reroll_munitions_misses(
     }
     let reason = format!("munitions:{player}");
     dice.reroll(rng, roll, misses, Some(&reason))
+}
+
+// -- reroll windows -----------------------------------------------------------
+//
+// Fire Team, Scramble Frequency, and Aglnlan Oln all act on dice that have been rolled
+// but not yet applied. Each roll site stages its rolls in `GameState::reroll_staging`,
+// opens the window, and then recomputes the hits from whatever faces remain when the
+// window closes.
+
+/// Ask the roller, one optional question per die, which dice to reroll.
+///
+/// A die whose question fails (the decider answered with something not offered) is kept
+// as-is, the same way the Letnev Munitions ask degrades, so an optional reroll can never
+/// wedge the combat.
+#[must_use]
+pub fn choose_reroll_dice(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Vec<(usize, usize)> {
+    let Some(set) = state.reroll_staging.get(player) else {
+        return Vec::new();
+    };
+    let observed = Observed::new(state, content, sources, galaxy);
+    let mut picks = Vec::new();
+    for (unit, entry) in set.rolls.iter().enumerate() {
+        for (die, face) in entry.faces.iter().enumerate() {
+            let choice = Choice::new(
+                player.clone(),
+                format!("reroll die {} of {}", die + 1, entry.unit),
+                vec![
+                    ChoiceOption::labelled(
+                        format!("reroll|{unit}:{die}"),
+                        "reroll_die",
+                        format!("reroll die {} of {} (shows {})", die + 1, entry.unit, face),
+                    ),
+                    ChoiceOption::decline(),
+                ],
+            );
+            let Ok(answer) = table.ask_seeing(&choice, &observed) else {
+                continue;
+            };
+            if !answer.is_decline() {
+                picks.push((unit, die));
+            }
+        }
+    }
+    picks
+}
+
+/// Re-draw the chosen dice of the staged set through the game's roller, in place.
+pub fn apply_reroll_dice(
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    set: &mut RerollSet,
+    picks: &[(usize, usize)],
+    reason: &str,
+) {
+    for (unit, die) in picks {
+        let Some(entry) = set.rolls.get_mut(*unit) else {
+            continue;
+        };
+        if *die >= entry.faces.len() {
+            continue;
+        }
+        let original = crate::dice::Roll {
+            reason: set.kind.clone(),
+            faces: entry.faces.clone(),
+            hits_on: entry.hits_on,
+            rerolled: std::collections::BTreeSet::new(),
+        };
+        let again = dice.reroll(rng, &original, [*die], Some(reason));
+        entry.faces = again.faces;
+    }
+}
+
+/// The hits a staged set currently produces from its (possibly rerolled) faces.
+#[must_use]
+pub fn staged_hits(set: &RerollSet) -> usize {
+    set.rolls.iter().map(RerollEntry::hits).sum()
+}
+
+/// Open the reroll window for the roll `side` just made: the roller's own commander reroll
+/// first (Agnlan Oln), then the event other players react to (Scramble Frequency).
+///
+/// The event goes through the timing resolver so reaction windows actually fire. Called at
+/// the space cannon, anti-fighter barrage, and bombardment sites; the caller recomputes
+/// the hits from the staging afterwards and clears it.
+///
+/// # Panics
+/// If the commander hook re-enters the staging it just read and finds it gone (a card effect
+/// ran in the meantime and removed it), which cannot happen on the call sites: the staged set
+/// is only removed by the caller after this returns.
+pub fn open_reroll_windows(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
+    let Some(set) = state.reroll_staging.get(side) else {
+        return;
+    };
+    let (kind, system) = (set.kind.clone(), set.system.clone());
+    let has_dice = set.rolls.iter().any(|entry| !entry.faces.is_empty());
+    // Aglnlan Oln: "After you roll dice for a unit ability: You may reroll any of those
+    // dice." Ground rolls are not unit ability rolls, so the commander stands down there.
+    let commander_reroll = has_dice
+        && kind != "ground"
+        && state.player(side).is_some_and(|seat| {
+            seat.leaders.iter().any(|(leader, status)| {
+                leader.as_str() == "jolnarcommander"
+                    && *status == ti4_model::state::LeaderStatus::Unlocked
+            })
+        });
+    if commander_reroll {
+        let picks = choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side);
+        if !picks.is_empty() {
+            let set = state.reroll_staging.get_mut(side).expect("checked above");
+            apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, "jolnar commander");
+        }
+    }
+    let hits = staged_hits(state.reroll_staging.get(side).expect("checked above"));
+    let mut payload = std::collections::BTreeMap::new();
+    payload.insert("kind".to_owned(), kind.into());
+    payload.insert("player".to_owned(), side.to_string().into());
+    payload.insert("system".to_owned(), system.to_string().into());
+    payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
+    let _ = ctx.emit(state, "UNIT_ABILITY_ROLLED", payload);
 }
 
 /// Roll one player's fleet and count the hits (78.5).
@@ -264,7 +390,115 @@ pub fn anti_fighter_barrage(
     .0
 }
 
-/// Resolve anti-fighter barrage and retain any event-scoped feat it creates.
+/// Roll one side's anti-fighter barrage and stage the roll for the reroll windows.
+///
+/// The dice-consuming half: both the combat window and the synchronous wrapper below call
+/// this, so a given seed makes the same barrage rolls however the hits are later assigned.
+pub fn roll_barrage_side(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    player: &PlayerId,
+) -> usize {
+    let types = catalogue(content, sources);
+    let mut set = RerollSet {
+        kind: "anti_fighter_barrage".into(),
+        system: system.clone(),
+        rolls: Vec::new(),
+    };
+    let mut hits = 0;
+    // Metali Void Armaments fires once for its holder, not once per ship: the card grants the
+    // barrage to the player.
+    if let Some((value, count)) = crate::relics::extra_barrage(state, player) {
+        let roll = dice.roll(rng, count, "anti_fighter_barrage", Some(value));
+        hits += roll.hits();
+        set.rolls.push(RerollEntry {
+            unit: "extra barrage".into(),
+            planet: None,
+            hits_on: Some(value),
+            faces: roll.faces,
+        });
+    }
+    for unit in ships_of(state, content, sources, player, system) {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = kind.afb_hits_on() else {
+            continue;
+        };
+        let count = usize::try_from(kind.afb_dice()).unwrap_or(0);
+        if count == 0 {
+            continue;
+        }
+        // Fighter Prototype names "each of your fighters' combat rolls": the barrage is a
+        // fighters' combat roll, so it gets the same +2 per copy as the fleet rolls do.
+        let value = if kind.is_fighter() {
+            value - fighter_bonus_now(state, player)
+        } else {
+            value
+        };
+        let roll = dice.roll(
+            rng,
+            count,
+            "anti-fighter barrage",
+            Some(u32::try_from(value).unwrap_or(u32::MAX)),
+        );
+        hits += roll.hits();
+        set.rolls.push(RerollEntry {
+            unit: unit.type_id.to_string(),
+            planet: None,
+            hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
+            faces: roll.faces,
+        });
+    }
+    if set.rolls.iter().any(|roll| !roll.faces.is_empty()) {
+        state.reroll_staging.insert(player.clone(), set);
+        state.last_reroll_player = Some(player.clone());
+    }
+    hits
+}
+
+/// Resolve both barrages: remove the target's fighters for each side's (possibly rerolled)
+/// hits, and keep the event-scoped feats that creates.
+fn apply_barrage(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    attacker: &PlayerId,
+    defender: &PlayerId,
+    results: &[(PlayerId, usize)],
+    occurrence: FeatOccurrence,
+) -> Vec<PlayerId> {
+    let mut feat_players = Vec::new();
+    for (player, hits) in results {
+        let target = if player == attacker {
+            defender
+        } else {
+            attacker
+        };
+        // Fight with Precision asks for the last fighter specifically, and specifically during
+        // this step, so the count is taken either side of the removal rather than after the
+        // combat: by then ordinary combat rounds have taken fighters too, and nothing would say
+        // which step emptied the system.
+        let before = fighters_of(state, content, sources, target, system);
+        destroy_fighters(state, content, sources, target, system, *hits);
+        if before > 0 && fighters_of(state, content, sources, target, system) == 0 {
+            state.record_event_feat(player, Feat::BarrageTookTheLastFighters, occurrence);
+            feat_players.push(player.clone());
+        }
+    }
+    feat_players
+}
+
+/// Resolve anti-fighter barrage without the reroll windows: roll both sides and apply. The
+/// synchronous API the tests and standalone callers use; the combat window instead rolls the
+/// same [`roll_barrage_side`] with the windows opened in between, so the two paths cannot
+/// disagree about the dice. The staging left behind is stale by construction and is cleared
+/// at the start of the next windowed roll.
 #[allow(
     clippy::too_many_arguments,
     reason = "one parameter per genuinely distinct input"
@@ -280,66 +514,17 @@ fn anti_fighter_barrage_at(
     defender: &PlayerId,
     occurrence: FeatOccurrence,
 ) -> (Vec<(PlayerId, usize)>, Vec<PlayerId>) {
-    let types = catalogue(content, sources);
     let mut pending = Vec::new();
     for player in [attacker, defender] {
-        let mut hits = 0;
-        // Metali Void Armaments fires once for its holder, not once per ship: the card grants the
-        // barrage to the player.
-        if let Some((value, count)) = crate::relics::extra_barrage(state, player) {
-            let roll = dice.roll(rng, count, "anti_fighter_barrage", Some(value));
-            hits += roll.hits();
-        }
-        for unit in ships_of(state, content, sources, player, system) {
-            let Some(kind) = types.get(unit.type_id.as_str()) else {
-                continue;
-            };
-            let Some(value) = kind.afb_hits_on() else {
-                continue;
-            };
-            let count = usize::try_from(kind.afb_dice()).unwrap_or(0);
-            if count == 0 {
-                continue;
-            }
-            // Fighter Prototype names "each of your fighters' combat rolls": the barrage is a
-            // fighters' combat roll, so it gets the same +2 per copy as the fleet rolls do.
-            let value = if kind.is_fighter() {
-                value - fighter_bonus_now(state, player)
-            } else {
-                value
-            };
-            let roll = dice.roll(
-                rng,
-                count,
-                "anti-fighter barrage",
-                Some(u32::try_from(value).unwrap_or(u32::MAX)),
-            );
-            hits += roll.hits();
-        }
+        let hits = roll_barrage_side(state, content, sources, dice, rng, system, player);
         if hits > 0 {
             pending.push((player.clone(), hits));
         }
     }
-
     let resolved = pending.clone();
-    let mut feat_players = Vec::new();
-    for (player, hits) in pending {
-        let target = if &player == attacker {
-            defender
-        } else {
-            attacker
-        };
-        // Fight with Precision asks for the last fighter specifically, and specifically during
-        // this step, so the count is taken either side of the removal rather than after the
-        // combat: by then ordinary combat rounds have taken fighters too, and nothing would say
-        // which step emptied the system.
-        let before = fighters_of(state, content, sources, target, system);
-        destroy_fighters(state, content, sources, target, system, hits);
-        if before > 0 && fighters_of(state, content, sources, target, system) == 0 {
-            state.record_event_feat(&player, Feat::BarrageTookTheLastFighters, occurrence);
-            feat_players.push(player);
-        }
-    }
+    let feat_players = apply_barrage(
+        state, content, sources, system, attacker, defender, &pending, occurrence,
+    );
     (resolved, feat_players)
 }
 
@@ -456,14 +641,14 @@ fn destroy_fighters(
 /// from combat hits because the two are answered by different cards, which is the distinction
 /// [`absorb_hits`] exists to preserve.
 pub fn space_cannon_offense(
-    state: &GameState,
+    state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
     dice: &mut Dice,
     rng: &mut GameRng,
     system: &SystemId,
     active: &PlayerId,
-) -> Vec<(PlayerId, usize)> {
+) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
     let types = catalogue(content, sources);
     let board = state.system_state(system);
 
@@ -483,7 +668,7 @@ pub fn space_cannon_offense(
         );
     }
 
-    let mut by_player: std::collections::BTreeMap<PlayerId, usize> =
+    let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
         std::collections::BTreeMap::new();
     for unit in guns {
         let Some(kind) = types.get(unit.type_id.as_str()) else {
@@ -502,11 +687,36 @@ pub fn space_cannon_offense(
             "space cannon",
             Some(u32::try_from(value).unwrap_or(u32::MAX)),
         );
-        *by_player.entry(unit.owner.clone()).or_insert(0) += roll.hits();
+        let entry = RerollEntry {
+            unit: unit.type_id.to_string(),
+            planet: None,
+            hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
+            faces: roll.faces,
+        };
+        let slot = by_player
+            .entry(unit.owner.clone())
+            .or_insert_with(|| (0, Vec::new()));
+        slot.0 += entry.hits();
+        slot.1.push(entry);
+    }
+    // Stage each gunner's rolls for the reroll windows; the caller opens one window per
+    // gunner and names them with `last_reroll_player`.
+    for (player, (_, rolls)) in &by_player {
+        if rolls.iter().any(|roll| !roll.faces.is_empty()) {
+            state.reroll_staging.insert(
+                player.clone(),
+                RerollSet {
+                    kind: "space_cannon".into(),
+                    system: system.clone(),
+                    rolls: rolls.clone(),
+                },
+            );
+        }
     }
     by_player
         .into_iter()
-        .filter(|(_, hits)| *hits > 0)
+        .filter(|(_, (hits, _))| *hits > 0)
+        .map(|(player, (hits, rolls))| (player, hits, rolls))
         .collect()
 }
 
@@ -738,6 +948,36 @@ fn announce_ship_destroyed(
     payload.insert("unit".to_owned(), destroyed.type_id.to_string().into());
     payload.insert("last".to_owned(), (remaining == 0).into());
     let _ = ctx.emit(state, "SHIP_DESTROYED", payload);
+}
+
+/// The retreat is named by the declaring player, so the window guard is `actor_is_not`.
+fn emit_retreat_declared(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    system: &SystemId,
+    player: &PlayerId,
+    round: u32,
+) {
+    let mut payload = std::collections::BTreeMap::new();
+    payload.insert("system".to_owned(), system.to_string().into());
+    payload.insert("player".to_owned(), player.to_string().into());
+    payload.insert("round".to_owned(), i64::from(round).into());
+    let _ = ctx.emit(state, "RETREAT_DECLARED", payload);
+}
+
+/// Both sustain windows read the moment, and both need the unit, so the event names it.
+fn emit_sustain_used(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    system: &SystemId,
+    player: &PlayerId,
+    unit: &str,
+) {
+    let mut payload = std::collections::BTreeMap::new();
+    payload.insert("system".to_owned(), system.to_string().into());
+    payload.insert("player".to_owned(), player.to_string().into());
+    payload.insert("unit".to_owned(), unit.to_owned().into());
+    let _ = ctx.emit(state, "SUSTAIN_DAMAGE_USED", payload);
 }
 
 /// 78.6: the owning player chooses which of their own units dies.
@@ -1176,15 +1416,39 @@ impl CombatWindow {
 
         if run_barrage && round == 1 {
             let occurrence = self.ensure_combat_occurrence(state);
-            let (_, feat_players) = anti_fighter_barrage_at(
+            // Both barrages are rolled before either is applied (78.3), one side at a time:
+            // each side's reroll windows (Agnlan Oln, Scramble Frequency) open between its
+            // roll and either side's removals, and the hits are read from the possibly
+            // rerolled dice only afterwards.
+            let mut results: Vec<(PlayerId, usize)> = Vec::new();
+            for side in [self.attacker.clone(), self.defender.clone()] {
+                let _ = roll_barrage_side(
+                    state,
+                    content,
+                    sources,
+                    ctx.dice,
+                    ctx.rng,
+                    &self.system,
+                    &side,
+                );
+                open_reroll_windows(state, ctx, &side);
+                if let Some(set) = state.reroll_staging.get(&side).cloned() {
+                    let hits = staged_hits(&set);
+                    if hits > 0 {
+                        results.push((side.clone(), hits));
+                    }
+                }
+                state.reroll_staging.remove(&side);
+            }
+            state.last_reroll_player = None;
+            let feat_players = apply_barrage(
                 state,
                 content,
                 sources,
-                ctx.dice,
-                ctx.rng,
                 &self.system,
                 &self.attacker,
                 &self.defender,
+                &results,
                 occurrence,
             );
             if !feat_players.is_empty() {
@@ -1556,18 +1820,11 @@ impl Window for CombatWindow {
                     announced.push(asking.clone());
                     // "After your opponent declares a retreat during a space combat." Named by the
                     // declaring player, so `actor_is_not` gives it to the opponent.
-                    let mut payload = std::collections::BTreeMap::new();
-                    payload.insert("system".to_owned(), self.system.to_string().into());
-                    payload.insert("player".to_owned(), asking.to_string().into());
-                    payload.insert("round".to_owned(), i64::from(round).into());
-                    let _ = ctx.emit(state, "RETREAT_DECLARED", payload);
+                    emit_retreat_declared(state, ctx, &self.system, &asking, round);
                 }
                 // 78.4b: the defender announcing silences the attacker.
-                let next = if asking == self.defender && !announced.contains(&self.defender) {
-                    Some(self.attacker.clone())
-                } else {
-                    None
-                };
+                let next = (asking == self.defender && !announced.contains(&self.defender))
+                    .then(|| self.attacker.clone());
                 self.stage = next.map_or(Stage::Rolling { round }, |asking| Stage::Announcing {
                     round,
                     asking,
@@ -1596,23 +1853,20 @@ impl Window for CombatWindow {
                     .strip_prefix("sustain|")
                     .and_then(|rest| rest.parse::<usize>().ok())
                 {
-                    let sustained = state
-                        .system_mut(&self.system)
-                        .units
-                        .get_mut(index)
-                        .map(|unit| {
-                            *unit = unit.sustained();
-                            unit.type_id.to_string()
-                        });
+                    let sustained =
+                        state
+                            .system_mut(&self.system)
+                            .units
+                            .get_mut(index)
+                            .map(|unit| {
+                                *unit = unit.sustained();
+                                unit.type_id.to_string()
+                            });
                     // Two printed windows read this moment -- "when one of your ships uses SUSTAIN
                     // DAMAGE" and "after another player's ship uses SUSTAIN DAMAGE to cancel a hit
                     // produced by your units". Both need the *unit*, so the event names it.
                     if let Some(kind) = sustained {
-                        let mut payload = std::collections::BTreeMap::new();
-                        payload.insert("system".to_owned(), self.system.to_string().into());
-                        payload.insert("player".to_owned(), front_player.to_string().into());
-                        payload.insert("unit".to_owned(), kind.into());
-                        let _ = ctx.emit(state, "SUSTAIN_DAMAGE_USED", payload);
+                        emit_sustain_used(state, ctx, &self.system, &front_player, &kind);
                     }
                     if let Some(front) = queue.first_mut() {
                         front.hits = front.hits.saturating_sub(1);
@@ -2042,7 +2296,11 @@ mod tests {
 
         assert_eq!(spend_cancellations(&mut state, &player, 1), 1);
         assert_eq!(cancellable_hits(&state, &player), 1);
-        assert_eq!(spend_cancellations(&mut state, &player, 5), 1, "capped by what is left");
+        assert_eq!(
+            spend_cancellations(&mut state, &player, 5),
+            1,
+            "capped by what is left"
+        );
         assert_eq!(cancellable_hits(&state, &player), 0);
     }
 
@@ -2076,7 +2334,6 @@ mod tests {
         state.combat_round_seq = 3;
         assert!(!retreat_barred(&state, &player));
     }
-
 
     #[test]
     fn skilled_retreat_may_go_where_an_ordinary_retreat_may_not() {
@@ -2431,7 +2688,7 @@ mod tests {
         let (_, mut dice, mut rng) = kit();
 
         let fired = space_cannon_offense(
-            &state,
+            &mut state,
             ContentStore::embedded(),
             POK,
             &mut dice,
@@ -2442,7 +2699,7 @@ mod tests {
 
         assert_eq!(dice.count(), 1, "the gun on the planet fired");
         assert!(
-            fired.iter().all(|(owner, _)| owner == &defender()),
+            fired.iter().all(|(owner, _, _)| owner == &defender()),
             "only the non-active player shoots"
         );
     }
@@ -2454,7 +2711,7 @@ mod tests {
         let (_, mut dice, mut rng) = kit();
 
         let fired = space_cannon_offense(
-            &state,
+            &mut state,
             ContentStore::embedded(),
             POK,
             &mut dice,

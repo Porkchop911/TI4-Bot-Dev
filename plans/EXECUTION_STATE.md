@@ -22,6 +22,50 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — reroll dice group (commit B) + v7 re-baseline (2026-08-29)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on `ed8eea8`
+  before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in scope):
+  the handoff's **reroll dice group** — Fire Team, Scramble Frequency, and the Aglnlan Oln
+  (Jol-Nar) commander reroll.
+  - Roll-site seam: `ti4-model` gained `reroll_staging` (per-roller staged dice: unit, planet,
+    `hits_on`, faces) plus `last_reroll_player` (the "that player" of Scramble) on `GameState`;
+    not part of `PartialEq` (dice, not state a decider can act on). Every ability roll site —
+    ground combat, bombardment, space cannon, anti-fighter barrage — now stages its dice, opens
+    the windows, recomputes hits from the possibly rerolled faces, and applies the removals.
+  - Windows: the commander's inline "may reroll any of those dice" fires first for the roller
+    (Munitions precedent, direct hook), then `GROUND_ROLLS_MADE` / `UNIT_ABILITY_ROLLED` open
+    the other players' reaction slots: **Fire Team** ("your ground forces make combat rolls",
+    `actor_is`) asks per die and rerolls the chosen subset; **Scramble Frequency** ("another
+    player makes a BOMBARDMENT, SPACE CANNON, or ANTI-FIGHTER BARRAGE roll", `actor_is_not`)
+    rerolls *all* of the roller's dice and asks nothing. A failed inner question degrades
+    (keeps the die / skips the reroll) and combat continues.
+  - Coverage 95 → **97/142** action cards (coverage_report, release); agendas still 63/63.
+- **ti4-sim baseline moved v6 → v7** through the same versioned process: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; `behavior.rs` now carries the v7 transcription and
+  `plans/evidence/M08-021.md` records the pair. Cause: the bots now play the new cards — the
+  visible shifts are `faction_differentiation` and `score_spread` narrowing (defenders can blunt
+  a bomb roll), with sub-thousandth drifts in the action-mix shares. `completion` stays the
+  strict 1.0 invariant; the debug-build integrity check (recorded == protocol recomputation,
+  2000 splitmix64 resamples, seed `0x9E3779B97F4A7C15`) passes.
+- Tests: 994 `ti4-engine` lib tests pass (was 991): `fire_team_rerolls_your_own_ground_dice_
+  before_anyone_is_removed`, `scramble_frequency_rerolls_all_of_the_rollers_dice`, and
+  `the_jolnar_commander_may_reroll_any_ability_die`, each with a decline arm. All three
+  probed (break the effect → the test fails → revert); scratch examples deleted.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s `fixture_capture_is_deterministic`
+  — the same pre-existing tracked failure, now at step 786 (was 781: the new windows change the
+  replay trajectory, not its failure mode). M09-019b scope, not part of this batch.
+- Clippy: zero warnings in every touched file (`ti4-model` state, `combat`, `invasion`, `game`,
+  `reactions`, `leaders`, `action_cards`, `behavior`); the one remaining workspace warning is
+  pre-existing in untouched `production.rs:183`.
+- Next safe action: the handoff's remaining groups in order — Invasion flow (`blitz`,
+  `disable`, `parley`, `ghost_squad`), Cancel API (`sabo1`–`4`), Movement (`lost_star`,
+  `solar_flare`), Agenda/turn flow (9 cards), remaining relics. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — coexistence bombardment choice + v6 re-baseline (2026-08-29)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

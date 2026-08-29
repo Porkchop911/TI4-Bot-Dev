@@ -403,7 +403,11 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
 /// payoff (+1 victory point). The other riders store `"outcome|alias"` so the same vote
 /// machinery can pay each card's distinct reward.
 fn imperial_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) = predicted_outcome(context, player, "Imperial Rider: predict the agenda outcome") else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Imperial Rider: predict the agenda outcome",
+    ) else {
         return; // nothing to predict, so the card cannot resolve (22.3)
     };
     context
@@ -449,24 +453,28 @@ fn predicted_outcome(
 /// If your prediction is correct, place 1 space dock from your reinforcements on a planet you
 /// control."
 fn construction_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) =
-        predicted_outcome(context, player, "Construction Rider: predict the agenda outcome")
-    else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Construction Rider: predict the agenda outcome",
+    ) else {
         return;
     };
-    context.state.agenda_predictions.insert(
-        player.clone(),
-        format!("{predicted}|const_rider"),
-    );
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|const_rider"));
 }
 
 /// Diplomacy Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
 /// If your prediction is correct, choose 1 system that contains a planet you control. Each other
 /// player places a command token from their reinforcements in that system."
 fn diplomacy_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) =
-        predicted_outcome(context, player, "Diplomacy Rider: predict the agenda outcome")
-    else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Diplomacy Rider: predict the agenda outcome",
+    ) else {
         return;
     };
     context
@@ -478,9 +486,11 @@ fn diplomacy_rider(context: &mut crate::timing::TimingContext<'_>, player: &Play
 /// Leadership Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
 /// If your prediction is correct, gain 3 command tokens."
 fn leadership_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) =
-        predicted_outcome(context, player, "Leadership Rider: predict the agenda outcome")
-    else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Leadership Rider: predict the agenda outcome",
+    ) else {
         return;
     };
     context
@@ -492,9 +502,11 @@ fn leadership_rider(context: &mut crate::timing::TimingContext<'_>, player: &Pla
 /// Politics Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
 /// If your prediction is correct, draw 3 action cards and gain the speaker token."
 fn politics_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) =
-        predicted_outcome(context, player, "Politics Rider: predict the agenda outcome")
-    else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Politics Rider: predict the agenda outcome",
+    ) else {
         return;
     };
     context
@@ -510,9 +522,11 @@ fn politics_rider(context: &mut crate::timing::TimingContext<'_>, player: &Playe
 /// and a table to pick and pay for the technology, and the vote-close that pays predictions has
 /// neither, so a correct Technology Rider is recorded but its research is not performed.
 fn technology_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) =
-        predicted_outcome(context, player, "Technology Rider: predict the agenda outcome")
-    else {
+    let Some(predicted) = predicted_outcome(
+        context,
+        player,
+        "Technology Rider: predict the agenda outcome",
+    ) else {
         return;
     };
     context
@@ -558,7 +572,8 @@ fn warfare_rider(context: &mut crate::timing::TimingContext<'_>, player: &Player
 /// vote-close that pays predictions carries only the outcome, not who voted which way, so a
 /// correct Sanction is recorded but its token returns are not performed.
 fn sanction(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let Some(predicted) = predicted_outcome(context, player, "Sanction: predict the agenda outcome")
+    let Some(predicted) =
+        predicted_outcome(context, player, "Sanction: predict the agenda outcome")
     else {
         return;
     };
@@ -583,16 +598,17 @@ fn assassinate_representative(context: &mut crate::timing::TimingContext<'_>, pl
         .iter()
         .map(|victim| (victim.to_string(), format!("assassinate {victim}")))
         .collect::<Vec<_>>();
-    let Some(victim) = pick(context, player, "Assassinate Representative: choose 1 player", "player", &options)
-    else {
+    let Some(victim) = pick(
+        context,
+        player,
+        "Assassinate Representative: choose 1 player",
+        "player",
+        &options,
+    ) else {
         return;
     };
     let victim = ti4_model::id::PlayerId::new(&victim);
-    if context
-        .state
-        .agenda_predictions
-        .contains_key(&victim)
-    {
+    if context.state.agenda_predictions.contains_key(&victim) {
         return; // they already predicted; the assassination finds no new grip on them
     }
     context
@@ -620,8 +636,13 @@ fn ancient_burial_sites(context: &mut crate::timing::TimingContext<'_>, player: 
         .iter()
         .map(|victim| (victim.to_string(), format!("target {victim}")))
         .collect::<Vec<_>>();
-    let Some(target) = pick(context, player, "Ancient Burial Sites: choose 1 player", "player", &options)
-    else {
+    let Some(target) = pick(
+        context,
+        player,
+        "Ancient Burial Sites: choose 1 player",
+        "player",
+        &options,
+    ) else {
         return;
     };
     let target = ti4_model::id::PlayerId::new(&target);
@@ -656,8 +677,13 @@ fn diplomatic_pressure(context: &mut crate::timing::TimingContext<'_>, player: &
         .filter(|victim| *victim != player)
         .map(|victim| (victim.to_string(), format!("pressure {victim}")))
         .collect();
-    let Some(victim) = pick(context, player, "Diplomatic Pressure: choose another player", "player", &options)
-    else {
+    let Some(victim) = pick(
+        context,
+        player,
+        "Diplomatic Pressure: choose another player",
+        "player",
+        &options,
+    ) else {
         return;
     };
     let victim = ti4_model::id::PlayerId::new(&victim);
@@ -667,7 +693,10 @@ fn diplomatic_pressure(context: &mut crate::timing::TimingContext<'_>, player: &
         &victim,
         "Diplomatic Pressure: which note do you give",
         "promissory note",
-        &notes.iter().map(|note| (note.clone(), note.clone())).collect::<Vec<_>>(),
+        &notes
+            .iter()
+            .map(|note| (note.clone(), note.clone()))
+            .collect::<Vec<_>>(),
     ) else {
         return; // the chosen player holds nothing to give (22.3)
     };
@@ -757,7 +786,9 @@ fn rider_payoff(state: &mut GameState, player: &PlayerId, card: Option<&str>) {
                 let system = ti4_model::id::SystemId::new(systems.into_iter().next().unwrap());
                 let mut holders: Vec<ti4_model::id::PlayerId> = Vec::new();
                 for other in state.seating_order.iter().filter(|other| *other != player) {
-                    if state.player(other).is_some_and(|seat| seat.tokens(ti4_model::state::TokenPool::Fleet) > 0)
+                    if state
+                        .player(other)
+                        .is_some_and(|seat| seat.tokens(ti4_model::state::TokenPool::Fleet) > 0)
                     {
                         holders.push((*other).clone());
                     }
@@ -830,7 +861,6 @@ pub fn resolve_predictions(state: &mut GameState, outcome: &str) -> Vec<PlayerId
         }
         rider_payoff(state, &player, card);
 
-
         paid.push(player);
     }
     paid
@@ -886,8 +916,13 @@ fn forward_supply_base(context: &mut crate::timing::TimingContext<'_>, player: &
     if options.is_empty() {
         return; // a solo table owes the card nothing further
     }
-    let Some(other) = pick(context, player, "Forward Supply Base: choose another player", "player", &options)
-    else {
+    let Some(other) = pick(
+        context,
+        player,
+        "Forward Supply Base: choose another player",
+        "player",
+        &options,
+    ) else {
         return;
     };
     if let Some(seat) = context
@@ -908,7 +943,12 @@ fn counterstroke(context: &mut crate::timing::TimingContext<'_>, player: &Player
     let Some(system) = context.state.active_system.clone() else {
         return;
     };
-    if !context.state.system_state(&system).command_tokens.contains(player) {
+    if !context
+        .state
+        .system_state(&system)
+        .command_tokens
+        .contains(player)
+    {
         return; // the window fired, but no token of the player's is there
     }
     context
@@ -956,8 +996,13 @@ fn bribery(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let options: Vec<(String, String)> = (0..=held)
         .map(|count| (count.to_string(), format!("spend {count} trade goods")))
         .collect();
-    let Some(answer) = pick(context, player, "Bribery: how many trade goods to spend?", "count", &options)
-    else {
+    let Some(answer) = pick(
+        context,
+        player,
+        "Bribery: how many trade goods to spend?",
+        "count",
+        &options,
+    ) else {
         return;
     };
     let spent = answer.parse::<i32>().unwrap_or(0).clamp(0, held);
@@ -1056,7 +1101,6 @@ fn war_machine(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     }
 }
 
-
 /// The player's ground forces on the board, wherever they stand, as `system|planet|index`
 /// options. A structure is not a ground force, and a unit whose type the catalogue does not
 /// recognise is not one either.
@@ -1104,11 +1148,7 @@ fn pull_and_land(
     // index, then land what was pulled.
     let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for position in taken {
-        let system_part = found[*position]
-            .0
-            .split('|')
-            .next()
-            .expect("a system part");
+        let system_part = found[*position].0.split('|').next().expect("a system part");
         by_source
             .entry(system_part.to_owned())
             .or_default()
@@ -1150,8 +1190,10 @@ fn pull_and_land(
                 .swap_remove(index);
         }
     }
-    let moved: Vec<ti4_model::units::Unit> =
-        taken.iter().map(|position| found[*position].2.clone()).collect();
+    let moved: Vec<ti4_model::units::Unit> = taken
+        .iter()
+        .map(|position| found[*position].2.clone())
+        .collect();
     context
         .state
         .system_mut(system)
@@ -1199,8 +1241,13 @@ fn decoy_operation(context: &mut crate::timing::TimingContext<'_>, player: &Play
             .iter()
             .map(|(id, label, _)| (id.clone(), label.clone()))
             .collect::<Vec<_>>();
-        let Some(first) = pick(context, player, "Decoy Operation: which unit to pull", "unit", &options)
-        else {
+        let Some(first) = pick(
+            context,
+            player,
+            "Decoy Operation: which unit to pull",
+            "unit",
+            &options,
+        ) else {
             return;
         };
         let Some(first_index) = found.iter().position(|(id, _, _)| id == &first) else {
@@ -1217,8 +1264,13 @@ fn decoy_operation(context: &mut crate::timing::TimingContext<'_>, player: &Play
                 "stop after one".to_owned(),
             )))
             .collect();
-        let Some(second) = pick(context, player, "Decoy Operation: another unit or stop", "unit", &rest)
-        else {
+        let Some(second) = pick(
+            context,
+            player,
+            "Decoy Operation: another unit or stop",
+            "unit",
+            &rest,
+        ) else {
             return;
         };
         if second != "stop" {
@@ -1235,8 +1287,13 @@ fn decoy_operation(context: &mut crate::timing::TimingContext<'_>, player: &Play
         }
     }
     // The planet they land on, after the units: one planet is not a decision.
-    let Some(planet_id) = pick(context, player, "Decoy Operation: which planet they land on", "planet", &destinations)
-    else {
+    let Some(planet_id) = pick(
+        context,
+        player,
+        "Decoy Operation: which planet they land on",
+        "planet",
+        &destinations,
+    ) else {
         return;
     };
     let planet = ti4_model::id::PlanetId::new(&planet_id);
@@ -1305,8 +1362,13 @@ fn upgrade_ship(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
     if options.is_empty() {
         return; // no cruiser of the player's in the system (22.3)
     }
-    let Some(chosen) = pick(context, player, "Upgrade: which cruiser becomes a dreadnought", "cruiser", &options)
-    else {
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Upgrade: which cruiser becomes a dreadnought",
+        "cruiser",
+        &options,
+    ) else {
         return;
     };
     let index: usize = chosen.parse().expect("the option was an index");
@@ -1359,13 +1421,21 @@ fn experimental_battlestation(context: &mut crate::timing::TimingContext<'_>, pl
     if eligible.is_empty() {
         return; // no dock in or adjacent to the active system
     }
-    let Some(_) = pick(context, player, "Experimental Battlestation: which dock fires", "space dock", &eligible)
-    else {
+    let Some(_) = pick(
+        context,
+        player,
+        "Experimental Battlestation: which dock fires",
+        "space dock",
+        &eligible,
+    ) else {
         return;
     };
-    let roll = context
-        .dice
-        .roll(context.rng, 3, "experimental_battlestation_space_cannon", Some(5));
+    let roll = context.dice.roll(
+        context.rng,
+        3,
+        "experimental_battlestation_space_cannon",
+        Some(5),
+    );
     let hits = roll.hits();
     if hits == 0 {
         return;
@@ -1417,16 +1487,18 @@ fn reveal_prototype(context: &mut crate::timing::TimingContext<'_>, player: &Pla
     if lines.is_empty() {
         return; // no unit of the player's is in the combat
     }
-    let open = crate::technology::researchable(
-        context.state, context.content, context.sources, player,
-    );
+    let open =
+        crate::technology::researchable(context.state, context.content, context.sources, player);
     let options: Vec<(String, String)> = open
         .iter()
         .filter(|alias| crate::technology::is_unit_upgrade(context.content, alias))
         .filter_map(|alias| {
             let record = context
                 .content
-                .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())?
+                .get(
+                    ti4_model::content_types::ContentType::Technologies,
+                    alias.as_str(),
+                )?
                 .clone();
             let base = record.text("baseUpgrade").unwrap_or_default().to_owned();
             if base.is_empty() {
@@ -1437,30 +1509,26 @@ fn reveal_prototype(context: &mut crate::timing::TimingContext<'_>, player: &Pla
                     .to_lowercase()
                     .replace(" ii", "")
                     .replace(' ', "_");
-                let matches = lines.iter().any(
-                    |line| name == *line || name.ends_with(&format!("_{line}")),
-                );
+                let matches = lines
+                    .iter()
+                    .any(|line| name == *line || name.ends_with(&format!("_{line}")));
                 matches.then(|| {
                     (
                         alias.as_str().to_owned(),
-                        record
-                            .text("name")
-                            .unwrap_or(alias.as_str())
-                            .to_owned(),
+                        record.text("name").unwrap_or(alias.as_str()).to_owned(),
                     )
                 })
             } else {
                 // A named subject: it must be the unit's own line, or the unit itself.
-                let subject_line = types.get(base.as_str()).map(ti4_content::units::UnitType::base_type);
+                let subject_line = types
+                    .get(base.as_str())
+                    .map(ti4_content::units::UnitType::base_type);
                 let matches = lines.iter().any(|line| Some(*line) == subject_line)
                     || subject_line.is_none() && lines.iter().any(|line| **line == base);
                 matches.then(|| {
                     (
                         alias.as_str().to_owned(),
-                        record
-                            .text("name")
-                            .unwrap_or(alias.as_str())
-                            .to_owned(),
+                        record.text("name").unwrap_or(alias.as_str()).to_owned(),
                     )
                 })
             }
@@ -1469,8 +1537,13 @@ fn reveal_prototype(context: &mut crate::timing::TimingContext<'_>, player: &Pla
     if options.is_empty() {
         return; // no offered technology is of a line in the combat
     }
-    let Some(alias) = pick(context, player, "Reveal Prototype: which prototype to reveal", "technology", &options)
-    else {
+    let Some(alias) = pick(
+        context,
+        player,
+        "Reveal Prototype: which prototype to reveal",
+        "technology",
+        &options,
+    ) else {
         return;
     };
     let paid = crate::production::pay(
@@ -1496,7 +1569,6 @@ fn reveal_prototype(context: &mut crate::timing::TimingContext<'_>, player: &Pla
         &ti4_model::TechnologyId::new(&alias),
     );
 }
-
 
 // -- component-action effects ------------------------------------------------------------------
 //
@@ -1573,16 +1645,13 @@ fn economic_initiative(context: &mut crate::timing::TimingContext<'_>, player: &
         .map(|(_, planet)| planet.clone())
         .collect();
     for planet in owned {
-        let cultural = ti4_content::galaxy::planet(
-                context.content,
-                planet.as_str(),
-                context.sources,
-            )
-            .is_some_and(|planet| {
-                planet
-                    .planet_type()
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
-            });
+        let cultural =
+            ti4_content::galaxy::planet(context.content, planet.as_str(), context.sources)
+                .is_some_and(|planet| {
+                    planet
+                        .planet_type()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
+                });
         if cultural {
             context.state.exhausted_planets.remove(&planet);
         }
@@ -1600,11 +1669,7 @@ fn industrial_initiative(context: &mut crate::timing::TimingContext<'_>, player:
     let count = owned
         .iter()
         .filter(|planet| {
-            ti4_content::galaxy::planet(
-                    context.content,
-                    planet.as_str(),
-                    context.sources,
-                )
+            ti4_content::galaxy::planet(context.content, planet.as_str(), context.sources)
                 .is_some_and(|planet| {
                     planet
                         .planet_type()
@@ -1644,15 +1709,12 @@ fn fighter_conscription(context: &mut crate::timing::TimingContext<'_>, player: 
                         .is_some_and(|kind| kind.base_type() == "spacedock")
             })
         });
-        let has_capacity = board
-            .units
-            .iter()
-            .any(|unit| {
-                &unit.owner == player
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(|kind| kind.capacity() > 0)
-            });
+        let has_capacity = board.units.iter().any(|unit| {
+            &unit.owner == player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| kind.capacity() > 0)
+        });
         if !docked && !has_capacity {
             continue;
         }
@@ -1728,8 +1790,12 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     if !paid {
         return;
     }
-    let mut options: Vec<(String, String, ti4_model::id::PlayerId, ti4_model::TechnologyId)> =
-        Vec::new();
+    let mut options: Vec<(
+        String,
+        String,
+        ti4_model::id::PlayerId,
+        ti4_model::TechnologyId,
+    )> = Vec::new();
     for neighbour in neighbors(context.state, player) {
         let Some(seat) = context.state.player(&neighbour) else {
             continue;
@@ -1737,14 +1803,20 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         for tech in &seat.technologies {
             let non_faction = context
                 .content
-                .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                .get(
+                    ti4_model::content_types::ContentType::Technologies,
+                    tech.as_str(),
+                )
                 .is_some_and(|record| record.text("faction").is_none());
             if !non_faction {
                 continue;
             }
             let name = context
                 .content
-                .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                .get(
+                    ti4_model::content_types::ContentType::Technologies,
+                    tech.as_str(),
+                )
                 .and_then(|record| record.text("name"))
                 .unwrap_or(tech.as_str());
             options.push((
@@ -1762,14 +1834,16 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         .iter()
         .map(|(id, label, _, _)| (id.clone(), label.clone()))
         .collect::<Vec<_>>();
-    let Some(chosen) = pick(context, player, "Plagiarize: which technology to steal", "technology", &options_only)
-    else {
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Plagiarize: which technology to steal",
+        "technology",
+        &options_only,
+    ) else {
         return;
     };
-    let Some((_, _, owner, tech)) = options
-        .iter()
-        .find(|(id, _, _, _)| *id == chosen)
-        .cloned()
+    let Some((_, _, owner, tech)) = options.iter().find(|(id, _, _, _)| *id == chosen).cloned()
     else {
         return; // the answer named nothing on offer
     };
@@ -1788,8 +1862,7 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
 fn archaeological_expedition(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let mut decks: Vec<(ti4_model::id::PlanetId, String)> = Vec::new();
     for (_, planet) in context.state.controlled_planets(player) {
-        if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, planet)
-        {
+        if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, planet) {
             decks.push((planet.clone(), deck));
         }
     }
@@ -1800,8 +1873,13 @@ fn archaeological_expedition(context: &mut crate::timing::TimingContext<'_>, pla
         .iter()
         .map(|(planet, _)| (planet.to_string(), planet.to_string()))
         .collect::<Vec<_>>();
-    let Some(planet_id) = pick(context, player, "Archaeological Expedition: which planet's deck", "planet", &options)
-    else {
+    let Some(planet_id) = pick(
+        context,
+        player,
+        "Archaeological Expedition: which planet's deck",
+        "planet",
+        &options,
+    ) else {
         return;
     };
     let deck = decks
@@ -1846,7 +1924,10 @@ fn divert_funding(context: &mut crate::timing::TimingContext<'_>, player: &Playe
         .filter(|alias| {
             context
                 .content
-                .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
+                .get(
+                    ti4_model::content_types::ContentType::Technologies,
+                    alias.as_str(),
+                )
                 .is_some_and(|record| record.text("faction").is_none())
         })
         .map(|alias| {
@@ -1854,7 +1935,10 @@ fn divert_funding(context: &mut crate::timing::TimingContext<'_>, player: &Playe
                 alias.as_str().to_owned(),
                 context
                     .content
-                    .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
+                    .get(
+                        ti4_model::content_types::ContentType::Technologies,
+                        alias.as_str(),
+                    )
                     .and_then(|record| record.text("name"))
                     .unwrap_or(alias.as_str())
                     .to_owned(),
@@ -1864,16 +1948,21 @@ fn divert_funding(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     if options.is_empty() {
         return;
     }
-    let Some(alias) = pick(context, player, "Divert Funding: which technology to return", "technology", &options)
-    else {
+    let Some(alias) = pick(
+        context,
+        player,
+        "Divert Funding: which technology to return",
+        "technology",
+        &options,
+    ) else {
         return;
     };
     if let Some(seat) = context.state.player_mut(player) {
-        seat.technologies.remove(&ti4_model::TechnologyId::new(&alias));
+        seat.technologies
+            .remove(&ti4_model::TechnologyId::new(&alias));
     }
-    let open = crate::technology::researchable(
-        context.state, context.content, context.sources, player,
-    );
+    let open =
+        crate::technology::researchable(context.state, context.content, context.sources, player);
     if open.is_empty() {
         return;
     }
@@ -1884,15 +1973,23 @@ fn divert_funding(context: &mut crate::timing::TimingContext<'_>, player: &Playe
                 tech.as_str().to_owned(),
                 context
                     .content
-                    .get(ti4_model::content_types::ContentType::Technologies, tech.as_str())
+                    .get(
+                        ti4_model::content_types::ContentType::Technologies,
+                        tech.as_str(),
+                    )
                     .and_then(|record| record.text("name"))
                     .unwrap_or(tech.as_str())
                     .to_owned(),
             )
         })
         .collect::<Vec<_>>();
-    let Some(alias) = pick(context, player, "Divert Funding: what to research with the funding", "technology", &research_options)
-    else {
+    let Some(alias) = pick(
+        context,
+        player,
+        "Divert Funding: what to research with the funding",
+        "technology",
+        &research_options,
+    ) else {
         return;
     };
     crate::technology::research(
@@ -1933,8 +2030,13 @@ fn exploration_probe(context: &mut crate::timing::TimingContext<'_>, player: &Pl
     if options.is_empty() {
         return;
     }
-    let Some(system) = pick(context, player, "Exploration Probe: which frontier token to explore", "system", &options)
-    else {
+    let Some(system) = pick(
+        context,
+        player,
+        "Exploration Probe: which frontier token to explore",
+        "system",
+        &options,
+    ) else {
         return;
     };
     let system = ti4_model::id::SystemId::new(&system);
@@ -2011,8 +2113,13 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
             .iter()
             .map(|(id, label, _)| (id.clone(), label.clone()))
             .collect::<Vec<_>>();
-        let Some(first) = pick(context, player, "Refit Troops: which infantry to replace", "infantry", &options)
-        else {
+        let Some(first) = pick(
+            context,
+            player,
+            "Refit Troops: which infantry to replace",
+            "infantry",
+            &options,
+        ) else {
             return;
         };
         let Some(first_index) = found.iter().position(|(id, _, _)| id == &first) else {
@@ -2029,8 +2136,13 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
                 "stop after one".to_owned(),
             )))
             .collect();
-        let Some(second) = pick(context, player, "Refit Troops: another infantry or stop", "infantry", &rest)
-        else {
+        let Some(second) = pick(
+            context,
+            player,
+            "Refit Troops: another infantry or stop",
+            "infantry",
+            &rest,
+        ) else {
             return;
         };
         if second != "stop" {
@@ -2048,11 +2160,7 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
     }
     let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for position in taken {
-        let system_part = found[position]
-            .0
-            .split('|')
-            .next()
-            .expect("a system part");
+        let system_part = found[position].0.split('|').next().expect("a system part");
         by_source
             .entry(system_part.to_owned())
             .or_default()
@@ -2134,8 +2242,13 @@ fn scuttle(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
             .iter()
             .map(|(id, label, _)| (id.clone(), label.clone()))
             .collect::<Vec<_>>();
-        let Some(first) = pick(context, player, "Scuttle: which ship to scuttle", "ship", &options)
-        else {
+        let Some(first) = pick(
+            context,
+            player,
+            "Scuttle: which ship to scuttle",
+            "ship",
+            &options,
+        ) else {
             return;
         };
         let Some(first_index) = found.iter().position(|(id, _, _)| id == &first) else {
@@ -2152,8 +2265,13 @@ fn scuttle(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
                 "stop after one".to_owned(),
             )))
             .collect();
-        let Some(second) = pick(context, player, "Scuttle: another ship or stop", "ship", &rest)
-        else {
+        let Some(second) = pick(
+            context,
+            player,
+            "Scuttle: another ship or stop",
+            "ship",
+            &rest,
+        ) else {
             return;
         };
         if second != "stop" {
@@ -2171,11 +2289,7 @@ fn scuttle(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     }
     let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for position in taken {
-        let system_part = found[position]
-            .0
-            .split('|')
-            .next()
-            .expect("a system part");
+        let system_part = found[position].0.split('|').next().expect("a system part");
         by_source
             .entry(system_part.to_owned())
             .or_default()
@@ -2235,8 +2349,13 @@ fn seize_artifact(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     if victims.is_empty() {
         return;
     }
-    let Some(victim) = pick(context, player, "Seize Artifact: which neighbor to take from", "player", &victims)
-    else {
+    let Some(victim) = pick(
+        context,
+        player,
+        "Seize Artifact: which neighbor to take from",
+        "player",
+        &victims,
+    ) else {
         return;
     };
     let victim_id = ti4_model::id::PlayerId::new(&victim);
@@ -2252,8 +2371,13 @@ fn seize_artifact(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     if traits.is_empty() {
         return;
     }
-    let Some(trait_name) = pick(context, player, "Seize Artifact: which fragment to take", "fragment", &traits)
-    else {
+    let Some(trait_name) = pick(
+        context,
+        player,
+        "Seize Artifact: which fragment to take",
+        "fragment",
+        &traits,
+    ) else {
         return;
     };
     let Some(seat) = context.state.player_mut(&victim_id) else {
@@ -2293,38 +2417,18 @@ fn exchange_program(context: &mut crate::timing::TimingContext<'_>, player: &Pla
     if others.is_empty() {
         return;
     }
-    let Some(other) = pick(context, player, "Exchange Program: which player to ask", "player", &others)
-    else {
+    let Some(other) = pick(
+        context,
+        player,
+        "Exchange Program: which player to ask",
+        "player",
+        &others,
+    ) else {
         return;
     };
     let other = ti4_model::id::PlayerId::new(&other);
     // A planet the other player controls on which their ground forces stand.
-    let types = ti4_content::units::catalogue(context.content, context.sources);
-    let mut offers: Vec<(String, String, ti4_model::id::SystemId, ti4_model::id::PlanetId)> =
-        Vec::new();
-    for (system, planet) in context.state.controlled_planets(&other) {
-        if context
-            .state
-            .system_state(system)
-            .planet_units
-            .get(planet)
-            .is_some_and(|units| {
-                units.iter().any(|unit| {
-                    unit.owner == other
-                        && types
-                            .get(unit.type_id.as_str())
-                            .is_some_and(ti4_content::units::UnitType::is_ground_force)
-                })
-            })
-        {
-            offers.push((
-                format!("{system}|{planet}"),
-                format!("{planet} in {system}"),
-                system.clone(),
-                planet.clone(),
-            ));
-        }
-    }
+    let offers = exchange_offers(context, &other);
     if offers.is_empty() {
         // Nothing to offer is a failed deal: both sides pay the fleet token.
         refuse_exchange(context.state, player, &other);
@@ -2343,10 +2447,7 @@ fn exchange_program(context: &mut crate::timing::TimingContext<'_>, player: &Pla
     ) else {
         return;
     };
-    let Some((_, _, system, planet)) = offers
-        .iter()
-        .find(|(id, _, _, _)| *id == chosen)
-        .cloned()
+    let Some((_, _, system, planet)) = offers.iter().find(|(id, _, _, _)| *id == chosen).cloned()
     else {
         return;
     };
@@ -2383,6 +2484,50 @@ fn exchange_program(context: &mut crate::timing::TimingContext<'_>, player: &Pla
         .or_default();
     units.push(ti4_model::units::Unit::new(infantry.clone(), other.clone()));
     units.push(ti4_model::units::Unit::new(infantry, player.clone()));
+}
+
+/// Exchange Program's offerable set: planets `other` controls on which their own ground forces
+/// stand.
+fn exchange_offers(
+    context: &crate::timing::TimingContext<'_>,
+    other: &PlayerId,
+) -> Vec<(
+    String,
+    String,
+    ti4_model::id::SystemId,
+    ti4_model::id::PlanetId,
+)> {
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let mut offers: Vec<(
+        String,
+        String,
+        ti4_model::id::SystemId,
+        ti4_model::id::PlanetId,
+    )> = Vec::new();
+    for (system, planet) in context.state.controlled_planets(other) {
+        if context
+            .state
+            .system_state(system)
+            .planet_units
+            .get(planet)
+            .is_some_and(|units| {
+                units.iter().any(|unit| {
+                    unit.owner == *other
+                        && types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ground_force)
+                })
+            })
+        {
+            offers.push((
+                format!("{system}|{planet}"),
+                format!("{planet} in {system}"),
+                system.clone(),
+                planet.clone(),
+            ));
+        }
+    }
+    offers
 }
 
 /// The failed half of Exchange Program: both players discard 1 fleet token. A pool that is
@@ -2422,7 +2567,7 @@ fn mercenary_contract(context: &mut crate::timing::TimingContext<'_>, player: &P
         for (planet, units) in &board.planet_units {
             if !units.is_empty() {
                 continue;
-        }
+            }
             if !all.contains_key(planet.as_str()) {
                 continue; // a planet the map does not know about is not on offer
             }
@@ -2435,8 +2580,13 @@ fn mercenary_contract(context: &mut crate::timing::TimingContext<'_>, player: &P
     if options.is_empty() {
         return;
     }
-    let Some(chosen) = pick(context, player, "Mercenary Contract: which planet the infantry land on", "planet", &options)
-    else {
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Mercenary Contract: which planet the infantry land on",
+        "planet",
+        &options,
+    ) else {
         return;
     };
     let (system_part, planet_part) = chosen
@@ -2455,7 +2605,10 @@ fn mercenary_contract(context: &mut crate::timing::TimingContext<'_>, player: &P
         .planet_units
         .entry(planet)
         .or_default();
-    units.push(ti4_model::units::Unit::new(infantry.clone(), neutral.clone()));
+    units.push(ti4_model::units::Unit::new(
+        infantry.clone(),
+        neutral.clone(),
+    ));
     units.push(ti4_model::units::Unit::new(infantry, neutral));
     if let Some(seat) = context.state.player_mut(player) {
         seat.trade_goods -= 2;
@@ -2488,27 +2641,24 @@ fn pirate_fleet(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
         .iter()
         .map(|system| (system.to_string(), system.to_string()))
         .collect::<Vec<_>>();
-    let Some(system) = pick(context, player, "Pirate Fleet: which system the fleet enters", "system", &options)
-    else {
+    let Some(system) = pick(
+        context,
+        player,
+        "Pirate Fleet: which system the fleet enters",
+        "system",
+        &options,
+    ) else {
         return;
     };
     let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
-    let fleet = [
-        "carrier",
-        "cruiser",
-        "destroyer",
-        "fighter",
-        "fighter",
-    ];
+    let fleet = ["carrier", "cruiser", "destroyer", "fighter", "fighter"];
     let system = ti4_model::id::SystemId::new(&system);
     let board = context.state.system_mut(&system);
     for kind in fleet {
-        board
-            .units
-            .push(ti4_model::units::Unit::new(
-                ti4_model::id::UnitTypeId::new(kind),
-                neutral.clone(),
-            ));
+        board.units.push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new(kind),
+            neutral.clone(),
+        ));
     }
 }
 
@@ -2523,8 +2673,13 @@ fn pirate_contract(context: &mut crate::timing::TimingContext<'_>, player: &Play
         .iter()
         .map(|system| (system.to_string(), system.to_string()))
         .collect::<Vec<_>>();
-    let Some(system) = pick(context, player, "Pirate Contract: which system the destroyer enters", "system", &options)
-    else {
+    let Some(system) = pick(
+        context,
+        player,
+        "Pirate Contract: which system the destroyer enters",
+        "system",
+        &options,
+    ) else {
         return;
     };
     let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
@@ -2553,9 +2708,13 @@ fn brilliance(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         .filter(|other| *other != player)
         .filter_map(|other| {
             let seat = context.state.player(other)?;
-            seat.breakthrough
-                .is_some()
-                .then(|| (other.to_string(), format!("gain {other}'s breakthrough"), other.clone()))
+            seat.breakthrough.is_some().then(|| {
+                (
+                    other.to_string(),
+                    format!("gain {other}'s breakthrough"),
+                    other.clone(),
+                )
+            })
         })
         .collect();
     if options.is_empty() {
@@ -2565,15 +2724,16 @@ fn brilliance(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         .iter()
         .map(|(id, label, _)| (id.clone(), label.clone()))
         .collect::<Vec<_>>();
-    let Some(chosen) = pick(context, player, "Brilliance: which breakthrough to gain", "player", &options_only)
-    else {
+    let Some(chosen) = pick(
+        context,
+        player,
+        "Brilliance: which breakthrough to gain",
+        "player",
+        &options_only,
+    ) else {
         return;
     };
-    let Some((_, _, owner)) = options
-        .iter()
-        .find(|(id, _, _)| *id == chosen)
-        .cloned()
-    else {
+    let Some((_, _, owner)) = options.iter().find(|(id, _, _)| *id == chosen).cloned() else {
         return;
     };
     let Some(theirs) = context
@@ -2625,7 +2785,12 @@ fn perform_strategy_card(
             }
             options.push((
                 card.to_string(),
-                format!("{}'s {}", other, crate::strategy_cards::card_name(context.content, card.as_str()).unwrap_or_else(|| card.to_string())),
+                format!(
+                    "{}'s {}",
+                    other,
+                    crate::strategy_cards::card_name(context.content, card.as_str())
+                        .unwrap_or_else(|| card.to_string())
+                ),
             ));
         }
     }
@@ -3645,7 +3810,9 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "exchangeprogram" => Some(exchange_program),
         "mercenarycontract" => Some(mercenary_contract),
         "piratefleet" => Some(pirate_fleet),
-        "piratecontract1" | "piratecontract2" | "piratecontract3" | "piratecontract4" => Some(pirate_contract),
+        "piratecontract1" | "piratecontract2" | "piratecontract3" | "piratecontract4" => {
+            Some(pirate_contract)
+        }
         "brilliance" => Some(brilliance),
         "overrule" => Some(overrule),
         "strategize1" | "strategize2" | "strategize3" | "strategize4" => Some(strategize),
@@ -3658,6 +3825,8 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "intercept" => Some(intercept),
         "f_prototype" => Some(fighter_prototype),
         "bunker" => Some(bunker),
+        "fire_team" => Some(fire_team),
+        "scramble" => Some(scramble),
         "war_machine1" | "war_machine2" | "war_machine3" | "war_machine4" => Some(war_machine),
         "decoy" => Some(decoy_operation),
         "emergency" => Some(emergency_repairs),
@@ -3668,6 +3837,80 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "silence_space" => Some(in_the_silence_of_space),
         _ => None,
     }
+}
+
+/// Fire Team: "After your ground forces make combat rolls during a round of ground combat:
+/// Reroll any number of your dice."
+///
+/// The window opened at the ground roll staged the roller's dice in
+/// `GameState::reroll_staging`; the dice chosen here are re-drawn through the game's roller,
+/// and the roll site recomputes the hits from the new faces before anyone is removed.
+fn fire_team(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(set) = context.state.reroll_staging.get(player) else {
+        return;
+    };
+    if set.kind != "ground" {
+        return;
+    }
+    let picks = crate::combat::choose_reroll_dice(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        context.table,
+        player,
+    );
+    if picks.is_empty() {
+        return;
+    }
+    let set = context
+        .state
+        .reroll_staging
+        .get_mut(player)
+        .expect("checked above");
+    crate::combat::apply_reroll_dice(context.dice, context.rng, set, &picks, "fire team");
+}
+
+/// Scramble Frequency: "After another player makes a BOMBARDMENT, SPACE CANNON, or
+/// ANTI-FIGHTER BARRAGE roll: That player rerolls all of their dice."
+///
+/// Forced, not a choice: every die the roller just made is re-drawn. The reaction guard
+/// already excludes the roller themselves; the kind check keeps this from touching a
+/// window the card text does not name.
+fn scramble(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) {
+    let Some(roller) = context.state.last_reroll_player.clone() else {
+        return;
+    };
+    let Some(set) = context.state.reroll_staging.get(&roller) else {
+        return;
+    };
+    if !matches!(
+        set.kind.as_str(),
+        "bombardment" | "space_cannon" | "anti_fighter_barrage"
+    ) {
+        return;
+    }
+    let picks: Vec<(usize, usize)> = set
+        .rolls
+        .iter()
+        .enumerate()
+        .flat_map(|(unit, entry)| {
+            entry
+                .faces
+                .iter()
+                .enumerate()
+                .map(move |(die, _)| (unit, die))
+        })
+        .collect();
+    if picks.is_empty() {
+        return;
+    }
+    let set = context
+        .state
+        .reroll_staging
+        .get_mut(&roller)
+        .expect("checked above");
+    crate::combat::apply_reroll_dice(context.dice, context.rng, set, &picks, "scramble frequency");
 }
 
 /// Aliases with a registered effect.
@@ -3741,6 +3984,8 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "intercept",
         "f_prototype",
         "bunker",
+        "fire_team",
+        "scramble",
         "war_machine1",
         "war_machine2",
         "war_machine3",
@@ -3988,7 +4233,10 @@ mod tests {
 
         let paid = resolve_predictions(&mut state, "FOR");
 
-        assert_eq!(paid, vec![PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")]);
+        assert_eq!(
+            paid,
+            vec![PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")]
+        );
         assert_eq!(
             state.player(&PlayerId::new("a")).unwrap().tokens(fleet),
             a_before + 3,
@@ -4012,7 +4260,10 @@ mod tests {
 
         assert!(paid.is_empty());
         assert_eq!(state.player(&PlayerId::new("a")).unwrap().trade_goods, 0);
-        assert!(state.agenda_predictions.is_empty(), "the card is spent either way");
+        assert!(
+            state.agenda_predictions.is_empty(),
+            "the card is spent either way"
+        );
     }
 
     #[test]
@@ -4033,9 +4284,17 @@ mod tests {
         let seat = state.player(&PlayerId::new("a")).unwrap();
         assert_eq!(
             seat.action_cards,
-            vec![ActionCardId::new("x1"), ActionCardId::new("x2"), ActionCardId::new("x3")]
+            vec![
+                ActionCardId::new("x1"),
+                ActionCardId::new("x2"),
+                ActionCardId::new("x3")
+            ]
         );
-        assert_eq!(state.action_card_deck.len(), 1, "exactly three, not the whole deck");
+        assert_eq!(
+            state.action_card_deck.len(),
+            1,
+            "exactly three, not the whole deck"
+        );
         assert_eq!(state.speaker, PlayerId::new("a"));
     }
 
@@ -4057,7 +4316,10 @@ mod tests {
         let mut state = crate::fixtures::game(&["a", "b"]);
         resolve_card(&mut state, "assassin", &player, &["b"]);
         assert_eq!(
-            state.agenda_predictions.get(&PlayerId::new("b")).map(String::as_str),
+            state
+                .agenda_predictions
+                .get(&PlayerId::new("b"))
+                .map(String::as_str),
             Some("none|assassin"),
         );
 
@@ -4072,7 +4334,10 @@ mod tests {
         resolve_card(&mut state, "assassin", &player, &["b"]);
 
         assert_eq!(
-            state.agenda_predictions.get(&PlayerId::new("b")).map(String::as_str),
+            state
+                .agenda_predictions
+                .get(&PlayerId::new("b"))
+                .map(String::as_str),
             Some("FOR|lead_rider"),
         );
     }
@@ -4105,12 +4370,15 @@ mod tests {
         state
             .system_mut(&system)
             .set_control(planet.clone(), player.clone());
-        state.system_mut(&system).planet_units.entry(planet.clone()).or_default().push(
-            ti4_model::units::Unit::new(
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
                 ti4_model::id::UnitTypeId::new("spacedock"),
                 player.clone(),
-            ),
-        );
+            ));
         state
             .agenda_predictions
             .insert(player.clone(), "FOR|const_rider".to_owned());
@@ -4177,8 +4445,14 @@ mod tests {
         resolve_predictions(&mut state, "FOR");
 
         let tokens = state.system_state(&system).command_tokens.clone();
-        assert!(tokens.contains(&PlayerId::new("b")), "b has a token to place");
-        assert!(tokens.contains(&PlayerId::new("c")), "c has a token to place");
+        assert!(
+            tokens.contains(&PlayerId::new("b")),
+            "b has a token to place"
+        );
+        assert!(
+            tokens.contains(&PlayerId::new("c")),
+            "c has a token to place"
+        );
         assert_eq!(
             state
                 .player(&PlayerId::new("b"))
@@ -4234,11 +4508,15 @@ mod tests {
         resolve_card(&mut state, "abs", &player, &["a"]);
 
         assert!(
-            state.exhausted_planets.contains(&ti4_model::id::PlanetId::new(*cultural_id)),
+            state
+                .exhausted_planets
+                .contains(&ti4_model::id::PlanetId::new(*cultural_id)),
             "the cultural planet is exhausted"
         );
         assert!(
-            !state.exhausted_planets.contains(&ti4_model::id::PlanetId::new(*barren_id)),
+            !state
+                .exhausted_planets
+                .contains(&ti4_model::id::PlanetId::new(*barren_id)),
             "an industrial planet is not"
         );
     }
@@ -4249,7 +4527,9 @@ mod tests {
         let me = PlayerId::new("a");
         let victim = PlayerId::new("b");
         let mut state = crate::fixtures::game(&["a", "b"]);
-        state.promissory_notes.insert(note.to_owned(), victim.clone());
+        state
+            .promissory_notes
+            .insert(note.to_owned(), victim.clone());
 
         // Setup already dealt b their own notes, so which note to give is a real question and
         // the script answers it. The victim question is never asked: in a two-player game b is
@@ -4278,7 +4558,10 @@ mod tests {
 
         resolve_card(&mut state, "insider", &player, &[]);
 
-        assert_eq!(state.agenda_deck, vec!["one".to_owned(), "two".to_owned(), "three".to_owned()]);
+        assert_eq!(
+            state.agenda_deck,
+            vec!["one".to_owned(), "two".to_owned(), "three".to_owned()]
+        );
     }
 
     #[test]
@@ -4287,12 +4570,18 @@ mod tests {
         let (system, _) = crate::fixtures::a_placed_planet();
         let mut state = crate::fixtures::game(&["a"]);
         state.active_system = Some(system);
-        let before = state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Fleet);
+        let before = state
+            .player(&player)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
 
         resolve_card(&mut state, "rally", &player, &[]);
 
         assert_eq!(
-            state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Fleet),
+            state
+                .player(&player)
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Fleet),
             before + 2,
         );
     }
@@ -4318,8 +4607,14 @@ mod tests {
         let (system, _) = crate::fixtures::a_placed_planet();
         let mut state = crate::fixtures::game(&["a"]);
         state.active_system = Some(system.clone());
-        state.system_mut(&system).command_tokens.insert(player.clone());
-        let before = state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Tactic);
+        state
+            .system_mut(&system)
+            .command_tokens
+            .insert(player.clone());
+        let before = state
+            .player(&player)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Tactic);
 
         resolve_card(&mut state, "counterstroke", &player, &[]);
 
@@ -4328,19 +4623,28 @@ mod tests {
             "the token is off the board"
         );
         assert_eq!(
-            state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Tactic),
+            state
+                .player(&player)
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Tactic),
             before + 1,
         );
 
         // No token of the player's in the activated system: the card fizzles.
         let mut state = crate::fixtures::game(&["a"]);
         state.active_system = Some(system.clone());
-        let before = state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Tactic);
+        let before = state
+            .player(&player)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Tactic);
 
         resolve_card(&mut state, "counterstroke", &player, &[]);
 
         assert_eq!(
-            state.player(&player).unwrap().tokens(ti4_model::state::TokenPool::Tactic),
+            state
+                .player(&player)
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Tactic),
             before,
             "nothing to return, nothing moved"
         );
@@ -4382,7 +4686,11 @@ mod tests {
 
         resolve_card(&mut state, "bribery", &a, &["2"]);
 
-        assert_eq!(state.player(&a).unwrap().trade_goods, 1, "two goods are gone");
+        assert_eq!(
+            state.player(&a).unwrap().trade_goods,
+            1,
+            "two goods are gone"
+        );
         assert_eq!(crate::vote::extra_votes(&state, &a), 2);
 
         // "Any number" includes zero: the goods stay and no vote is cast.
@@ -4433,8 +4741,14 @@ mod tests {
 
         resolve_card(&mut state, "intercept", &a, &[]);
 
-        assert!(crate::combat::retreat_barred(&state, &b), "the declarant is barred");
-        assert!(!crate::combat::retreat_barred(&state, &a), "the card holder is not");
+        assert!(
+            crate::combat::retreat_barred(&state, &b),
+            "the declarant is barred"
+        );
+        assert!(
+            !crate::combat::retreat_barred(&state, &a),
+            "the card holder is not"
+        );
 
         // The bar names this combat round: the next round is unbarred.
         state.combat_round_seq = 6;
@@ -4482,27 +4796,45 @@ mod tests {
         // Baseline: a 6 is below the fighter's 9.
         let mut state = arena();
         let mut dice = crate::dice::Dice::from_faces([6]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            0
+        );
 
         // One copy: a 7 now hits the lowered 7 (the same 7 would have been a miss on the
         // printed 9), while a 6 still falls short.
         state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
         let mut dice = crate::dice::Dice::from_faces([6]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            0
+        );
         let mut dice = crate::dice::Dice::from_faces([7]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            1
+        );
 
         // Two copies: the threshold reaches 5, so a 4 misses and a 5 hits.
         state.player_mut(&a).unwrap().fighter_bonus_round = vec![3, 3];
         let mut dice = crate::dice::Dice::from_faces([4]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            0
+        );
         let mut dice = crate::dice::Dice::from_faces([5]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            1
+        );
 
         // A marker for round 3 says nothing in round 4: the combat is over for it.
         state.combat_round_seq = 4;
         let mut dice = crate::dice::Dice::from_faces([8]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 0);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            0
+        );
 
         // The bonus is fighter-only. A destroyer holding the marker keeps its printed 9, so
         // the same 8 that the boosted fighter turns into a hit stays a miss for it.
@@ -4511,7 +4843,10 @@ mod tests {
         state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
         crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
         let mut dice = crate::dice::Dice::from_faces([8, 8]);
-        assert_eq!(crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system), 1);
+        assert_eq!(
+            crate::combat::roll_fleet(&state, store, POK, &mut dice, &mut rng, &a, &system),
+            1
+        );
         let mut state = arena();
         state.combat_round_seq = 3;
         state.player_mut(&a).unwrap().fighter_bonus_round = vec![3];
@@ -4544,7 +4879,9 @@ mod tests {
             state.active = Some(a.clone());
             state.active_system = Some(system.clone());
             state.activation_seq = 2;
-            state.system_mut(&system).set_control(planet.clone(), b.clone());
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
             crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
             crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
             state.player_mut(&b).unwrap().bunker_invasion = markers;
@@ -4605,7 +4942,10 @@ mod tests {
         };
 
         let bare = arena(vec![]);
-        assert_eq!(crate::production::capacity(&bare, store, POK, &a, &system), 1);
+        assert_eq!(
+            crate::production::capacity(&bare, store, POK, &a, &system),
+            1
+        );
         let boosted = arena(vec![2]);
         assert_eq!(
             crate::production::capacity(&boosted, store, POK, &a, &system),
@@ -4616,16 +4956,40 @@ mod tests {
         // the same wallet, so the resource wallet gains the same five faces. The influence
         // bill is untouched.
         assert_eq!(
-            crate::production::available(&bare, store, POK, &a, crate::production::Spend::Resources),
+            crate::production::available(
+                &bare,
+                store,
+                POK,
+                &a,
+                crate::production::Spend::Resources
+            ),
             10,
         );
         assert_eq!(
-            crate::production::available(&boosted, store, POK, &a, crate::production::Spend::Resources),
+            crate::production::available(
+                &boosted,
+                store,
+                POK,
+                &a,
+                crate::production::Spend::Resources
+            ),
             15,
         );
         assert_eq!(
-            crate::production::available(&bare, store, POK, &a, crate::production::Spend::Influence),
-            crate::production::available(&boosted, store, POK, &a, crate::production::Spend::Influence),
+            crate::production::available(
+                &bare,
+                store,
+                POK,
+                &a,
+                crate::production::Spend::Influence
+            ),
+            crate::production::available(
+                &boosted,
+                store,
+                POK,
+                &a,
+                crate::production::Spend::Influence
+            ),
         );
 
         // A marker for another activation buys nothing here.
@@ -4638,9 +5002,7 @@ mod tests {
         // which turns the lone fighter the bare budget afforded into the full pair; the
         // one-off builds it already afforded survive, and the prompt says so.
         let mut state = arena(vec![]);
-        let mut window = crate::production::ProductionWindow::new(
-            &state, store, POK, &a, &system,
-        );
+        let mut window = crate::production::ProductionWindow::new(&state, store, POK, &a, &system);
         let before = window
             .pending_choice(&state, store, POK)
             .expect("one budget face can still buy a fighter");
@@ -4665,11 +5027,20 @@ mod tests {
 
         // The card effect stamps the activation it was played in; all four copies are the same
         // effect.
-        for alias in ["war_machine1", "war_machine2", "war_machine3", "war_machine4"] {
+        for alias in [
+            "war_machine1",
+            "war_machine2",
+            "war_machine3",
+            "war_machine4",
+        ] {
             let mut state = crate::fixtures::game(&["a"]);
             state.activation_seq = 9;
             play_effect(&mut state, alias, &a);
-            assert_eq!(state.player(&a).unwrap().war_machine_use, vec![9], "{alias}");
+            assert_eq!(
+                state.player(&a).unwrap().war_machine_use,
+                vec![9],
+                "{alias}"
+            );
         }
     }
 
@@ -4712,8 +5083,14 @@ mod tests {
             .entry(landing.clone())
             .or_default()
             .extend([
-                ti4_model::units::Unit::new(ti4_model::id::UnitTypeId::new("infantry"), player.clone()),
-                ti4_model::units::Unit::new(ti4_model::id::UnitTypeId::new("infantry"), player.clone()),
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("infantry"),
+                    player.clone(),
+                ),
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("infantry"),
+                    player.clone(),
+                ),
             ]);
         state
             .system_mut(&foreign_system)
@@ -4809,9 +5186,21 @@ mod tests {
                 .filter(|unit| unit.sustained_damage)
                 .count()
         };
-        assert_eq!(damaged(&state, &system, &player), 0, "the player's ships there are repaired");
-        assert_eq!(damaged(&state, &foreign_system, &player), 1, "and not the ones elsewhere");
-        assert_eq!(damaged(&state, &system, &rival), 1, "nor anyone else's ships");
+        assert_eq!(
+            damaged(&state, &system, &player),
+            0,
+            "the player's ships there are repaired"
+        );
+        assert_eq!(
+            damaged(&state, &foreign_system, &player),
+            1,
+            "and not the ones elsewhere"
+        );
+        assert_eq!(
+            damaged(&state, &system, &rival),
+            1,
+            "nor anyone else's ships"
+        );
     }
 
     #[test]
@@ -4827,7 +5216,11 @@ mod tests {
 
         let board = state.system_state(&system);
         assert_eq!(
-            board.units.iter().filter(|unit| unit.type_id.as_str() == "cruiser").count(),
+            board
+                .units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == "cruiser")
+                .count(),
             0,
             "the cruiser is gone"
         );
@@ -4854,18 +5247,28 @@ mod tests {
             .system_mut(&system)
             .set_control(planet.clone(), card_player.clone());
         // The card player's dock stands on the active system, so it is the only candidate.
-        state.system_mut(&system).planet_units.entry(planet.clone()).or_default().push(
-            ti4_model::units::Unit::new(
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
                 ti4_model::id::UnitTypeId::new("spacedock"),
                 card_player.clone(),
-            ),
-        );
+            ));
         // The mover leaves a cruiser in the system to be shot at.
         crate::fixtures::put(&mut state, &system, "cruiser", &mover, 1);
 
         // Three faces, two of which are five or higher: two hits on one cruiser, which dies.
         let mut dice = crate::dice::Dice::from_faces([5, 9, 3]);
-        resolve_card_loaded(&mut state, "experimental", &card_player, &[], &mut dice, None);
+        resolve_card_loaded(
+            &mut state,
+            "experimental",
+            &card_player,
+            &[],
+            &mut dice,
+            None,
+        );
 
         assert!(
             !state
@@ -4883,16 +5286,26 @@ mod tests {
         state
             .system_mut(&system)
             .set_control(planet.clone(), card_player.clone());
-        state.system_mut(&system).planet_units.entry(planet.clone()).or_default().push(
-            ti4_model::units::Unit::new(
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
                 ti4_model::id::UnitTypeId::new("spacedock"),
                 card_player.clone(),
-            ),
-        );
+            ));
         crate::fixtures::put(&mut state, &system, "cruiser", &mover, 1);
 
         let mut dice = crate::dice::Dice::from_faces([1, 2, 4]);
-        resolve_card_loaded(&mut state, "experimental", &card_player, &[], &mut dice, None);
+        resolve_card_loaded(
+            &mut state,
+            "experimental",
+            &card_player,
+            &[],
+            &mut dice,
+            None,
+        );
 
         assert_eq!(
             state
@@ -4925,7 +5338,10 @@ mod tests {
             .filter(|alias| crate::technology::is_unit_upgrade(store, alias))
             .filter(|alias| {
                 let record = store
-                    .get(ti4_model::content_types::ContentType::Technologies, alias.as_str())
+                    .get(
+                        ti4_model::content_types::ContentType::Technologies,
+                        alias.as_str(),
+                    )
                     .expect("in the corpus");
                 let base = record.text("baseUpgrade").unwrap_or_default().to_owned();
                 let types = ti4_content::units::catalogue(store, POK);
@@ -4949,9 +5365,7 @@ mod tests {
             // No cruiser line is researchable for this faction's start; the card is correct
             // to fizzle, and the fizzle is the assertion.
             state.player_mut(&player).unwrap().trade_goods = 10;
-            let before = state
-                .player(&player)
-                .map(|seat| seat.technologies.len());
+            let before = state.player(&player).map(|seat| seat.technologies.len());
             resolve_card(&mut state, "reveal_prototype", &player, &[]);
             assert_eq!(
                 state.player(&player).map(|seat| seat.technologies.len()),
@@ -4961,17 +5375,16 @@ mod tests {
             return;
         };
         state.player_mut(&player).unwrap().trade_goods = 10;
-        let before = state.player(&player).map(|seat| seat.technologies.len()).unwrap();
+        let before = state
+            .player(&player)
+            .map(|seat| seat.technologies.len())
+            .unwrap();
         let tg_before = state.player(&player).unwrap().trade_goods;
 
         resolve_card(&mut state, "reveal_prototype", &player, &[chosen.as_str()]);
 
         assert!(
-            state
-                .player(&player)
-                .unwrap()
-                .technologies
-                .contains(chosen),
+            state.player(&player).unwrap().technologies.contains(chosen),
             "the prototype is revealed"
         );
         assert_eq!(
@@ -6352,7 +6765,7 @@ mod tests {
             "some are done and some are not; both halves must be visible"
         );
     }
-/// Build a `SystemId` from a `&str` or `String` the same way every test below does.
+    /// Build a `SystemId` from a `&str` or `String` the same way every test below does.
     fn sys(id: &str) -> ti4_model::id::SystemId {
         ti4_model::id::SystemId::new(id)
     }
@@ -6375,10 +6788,7 @@ mod tests {
         let player = PlayerId::new("a");
         let store = ContentStore::embedded();
         let mut state = crate::fixtures::game(&["a"]);
-        state
-            .player_mut(&player)
-            .unwrap()
-            .faction = ti4_model::id::FactionId::new("arborec");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("arborec");
         state.player_mut(&player).unwrap().commodities = 0;
 
         resolve_card(&mut state, "harness", &player, &[]);
@@ -6408,7 +6818,9 @@ mod tests {
         let system = system_of(store, &cultural);
 
         let mut state = crate::fixtures::game(&["a"]);
-        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
         state.exhausted_planets.insert(planet.clone());
 
         resolve_card(&mut state, "economic_initiative", &player, &[]);
@@ -6471,22 +6883,32 @@ mod tests {
         let mut state = crate::fixtures::game(&["a", "b"]);
         // A dock on the player's planet in `docked`; a carrier (which has capacity) in
         // `capacity`; a rival cruiser in `blocked`.
-        state.system_mut(&docked).set_control(docked_planet.clone(), player.clone());
-        state.system_mut(&docked).planet_units
+        state
+            .system_mut(&docked)
+            .set_control(docked_planet.clone(), player.clone());
+        state
+            .system_mut(&docked)
+            .planet_units
             .entry(docked_planet.clone())
             .or_default()
             .push(ti4_model::units::Unit::new(
                 ti4_model::id::UnitTypeId::new("spacedock"),
                 player.clone(),
             ));
-        state.system_mut(&capacity).units.push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new("carrier"),
-            player.clone(),
-        ));
-        state.system_mut(&blocked).units.push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new("cruiser"),
-            rival.clone(),
-        ));
+        state
+            .system_mut(&capacity)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("carrier"),
+                player.clone(),
+            ));
+        state
+            .system_mut(&blocked)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                rival.clone(),
+            ));
         let fighters = |state: &GameState, system: &ti4_model::id::SystemId| {
             state
                 .system_state(system)
@@ -6498,7 +6920,11 @@ mod tests {
 
         resolve_card(&mut state, "f_conscription", &player, &[]);
 
-        assert_eq!(fighters(&state, &docked), 1, "the dock's system takes a fighter");
+        assert_eq!(
+            fighters(&state, &docked),
+            1,
+            "the dock's system takes a fighter"
+        );
         assert_eq!(
             fighters(&state, &capacity),
             1,
@@ -6524,13 +6950,13 @@ mod tests {
         let system = system_of(store, &influence);
 
         let mut state = crate::fixtures::game(&["a"]);
-        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
         // The influence bill has exactly one source (the planet): no trade goods, no
         // promissory notes, so the payment asks no question.
         state.player_mut(&player).unwrap().trade_goods = 0;
-        state
-            .promissory_notes
-            .retain(|_, owner| *owner != player);
+        state.promissory_notes.retain(|_, owner| *owner != player);
         let drawn_before = state.player(&player).map(|s| s.secret_objectives.len());
         let deck_before = state.secret_deck.len();
 
@@ -6541,10 +6967,7 @@ mod tests {
             drawn_before.map(|n| n + 1),
             "a secret objective is drawn"
         );
-        assert_eq!(
-            state.secret_deck.len(),
-            deck_before.saturating_sub(1),
-        );
+        assert_eq!(state.secret_deck.len(), deck_before.saturating_sub(1),);
     }
 
     #[test]
@@ -6561,10 +6984,12 @@ mod tests {
 
         let mut state = crate::fixtures::game(&["a", "b"]);
         state.player_mut(&me).unwrap().trade_goods = 5;
+        state.promissory_notes.retain(|_, owner| *owner != me);
         state
-            .promissory_notes
-            .retain(|_, owner| *owner != me);
-        state.player_mut(&neighbor).unwrap().technologies.insert(tech.clone());
+            .player_mut(&neighbor)
+            .unwrap()
+            .technologies
+            .insert(tech.clone());
 
         resolve_card(&mut state, "plagiarize", &me, &[]);
 
@@ -6573,7 +6998,11 @@ mod tests {
             "the technology is gained"
         );
         assert!(
-            !state.player(&neighbor).unwrap().technologies.contains(&tech),
+            !state
+                .player(&neighbor)
+                .unwrap()
+                .technologies
+                .contains(&tech),
             "and it is gone from the neighbor"
         );
     }
@@ -6585,7 +7014,7 @@ mod tests {
         let trait_planet = ti4_content::galaxy::all_planets(store, POK)
             .iter()
             .find(|(id, _)| {
-            let id: &str = id;
+                let id: &str = id;
 
                 crate::exploration::trait_of(store, POK, &planet(id)).is_some()
             })
@@ -6593,11 +7022,12 @@ mod tests {
             .expect("the corpus has a planet with an exploration trait");
         let planet = planet(&trait_planet);
         let system = system_of(store, &trait_planet);
-        let deck = crate::exploration::trait_of(store, POK, &planet)
-            .expect("a deck for the trait");
+        let deck = crate::exploration::trait_of(store, POK, &planet).expect("a deck for the trait");
 
         let mut state = crate::fixtures::game(&["a"]);
-        state.system_mut(&system).set_control(planet.clone(), player.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
         let deck_before = state
             .exploration_decks
             .get(deck.as_str())
@@ -6664,10 +7094,13 @@ mod tests {
         let player = PlayerId::new("a");
         let (system, _) = crate::fixtures::a_placed_planet();
         let mut state = crate::fixtures::game(&["a"]);
-        state.system_mut(&system).units.push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new("destroyer"),
-            player.clone(),
-        ));
+        state
+            .system_mut(&system)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("destroyer"),
+                player.clone(),
+            ));
         let deck_before = state
             .exploration_decks
             .get(crate::exploration::FRONTIER)
@@ -6677,7 +7110,10 @@ mod tests {
 
         resolve_card(&mut state, "probe", &player, &[]);
 
-        assert!(!state.frontier_tokens.contains(&system), "the token is gone");
+        assert!(
+            !state.frontier_tokens.contains(&system),
+            "the token is gone"
+        );
         let deck_after = state
             .exploration_decks
             .get(crate::exploration::FRONTIER)
@@ -6699,7 +7135,10 @@ mod tests {
             .planet_units
             .entry(planet.clone())
             .or_default();
-        units.push(ti4_model::units::Unit::new(infantry.clone(), player.clone()));
+        units.push(ti4_model::units::Unit::new(
+            infantry.clone(),
+            player.clone(),
+        ));
         units.push(ti4_model::units::Unit::new(infantry, player.clone()));
         let mechs_before = state
             .system_state(&system)
@@ -6726,7 +7165,11 @@ mod tests {
             .iter()
             .filter(|unit| unit.type_id.as_str() == "infantry")
             .count();
-        assert_eq!(mechs, mechs_before + 1, "one mech replaces the chosen infantry");
+        assert_eq!(
+            mechs,
+            mechs_before + 1,
+            "one mech replaces the chosen infantry"
+        );
         assert_eq!(infantry_left, 1, "the other infantry is untouched");
     }
 
@@ -6739,19 +7182,32 @@ mod tests {
         let cruiser = ti4_model::id::UnitTypeId::new("cruiser");
         let types = ti4_content::units::catalogue(store, POK);
         let cost_destroyer = {
-            let cost = types.get("destroyer").expect("the destroyer").cost().round();
+            let cost = types
+                .get("destroyer")
+                .expect("the destroyer")
+                .cost()
+                .round();
             #[allow(clippy::cast_possible_truncation)]
             let cost_i32 = cost as i32;
             cost_i32
         };
         let mut state = crate::fixtures::game(&["a"]);
         let board = state.system_mut(&system);
-        board.units.push(ti4_model::units::Unit::new(destroyer, player.clone()));
-        board.units.push(ti4_model::units::Unit::new(cruiser, player.clone()));
+        board
+            .units
+            .push(ti4_model::units::Unit::new(destroyer, player.clone()));
+        board
+            .units
+            .push(ti4_model::units::Unit::new(cruiser, player.clone()));
         let before = state.player(&player).unwrap().trade_goods;
 
         // Two ships: the first is chosen, then the card stops.
-        resolve_card(&mut state, "scuttle", &player, &[&format!("{system}|0"), "stop"]);
+        resolve_card(
+            &mut state,
+            "scuttle",
+            &player,
+            &[&format!("{system}|0"), "stop"],
+        );
 
         let left = state
             .system_state(&system)
@@ -6815,7 +7271,9 @@ mod tests {
         state
             .system_mut(&system)
             .set_control(planet.clone(), other.clone());
-        state.system_mut(&system).planet_units
+        state
+            .system_mut(&system)
+            .planet_units
             .entry(planet.clone())
             .or_default()
             .push(ti4_model::units::Unit::new(
@@ -6857,7 +7315,9 @@ mod tests {
         state
             .system_mut(&system)
             .set_control(planet.clone(), other.clone());
-        state.system_mut(&system).planet_units
+        state
+            .system_mut(&system)
+            .planet_units
             .entry(planet.clone())
             .or_default()
             .push(ti4_model::units::Unit::new(
@@ -6911,7 +7371,12 @@ mod tests {
             .entry(planet.clone())
             .or_default();
 
-        resolve_card(&mut state, "mercenarycontract", &player, &[&format!("{system}|{planet}")]);
+        resolve_card(
+            &mut state,
+            "mercenarycontract",
+            &player,
+            &[&format!("{system}|{planet}")],
+        );
 
         let board = state.system_state(&system);
         let units = board.planet_units.get(&planet).expect("the planet");
@@ -6956,9 +7421,7 @@ mod tests {
             board
                 .units
                 .iter()
-                .filter(|unit| {
-                    unit.type_id.as_str() == kind && unit.owner.as_str() == neutral
-                })
+                .filter(|unit| unit.type_id.as_str() == kind && unit.owner.as_str() == neutral)
                 .count()
         };
         assert_eq!(count("carrier"), 1);
@@ -6980,7 +7443,12 @@ mod tests {
             .expect("a plain, non-home system in the map");
         state.system_mut(&target);
 
-        resolve_card(&mut state, "piratecontract1", &player, &[&target.to_string()]);
+        resolve_card(
+            &mut state,
+            "piratecontract1",
+            &player,
+            &[&target.to_string()],
+        );
 
         let board = state.system_state(&target);
         assert_eq!(
@@ -7002,10 +7470,7 @@ mod tests {
         let other = PlayerId::new("b");
         let mut state = crate::fixtures::game(&["a", "b"]);
         let breakthrough = ti4_model::BreakthroughId::new("test_breakthrough");
-        state
-            .player_mut(&other)
-            .unwrap()
-            .breakthrough = Some(breakthrough.clone());
+        state.player_mut(&other).unwrap().breakthrough = Some(breakthrough.clone());
 
         resolve_card(&mut state, "brilliance", &me, &[]);
 
@@ -7060,10 +7525,7 @@ mod tests {
             .unwrap()
             .strategy_cards
             .push(ti4_model::StrategyCardId::new("pok5trade"));
-        state
-            .player_mut(&me)
-            .unwrap()
-            .faction = ti4_model::id::FactionId::new("arborec");
+        state.player_mut(&me).unwrap().faction = ti4_model::id::FactionId::new("arborec");
         state.player_mut(&me).unwrap().commodities = 0;
 
         resolve_card(&mut state, "strategize1", &me, &["pok5trade"]);

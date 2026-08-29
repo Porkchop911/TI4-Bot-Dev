@@ -263,6 +263,10 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             guarded("GROUND_ROLLS_MADE", After, actor_is),
         ),
         (
+            "After another player makes a BOMBARDMENT, SPACE CANNON, or ANTI-FIGHTER BARRAGE roll",
+            guarded("UNIT_ABILITY_ROLLED", After, actor_is_not),
+        ),
+        (
             "After another player commits units to land on a planet you control",
             guarded("UNITS_COMMITTED", After, actor_is_not),
         ),
@@ -297,6 +301,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SUSTAIN_DAMAGE_USED",
     "GROUND_ROLLS_MADE",
     "HITS_TO_ASSIGN",
+    "UNIT_ABILITY_ROLLED",
     "RETREAT_DECLARED",
     "RETREAT_STEP_STARTED",
     "SPACE_CANNON_HITS",
