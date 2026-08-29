@@ -94,6 +94,16 @@ pub fn outcomes(
 
 /// Readied planets this player controls that carry any influence at all.
 #[must_use]
+/// Representative Government: each player casts exactly one vote, and exhausts nothing.
+///
+/// Returned as an amount rather than a flag so a caller cannot honour "one vote" and forget "no
+/// exhausting" — under this law there is nothing to exhaust, because influence is not what is being
+/// cast.
+#[must_use]
+pub fn flat_vote_amount(state: &GameState) -> Option<i64> {
+    crate::laws::flat_votes(state).then_some(1)
+}
+
 pub fn votable_planets(
     state: &GameState,
     content: &ContentStore,

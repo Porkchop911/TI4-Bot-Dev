@@ -30,17 +30,30 @@ pub enum Used {
 /// Relics this engine can resolve.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec![
-        "bookoflatvinia",
-        "circletofthevoid",
-        "dynamiscore",
-        "nanoforge",
-        "obsidian",
-        "prophetstears",
-        "quantumcore",
-        "shard",
-        "thesilverflame",
-    ]
+    let mut all = action_aliases();
+    // Passive relics: they change a standing rule and are never *used* as an action. Keeping them
+    // out of `action_aliases` is what stops them being offered as an action that does nothing --
+    // `available_actions` offers exactly what `use_relic` can resolve.
+    all.extend([
+        "circletofthevoid", // ignores gravity rifts and other anomalies on movement
+        "nanoforge",        // the attached planet is worth two more of each
+        "obsidian",         // one additional secret objective
+        "prophetstears",    // exhaust to ignore one research prerequisite
+        "quantumcore",      // synergy across all four technology types
+        "shard",            // a victory point while held
+    ]);
+    all.sort_unstable();
+    all
+}
+
+/// Relics whose printed ACTION this engine can resolve.
+///
+/// Exactly the arms of [`use_relic`]. `available_actions` offers from this list rather than from
+/// [`registered_aliases`], because 22.3 says an action that cannot fully resolve is never offered,
+/// and a passive relic has no action to resolve at all.
+#[must_use]
+pub fn action_aliases() -> Vec<&'static str> {
+    vec!["bookoflatvinia", "dynamiscore", "thesilverflame"]
 }
 
 /// The Prophet's Tears: exhaust to ignore one research prerequisite.
@@ -280,7 +293,7 @@ pub fn available_actions(
         .player(player)
         .map(|seat| seat.relics.clone())
         .unwrap_or_default();
-    let known = registered_aliases();
+    let known = action_aliases();
     options.extend(
         held.into_iter()
             // 22.3: an action that cannot fully resolve is never offered, and a relic with no
@@ -346,6 +359,58 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<RelicId>
 
 #[cfg(test)]
 mod tests {
+    /// Every relic offered as an action must have an arm that resolves it (22.3).
+    ///
+    /// This exists because adding five *passive* relics to `registered_aliases` for coverage very
+    /// nearly offered all five as actions that would have done nothing when taken. Coverage and
+    /// "has a printed ACTION" are different questions and were briefly the same list.
+    #[test]
+    fn every_offered_relic_action_actually_resolves() {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+
+        for alias in action_aliases() {
+            if let Some(seat) = state.player_mut(&player) {
+                seat.relics = vec![RelicId::new(alias)];
+            }
+            let used = use_relic(
+                &mut state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &mut crate::dice::Dice::new(),
+                &mut crate::rng::GameRng::new(1),
+                &player,
+                &RelicId::new(alias),
+            );
+            assert!(
+                !matches!(used, Used::Unresolved { .. }),
+                "{alias} is offered as an action but does not resolve"
+            );
+        }
+    }
+
+    /// A passive relic is implemented but never offered as an action.
+    #[test]
+    fn a_passive_relic_is_not_offered_as_an_action() {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics = vec![RelicId::new("obsidian")];
+        }
+
+        let offered = available_actions(&state, content, ti4_model::content_types::DEFAULT, &player);
+        assert!(
+            !offered.iter().any(|option| option.id.contains("obsidian")),
+            "the Obsidian has no printed ACTION and must not be offered as one"
+        );
+        assert!(
+            registered_aliases().contains(&"obsidian"),
+            "but it is implemented, and coverage must say so"
+        );
+    }
+
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
 
     fn holding(alias: &str) -> (GameState, PlayerId) {

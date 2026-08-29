@@ -215,6 +215,20 @@ pub fn wormholes_all_connected(state: &GameState) -> bool {
     active(state, "wormhole_recon")
 }
 
+/// Point the map at what the wormhole laws say.
+///
+/// `Galaxy` already carries both switches — `wormholes_off` for "alpha and beta wormholes have no
+/// effect during movement", and `wormholes_all_linked` for "all systems that contain either an
+/// alpha or beta wormhole are adjacent to each other", complete with the ALPHA/BETA restriction
+/// both laws share. Neither was ever set from a law, so both laws were inert.
+///
+/// Applied to the owned map rather than threaded through movement: every route query already reads
+/// the galaxy, so setting it here means no movement path can consult the wrong one.
+pub fn apply_to_galaxy(state: &GameState, galaxy: &mut ti4_content::galaxy::Galaxy) {
+    galaxy.wormholes_off = wormholes_suppressed(state);
+    galaxy.wormholes_all_linked = wormholes_all_connected(state);
+}
+
 /// Laws this engine can enact but not enforce — the honest coverage gap.
 #[must_use]
 pub fn enforced_aliases() -> Vec<&'static str> {
@@ -258,6 +272,70 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    /// Every law claimed as enforced must change something observable.
+    ///
+    /// The reason this exists: four laws were listed in `enforced_aliases` with a predicate written
+    /// and no caller — Regulated Conscription, both printings of Representative Government,
+    /// Enforced Travel Ban and Wormhole Reconstruction. Each read as enforced and did nothing. A
+    /// list of claims is not evidence; this drives the engine and watches it move.
+    #[test]
+    fn regulated_conscription_halves_the_yield_without_changing_the_price() {
+        let content = ti4_content::ContentStore::embedded();
+        let types = ti4_content::units::catalogue(content, ALL_SOURCES);
+        let fighter = types.get("fighter").expect("in the corpus");
+
+        let quiet = crate::fixtures::game(&["a"]);
+        assert_eq!(
+            crate::production::price_of_under(Some(&quiet), fighter),
+            (1, 2),
+            "ordinarily one resource buys two"
+        );
+
+        let state = enacted("conscription", "For");
+        assert_eq!(
+            crate::production::price_of_under(Some(&state), fighter),
+            (1, 1),
+            "the law halves the yield; the cost is unchanged"
+        );
+
+        // A full-price unit is untouched either way.
+        let cruiser = types.get("cruiser").expect("in the corpus");
+        assert_eq!(
+            crate::production::price_of_under(Some(&state), cruiser),
+            crate::production::price_of_under(Some(&quiet), cruiser)
+        );
+    }
+
+    #[test]
+    fn representative_government_replaces_influence_with_one_vote() {
+        assert_eq!(crate::vote::flat_vote_amount(&enacted("rep_govt", "For")), Some(1));
+        assert_eq!(
+            crate::vote::flat_vote_amount(&enacted("representative_government", "For")),
+            Some(1)
+        );
+        assert_eq!(
+            crate::vote::flat_vote_amount(&crate::fixtures::game(&["a"])),
+            None,
+            "without the law, votes come from influence as usual"
+        );
+    }
+
+    #[test]
+    fn the_wormhole_laws_reach_the_map() {
+        let mut galaxy = crate::fixtures::plain_hub().galaxy;
+
+        apply_to_galaxy(&enacted("travel_ban", "For"), &mut galaxy);
+        assert!(galaxy.wormholes_off, "Enforced Travel Ban closes them");
+        assert!(!galaxy.wormholes_all_linked);
+
+        apply_to_galaxy(&enacted("wormhole_recon", "For"), &mut galaxy);
+        assert!(galaxy.wormholes_all_linked, "Wormhole Reconstruction joins them");
+        assert!(!galaxy.wormholes_off, "and re-opens what the ban had shut");
+
+        apply_to_galaxy(&crate::fixtures::game(&["a"]), &mut galaxy);
+        assert!(!galaxy.wormholes_off && !galaxy.wormholes_all_linked);
+    }
 
     fn enacted(alias: &str, elected: &str) -> GameState {
         let mut state = crate::fixtures::game(&["a", "b"]);

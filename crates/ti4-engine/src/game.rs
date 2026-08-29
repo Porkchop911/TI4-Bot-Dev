@@ -682,6 +682,12 @@ impl<'a> Game<'a> {
         // is recomputed once per step rather than at each of the dozen places a unit can move or
         // die. Doing it here means a movement path added later cannot forget to.
         crate::space_stations::reconcile_all(&mut self.state, self.content, self.sources);
+        // The two wormhole laws are switches on the map, and the map is owned here. Set once per
+        // step for the same reason as station control: derived state is cheaper to recompute than
+        // to keep in sync from every place a law can be enacted or repealed.
+        if let Some(galaxy) = self.galaxy.as_mut() {
+            crate::laws::apply_to_galaxy(&self.state, galaxy);
+        }
         if self.state.finished {
             return self.result(false, None);
         }

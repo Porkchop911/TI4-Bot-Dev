@@ -643,7 +643,7 @@ pub fn integrated_economy(
             let Some(kind) = types.get(id.as_str()) else {
                 continue;
             };
-            let (cost, pair) = price_of(kind);
+            let (cost, pair) = price_of_under(Some(state), kind);
             if cost <= 0 || cost > budget || cost > affordable {
                 continue;
             }
@@ -901,9 +901,27 @@ pub fn produce_one(
 /// detail: it is most of an early fleet.
 #[must_use]
 pub fn price_of(kind: &UnitType<'_>) -> (i64, usize) {
+    price_of_under(None, kind)
+}
+
+/// The same, under whatever laws are in play.
+///
+/// Regulated Conscription: "When a player produces units, they produce only 1 fighter and infantry
+/// for its cost instead of 2." It halves the yield rather than doubling the price, which is a
+/// different card: the cost stays one resource.
+///
+/// `price_of` remains the printed rule for callers that mean the printed rule. Passing the state is
+/// how a caller says it means *now*.
+#[must_use]
+pub fn price_of_under(state: Option<&GameState>, kind: &UnitType<'_>) -> (i64, usize) {
     let printed = kind.cost();
     if printed > 0.0 && printed < 1.0 {
-        return (1, 2);
+        let yielded = if state.is_some_and(crate::laws::single_unit_production) {
+            1
+        } else {
+            2
+        };
+        return (1, yielded);
     }
     // Costs are small printed integers; anything that is not finite is treated as free rather
     // than wrapping to a nonsense charge.
@@ -1189,7 +1207,7 @@ impl ProductionWindow {
             let Some(kind) = types.get(id.as_str()) else {
                 continue;
             };
-            let (cost, pair) = price_of(kind);
+            let (cost, pair) = price_of_under(Some(state), kind);
             if cost > available(state, content, sources, &self.player, Spend::Resources) {
                 continue;
             }
