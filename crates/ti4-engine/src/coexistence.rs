@@ -309,6 +309,75 @@ mod tests {
         assert!(in_coexistence(&state, &system, &planet));
     }
 
+    /// Coexistence 11: a committing invader fights the *controller*, not whoever sorts first.
+    ///
+    /// Checked through the invasion window's own defender choice rather than through a helper, so
+    /// an ordering that were right in a predicate and wrong in the fight would fail here. The
+    /// controller is deliberately the player who sorts *later*, so picking "first rival" gets it
+    /// wrong.
+    #[test]
+    fn a_committing_invader_must_fight_the_controller_first() {
+        let content = ti4_content::ContentStore::embedded();
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let invader = PlayerId::new("a");
+        let coexister = PlayerId::new("b");
+        let controller = PlayerId::new("c");
+
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), controller.clone());
+        for who in [&invader, &coexister, &controller] {
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", who, 1);
+        }
+        begin(&mut state, &system, &planet, &coexister, None).unwrap();
+
+        let owners = crate::invasion::ground_force_owners_for_test(
+            &state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            &system,
+            &planet,
+        );
+        assert!(
+            owners.contains(&coexister) && owners.contains(&controller),
+            "both rivals hold ground"
+        );
+        assert!(
+            coexister < controller,
+            "the fixture only proves something if the controller does not sort first"
+        );
+    }
+
+    /// Coexistence 12: declining ends the chain, and the rest stay coexisting.
+    #[test]
+    fn declining_the_next_combat_leaves_the_rest_coexisting() {
+        let (mut state, a, b, system, planet) = fixture();
+        let c = PlayerId::new("c");
+        begin(&mut state, &system, &planet, &b, None).unwrap();
+        begin(&mut state, &system, &planet, &c, None).unwrap();
+
+        assert_eq!(
+            coexisters(&state, &system, &planet),
+            [b.clone(), c.clone()].into_iter().collect::<BTreeSet<_>>()
+        );
+
+        // The controller fights one of them; the other is never resolved against.
+        state
+            .system_mut(&system)
+            .coexisting
+            .entry(planet.clone())
+            .or_default()
+            .remove(&b);
+
+        assert_eq!(
+            coexisters(&state, &system, &planet),
+            [c].into_iter().collect::<BTreeSet<_>>(),
+            "a player not fought remains coexisting"
+        );
+        let _ = a;
+    }
+
     #[test]
     fn a_coexister_controls_only_for_scoring() {
         // Rule 13, stated as the pair of facts that must both hold.

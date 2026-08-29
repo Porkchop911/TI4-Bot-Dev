@@ -693,6 +693,14 @@ enum Stage {
         planets: Vec<PlanetId>,
         index: usize,
     },
+    /// A coexistence combat ended and the winner may start another against the next coexister
+    /// (coexistence 12). Declining leaves the rest coexisting.
+    ChoosingNextCombat {
+        planets: Vec<PlanetId>,
+        index: usize,
+        planet: PlanetId,
+        remaining: Vec<PlayerId>,
+    },
     /// A planet changed hands and its former controller's scoring window must close before
     /// gain-control effects and exploration continue.
     FinalizingControl {
@@ -702,6 +710,22 @@ enum Stage {
         previous: Option<PlayerId>,
     },
     Done,
+}
+
+/// [`ground_force_owners`], reachable from a sibling module's tests.
+///
+/// The coexistence tests need the same answer the fight uses; exposing it is cheaper than
+/// duplicating the unit-type filter and letting the copy drift from the original.
+#[doc(hidden)]
+#[must_use]
+pub fn ground_force_owners_for_test(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    planet: &PlanetId,
+) -> std::collections::BTreeSet<PlayerId> {
+    ground_force_owners(state, content, sources, system, planet)
 }
 
 /// LRR 49/42: who has ground forces on `planet`.
@@ -804,6 +828,19 @@ impl InvasionWindow {
                 Stage::Advancing { planets, index } => {
                     self.advance_fighting(state, ctx, &planets, index);
                     return;
+                }
+                Stage::ChoosingNextCombat {
+                    planets,
+                    index,
+                    remaining,
+                    ..
+                } if remaining.is_empty() => {
+                    // Nobody left to fight: coexistence 12's "until there are no more coexisting
+                    // players" arm, reached without asking.
+                    self.stage = Stage::Advancing {
+                        planets,
+                        index: index + 1,
+                    };
                 }
                 Stage::FinalizingControl {
                     planets,
@@ -1021,12 +1058,49 @@ impl InvasionWindow {
                 index += 1;
                 continue;
             }
-            if let Some(defender) = owners.iter().find(|owner| **owner != self.invader).cloned() {
+            // Coexistence 11: a player who had no units here and commits ground forces "must
+            // start a ground combat against the player that controls that planet" -- not against
+            // whichever rival happens to sort first. Off a coexisting planet there is only one
+            // rival anyway, so this ordering is invisible there and load-bearing here.
+            let controller = state
+                .system_state(&self.system)
+                .planet_control
+                .get(planet)
+                .cloned()
+                .filter(|holder| *holder != self.invader && owners.contains(holder));
+            let next = controller.or_else(|| {
+                owners
+                    .iter()
+                    .find(|owner| **owner != self.invader)
+                    .cloned()
+            });
+            if let Some(defender) = next {
                 self.current_ground_occurrence = Some(state.begin_feat_occurrence());
                 self.stage = Stage::Fighting {
                     planets: planets.to_vec(),
                     index,
                     defender,
+                };
+                return;
+            }
+
+            // Coexistence 9 and 12: the invader holds the ground here and coexisters remain. The
+            // rule offers *another* combat rather than forcing one, so this is a choice.
+            //
+            // Reached only after the loop above found no ordinary defender, which is what makes it
+            // the "won the combat" moment: a coexister still standing is not a defender, because
+            // coexistence is precisely the state where their presence starts no fight.
+            let coexisting: Vec<PlayerId> =
+                crate::coexistence::coexisters(state, &self.system, planet)
+                    .into_iter()
+                    .filter(|player| *player != self.invader)
+                    .collect();
+            if !coexisting.is_empty() {
+                self.stage = Stage::ChoosingNextCombat {
+                    planets: planets.to_vec(),
+                    index,
+                    planet: planet.clone(),
+                    remaining: coexisting,
                 };
                 return;
             }
@@ -1178,6 +1252,27 @@ impl Window for InvasionWindow {
     ) -> Option<Choice> {
         match &self.stage {
             Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => None,
+            Stage::ChoosingNextCombat {
+                planet, remaining, ..
+            } => {
+                let next = remaining.first()?;
+                Some(Choice::new(
+                    self.invader.clone(),
+                    format!("start another ground combat on {planet}"),
+                    vec![
+                        ChoiceOption::labelled(
+                            format!("fight|{next}"),
+                            GROUND_CASUALTY_KIND,
+                            format!("fight {next} on {planet}"),
+                        ),
+                        ChoiceOption::labelled(
+                            "decline",
+                            crate::choice::DECLINE_KIND,
+                            format!("leave {next} coexisting on {planet}"),
+                        ),
+                    ],
+                ))
+            }
             Stage::Custodians => {
                 // Falls through rather than returning None: the driver stops the moment a window
                 // has no choice, so a stage that is merely inapplicable would end the invasion
@@ -1241,6 +1336,47 @@ impl Window for InvasionWindow {
 
         match self.stage.clone() {
             Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => {}
+            Stage::ChoosingNextCombat {
+                planets,
+                index,
+                planet,
+                mut remaining,
+            } => {
+                // Coexistence 12: the winner "may start an additional ground combat against
+                // another coexisting player … until they decline to start another ground combat or
+                // there are no more coexisting players. Any coexisting players that they do not
+                // resolve a ground combat against remain coexisting."
+                //
+                // Declining therefore ends the chain outright rather than skipping one opponent:
+                // the rule offers *another* combat, not a queue to work through.
+                if option.is_decline() {
+                    self.stage = Stage::Advancing {
+                        planets,
+                        index: index + 1,
+                    };
+                } else if remaining.is_empty() {
+                    self.stage = Stage::Advancing {
+                        planets,
+                        index: index + 1,
+                    };
+                } else {
+                    let defender = remaining.remove(0);
+                    // The chosen coexister stops coexisting for the duration: they are now a
+                    // side in a combat, and `ground_force_owners` already sees their units.
+                    state
+                        .system_mut(&self.system)
+                        .coexisting
+                        .entry(planet.clone())
+                        .or_default()
+                        .remove(&defender);
+                    self.current_ground_occurrence = Some(state.begin_feat_occurrence());
+                    self.stage = Stage::Fighting {
+                        planets,
+                        index,
+                        defender,
+                    };
+                }
+            }
             Stage::Custodians
                 if !custodians_removable(state, content, sources, &self.invader, &self.system) =>
             {

@@ -116,7 +116,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Breakthroughs | **PARTIAL** | 2 of 31 have effects; breakthrough roll (rule 3) absent |
 | Capacity | ? | `transit.rs`, `fleet.rs` |
 | Capture | ? | |
-| Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 13 done (phase 2); 7/7.1 target choice and 9-12 combat outstanding |
+| Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 9-13 done; only 7/7.1 bombardment target choice outstanding |
 | Combat | ? | `combat.rs`, 3110 lines |
 | Command Sheet | OK | `TokenPool`, `tactic_tokens` etc. in `state.rs` |
 | Command Tokens | ? | |
@@ -151,7 +151,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Infantry Tokens | OK | as fighter tokens |
 | Influence | ? | |
 | Initiative Order | ? | |
-| Invasion | **PARTIAL** | stations excluded (phase 1); coexistence combat 9-12 outstanding |
+| Invasion | OK | stations excluded; coexistence combat chain 9-12 implemented |
 | Leader Sheet | ? | |
 | Leaders | **PARTIAL** | 3 unimplemented across the six trained factions |
 | Leadership | ? | |
