@@ -381,6 +381,21 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v4 — recorded 2026-08-29. Phase 8 of the engine completion plan began emitting three events
+    // that did not exist before: SHIP_DESTROYED (per casualty, carrying whether it was the owner's
+    // last ship), SUSTAIN_DAMAGE_USED, and STRATEGY_PHASE_BEGAN. Five printed reaction windows name
+    // those moments and had nothing to bind to.
+    //
+    // Only the six action-mix shares move, and every one of them moves *down by the same factor*,
+    // 0.9848. That is the signature of dilution rather than of changed play: the shares are each
+    // label's count over the whole event stream, three new labels lengthen the denominator by about
+    // 1.54%, and no numerator changes. vp_pace, score_spread, faction_differentiation and
+    // completion are bit-identical to v3, which they could not be if any decision had gone
+    // differently.
+    //
+    // Approved by the project owner on 2026-08-29 as the reviewer the discipline requires. v1, v2
+    // and v3 values are preserved side by side in plans/evidence/M08-021.md.
+    //
     // v3 — recorded 2026-08-23 on branch wp/m08-019-reopened-frontier-review after the
     // Tier-C correction round completed F-M08-019-1: C1 canonicalized invasion landing-option
     // order (landable_planets from the system record's `planets` array) and C2 threaded the
@@ -408,27 +423,27 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027_887_127_382_587_116, 0.029_379_724_541_312_928),
+        (0.02746995826549488, 0.028933288356179577),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.047_428_583_456_618_63, 0.048_660_660_227_172_75),
+        (0.04671410827862237, 0.047924850659158934),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.067_420_702_892_928_33, 0.072_385_601_009_851_66),
+        (0.06640752685995822, 0.07128887512765762),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.008_142_061_219_023_835, 0.009_275_008_762_437_54),
+        (0.008019455765829799, 0.009125187101255976),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.093_517_207_031_071_19, 0.095_809_575_282_834_01),
+        (0.09208860220768417, 0.09435310035323133),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.046_066_967_306_267_2, 0.047_168_934_633_599_81),
+        (0.045359814670357705, 0.046458373571462576),
     );
     bounds
 }

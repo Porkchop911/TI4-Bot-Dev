@@ -242,16 +242,51 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SPACE_COMBAT_WON",
     "STRATEGY_CARD_CHOSEN",
     "SYSTEM_ACTIVATED",
+    "SHIP_DESTROYED",
+    "STRATEGY_PHASE_BEGAN",
+    "SUSTAIN_DAMAGE_USED",
 ];
 
-/// Printed windows that name a moment this engine does not have, with the reason.
+/// Printed windows that cannot yet be reacted to, with the reason.
 ///
-/// Listed rather than counted, so the gap stays a set of reasons instead of a number. Every one
-/// of these needs a point *inside* a resolution step — between rolling and assigning, or as a
-/// unit dies — and the combat and invasion windows resolve those steps whole.
+/// Listed rather than counted, so the gap stays a set of reasons instead of a number.
+///
+/// Two different reasons appear here, and they want different work:
+///
+/// * **No such moment.** The window names a point inside a resolution step — between rolling and
+///   assigning, or as a retreat is declared — and the step resolves whole. These need the step
+///   decomposed before anything can be emitted.
+/// * **Moment exists, binding deferred.** The event is emitted and carries what the window needs;
+///   what is missing is the entry in [`window_table`] that lets a card subscribe. Adding one
+///   changes what [`arm`] registers for *every* seat, which changes what deciders are asked and
+///   therefore the behavioural baseline in `ti4-sim`. That baseline may only move through the
+///   versioned process in `crates/ti4-sim/src/behavior.rs`, with the cause recorded and reviewed.
+///   These bind when the cards that read them are implemented and the baseline moves once, rather
+///   than moving it now for windows no implemented card can use.
 #[must_use]
 pub fn unsupported_windows() -> BTreeMap<&'static str, &'static str> {
     [
+        (
+            "After 1 of your ships is destroyed during a space combat",
+            "SHIP_DESTROYED is emitted per casualty and carries the unit; binding deferred until \
+             an action card reads it, so the ti4-sim baseline moves once and under review",
+        ),
+        (
+            "When your last ship in the active system is destroyed",
+            "SHIP_DESTROYED carries `last`; binding deferred with the rest",
+        ),
+        (
+            "When one of your ships uses SUSTAIN DAMAGE during combat",
+            "SUSTAIN_DAMAGE_USED is emitted where the sustain is applied; binding deferred",
+        ),
+        (
+            "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your units or abilities",
+            "SUSTAIN_DAMAGE_USED names the owner, so actor_is_not divides it; binding deferred",
+        ),
+        (
+            "At the start of the strategy phase",
+            "STRATEGY_PHASE_BEGAN is emitted when a round opens; binding deferred",
+        ),
         (
             "Before you assign hits to your ships during a space combat",
             "hits are assigned inside one step; there is no window between rolling and assigning",
@@ -260,23 +295,8 @@ pub fn unsupported_windows() -> BTreeMap<&'static str, &'static str> {
             "Before you assign hits produced by another player's SPACE CANNON roll",
             "space cannon resolves whole, with no window before its hits land",
         ),
-        (
-            "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your \
-             units or abilities",
-            "sustain is chosen and applied inside hit assignment, and is not announced",
-        ),
-        (
-            "When one of your ships uses SUSTAIN DAMAGE during combat",
-            "sustain is chosen and applied inside hit assignment, and is not announced",
-        ),
-        (
-            "After 1 of your ships is destroyed during a space combat",
-            "units are removed in bulk; no event names a single destroyed ship",
-        ),
-        (
-            "When your last ship in the active system is destroyed",
-            "units are removed in bulk; no event names a single destroyed ship",
-        ),
+
+
         (
             "After your opponent declares a retreat during a space combat",
             "a retreat is resolved as part of the round rather than announced first",
@@ -289,10 +309,7 @@ pub fn unsupported_windows() -> BTreeMap<&'static str, &'static str> {
             "After another player commits units to land on a planet you control",
             "committing is a stage of the invasion window rather than an event",
         ),
-        (
-            "At the start of the strategy phase",
-            "the strategy phase does not emit a start event",
-        ),
+
         (
             "At the start of the 'Announce Retreats' step of space combat, if you are the defender",
             "the retreat step is inside the combat round and is not announced",

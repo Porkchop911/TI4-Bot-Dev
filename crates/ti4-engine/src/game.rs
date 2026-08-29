@@ -2323,6 +2323,16 @@ impl<'a> Game<'a> {
                 self.status_resolved = false;
                 self.agenda_resolved = false;
                 self.emit("ROUND_BEGAN");
+                // A round begins with the strategy phase, and cards read "at the start of the
+                // strategy phase" -- a window this engine had no moment for. `ROUND_BEGAN` is not
+                // it: that is the round's transition, and a card reading the strategy phase must
+                // not fire on a round that never reaches one.
+                // Only `emit_typed`: `mirror_timing_log` copies what the resolver emitted into
+                // `events`, so calling `emit` as well would log the phase twice and fire any card
+                // reading it twice with it.
+                if let Err(error) = self.emit_typed("STRATEGY_PHASE_BEGAN", BTreeMap::new()) {
+                    return self.result(false, Some(error));
+                }
             }
         }
         self.result(false, None)
@@ -4097,7 +4107,10 @@ mod tests {
         assert!(game.step().error.is_none());
         assert_eq!(game.state.phase, Phase::Strategy);
         assert_eq!(game.state.round, 2);
-        assert_eq!(game.events.last().unwrap(), "ROUND_BEGAN");
+        // The round begins, and the strategy phase it opens with announces itself. Both, in that
+        // order: cards read "at the start of the strategy phase" and must not fire on a round
+        // transition that never reaches one.
+        assert_eq!(game.events, vec!["AGENDA_PHASE_RESOLVED", "ROUND_BEGAN", "STRATEGY_PHASE_BEGAN"]);
     }
 
     #[test]

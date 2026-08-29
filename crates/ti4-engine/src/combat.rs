@@ -613,6 +613,33 @@ pub fn absorb_hits_seeing(
     Ok(())
 }
 
+/// Announce one destroyed ship, and whether it was the owner's last in the system.
+///
+/// Two printed windows read this: "after 1 of your ships is destroyed during a space combat", and
+/// "when your last ship in the active system is destroyed". The second is not a separate moment --
+/// it is the first with a fact attached -- so one event carries `last` rather than two events
+/// racing to describe the same removal.
+///
+/// Called after the unit is off the board, so `last` is read from the position a reacting card
+/// would see.
+fn announce_ship_destroyed(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    system: &SystemId,
+    owner: &PlayerId,
+    destroyed: &Unit,
+    content: &ContentStore,
+    sources: SourceSet,
+) {
+    let remaining = ships_of(state, content, sources, owner, system).len();
+    let mut payload = std::collections::BTreeMap::new();
+    payload.insert("system".to_owned(), system.to_string().into());
+    payload.insert("player".to_owned(), owner.to_string().into());
+    payload.insert("unit".to_owned(), destroyed.type_id.to_string().into());
+    payload.insert("last".to_owned(), (remaining == 0).into());
+    let _ = ctx.emit(state, "SHIP_DESTROYED", payload);
+}
+
 /// 78.6: the owning player chooses which of their own units dies.
 fn choose_casualty(
     state: &GameState,
@@ -1165,6 +1192,15 @@ impl CombatWindow {
                         state
                             .system_mut(&self.system)
                             .remove(std::slice::from_ref(&only));
+                        announce_ship_destroyed(
+                            state,
+                            ctx,
+                            &self.system,
+                            &front.player,
+                            &only,
+                            content,
+                            sources,
+                        );
                         let mut rest = queue;
                         rest[0].hits -= 1;
                         self.stage = Stage::Sustaining { queue: rest, round };
@@ -1401,6 +1437,9 @@ impl Window for CombatWindow {
                 self.stage = Stage::Retreating { round, leaving };
             }
             Stage::Sustaining { mut queue, round } => {
+                let front_player = queue
+                    .first()
+                    .map_or_else(|| self.defender.clone(), |front| front.player.clone());
                 if option.is_decline() {
                     self.stage = Stage::Assigning { queue, round };
                 } else if let Some(index) = option
@@ -1408,8 +1447,23 @@ impl Window for CombatWindow {
                     .strip_prefix("sustain|")
                     .and_then(|rest| rest.parse::<usize>().ok())
                 {
-                    if let Some(unit) = state.system_mut(&self.system).units.get_mut(index) {
-                        *unit = unit.sustained();
+                    let sustained = state
+                        .system_mut(&self.system)
+                        .units
+                        .get_mut(index)
+                        .map(|unit| {
+                            *unit = unit.sustained();
+                            unit.type_id.to_string()
+                        });
+                    // Two printed windows read this moment -- "when one of your ships uses SUSTAIN
+                    // DAMAGE" and "after another player's ship uses SUSTAIN DAMAGE to cancel a hit
+                    // produced by your units". Both need the *unit*, so the event names it.
+                    if let Some(kind) = sustained {
+                        let mut payload = std::collections::BTreeMap::new();
+                        payload.insert("system".to_owned(), self.system.to_string().into());
+                        payload.insert("player".to_owned(), front_player.to_string().into());
+                        payload.insert("unit".to_owned(), kind.into());
+                        let _ = ctx.emit(state, "SUSTAIN_DAMAGE_USED", payload);
                     }
                     if let Some(front) = queue.first_mut() {
                         front.hits = front.hits.saturating_sub(1);
@@ -1432,6 +1486,15 @@ impl Window for CombatWindow {
                     state
                         .system_mut(&self.system)
                         .remove(std::slice::from_ref(&doomed));
+                    announce_ship_destroyed(
+                        state,
+                        ctx,
+                        &self.system,
+                        &front.player,
+                        &doomed,
+                        content,
+                        sources,
+                    );
                 }
                 if let Some(front) = queue.first_mut() {
                     front.hits = front.hits.saturating_sub(1);
