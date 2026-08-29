@@ -14,7 +14,8 @@ use ti4_model::units::Unit;
 
 use crate::{
     AdvanceUnit, LiveReview, MAX_COMMAND_STEPS, ProfileTable, ReviewFrame, ReviewSession,
-    SessionOutcome, SimulationConfig, export_html, load_session, save_session,
+    SessionOutcome, SimulationConfig, default_sampling_temperature, export_html, load_session,
+    save_session,
 };
 
 const STEPS_PER_UI_FRAME: usize = 128;
@@ -262,13 +263,26 @@ enum RunTarget {
     End,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct ReviewerSettings {
     checkpoint: String,
     map_pool: String,
     profile_table: ProfileTable,
+    temperature: f64,
     last_review: Option<String>,
+}
+
+impl Default for ReviewerSettings {
+    fn default() -> Self {
+        Self {
+            checkpoint: String::new(),
+            map_pool: String::new(),
+            profile_table: ProfileTable::default(),
+            temperature: default_sampling_temperature(),
+            last_review: None,
+        }
+    }
 }
 
 fn load_settings() -> std::result::Result<ReviewerSettings, String> {
@@ -308,6 +322,7 @@ struct ReviewApp {
     seed: String,
     rotation: usize,
     table: ProfileTable,
+    temperature: f64,
     run_count: String,
     run_unit: AdvanceUnit,
     live: Option<LiveReview>,
@@ -334,6 +349,7 @@ impl ReviewApp {
             seed: "42".to_owned(),
             rotation: 0,
             table: settings.profile_table,
+            temperature: settings.temperature,
             run_count: "10".to_owned(),
             run_unit: AdvanceUnit::Step,
             live: None,
@@ -368,6 +384,7 @@ impl ReviewApp {
             checkpoint: self.checkpoint.trim().to_owned(),
             map_pool: self.map_pool.trim().to_owned(),
             profile_table: self.table,
+            temperature: self.temperature,
             last_review: self
                 .last_review
                 .as_ref()
@@ -452,6 +469,7 @@ impl ReviewApp {
             seed,
             rotation: self.rotation,
             table: self.table,
+            temperature: self.temperature,
         };
         match LiveReview::start(&config) {
             Ok(live) => {
@@ -689,6 +707,20 @@ impl ReviewApp {
                         );
                     });
                 if profile_response.response.changed() {
+                    self.persist_settings();
+                }
+                ui.label("Temperature");
+                let temperature_response = ui
+                    .add(
+                        egui::DragValue::new(&mut self.temperature)
+                            .range(0.01..=10.0)
+                            .speed(0.05)
+                            .max_decimals(2),
+                    )
+                    .on_hover_text(
+                        "Lower values prefer the highest-scored move; higher values explore more. The setting applies when a new starting table is loaded.",
+                    );
+                if temperature_response.changed() {
                     self.persist_settings();
                 }
                 if ui.button("Load starting table").clicked() {
@@ -1487,6 +1519,7 @@ mod tests {
             checkpoint: "out/checkpoints/run-003/checkpoint-532156/slots.json".to_owned(),
             map_pool: "out/pools/save52_noadj_train.json".to_owned(),
             profile_table: ProfileTable::Accepted,
+            temperature: 0.25,
             last_review: Some("out/reviews/autosave.ti4review.json".to_owned()),
         };
         let bytes = serde_json::to_vec(&settings).unwrap();
@@ -1494,6 +1527,7 @@ mod tests {
         assert_eq!(restored.checkpoint, settings.checkpoint);
         assert_eq!(restored.map_pool, settings.map_pool);
         assert_eq!(restored.profile_table, settings.profile_table);
+        assert!((restored.temperature - settings.temperature).abs() <= f64::EPSILON);
         assert_eq!(restored.last_review, settings.last_review);
     }
 

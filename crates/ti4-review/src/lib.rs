@@ -47,6 +47,11 @@ pub const MAX_COMMAND_STEPS: usize = 2_000_000;
 pub const MAX_RUN_COUNT: usize = 1_000_000;
 pub const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 
+#[must_use]
+pub const fn default_sampling_temperature() -> f64 {
+    1.0
+}
+
 #[derive(Debug, Error)]
 pub enum ReviewError {
     #[error("read {path}: {source}")]
@@ -94,9 +99,10 @@ pub struct SimulationConfig {
     pub seed: u64,
     pub rotation: usize,
     pub table: ProfileTable,
+    pub temperature: f64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SessionManifest {
     pub checkpoint_path: String,
     pub checkpoint_sha256: String,
@@ -106,6 +112,8 @@ pub struct SessionManifest {
     pub tile_seed: u64,
     pub rotation: usize,
     pub profile_table: ProfileTable,
+    #[serde(default = "default_sampling_temperature")]
+    pub temperature: f64,
     pub factions: Vec<String>,
 }
 
@@ -232,6 +240,11 @@ impl ReviewSession {
         if self.manifest.factions != FACTIONS.map(str::to_owned) {
             return Err(ReviewError::Invalid(
                 "session does not carry the standard six-faction lineup".to_owned(),
+            ));
+        }
+        if !self.manifest.temperature.is_finite() || self.manifest.temperature <= 0.0 {
+            return Err(ReviewError::Invalid(
+                "session carries an invalid sampling temperature".to_owned(),
             ));
         }
         for (index, frame) in self.frames.iter().enumerate() {
@@ -402,6 +415,7 @@ struct MlpTraceBot {
     row: FactionRow,
     baseline: Baseline,
     faction: String,
+    temperature: f64,
     log: Rc<RefCell<Vec<DecisionDetail>>>,
 }
 
@@ -423,7 +437,7 @@ impl MlpTraceBot {
             path: path.to_owned(),
             requested_head: head.to_owned(),
             resolved_head: head.to_owned(),
-            temperature: Some(1.0),
+            temperature: Some(self.temperature),
             chosen: chosen.as_ref().ok().map(|option| option.id.clone()),
             options,
         });
@@ -464,7 +478,10 @@ impl Decider for MlpTraceBot {
             .collect();
         let head = Actor::resolve_head(decision_head(choice));
         let scores = self.actor.logits(&sparse, head, self.row).ok();
-        let probabilities = self.actor.probabilities(&sparse, head, self.row, 1.0).ok();
+        let probabilities = self
+            .actor
+            .probabilities(&sparse, head, self.row, self.temperature)
+            .ok();
         let mut options = TraceBot::option_rows(choice);
         for (index, option) in options.iter_mut().enumerate() {
             option.score = scores
@@ -533,6 +550,11 @@ impl LiveReview {
                 "rotation must be 0 through 5".to_owned(),
             ));
         }
+        if !config.temperature.is_finite() || config.temperature <= 0.0 {
+            return Err(ReviewError::Invalid(
+                "temperature must be a finite number greater than zero".to_owned(),
+            ));
+        }
         let (checkpoint_path, checkpoint_bytes, policy) =
             load_policy(&config.checkpoint, config.table)?;
         let pool_bytes = read_bounded(&config.map_pool)?;
@@ -561,6 +583,7 @@ impl LiveReview {
         let decider_factions = factions.clone();
         let mlp_status_sink = Rc::new(RefCell::new(Vec::new()));
         let status_sink = Rc::clone(&mlp_status_sink);
+        let temperature = config.temperature;
         let map = OpeningMap::PythonPool {
             pool: Arc::new(pool),
             tile_seed_offset: TILE_SEED_OFFSET,
@@ -586,10 +609,13 @@ impl LiveReview {
                     let baseline = baselines.get(player).copied().unwrap_or_default();
                     let decider: Box<dyn Decider> = match &policy {
                         LoadedPolicy::Linear(profiles) => {
-                            let profile = profiles
+                            let mut profile = profiles
                                 .get(&faction)
                                 .expect("profiles validated before setup")
                                 .clone();
+                            for head in profile.learned.heads.values_mut() {
+                                head.temperature = temperature;
+                            }
                             let bot = LearnedBot::from_shared(Arc::new(profile), stream)
                                 .from_setup(baseline);
                             Box::new(TraceBot {
@@ -602,6 +628,7 @@ impl LiveReview {
                             let row = FactionRow::of(&faction)
                                 .map_err(|error| format!("MLP faction: {error}"))?;
                             let bot = MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+                                .at_temperature(temperature)
                                 .from_setup(baseline);
                             let (inner, status) = bot.seat();
                             status_sink.borrow_mut().push(status);
@@ -612,6 +639,7 @@ impl LiveReview {
                                 row,
                                 baseline,
                                 faction,
+                                temperature,
                                 log: Rc::clone(&decision_sink),
                             })
                         }
@@ -633,6 +661,7 @@ impl LiveReview {
             tile_seed: config.seed.wrapping_add(TILE_SEED_OFFSET),
             rotation: config.rotation,
             profile_table: config.table,
+            temperature: config.temperature,
             factions: FACTIONS.map(str::to_owned).to_vec(),
         };
         let initial = ReviewFrame {
@@ -1533,6 +1562,7 @@ mod tests {
                 tile_seed: 20_000_042,
                 rotation: 0,
                 profile_table: ProfileTable::Learner,
+                temperature: default_sampling_temperature(),
                 factions: FACTIONS.map(str::to_owned).to_vec(),
             },
             board: vec![],
@@ -1549,6 +1579,39 @@ mod tests {
         let read: ReviewSession = serde_json::from_slice(&json).unwrap();
         assert_eq!(read, session);
         assert_eq!(read.outcome, SessionOutcome::InProgress);
+    }
+
+    #[test]
+    fn old_sessions_default_the_sampling_temperature() {
+        let mut value = serde_json::to_value(fixture_session()).unwrap();
+        value["manifest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("temperature");
+
+        let restored: ReviewSession = serde_json::from_value(value).unwrap();
+        assert!(
+            (restored.manifest.temperature - default_sampling_temperature()).abs() <= f64::EPSILON
+        );
+        restored.validate().unwrap();
+    }
+
+    #[test]
+    fn a_non_positive_sampling_temperature_is_refused_before_input_loading() {
+        let config = SimulationConfig {
+            checkpoint: PathBuf::from("does-not-exist.json"),
+            map_pool: PathBuf::from("does-not-exist.json.gz"),
+            seed: 42,
+            rotation: 0,
+            table: ProfileTable::Learner,
+            temperature: 0.0,
+        };
+
+        let error = match LiveReview::start(&config) {
+            Ok(_) => panic!("zero temperature was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("temperature"), "{error}");
     }
 
     #[test]
