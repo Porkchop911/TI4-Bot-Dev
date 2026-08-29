@@ -221,8 +221,9 @@ fn pay_with_mech_or_infantry(
 pub fn registered_cards() -> Vec<&'static str> {
     vec![
         "aw1", "aw2", "aw3", "aw4", "cm1", "cm2", "cm3", "dv1", "dv2", "dw", "ent", "exp1", "exp2",
-        "exp3", "fb1", "fb2", "fb3", "fb4", "kel1", "kel2", "lc1", "lc2", "lf1", "lf2", "lf3",
-        "lf4", "majent", "minent", "mo1", "mo2", "mo3", "ms1", "ms2", "vfs1", "vfs2", "vfs3",
+        "exp3", "fb1", "fb2", "fb3", "fb4", "gamma", "gw", "kel1", "kel2", "lc1", "lc2", "lf1",
+        "lf2", "lf3", "lf4", "majent", "minent", "mo1", "mo2", "mo3", "ms1", "ms2", "vfs1", "vfs2",
+        "vfs3",
     ]
 }
 
@@ -262,6 +263,22 @@ fn resolve_instant(
         "ent" => (1, 2),
         "majent" => (1, 3),
         "kel1" | "kel2" => (2, 0),
+        "gw" | "gamma" => {
+            // Gamma Wormhole and Gamma Relay both read "place a gamma wormhole token in this
+            // system, then purge this card". `wormhole_tokens` already exists for the Creuss
+            // tokens and is keyed by kind, which is what makes two cards placing the same token
+            // one line rather than two.
+            //
+            // A gamma wormhole is not alpha or beta, so neither wormhole law touches it: Enforced
+            // Travel Ban and Wormhole Reconstruction both name those two.
+            let Some(system) = state.active_system.clone() else {
+                return false;
+            };
+            state
+                .wormhole_tokens
+                .insert("GAMMA".to_owned(), system);
+            return true;
+        }
         "dw" => {
             // Draw 1 relic, through `relics::gain` — a relic can be worth a point the moment it
             // arrives, and taking it off the deck here scored nobody the Shard.
@@ -645,6 +662,71 @@ pub fn purge_for_relic(
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::POK;
+
+    /// Gamma Wormhole and Gamma Relay both place the gamma token in the explored system.
+    ///
+    /// Driven through `resolve_instant`, which is what the draw path calls, so a handler that
+    /// existed but was never reached would fail here.
+    #[test]
+    fn the_gamma_cards_place_their_token_in_the_active_system() {
+        for card in ["gw", "gamma"] {
+            let mut state = crate::fixtures::game(&["a"]);
+            let system = ti4_model::id::SystemId::new("19");
+            state.active_system = Some(system.clone());
+
+            let content = ti4_content::ContentStore::embedded();
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(3);
+            let mut table = crate::choice::Table::new();
+            let mut ctx = crate::choice::Resolving {
+                content,
+                sources: ti4_model::content_types::DEFAULT,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: None,
+            };
+
+            assert!(
+                resolve_instant(&mut state, &mut ctx, &PlayerId::new("a"), None, card),
+                "{card} must resolve"
+            );
+            assert_eq!(
+                state.wormhole_tokens.get("GAMMA"),
+                Some(&system),
+                "{card} places the gamma token where it was explored"
+            );
+        }
+    }
+
+    /// With no active system there is nowhere to put it, and the card says so rather than
+    /// silently succeeding.
+    #[test]
+    fn a_gamma_card_with_nowhere_to_place_reports_unresolved() {
+        let mut state = crate::fixtures::game(&["a"]);
+        state.active_system = None;
+        let content = ti4_content::ContentStore::embedded();
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(3);
+        let mut table = crate::choice::Table::new();
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: ti4_model::content_types::DEFAULT,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        assert!(!resolve_instant(
+            &mut state,
+            &mut ctx,
+            &PlayerId::new("a"),
+            None,
+            "gw"
+        ));
+        assert!(state.wormhole_tokens.is_empty());
+    }
+
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
 
     /// Space stations rule 14: a tile with a station but no planets still takes a frontier token.
