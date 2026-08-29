@@ -79,6 +79,17 @@ Every batch: effect + dispatch + a test driving the engine's own path (via
 (exchange A-side infantry, pirate-fleet crew placement, scuttle goods payment — each break makes
 the test fail, then reverted).
 
+- Coexistence 7/7.1 bombardment target choice (engine plumbing, no new card): the invasion
+  window now pauses on `Stage::ChoosingBombardment` and asks the table, per bombarding unit,
+  whose units on a coexisting planet take that unit's hits (7, 7.1), capped per target with no
+  spill (7.2). Roll-then-apply split (`roll_bombard_plan` consumes the dice; application is
+  the pause-and-answer path in the window or the inline ask in the synchronous `bombardment`
+  wrapper, which now takes `&mut Table`); `InvasionWindow::drive` settles before its first
+  question and stops when a scoring occurrence is queued. This unblocks `fire_team` and
+  `scramble` (next batch) and closed the `debug_assert!(false)` landmine `exchange_program`
+  had made reachable; it also moved the ti4-sim behavioural baseline v5 → v6
+  (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -163,27 +174,24 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 990 passed, 0 failed.
-- `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate green
-  (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 50 non-suite tests); **ti4-sim's
-  two suite tests are red on the pre-change baseline `c18c276` too** and are tracked, not new:
-  - `the_suite_reproduces_and_stays_within_the_recorded_bounds` panics on the engine's
-    coexistence-7/7.1 gap: `bombardment_at` cannot ask *whose* units on a coexisting planet take
-    the hits (the debug announcement at `invasion.rs`), reached now that `exchange_program` makes
-    coexisting planets real; the recorded bounds (29 vs 30) shift with it.
-  - `fixture_capture_is_deterministic`: the recorded capture predates the trajectory shifts and
-    replays to a different terminal step; needs re-recording through its versioned process after
-    the engine gap is closed.
-  Both are the handoff's remaining group: thread a decision interface into
-  `bombardment_at`/`roll_ground` (coexistence 7, 7.1, fire_team, scramble), then re-record the
-  sim baseline.
-- `cargo clippy -p ti4-engine --all-targets`: zero warnings in the touched files.
-- Every effect of the scoped roll modifiers batch probed (break the consumption site → its test
-  fails → revert): fleet roll threshold, AFB guard, bombardment penalty, production budget.
+- `cargo test -p ti4-engine --lib`: 991 passed, 0 failed.
+- `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
+  green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 51 non-fixture tests);
+  **ti4-sim's behavioral suite is green after the v5 → v6 re-baseline** (`plans/evidence/M08-021.md`),
+  including the protocol-integrity check in the debug build. The one remaining red is
+  `fixture_capture_is_deterministic`: pre-existing and byte-identical on the pre-change tree
+  (seed `919_601`'s replay finishes at step 781 before any production-head menu of ≥3 options);
+  it belongs to the M09-019b profile module's own versioned process and is tracked, not new.
+- `cargo clippy -p ti4-engine`: zero warnings in the touched files (the rework also cleared
+  the long-function warning the previous batch left in `invasion.rs`).
+- Both coexistence behaviors probed (break → the new test fails → revert): a `resolve` that
+  ignored the decider's answer (`ScriptDiverged` at the second unit), and a 7.2 cap that
+  spilled hits across owners (4 kills instead of 3).
 - The 47 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group:
-  - **Reroll at the roll site** (2 cards + Jol-Nar's commander + coexistence 7/7.1): `fire_team`,
-    `scramble` — `bombardment_at`/`roll_ground` need `&mut Table` threaded in (`combat.rs`/`invasion.rs`).
+  - **Reroll at the roll site** (2 cards + Jol-Nar's commander): `fire_team`, `scramble` — the
+    roll-site decision seam now exists (`ChoosingBombardment` proves the pause/answer pattern);
+    the cards themselves plus Jol-Nar's commander reroll are the next batch.
   - **Invasion flow** (4): `blitz`, `disable`, `parley`, `ghost_squad` — need commit
     undo/modify (`invasion.rs`).
   - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.

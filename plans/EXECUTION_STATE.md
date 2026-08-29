@@ -22,6 +22,54 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — coexistence bombardment choice + v6 re-baseline (2026-08-29)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on `f5b1acc`
+  before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` phase 2.4 +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the **coexistence 7/7.1 bombardment target choice**, closed in `invasion.rs`.
+  - `Stage::ChoosingBombardment` — a paused invasion stage surfaced through
+    `pending_choice()`: when a bombarded planet's units belong to more than one defender, the
+    window pauses and the table is asked, per bombarding unit, whose units take that unit's
+    hits. Single-owner planets still resolve inline; the settle-pauses/driver-asks invariant
+    is preserved (no inline `table.ask` in `settle`), and `InvasionWindow::drive` is overridden
+    so a fresh window settles before its first question and stops when a scoring occurrence is
+    queued (the pause belongs to the caller, exactly as between the window's own steps).
+  - Roll-then-apply split: `roll_bombard_plan` is the dice-consuming half (same Bunker −4×count
+    penalty as before; planets in `planet_units` key order, units in `units_of` order), shared
+    by the window and the synchronous `bombardment` wrapper, so a seed rolls identically
+    regardless of how the hits are later assigned. The old `debug_assert!(false)` announcement
+    is gone; `bombardment` now threads `&mut Table` and returns `Result<usize, IllegalChoice>`.
+  - 7.2: each unit's hits are capped at the chosen target's units on that planet and do not
+    spill; `BombardedOutTheLastGroundForces` fires exactly as before (last ground force taken
+    from a single victim and the planet left to the invader).
+  - New test `a_coexisting_planets_bombardment_is_chosen_per_unit_and_capped_at_each_target`
+    (B: 1 infantry, C: 2; a's three bombard units; scripted answers `c, b, c`): asserts the
+    per-unit choices, the 7.2 waste (unit 2's surplus hit lands on empty-handed B, never on C),
+    the questions offered (`[b,c] [b,c] [c]` — B stops being offered once it holds nothing),
+    3 total kills, empty planet, and the dice count.
+- **ti4-sim baseline moved exactly once (v5 → v6)**, per the handoff: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; the recorded bounds in `behavior.rs` now carry the
+  v6 transcription and `plans/evidence/M08-021.md` records the pair. Cause: bombs that used to
+  evaporate on a coexisting planet (release build skipped it) now land as kills. Five metrics
+  fell outside the v5 intervals; all ten v6 values sit inside v6; `completion` stays the strict
+  1.0 invariant. The debug-build integrity check (recorded == protocol recomputation) passes.
+- Tests: 991 `ti4-engine` lib tests pass (was 990). Probes (both caught by the new test, then
+  reverted): a decider whose answer `resolve` ignored → `ScriptDiverged` at unit 2; a 7.2 cap
+  that spilled across owners → 4 kills instead of 3.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s
+  `fixture_capture_is_deterministic` — **pre-existing and unchanged by this batch** (identical
+  failure on `f5b1acc`: seed `919_601`'s replay finishes at step 781 before any production-head
+  menu of ≥3 options). It lives in the M09-019b profile module with its own versioned process
+  and is tracked, not part of the handoff's mandated re-baseline.
+- Clippy: zero new warnings in the touched files; this rework also cleared the `f5b1acc`
+  long-function warning in `invasion.rs` (102/100 lines).
+- Next safe action: commit B of the handoff's Reroll group — `fire_team`, `scramble`, and the
+  Jol-Nar commander reroll on the now-real roll-site decision seam — then the remaining groups
+  (Invasion flow, Cancel API, Movement, Agenda/turn flow, relics).
+
 ### Engine completion — scoped roll modifiers + production window (2026-08-29)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` (this

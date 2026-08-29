@@ -110,7 +110,13 @@ pub fn bombardable(
 
 /// 49.1: the invader's bombarding ships fire at ground forces on the planets below.
 ///
-/// Returns how many ground forces were destroyed.
+/// Returns how many ground forces were destroyed. On a coexisting planet the invader must
+/// choose, per bombarding unit, whose units take the hits (coexistence 7, 7.1), so a decider
+/// is threaded in.
+///
+/// # Errors
+///
+/// [`IllegalChoice`] when the decider answers with something not offered.
 #[allow(
     clippy::too_many_arguments,
     reason = "one parameter per distinct input"
@@ -121,35 +127,46 @@ pub fn bombardment(
     sources: SourceSet,
     dice: &mut Dice,
     rng: &mut GameRng,
+    table: &mut Table,
     system: &SystemId,
     invader: &PlayerId,
-) -> usize {
+) -> Result<usize, IllegalChoice> {
     let occurrence = state.begin_feat_occurrence();
-    bombardment_at(
-        state, content, sources, dice, rng, system, invader, occurrence,
-    )
-    .0
+    let plan = roll_bombard_plan(state, content, sources, dice, rng, system, invader);
+    apply_bombard_plan(state, table, system, invader, &plan, occurrence)
+        .map(|(killed, _)| killed)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one parameter per distinct invasion input"
-)]
-fn bombardment_at(
-    state: &mut GameState,
+/// What was rolled on one planet: each bombarding unit's hit total (roll order) and the
+/// ground forces that stood there before the bombardment, so "the last ground force on a
+/// planet" (Make an Example of Their World) can be judged after the hits are assigned.
+#[derive(Debug, Clone)]
+struct BombardPlan {
+    planet: PlanetId,
+    groups: Vec<usize>,
+    held: usize,
+    victims: std::collections::BTreeSet<PlayerId>,
+}
+
+/// Roll the invader's bombarding ships on every planet they can reach (49.1).
+///
+/// The dice-consuming half of the bombardment: both the invasion window and this synchronous
+/// wrapper call it, so a given seed makes the same bombardment rolls no matter how the hits
+/// are assigned afterwards.
+fn roll_bombard_plan(
+    state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     dice: &mut Dice,
     rng: &mut GameRng,
     system: &SystemId,
     invader: &PlayerId,
-    occurrence: FeatOccurrence,
-) -> (usize, bool) {
-    // Entropic scars rules 2 and 4: bombardment is a unit ability, so it cannot be used by ships
-    // in a scar, nor against ground forces in one. Both directions collapse to the same system
-    // here, since bombardment fires from the active system onto planets in it.
+) -> Vec<BombardPlan> {
+    // Entropic scars rules 2 and 4: bombardment is a unit ability, so it cannot be used by
+    // ships in a scar, nor against ground forces in one. Both directions collapse to the same
+    // system here, since bombardment fires from the active system onto planets in it.
     if !crate::entropic_scars::abilities_usable(content, sources, system, Some(system)) {
-        return (0, false);
+        return Vec::new();
     }
     let types = catalogue(content, sources);
     let planets: Vec<PlanetId> = state
@@ -159,8 +176,7 @@ fn bombardment_at(
         .cloned()
         .collect();
 
-    let mut killed = 0;
-    let mut noted = false;
+    let mut plan = Vec::new();
     for planet in planets {
         if !bombardable(state, content, sources, system, &planet, invader) {
             continue;
@@ -176,16 +192,6 @@ fn bombardment_at(
             continue;
         }
 
-        // Hits are grouped by the unit that produced them, because coexistence prices them that
-        // way:
-        //
-        //   7.   the bombarding player chooses which player's units on that planet take the hits;
-        //   7.1  that choice is made independently for each bombarding unit;
-        //   7.2  surplus hits above the chosen player's unit count cannot go to a different player.
-        //
-        // Off a coexisting planet all three are invisible: there is only one defending player, so
-        // the choice is forced and 7.2 is the ordinary "extra hits are wasted". Grouping per unit
-        // costs nothing there and is what makes 7.2 true rather than accidentally true.
         let mut groups: Vec<usize> = Vec::new();
         for unit in state.system_state(system).units_of(invader) {
             let Some(kind) = types.get(unit.type_id.as_str()) else {
@@ -199,10 +205,9 @@ fn bombardment_at(
                 continue;
             }
             // Bunker: "during this invasion, apply -4 to the result of each BOMBARDMENT roll
-            // against planets you control." The window opened before the invasion window was
-            // constructed (the driver emits it, then builds the window that runs this step), so
-            // the marker is in place by the time these rolls are made. One entry per copy, so
-            // two Bunkers on the same planet give -8.
+            // against planets you control." The window that hosts these rolls is opened after
+            // the driver's invasion events, so the marker is in place by the time the rolls
+            // are made. One entry per copy, so two Bunkers on the same planet give -8.
             let bunker_penalty = state
                 .system_state(system)
                 .planet_control
@@ -230,50 +235,124 @@ fn bombardment_at(
                 groups.push(produced);
             }
         }
-
-        // Who may be shot at. On a coexisting planet this is a real choice per bombarding unit
-        // (7, 7.1) and the engine has no one to ask: bombardment resolves when the invasion window
-        // opens, before any decision is taken, precisely because it never had a choice before.
-        //
-        // Rather than pick a target and call it a rule, an ambiguous case is announced and the
-        // bombardment is skipped for that planet. Coexistence is currently unreachable -- the three
-        // effects that grant it (`exchangeprogram`, `crashlanding`, `sdn`) are unimplemented -- so
-        // this cannot fire yet, and it must be turned into a real choice when they land.
-        let targets: std::collections::BTreeSet<PlayerId> =
-            defenders.iter().map(|unit| unit.owner.clone()).collect();
-        if targets.len() > 1 {
-            debug_assert!(
-                false,
-                "bombarding a coexisting planet needs a target choice per bombarding unit \
-                 (coexistence 7, 7.1); see plans/ENGINE_COMPLETION_PLAN.md phase 2.4"
-            );
-            continue;
-        }
-        // 7.2: each unit's hits are capped by the chosen player's units, and do not spill.
-        let standing = defenders.len();
-        let hits: usize = groups.iter().map(|produced| (*produced).min(standing)).sum();
-        let hits = hits.min(standing);
-
-        // Make an Example of Their World asks for the last ground force on a planet and asks for
-        // it during this step. Counted here rather than after the invasion, because ground
-        // combat clears planets too and the empty planet afterwards does not say which step
-        // emptied it.
-        let held = defenders.len();
         let victims: std::collections::BTreeSet<PlayerId> =
             defenders.iter().map(|unit| unit.owner.clone()).collect();
+        plan.push(BombardPlan {
+            planet,
+            groups,
+            held: defenders.len(),
+            victims,
+        });
+    }
+    plan
+}
+
+/// Destroy up to `produced` of `owner`'s ground forces on `planet` (their deterministic
+/// on-planet order) and return how many fell. Coexistence 7.2: a unit's hits stop at the
+/// chosen player's own units and do not spill to anyone else's.
+fn take_bombard_hits(
+    state: &mut GameState,
+    system: &SystemId,
+    planet: &PlanetId,
+    owner: &PlayerId,
+    produced: usize,
+) -> usize {
+    if produced == 0 {
+        return 0;
+    }
+    let doomed: Vec<Unit> = state
+        .system_state(system)
+        .on_planet(planet)
+        .iter()
+        .filter(|unit| unit.owner == *owner)
+        .take(produced)
+        .cloned()
+        .collect();
+    if doomed.is_empty() {
+        return 0;
+    }
+    state.system_mut(system).remove_from_planet(planet, &doomed);
+    doomed.len()
+}
+
+/// The coexistence 7/7.1 question: whose units on the planet take this bombarding unit's
+/// hits. Only players still holding ground forces there are offered.
+fn bombardment_target_question(
+    invader: &PlayerId,
+    planet: &PlanetId,
+    hits: usize,
+    present: &std::collections::BTreeSet<PlayerId>,
+) -> Option<Choice> {
+    if present.is_empty() {
+        return None;
+    }
+    Some(Choice::new(
+        invader.clone(),
+        format!(
+            "whose units on {planet} take the bombardment's next hits ({hits} hits)"
+        ),
+        present
+            .iter()
+            .map(|player| {
+                ChoiceOption::labelled(
+                    player.as_str(),
+                    "bombardment_target",
+                    format!("{player}'s units"),
+                )
+            })
+            .collect(),
+    ))
+}
+
+/// Assign an already-rolled bombardment synchronously, asking the decider on coexisting
+/// planets (7, 7.1) and capping each unit's hits at the chosen player's forces (7.2).
+///
+/// Returns how many ground forces were destroyed and whether the "last ground force on a
+/// planet" feat fired. The invasion window applies the same rolls through its pause-and-
+/// answer state machine instead, because there the choice crosses a step boundary.
+fn apply_bombard_plan(
+    state: &mut GameState,
+    table: &mut Table,
+    system: &SystemId,
+    invader: &PlayerId,
+    plan: &[BombardPlan],
+    occurrence: FeatOccurrence,
+) -> Result<(usize, bool), IllegalChoice> {
+    let mut killed = 0;
+    let mut noted = false;
+    for entry in plan {
         let mut taken = 0;
-        for doomed in defenders.into_iter().take(hits) {
-            state
-                .system_mut(system)
-                .remove_from_planet(&planet, std::slice::from_ref(&doomed));
-            killed += 1;
-            taken += 1;
+        for produced in &entry.groups {
+            let target = if entry.victims.len() == 1 {
+                entry.victims.iter().next().expect("a single owner").clone()
+            } else {
+                let present: std::collections::BTreeSet<PlayerId> = state
+                    .system_state(system)
+                    .on_planet(&entry.planet)
+                    .iter()
+                    .filter(|unit| &unit.owner != invader)
+                    .map(|unit| unit.owner.clone())
+                    .collect();
+                let Some(question) =
+                    bombardment_target_question(invader, &entry.planet, *produced, &present)
+                else {
+                    // 7.2: nobody left with units takes the remaining hits.
+                    break;
+                };
+                PlayerId::new(table.ask(&question)?.id)
+            };
+            taken += take_bombard_hits(state, system, &entry.planet, &target, *produced);
         }
-        if taken == held
-            && victims.len() == 1
+        killed += taken;
+        // Make an Example of Their World asks for the last ground force on a planet and asks
+        // for it during this step: counted here rather than after the invasion, because
+        // ground combat clears planets too and the empty planet afterwards does not say
+        // which step emptied it.
+        if taken == entry.held
+            && entry.victims.len() == 1
             && state
                 .system_state(system)
-                .on_planet(&planet)
+                .on_planet(&entry.planet)
                 .iter()
                 .all(|unit| &unit.owner == invader)
         {
@@ -281,9 +360,8 @@ fn bombardment_at(
             noted = true;
         }
     }
-    (killed, noted)
+    Ok((killed, noted))
 }
-
 /// Ground forces this player has in the system's space area, available to land.
 #[must_use]
 pub fn landable(
@@ -699,6 +777,23 @@ pub fn establish_control(
 /// Where an open invasion has reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
+    /// The invader's bombarding ships have rolled (49.1); their hits are being assigned, in
+    /// roll order, before any other invasion decision. Pauses on coexisting planets for the
+    /// per-unit target choice (coexistence 7, 7.1).
+    Bombarding,
+    /// Mid-bombardment on the planet at `planet_index` of the window's bombardment plan:
+    /// `groups` holds each bombarding unit's hit total, `next_group` the next unit to be
+    /// assigned, `taken` the units destroyed on the planet so far.
+    ChoosingBombardment {
+        planet_index: usize,
+        planet: PlanetId,
+        groups: Vec<usize>,
+        next_group: usize,
+        taken: usize,
+        held: usize,
+        victims: std::collections::BTreeSet<PlayerId>,
+        occurrence: FeatOccurrence,
+    },
     /// Offering to lift the custodians token from Mecatol Rex (27.2).
     Custodians,
     /// Choosing which ground forces to land, and where (49.2).
@@ -778,9 +873,11 @@ fn ground_force_owners(
 
 /// An invasion, resolvable one decision at a time (LRR 49).
 ///
-/// Bombardment happens when the window opens: it involves no choices, and 49.1 puts it before
-/// ground forces are committed, so deferring it would let a player commit knowing what a
-/// bombardment they had not yet suffered was going to do.
+/// Bombardment is rolled when the window opens: 49.1 puts it before ground forces are
+/// committed, so deferring even its rolls would let a player commit knowing what a
+/// bombardment they had not yet suffered was going to do. The rolled hits are then assigned
+/// inside the settle loop, pausing on coexisting planets for the invader's per-unit target
+/// choices (coexistence 7, 7.1).
 #[derive(Debug, Clone)]
 pub struct InvasionWindow {
     invader: PlayerId,
@@ -790,10 +887,15 @@ pub struct InvasionWindow {
     pending_scoring_occurrences: std::collections::VecDeque<(FeatOccurrence, bool)>,
     current_ground_occurrence: Option<FeatOccurrence>,
     notes_at_tactical_start: crate::combat::NoteHoldings,
+    /// The bombardment rolled when the window opened (49.1), awaiting assignment.
+    bombard_plan: Vec<BombardPlan>,
+    /// Next entry of `bombard_plan` to assign or finish.
+    bombard_index: usize,
+    bombard_occurrence: FeatOccurrence,
 }
 
 impl InvasionWindow {
-    /// Open an invasion, resolving bombardment immediately.
+    /// Open an invasion, rolling its bombardment immediately (49.1).
     #[must_use]
     pub fn new(
         state: &mut GameState,
@@ -821,20 +923,19 @@ impl InvasionWindow {
         notes_at_tactical_start: crate::combat::NoteHoldings,
     ) -> Self {
         let occurrence = state.begin_feat_occurrence();
-        let (kills, noted) = bombardment_at(
-            state, content, sources, dice, rng, system, invader, occurrence,
-        );
+        let bombard_plan =
+            roll_bombard_plan(state, content, sources, dice, rng, system, invader);
         Self {
             invader: invader.clone(),
             system: system.clone(),
-            stage: Stage::Custodians,
-            report: InvasionReport {
-                bombardment_kills: kills,
-                ..InvasionReport::default()
-            },
-            pending_scoring_occurrences: noted.then_some((occurrence, false)).into_iter().collect(),
+            stage: Stage::Bombarding,
+            report: InvasionReport::default(),
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
             current_ground_occurrence: None,
             notes_at_tactical_start,
+            bombard_plan,
+            bombard_index: 0,
+            bombard_occurrence: occurrence,
         }
     }
 
@@ -843,9 +944,121 @@ impl InvasionWindow {
         self.pending_scoring_occurrences.pop_front()
     }
 
+    /// Advance the bombardment as far as it can without asking anyone: assign the hits on
+    /// single-owner planets inline, and pause (stopping the loop) on the first planet that
+    /// needs a per-unit target choice.
+    fn step_bombardment(&mut self, state: &mut GameState) {
+        loop {
+            let Some(entry) = self.bombard_plan.get(self.bombard_index) else {
+                self.stage = Stage::Custodians;
+                return;
+            };
+            if entry.groups.is_empty() {
+                self.bombard_index += 1;
+                continue;
+            }
+            // Lift the entry's data out before touching self mutably again.
+            let (planet, groups, held, victims) = (
+                entry.planet.clone(),
+                entry.groups.clone(),
+                entry.held,
+                entry.victims.clone(),
+            );
+            if victims.len() == 1 {
+                let target = victims.iter().next().expect("a single owner");
+                let mut taken = 0;
+                for produced in &groups {
+                    taken += take_bombard_hits(state, &self.system, &planet, target, *produced);
+                }
+                self.report.bombardment_kills += taken;
+                self.complete_bombard_plan(
+                    state, &planet, taken, held, &victims, self.bombard_occurrence,
+                );
+                self.bombard_index += 1;
+                continue;
+            }
+            // Coexistence 7, 7.1: the invader picks, per bombarding unit, whose units take the
+            // hits. The window pauses here until the driver's decider answers.
+            self.stage = Stage::ChoosingBombardment {
+                planet_index: self.bombard_index,
+                planet,
+                groups,
+                next_group: 0,
+                taken: 0,
+                held,
+                victims,
+                occurrence: self.bombard_occurrence,
+            };
+            return;
+        }
+    }
+
+    /// Finish a planet's bombardment: if the step destroyed its last ground force, fire the
+    /// feat (counted during the step -- later ground combat clears planets too, and the empty
+    /// planet afterwards does not say which step emptied it).
+    fn complete_bombard_plan(
+        &mut self,
+        state: &mut GameState,
+        planet: &PlanetId,
+        taken: usize,
+        held: usize,
+        victims: &std::collections::BTreeSet<PlayerId>,
+        occurrence: FeatOccurrence,
+    ) {
+        if taken == held
+            && victims.len() == 1
+            && state
+                .system_state(&self.system)
+                .on_planet(planet)
+                .iter()
+                .all(|unit| unit.owner == self.invader)
+        {
+            state.record_event_feat(
+                &self.invader,
+                Feat::BombardedOutTheLastGroundForces,
+                occurrence,
+            );
+            self.pending_scoring_occurrences.push_back((occurrence, false));
+        }
+    }
+
     pub fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         loop {
             match self.stage.clone() {
+                Stage::Bombarding => {
+                    self.step_bombardment(state);
+                    // The stage moved on (a later bombardment step, the custodians stage, or
+                    // the coexistence pause); re-match it.
+                }
+                Stage::ChoosingBombardment {
+                    planet_index,
+                    planet,
+                    taken,
+                    held,
+                    victims,
+                    occurrence,
+                    ..
+                } => {
+                    // If the planet's ground forces are already gone, the remaining hits have
+                    // no target (coexistence 7.2) and the planet finishes without asking.
+                    let present: std::collections::BTreeSet<PlayerId> = state
+                        .system_state(&self.system)
+                        .on_planet(&planet)
+                        .iter()
+                        .filter(|unit| unit.owner != self.invader)
+                        .map(|unit| unit.owner.clone())
+                        .collect();
+                    if present.is_empty() {
+                        self.complete_bombard_plan(
+                            state, &planet, taken, held, &victims, occurrence,
+                        );
+                        self.bombard_index = planet_index + 1;
+                        self.stage = Stage::Bombarding;
+                    } else {
+                        // Wait for the invader's choice (the driver presents pending_choice).
+                        return;
+                    }
+                }
                 Stage::Advancing { planets, index } => {
                     self.advance_fighting(state, ctx, &planets, index);
                     return;
@@ -1276,6 +1489,29 @@ impl InvasionWindow {
 }
 
 impl Window for InvasionWindow {
+    /// A fresh window starts on its bombardment, and bombardment advances by
+    /// [`Self::settle`] rather than by any player choice, so driving one settles before the
+    /// first question and after every answer that leaves nothing to ask.
+    ///
+    /// Drive stops once a scoring occurrence is queued: that pause belongs to the caller (the
+    /// driver opens the occurrence's scoring window there), exactly as between its own steps.
+    fn drive(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+    ) -> Result<(), IllegalChoice> {
+        self.settle(state, ctx);
+        while self.pending_scoring_occurrences.is_empty() && !self.is_done() {
+            if let Some(choice) = self.pending_choice(state, ctx.content, ctx.sources) {
+                let answer = ctx.ask_seeing(state, &choice)?;
+                self.resolve(state, ctx, answer)?;
+            } else {
+                self.settle(state, ctx);
+            }
+        }
+        Ok(())
+    }
+
     fn pending_choice(
         &self,
         state: &GameState,
@@ -1283,7 +1519,32 @@ impl Window for InvasionWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         match &self.stage {
-            Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => None,
+            Stage::Done
+            | Stage::Bombarding
+            | Stage::Advancing { .. }
+            | Stage::FinalizingControl { .. } => None,
+            Stage::ChoosingBombardment {
+                planet,
+                groups,
+                next_group,
+                ..
+            } => {
+                // Coexistence 7, 7.1, asked once per bombarding unit (7.1), with the choices
+                // narrowed to the players still holding units on the planet (7.2 makes the
+                // rest of a unit's hits waste if its chosen target runs out).
+                let Some(next) = (*next_group..groups.len()).find(|&i| groups[i] > 0) else {
+                    // settle() finishes the planet; present nothing so the driver settles it.
+                    return None;
+                };
+                let present: std::collections::BTreeSet<PlayerId> = state
+                    .system_state(&self.system)
+                    .on_planet(planet)
+                    .iter()
+                    .filter(|unit| unit.owner != self.invader)
+                    .map(|unit| unit.owner.clone())
+                    .collect();
+                bombardment_target_question(&self.invader, planet, groups[next], &present)
+            }
             Stage::ChoosingNextCombat {
                 planet, remaining, ..
             } => {
@@ -1371,7 +1632,53 @@ impl Window for InvasionWindow {
         let option = crate::choice::validate(&choice, answer)?;
 
         match self.stage.clone() {
-            Stage::Done | Stage::Advancing { .. } | Stage::FinalizingControl { .. } => {}
+            Stage::Done
+            | Stage::Bombarding
+            | Stage::Advancing { .. }
+            | Stage::FinalizingControl { .. } => {}
+            Stage::ChoosingBombardment {
+                planet_index,
+                planet,
+                groups,
+                next_group,
+                taken,
+                held,
+                victims,
+                occurrence,
+            } => {
+                // Coexistence 7, 7.1: apply the chosen target to this bombarding unit's hits.
+                // 7.2 caps the destruction at the chosen player's remaining units.
+                let next = (next_group..groups.len())
+                    .find(|&i| groups[i] > 0)
+                    .expect("paused on a bombardment that had hits to assign");
+                let target = PlayerId::new(option.id);
+                let applied = take_bombard_hits(state, &self.system, &planet, &target, groups[next]);
+                self.report.bombardment_kills += applied;
+                let taken = taken + applied;
+                let exhausted = next + 1 >= groups.len()
+                    || state
+                        .system_state(&self.system)
+                        .on_planet(&planet)
+                        .iter()
+                        .find(|unit| unit.owner != self.invader)
+                        .is_none();
+                if exhausted {
+                    self.complete_bombard_plan(state, &planet, taken, held, &victims, occurrence);
+                    self.bombard_index = planet_index + 1;
+                    self.stage = Stage::Bombarding;
+                } else {
+                    self.stage = Stage::ChoosingBombardment {
+                        planet_index,
+                        planet,
+                        groups,
+                        next_group: next + 1,
+                        taken,
+                        held,
+                        victims,
+                        occurrence,
+                    };
+                }
+            }
             Stage::ChoosingNextCombat {
                 planets,
                 index,
@@ -1756,7 +2063,7 @@ mod tests {
         on_planet(&mut state, &system, &planet, "infantry", &holder(), 4);
         on_planet(&mut state, &system, &planet, "infantry", &invader(), 2);
         in_space(&mut state, &system, "dreadnought", &invader(), 6);
-        let (_, mut dice, mut rng) = kit();
+        let (mut table, mut dice, mut rng) = kit();
 
         bombardment(
             &mut state,
@@ -1764,9 +2071,11 @@ mod tests {
             POK,
             &mut dice,
             &mut rng,
+            &mut table,
             &system,
             &invader(),
-        );
+        )
+        .expect("single owner: no choice to refuse");
 
         assert_eq!(
             state
@@ -1784,6 +2093,7 @@ mod tests {
         in_space(&mut state, &system, "dreadnought", &invader(), 1);
         let mut dice = Dice::from_faces([10, 10]);
         let mut rng = GameRng::new(1);
+        let mut table = Table::new();
 
         for _ in 0..2 {
             on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
@@ -1794,9 +2104,11 @@ mod tests {
                     POK,
                     &mut dice,
                     &mut rng,
+                    &mut table,
                     &system,
                     &invader(),
-                ),
+                )
+                .expect("single owner: no choice to refuse"),
                 1
             );
         }
@@ -1906,7 +2218,7 @@ mod tests {
     fn an_undefended_planet_is_not_bombarded() {
         let (mut state, system, _) = arena();
         in_space(&mut state, &system, "dreadnought", &invader(), 4);
-        let (_, mut dice, mut rng) = kit();
+        let (mut table, mut dice, mut rng) = kit();
 
         let killed = bombardment(
             &mut state,
@@ -1914,12 +2226,118 @@ mod tests {
             POK,
             &mut dice,
             &mut rng,
+            &mut table,
             &system,
             &invader(),
-        );
+        )
+        .expect("no defenders: no choice to refuse");
 
         assert_eq!(killed, 0);
         assert_eq!(dice.count(), 0, "nothing to shoot at, so no dice");
+    }
+
+    /// Answers like [`Scripted`] but records what every question offered, so a test can
+    /// assert not only the outcome but what the engine was allowed to say.
+    struct RecordingScripted {
+        inner: crate::choice::Scripted,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<Vec<String>>>>,
+    }
+
+    impl crate::choice::Decider for RecordingScripted {
+        fn choose(
+            &mut self,
+            choice: &Choice,
+        ) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen
+                .borrow_mut()
+                .push(choice.ids().into_iter().map(String::from).collect());
+            self.inner.choose(choice)
+        }
+    }
+
+    #[test]
+    fn a_coexisting_planets_bombardment_is_chosen_per_unit_and_capped_at_each_target() {
+        // Coexistence 7, 7.1, 7.2: the invader chooses, per bombarding unit, whose units on
+        // the planet take the hits, and a unit's hits stop at the chosen player's own units
+        // rather than spilling to a different player's forces.
+        //
+        // Invader's fleet: a dreadnought (one hit), a Sardakkian dreadnought (two hits),
+        // another dreadnought (one hit). B holds one infantry on the planet, C holds two.
+        // The first unit names C, the second names B (destroying B's only infantry and
+        // wasting its surplus hit, which must not spill to C), the third names C again,
+        // which empties the planet. The answers deliberately differ from the first offered
+        // option, so a decider that ignored them would visibly change the result.
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let content = ContentStore::embedded();
+
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state.system_mut(&system).set_control(planet.clone(), b.clone());
+        on_planet(&mut state, &system, &planet, "infantry", &b, 1);
+        on_planet(&mut state, &system, &planet, "infantry", &c, 2);
+        in_space(&mut state, &system, "dreadnought", &a, 1);
+        in_space(&mut state, &system, "sardakk_dreadnought", &a, 1);
+        in_space(&mut state, &system, "dreadnought", &a, 1);
+
+        let mut dice = Dice::from_faces([8, 6, 6, 8]);
+        let mut rng = GameRng::new(7);
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let decider = RecordingScripted {
+            inner: crate::choice::Scripted::new(["c", "b", "c"]),
+            seen: seen.clone(),
+        };
+        let mut table = Table::with_default(Box::new(decider));
+
+        let mut window = InvasionWindow::new(
+            &mut state,
+            content,
+            POK,
+            &mut dice,
+            &mut rng,
+            &a,
+            &system,
+        );
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        // The window's own decisions run against the table, exactly as the public `resolve`
+        // wrapper does, and the driver does through its step boundary.
+        while !window.is_done() {
+            window.drive(&mut state, &mut ctx).expect("the script only picks what is offered");
+            while window.take_scoring_occurrence().is_some() {}
+            window.settle(&mut state, &mut ctx);
+        }
+
+        let report = window.into_report();
+        assert_eq!(
+            report.bombardment_kills, 3,
+            "1 + 1 (the second unit's other hit wasted on B) + 1"
+        );
+        let expected: Vec<Vec<String>> = vec![
+            vec!["b".to_owned(), "c".to_owned()],
+            vec!["b".to_owned(), "c".to_owned()],
+            vec!["c".to_owned()],
+        ];
+        assert_eq!(
+            seen.borrow().as_slice(),
+            expected.as_slice(),
+            "each unit is asked separately, and B stops being offered once B holds nothing there"
+        );
+
+        let left: Vec<Unit> = state.system_state(&system).on_planet(&planet).to_vec();
+        assert!(
+            left.is_empty(),
+            "every infantry was named: C twice, B once, B's surplus hit wasted"
+        );
+        assert_eq!(dice.count(), 3, "one roll per bombarding ship");
     }
 
     #[test]
@@ -1992,6 +2410,9 @@ mod tests {
             pending_scoring_occurrences: std::collections::VecDeque::new(),
             current_ground_occurrence: None,
             notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
         };
         let mut dice = Dice::new();
         let mut rng = GameRng::new(1);
@@ -2054,6 +2475,9 @@ mod tests {
                 pending_scoring_occurrences: std::collections::VecDeque::new(),
                 current_ground_occurrence: None,
                 notes_at_tactical_start: crate::combat::note_holdings(&state),
+                bombard_plan: Vec::new(),
+                bombard_index: 0,
+                bombard_occurrence: state.begin_feat_occurrence(),
             };
             let mut dice = Dice::new();
             let mut rng = GameRng::new(1);
@@ -2197,6 +2621,9 @@ mod tests {
             pending_scoring_occurrences: std::collections::VecDeque::new(),
             current_ground_occurrence: None,
             notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
         };
         let mut dice = Dice::from_faces([10, 1, 10, 1]);
         let mut rng = GameRng::new(1);
@@ -2815,6 +3242,9 @@ mod tests {
             pending_scoring_occurrences: std::collections::VecDeque::new(),
             current_ground_occurrence: None,
             notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
         };
         let choice = window
             .pending_choice(&state, content, POK)
@@ -2935,9 +3365,9 @@ mod tests {
         // the option list, so the surface is asserted here rather than assumed shared.
         let (mut state, system, pa, pb) = two_planet_arena();
         in_space(&mut state, &system, "infantry", &invader(), 2);
-        let (_table, mut dice, mut rng) = kit();
+        let (mut table, mut dice, mut rng) = kit();
 
-        let window = InvasionWindow::new(
+        let mut window = InvasionWindow::new(
             &mut state,
             ContentStore::embedded(),
             POK,
@@ -2946,8 +3376,19 @@ mod tests {
             &invader(),
             &system,
         );
+        let content = ContentStore::embedded();
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        // A fresh window sits on its (choice-free) bombardment until it settles.
+        window.settle(&mut state, &mut ctx);
         let choice = window
-            .pending_choice(&state, ContentStore::embedded(), POK)
+            .pending_choice(&state, content, POK)
             .expect("troops in space mean a commit ask");
 
         assert_eq!(choice.prompt, format!("commit ground forces in {system}"));

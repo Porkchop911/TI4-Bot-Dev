@@ -4550,8 +4550,16 @@ mod tests {
             state.player_mut(&b).unwrap().bunker_invasion = markers;
             let mut dice = crate::dice::Dice::from_faces([face]);
             let killed = crate::invasion::bombardment(
-                &mut state, store, POK, &mut dice, &mut rng, &system, &a,
-            );
+                &mut state,
+                store,
+                POK,
+                &mut dice,
+                &mut rng,
+                &mut crate::choice::Table::new(),
+                &system,
+                &a,
+            )
+            .expect("single-owner planet: no choice to refuse");
             (killed, state.system_state(&system).on_planet(&planet).len())
         };
 

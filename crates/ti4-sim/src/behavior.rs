@@ -4,7 +4,7 @@
 //! (SD-1, `plans/M08_AUTHORED_BOTS.md`). Determinism pins catch *run-to-run* drift; this suite
 //! catches *version-to-version* behavioral drift: it plays a fixed seed set twice, asserts
 //! per-seed identity before any comparison, and checks ten behavioral metrics against bounds
-//! recorded from the current baseline (v3 — see [`baseline_bounds`]).
+//! recorded from the current baseline (v6 — see [`baseline_bounds`]).
 //!
 //! Protocol (v1): six seats `p1`..`p6` on [`crate::run::Table::seated`]'s stable roster,
 //! `DEFAULT` (= FULL) content scope — the simulator runtime's assigned scope (an earlier draft
@@ -375,12 +375,34 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v2): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v6): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the v1→v2 old/new comparison in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v6 — recorded 2026-08-29. A change in *play*: coexistence bombardment (rules 7, 7.1, 7.2)
+    // became a real decider question instead of a skipped planet.
+    //
+    // `plans/ENGINE_COMPLETION_PLAN.md` phase 2.4: on a planet whose ground forces belong to
+    // several players, the bombarding player now chooses, independently per bombarding unit,
+    // whose units take the hits (capped per target, no spill — 7.2). Before this tree, the
+    // engine announced the case with `debug_assert!(false)` and, in release builds, simply
+    // skipped the planet: dice were consumed and no defender was touched. `exchangeprogram`
+    // (9a6fe0b, batch 4) made coexisting planets reachable in bot play, which is what
+    // exposed the gap and made the suite red.
+    //
+    // Bots now answer the question, so bombs that used to evaporate land as kills. The action
+    // mix drifts down by a few hundredths on the invasion-adjacent labels and
+    // `faction_differentiation` / `score_spread` widen; `completion` stays the strict 1.0
+    // invariant — every game still ends cleanly, just with more ground forces traded on
+    // shared planets. The protocol-integrity check is what forced the move: the recomputed
+    // bounds no longer match the v5 transcription.
+    //
+    // Approved by the project owner 2026-08-29 (the handoff's standing approval to move the
+    // baseline once when this group lands); v5 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v5 — recorded 2026-08-29, and unlike v4 this one is a change in *play*.
     //
     // `plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md`: Lead From the Front and Galvanize the People are
@@ -424,43 +446,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.36049382716049383, 0.4141975308641975),
+        (0.3777777777777778, 0.4345679012345679),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.6540991973705854, 2.0061385135350815),
+        (1.4978213810119856, 1.988578448770187),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.40184758488944705, 0.8893228107545623),
+        (0.4147362690186453, 1.021074234614013),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027505101042852347, 0.029080687426688054),
+        (0.027526346140123132, 0.02915790173900407),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.04668181736870523, 0.04779933168281916),
+        (0.0457303376062687, 0.046983485464914515),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.06814141847180269, 0.07149281157674263),
+        (0.06446631758170146, 0.06931296439058442),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.008362208294921845, 0.009382226394320903),
+        (0.007880342339843086, 0.008682482089389229),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.09216129477947528, 0.09436985000605595),
+        (0.0903563492636094, 0.0928960138891977),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.04545672658738001, 0.046608822657833976),
+        (0.04461790726584114, 0.0459011136298896),
     );
     bounds
 }
