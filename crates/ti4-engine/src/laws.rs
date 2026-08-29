@@ -85,10 +85,161 @@ pub fn nebulae_passable(state: &GameState) -> bool {
     active(state, "shared_research")
 }
 
+/// Homeland Defense Act: any number of PDS on a controlled planet.
+///
+/// The law removes the per-planet cap rather than raising it, so this answers "is there a cap"
+/// rather than "what is it".
+#[must_use]
+pub fn structure_cap_lifted(state: &GameState, base_type: &str) -> bool {
+    base_type == "pds" && active(state, "defense_act")
+}
+
+/// Conventions of War: BOMBARDMENT cannot be used against units on cultural planets.
+#[must_use]
+pub fn bombardment_forbidden(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &ti4_model::id::PlanetId,
+) -> bool {
+    if !active(state, "conventions") {
+        return false;
+    }
+    ti4_content::galaxy::planet(content, planet.as_str(), sources)
+        .is_some_and(|record| record.has_trait("CULTURAL"))
+}
+
+/// Demilitarized Zone: nothing may land on, be produced on, or be placed on the elected planet.
+#[must_use]
+pub fn planet_is_demilitarized(state: &GameState, planet: &ti4_model::id::PlanetId) -> bool {
+    elected(state, "demilitarized_zone").is_some_and(|elected| elected == planet.as_str())
+}
+
+/// Holy Planet of Ixth: units on the elected planet cannot use PRODUCTION.
+#[must_use]
+pub fn production_forbidden_on(state: &GameState, planet: &ti4_model::id::PlanetId) -> bool {
+    elected(state, "holy_planet_of_ixth").is_some_and(|elected| elected == planet.as_str())
+}
+
+/// How much a law adds to a planet's resources or influence.
+///
+/// Separate from [`crate::production::planet_value`], which stays the *printed* value: three laws
+/// attach to a planet card and change what it is worth now, and conflating "printed" with "current"
+/// is how an attachment silently stops applying somewhere.
+///
+/// * Core Mining — resources +2
+/// * Senate Sanctuary — influence +2
+/// * Terraforming Initiative — resources +1 and influence +1
+#[must_use]
+pub fn planet_value_bonus(
+    state: &GameState,
+    planet: &ti4_model::id::PlanetId,
+    kind: crate::production::Spend,
+) -> i64 {
+    let attached = |alias: &str| -> bool {
+        elected(state, alias).is_some_and(|elected| elected == planet.as_str())
+    };
+    let mut bonus = 0;
+    match kind {
+        crate::production::Spend::Resources => {
+            if attached("core_mining") {
+                bonus += 2;
+            }
+            if attached("terraforming_initiative") {
+                bonus += 1;
+            }
+        }
+        crate::production::Spend::Influence => {
+            if attached("senate_sanctuary") {
+                bonus += 2;
+            }
+            if attached("terraforming_initiative") {
+                bonus += 1;
+            }
+        }
+    }
+    bonus
+}
+
+/// Regulated Conscription: a fighter or infantry costs its price for one unit, not two.
+#[must_use]
+pub fn single_unit_production(state: &GameState) -> bool {
+    active(state, "conscription")
+}
+
+/// Research Teams: an exhausted research-team planet ignores one prerequisite of its colour.
+///
+/// Returns how many prerequisites of `colour` this player may waive. The card is attached to a
+/// planet and exhausted to use, so the player must control it and it must be readied.
+#[must_use]
+pub fn research_team_waivers(state: &GameState, player: &PlayerId, colour: &str) -> usize {
+    let alias = match colour {
+        "BIOTIC" => "rt_biotic",
+        "CYBERNETIC" => "rt_cybernetic",
+        "PROPULSION" => "rt_propulsion",
+        "WARFARE" => "rt_warfare",
+        _ => return 0,
+    };
+    let Some(planet) = elected(state, alias) else {
+        return 0;
+    };
+    let planet = ti4_model::id::PlanetId::new(planet.clone());
+    if state.exhausted_planets.contains(&planet) {
+        return 0;
+    }
+    usize::from(
+        state
+            .controlled_planets(player)
+            .into_iter()
+            .any(|(_, held)| *held == planet),
+    )
+}
+
+/// Representative Government: one vote each, and planets are not exhausted to vote.
+///
+/// Both printings say the same thing; the corpus carries them as two aliases.
+#[must_use]
+pub fn flat_votes(state: &GameState) -> bool {
+    active(state, "rep_govt") || active(state, "representative_government")
+}
+
+/// Enforced Travel Ban: alpha and beta wormholes have no effect during movement.
+#[must_use]
+pub fn wormholes_suppressed(state: &GameState) -> bool {
+    active(state, "travel_ban")
+}
+
+/// Wormhole Reconstruction: every system with an alpha or beta wormhole is adjacent to every other.
+#[must_use]
+pub fn wormholes_all_connected(state: &GameState) -> bool {
+    active(state, "wormhole_recon")
+}
+
 /// Laws this engine can enact but not enforce — the honest coverage gap.
 #[must_use]
 pub fn enforced_aliases() -> Vec<&'static str> {
-    vec!["censure", "regulations", "sanctions", "shared_research"]
+    vec![
+        "censure",
+        "conscription",
+        "conventions",
+        "core_mining",
+        "defense_act",
+        "demilitarized_zone",
+        "holy_planet_of_ixth",
+        "regulations",
+        "rep_govt",
+        "representative_government",
+        "rt_biotic",
+        "rt_cybernetic",
+        "rt_propulsion",
+        "rt_warfare",
+        "sanctions",
+        "senate_sanctuary",
+        "shared_research",
+        "terraforming_initiative",
+        "travel_ban",
+        "wormhole_recon",
+    ]
 }
 
 /// Laws in the corpus that nothing here consults.
@@ -106,6 +257,156 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
 
 #[cfg(test)]
 mod tests {
+    use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    fn enacted(alias: &str, elected: &str) -> GameState {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.laws.insert(alias.to_owned(), elected.to_owned());
+        state
+    }
+
+    /// Core Mining, Senate Sanctuary and Terraforming Initiative change what a planet can pay.
+    ///
+    /// Checked through `planet_value_now`, the function every spending path reads, rather than
+    /// through the bonus itself — an attachment that changed a number nothing consults would pass a
+    /// test written the other way round.
+    #[test]
+    fn an_attached_law_changes_what_a_planet_can_pay() {
+        let content = ti4_content::ContentStore::embedded();
+        let planet = ti4_model::id::PlanetId::new("bellatrix");
+        let printed_resources =
+            crate::production::planet_value(content, ALL_SOURCES, &planet, crate::production::Spend::Resources);
+        let printed_influence =
+            crate::production::planet_value(content, ALL_SOURCES, &planet, crate::production::Spend::Influence);
+
+        let state = enacted("core_mining", "bellatrix");
+        assert_eq!(
+            crate::production::planet_value_now(
+                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+            ),
+            printed_resources + 2,
+            "Core Mining adds two resources"
+        );
+
+        let state = enacted("senate_sanctuary", "bellatrix");
+        assert_eq!(
+            crate::production::planet_value_now(
+                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Influence
+            ),
+            printed_influence + 2,
+            "Senate Sanctuary adds two influence"
+        );
+
+        let state = enacted("terraforming_initiative", "bellatrix");
+        assert_eq!(
+            (
+                crate::production::planet_value_now(
+                    &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                ),
+                crate::production::planet_value_now(
+                    &state, content, ALL_SOURCES, &planet, crate::production::Spend::Influence
+                )
+            ),
+            (printed_resources + 1, printed_influence + 1),
+            "Terraforming Initiative adds one of each"
+        );
+
+        // A law attached elsewhere leaves this planet alone.
+        let state = enacted("core_mining", "somewhere_else");
+        assert_eq!(
+            crate::production::planet_value_now(
+                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+            ),
+            printed_resources
+        );
+    }
+
+    /// Conventions of War: no BOMBARDMENT against units on a cultural planet.
+    #[test]
+    fn conventions_of_war_protects_cultural_planets() {
+        let content = ti4_content::ContentStore::embedded();
+        let cultural = ti4_content::galaxy::all_planets(content, ALL_SOURCES)
+            .into_iter()
+            .find(|(_, record)| record.has_trait("CULTURAL"))
+            .map(|(name, _)| ti4_model::id::PlanetId::new(name.to_owned()))
+            .expect("the corpus has cultural planets");
+        let hazardous = ti4_content::galaxy::all_planets(content, ALL_SOURCES)
+            .into_iter()
+            .find(|(_, record)| record.has_trait("HAZARDOUS"))
+            .map(|(name, _)| ti4_model::id::PlanetId::new(name.to_owned()))
+            .expect("the corpus has hazardous planets");
+
+        let state = enacted("conventions", "For");
+        assert!(bombardment_forbidden(&state, content, ALL_SOURCES, &cultural));
+        assert!(
+            !bombardment_forbidden(&state, content, ALL_SOURCES, &hazardous),
+            "only cultural planets are protected"
+        );
+
+        let quiet = crate::fixtures::game(&["a"]);
+        assert!(!bombardment_forbidden(&quiet, content, ALL_SOURCES, &cultural));
+    }
+
+    /// Homeland Defense Act removes the PDS cap; Demilitarized Zone bars the planet entirely.
+    #[test]
+    fn structure_laws_lift_and_bar() {
+        let state = enacted("defense_act", "For");
+        assert!(structure_cap_lifted(&state, "pds"));
+        assert!(
+            !structure_cap_lifted(&state, "spacedock"),
+            "the law names PDS only"
+        );
+
+        let state = enacted("demilitarized_zone", "bellatrix");
+        assert!(planet_is_demilitarized(
+            &state,
+            &ti4_model::id::PlanetId::new("bellatrix")
+        ));
+        assert!(!planet_is_demilitarized(
+            &state,
+            &ti4_model::id::PlanetId::new("somewhere_else")
+        ));
+    }
+
+    /// A Research Team waives one prerequisite of its colour, and only while readied and held.
+    #[test]
+    fn a_research_team_waives_one_prerequisite_of_its_colour() {
+        let player = PlayerId::new("a");
+        let planet = ti4_model::id::PlanetId::new("bellatrix");
+        let mut state = enacted("rt_biotic", "bellatrix");
+        state
+            .system_mut(&ti4_model::id::SystemId::new("109"))
+            .set_control(planet.clone(), player.clone());
+
+        assert_eq!(research_team_waivers(&state, &player, "BIOTIC"), 1);
+        assert_eq!(
+            research_team_waivers(&state, &player, "WARFARE"),
+            0,
+            "each team covers one colour"
+        );
+        assert_eq!(
+            research_team_waivers(&state, &PlayerId::new("b"), "BIOTIC"),
+            0,
+            "and only for the player holding the planet"
+        );
+
+        state.exhausted_planets.insert(planet);
+        assert_eq!(
+            research_team_waivers(&state, &player, "BIOTIC"),
+            0,
+            "the card is exhausted to use it"
+        );
+    }
+
+    /// Both printings of Representative Government mean the same thing.
+    #[test]
+    fn representative_government_flattens_votes_under_either_alias() {
+        assert!(flat_votes(&enacted("rep_govt", "For")));
+        assert!(flat_votes(&enacted("representative_government", "For")));
+        assert!(!flat_votes(&crate::fixtures::game(&["a"])));
+    }
+
+
     use ti4_model::content_types::POK;
 
     use super::*;

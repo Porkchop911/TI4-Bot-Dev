@@ -778,6 +778,12 @@ pub fn can_research(
     for (colour, count) in specialties {
         *holdings.entry(colour).or_insert(0) += count;
     }
+    // Research Team laws attach to a planet and are exhausted to ignore one prerequisite of their
+    // colour. They add to the same waiver budget the faction abilities use, because both are
+    // "ignore a prerequisite" and the requirement is checked once.
+    for colour in COLOURS {
+        waivable += crate::laws::research_team_waivers(state, player, colour);
+    }
     let pair = crate::synergy::pair(state, content, sources, player);
     crate::synergy::satisfies(
         &prerequisites(content, alias),

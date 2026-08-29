@@ -85,6 +85,22 @@ pub fn planet_value(
     })
 }
 
+/// A planet's resources or influence **as they now stand**, printed value plus attachments.
+///
+/// [`planet_value`] stays the printed number, because most callers want the card as dealt. Three
+/// laws attach to a planet and change what it is worth in play — Core Mining, Senate Sanctuary and
+/// Terraforming Initiative — so anything asking "what can this planet pay" must ask here instead.
+#[must_use]
+pub fn planet_value_now(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &PlanetId,
+    kind: Spend,
+) -> i64 {
+    planet_value(content, sources, planet, kind) + crate::laws::planet_value_bonus(state, planet, kind)
+}
+
 /// Controlled planets whose cards are still readied (LRR 34, 75.2).
 #[must_use]
 pub fn spendable_planets(state: &GameState, player: &PlayerId) -> Vec<PlanetId> {
@@ -147,7 +163,10 @@ fn payment_faces(
     planet: &PlanetId,
     kind: Spend,
 ) -> Vec<(Spend, i64)> {
-    let ordinary = planet_value(content, sources, planet, kind);
+    // `planet_value_now`, not the printed value: Core Mining, Senate Sanctuary and Terraforming
+    // Initiative attach to a planet card and change what it can pay. Both faces are computed here,
+    // so this one substitution reaches every spending path.
+    let ordinary = planet_value_now(state, content, sources, planet, kind);
     let mut faces = if ordinary > 0 {
         vec![(kind, ordinary)]
     } else {
@@ -166,7 +185,7 @@ fn payment_faces(
         Spend::Resources => Spend::Influence,
         Spend::Influence => Spend::Resources,
     };
-    let alternate = planet_value(content, sources, planet, alternate_kind);
+    let alternate = planet_value_now(state, content, sources, planet, alternate_kind);
     if alternate > 0 && alternate != ordinary {
         faces.push((alternate_kind, alternate));
     }
@@ -989,6 +1008,14 @@ pub fn structure_allowed(
     planet: &PlanetId,
     base_type: &str,
 ) -> bool {
+    // Homeland Defense Act removes the PDS cap outright rather than raising it.
+    if crate::laws::structure_cap_lifted(state, base_type) {
+        return true;
+    }
+    // Demilitarized Zone: nothing may be placed on the elected planet at all.
+    if crate::laws::planet_is_demilitarized(state, planet) {
+        return false;
+    }
     structure_limit(base_type)
         .is_none_or(|cap| structures_on(state, content, sources, player, planet, base_type) < cap)
 }
@@ -1016,6 +1043,12 @@ pub fn placements(
     let mut spots: Vec<String> = made
         .iter()
         .filter_map(|(_, planet)| planet.clone())
+        // Holy Planet of Ixth: units on the elected planet cannot use PRODUCTION.
+        // Demilitarized Zone: nothing may be produced on the elected planet.
+        .filter(|planet| {
+            !crate::laws::production_forbidden_on(state, planet)
+                && !crate::laws::planet_is_demilitarized(state, planet)
+        })
         // Space stations rule 5. Defensive: with structures barred from stations a station cannot
         // hold a producer in the first place, so this should be unreachable -- but `placements` is
         // the last gate before a unit is placed, and the rule belongs at the gate too.

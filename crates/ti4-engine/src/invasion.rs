@@ -82,6 +82,11 @@ pub fn bombardable(
     planet: &PlanetId,
     invader: &PlayerId,
 ) -> bool {
+    // Conventions of War outranks every reason bombardment would otherwise be allowed, war sun
+    // included: the law says it cannot be used against units on a cultural planet at all.
+    if crate::laws::bombardment_forbidden(state, content, sources, planet) {
+        return false;
+    }
     let types = catalogue(content, sources);
     let board = state.system_state(system);
     let has_warsun = board.units_of(invader).into_iter().any(|unit| {
@@ -322,6 +327,8 @@ fn landable_planets(
         .filter(|planet| {
             !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
         })
+        // Demilitarized Zone: units cannot land on the elected planet.
+        .filter(|planet| !crate::laws::planet_is_demilitarized(state, planet))
         .collect()
 }
 
