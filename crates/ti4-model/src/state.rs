@@ -868,6 +868,7 @@ impl PartialEq for GameState {
             && self.secret_deck == other.secret_deck
             && self.custodians_removed == other.custodians_removed
             && self.frontier_tokens == other.frontier_tokens
+
             && self.fracture_in_play == other.fracture_in_play
             && self.ingress_tokens == other.ingress_tokens
             && self.breach_tokens == other.breach_tokens

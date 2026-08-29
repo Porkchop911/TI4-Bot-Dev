@@ -44,6 +44,7 @@ pub mod fingerprint;
 /// so carrying the module is the cheaper of the two costs.
 pub mod fixtures;
 pub mod fleet;
+pub mod fracture;
 pub mod game;
 pub mod invasion;
 pub mod laws;
