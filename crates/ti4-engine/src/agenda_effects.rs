@@ -67,6 +67,19 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "mutiny",
         "unconventional",
         "seed_empire",
+        // Standing rules enforced in `laws`; the arm exists so the agenda is available at all.
+        "rep_govt",
+        "rt_biotic",
+        "rt_cybernetic",
+        "rt_propulsion",
+        "rt_warfare",
+        "senate_sanctuary",
+        "terraforming_initiative",
+        // Immediate effects, resolved here.
+        "cladenstine",
+        "minister_antiquities",
+        "rearmament",
+        "standardization",
     ]
 }
 
@@ -818,6 +831,110 @@ pub fn resolve_with(
             // Against does nothing. The For half is a standing rule and belongs to `laws`,
             // which is why this arm exists at all: an agenda with no arm is *unavailable*.
         }
+        // Five more of the same shape: the card does nothing when it passes, and everything
+        // afterwards. Each is enforced in `laws` -- the attachment changes what a planet is worth,
+        // the Research Teams waive a prerequisite, Representative Government flattens the vote.
+        "rep_govt"
+        | "rt_biotic"
+        | "rt_cybernetic"
+        | "rt_propulsion"
+        | "rt_warfare"
+        | "senate_sanctuary"
+        | "terraforming_initiative" => {}
+        "standardization" => {
+            // "so that they have 3 in tactic, 3 in fleet, and 2 in strategy" -- a target, not a
+            // gain. A seat already above a target keeps what it has: the card says place tokens
+            // from reinforcements, and there is no clause taking any away.
+            let elected = PlayerId::new(outcome);
+            if let Some(seat) = state.player_mut(&elected) {
+                for (pool, target) in [
+                    (ti4_model::state::TokenPool::Tactic, 3),
+                    (ti4_model::state::TokenPool::Fleet, 3),
+                    (ti4_model::state::TokenPool::Strategic, 2),
+                ] {
+                    let short = target - seat.tokens(pool);
+                    if short > 0 {
+                        seat.gain_token(pool, short);
+                    }
+                }
+            }
+        }
+        "cladenstine" => {
+            // For: two tokens off the command sheet, the player's choice of pools. Against: one
+            // specifically from the fleet pool. Taken from the fullest pool first, so a seat is
+            // never asked to pay from an empty one while another is stocked.
+            if outcome == FOR {
+                for player in everyone(state) {
+                    for _ in 0..2 {
+                        let Some(seat) = state.player(&player) else {
+                            continue;
+                        };
+                        let fullest = ti4_model::state::TokenPool::ALL
+                            .into_iter()
+                            .max_by_key(|pool| seat.tokens(*pool));
+                        if let Some(pool) = fullest
+                            && let Some(seat) = state.player_mut(&player)
+                        {
+                            seat.spend_token(pool);
+                        }
+                    }
+                }
+            } else {
+                for player in everyone(state) {
+                    if let Some(seat) = state.player_mut(&player) {
+                        seat.spend_token(ti4_model::state::TokenPool::Fleet);
+                    }
+                }
+            }
+        }
+        "rearmament" => {
+            // For: a mech onto a home planet. Against: every mech becomes an infantry.
+            if outcome == FOR {
+                for player in everyone(state) {
+                    let home: Option<(ti4_model::id::SystemId, ti4_model::id::PlanetId)> = state
+                        .controlled_planets(&player)
+                        .into_iter()
+                        .find(|(system, _)| {
+                            state.player(&player).is_some_and(|seat| {
+                                ti4_content::factions::get(content, seat.faction.as_str())
+                                    .and_then(|faction| faction.home_system())
+                                    .is_some_and(|home| home == system.as_str())
+                            })
+                        })
+                        .map(|(system, planet)| (system.clone(), planet.clone()));
+                    if let Some((system, planet)) = home {
+                        state
+                            .system_mut(&system)
+                            .planet_units
+                            .entry(planet)
+                            .or_default()
+                            .push(ti4_model::units::Unit::new(
+                                ti4_model::id::UnitTypeId::new("mech"),
+                                player.clone(),
+                            ));
+                    }
+                }
+            } else {
+                let types = ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
+                for (_, record) in &mut state.board {
+                    for units in record.planet_units.values_mut() {
+                        for unit in units.iter_mut() {
+                            if types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(|kind| kind.base_type() == "mech")
+                            {
+                                unit.type_id = ti4_model::id::UnitTypeId::new("infantry");
+                                unit.sustained_damage = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "minister_antiquities" => {
+            let elected = PlayerId::new(outcome);
+            crate::relics::gain(state, &elected);
+        }
         "core_mining" => {
             // An infantry pays for the seam. The planet's +2 resources is the law itself.
             clear_planet(
@@ -1004,6 +1121,142 @@ mod tests {
 
     fn no_votes() -> Ballot {
         Ballot::default()
+    }
+
+    /// Armed Forces Standardization tops pools up to 3/3/2 and takes nothing away.
+    ///
+    /// The card says *place* tokens from reinforcements so that the seat has those numbers. A seat
+    /// already above one of them keeps what it has: nothing in the text removes a token.
+    #[test]
+    fn standardization_tops_the_pools_up_without_taking_any_away() {
+        use ti4_model::state::TokenPool;
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let elected = PlayerId::new("a");
+        {
+            let seat = state.player_mut(&elected).expect("seated");
+            seat.tactic_tokens = 0;
+            seat.fleet_tokens = 5;
+            seat.strategic_tokens = 1;
+        }
+
+        let effect = run(&mut state, "standardization", "a", &no_votes());
+        assert_eq!(
+            effect,
+            Effect::Resolved {
+                agenda: "standardization".to_owned()
+            }
+        );
+
+        let seat = state.player(&elected).expect("seated");
+        assert_eq!(seat.tokens(TokenPool::Tactic), 3, "topped up to three");
+        assert_eq!(
+            seat.tokens(TokenPool::Fleet),
+            5,
+            "already above the target, so untouched"
+        );
+        assert_eq!(seat.tokens(TokenPool::Strategic), 2);
+    }
+
+    /// Clandestine Operations takes two tokens off the sheet, or one from the fleet pool.
+    #[test]
+    fn clandestine_operations_removes_tokens() {
+        use ti4_model::state::TokenPool;
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let before: i32 = TokenPool::ALL
+            .into_iter()
+            .map(|pool| state.player(&PlayerId::new("a")).expect("seated").tokens(pool))
+            .sum();
+
+        run(&mut state, "cladenstine", FOR, &no_votes());
+        let after: i32 = TokenPool::ALL
+            .into_iter()
+            .map(|pool| state.player(&PlayerId::new("a")).expect("seated").tokens(pool))
+            .sum();
+        assert_eq!(after, before - 2, "two tokens leave the command sheet");
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let fleet = state
+            .player(&PlayerId::new("a"))
+            .expect("seated")
+            .tokens(TokenPool::Fleet);
+        run(&mut state, "cladenstine", AGAINST, &no_votes());
+        assert_eq!(
+            state
+                .player(&PlayerId::new("a"))
+                .expect("seated")
+                .tokens(TokenPool::Fleet),
+            fleet - 1,
+            "Against takes one, and takes it from the fleet pool"
+        );
+    }
+
+    /// Rearmament Agreement, Against: every mech on the board becomes an infantry.
+    #[test]
+    fn rearmament_against_replaces_every_mech_with_an_infantry() {
+        let (mut state, planet, player) = garrison(0);
+        let (system, _) = crate::fixtures::a_placed_planet();
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "mech", &player, 2);
+        assert_eq!(on_planet(&state, &planet), 2);
+
+        run(&mut state, "rearmament", AGAINST, &no_votes());
+
+        let kinds: Vec<String> = state
+            .system_state(&system)
+            .on_planet(&planet)
+            .iter()
+            .map(|unit| unit.type_id.as_str().to_owned())
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["infantry", "infantry"],
+            "each mech is replaced, not removed"
+        );
+    }
+
+    /// Minister of Antiquities hands the elected player a relic off the deck.
+    #[test]
+    fn minister_of_antiquities_gains_a_relic() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.relic_deck = vec![ti4_model::id::RelicId::new("dominusori")];
+        let elected = PlayerId::new("a");
+
+        run(&mut state, "minister_antiquities", "a", &no_votes());
+
+        assert_eq!(
+            state.player(&elected).expect("seated").relics.len(),
+            1,
+            "the elected player gains one relic"
+        );
+        assert!(state.relic_deck.is_empty(), "and it came off the deck");
+    }
+
+    /// The standing-rule laws resolve to nothing and are still *available*.
+    ///
+    /// An agenda with no arm is unavailable, so these need one even though the card does nothing
+    /// when it passes. Their effect lives in `laws`.
+    #[test]
+    fn a_standing_rule_law_resolves_cleanly() {
+        for alias in [
+            "senate_sanctuary",
+            "terraforming_initiative",
+            "rt_biotic",
+            "rt_cybernetic",
+            "rt_propulsion",
+            "rt_warfare",
+            "rep_govt",
+        ] {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            let effect = run(&mut state, alias, "a", &no_votes());
+            assert_eq!(
+                effect,
+                Effect::Resolved {
+                    agenda: alias.to_owned()
+                },
+                "{alias} must resolve rather than report itself unregistered"
+            );
+        }
     }
 
     /// A player controlling one planet, with `infantry` infantry on it.
