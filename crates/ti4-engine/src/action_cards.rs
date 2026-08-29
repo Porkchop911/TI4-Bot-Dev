@@ -396,34 +396,15 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
 /// Imperial Rider: "predict aloud an outcome of this agenda. If your prediction is correct, gain
 /// 1 victory point." The cost is the vote: a player who predicts cannot vote on that agenda.
 ///
-/// The prediction is read from the event rather than from the game, because the card is played
+/// The prediction is read from the game rather than from the event, because the card is played
 /// into the `AGENDA_REVEALED` window and the outcomes are what that event carries.
+///
+/// Imperial Rider stores the bare outcome, which [`resolve_predictions`] reads as its legacy
+/// payoff (+1 victory point). The other riders store `"outcome|alias"` so the same vote
+/// machinery can pay each card's distinct reward.
 fn imperial_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let choices: Vec<String> = context.state.agenda_choices.clone();
-    let Some(first) = choices.first().cloned() else {
+    let Some(predicted) = predicted_outcome(context, player, "Imperial Rider: predict the agenda outcome") else {
         return; // nothing to predict, so the card cannot resolve (22.3)
-    };
-    let predicted = if choices.len() == 1 {
-        first
-    } else {
-        let choice = crate::choice::Choice::new(
-            player.clone(),
-            "Imperial Rider: predict the agenda outcome",
-            choices
-                .iter()
-                .map(|outcome| {
-                    crate::choice::ChoiceOption::labelled(
-                        outcome.clone(),
-                        "prediction",
-                        format!("predict {outcome}"),
-                    )
-                })
-                .collect(),
-        );
-        match context.ask_seeing(&choice) {
-            Ok(answer) => answer.id,
-            Err(_) => return,
-        }
     };
     context
         .state
@@ -431,21 +412,413 @@ fn imperial_rider(context: &mut crate::timing::TimingContext<'_>, player: &Playe
         .insert(player.clone(), predicted);
 }
 
-/// Pay every correct Imperial Rider once the outcome is known, and clear the predictions.
+/// Read the agenda's outcomes and ask this player to predict one, or take the only one on offer.
+///
+/// One is not a decision and none is not a question: asking either would put a line in the
+/// decision log that no player ever chose. `None` means the card fizzles (22.3) or the answer
+/// was refused.
+fn predicted_outcome(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    prompt: &str,
+) -> Option<String> {
+    let choices: Vec<String> = context.state.agenda_choices.clone();
+    match choices.as_slice() {
+        [] => None,
+        [only] => Some(only.clone()),
+        many => {
+            let choice = crate::choice::Choice::new(
+                player.clone(),
+                prompt,
+                many.iter()
+                    .map(|outcome| {
+                        crate::choice::ChoiceOption::labelled(
+                            outcome.clone(),
+                            "prediction",
+                            format!("predict {outcome}"),
+                        )
+                    })
+                    .collect(),
+            );
+            context.ask_seeing(&choice).ok().map(|answer| answer.id)
+        }
+    }
+}
+
+/// Construction Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
+/// If your prediction is correct, place 1 space dock from your reinforcements on a planet you
+/// control."
+fn construction_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Construction Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context.state.agenda_predictions.insert(
+        player.clone(),
+        format!("{predicted}|const_rider"),
+    );
+}
+
+/// Diplomacy Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
+/// If your prediction is correct, choose 1 system that contains a planet you control. Each other
+/// player places a command token from their reinforcements in that system."
+fn diplomacy_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Diplomacy Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|diplo_rider"));
+}
+
+/// Leadership Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
+/// If your prediction is correct, gain 3 command tokens."
+fn leadership_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Leadership Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|lead_rider"));
+}
+
+/// Politics Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
+/// If your prediction is correct, draw 3 action cards and gain the speaker token."
+fn politics_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Politics Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|politic_rider"));
+}
+
+/// Technology Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda.
+/// If your prediction is correct, research 1 technology."
+///
+/// The prediction and the vote exclusion are honoured; the research payoff needs a content store
+/// and a table to pick and pay for the technology, and the vote-close that pays predictions has
+/// neither, so a correct Technology Rider is recorded but its research is not performed.
+fn technology_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Technology Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|tech_rider"));
+}
+
+/// Trade Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda. If
+/// your prediction is correct, gain 5 trade goods."
+fn trade_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Trade Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|trade_rider"));
+}
+
+/// Warfare Rider: "You cannot vote on this agenda. Predict aloud an outcome of this agenda. If
+/// your prediction is correct, place 1 dreadnought from your reinforcements in a system that
+/// contains 1 or more of your ships."
+fn warfare_rider(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) =
+        predicted_outcome(context, player, "Warfare Rider: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|war_rider"));
+}
+
+/// Sanction: "You cannot vote on this agenda. Predict aloud an outcome of this agenda. If your
+/// prediction is correct, each player that voted for that outcome returns 1 command token from
+/// their fleet supply to their reinforcements."
+///
+/// The prediction and the vote exclusion are honoured; the payoff reads the ballot, and the
+/// vote-close that pays predictions carries only the outcome, not who voted which way, so a
+/// correct Sanction is recorded but its token returns are not performed.
+fn sanction(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(predicted) = predicted_outcome(context, player, "Sanction: predict the agenda outcome")
+    else {
+        return;
+    };
+    context
+        .state
+        .agenda_predictions
+        .insert(player.clone(), format!("{predicted}|sanction"));
+}
+
+/// Assassinate Representative: "Choose 1 player. That player cannot vote on this agenda."
+///
+/// The vote order is built from `agenda_predictions`: any player who has an entry there is
+/// excluded from voting. The entry's value is a sentinel that matches no outcome, so the victim
+/// collects nothing either. A victim who already predicted keeps that prediction, not the
+/// sentinel: one prediction per agenda, and a rider in hand is worth more than an assassination.
+fn assassinate_representative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let seating = context.state.seating_order.clone();
+    if seating.is_empty() {
+        return;
+    }
+    let options = seating
+        .iter()
+        .map(|victim| (victim.to_string(), format!("assassinate {victim}")))
+        .collect::<Vec<_>>();
+    let Some(victim) = pick(context, player, "Assassinate Representative: choose 1 player", "player", &options)
+    else {
+        return;
+    };
+    let victim = ti4_model::id::PlayerId::new(&victim);
+    if context
+        .state
+        .agenda_predictions
+        .contains_key(&victim)
+    {
+        return; // they already predicted; the assassination finds no new grip on them
+    }
+    context
+        .state
+        .agenda_predictions
+        .insert(victim, "none|assassin".to_owned());
+}
+
+/// Insider Information: "Look at the top 3 cards of the agenda deck."
+///
+/// A pure peek, and this engine's deciders see the whole state through
+/// `Table::ask_seeing`, so there is no hidden top of the deck to reveal: the card changes no
+/// state, the deck order is untouched, and the information it would add is already held by any
+/// decider answering for the player. It is registered rather than left unimplemented because it
+/// is not an unmodelled gap, it is a complete effect with no mechanical half.
+fn insider_information(_: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {}
+
+/// Ancient Burial Sites: "Choose 1 player. Exhaust each cultural planet owned by that player."
+fn ancient_burial_sites(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let seating = context.state.seating_order.clone();
+    if seating.is_empty() {
+        return;
+    }
+    let options = seating
+        .iter()
+        .map(|victim| (victim.to_string(), format!("target {victim}")))
+        .collect::<Vec<_>>();
+    let Some(target) = pick(context, player, "Ancient Burial Sites: choose 1 player", "player", &options)
+    else {
+        return;
+    };
+    let target = ti4_model::id::PlayerId::new(&target);
+    let planets = ti4_content::galaxy::all_planets(context.content, context.sources);
+    let spots: Vec<ti4_model::id::PlanetId> = context
+        .state
+        .controlled_planets(&target)
+        .into_iter()
+        .map(|(_, planet)| planet.clone())
+        .collect();
+    for planet in spots {
+        let cultural = planets
+            .get(planet.as_str())
+            .is_some_and(|planet| planet.planet_type() == Some("CULTURAL"));
+        if cultural {
+            context.state.exhausted_planets.insert(planet);
+        }
+    }
+}
+
+/// Diplomatic Pressure: "Choose another player. That player must give you 1 promissory note from
+/// their hand."
+///
+/// The note given is the holder's to choose: the card says they *give* it, and a forced handover
+/// of a note the holder did not pick would invent a second choice the card does not print. If
+/// the chosen player holds no notes, the command has nothing to act on and the card fizzles
+/// (22.3); it has already left the hand.
+fn diplomatic_pressure(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let seating = context.state.seating_order.clone();
+    let options: Vec<(String, String)> = seating
+        .iter()
+        .filter(|victim| *victim != player)
+        .map(|victim| (victim.to_string(), format!("pressure {victim}")))
+        .collect();
+    let Some(victim) = pick(context, player, "Diplomatic Pressure: choose another player", "player", &options)
+    else {
+        return;
+    };
+    let victim = ti4_model::id::PlayerId::new(&victim);
+    let notes = crate::promissory::held_by(context.state, &victim);
+    let Some(note) = pick(
+        context,
+        &victim,
+        "Diplomatic Pressure: which note do you give",
+        "promissory note",
+        &notes.iter().map(|note| (note.clone(), note.clone())).collect::<Vec<_>>(),
+    ) else {
+        return; // the chosen player holds nothing to give (22.3)
+    };
+    crate::promissory::take(context.state, context.content, player, &note);
+}
+
+/// Pay every correct prediction once the outcome is known, and clear the predictions.
 ///
 /// Called when a vote closes. Clearing matters: a prediction left behind would pay again on the
 /// next agenda, for a card that was spent on this one.
+///
+/// A stored prediction is either a bare outcome (Imperial Rider, worth 1 victory point) or
+/// `"outcome|alias"`, where the alias names the rider and the payoff that alias owes. The payoffs
+/// here run with only the game state in hand: a reward that needs a choice (which planet, which
+/// system) is performed when the card's own text forces a single answer, and skipped when it
+/// would be a guess. A reward that needs the content store, a table, or the ballot (Technology
+/// Rider's research, Sanction's token returns) is likewise recorded but not performed at this
+/// call site, which has none of the three.
 pub fn resolve_predictions(state: &mut GameState, outcome: &str) -> Vec<PlayerId> {
     let predictions = std::mem::take(&mut state.agenda_predictions);
     let mut paid = Vec::new();
     for (player, predicted) in predictions {
-        if predicted == outcome {
-            if let Some(seat) = state.player_mut(&player) {
-                seat.victory_points =
-                    (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
-            }
-            paid.push(player);
+        let (hit, card) = match predicted.split_once('|') {
+            Some((result, card)) => (result == outcome, Some(card)),
+            None => (predicted == outcome, None),
+        };
+        if !hit {
+            continue;
         }
+        match card {
+            Some("lead_rider") => {
+                // "gain 3 command tokens" is a supply of reinforcements, not a placement: the
+                // tokens land in the fleet pool from which command tokens are spent.
+                if let Some(seat) = state.player_mut(&player) {
+                    seat.gain_token(ti4_model::state::TokenPool::Fleet, 3);
+                }
+            }
+            Some("trade_rider") => {
+                if let Some(seat) = state.player_mut(&player) {
+                    seat.trade_goods += 5;
+                }
+            }
+            Some("politic_rider") => {
+                // Three action cards, the hand limit applied later by whoever owns a table (the
+                // same idiom the Unconventional Measures arm uses), and the speaker token.
+                for _ in 0..3 {
+                    if state.action_card_deck.is_empty() {
+                        break;
+                    }
+                    let top = state.action_card_deck.remove(0);
+                    if let Some(seat) = state.player_mut(&player) {
+                        seat.action_cards.push(top);
+                    }
+                }
+                state.speaker = player.clone();
+            }
+            Some("const_rider") => {
+                // "on a planet you control": with one controlled planet the card forces it. The
+                // 79.2 one-dock-per-planet cap is not checked here because the vote-close has no
+                // content store, so a planet that already holds a dock takes the card at face
+                // value instead of blocking the placement.
+                let spots: Vec<(String, String)> = state
+                    .controlled_planets(&player)
+                    .into_iter()
+                    .map(|(system, planet)| (system.to_string(), planet.to_string()))
+                    .collect();
+                if spots.len() == 1 {
+                    let system = ti4_model::id::SystemId::new(&spots[0].0);
+                    let planet = ti4_model::id::PlanetId::new(&spots[0].1);
+                    let already_docked = state
+                        .system_state(&system)
+                        .planet_units
+                        .get(&planet)
+                        .is_some_and(|units| {
+                            units
+                                .iter()
+                                .any(|unit| unit.type_id.as_str() == "spacedock")
+                        });
+                    if !already_docked {
+                        state
+                            .system_mut(&system)
+                            .planet_units
+                            .entry(planet)
+                            .or_default()
+                            .push(ti4_model::units::Unit::new(
+                                ti4_model::id::UnitTypeId::new("spacedock"),
+                                player.clone(),
+                            ));
+                    }
+                }
+            }
+            Some("diplo_rider") => {
+                // "choose 1 system that contains a planet you control": with one such system the
+                // card forces it, and each other player who still holds a command token places
+                // one there; a seat that spent them all simply cannot comply.
+                let systems: std::collections::BTreeSet<String> = state
+                    .controlled_planets(&player)
+                    .iter()
+                    .map(|(system, _)| system.to_string())
+                    .collect();
+                if systems.len() == 1 {
+                    let system = ti4_model::id::SystemId::new(&systems.into_iter().next().unwrap());
+                    let mut holders: Vec<ti4_model::id::PlayerId> = Vec::new();
+                    for other in state.seating_order.iter().filter(|other| *other != &player) {
+                        if state.player(other).is_some_and(|seat| seat.tokens(ti4_model::state::TokenPool::Fleet) > 0)
+                        {
+                            holders.push((*other).clone());
+                        }
+                    }
+                    for other in holders {
+                        if let Some(seat) = state.player_mut(&other) {
+                            seat.spend_token(ti4_model::state::TokenPool::Fleet);
+                        }
+                        state.system_mut(&system).command_tokens.insert(other);
+                    }
+                }
+            }
+            Some("war_rider") => {
+                // "in a system that contains 1 or more of your ships": space holdings are ships
+                // (structures sit on planets), so one system holding your space units forces the
+                // placement.
+                let systems: Vec<ti4_model::id::SystemId> = state
+                    .board
+                    .iter()
+                    .filter(|(_, board)| !board.units_of(&player).is_empty())
+                    .map(|(system, _)| system.clone())
+                    .collect();
+                if systems.len() == 1 {
+                    state
+                        .system_mut(&systems[0])
+                        .units
+                        .push(ti4_model::units::Unit::new(
+                            ti4_model::id::UnitTypeId::new("dreadnought"),
+                            player.clone(),
+                        ));
+                }
+            }
+            // Recorded, not performed at this call site: the payoff needs a content store and a
+            // table (research) or the ballot (token returns), and the vote-close carries only
+            // the outcome. See the riders' doc comments.
+            Some("tech_rider") | Some("sanction") | Some("assassin") => {}
+            // The bare imperial encoding, and anything unknown a correct prediction is worth the
+            // rider that stores a bare outcome: 1 victory point.
+            _ => {
+                if let Some(seat) = state.player_mut(&player) {
+                    seat.victory_points =
+                        (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+                }
+            }
+        }
+        paid.push(player);
     }
     paid
 }
@@ -1392,6 +1765,18 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "jamming" => Some(signal_jamming),
         "lucky" => Some(lucky_shot),
         "imp_rider" => Some(imperial_rider),
+        "const_rider" => Some(construction_rider),
+        "diplo_rider" => Some(diplomacy_rider),
+        "lead_rider" => Some(leadership_rider),
+        "politic_rider" => Some(politics_rider),
+        "tech_rider" => Some(technology_rider),
+        "trade_rider" => Some(trade_rider),
+        "war_rider" => Some(warfare_rider),
+        "sanction" => Some(sanction),
+        "assassin" => Some(assassinate_representative),
+        "insider" => Some(insider_information),
+        "abs" => Some(ancient_burial_sites),
+        "dp1" | "dp2" | "dp3" | "dp4" => Some(diplomatic_pressure),
         "insub" => Some(insubordination),
         "meltdown" => Some(reactor_meltdown),
         "messiah" => Some(rise_of_a_messiah),
@@ -1423,6 +1808,21 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "cripple",
         "f_deployment",
         "imp_rider",
+        "const_rider",
+        "diplo_rider",
+        "lead_rider",
+        "politic_rider",
+        "tech_rider",
+        "trade_rider",
+        "war_rider",
+        "sanction",
+        "assassin",
+        "insider",
+        "abs",
+        "dp1",
+        "dp2",
+        "dp3",
+        "dp4",
         "insub",
         "messiah",
         "mining_initiative",
@@ -1602,6 +2002,365 @@ mod tests {
         let paid_again = resolve_predictions(&mut state, "for");
         assert!(paid_again.is_empty(), "and cannot pay a second time");
         assert_eq!(state.player(&PlayerId::new("a")).unwrap().victory_points, 1);
+    }
+
+    #[test]
+    fn a_rider_stores_its_outcome_tagged_with_its_own_alias() {
+        // The vote order reads the prediction's key; the payoff reads its value. Tagging the
+        // value with the alias is what lets one vote pay seven different riders.
+        for (alias, tag) in [
+            ("const_rider", "const_rider"),
+            ("diplo_rider", "diplo_rider"),
+            ("lead_rider", "lead_rider"),
+            ("politic_rider", "politic_rider"),
+            ("tech_rider", "tech_rider"),
+            ("trade_rider", "trade_rider"),
+            ("war_rider", "war_rider"),
+            ("sanction", "sanction"),
+        ] {
+            let player = PlayerId::new("a");
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state.agenda_choices = vec!["FOR".to_owned(), "AGAINST".to_owned()];
+
+            resolve_card(&mut state, alias, &player, &["FOR"]);
+
+            assert_eq!(
+                state.agenda_predictions.get(&player).map(String::as_str),
+                Some(format!("FOR|{tag}").as_str()),
+                "{alias} records its prediction tagged with itself"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lone_outcome_is_predicted_without_asking() {
+        // One is not a decision: an agenda with a single outcome needs no answer, and the
+        // script never sees a question that was never asked.
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.agenda_choices = vec!["AGAINST".to_owned()];
+
+        resolve_card(&mut state, "lead_rider", &player, &[]);
+
+        assert_eq!(
+            state.agenda_predictions.get(&player).map(String::as_str),
+            Some("AGAINST|lead_rider"),
+        );
+    }
+
+    #[test]
+    fn the_rider_payoffs_pay_what_each_card_promises() {
+        let fleet = ti4_model::state::TokenPool::Fleet;
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        let a_before = state.player(&PlayerId::new("a")).unwrap().tokens(fleet);
+        let b_before = state.player(&PlayerId::new("b")).unwrap().trade_goods;
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "FOR|lead_rider".to_owned());
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("b"), "FOR|trade_rider".to_owned());
+        // A correct prediction whose payoff this call site cannot perform: recorded, not paid
+        // out in kind, and no state may move for it.
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("c"), "FOR|tech_rider".to_owned());
+
+        let paid = resolve_predictions(&mut state, "FOR");
+
+        assert_eq!(paid, vec![PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")]);
+        assert_eq!(
+            state.player(&PlayerId::new("a")).unwrap().tokens(fleet),
+            a_before + 3,
+            "three command tokens, on top of what the seat already held"
+        );
+        assert_eq!(
+            state.player(&PlayerId::new("b")).unwrap().trade_goods,
+            b_before + 5,
+        );
+        assert!(state.agenda_predictions.is_empty(), "all spent");
+    }
+
+    #[test]
+    fn a_wrong_rider_prediction_pays_nothing() {
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "AGAINST|trade_rider".to_owned());
+
+        let paid = resolve_predictions(&mut state, "FOR");
+
+        assert!(paid.is_empty());
+        assert_eq!(state.player(&PlayerId::new("a")).unwrap().trade_goods, 0);
+        assert!(state.agenda_predictions.is_empty(), "the card is spent either way");
+    }
+
+    #[test]
+    fn a_politics_rider_draws_three_and_takes_the_speaker_token() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.action_card_deck = vec![
+            ActionCardId::new("x1"),
+            ActionCardId::new("x2"),
+            ActionCardId::new("x3"),
+            ActionCardId::new("x4"),
+        ];
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "FOR|politic_rider".to_owned());
+
+        resolve_predictions(&mut state, "FOR");
+
+        let seat = state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(
+            seat.action_cards,
+            vec![ActionCardId::new("x1"), ActionCardId::new("x2"), ActionCardId::new("x3")]
+        );
+        assert_eq!(state.action_card_deck.len(), 1, "exactly three, not the whole deck");
+        assert_eq!(state.speaker, PlayerId::new("a"));
+    }
+
+    #[test]
+    fn an_assassinated_representative_never_votes_and_never_wins() {
+        // The sentinel matches no outcome, so the victim is excluded from the ballot by the
+        // key and collects nothing by the value.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("b"), "none|assassin".to_owned());
+
+        for outcome in ["FOR", "AGAINST"] {
+            let paid = resolve_predictions(&mut state, outcome);
+            assert!(paid.is_empty(), "{outcome} pays the sentinel nothing");
+        }
+
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        resolve_card(&mut state, "assassin", &player, &["b"]);
+        assert_eq!(
+            state.agenda_predictions.get(&PlayerId::new("b")).map(String::as_str),
+            Some("none|assassin"),
+        );
+
+        // A victim who already predicted keeps the prediction, not the sentinel: a rider in
+        // hand is worth more than an assassination, and one prediction per agenda.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.agenda_choices = vec!["FOR".to_owned(), "AGAINST".to_owned()];
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("b"), "FOR|lead_rider".to_owned());
+
+        resolve_card(&mut state, "assassin", &player, &["b"]);
+
+        assert_eq!(
+            state.agenda_predictions.get(&PlayerId::new("b")).map(String::as_str),
+            Some("FOR|lead_rider"),
+        );
+    }
+
+    #[test]
+    fn a_construction_rider_places_a_dock_when_there_is_only_one_choice() {
+        // "on a planet you control": one controlled planet forces the placement, and a planet
+        // that already holds a dock takes nothing more (the 79.2 cap, so far as this call
+        // site can see it).
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state
+            .agenda_predictions
+            .insert(player.clone(), "FOR|const_rider".to_owned());
+
+        resolve_predictions(&mut state, "FOR");
+
+        let docked = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(docked, 1, "one dock on the one planet");
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state.system_mut(&system).planet_units.entry(planet.clone()).or_default().push(
+            ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("spacedock"),
+                player.clone(),
+            ),
+        );
+        state
+            .agenda_predictions
+            .insert(player.clone(), "FOR|const_rider".to_owned());
+
+        resolve_predictions(&mut state, "FOR");
+
+        let docked = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(docked, 1, "a second dock has nowhere to go");
+    }
+
+    #[test]
+    fn a_warfare_rider_places_a_dreadnought_where_its_ships_are() {
+        // Space holdings are ships (structures sit on planets), so one system holding space
+        // units forces the placement; two such systems are a choice this call site cannot ask.
+        let (system, _) = crate::fixtures::a_placed_planet();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &system, "cruiser", &player, 1);
+        state
+            .agenda_predictions
+            .insert(player.clone(), "FOR|war_rider".to_owned());
+
+        resolve_predictions(&mut state, "FOR");
+
+        let dreadnoughts = state
+            .system_state(&system)
+            .units
+            .iter()
+            .filter(|unit| unit.type_id.as_str() == "dreadnought")
+            .count();
+        assert_eq!(dreadnoughts, 1);
+    }
+
+    #[test]
+    fn a_diplomacy_rider_anchors_the_others_to_the_one_system() {
+        // "choose 1 system that contains a planet you control": one such system forces it, and
+        // every other seat that still holds a command token places one there.
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        let b_before = state
+            .player(&PlayerId::new("b"))
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
+        let c_before = state
+            .player(&PlayerId::new("c"))
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Fleet);
+        state
+            .player_mut(&PlayerId::new("c"))
+            .unwrap()
+            .spend_token(ti4_model::state::TokenPool::Fleet);
+        state
+            .agenda_predictions
+            .insert(player, "FOR|diplo_rider".to_owned());
+
+        resolve_predictions(&mut state, "FOR");
+
+        let tokens = state.system_state(&system).command_tokens.clone();
+        assert!(tokens.contains(&PlayerId::new("b")), "b has a token to place");
+        assert!(tokens.contains(&PlayerId::new("c")), "c has a token to place");
+        assert_eq!(
+            state
+                .player(&PlayerId::new("b"))
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Fleet),
+            b_before - 1,
+        );
+        assert_eq!(
+            state
+                .player(&PlayerId::new("c"))
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Fleet),
+            c_before - 2,
+            "c spent one before the agenda and one more on the rider",
+        );
+    }
+
+    #[test]
+    fn ancient_burial_sites_exhausts_the_cultural_planets_and_only_those() {
+        let store = ContentStore::embedded();
+        let planets = ti4_content::galaxy::all_planets(store, ti4_model::content_types::POK);
+        let cultural = planets
+            .iter()
+            .find(|(_, planet)| planet.planet_type() == Some("CULTURAL"))
+            .expect("the corpus has cultural planets");
+        let (cultural_id, cultural_planet) = cultural;
+        let barren = planets
+            .iter()
+            .find(|(_, planet)| planet.planet_type() == Some("INDUSTRIAL"))
+            .expect("the corpus has industrial planets");
+        let (barren_id, _) = barren;
+
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let cultural_system = ti4_model::id::SystemId::new(
+            cultural_planet
+                .system_id()
+                .expect("a placed planet has a system"),
+        );
+        let barren_system = ti4_model::id::SystemId::new(
+            ti4_content::galaxy::planet(store, *barren_id, ti4_model::content_types::POK)
+                .expect("in the galaxy")
+                .system_id()
+                .expect("a placed planet has a system"),
+        );
+        state
+            .system_mut(&cultural_system)
+            .set_control(ti4_model::id::PlanetId::new(*cultural_id), player.clone());
+        state
+            .system_mut(&barren_system)
+            .set_control(ti4_model::id::PlanetId::new(*barren_id), player.clone());
+
+        resolve_card(&mut state, "abs", &player, &["a"]);
+
+        assert!(
+            state.exhausted_planets.contains(&ti4_model::id::PlanetId::new(*cultural_id)),
+            "the cultural planet is exhausted"
+        );
+        assert!(
+            !state.exhausted_planets.contains(&ti4_model::id::PlanetId::new(*barren_id)),
+            "an industrial planet is not"
+        );
+    }
+
+    #[test]
+    fn diplomatic_pressure_takes_a_note_the_holder_gives() {
+        let note = "cf:Solari";
+        let me = PlayerId::new("a");
+        let victim = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.promissory_notes.insert(note.to_owned(), victim.clone());
+
+        // Setup already dealt b their own notes, so which note to give is a real question and
+        // the script answers it. The victim question is never asked: in a two-player game b is
+        // the only other player, and one is not a decision.
+        resolve_card(&mut state, "dp1", &me, &[note]);
+
+        assert_eq!(
+            state.promissory_notes.get(note),
+            Some(&me),
+            "the note moves to the card player"
+        );
+
+        // A player holding nothing to give: the command fizzles, the card is spent anyway.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.promissory_notes.clear();
+        resolve_card(&mut state, "dp1", &me, &[]);
+        assert!(state.promissory_notes.is_empty());
+    }
+
+    #[test]
+    fn insider_information_changes_nothing_and_the_deck_order_is_untouched() {
+        // A peek is not a state change: the deck, in the order it was dealt, is as found.
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.agenda_deck = vec!["one".into(), "two".into(), "three".into()];
+
+        resolve_card(&mut state, "insider", &player, &[]);
+
+        assert_eq!(state.agenda_deck, vec!["one".to_owned(), "two".to_owned(), "three".to_owned()]);
     }
 
     /// A card whose printed window makes it a component action.
