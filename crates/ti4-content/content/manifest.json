@@ -30,7 +30,7 @@
     "unitPositions"
   ],
   "totals": {
-    "records": 1800,
+    "records": 1811,
     "categories": 28,
     "untagged": 237
   },
@@ -249,13 +249,13 @@
       }
     },
     "units": {
-      "records": 125,
+      "records": 136,
       "untagged": 0,
       "by_source": {
         "base": 54,
         "codex3": 3,
         "pok": 47,
-        "thunders_edge": 21
+        "thunders_edge": 32
       }
     },
     "planets": {

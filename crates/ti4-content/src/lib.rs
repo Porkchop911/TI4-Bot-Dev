@@ -1,7 +1,9 @@
 //! The TI4 content corpus: loading, provenance, and referential validation.
 //!
 //! The corpus is 28 categories of records extracted from `AsyncTI4` and copied verbatim from
-//! the Python oracle at commit `37061c5` (see `content/CHECKSUMS.sha256`). Records keep
+//! the Python oracle at commit `37061c5` (see `content/CHECKSUMS.sha256`), with one deliberate
+//! addition: the eleven neutral unit records in `units.json`, transcribed from the printed Neutral
+//! Unit Reference sheet, which the oracle corpus does not carry. Records keep
 //! their upstream field names; interpretation belongs to the rules code that consumes a
 //! category.
 //!

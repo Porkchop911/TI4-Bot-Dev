@@ -101,7 +101,7 @@ mod tests {
         let a = digest_of(&ContentStore::parse_embedded().unwrap());
         let b = digest_of(&ContentStore::parse_embedded().unwrap());
         assert_eq!(a, b);
-        assert_eq!(a.records, 1800);
+        assert_eq!(a.records, 1811);
     }
 
     #[test]

@@ -33,17 +33,22 @@
 //! that id to `state.players` or `state.seating_order`. Anything that iterates seats therefore skips
 //! them automatically, which is exactly rule 6.
 //!
-//! # What is missing, and why nothing here invents it
+//! # The roster is transcribed content, not invented
 //!
 //! Rule 7 orders hits by "the neutral unit reference card", and the rules text says only that "the
-//! combat values and unit abilities are found on the neutral unit reference card". That card is not
-//! in this corpus: `units.json` has no neutral records, and no rules source publishes its roster,
-//! its combat values, or its order.
+//! combat values and unit abilities are found on the neutral unit reference card". The card is now
+//! transcribed into `units.json` as eleven records tagged `faction: "neutral"`, each carrying its
+//! printed position as `cardOrder` (1 at the top). This is the one place the corpus deliberately
+//! diverges from the oracle it was copied from, and `loader.rs` says so where the counts are pinned.
 //!
-//! Those are game data, not rules, and guessing them would put invented numbers behind a correct-
-//! looking implementation — the failure this project has been bitten by repeatedly. So the roster is
-//! read from content, [`missing_content`] reports when it is absent, and neutral units simply cannot
-//! be placed until it is supplied. Everything above that is implemented and tested.
+//! Rule 7 wants the unit *lowest* on the card, so [`roster`] sorts by `cardOrder` descending. The
+//! two-column bottom block makes fighter-versus-mech and PDS-versus-infantry ordering ambiguous by
+//! eye; it is never consulted, because a hit is either a space hit or a ground hit and no unit is
+//! eligible for both. The orderings that are consulted — ships among themselves, ground forces among
+//! themselves — are each a single column and unambiguous.
+//!
+//! [`missing_content`] and [`can_place`] remain: they now guard against the records being removed or
+//! a source scope that excludes Thunder's Edge, rather than against a gap in the corpus.
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
@@ -83,11 +88,18 @@ pub fn is_seated(state: &GameState) -> bool {
 /// Read from content records marked with the neutral faction. Empty until that content exists.
 #[must_use]
 pub fn roster(content: &ContentStore, sources: SourceSet) -> Vec<UnitTypeId> {
-    content
+    // Ordered by the printed card, lowest first, because rule 7 assigns a hit to the unit lowest on
+    // it. `cardOrder` is the printed position with 1 at the top, so this is descending.
+    let mut found: Vec<(i64, UnitTypeId)> = content
         .from_sources(ContentType::Units, sources)
         .filter(|record| record.text("faction") == Some(NEUTRAL))
-        .filter_map(|record| record.id().map(UnitTypeId::new))
-        .collect()
+        .filter_map(|record| {
+            let order = record.int("cardOrder")?;
+            record.id().map(|id| (order, UnitTypeId::new(id)))
+        })
+        .collect();
+    found.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    found.into_iter().map(|(_, id)| id).collect()
 }
 
 /// Whether the neutral unit reference card is absent from the corpus.
@@ -228,12 +240,70 @@ mod tests {
     }
 
     #[test]
-    fn placing_neutral_units_is_refused_while_the_reference_card_is_absent() {
-        // The gate that keeps this honest: no roster, no placement, rather than invented stats.
+    fn the_reference_card_is_in_the_corpus_lowest_first() {
+        // Rule 7 assigns hits to the unit lowest on the card, so the roster reads bottom-up.
         let content = ti4_content::ContentStore::embedded();
-        assert!(missing_content(content, ALL_SOURCES));
+        assert!(!missing_content(content, ALL_SOURCES));
+        assert!(can_place(content, ALL_SOURCES).is_ok());
+
+        let order: Vec<String> = roster(content, ALL_SOURCES)
+            .into_iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
         assert_eq!(
-            can_place(content, ALL_SOURCES),
+            order,
+            vec![
+                "neutral_spacedock",
+                "neutral_pds",
+                "neutral_infantry",
+                "neutral_mech",
+                "neutral_fighter",
+                "neutral_destroyer",
+                "neutral_cruiser",
+                "neutral_carrier",
+                "neutral_dreadnought",
+                "neutral_warsun",
+                "neutral_flagship",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_transcribed_stats_match_the_printed_card() {
+        // Pins the transcription itself. Every number here was read off the reference sheet; if a
+        // record is edited, this says so rather than letting a silent change ride.
+        let content = ti4_content::ContentStore::embedded();
+        let types = ti4_content::units::catalogue(content, ALL_SOURCES);
+        let stat = |id: &str| types.get(id).expect("transcribed").clone();
+
+        let flagship = stat("neutral_flagship");
+        assert_eq!((flagship.combat_hits_on(), flagship.combat_dice()), (Some(7), 2));
+        assert_eq!(flagship.capacity(), 3);
+        assert!(flagship.sustain_damage());
+
+        let warsun = stat("neutral_warsun");
+        assert_eq!((warsun.combat_hits_on(), warsun.combat_dice()), (Some(3), 3));
+        assert_eq!(warsun.bombard_hits_on(), Some(3));
+
+        let destroyer = stat("neutral_destroyer");
+        assert_eq!((destroyer.combat_hits_on(), destroyer.combat_dice()), (Some(8), 1));
+
+        let infantry = stat("neutral_infantry");
+        assert_eq!(infantry.combat_hits_on(), Some(8));
+        assert!(infantry.is_ground_force());
+
+        let pds = stat("neutral_pds");
+        assert!(pds.planetary_shield());
+        assert!(!pds.is_ship());
+    }
+
+    #[test]
+    fn a_scope_without_thunders_edge_has_no_neutral_units() {
+        // The guard still does something: neutral units are Thunder's Edge content.
+        let content = ti4_content::ContentStore::embedded();
+        assert!(missing_content(content, ti4_model::content_types::POK));
+        assert_eq!(
+            can_place(content, ti4_model::content_types::POK),
             Err(NeutralError::NoReferenceCard)
         );
     }

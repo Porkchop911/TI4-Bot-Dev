@@ -547,8 +547,9 @@ mod tests {
     fn embedded_corpus_parses_and_agrees_with_its_manifest() {
         // parse_embedded runs check_manifest, so a clean parse is the whole assertion.
         let store = ContentStore::parse_embedded().expect("embedded corpus must parse");
-        assert_eq!(store.total_records(), 1800);
-        assert_eq!(store.manifest().totals.records, 1800);
+        // 1,800 from the oracle plus 11 transcribed neutral unit records.
+        assert_eq!(store.total_records(), 1811);
+        assert_eq!(store.manifest().totals.records, 1811);
         assert_eq!(store.manifest().totals.categories, 28);
         assert_eq!(store.manifest().totals.untagged, 237);
     }
@@ -606,7 +607,11 @@ mod tests {
     #[test]
     fn category_record_counts_match_the_oracle() {
         // Spot counts taken from the corpus; the manifest cross-check covers the rest.
-        assert_eq!(store().records(ContentType::Units).len(), 125);
+        //
+        // Units are 125 from the oracle plus the 11 neutral unit records transcribed from the
+        // printed Neutral Unit Reference sheet, which the oracle corpus does not carry. That is the
+        // one place this corpus deliberately diverges from its source.
+        assert_eq!(store().records(ContentType::Units).len(), 136);
         assert_eq!(store().records(ContentType::Planets).len(), 159);
         assert_eq!(store().records(ContentType::Systems).len(), 231);
         assert_eq!(store().records(ContentType::Factions).len(), 34);
