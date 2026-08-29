@@ -119,6 +119,43 @@ pub fn enforce(
     enforce_seeing(state, content, sources, None, table, player, system)
 }
 
+/// Enforce fleet and capacity limits everywhere, for every seat.
+///
+/// Both `while` loops in [`enforce_seeing`] fall through when a seat is inside its limits, so this
+/// is cheap on the overwhelmingly common step where nothing changed and asks no question.
+///
+/// It exists because the fleet pool can shrink far from any movement: Fleet Regulations caps it,
+/// Clandestine Operations returns tokens from it, and a token-cost objective spends from it. Each of
+/// those sites lacks a decider, and a limit that is only checked where ships move leaves ships on
+/// the board that the rules have already removed.
+///
+/// **Not yet called from the game loop.** Running it every step enforces limits for every seat in
+/// every system continuously, which is arguably what 58.4 says — and it changes long-standing
+/// behaviour broadly: eight existing fixtures set up positions that were legal only because nobody
+/// looked. That is a behavioural change large enough to move the `ti4-sim` baseline, so it belongs
+/// in its own reviewed change rather than riding along with a targeted fix. See
+/// `plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md`.
+///
+/// # Errors
+/// [`IllegalChoice`] when a decider answers a casualty choice with something not offered.
+pub fn enforce_everywhere(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+) -> Result<usize, IllegalChoice> {
+    let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
+    let systems: Vec<SystemId> = state.board.keys().cloned().collect();
+    let mut removed = 0;
+    for player in &seats {
+        for system in &systems {
+            removed += enforce_seeing(state, content, sources, galaxy, table, player, system)?;
+        }
+    }
+    Ok(removed)
+}
+
 /// Enforce fleet and capacity limits while exposing the public position to learned deciders.
 ///
 /// # Errors

@@ -1226,6 +1226,29 @@ pub fn cost_of(alias: &ObjectiveId) -> Option<Cost> {
     Some(cost)
 }
 
+/// The pools a token-cost objective may be paid from.
+///
+/// Lead From the Front: "Spend a total of 3 tokens from your tactic and/or strategy pools."
+/// Galvanize the People says the same for six. **The fleet pool is not eligible**, and it was being
+/// spent first: affordability counted `total_tokens()` and payment took strategy, then fleet, then
+/// tactic. A player short on tactic and strategy could score by surrendering fleet tokens, which is
+/// not a rounding error — the fleet pool is what caps ships on the board.
+///
+/// Strategy before tactic among the two that *are* eligible: a tactic token is the scarcer resource
+/// in an action phase, and nothing in the card prefers either.
+const TOKEN_COST_POOLS: [ti4_model::state::TokenPool; 2] = [
+    ti4_model::state::TokenPool::Strategic,
+    ti4_model::state::TokenPool::Tactic,
+];
+
+/// Tokens this seat may put toward a token-cost objective.
+fn eligible_tokens(seat: &ti4_model::state::Player) -> i32 {
+    TOKEN_COST_POOLS
+        .into_iter()
+        .map(|pool| seat.tokens(pool))
+        .sum()
+}
+
 /// A disjoint pair of plans paying `amount` resources and `amount` influence, plus the trade
 /// goods both plans and the printed cost need.
 ///
@@ -1285,7 +1308,7 @@ pub fn can_afford(
         Cost::AllThree(amount) => all_three_plan(state, content, sources, player, amount).is_some(),
         Cost::Tokens(amount) => state
             .player(player)
-            .is_some_and(|seat| seat.total_tokens() >= amount),
+            .is_some_and(|seat| eligible_tokens(seat) >= amount),
     }
 }
 
@@ -1405,11 +1428,7 @@ pub fn pay_for(
         }
         Cost::Tokens(amount) => {
             let mut owed = amount;
-            for pool in [
-                ti4_model::state::TokenPool::Strategic,
-                ti4_model::state::TokenPool::Fleet,
-                ti4_model::state::TokenPool::Tactic,
-            ] {
+            for pool in TOKEN_COST_POOLS {
                 if owed == 0 {
                     break;
                 }
@@ -2230,9 +2249,15 @@ mod tests {
                     let mut state = game(std::slice::from_ref(&player));
                     let seat = state.player_mut(&player).unwrap();
                     seat.tactic_tokens = tactic;
+                    // Varied deliberately, and deliberately not counted: a fleet pool that moves
+                    // the answer is the defect.
                     seat.fleet_tokens = fleet;
                     seat.strategic_tokens = strategic;
-                    let total = i64::from(tactic + fleet + strategic);
+                    // Tactic and strategy only. Lead From the Front says "from your tactic
+                    // and/or strategy pools", and the fleet pool was being counted -- and spent --
+                    // which let a player buy the objective by surrendering ship capacity.
+                    // See plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md.
+                    let total = i64::from(tactic + strategic);
                     for (alias, target) in [("lead", 3), ("galvanize", 6)] {
                         let progress = bought_progress(
                             &state,

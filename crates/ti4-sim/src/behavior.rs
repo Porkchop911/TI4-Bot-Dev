@@ -381,6 +381,23 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v5 — recorded 2026-08-29, and unlike v4 this one is a change in *play*.
+    //
+    // `plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md`: Lead From the Front and Galvanize the People are
+    // "a total of N tokens from your tactic and/or strategy pools". Affordability counted
+    // `total_tokens()` and payment took strategy, then fleet, then tactic, so a player short on the
+    // two eligible pools could score by surrendering fleet tokens — which is what caps ships on the
+    // board. Bots did exactly that.
+    //
+    // Removing that route costs them a cheap objective: vp_pace falls 0.416 -> 0.387 and
+    // faction_differentiation rises 0.432 -> 0.563, because the seats that were buying it are no
+    // longer all buying it. Every current value still lands inside the v4 intervals; what fails
+    // without this is the protocol-integrity check, which requires the recorded bounds to be
+    // exactly what this tree recomputes.
+    //
+    // Approved by the project owner on 2026-08-29, offered the alternatives of reverting the fix or
+    // leaving the gate red.
+    //
     // v4 — recorded 2026-08-29. Phase 8 of the engine completion plan began emitting three events
     // that did not exist before: SHIP_DESTROYED (per casualty, carrying whether it was the owner's
     // last ship), SUSTAIN_DAMAGE_USED, and STRATEGY_PHASE_BEGAN. Five printed reaction windows name
@@ -407,43 +424,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.383_333_333_333_333_5, 0.448_765_432_098_765_46),
+        (0.36049382716049383, 0.4141975308641975),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.608_870_963_060_335_5, 1.922_138_631_083_791),
+        (1.6540991973705854, 2.0061385135350815),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.306_362_570_643_605_3, 0.763_378_617_450_244_5),
+        (0.40184758488944705, 0.8893228107545623),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.02746995826549488, 0.028933288356179577),
+        (0.027505101042852347, 0.029080687426688054),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.04671410827862237, 0.047924850659158934),
+        (0.04668181736870523, 0.04779933168281916),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.06640752685995822, 0.07128887512765762),
+        (0.06814141847180269, 0.07149281157674263),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.008019455765829799, 0.009125187101255976),
+        (0.008362208294921845, 0.009382226394320903),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.09208860220768417, 0.09435310035323133),
+        (0.09216129477947528, 0.09436985000605595),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.045359814670357705, 0.046458373571462576),
+        (0.04545672658738001, 0.046608822657833976),
     );
     bounds
 }

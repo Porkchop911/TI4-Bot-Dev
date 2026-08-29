@@ -688,6 +688,7 @@ impl<'a> Game<'a> {
         if let Some(galaxy) = self.galaxy.as_mut() {
             crate::laws::apply_to_galaxy(&self.state, galaxy);
         }
+
         if self.state.finished {
             return self.result(false, None);
         }

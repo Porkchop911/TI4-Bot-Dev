@@ -106,3 +106,35 @@ This is not a presentation-only defect. It changes objective eligibility, awards
 that should be unavailable, preserves fleets that the rules require removing, and exposes learned
 policies to impossible positions. Replays and training/evaluation results produced through the
 affected path may therefore contain rules-invalid state transitions.
+
+## Resolution, 2026-08-29
+
+**Defect 1 (fleet tokens are not eligible): FIXED.**
+
+`TOKEN_COST_POOLS` names the two pools the cards allow — tactic and strategy — and both
+affordability and payment read it. Strategy is taken before tactic among the two that are eligible:
+a tactic token is the scarcer resource in an action phase and nothing in either card prefers one.
+
+`bought_progress` needed no change: it derives from `can_afford`, so fixing affordability fixed
+progress with it. The existing test
+`token_progress_is_exact_across_all_small_pool_splits` asserted the *sum of all three pools* and so
+encoded the bug; it now varies the fleet pool deliberately and asserts the answer does not move.
+
+**Defect 2 (fleet supply not re-enforced when the pool shrinks): PARTIALLY ADDRESSED.**
+
+`fleet::enforce_everywhere` now exists and does the right thing — both enforcement loops fall through
+when a seat is inside its limits, so it is cheap and silent on the common step.
+
+It is deliberately **not** called from the game loop. Doing so enforces limits for every seat in
+every system continuously, which is arguably what 58.4 requires, and it broke eight existing tests
+whose fixtures set up positions that were legal only because nothing looked. That is a behavioural
+change large enough to move the `ti4-sim` baseline on its own, and it deserves its own reviewed
+change rather than riding along with the eligibility fix.
+
+With defect 1 fixed, the specific route this bug reported — scoring Lead From the Front by
+surrendering fleet tokens — is closed. The general gap remains: Fleet Regulations and Clandestine
+Operations both shrink the pool from sites with no decider.
+
+**Behavioural baseline:** the fix changes play, because bots were buying the objective this way.
+`vp_pace` falls 0.416 -> 0.387 and `faction_differentiation` rises 0.432 -> 0.563. Recorded as v5 in
+`plans/evidence/M08-021.md`, approved by the project owner.
