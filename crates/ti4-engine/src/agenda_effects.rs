@@ -403,7 +403,8 @@ pub fn resolve(
 /// covers — so a driver that has them must pass its own.
 #[allow(
     clippy::too_many_lines,
-    reason = "one arm per agenda: the list is the point, and splitting it hides the set"
+    clippy::match_same_arms,
+    reason = "one arm per agenda: the list is the point, and splitting it hides the set; the empty arms are the availability-only laws documented beside them"
 )]
 pub fn resolve_with(
     state: &mut GameState,
@@ -1005,7 +1006,7 @@ pub fn resolve_with(
                 }
             } else {
                 let types = ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
-                for (_, record) in &mut state.board {
+                for record in state.board.values_mut() {
                     for units in record.planet_units.values_mut() {
                         for unit in units.iter_mut() {
                             if types
