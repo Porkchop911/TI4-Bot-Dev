@@ -75,8 +75,15 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "rt_warfare",
         "senate_sanctuary",
         "terraforming_initiative",
+        // Ministries and standing rules, enforced in `laws`.
+        "articles_war",
+        "minister_exploration",
+        "minister_policy",
         // Immediate effects, resolved here.
         "cladenstine",
+        "grant_reallocation",
+        "nexus",
+        "warrant",
         "minister_antiquities",
         "rearmament",
         "standardization",
@@ -841,6 +848,51 @@ pub fn resolve_with(
         | "rt_warfare"
         | "senate_sanctuary"
         | "terraforming_initiative" => {}
+        // Ministries: the card does nothing when it passes and everything afterwards, so the arm
+        // exists only to make the agenda available. Articles of War is the same shape -- its For
+        // half is a standing rule, and its Against half pays the players who voted For.
+        "minister_exploration" | "minister_policy" => {}
+        "articles_war" => {
+            if outcome == AGAINST {
+                for player in ballot.voted_for(FOR) {
+                    if let Some(seat) = state.player_mut(&player) {
+                        seat.trade_goods += 3;
+                    }
+                }
+            }
+        }
+        "nexus" => {
+            // For is a standing rule about the wormhole nexus. Against places a gamma wormhole in
+            // Mecatol Rex -- gamma, so neither wormhole law touches it: both name alpha and beta.
+            if outcome == AGAINST {
+                state.wormhole_tokens.insert(
+                    "GAMMA".to_owned(),
+                    ti4_model::id::SystemId::new(crate::seating::MECATOL),
+                );
+            }
+        }
+        "warrant" => {
+            // "draws 2 secret objectives". The revealed-hand half is information, not mechanics,
+            // and needs no state: nothing in this engine hides a hand from a decider.
+            let elected = PlayerId::new(outcome);
+            if state.player(&elected).is_some() {
+                let mut table = crate::choice::Table::new();
+                for _ in 0..2 {
+                    let _ = crate::secrets::draw(state, content, &mut table, &elected);
+                }
+            }
+        }
+        "grant_reallocation" => {
+            // "gains any 1 technology of their choice. Then, for each prerequisite on that
+            // technology, they remove 1 token from their fleet pool." The choice is the elected
+            // player's; with no decider here the technology is not chosen for them -- the fleet
+            // cost is what this arm can honour without inventing a pick, and a driver that has a
+            // table resolves the gain through `technology`.
+            let elected = PlayerId::new(outcome);
+            if let Some(seat) = state.player_mut(&elected) {
+                seat.spend_token(ti4_model::state::TokenPool::Fleet);
+            }
+        }
         "standardization" => {
             // "so that they have 3 in tactic, 3 in fleet, and 2 in strategy" -- a target, not a
             // gain. A seat already above a target keeps what it has: the card says place tokens
@@ -1121,6 +1173,70 @@ mod tests {
 
     fn no_votes() -> Ballot {
         Ballot::default()
+    }
+
+    /// Nexus Sovereignty, Against: a gamma wormhole into Mecatol Rex.
+    #[test]
+    fn nexus_sovereignty_against_puts_a_gamma_wormhole_on_mecatol() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        run(&mut state, "nexus", AGAINST, &no_votes());
+        assert_eq!(
+            state.wormhole_tokens.get("GAMMA").map(ti4_model::id::SystemId::as_str),
+            Some(crate::seating::MECATOL)
+        );
+
+        // For is a standing rule and places nothing.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        run(&mut state, "nexus", FOR, &no_votes());
+        assert!(state.wormhole_tokens.is_empty());
+    }
+
+    /// Search Warrant deals the elected player two secrets.
+    #[test]
+    fn a_search_warrant_deals_two_secrets() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let elected = PlayerId::new("a");
+        let before = state
+            .player(&elected)
+            .map_or(0, |seat| seat.secret_objectives.len());
+
+        run(&mut state, "warrant", "a", &no_votes());
+
+        let after = state
+            .player(&elected)
+            .map_or(0, |seat| seat.secret_objectives.len());
+        assert_eq!(after, before + 2, "two secret objectives");
+    }
+
+    /// Articles of War, Against: three trade goods to everyone who voted For.
+    #[test]
+    fn articles_of_war_pays_the_players_who_voted_for_it() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let mut ballot = Ballot::default();
+        ballot.votes.insert(PlayerId::new("a"), FOR.to_owned());
+
+        let before = state
+            .player(&PlayerId::new("a"))
+            .map_or(0, |seat| seat.trade_goods);
+        let untouched = state
+            .player(&PlayerId::new("b"))
+            .map_or(0, |seat| seat.trade_goods);
+
+        run(&mut state, "articles_war", AGAINST, &ballot);
+
+        assert_eq!(
+            state
+                .player(&PlayerId::new("a"))
+                .map_or(0, |seat| seat.trade_goods),
+            before + 3
+        );
+        assert_eq!(
+            state
+                .player(&PlayerId::new("b"))
+                .map_or(0, |seat| seat.trade_goods),
+            untouched,
+            "and nobody else"
+        );
     }
 
     /// Armed Forces Standardization tops pools up to 3/3/2 and takes nothing away.

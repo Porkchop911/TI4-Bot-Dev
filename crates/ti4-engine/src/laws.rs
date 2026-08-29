@@ -215,6 +215,52 @@ pub fn wormholes_all_connected(state: &GameState) -> bool {
     active(state, "wormhole_recon")
 }
 
+/// Minister of Commerce/Exploration and friends: who holds this ministry, if anyone.
+///
+/// A ministry is a law whose elected value is its owner, so "does this player own it" is one
+/// question asked of several cards rather than a predicate each.
+#[must_use]
+pub fn ministry_owner<'a>(state: &'a GameState, alias: &str) -> Option<&'a String> {
+    elected(state, alias)
+}
+
+/// Whether this player holds a named ministry.
+#[must_use]
+pub fn holds_ministry(state: &GameState, player: &PlayerId, alias: &str) -> bool {
+    ministry_owner(state, alias).is_some_and(|owner| owner == player.as_str())
+}
+
+/// Minister of Exploration: gaining control of a planet pays its owner a trade good.
+///
+/// Called where control changes hands, beside the gain-control breakthrough, so the two cannot be
+/// honoured in one path and forgotten in another. Returns how many goods were paid.
+pub fn on_gain_control(state: &mut GameState, player: &PlayerId) -> i32 {
+    if !holds_ministry(state, player, "minister_exploration") {
+        return 0;
+    }
+    if let Some(seat) = state.player_mut(player) {
+        seat.trade_goods += 1;
+    }
+    1
+}
+
+/// Minister of Policy: its owner draws an action card at the end of the status phase.
+#[must_use]
+pub fn draws_at_status_end(state: &GameState, player: &PlayerId) -> bool {
+    holds_ministry(state, player, "minister_policy")
+}
+
+/// Articles of War: mechs lose their printed abilities, SUSTAIN DAMAGE excepted.
+///
+/// The same shape as an entropic scar suppressing unit abilities, and asked the same way — of the
+/// unit, at the point the ability would be used.
+#[must_use]
+pub fn mech_abilities_suppressed(state: &GameState, base_type: &str, ability: &str) -> bool {
+    base_type == "mech"
+        && active(state, "articles_war")
+        && !ability.eq_ignore_ascii_case("sustain")
+}
+
 /// Point the map at what the wormhole laws say.
 ///
 /// `Galaxy` already carries both switches — `wormholes_off` for "alpha and beta wormholes have no
@@ -253,6 +299,9 @@ pub fn enforced_aliases() -> Vec<&'static str> {
         "terraforming_initiative",
         "travel_ban",
         "wormhole_recon",
+        "articles_war",
+        "minister_exploration",
+        "minister_policy",
     ]
 }
 

@@ -6,6 +6,8 @@ use ti4_model::state::{GameState, Phase};
 /// The observable structural changes made during one status phase.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StatusPhaseReport {
+    /// Players owed an action card at the end of the phase (Minister of Policy).
+    pub action_card_draws: Vec<PlayerId>,
     /// The mandatory public objective revealed at step 81.2.
     pub revealed_objective: Option<ObjectiveId>,
     /// Action cards drawn per player, retained in the initiative order used at step 81.3.
@@ -150,6 +152,17 @@ pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseR
             }
         }
     }
+
+    // Minister of Policy: its owner draws an action card at the end of the status phase. Recorded
+    // on the report rather than drawn here, because this function has no deck access and inventing
+    // one would put the draw somewhere the action-card deck does not know about.
+    let ministers: Vec<PlayerId> = state
+        .players
+        .iter()
+        .map(|player| player.id.clone())
+        .filter(|player| crate::laws::draws_at_status_end(state, player))
+        .collect();
+    report.action_card_draws.extend(ministers);
 
     // 81.8 comes last: clearing earlier would turn later initiative reads into seating order.
     let holders: Vec<(PlayerId, Vec<StrategyCardId>)> = state

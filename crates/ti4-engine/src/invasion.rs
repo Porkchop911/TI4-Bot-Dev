@@ -664,10 +664,12 @@ pub fn establish_control(
             .system_mut(system)
             .set_control(planet.clone(), invader.clone());
         state.exhaust_planet(planet.clone());
-        // Gain-control breakthroughs fire here, where control actually changes hands.
+        // Everything that reads "when you gain control of a planet" fires here, where control
+        // actually changes hands: the L1Z1X breakthrough and the Minister of Exploration.
         crate::breakthroughs::on_gain_control(
             state, content, sources, invader, system, planet,
         );
+        crate::laws::on_gain_control(state, invader);
         captured.push((planet.clone(), previous));
     }
     captured
