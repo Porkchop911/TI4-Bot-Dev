@@ -921,6 +921,93 @@ fn counterstroke(context: &mut crate::timing::TimingContext<'_>, player: &Player
     }
 }
 
+/// Distinguished Councilor: "After you cast votes on an outcome of an agenda: cast 5 additional
+/// votes for that outcome."
+///
+/// The bonus is stored against `agenda_seq` and read in `vote::record`, where it is added to the
+/// outcome the seat actually chose, so it cannot be honoured on one voting path and forgotten on
+/// another. The window fires after the voter's outcome choice but before their vote is banked,
+/// so in the normal case (the voter still owes planet exhaustions) the +5 lands on the ballot.
+/// Two degenerate cases leave it unbanked, both inherited from `VOTES_CAST` being emitted after
+/// `record` (`game.rs`/`vote.rs`): a voter who exhausts no planet is banked in the same step the
+/// window opens, and an abstainer casts nothing to add to.
+fn distinguished_councilor(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    crate::vote::add_votes(context.state, player, 5);
+}
+
+/// Bribery: "After the speaker votes on an agenda: spend any number of trade goods. For each
+/// trade good spent, cast 1 additional vote for the outcome on which you voted."
+///
+/// The extra votes ride on the holder's own recorded vote exactly as for Distinguished
+/// Councilor, so they bank only if the holder's vote is not yet banked when the window fires.
+/// The printed trigger is the *speaker's* vote, and the table row in `reactions.rs`
+/// (`VOTES_CAST`, unguarded) cannot express "the voter is the speaker" — a guard sees the event
+/// and the card holder but not the seating — so the engine also offers the card after any
+/// voter's vote; playing it then either banks on the holder's still-pending vote or, once the
+/// holder's vote is already banked, counts for nothing.
+fn bribery(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let held = context
+        .state
+        .player(player)
+        .map_or(0, |seat| seat.trade_goods.max(0));
+    if held == 0 {
+        return; // "any number" includes zero, and zero buys nothing
+    }
+    let options: Vec<(String, String)> = (0..=held)
+        .map(|count| (count.to_string(), format!("spend {count} trade goods")))
+        .collect();
+    let Some(answer) = pick(context, player, "Bribery: how many trade goods to spend?", "count", &options)
+    else {
+        return;
+    };
+    let spent = answer.parse::<i32>().unwrap_or(0).clamp(0, held);
+    if spent == 0 {
+        return;
+    }
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.trade_goods -= spent;
+    }
+    crate::vote::add_votes(context.state, player, i64::from(spent));
+}
+
+/// Shields Holding, four physical copies: "Before you assign hits to your ships during a space
+/// combat: cancel up to 2 hits."
+///
+/// The hits are granted for the current combat round and spent as the hits would land, before
+/// the sustain offer: a cancelled hit is one nobody has to absorb. Each copy cancels two, so
+/// holding all four cancels eight, and the pool is consumed across the round rather than
+/// refreshed per assignment.
+fn shields_holding(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    crate::combat::grant_hit_cancellation(context.state, player, 2);
+}
+
+/// Intercept: "After your opponent declares a retreat during a space combat: your opponent
+/// cannot retreat during this round of space combat."
+///
+/// Expressed as having nowhere to go: the retreat step already declines to ask a seat with no
+/// legal destination (78.4c), so barring the declarant is enough to keep their ships in the
+/// fight. The declarant is not on `GameState` — the combat window is on the driver — so the
+/// effect infers it from the board: the declarant is a ship-bearing combatant of the active
+/// system who is not the card holder. That inference is exact while the system holds only the
+/// two combatants' ships; parked third-party ships widen it to a superset, which is inert on
+/// any player who never announces a retreat (a bar is only read for the retreatants). A seat
+/// with no ships in the system has no opponent in the combat, and the card fizzles for it.
+fn intercept(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(system) = context.state.active_system.clone() else {
+        return;
+    };
+    let combatants =
+        crate::combat::combatants(context.state, context.content, context.sources, &system);
+    if !combatants.iter().any(|combatant| combatant == player) {
+        return;
+    }
+    for opponent in &combatants {
+        if opponent != player {
+            crate::combat::bar_retreat(context.state, opponent);
+        }
+    }
+}
+
 
 /// The player's ground forces on the board, wherever they stand, as `system|planet|index`
 /// options. A structure is not a ground force, and a unit whose type the catalogue does not
@@ -3517,6 +3604,10 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "rally" => Some(rally),
         "fsb" => Some(forward_supply_base),
         "counterstroke" => Some(counterstroke),
+        "distinguished" => Some(distinguished_councilor),
+        "bribery" => Some(bribery),
+        "sh1" | "sh2" | "sh3" | "sh4" => Some(shields_holding),
+        "intercept" => Some(intercept),
         "decoy" => Some(decoy_operation),
         "emergency" => Some(emergency_repairs),
         "upgrade" => Some(upgrade_ship),
@@ -3590,6 +3681,13 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "rally",
         "fsb",
         "counterstroke",
+        "distinguished",
+        "bribery",
+        "sh1",
+        "sh2",
+        "sh3",
+        "sh4",
+        "intercept",
         "decoy",
         "emergency",
         "upgrade",
@@ -4188,6 +4286,120 @@ mod tests {
             before,
             "nothing to return, nothing moved"
         );
+    }
+
+    #[test]
+    fn distinguished_councilor_casts_five_extra_votes_for_the_agenda() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.agenda_seq = 3;
+
+        resolve_card(&mut state, "distinguished", &a, &[]);
+
+        assert_eq!(crate::vote::extra_votes(&state, &a), 5);
+        assert_eq!(
+            crate::vote::extra_votes(&state, &b),
+            0,
+            "the bonus is the holder's, not the table's"
+        );
+
+        // A second copy in hand gets a second window: the bonus accumulates, not overwrites.
+        resolve_card(&mut state, "distinguished", &a, &[]);
+        assert_eq!(crate::vote::extra_votes(&state, &a), 10);
+
+        // The card says "that outcome": the next reveal leaves the bonus worth nothing.
+        state.agenda_seq = 4;
+        assert_eq!(crate::vote::extra_votes(&state, &a), 0);
+    }
+
+    #[test]
+    fn bribery_adds_one_vote_per_trade_good_spent() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.agenda_seq = 1;
+        state.player_mut(&a).unwrap().trade_goods = 3;
+        state.player_mut(&b).unwrap().trade_goods = 1;
+
+        resolve_card(&mut state, "bribery", &a, &["2"]);
+
+        assert_eq!(state.player(&a).unwrap().trade_goods, 1, "two goods are gone");
+        assert_eq!(crate::vote::extra_votes(&state, &a), 2);
+
+        // "Any number" includes zero: the goods stay and no vote is cast.
+        resolve_card(&mut state, "bribery", &b, &["0"]);
+        assert_eq!(state.player(&b).unwrap().trade_goods, 1);
+        assert_eq!(crate::vote::extra_votes(&state, &b), 0);
+
+        // No goods at all: the card asks nothing and buys nothing.
+        let c = PlayerId::new("c");
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state.agenda_seq = 1;
+
+        resolve_card(&mut state, "bribery", &c, &[]);
+
+        assert_eq!(crate::vote::extra_votes(&state, &c), 0);
+    }
+
+    #[test]
+    fn shields_holding_grants_two_cancellations_per_copy_for_the_round() {
+        let a = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.combat_round_seq = 2;
+
+        for alias in ["sh1", "sh2", "sh3", "sh4"] {
+            resolve_card(&mut state, alias, &a, &[]);
+        }
+        assert_eq!(
+            crate::combat::cancellable_hits(&state, &a),
+            8,
+            "four copies cancel eight, stacked"
+        );
+
+        // The card names this combat round: the next round starts with an empty pool.
+        state.combat_round_seq = 3;
+        assert_eq!(crate::combat::cancellable_hits(&state, &a), 0);
+    }
+
+    #[test]
+    fn intercept_bars_the_opponents_retreat_for_the_round() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_hub().centre.clone());
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.active_system = Some(system.clone());
+        state.combat_round_seq = 5;
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+
+        resolve_card(&mut state, "intercept", &a, &[]);
+
+        assert!(crate::combat::retreat_barred(&state, &b), "the declarant is barred");
+        assert!(!crate::combat::retreat_barred(&state, &a), "the card holder is not");
+
+        // The bar names this combat round: the next round is unbarred.
+        state.combat_round_seq = 6;
+        assert!(!crate::combat::retreat_barred(&state, &b));
+    }
+
+    #[test]
+    fn intercept_fizzles_for_a_seat_outside_the_combat() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_hub().centre.clone());
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state.active_system = Some(system.clone());
+        state.combat_round_seq = 5;
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+        // c has no ships in the system: it is not in the combat, so it has no opponent to bar.
+
+        resolve_card(&mut state, "intercept", &c, &[]);
+
+        assert!(!crate::combat::retreat_barred(&state, &a));
+        assert!(!crate::combat::retreat_barred(&state, &b));
     }
 
     #[test]
