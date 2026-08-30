@@ -22,6 +22,56 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — Cancel API: Sabotage + v9 re-baseline (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `3325ab9` before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **Cancel API group** — Sabotage, all four copies (`sabo1`–`4`).
+  "When another player plays an action card other than 'Sabotage': cancel that action card."
+  - The machinery already existed: `reactions::announce` emits `ACTION_CARD_PLAYED` through the
+    resolver and skips the card's effect when the event comes back cancelled (the card is still
+    spent — 1.15 cancels the event, not the spend), and the Sabotage window row already existed
+    in `window_table()`. This group added the two missing pieces:
+  - **The cancellation itself.** The reaction slot that owns the triggering `ACTION_CARD_PLAYED`
+    event is the only code that still holds that event (a card effect's signature carries no
+    event; by the time the played card's effect runs, the triggering event is back in its own
+    frame). The slot cancels the event after a successfully played Sabotage. The effect-table
+    entry (`sabotage` in `action_cards.rs`) is a documented no-op marker so a played Sabotage
+    reports as resolved rather than `ACTION_CARD_UNRESOLVED` — the doc says not to move the
+    cancellation there.
+  - **The "other than 'Sabotage'" guard.** The window row's guard is now
+    `another_players_card_is_not_sabotage` (`actor_is_not` + the played card's alias read off
+    the event payload is not one of `sabo1`–`sabo4`), so the four copies cancel other cards
+    being played, not each other — a chain of Sabotages would spend the whole deck for nothing.
+- Coverage 101 → **105/142** action cards (coverage_report, release); agendas still 63/63.
+- **ti4-sim baseline moved v8 → v9** through the same versioned process: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; `behavior.rs` now carries the v9 transcription and
+  `plans/evidence/M08-021.md` records the pair. Cause: the bots now play Sabotage, so a card
+  play the v8 bots let stand can be interrupted mid-announcement. Every v9 value sits inside
+  its v8 interval (value gate green); what forced the move is the protocol-integrity check
+  (recorded == protocol recomputation, 2000 splitmix64 resamples, seed
+  `0x9E3779B97F4A7C15`). `completion` stays the strict 1.0 invariant.
+- Tests: 1000 `ti4-engine` lib tests pass (was 998): `sabotage_cancels_the_card_being_played`
+  (a `Game::step` driver — A plays Flank Speed in his activation's after window, B's Sabotage
+  cancels the announcement: A's card and B's Sabotage are both spent, the `move_bonus`
+  marker never lands, no `ACTION_CARD_UNRESOLVED`; cardless control arm sets the marker) and
+  `sabotage_reacts_only_to_a_card_that_is_not_sabotage` (the guard at function level via
+  `playable_now`: offered for another player's non-Sabotage card, not for a Sabotage play).
+  All three halves probed (break → the exact test fails → revert): the slot's `event.cancel()`
+  removed, the guard forced off, the dispatch entry deleted.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s `fixture_capture_is_deterministic`
+  — the same pre-existing tracked failure, now at step 781 (was 782: the new card changes the
+  replay trajectory, not its failure mode). M09-019b scope, not part of this batch.
+- Clippy: zero warnings in every touched file under `--all-targets` (`reactions`,
+  `action_cards`, `game` tests, `behavior` docs); the remaining workspace warnings are
+  pre-existing in untouched files.
+- Next safe action: the handoff's remaining groups in order — Movement (`lost_star`,
+  `solar_flare`), Agenda/turn flow (9 cards), remaining relics. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — invasion-flow cards + v8 re-baseline (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

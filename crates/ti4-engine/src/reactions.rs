@@ -83,6 +83,22 @@ fn commit_on_your_planet(event: &Event, player: &PlayerId) -> bool {
             .is_some_and(|holder| holder == player.as_str())
 }
 
+/// "When another player plays an action card other than 'Sabotage'": the committer is
+/// someone else, and the card being played is not one of the four Sabotage copies — Sabotage
+/// cancels other cards being played, not itself (1.15 would otherwise let a chain of
+/// Sabotages spend the whole deck for nothing).
+fn another_players_card_is_not_sabotage(event: &Event, player: &PlayerId) -> bool {
+    actor_is_not(event, player) && !is_sabotage_play(event)
+}
+
+/// The `ACTION_CARD_PLAYED` payload names one of the four Sabotage copies.
+fn is_sabotage_play(event: &Event) -> bool {
+    matches!(
+        event.text("card"),
+        Some("sabo1" | "sabo2" | "sabo3" | "sabo4")
+    )
+}
+
 /// Anybody at all — the window applies whoever the event names.
 fn anyone(_: &Event, _: &PlayerId) -> bool {
     true
@@ -151,7 +167,7 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "When another player plays an action card other than 'Sabotage'",
-            guarded("ACTION_CARD_PLAYED", When, actor_is_not),
+            guarded("ACTION_CARD_PLAYED", When, another_players_card_is_not_sabotage),
         ),
         // Activation, seen from either chair. Five printed windows, one event: what separates
         // them is whose activation it was, which is exactly what the guard is for.
@@ -521,7 +537,19 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                     Err(_) => return Ok(()),
                 }
             };
-            play(context, resolver, &owner, &chosen).map(|_| ())
+            let played = play(context, resolver, &owner, &chosen)?;
+            // Sabotage: "Cancel that action card." The cancelled event is the one that
+            // opened this window, and only this closure still holds it: a card's effect
+            // signature carries no event, and by the time the played card's effect runs,
+            // the triggering event is back in its own frame. A Sabotage spent in any other
+            // window (none exists today) answers nothing, exactly as the window table says.
+            if played
+                && event.event_type == "ACTION_CARD_PLAYED"
+                && crate::action_cards::name_of(context.content, &chosen) == "Sabotage"
+            {
+                event.cancel();
+            }
+            Ok(())
         }),
     )
     .with_optional(true)
@@ -631,6 +659,14 @@ mod tests {
         Event::new(1, event_type, payload)
     }
 
+    /// An `ACTION_CARD_PLAYED`-shaped event: the player who played, and the card played.
+    fn event_with_card(event_type: &str, who: &str, card: &str) -> Event {
+        let mut payload = BTreeMap::new();
+        payload.insert("player".to_owned(), who.to_owned().into());
+        payload.insert("card".to_owned(), card.to_owned().into());
+        Event::new(1, event_type, payload)
+    }
+
     #[test]
     fn a_component_action_is_not_a_reaction() {
         // Forty-two cards read "Action". Treating one as a reaction would offer it in a window
@@ -673,6 +709,30 @@ mod tests {
         assert!(
             playable_now(&state, content, &player(), &theirs, Relation::After).is_empty(),
             "another player's activation is not yours"
+        );
+    }
+
+    #[test]
+    fn sabotage_reacts_only_to_a_card_that_is_not_sabotage() {
+        // The window's tail: "other than 'Sabotage'". The four copies cancel other cards
+        // being played, not each other — a chain of Sabotages would spend the whole deck
+        // for nothing. The guard reads the played card's alias off the event payload.
+        let content = ContentStore::embedded();
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&b).unwrap().action_cards = vec![ActionCardId::new("sabo1")];
+
+        let other_card = event_with_card("ACTION_CARD_PLAYED", "a", "fs1");
+        let sabotage_play = event_with_card("ACTION_CARD_PLAYED", "a", "sabo2");
+
+        assert_eq!(
+            playable_now(&state, content, &b, &other_card, Relation::When),
+            vec![ActionCardId::new("sabo1")],
+            "another player's card is a legal target"
+        );
+        assert!(
+            playable_now(&state, content, &b, &sabotage_play, Relation::When).is_empty(),
+            "Sabotage does not answer a Sabotage"
         );
     }
 

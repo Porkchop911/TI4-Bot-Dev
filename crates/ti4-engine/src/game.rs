@@ -3379,6 +3379,99 @@ mod tests {
         assert!(seat.action_cards.is_empty(), "the card was spent");
     }
 
+    #[test]
+    fn sabotage_cancels_the_card_being_played() {
+        // Sabotage: "When another player plays an action card other than 'Sabotage': cancel
+        // that action card." A plays Flank Speed in the after window of his own activation,
+        // which announces an ACTION_CARD_PLAYED event. B's Sabotage hooks that event's WHEN
+        // window and cancels it: A's card is still spent (1.15 cancels the effect, not the
+        // spend), but its marker never lands. Without the card the announcement is not
+        // interrupted and the marker is set.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) = tactical_fixture();
+            state.player_mut(&a).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("fs1")];
+            if with_card {
+                state.player_mut(&b).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("sabo1")];
+            }
+            // A: start the action, activate, answer his own after window (play Flank
+            // Speed). With the card, B then answers the Sabotage window that A's card
+            // announcement opens, and A finishes the empty movement step.
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    ids[0].to_string(),
+                    "reaction:generic:SYSTEM_ACTIVATED:after".to_owned(),
+                    "reaction:generic:ACTION_CARD_PLAYED:when".to_owned(),
+                    "done_moving".to_owned(),
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    ids[0].to_string(),
+                    "reaction:generic:SYSTEM_ACTIVATED:after".to_owned(),
+                    "done_moving".to_owned(),
+                ]
+            };
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            for _ in 0..16 {
+                let result = game.step();
+                assert_eq!(result.error, None, "no tactical step should refuse");
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran every step it has and closed; log was {:?}",
+                game.events
+            );
+            (game.state, game.events)
+        };
+
+        // No Sabotage: the announcement stands and Flank Speed sets its marker for the
+        // tactical action in flight.
+        let (state, _events) = run(false);
+        let seat = state.player(&a).unwrap();
+        assert_eq!(
+            seat.move_bonus_activation,
+            Some(state.activation_seq),
+            "an uninterrupted play applies its effect"
+        );
+        assert!(seat.action_cards.is_empty(), "the card was spent");
+
+        // With Sabotage: the play's effect never happens. The card is spent anyway, and so
+        // is the Sabotage that answered it; the play itself happened and is logged, and a
+        // cancelled card is not a registry gap.
+        let (state, events) = run(true);
+        let seat = state.player(&a).unwrap();
+        assert_eq!(
+            seat.move_bonus_activation, None,
+            "a cancelled play applies no effect"
+        );
+        assert!(
+            seat.action_cards.is_empty(),
+            "the played card is still spent"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the Sabotage that answered it is spent too"
+        );
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the play happened and was logged"
+        );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_UNRESOLVED"),
+            "a cancelled card is not an unimplemented one"
+        );
+    }
+
     /// Drive a tactical action through to the production step and report the budget the step
     /// was offered. `reaction`, when set, is the answer to the one question the production
     /// window asks the holder of a playable card (playing is optional, so even a single

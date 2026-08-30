@@ -375,12 +375,32 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v8): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v9): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v9 — recorded 2026-08-30. A change in *play*: Sabotage (all four copies) stopped being
+    // an unimplemented placeholder and became a real cancellation — when another player
+    // plays an action card other than Sabotage, its `ACTION_CARD_PLAYED` announcement is
+    // cancelled in its WHEN window, the card is still spent, and its effect never runs.
+    // The reaction slot that owns the triggering event performs the cancellation, and the
+    // "other than 'Sabotage'" guard keeps the copies from cancelling each other.
+    //
+    // The bots now hold and play Sabotage, so a card play the v8 bots let stand can now be
+    // interrupted. The shifts are modest: `faction_differentiation` and `score_spread`
+    // widen further (a play can now be undone, another way for endings to split), the
+    // action-label shares drift by a few thousandths in both directions, and `completion`
+    // stays the strict 1.0 invariant — a cancelled play spends its card and the game still
+    // ends cleanly. The protocol-integrity check is what forced the move: the recomputed
+    // bounds no longer match the v8 transcription, even though every v9 value sits inside
+    // its v8 interval.
+    //
+    // Approved by the project owner (the engine-completion handoff's standing instruction to
+    // re-baseline when this card group lands); v8 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v8 — recorded 2026-08-30. A change in *play*: the invasion-flow cards (Blitz, Disable,
     // Parley, Ghost Squad) stopped being unimplemented placeholders and became real effects —
     // Blitz grants BOMBARDMENT 6 to the invader's non-fighter ships without BOMBARDMENT,
@@ -483,43 +503,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.399_382_716_049_382_7, 0.446_913_580_246_913_63),
+        (0.401_234_567_901_234_63, 0.457_407_407_407_407_3),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.590_497_304_558_980_5, 2.038_881_386_318_379_5),
+        (1.679_289_085_153_497_6, 2.098_782_668_946_063_4),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.429_469_957_557_504_3, 0.951_168_871_558_684_9),
+        (0.461_077_642_694_365_13, 1.012_087_440_715_633_5),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027_543_038_148_746_417, 0.029_082_826_274_727_462),
+        (0.027_412_668_488_770_175, 0.029_032_224_040_478_34),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.045_355_513_133_917_93, 0.046_584_954_196_854_39),
+        (0.045_683_099_285_701_974, 0.046_884_705_021_987_53),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.064_794_093_625_977_64, 0.068_847_506_810_310_46),
+        (0.063_522_262_076_881_86, 0.068_439_558_575_969_9),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.007_881_981_979_744_561, 0.008_951_325_901_020_851),
+        (0.007_668_843_442_102_239, 0.008_589_845_601_301_509),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.089_549_215_046_245_62, 0.091_897_873_401_198_12),
+        (0.090_279_258_806_919_03, 0.092_672_053_472_955_4),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.044_161_586_888_981_37, 0.045_358_583_581_532_594),
+        (0.044_569_179_212_301_51, 0.045_808_806_940_314_487),
     );
     bounds
 }

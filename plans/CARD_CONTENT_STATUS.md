@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 101/142 |
+| action cards  | 34/142 | 105/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 101 of
-142 (71.1%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 105 of
+142 (73.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -112,6 +112,25 @@ the test fail, then reverted).
   a cardless control arm), and each effect was probed (break → the new test fails → revert). The
   group moved the ti4-sim behavioural baseline v7 → v8 (`plans/evidence/M08-021.md`).
 
+- Cancel API (the handoff's next group): `sabo1`–`4` (Sabotage). "When another player plays an
+  action card other than 'Sabotage': cancel that action card." The machinery was already in
+  place — `reactions::announce` emits `ACTION_CARD_PLAYED` through the resolver and skips the
+  card's effect when the event comes back cancelled (the card is still spent: 1.15 cancels the
+  event, not the spend), and the Sabotage window row already existed in the window table. This
+  group added the two missing pieces: the cancellation itself (the reaction slot that owns the
+  triggering `ACTION_CARD_PLAYED` event is the only code that still holds that event — a card
+  effect's signature carries no event — so the slot cancels the event after a successfully
+  played Sabotage; the effect-table entry exists so a played Sabotage reports as resolved
+  rather than `ACTION_CARD_UNRESOLVED`), and the "other than 'Sabotage'" guard (the window row's
+  guard reads the played card's alias off the event payload, so the four copies cancel other
+  cards being played, not each other). Tests: `sabotage_cancels_the_card_being_played` (a
+  `Game::step` driver — A plays Flank Speed in his activation's after window, B's Sabotage
+  cancels the announcement, and the marker never lands; cardless control arm) and
+  `sabotage_reacts_only_to_a_card_that_is_not_sabotage` (the guard at function level, via
+  `playable_now`). All three halves probed (break the cancel / break the guard / remove the
+  dispatch entry → the exact test fails → revert). The group moved the ti4-sim behavioural
+  baseline v8 → v9 (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -127,12 +146,13 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 41 unimplemented action cards, grouped by blocking root cause
+## The 37 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
-flow group (`blitz`, `disable`, `parley`, `ghost_squad`) closed with the batch above; only
-`rout`, `dh1-4` and the live-dice half of `intercept` remain in the combat-dice group.
+flow group (`blitz`, `disable`, `parley`, `ghost_squad`) and the Cancel API group (`sabo1`–`4`)
+closed with the batches above; only `rout`, `dh1-4` and the live-dice half of
+`intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
   keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
@@ -145,7 +165,6 @@ flow group (`blitz`, `disable`, `parley`, `ghost_squad`) closed with the batch a
   `deadly_plot`, `veto`, `veto3`, `veto4`.
 - **Turn / phase driver hooks** (`game.rs`): `coup`, `crisis`, `master_plan`.
 - **Production hook**: done — `war_machine1-4` (see the scoped roll modifiers batch above).
-- **Cancel an effect** (no cancel API exists): `sabo1-4`.
 - **Event payload only** (the fact the effect needs is not in `GameState`): `lieinwait`
   (no transaction-history field to know two neighbours transacted).
 - **Unmodelled attachment** (no per-card trade-good slot on `Player::action_cards`):
@@ -197,26 +216,25 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 998 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 1000 passed, 0 failed.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite is green after the v7 → v8 re-baseline** (the invasion-flow
-  cards became playable; `plans/evidence/M08-021.md`), including the protocol-integrity check
+  **ti4-sim's behavioral suite is green after the v8 → v9 re-baseline** (the Sabotage family
+  became playable; `plans/evidence/M08-021.md`), including the protocol-integrity check
   in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-existing
-  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 782
+  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 781
   before any production-head menu of ≥3 options); it belongs to the M09-019b profile module's
   own versioned process and is tracked, not new.
 - `cargo clippy -p ti4-model -p ti4-engine --all-targets`: zero warnings in the touched files
   (lib and tests); the remaining workspace warnings are pre-existing in untouched files
   (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
   `coverage_report` example's length).
-- All four invasion-flow effects probed (break → the new test fails → revert): the blitz
-  grant arm removed, the disable filter forced off, the parley marker hand-off skipped, and the
-  ghost squad move loop short-circuited.
-- The 41 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- All three Sabotage halves probed (break → the exact new test fails → revert): the slot's
+  `event.cancel()` removed, the "not Sabotage" guard forced off, and the dispatch entry deleted
+  (which alone makes a played Sabotage report `ACTION_CARD_UNRESOLVED`).
+- The 37 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow group closed with this batch):
-  - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.
+  group; the invasion-flow group and the Cancel API group closed with the batches above):
   - **Movement** (2): `lost_star`, `solar_flare` — `wormholes_all_linked`-style galaxy scoping
     (`movement.rs`/`laws`).
   - **Agenda and turn flow** (9): `veto`, `veto3`, `veto4`, `confusing`, `confounding`,

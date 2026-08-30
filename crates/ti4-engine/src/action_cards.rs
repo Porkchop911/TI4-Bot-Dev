@@ -279,6 +279,19 @@ fn flank_speed(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     }
 }
 
+/// Sabotage: "When another player plays an action card other than 'Sabotage': cancel that
+/// action card."
+///
+/// The cancellation itself happens in the reaction slot that owns the triggering
+/// `ACTION_CARD_PLAYED` event (`crate::reactions`): the slot is the only place that still
+/// holds that event, because an effect signature carries no event and by the time the
+/// played card's effect runs, the triggering event is back in its own frame. Playing
+/// Sabotage spends the card (the slot discards it first), announces it, and cancels the
+/// card that was being played — whose effect never runs and whose spend stands (1.15
+/// cancels the event, not the spend). This entry exists so a played Sabotage reports as
+/// resolved rather than `ACTION_CARD_UNRESOLVED`; do not move the cancellation here.
+fn sabotage(_: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {}
+
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
 ///
 /// All of them, including a gravity rift's +1 and its destruction roll. A rift's bonus is as much
@@ -3963,6 +3976,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         // fourth copy left off a list stays unplayable for ever with no symptom.
         "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
+        "sabo1" | "sabo2" | "sabo3" | "sabo4" => Some(sabotage),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4124,6 +4138,10 @@ const REGISTERED_ALIASES: &[&str] = &[
     "fs2",
     "fs3",
     "fs4",
+    "sabo1",
+    "sabo2",
+    "sabo3",
+    "sabo4",
     "cripple",
     "f_deployment",
     "imp_rider",
