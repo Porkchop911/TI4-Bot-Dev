@@ -351,6 +351,14 @@ pub struct Player {
     /// for the rest of the game.
     #[serde(default)]
     pub extra_votes_agenda: Option<(u32, i64)>,
+    /// Hack Election: the [`GameState::agenda_seq`] of the agenda whose vote this seat takes
+    /// the last seat of — "During this agenda, you vote last." Scoped by `agenda_seq` for
+    /// the same reason `extra_votes_agenda` is: `reveal_agenda` bumps the counter before
+    /// its window opens, so the marker binds to the vote the reveal produced (including a
+    /// Veto replacement, which is voted on in the same cycle) and expires at the next
+    /// reveal without any cleanup.
+    #[serde(default)]
+    pub hack_votes_last_agenda: Option<u32>,
     /// Hits this seat may cancel before assigning them, in the combat round numbered here
     /// (Shields Holding). Consumed as they are cancelled.
     #[serde(default)]
@@ -493,6 +501,7 @@ impl PartialEq for Player {
             && self.fleet_supply_unlimited_until == other.fleet_supply_unlimited_until
             && self.combat_bonus_round == other.combat_bonus_round
             && self.extra_votes_agenda == other.extra_votes_agenda
+            && self.hack_votes_last_agenda == other.hack_votes_last_agenda
             && self.cancel_hits_round == other.cancel_hits_round
             && self.retreat_barred_round == other.retreat_barred_round
             && self.extra_die_round == other.extra_die_round
@@ -560,6 +569,7 @@ impl Player {
             fleet_supply_unlimited_until: None,
             combat_bonus_round: None,
             extra_votes_agenda: None,
+            hack_votes_last_agenda: None,
             cancel_hits_round: None,
             retreat_barred_round: None,
             extra_die_round: None,

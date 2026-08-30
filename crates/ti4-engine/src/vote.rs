@@ -268,19 +268,35 @@ impl VoteWindow {
     /// Open a vote on `alias`.
     ///
     /// 8.2ii: voting starts to the speaker's left and goes clockwise, so the speaker votes
-    /// last — knowing every other vote, which is the whole point of the seat.
+    /// last — knowing every other vote, which is the whole point of the seat. A seat that
+    /// played Hack Election into this agenda's reveal window (`Player::hack_votes_last_agenda`
+    /// == the current `agenda_seq`) moves to the very end of the order, after the speaker;
+    /// several such seats take the last seats in turn, clockwise.
     #[must_use]
     pub fn new(state: &GameState, alias: &str, choices: Vec<String>) -> Self {
         let mut order = state.clockwise_from(&state.speaker);
         // Imperial Rider's cost: a player who predicted this agenda's outcome gives up their
         // vote on it. Dropped from the order rather than skipped later, so nothing downstream
-        // has to remember they are barred.
+        // has to remember they are barred. A speaker who is barred is simply gone from the
+        // order — the rotation below only re-seats players who still vote.
         order.retain(|player| !state.agenda_predictions.contains_key(player));
-        if !order.is_empty() {
-            order.rotate_left(1); // drop the speaker from the front...
-            order.pop();
-            order.push(state.speaker.clone()); // ...and put them last
+        let votes_last = |player: &PlayerId| {
+            state
+                .player(player)
+                .and_then(|seat| seat.hack_votes_last_agenda)
+                .is_some_and(|agenda| agenda == state.agenda_seq)
+        };
+        let (hackers, rest): (Vec<PlayerId>, Vec<PlayerId>) =
+            order.into_iter().partition(|player| votes_last(player));
+        let mut final_order: Vec<PlayerId> = rest
+            .iter()
+            .filter(|player| *player != &state.speaker)
+            .cloned()
+            .collect();
+        if rest.contains(&state.speaker) {
+            final_order.push(state.speaker.clone());
         }
+        final_order.extend(hackers);
         let opening = if choices.is_empty() {
             Stage::Done(None)
         } else {
@@ -289,7 +305,7 @@ impl VoteWindow {
         Self {
             alias: alias.to_owned(),
             choices,
-            order,
+            order: final_order,
             stage: opening,
             ballot: Ballot::default(),
         }
@@ -317,6 +333,13 @@ impl VoteWindow {
     #[must_use]
     pub const fn ballot(&self) -> &Ballot {
         &self.ballot
+    }
+
+    /// The order the votes are asked in, starting with the first voter. Public knowledge in
+    /// the printed game as well: everyone sees who is asked next.
+    #[must_use]
+    pub fn order(&self) -> &[PlayerId] {
+        &self.order
     }
 
     /// The decision currently owed, or `None` once the vote is finished.
@@ -534,7 +557,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn a_player_who_predicted_the_outcome_does_not_vote_on_it() {
         // Imperial Rider's cost. Without this the card is a free victory point.
@@ -574,6 +596,90 @@ mod tests {
             "b predicted, so b does not vote; asked {asked:?}"
         );
         assert!(asked.contains(&PlayerId::new("a")), "a still votes");
+    }
+
+    /// A speaker who paid the Imperial Rider's cost gives up their vote too. The old
+    /// rotation unseated the speaker and then re-seated them, so a barred speaker ended up
+    /// voting last anyway while the player on their left was dropped.
+    #[test]
+    fn a_speaker_who_predicted_the_outcome_gives_up_their_vote() {
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("a");
+        state
+            .agenda_predictions
+            .insert(PlayerId::new("a"), "for".to_owned());
+
+        let vote = VoteWindow::new(&state, "some_agenda", for_against());
+        assert_eq!(
+            vote.order(),
+            [PlayerId::new("b"), PlayerId::new("c")],
+            "the barred speaker is simply gone; the others keep their clockwise order"
+        );
+    }
+
+    #[test]
+    fn hack_votes_last_moves_the_holder_to_the_end_of_the_order() {
+        // "During this agenda, you vote last": the holder takes the very last seat, after
+        // the speaker.
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("a");
+        state.agenda_seq = 7;
+        state
+            .player_mut(&PlayerId::new("b"))
+            .expect("b sits at the table")
+            .hack_votes_last_agenda = Some(7);
+
+        let vote = VoteWindow::new(&state, "some_agenda", for_against());
+        assert_eq!(
+            vote.order(),
+            [PlayerId::new("c"), PlayerId::new("a"), PlayerId::new("b")],
+            "the speaker keeps their seat ahead of the hacker, b votes dead last"
+        );
+    }
+
+    #[test]
+    fn several_hacks_take_the_last_seats_in_clockwise_turn() {
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("a");
+        state.agenda_seq = 7;
+        for who in ["a", "c"] {
+            state
+                .player_mut(&PlayerId::new(who))
+                .expect("a seat")
+                .hack_votes_last_agenda = Some(7);
+        }
+
+        let vote = VoteWindow::new(&state, "some_agenda", for_against());
+        assert_eq!(
+            vote.order(),
+            [PlayerId::new("b"), PlayerId::new("a"), PlayerId::new("c")],
+            "the hackers keep their relative clockwise order at the end"
+        );
+    }
+
+    #[test]
+    fn hack_votes_last_expires_with_the_agenda_it_was_played_into() {
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("a");
+        state.agenda_seq = 7;
+        state
+            .player_mut(&PlayerId::new("b"))
+            .expect("b sits at the table")
+            .hack_votes_last_agenda = Some(7);
+
+        let this_agenda = VoteWindow::new(&state, "some_agenda", for_against());
+        assert_eq!(
+            this_agenda.order().last().expect("somebody votes last"),
+            &PlayerId::new("b")
+        );
+
+        state.agenda_seq = 8; // the next reveal
+        let next = VoteWindow::new(&state, "some_agenda", for_against());
+        assert_eq!(
+            next.order(),
+            [PlayerId::new("b"), PlayerId::new("c"), PlayerId::new("a")],
+            "the card said *this* agenda; the next one votes in the ordinary order"
+        );
     }
 
     use ti4_model::content_types::POK;

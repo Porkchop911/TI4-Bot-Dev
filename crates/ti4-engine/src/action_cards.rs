@@ -427,7 +427,7 @@ fn deadly_plot(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
 /// turn, the strategic action is not resolved and the strategy card is not exhausted."
 ///
 /// The driver fires the typed `STRATEGIC_ACTION_BEGAN` event before it resolves anything, so
-/// setting [`GameState::strategic_action_cancelled`] here still undoes the action entirely:
+/// setting `TransientFlags::STRATEGIC_CANCELLED` here still undoes the action entirely:
 /// the card goes back to hand unexhausted, no token is placed, no ability runs, and the
 /// victim's turn simply ends.
 fn coup(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
@@ -441,7 +441,7 @@ fn coup(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
 /// passed: Skip the next player's turn."
 ///
 /// The guard counts the unpassed seats at the moment a turn ends; the effect arms
-/// [`GameState::skip_next_turn`], which the turn driver consumes on the very next advance —
+/// `TransientFlags::SKIP_NEXT_TURN`, which the turn driver consumes on the very next advance —
 /// the seat the turn just landed on is skipped and never acts.
 fn crisis(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
     context
@@ -453,7 +453,7 @@ fn crisis(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
 /// Master Plan: "After you perform an action: Perform an additional action."
 ///
 /// The driver fires `ACTION_COMPLETED` when the action is over, and the effect arms
-/// [`GameState::additional_action`]: the next turn advance keeps the same seat — no
+/// `TransientFlags::ADDITIONAL_ACTION`: the next turn advance keeps the same seat — no
 /// `turn_seq` bump, no end-of-turn tech, no transaction reset — and the player simply takes
 /// another action.
 fn master_plan(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
@@ -461,6 +461,20 @@ fn master_plan(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
         .state
         .transient_flags
         .set(TransientFlags::ADDITIONAL_ACTION);
+}
+
+/// Hack Election: "After an agenda is revealed: During this agenda, you vote last."
+///
+/// The marker is keyed to `agenda_seq`, which `reveal_agenda` bumps before its window opens,
+/// so it binds to the vote that reveal produces — including a Veto replacement, which is
+/// voted on in the same cycle — and expires at the next reveal without cleanup. The vote
+/// order reads it in `VoteWindow::new` and moves the holder to the last seat, after the
+/// speaker.
+fn hack_election(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let agenda = context.state.agenda_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.hack_votes_last_agenda = Some(agenda);
+    }
 }
 
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
@@ -4157,6 +4171,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "coup" => Some(coup),
         "crisis" => Some(crisis),
         "master_plan" => Some(master_plan),
+        "hack" => Some(hack_election),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4330,6 +4345,7 @@ const REGISTERED_ALIASES: &[&str] = &[
     "confusing",
     "confounding",
     "deadly_plot",
+    "hack",
     "coup",
     "crisis",
     "master_plan",

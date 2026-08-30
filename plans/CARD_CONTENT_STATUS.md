@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 116/142 |
+| action cards  | 34/142 | 117/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 116 of
-142 (81.7%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 117 of
+142 (82.4%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -195,6 +195,30 @@ the test fail, then reverted).
   for the recorded ti4-sim suite — the v10 bounds still reproduce exactly — so it needed no
   re-baseline.
 
+- Vote order (the handoff's next group): `hack` (Hack Election) — "After an agenda is
+  revealed: During this agenda, you vote last." The marker `Player.hack_votes_last_agenda` (an
+  `Option<u32>` on the seat in `ti4-model`, `#[serde(default)]`, in the manual `PartialEq`,
+  `None` on a fresh seat) records the `agenda_seq` the card was played into: `reveal_agenda`
+  bumps `agenda_seq` before its window opens, so the marker binds to the vote that reveal
+  produces — including a Veto replacement voted on in the same cycle — and expires at the next
+  reveal with no cleanup, the `extra_votes_agenda` precedent. `VoteWindow::new` (vote.rs) reads
+  it: the order is the non-speaker seats in clockwise order, the speaker last if still voting,
+  then the hackers (several keep their relative clockwise order) at the very end. The same
+  rewrite fixed a latent ordering bug: the old code rotated the seated list left by one, popped
+  the old first seat and re-pushed the speaker — re-seating a speaker who had been barred from
+  voting (the Imperial Rider's prediction cost), which re-admitted the barred seat and dropped
+  the player on its left. A barred speaker is now simply gone from the order. Tests: four
+  `VoteWindow::new` unit tests (the holder last behind the speaker, several hackers keep their
+  clockwise order, the marker expires with the agenda, the barred speaker is gone) plus two
+  full-game drivers in `game.rs` (a three-seat agenda phase with a `RecordingDecider` that
+  logs the (player, prompt) sequence: with the card b is asked in the reveal window and the
+  outcome questions go to c, then the speaker a, then b; the cardless control goes b, c, a —
+  same two-to-one tally, different order). Both halves probed: the hack partition disabled →
+  both unit tests and the full-game test fail on the exact order; the old speaker re-seating
+  restored → the barred-speaker test fails. The group moved no behavioural bound: the release
+  re-baseline run reproduced all ten v11 values to the last digit, 0 metrics outside, so no
+  v12 was needed (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -210,22 +234,28 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 26 unimplemented action cards, grouped by blocking root cause
+## The 25 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
 flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (`sabo1`–`4`)
 and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`veto3`/`veto4`,
-`confusing`, `confounding`) and the Turn-flow group (`deadly_plot`, `coup`, `crisis`,
-`master_plan`) closed with the batches above; only `rout`, `dh1-4` and the
-live-dice half of `intercept` remain in the combat-dice group.
+`confusing`, `confounding`), the Turn-flow group (`deadly_plot`, `coup`, `crisis`,
+`master_plan`) and the Vote-order group (`bribery`/`distinguished` via `vote::add_votes` in
+`cc40c70`, `hack` in the batch above) closed with the batches above; only `rout`, `dh1-4` and
+the live-dice half of `intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
   keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
   `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
   `fire_team` and `scramble` left this group with the reroll group below.
-- **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
+- **Vote weighting / ballot** (`vote.rs`): done — `bribery`/`distinguished` (the `cc40c70`
+  batch, via `vote::add_votes` scoped by `agenda_seq`) and `hack` (the vote-order batch above).
+  The only documented gap left: a bonus whose vote is already banked when `VOTES_CAST` fires
+  counts for nothing (zero-planet voter / abstainer), and the unguarded `VOTES_CAST` row also
+  offers `bribery` after a non-speaker's vote (a `Guard` sees the event and the holder but not
+  the seating, so "the voter is the speaker" is inexpressible in `reactions.rs`).
 - **Agenda outcome redirection / agenda queue** (`game.rs`): done — `deadly_plot` (the
   `AGENDA_RESOLVED` window + the discard path in `close_vote`; see the Turn-flow group below).
 - **Turn / phase driver hooks** (`game.rs`): done — `coup`, `crisis`, `master_plan` (the
@@ -245,12 +275,16 @@ token), `courageous` (ship destroyed + reinforcement move), `stability` (status-
 return + command token), `summit` (strategy-phase start + 1 TG), `blackmarketdealing`
 (transaction + sell a ship for 1 TG), `reparations` (planet taken + 1 TG),
 `reverse_engineer` (component-card discard + research), `salvage` (space combat won +
-reinforcement move), `mjets1-4` (space-cannon window + ship move), `waylay` (anti-fighter
-window + ship move), `disgrace` (strategy-card choice + leader return, if leader state is on
-`GameState`), `puppetsonastring` (turn end + strategy-card discard), `extremeduress` (turn
-start + TG). These are reaction cards: each needs a full-game scripted scenario in which the
-window actually fires, so this is a separate session, not a continuation of the component-action
-batches.
+reinforcement move), `mjets1-4` (space-cannon window + ship move), `waylay` (a roll-site
+modifier on the anti-fighter barrage: hits from the roll are produced against all ships, not
+just fighters — the `f_prototype` shape, at the AFB roll), `disgrace` (strategy-card choice +
+leader return, if leader state is on `GameState`), `puppetsonastring` (turn end +
+strategy-card discard), `extremeduress` (turn start + TG), `reflective` (produce 2 hits
+against the opponent's ships in the active system, when one of the holder's ships uses SUSTAIN
+DAMAGE — the `SUSTAIN_DAMAGE_USED` event and its When/After window rows already exist, so the
+effect has a live binding point). These are reaction cards: each needs a full-game scripted
+scenario in which the window actually fires, so this is a separate session, not a continuation
+of the component-action batches.
 
 ## FINDING — `ti4-policy` test ledger was wrong; **resolved in `873178e`**
 
@@ -284,13 +318,15 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 1007 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 1021 passed, 0 failed (plus the 5 doc/other targets); the
+  engine-line crates all green.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite stays green at v10** — the Agenda cards (`veto`/`veto3`/`veto4`,
-  `confusing`, `confounding`) are behaviorally inert for the recorded suite (the v10 bounds still
-  reproduce exactly, protocol-integrity included), so this group needed no re-baseline; the last
-  move was v9 → v10 for Solar Flare / Lost Star Chart (`plans/evidence/M08-021.md`). The one remaining red is `fixture_capture_is_deterministic`: pre-
+  **ti4-sim's behavioral suite stays green at v11** — the vote-order package (Hack Election +
+  the barred-speaker fix) reproduced all ten v11 values to the last digit in the release
+  re-baseline run, `0 metric(s) outside the recorded bounds`, so no v12 re-baseline was needed
+  (`plans/evidence/M08-021.md`); the last move was v11 for the turn-flow cards. The one
+  remaining red is `fixture_capture_is_deterministic`: pre-
   existing (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at
   step 781 before any production-head menu of ≥3 options); it belongs to the M09-019b profile
   module's own versioned process and is tracked, not new.
@@ -298,26 +334,26 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
   touched files (lib and tests); the remaining workspace warnings are pre-existing in untouched
   files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
   `coverage_report` example's length).
-- The Agenda group was probed break → the exact new test fails → revert: the Veto hook disabled
-  in `reveal_agenda` (the replacement is never voted, the veto test fails), the `close_vote`
-  override ignored (both the confusing and confounding tests fail), the confusing + confounding
-  effects emptied (both fail), the Veto effect emptied (the veto test fails), and the Confounding
-  guard reverted to the buggy raw-outcome reading (it fires on an Elect-Planet agenda —
-  `AGENDA_OUTCOME_REDIRECTED` on a planet — and the guard test fails). The Movement group's four
-  probes (cannon suppression removed / the laws' star-flag derivation pinned off / both effect
-  markers removed / the dispatch entries deleted) and the Sabotage group's three were recorded at
-  their own checkpoints. The galaxy's both-link branch has no detecting probe — it is
+- The vote-order package was probed break → the exact new test fails → revert: the hack
+  partition in `VoteWindow::new` disabled (both the unit order tests and the full-game driver
+  fail on the exact (player, prompt) sequence) and the old speaker re-seating restored (the
+  barred-speaker test fails). The Agenda group's five probes, the Movement group's four
+  probes, the Sabotage group's three and the Turn-flow group's eleven were recorded at their
+  own checkpoints. The galaxy's both-link branch has no detecting probe — it is
   indistinguishable from same-letter matching by the map's data (documented above).
-- The 26 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- The 25 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow, Cancel API, Movement, Agenda and Turn-flow groups closed with the
-  batches above):
+  group; the invasion-flow, Cancel API, Movement, Agenda, Turn-flow and Vote-order groups closed
+  with the batches above):
   - **Agenda and turn flow** (0 remaining of 9): the five agenda cards
     (`veto`/`veto3`/`veto4`, `confusing`, `confounding`) closed with the Agenda batch, and the
     four turn cards (`deadly_plot`, `coup`, `crisis`, `master_plan`) closed with the Turn-flow
     batch (new window rows, the three new typed turn events, the `TransientFlags` bitfield and
     the `advance_turn` retention/skip/cancellation paths).
-  - **Vote order** (1): `hack` — re-orderable vote sequence (`vote.rs`).
+  - **Vote order** (0 remaining of 3): `bribery`/`distinguished` closed with the `cc40c70`
+    batch (via `vote::add_votes`) and `hack` closed with the vote-order batch (the
+    `hack_votes_last_agenda` marker read by `VoteWindow::new`, plus the fix for a barred
+    speaker being re-seated at the end of the order).
   - **Not grouped by the handoff** (25, most blocked on movement/state the handoff's groups do
     not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `dh1`–`4`, `disgrace`,
     `extremeduress`, `infiltrate`, `investments`, `lieinwait`, `mjets1`–`4`,

@@ -2726,7 +2726,7 @@ impl<'a> Game<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
@@ -2734,7 +2734,7 @@ mod tests {
     use ti4_model::state::Phase;
 
     use super::*;
-    use crate::choice::{AlwaysDecline, Scripted};
+    use crate::choice::{AlwaysDecline, Decider, Scripted};
     use crate::setup::start_game;
     use crate::timing::{Ability, Relation};
     use crate::tokens::STATUS_TOKENS;
@@ -5777,6 +5777,159 @@ mod tests {
             Some(PlayerId::new("b")),
             "the turn passed on after the single action; log {events:?}"
         );
+    }
+
+    /// A decider that records every (player, prompt) it answers, then answers on its own:
+    /// b votes "b", every other seat votes "a", and anything else (playing a reaction
+    /// card, exhausting a planet, scoring an objective) takes the first option offered.
+    /// The recorded sequence *is* the question order, which is the observable shape of a
+    /// vote.
+    struct RecordingDecider {
+        seen: Arc<Mutex<Vec<(String, String)>>>,
+    }
+
+    impl Decider for RecordingDecider {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen
+                .lock()
+                .unwrap()
+                .push((choice.player.to_string(), choice.prompt.clone()));
+            let prefer = if choice.player == PlayerId::new("b") {
+                "b"
+            } else {
+                "a"
+            };
+            if let Some(option) = choice.option(prefer).cloned() {
+                return Ok(option);
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: prefer.to_owned(),
+                    offered: choice.ids().into_iter().map(str::to_owned).collect(),
+                })
+        }
+    }
+
+    /// Three seats in the agenda phase: a is the speaker, every seat controls one
+    /// influence-1 planet, and the deck holds the single `secret` agenda. With `with_hack`
+    /// b holds a Hack Election card and plays it in the reveal window.
+    fn hack_state(with_hack: bool) -> GameState {
+        let content = ContentStore::embedded();
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let mut state = start_game(content, &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+
+        let catalogue = ti4_content::galaxy::all_planets(content, POK);
+        let grants: Vec<(String, String)> = catalogue
+            .iter()
+            .filter(|(_, planet)| planet.influence() == 1 && !planet.is_placed_during_play())
+            .take(3)
+            .map(|(id, planet)| {
+                (
+                    id.to_string(),
+                    planet.system_id().unwrap_or("18").to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(grants.len(), 3, "the corpus has three influence-1 planets");
+        for (who, (planet, system)) in players.iter().zip(&grants) {
+            state
+                .system_mut(&SystemId::new(system))
+                .set_control(PlanetId::new(planet), who.clone());
+        }
+        if with_hack {
+            state.player_mut(&players[1]).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("hack")];
+        }
+        state.agenda_deck = vec!["secret".to_owned()];
+        state
+    }
+
+    /// Drives the scenario to the agenda's resolution and hands back the final state, the
+    /// event log, and the question sequence the table recorded along the way.
+    fn run_hack_scenario(with_hack: bool) -> (GameState, Vec<String>, Vec<(String, String)>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let table = Table::with_default(Box::new(RecordingDecider { seen: seen.clone() }));
+        let mut game = Game::with_table(hack_state(with_hack), ContentStore::embedded(), table);
+        let mut guard = 0;
+        while guard < 100
+            && !game
+                .events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_RESOLVED:"))
+        {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+        (game.state, game.events, seen.lock().unwrap().clone())
+    }
+
+    #[test]
+    fn hack_votes_last_in_the_agenda_vote() {
+        // Hack Election: "After an agenda is revealed: During this agenda, you vote last."
+        // b plays it in the reveal window, so b's vote is the last one asked even though a
+        // is the speaker: c, then the speaker a, then b.
+        let (state, events, seen) = run_hack_scenario(true);
+
+        assert!(
+            seen.iter()
+                .any(|(p, q)| p == "b" && q.contains("AGENDA_REVEALED")),
+            "the reveal window asked the card's holder; saw {seen:?}"
+        );
+        let voters: Vec<&str> = seen
+            .iter()
+            .filter(|(_, q)| q.starts_with("vote for which outcome"))
+            .map(|(p, _)| p.as_str())
+            .collect();
+        assert_eq!(
+            voters,
+            ["c", "a", "b"],
+            "b voted dead last and the speaker's seat moved ahead of the hacker; saw {seen:?}"
+        );
+        assert!(
+            events.iter().any(|e| *e == "AGENDA_RESOLVED:secret:a"),
+            "c and a backed `a` against b's lone vote; log {events:?}"
+        );
+        assert!(
+            state
+                .player(&PlayerId::new("b"))
+                .unwrap()
+                .action_cards
+                .is_empty(),
+            "the card was spent on the reveal window"
+        );
+    }
+
+    #[test]
+    fn without_hack_the_speaker_still_votes_last() {
+        // The control: no reveal-window card anywhere, so the ordinary order stands —
+        // b, then c, then the speaker a.
+        let (state, events, seen) = run_hack_scenario(false);
+
+        assert!(
+            !seen.iter().any(|(_, q)| q.contains("AGENDA_REVEALED")),
+            "nobody held a reveal-window card, so nobody was asked; saw {seen:?}"
+        );
+        let voters: Vec<&str> = seen
+            .iter()
+            .filter(|(_, q)| q.starts_with("vote for which outcome"))
+            .map(|(p, _)| p.as_str())
+            .collect();
+        assert_eq!(
+            voters,
+            ["b", "c", "a"],
+            "from the speaker's left all the way around to the speaker; saw {seen:?}"
+        );
+        assert!(
+            events.iter().any(|e| *e == "AGENDA_RESOLVED:secret:a"),
+            "same two-to-one tally in the ordinary order; log {events:?}"
+        );
+        let _ = state;
     }
 
     #[test]

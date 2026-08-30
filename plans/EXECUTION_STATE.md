@@ -22,6 +22,66 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — vote order: Hack Election + the barred-speaker fix, v11 holds (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `d5009f2` before this batch (the sub-batch B turn-flow commit).
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **vote-order group** — `hack` (Hack Election), "After an agenda is
+  revealed: During this agenda, you vote last." This closes the vote-order group 3/3
+  (`bribery`/`distinguished` were done in `cc40c70`).
+  - **Marker.** `Player.hack_votes_last_agenda: Option<u32>` (new field in `ti4-model`,
+    `#[serde(default)]`, in the manual `PartialEq`, `None` on a fresh seat): the `agenda_seq`
+    the card was played into. `reveal_agenda` bumps `agenda_seq` before its window opens, so
+    the marker binds to the vote that reveal produces — including a Veto replacement voted on
+    in the same cycle — and expires at the next reveal with no cleanup (the
+    `extra_votes_agenda` precedent).
+  - **Order.** `VoteWindow::new` (vote.rs) now partitions the clockwise seating into hackers
+    (marker == current `agenda_seq`) and the rest: the non-speaker seats in clockwise order,
+    the speaker last if still voting, then the hackers at the very end (several hackers keep
+    their relative clockwise order).
+  - **Latent bug fixed.** The old code rotated the seating left by one, popped the old first
+    seat and unconditionally re-pushed the speaker — re-seating a speaker who had been barred
+    from voting (the Imperial Rider's prediction cost), re-admitting the barred seat and
+    dropping the player on its left. A barred speaker is now simply gone from the order;
+    `a_speaker_who_predicted_the_outcome_does_not_vote_on_it` (non-speaker exclusion) still
+    pins the other case.
+  - **Effect.** `hack_election` in `action_cards.rs` sets the marker; dispatch arm +
+    `REGISTERED_ALIASES`. The window row ("After an agenda is revealed" → `AGENDA_REVEALED` /
+    After) already existed — no new events, no new table row.
+- Coverage 116 → **117/142** action cards (82.4%, coverage_report, release); agendas still
+  63/63; the vote-order group is fully closed.
+- **No re-baseline.** The release `rebaseline_behavior` run (LIBTORCH) reproduced all ten v11
+  values to the last digit and reported `0 metric(s) outside the recorded bounds`: Hack
+  Election reorders who is asked, not what is asked, and at the policy network's voting skill
+  that perturbation does not move any batch metric off its v11 point. v11 still holds; the run
+  is recorded in `plans/evidence/M08-021.md`.
+- Tests: 1021 `ti4-engine` lib tests pass (was 1015): four `VoteWindow::new` unit tests
+  (`hack_votes_last_moves_the_holder_to_the_end_of_the_order` — the holder takes the last seat
+  behind the speaker; `several_hacks_take_the_last_seats_in_clockwise_turn`; `hack_votes_last
+  _expires_with_the_agenda_it_was_played_into`; `a_speaker_who_predicted_the_outcome_gives_up
+  _their_vote` — the new barred-speaker pin) plus two full-game drivers in `game.rs` built on
+  a `RecordingDecider` that logs the (player, prompt) sequence: `hack_votes_last_in_the_
+  agenda_vote` (three-seat agenda phase; b is asked in the reveal window and the outcome
+  questions go to c, then the speaker a, then b; same two-to-one tally elects a; the card is
+  spent) vs `without_hack_the_speaker_still_votes_last` (control: no one is asked in the
+  reveal window; the outcome questions go to b, c, a). Two probes confirmed both halves (break
+  → the exact test fails → revert): the hack partition disabled (both unit tests and the
+  full-game driver fail on the exact order) and the old speaker re-seating restored (the
+  barred-speaker test fails).
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s pre-existing tracked
+  `fixture_capture_is_deterministic` (unchanged failure mode; M09-019b scope).
+- Clippy: zero warnings in every touched file under `--all-targets` (`vote`, `game`,
+  `action_cards`, `ti4-model` state); the remaining workspace warnings are pre-existing in
+  untouched files.
+- Next safe action: the handoff's remaining groups in order — the 25 ungrouped action cards
+  (the follow-up-batch list in `plans/CARD_CONTENT_STATUS.md`, each a full-game scripted
+  scenario; note `waylay` is an anti-fighter-barrage roll-site modifier and `reflective`
+  binds to the existing `SUSTAIN_DAMAGE_USED` event), then relics. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — turn-flow cards: Deadly Plot / Coup d'Etat / Crisis / Master Plan + v11 re-baseline (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
