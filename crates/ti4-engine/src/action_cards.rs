@@ -9,7 +9,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_content::units::UnitType;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
-use ti4_model::id::{ActionCardId, PlayerId};
+use ti4_model::id::{ActionCardId, PlayerId, StrategyCardId};
 use ti4_model::state::{GameState, TransientFlags};
 use ti4_model::units::Unit;
 
@@ -474,6 +474,170 @@ fn hack_election(context: &mut crate::timing::TimingContext<'_>, player: &Player
     let agenda = context.state.agenda_seq;
     if let Some(seat) = context.state.player_mut(player) {
         seat.hack_votes_last_agenda = Some(agenda);
+    }
+}
+
+/// Summit: "At the start of the strategy phase: Gain 2 command tokens."
+///
+/// The tokens name no pool, so each is placed individually into a pool of the holder's
+/// choice (52.4). The window opens when the strategy phase begins and the questions are
+/// asked from the card's own timing context.
+fn summit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let _ = crate::strategy_cards::gain_tokens(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        context.table,
+        player,
+        2,
+    );
+}
+
+/// Political Stability: "When you would return your strategy card(s) during the status
+/// phase: Do not return your strategy card(s). You do not choose strategy cards during
+/// the next strategy phase."
+///
+/// The driver fires `STRATEGY_CARDS_WOULD_RETURN` per seat before 81.8 returns the cards,
+/// and the effect marks the seat. The marker does the card's two halves: 81.8 keeps the
+/// seat's cards (readying any the seat spent), and the draft skips the seat in the
+/// strategy phase that follows. It is cleared when that action phase begins, and the
+/// retained cards then go back to the mat in the following round's status phase.
+fn political_stability(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.stability = true;
+    }
+}
+
+/// Public Disgrace: "When another player chooses a strategy card during the strategy
+/// phase: That player must choose a different strategy card instead, if able."
+///
+/// The driver records the picker and the chosen card in `last_strategy_choice` before
+/// firing `STRATEGY_CARD_CHOSEN` — the event payload is consumed by the timing machinery,
+/// which the effect cannot see. The chosen card goes back to the mat, the picker is asked
+/// to choose again from what the mat now holds, and "if able" means the first choice
+/// simply stands when nothing else remains. A failed question restores the first choice
+/// exactly: the card goes back to the picker and off the mat again.
+fn public_disgrace(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((picker, first)) = context.state.last_strategy_choice.clone() else {
+        return;
+    };
+    if picker == *player {
+        return; // the row's guard says "another player"; the card cannot act on itself
+    }
+    let Some(position) = context
+        .state
+        .player(&picker)
+        .and_then(|seat| seat.strategy_cards.iter().position(|card| card == &first))
+    else {
+        return;
+    };
+    {
+        let seat = context.state.player_mut(&picker).expect("just read");
+        seat.strategy_cards.remove(position);
+    }
+    context.state.unclaimed_strategy_cards.push(first.clone());
+    let alternatives: Vec<ChoiceOption> = context
+        .state
+        .unclaimed_strategy_cards
+        .iter()
+        .filter(|card| **card != first)
+        .map(|card| {
+            ChoiceOption::labelled(
+                card.as_str().to_owned(),
+                crate::draft::STRATEGY_CARD_KIND,
+                crate::draft::strategy_card_label(context.content, card.as_str()),
+            )
+        })
+        .collect();
+    if alternatives.is_empty() {
+        // "If able": nothing else is on the mat, so the first choice stands.
+        restore_first_choice(context, &picker, &first);
+        return;
+    }
+    let choice = Choice::new(
+        picker.clone(),
+        "choose a different strategy card",
+        alternatives,
+    );
+    let Ok(answer) = context.ask_seeing(&choice) else {
+        restore_first_choice(context, &picker, &first);
+        return;
+    };
+    let picked = StrategyCardId::new(answer.id.clone());
+    let Some(at) = context
+        .state
+        .unclaimed_strategy_cards
+        .iter()
+        .position(|card| card == &picked)
+    else {
+        restore_first_choice(context, &picker, &first);
+        return;
+    };
+    context.state.unclaimed_strategy_cards.remove(at);
+    let _ = context.state.deal_strategy_card(&picker, picked);
+}
+
+/// Put the first choice back with its picker and off the mat — the exact restoration
+/// [`public_disgrace`] makes when the re-choice fails or when "if able" offers nothing.
+fn restore_first_choice(
+    context: &mut crate::timing::TimingContext<'_>,
+    picker: &PlayerId,
+    first: &StrategyCardId,
+) {
+    if let Some(at) = context
+        .state
+        .unclaimed_strategy_cards
+        .iter()
+        .position(|card| card == first)
+    {
+        context.state.unclaimed_strategy_cards.remove(at);
+    }
+    let _ = context.state.deal_strategy_card(picker, first.clone());
+}
+
+/// Puppets on a String: "At the end of a player's turn, if you have passed: Perform 1
+/// action."
+///
+/// The row's `actor_is` guard means the window opens only for the seat whose turn ended
+/// — the seat that has just passed. The effect arms `TransientFlags::PUPPET_ACTION`, and
+/// the turn advance hands that passer a fresh turn — new `turn_seq`, start-of-turn hooks,
+/// `TURN_BEGAN` window — in which exactly one action is taken. The seat stays `passed`:
+/// the grant is one action, not a return from pass, so the advance after it moves on like
+/// any other passed seat.
+fn puppets_on_a_string(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(seat) = context.state.player(player) else {
+        return;
+    };
+    if !seat.passed {
+        return; // belt and braces: the row's guard already requires it
+    }
+    context
+        .state
+        .transient_flags
+        .set(TransientFlags::PUPPET_ACTION);
+}
+
+/// Extreme Duress: "At the start of another player's turn, if they have a readied
+/// strategy card: If that player's next action is not a strategic action, they discard
+/// all of their action cards, give you all of their trade goods, and show you all of
+/// their secret objectives."
+///
+/// The window fires at the start of the target's turn — the row's guard requires the new
+/// active seat to hold a readied strategy card — and the effect marks the target with
+/// the holder. The punishment is deferred: when the target next takes an action the
+/// driver settles the marker. A strategic action lifts the duress quietly, and any other
+/// action triggers it (see `Game::settle_extreme_duress`). Passing is not an action, so
+/// it neither triggers nor lifts it.
+fn extreme_duress(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(target) = context.state.active.clone() else {
+        return;
+    };
+    if target == *player {
+        return;
+    }
+    if let Some(seat) = context.state.player_mut(&target) {
+        seat.duress_by = Some(player.clone());
     }
 }
 
@@ -4489,6 +4653,10 @@ fn rescue(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
 
 /// The effect registered for a card, if this engine has one.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per action card, read as a table of what each card does"
+)]
 pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
     match alias.as_str() {
         // Four physical copies each, resolved from the printed name rather than listed by hand:
@@ -4507,6 +4675,11 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "crisis" => Some(crisis),
         "master_plan" => Some(master_plan),
         "hack" => Some(hack_election),
+        "summit" => Some(summit),
+        "stability" => Some(political_stability),
+        "disgrace" => Some(public_disgrace),
+        "puppetsonastring" => Some(puppets_on_a_string),
+        "extremeduress" => Some(extreme_duress),
         "rout" => Some(rout),
         "waylay" => Some(waylay),
         "dh1" | "dh2" | "dh3" | "dh4" => Some(direct_hit),
@@ -4688,6 +4861,11 @@ const REGISTERED_ALIASES: &[&str] = &[
     "confounding",
     "deadly_plot",
     "hack",
+    "summit",
+    "stability",
+    "disgrace",
+    "puppetsonastring",
+    "extremeduress",
     "dh1",
     "dh2",
     "dh3",

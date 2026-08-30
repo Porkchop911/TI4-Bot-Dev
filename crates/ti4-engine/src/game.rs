@@ -584,6 +584,12 @@ pub struct Game<'a> {
     dice: Dice,
     status_resolved: bool,
     agenda_resolved: bool,
+    /// The first round's strategy phase has announced its start. `start_game` opens the
+    /// game already inside that phase, so the `RoundEnded` branch — which announces the
+    /// strategy phases of later rounds — never runs for it: without this one-time emit a
+    /// card reading "at the start of the strategy phase" held in the starting hand would
+    /// sleep until the start of round two, a phase late.
+    strategy_phase_announced: bool,
     /// Turn sequence whose free start-of-turn technology choices have been resolved.
     prepared_turn_seq: Option<u32>,
     blocked: Option<GameError>,
@@ -646,6 +652,7 @@ impl<'a> Game<'a> {
             dice: Dice::new(),
             status_resolved: false,
             agenda_resolved: false,
+            strategy_phase_announced: false,
             prepared_turn_seq: None,
             blocked: None,
         }
@@ -791,12 +798,34 @@ impl<'a> Game<'a> {
                 return self.result(false, Some(error.into()));
             }
             self.prepared_turn_seq = Some(self.state.turn_seq);
+            // "At the start of another player's turn" — this is that moment, typed so a
+            // window can hang off it: the payload names the seat whose turn is beginning,
+            // and the marker lands before the seat has chosen any action for it.
+            self.sync_timing_context();
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(active.to_string()),
+            );
+            if let Err(error) = self.emit_typed("TURN_BEGAN", payload) {
+                return self.result(false, Some(error));
+            }
         }
         if self.state.phase == Phase::Status && !self.status_resolved {
             return self.step_status();
         }
         if self.state.phase == Phase::Agenda && !self.agenda_resolved {
             return self.step_agenda();
+        }
+        if self.state.phase == Phase::Strategy
+            && self.state.round == 1
+            && !self.strategy_phase_announced
+        {
+            self.strategy_phase_announced = true;
+            self.sync_timing_context();
+            if let Err(error) = self.emit_typed("STRATEGY_PHASE_BEGAN", BTreeMap::new()) {
+                return self.result(false, Some(error));
+            }
         }
 
         let Some(choice) = self.legal_options() else {
@@ -987,6 +1016,9 @@ impl<'a> Game<'a> {
                 // advances it whether or not the relic did anything worth having.
                 if answer.id.starts_with("faction|") {
                     let done = self.play_faction_action(&active, &answer);
+                    // Extreme Duress bites once the action is taken: the played card is
+                    // already out of the hand, so only what is left gets discarded.
+                    self.settle_extreme_duress(&active, false);
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1005,6 +1037,7 @@ impl<'a> Game<'a> {
                         &active,
                         &answer,
                     )?;
+                    self.settle_extreme_duress(&active, false);
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1023,6 +1056,7 @@ impl<'a> Game<'a> {
                         &active,
                         &answer,
                     )?;
+                    self.settle_extreme_duress(&active, false);
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1034,6 +1068,7 @@ impl<'a> Game<'a> {
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
                     let _ = index;
                     let played = self.play_component_action(&active, &answer);
+                    self.settle_extreme_duress(&active, false);
                     self.emit(if played.unwrap_or(false) {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1056,6 +1091,7 @@ impl<'a> Game<'a> {
                     );
                     self.dice = dice;
                     self.rng = rng;
+                    self.settle_extreme_duress(&active, false);
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1065,6 +1101,7 @@ impl<'a> Game<'a> {
                     return Ok(());
                 }
                 if let Some(partner) = crate::transactions::opens_with(&self.state, &answer) {
+                    self.settle_extreme_duress(&active, false);
                     self.trade = Some(crate::transactions::TradeWindow::open(
                         &mut self.state,
                         &active,
@@ -1077,6 +1114,7 @@ impl<'a> Game<'a> {
                     return Err(GameError::UnsupportedAction(answer.id));
                 }
                 if answer.id == TACTICAL_ACTION_ID {
+                    self.settle_extreme_duress(&active, false);
                     self.tactical = Some(TacticalWindow {
                         player: active,
                         stage: TacticalStage::Activating,
@@ -1087,6 +1125,10 @@ impl<'a> Game<'a> {
                 }
                 let window =
                     begin_strategic_action(&mut self.state, self.content, &active, answer)?;
+                // Strategic is the one action Extreme Duress does not punish: it lifts
+                // quietly, settled after the action is set up so a cancelled action (Coup
+                // d'Etat) leaves nothing behind but the duress the target no longer owes.
+                self.settle_extreme_duress(&active, true);
                 let card = window.card().to_string();
                 // "When another player would perform a strategic action" — typed, and fired
                 // before anything is resolved, so Coup d'Etat can end the turn in time to
@@ -1156,6 +1198,42 @@ impl<'a> Game<'a> {
                 Err(GameError::UnsupportedAction(choice.prompt.clone()))
             }
         }
+    }
+
+    /// Extreme Duress settles when the target takes an action. A strategic action is the
+    /// one case the card does not punish: the duress lifts quietly and the action
+    /// proceeds. Every other action the target takes triggers the punishment — discard
+    /// every action card, hand over every trade good, show every secret objective — and
+    /// the action proceeds with what the target has left, settled after synchronous
+    /// actions resolve so the card just played is not among the discarded ones. (Showing
+    /// the secret objectives is a hidden peek: the holder already sees their own view, so
+    /// there is no state to change, the same reading as Insider Information.) A pass is
+    /// not an action, so it neither triggers nor lifts the duress: it stays armed until
+    /// the next action.
+    fn settle_extreme_duress(&mut self, player: &PlayerId, strategic: bool) {
+        let Some(by) = self
+            .state
+            .player(player)
+            .and_then(|seat| seat.duress_by.clone())
+        else {
+            return;
+        };
+        if strategic {
+            self.state.player_mut(player).expect("just read").duress_by = None;
+            return;
+        }
+        let goods = {
+            let seat = self.state.player_mut(player).expect("just read");
+            let goods = seat.trade_goods;
+            seat.trade_goods = 0;
+            seat.action_cards.clear();
+            seat.duress_by = None;
+            goods
+        };
+        if let Some(holder) = self.state.player_mut(&by) {
+            holder.trade_goods += goods;
+        }
+        self.emit(&format!("EXTREME_DURESS:{player}"));
     }
 
     /// The decision an open tactical action currently owes.
@@ -2195,6 +2273,28 @@ impl<'a> Game<'a> {
         let Some((_, mut report)) = self.tokens.take() else {
             unreachable!("the token window was open");
         };
+        // "When you would return strategy cards during the status phase" — fired per seat
+        // that holds cards, so every holder's window opens (and every card plays) before
+        // 81.8 returns the cards: a Political Stability played here sets its seat's
+        // marker, and 81.8 honors it.
+        let seats: Vec<PlayerId> = self
+            .state
+            .players
+            .iter()
+            .filter(|seat| !seat.strategy_cards.is_empty())
+            .map(|seat| seat.id.clone())
+            .collect();
+        self.sync_timing_context();
+        for player in seats {
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(player.to_string()),
+            );
+            if let Err(error) = self.emit_typed("STRATEGY_CARDS_WOULD_RETURN", payload) {
+                return self.result(false, Some(error));
+            }
+        }
         resolve_after_token_gain(&mut self.state, &mut report);
         self.emit("COMMAND_TOKENS_GAINED");
         self.emit("STATUS_PHASE_RESOLVED");
@@ -2618,7 +2718,12 @@ impl<'a> Game<'a> {
                 &active,
             );
         }
-        if advance_turn(&mut self.state).is_none() {
+        if advance_turn(&mut self.state).is_none()
+            && !self
+                .state
+                .transient_flags
+                .has(TransientFlags::PUPPET_ACTION)
+        {
             return Ok(());
         }
         let Some(ended) = ended else {
@@ -2644,6 +2749,22 @@ impl<'a> Game<'a> {
                 let _ = advance_turn(&mut self.state);
             }
         }
+        // Puppets on a String: the passer's card gives the turn straight back — a fresh
+        // turn (new `turn_seq`, start-of-turn hooks, `TURN_BEGAN` window) rather than a
+        // continuation of the old one — and the seat stays passed: the grant is one
+        // action, not a return from pass. The next step re-runs turn preparation, since
+        // `prepared_turn_seq` no longer matches.
+        if self
+            .state
+            .transient_flags
+            .has(TransientFlags::PUPPET_ACTION)
+        {
+            self.state
+                .transient_flags
+                .clear(TransientFlags::PUPPET_ACTION);
+            crate::phase::begin_action_turn(&mut self.state, &ended);
+            self.emit(&format!("TURN_PUPPET:{ended}"));
+        }
         Ok(())
     }
 
@@ -2654,6 +2775,10 @@ impl<'a> Game<'a> {
     ) -> Result<PlayerId, GameError> {
         self.sync_timing_context();
         let card = StrategyCardId::new(answer.id.clone());
+        // The card's payload names the picker and the card, but the payload is consumed by
+        // the timing machinery and invisible to effects: the slot is the handoff Public
+        // Disgrace reads back in the After window that follows the emission.
+        self.state.last_strategy_choice = Some((player.clone(), card.clone()));
         let mut payload = BTreeMap::new();
         payload.insert(
             "player".to_owned(),
@@ -2761,7 +2886,12 @@ mod tests {
         assert!(result.resolved_choice);
         assert_eq!(game.table.log.len(), 1);
         assert_eq!(game.state.unclaimed_strategy_cards.len(), 7);
-        assert_eq!(game.events, vec!["STRATEGY_CARD_CHOSEN"]);
+        // The step also carries the one-time announcement of round one's strategy
+        // phase, which start_game opens the game already inside.
+        assert_eq!(
+            game.events,
+            vec!["STRATEGY_PHASE_BEGAN", "STRATEGY_CARD_CHOSEN"]
+        );
     }
 
     #[test]
@@ -2843,7 +2973,9 @@ mod tests {
                 .strategy_cards
                 .is_empty()
         );
-        assert!(game.events.is_empty());
+        // Only the one-time round-1 strategy phase announcement reached the log; the
+        // cancelled draft choice produced nothing.
+        assert_eq!(game.events, vec!["STRATEGY_PHASE_BEGAN"]);
     }
 
     #[test]
@@ -6785,7 +6917,714 @@ mod tests {
         );
     }
 
-    /// A decider that records every (player, prompt) it answers, then answers on its own:
+    /// A decider that answers by rule rather than by queue, so a test can drive whole
+    /// rounds and script only the one window play it is about. The rules:
+    ///
+    /// * a timing window — the one scripted play, if it is addressed to this seat for
+    ///   this event; a play the test expects but is never offered fails loudly (the
+    ///   window that should have opened did not), and anything else declines;
+    /// * the action phase — the offered `action_card|0` when the mode says so,
+    ///   otherwise the seat's strategic action when the mode says so, otherwise a pass;
+    /// * everything else (the strategy draft, the token gains, a strategic sub-flow) —
+    ///   the first option, which the test's assertions pin down.
+    #[derive(Clone)]
+    struct TurnDecider {
+        /// Plays to make, in order, as `(seat, event, play option id)`.
+        plays: Vec<(String, String, String)>,
+        /// The action phase plays the offered action card instead of passing.
+        prefer_action_card: bool,
+        /// The action phase takes the first option, the seat's strategic action.
+        prefer_first: bool,
+    }
+
+    impl TurnDecider {
+        fn new(plays: &[(&str, &str, &str)]) -> Self {
+            Self {
+                plays: plays
+                    .iter()
+                    .map(|&(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
+                    .collect(),
+                prefer_action_card: false,
+                prefer_first: false,
+            }
+        }
+
+        /// The action phase plays the offered action card instead of passing.
+        fn playing_the_action_card(mut self) -> Self {
+            self.prefer_action_card = true;
+            self
+        }
+
+        /// The action phase takes the seat's strategic action instead of passing.
+        fn taking_the_strategic_action(mut self) -> Self {
+            self.prefer_first = true;
+            self
+        }
+    }
+
+    impl Decider for TurnDecider {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            let offered = choice
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .collect::<Vec<_>>();
+            let window = choice.prompt.starts_with("when ") || choice.prompt.starts_with("after ");
+            if window
+                && self.plays.first().is_some_and(|(seat, event, _)| {
+                    choice.player.as_str() == seat && choice.prompt.ends_with(event)
+                })
+            {
+                let (.., id) = self.plays.remove(0);
+                return choice
+                    .options
+                    .iter()
+                    .find(|option| option.id == id)
+                    .cloned()
+                    .ok_or_else(|| IllegalChoice::ScriptDiverged {
+                        player: choice.player.clone(),
+                        wanted: id,
+                        offered,
+                    });
+            }
+            if window {
+                if let Some(decline) = choice
+                    .options
+                    .iter()
+                    .find(|option| option.is_decline())
+                    .cloned()
+                {
+                    return Ok(decline);
+                }
+            } else if choice.prompt == "gain a command token into which pool" {
+                // Every token the test's play gains is named into the fleet pool, so a
+                // card's gain is worth exactly its tokens.
+                if let Some(pool) = choice
+                    .options
+                    .iter()
+                    .find(|option| option.id == "fleet_tokens")
+                    .cloned()
+                {
+                    return Ok(pool);
+                }
+            } else if choice.prompt == "action phase" {
+                if self.prefer_action_card
+                    && let Some(card) = choice
+                        .options
+                        .iter()
+                        .find(|option| option.id == "action_card|0")
+                        .cloned()
+                {
+                    return Ok(card);
+                }
+                if !self.prefer_first {
+                    // The pass is the phase's decline option.
+                    if let Some(pass) = choice
+                        .options
+                        .iter()
+                        .find(|option| option.is_decline())
+                        .cloned()
+                    {
+                        return Ok(pass);
+                    }
+                }
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    #[test]
+    fn summit_gains_two_command_tokens_at_the_start_of_the_strategy_phase() {
+        // Summit: "At the start of the strategy phase: Gain 2 command tokens." a holds
+        // it in the starting hand, so it plays in the one-time window that announces
+        // round one's strategy phase, before that phase's first draft choice. Both
+        // games below are the same seeded game — they draft the same eight-card mat
+        // and take the same forced strategic actions, so the only difference the runs
+        // can show is the card's: two fleet tokens (the decider names every gained
+        // token into the fleet pool, card tokens included) and a spent card.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let content = ContentStore::embedded();
+
+        // The arm: a Summit in the starting hand.
+        let mut state = start_game(content, &[a.clone(), b.clone()], POK, None).unwrap();
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("summit"));
+        let table = Table::with_default(Box::new(TurnDecider::new(&[(
+            "a",
+            "STRATEGY_PHASE_BEGAN",
+            "reaction:generic:STRATEGY_PHASE_BEGAN:after",
+        )])));
+        let mut arm = Game::with_table(state, content, table);
+        arm.run(1, 4000).unwrap();
+
+        // The control: the same game without the card. Its window is never offered —
+        // nobody can play into it — so it is the arm's baseline.
+        let state = start_game(content, &[a.clone(), b.clone()], POK, None).unwrap();
+        let table = Table::with_default(Box::new(TurnDecider::new(&[])));
+        let mut control = Game::with_table(state, content, table);
+        control.run(1, 4000).unwrap();
+
+        let pools = |game: &Game<'_>| {
+            let seat = game.state.player(&a).unwrap();
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+        };
+        let (arm_tactic, arm_fleet, arm_strategic) = pools(&arm);
+        let (control_tactic, control_fleet, control_strategic) = pools(&control);
+
+        assert_eq!(
+            arm_fleet,
+            control_fleet + 2,
+            "Summit is worth exactly two tokens, both named into the fleet pool; arm log {:?} / control log {:?}",
+            arm.events,
+            control.events
+        );
+        assert_eq!(
+            (arm_tactic, arm_strategic),
+            (control_tactic, control_strategic),
+            "the card touched only the pool its gain named; arm log {:?} / control log {:?}",
+            arm.events,
+            control.events
+        );
+        // The play itself: an action card played in the one-time window that
+        // announces round one's strategy phase — before that phase's first draft
+        // choice — in the arm and in no one's hand in the control.
+        let played_at_phase_start = |game: &Game<'_>| {
+            game.events
+                .iter()
+                .take_while(|event| **event != "STRATEGY_CARD_CHOSEN")
+                .any(|event| *event == "ACTION_CARD_PLAYED")
+        };
+        assert!(
+            played_at_phase_start(&arm),
+            "Summit played into the window that announces round one's strategy phase; arm log {:?}",
+            arm.events
+        );
+        assert!(
+            !played_at_phase_start(&control),
+            "the control's window was never offered — nobody held a card to play into it; control log {:?}",
+            control.events
+        );
+    }
+
+    #[test]
+    fn political_stability_keeps_the_cards_and_skips_the_next_draft() {
+        // Political Stability: "When you would return your strategy card(s) during the
+        // status phase: Do not return your strategy card(s). You do not choose strategy
+        // cards during the next strategy phase." a plays it in round one's status
+        // phase: a keeps the two cards the draft just dealt and returns them only in
+        // the next round's status phase, and round two's draft deals around a. With
+        // eight cards on the mat and six picks, skipping one seat leaves four cards
+        // unclaimed where a full draft would leave two.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let mut state = start_game(
+            ContentStore::embedded(),
+            &[a.clone(), b.clone(), c.clone()],
+            POK,
+            None,
+        )
+        .unwrap();
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("stability"));
+        let table = Table::with_default(Box::new(TurnDecider::new(&[(
+            "a",
+            "STRATEGY_CARDS_WOULD_RETURN",
+            "reaction:generic:STRATEGY_CARDS_WOULD_RETURN:when",
+        )])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        game.run(1, 4000).unwrap();
+
+        // Round one ends with a's marker set and its cards kept, the other seats empty.
+        {
+            let state = &game.state;
+            assert!(
+                state.player(&a).unwrap().stability,
+                "the marker is set at the status phase it fired in; log {:?}",
+                game.events
+            );
+            assert_eq!(
+                state.player(&a).unwrap().strategy_cards.len(),
+                2,
+                "a kept the cards the round dealt it; log {:?}",
+                game.events
+            );
+            assert!(
+                state.player(&b).unwrap().strategy_cards.is_empty(),
+                "b returned its cards; log {:?}",
+                game.events
+            );
+            assert!(
+                state.player(&c).unwrap().strategy_cards.is_empty(),
+                "c returned its cards; log {:?}",
+                game.events
+            );
+        }
+
+        // Round two's draft deals around a, and its status phase returns everything,
+        // the retained cards included.
+        game.run(1, 4000).unwrap();
+        let state = &game.state;
+        assert!(
+            !state.player(&a).unwrap().stability,
+            "the marker is spent by the action phase it skipped; log {:?}",
+            game.events
+        );
+        assert!(
+            state
+                .players
+                .iter()
+                .all(|player| player.strategy_cards.is_empty()),
+            "round two's status returned every card, the retained ones included; log {:?}",
+            game.events
+        );
+        // The mat is re-dealt at the round boundary, so the skip shows up in the
+        // draft's pick count: round one dealt six picks, round two's draft dealt
+        // four around the marked seat where a full draft would have dealt six.
+        let picks = game
+            .events
+            .iter()
+            .filter(|event| **event == "STRATEGY_CARD_CHOSEN")
+            .count();
+        assert_eq!(
+            picks, 10,
+            "round two's draft skipped the marked seat: six plus four picks; a full draft would have made twelve; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn without_political_stability_every_seat_returns_and_drafts() {
+        // The control: the same three-seat game, no card played. Every seat returns its
+        // cards at the status phase and every seat drafts again, so round two's six
+        // picks from the eight-card mat leave two unclaimed, not four.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let state = start_game(
+            ContentStore::embedded(),
+            &[a.clone(), b.clone(), c.clone()],
+            POK,
+            None,
+        )
+        .unwrap();
+        let table = Table::with_default(Box::new(TurnDecider::new(&[])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        game.run(1, 4000).unwrap();
+        game.run(1, 4000).unwrap();
+
+        let state = &game.state;
+        assert!(
+            state
+                .players
+                .iter()
+                .all(|player| player.strategy_cards.is_empty()),
+            "every seat returned its cards; log {:?}",
+            game.events
+        );
+        // Both drafts dealt the full six picks.
+        let picks = game
+            .events
+            .iter()
+            .filter(|event| **event == "STRATEGY_CARD_CHOSEN")
+            .count();
+        assert_eq!(
+            picks, 12,
+            "every seat drafted in both rounds: twelve picks; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn public_disgrace_puts_the_pickers_choice_back_on_the_mat() {
+        // Public Disgrace: "When another player chooses a strategy card during the
+        // strategy phase: That player must choose a different strategy card instead, if
+        // able." b plays it as a makes the draft's first choice: a's card goes back to
+        // the mat, a re-chooses — the decider takes the first card the re-choice
+        // offers, the second from the top of the mat — and the draft completes around
+        // it. a never keeps its first pick, and the displaced card ends the draft on
+        // the mat: six picks from eight leave two unclaimed, the displaced one among
+        // them.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let mut state = start_game(
+            ContentStore::embedded(),
+            &[a.clone(), b.clone(), c.clone()],
+            POK,
+            None,
+        )
+        .unwrap();
+        let first_pick = state.unclaimed_strategy_cards[0].clone();
+        let re_choice = state.unclaimed_strategy_cards[1].clone();
+        state
+            .player_mut(&b)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("disgrace"));
+        let table = Table::with_default(Box::new(TurnDecider::new(&[(
+            "b",
+            "STRATEGY_CARD_CHOSEN",
+            "reaction:generic:STRATEGY_CARD_CHOSEN:after",
+        )])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.phase == Phase::Strategy && guard < 100 {
+            assert_eq!(game.step().error, None, "no draft step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        let hand = state.player(&a).unwrap().strategy_cards.clone();
+        assert!(
+            !hand.contains(&first_pick),
+            "a's first choice went back to the mat; log {:?}",
+            game.events
+        );
+        assert!(
+            hand.contains(&re_choice),
+            "the re-choice took effect; log {:?}",
+            game.events
+        );
+        assert!(
+            state.unclaimed_strategy_cards.contains(&first_pick),
+            "the displaced card ended the draft on the mat; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn without_public_disgrace_the_draft_keeps_the_first_choice() {
+        // The control: the same draft, no card played. a's first pick is final and
+        // stays in a's hand at the end of the phase.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let state = start_game(
+            ContentStore::embedded(),
+            &[a.clone(), b.clone(), c.clone()],
+            POK,
+            None,
+        )
+        .unwrap();
+        let first_pick = state.unclaimed_strategy_cards[0].clone();
+        let table = Table::with_default(Box::new(TurnDecider::new(&[])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.phase == Phase::Strategy && guard < 100 {
+            assert_eq!(game.step().error, None, "no draft step should refuse");
+            guard += 1;
+        }
+
+        let hand = game.state.player(&a).unwrap().strategy_cards.clone();
+        assert!(
+            hand.contains(&first_pick),
+            "an unchallenged first choice stands; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn puppets_on_a_string_gives_the_passer_one_fresh_action_turn() {
+        // Puppets on a String: "At the end of a player's turn, if you have passed:
+        // Perform 1 action." a holds it and passes: the turn comes back to a as a fresh
+        // turn — a new turn sequence, so start-of-turn hooks run again — and the seat
+        // stays passed: the grant is one action, not a return from pass.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(a.clone());
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("puppetsonastring"));
+        let table = Table::with_default(Box::new(TurnDecider::new(&[(
+            "a",
+            "PLAYER_PASSED",
+            "reaction:generic:PLAYER_PASSED:after",
+        )])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TURN_PUPPET:a") && guard < 50 {
+            assert_eq!(game.step().error, None, "no turn step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        let events = &game.events;
+        assert!(
+            events.iter().any(|e| e == "TURN_PUPPET:a"),
+            "the passed turn came back to the passer; log {events:?}"
+        );
+        assert_eq!(
+            state.turn_seq, 2,
+            "a's first turn and the puppet's: the returned turn is fresh, so its sequence moved; log {events:?}"
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(a.clone()),
+            "the turn sits back on the passer while it spends its action; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().passed,
+            "the grant is one action, not a return from pass; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the card was spent playing its window; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_puppets_a_pass_is_final_until_the_phase_ends() {
+        // The control: the same seat and turn, no card in hand. A pass is a pass: the
+        // turn moves on to the next seat and never comes back during the phase.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(a.clone());
+        let table = Table::with_default(Box::new(TurnDecider::new(&[])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 50 {
+            assert_eq!(game.step().error, None, "no turn step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        assert!(
+            state.player(&a).unwrap().passed,
+            "the pass stuck; log {:?}",
+            game.events
+        );
+        assert!(
+            !game.events.iter().any(|e| e == "TURN_PUPPET:a"),
+            "nothing returned the turn; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(b.clone()),
+            "the turn moved on after a single pass; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.turn_seq, 1,
+            "one turn has passed; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn extreme_duress_punishes_the_first_nonstrategic_action() {
+        // Extreme Duress: "At the start of another player's turn, if they have a
+        // readied strategy card: If that player's next action is not a strategic
+        // action, they discard all of their action cards, give you all of their trade
+        // goods, and show you all of their secret objectives." b arms it at the start
+        // of a's turn; a's first action is a played action card (Spy — a card whose
+        // window is "Action", so it is offered on a plain turn), not a strategic
+        // one, so the punishment settles: the goods move to b, the rest of the hand
+        // is discarded, the duress is spent, and the turn passes on.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(a.clone());
+        state.deal_strategy_card(&a, StrategyCardId::new("leadership"));
+        state.deal_strategy_card(&b, StrategyCardId::new("imperial"));
+        state.player_mut(&a).unwrap().trade_goods = 4;
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("spy"));
+        // A card the punishment will discard, proving the hand is lost wholesale.
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("emergency"));
+        state
+            .player_mut(&b)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("extremeduress"));
+        let table = Table::with_default(Box::new(
+            TurnDecider::new(&[("b", "TURN_BEGAN", "reaction:generic:TURN_BEGAN:after")])
+                .playing_the_action_card(),
+        ));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "EXTREME_DURESS:a") && guard < 50 {
+            assert_eq!(game.step().error, None, "no turn step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        let events = &game.events;
+        assert!(
+            events.iter().any(|e| e == "EXTREME_DURESS:a"),
+            "the punishment settled when a took its non-strategic action; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().trade_goods,
+            0,
+            "a's trade goods went to b; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&b).unwrap().trade_goods,
+            4,
+            "b holds the confiscated goods; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "a's action cards were discarded; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().duress_by,
+            None,
+            "the duress is spent once it bites; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_extreme_duress_an_action_keeps_the_target_whole() {
+        // The control: the same turn, no card armed. a's action card plays out and the
+        // seat keeps its trade goods: the punishment has no card to come from.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(a.clone());
+        state.deal_strategy_card(&a, StrategyCardId::new("leadership"));
+        state.deal_strategy_card(&b, StrategyCardId::new("imperial"));
+        state.player_mut(&a).unwrap().trade_goods = 4;
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("spy"));
+        state
+            .player_mut(&a)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("emergency"));
+        let table = Table::with_default(Box::new(TurnDecider::new(&[]).playing_the_action_card()));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 50 {
+            assert_eq!(game.step().error, None, "no turn step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        assert!(
+            !game.events.iter().any(|e| e == "EXTREME_DURESS:a"),
+            "nothing was armed, nothing punished; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&a).unwrap().trade_goods,
+            4,
+            "an un-pressured action keeps the seat's goods; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&a).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("emergency")],
+            "the played card left the hand, but nothing else was discarded; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&a).unwrap().duress_by,
+            None,
+            "there was no duress to carry; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(b.clone()),
+            "the turn passed on after the single action; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn extreme_duress_lifts_when_the_target_takes_a_strategic_action() {
+        // The card punishes the target "if that player's next action is not a strategic
+        // action": a strategic action is the one that owes nothing. b arms the duress
+        // at the start of a's turn, a takes the strategic action (the only one a
+        // holds), and the duress lifts quietly: no goods move, no hand is discarded,
+        // and the target's action proceeds.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(a.clone());
+        state.deal_strategy_card(&a, StrategyCardId::new("leadership"));
+        state.deal_strategy_card(&b, StrategyCardId::new("imperial"));
+        state.player_mut(&a).unwrap().trade_goods = 3;
+        state
+            .player_mut(&b)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("extremeduress"));
+        let table = Table::with_default(Box::new(
+            TurnDecider::new(&[("b", "TURN_BEGAN", "reaction:generic:TURN_BEGAN:after")])
+                .taking_the_strategic_action(),
+        ));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "STRATEGIC_ACTION_BEGAN") && guard < 100 {
+            assert_eq!(game.step().error, None, "no turn step should refuse");
+            guard += 1;
+        }
+
+        let state = &game.state;
+        let events = &game.events;
+        assert!(
+            events.iter().any(|e| e == "STRATEGIC_ACTION_BEGAN"),
+            "a's strategic action began; log {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "EXTREME_DURESS:a"),
+            "a strategic action is not the action the card punishes; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().duress_by,
+            None,
+            "the duress lifted with the strategic action; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().trade_goods,
+            3,
+            "the punishment never settled, so the goods never moved; log {events:?}"
+        );
+    }
+
+    /// A decider that records every (player, prompt) it answers, then answers on its own:    /// A decider that records every (player, prompt) it answers, then answers on its own:
     /// b votes "b", every other seat votes "a", and anything else (playing a reaction
     /// card, exhausting a planet, scoring an objective) takes the first option offered.
     /// The recorded sequence *is* the question order, which is the observable shape of a

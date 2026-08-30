@@ -40,7 +40,7 @@ use std::sync::Arc;
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{ActionCardId, PlayerId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, Player};
 
 use crate::event::Event;
 use crate::timing::{
@@ -75,6 +75,32 @@ fn actor_is_not(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
     event
         .text("player")
         .is_some_and(|who| who != player.as_str())
+}
+
+/// "When you would return your strategy card(s) during the status phase" — Political
+/// Stability. The window fires per seat, named by that seat, and only a seat that
+/// actually holds strategy cards has anything to keep.
+fn holds_strategy_cards(event: &Event, player: &PlayerId, state: &GameState) -> bool {
+    actor_is(event, player, state)
+        && state
+            .player(player)
+            .is_some_and(|seat| !seat.strategy_cards.is_empty())
+}
+
+/// "At the start of another player's turn, if they have a readied strategy card" —
+/// Extreme Duress. The event names the seat whose turn is beginning, and it is that seat
+/// — not the holder — that must have a readied card to be pressured over.
+fn another_seat_has_a_readied_strategy_card(
+    event: &Event,
+    player: &PlayerId,
+    state: &GameState,
+) -> bool {
+    actor_is_not(event, player, state)
+        && state
+            .active
+            .as_ref()
+            .and_then(|active| state.player(active))
+            .is_some_and(Player::has_unused_strategy_card)
 }
 
 /// A rival's landing on a planet this player controls — "after another player commits units
@@ -280,7 +306,19 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             "After a player moves ships into a system that contains your ships",
             guarded("SHIP_MOVED", After, anyone),
         ),
-        ("At the end of a player's turn, if you have passed", window("PLAYER_PASSED", After)),
+        (
+            "At the start of another player's turn, if they have a readied strategy card",
+            guarded(
+                "TURN_BEGAN",
+                After,
+                another_seat_has_a_readied_strategy_card,
+            ),
+        ),
+        (
+            "When you would return your strategy card(s) during the status phase",
+            guarded("STRATEGY_CARDS_WOULD_RETURN", When, holds_strategy_cards),
+        ),
+        ("At the end of a player's turn, if you have passed", guarded("PLAYER_PASSED", After, actor_is)),
         (
             "When you are elected as the outcome of an agenda",
             guarded("AGENDA_RESOLVED", When, actor_is),
@@ -436,6 +474,8 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SPACE_CANNON_HITS",
     "UNITS_COMMITTED",
     "TURN_PASSED",
+    "TURN_BEGAN",
+    "STRATEGY_CARDS_WOULD_RETURN",
 ];
 
 /// Printed windows that cannot yet be reacted to, with the reason.

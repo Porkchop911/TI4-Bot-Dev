@@ -23,9 +23,17 @@ use ti4_model::state::{GameState, Phase};
 ///
 /// Without the reversal the speaker would take the best card of both laps and the last seat
 /// the worst of both, which is the compensation the snake exists to pay.
+///
+/// A seat under Political Stability — holding strategy cards it kept instead of returning
+/// them in the status phase — skips the draft entirely: the card says it does not choose
+/// cards in the strategy phase that follows, and the retained cards are already in hand.
 #[must_use]
 pub fn strategy_pick_order(state: &GameState) -> Vec<PlayerId> {
     let seats = state.clockwise_from(&state.speaker);
+    let seats: Vec<PlayerId> = seats
+        .into_iter()
+        .filter(|seat| state.player(seat).is_none_or(|p| !p.stability))
+        .collect();
     let mut picks = Vec::with_capacity(seats.len() * state.strategy_cards_per_player);
     for lap in 0..state.strategy_cards_per_player {
         if lap % 2 == 0 {
@@ -42,14 +50,28 @@ pub fn strategy_pick_order(state: &GameState) -> Vec<PlayerId> {
 /// Indexed by how many cards have been dealt rather than by scanning for a seat that is
 /// short of its quota: with a snake order the same seat picks twice in a row, and a scan
 /// cannot tell that second pick from the first.
+///
+/// Seats under Political Stability dealt cards they kept, not cards they chose, so the
+/// draft's progress counts only the picks made from the mat: total held minus what the
+/// marked seats retained.
 #[must_use]
 pub fn next_strategy_picker(state: &GameState) -> Option<PlayerId> {
-    let dealt: usize = state.players.iter().map(|p| p.strategy_cards.len()).sum();
     let order = strategy_pick_order(state);
-    if dealt >= order.len() || state.unclaimed_strategy_cards.is_empty() {
+    if order.is_empty() || state.unclaimed_strategy_cards.is_empty() {
         return None;
     }
-    order.get(dealt).cloned()
+    let dealt: usize = state.players.iter().map(|p| p.strategy_cards.len()).sum();
+    let retained: usize = state
+        .players
+        .iter()
+        .filter(|p| p.stability)
+        .map(|p| p.strategy_cards.len().min(state.strategy_cards_per_player))
+        .sum();
+    let picks_this_round = dealt.saturating_sub(retained);
+    if picks_this_round >= order.len() {
+        return None;
+    }
+    order.get(picks_this_round).cloned()
 }
 
 /// LRR 83.4: every card still on the mat gains a trade good.
@@ -159,6 +181,12 @@ pub fn advance_phase(state: &mut GameState) -> PhaseOutcome {
     match state.phase {
         Phase::Strategy => {
             stock_unclaimed_cards(state);
+            // Political Stability is spent here: the retention covers the strategy phase
+            // just played, and whatever the marked seat kept goes back to the mat in the
+            // status phase that follows this action phase.
+            for player in &mut state.players {
+                player.stability = false;
+            }
             // Imperial Arbiter and the technology hooks belong here, before the read.
             let order = state.initiative_order();
             state.phase = Phase::Action;

@@ -165,12 +165,28 @@ pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseR
     report.action_card_draws.extend(ministers);
 
     // 81.8 comes last: clearing earlier would turn later initiative reads into seating order.
-    let holders: Vec<(PlayerId, Vec<StrategyCardId>)> = state
+    // A seat under Political Stability keeps the cards this step would return, and the
+    // retained cards it spent during the round are readied: they stay in play, so a
+    // spent one should be as ready as any card a player still holds.
+    let holders: Vec<(PlayerId, Vec<StrategyCardId>, bool)> = state
         .players
         .iter()
-        .map(|player| (player.id.clone(), player.strategy_cards.clone()))
+        .map(|player| {
+            (
+                player.id.clone(),
+                player.strategy_cards.clone(),
+                player.stability,
+            )
+        })
         .collect();
-    for (player_id, cards) in holders {
+    for (player_id, cards, retained) in holders {
+        if retained {
+            if let Some(player) = state.player_mut(&player_id) {
+                player.exhausted_strategy_cards.clear();
+                player.passed = false;
+            }
+            continue;
+        }
         report
             .returned_strategy_cards
             .extend(cards.iter().cloned().map(|card| (player_id.clone(), card)));

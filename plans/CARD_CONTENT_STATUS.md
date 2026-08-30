@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 130/142 |
+| action cards  | 34/142 | 135/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run, after the combat-
-aftermath batch): action cards 130 of 142 (91.5%), agendas 63 of 63, reaction windows 0
+`cargo run --release -p ti4-engine --example coverage_report` (final run, after the
+turn/status-flow batch): action cards 135 of 142 (95.1%), agendas 63 of 63, reaction windows 0
 unsupported, plus the unchanged rows for exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -281,6 +281,79 @@ the test fail, then reverted).
   recorded bounds`, so no v13 was needed: the interleave changes scripted question order but
   not the bots' learned play inside the bounds (`plans/evidence/M08-021.md`).
 
+- Turn/status flow (sub-batch C2 of the handoff's "not grouped" set): `summit` (Summit),
+  `stability` (Political Stability), `disgrace` (Public Disgrace), `puppetsonastring`
+  (Puppets on a String) and `extremeduress` (Extreme Duress) — the five cards whose moments
+  live in the turn/status/strategy driver. **Model fields** (`ti4-model`, all
+  `#[serde(default)]`; the marker fields are part of a seat's standing condition, so unlike
+  the in-flight C1 fields they are compared in `Player`'s manual `PartialEq`): `Player
+  .stability: bool` (the Political Stability marker) and `Player.duress_by: Option<PlayerId>`
+  (the armed Extreme Duress holder); `TransientFlags::PUPPET_ACTION (1 << 4)`; and
+  `GameState.last_strategy_choice: Option<(PlayerId, StrategyCardId)>` (in-flight, excluded
+  from comparison) — the draft choice Public Disgrace rolls back. **Driver moments**: the
+  strategy phase now announces its start in round 1 as well as at every round boundary
+  (one-time `Game.strategy_phase_announced` flag; previously only the `RoundEnded` branch
+  fired) so Summit bites on the starting hand; `finish_status_phase` fires a per-seat
+  `STRATEGY_CARDS_WOULD_RETURN` (When) just before that seat's token-gain settlement; and
+  `step()` fires `TURN_BEGAN` (After, payload `player` = active seat) after `start_turn`
+  when the new active seat holds a readied strategy card. **Summit** — "At the start of the
+  strategy phase: Gain 2 command tokens." — reuses the `STRATEGY_PHASE_BEGAN` After window
+  and calls `strategy_cards::gain_tokens(..., 2)` (made `pub(crate)` for it). **Political
+  Stability** — "When you would return your strategy card(s) during the status phase: Do not
+  return your strategy card(s). You do not choose strategy cards during the next strategy
+  phase." — the When-window effect marks the seat; 81.8 then keeps the marked seat's cards
+  (readying the ones it spent, resetting `passed`) and skips the return and the report entry;
+  `strategy_pick_order` / `next_strategy_picker` skip the marked seat in the following draft
+  (`picks_this_round = dealt - retained`); the marker clears when that action phase begins,
+  and the retained cards go back in the next round's status phase. **Public Disgrace** —
+  "When another player chooses a strategy card during the strategy phase: That player must
+  choose a different strategy card instead, if able." — the driver records
+  `(picker, chosen card)` in `last_strategy_choice` before firing `STRATEGY_CARD_CHOSEN`;
+  the effect returns the chosen card to the mat and re-asks the picker to choose from what
+  the mat now holds (the returned card excluded); "if able" and a failed question both
+  restore the first choice exactly (`restore_first_choice`). **Puppets on a String** —
+  "At the end of a player's turn, if you have passed: Perform 1 action." — the window row
+  is `PLAYER_PASSED` / After with the `actor_is` guard (only the seat that just passed is
+  offered it); the effect arms `PUPPET_ACTION`, and `advance_turn` runs the puppet branch:
+  the passer gets one fresh action turn (new `turn_seq`, `TURN_BEGAN`, `TURN_PUPPET:
+  <seat>`), after which the advance moves on as for any passed seat. **Extreme Duress** —
+  "At the start of another player's turn, if they have a readied strategy card: If that
+  player's next action is not a strategic action, they discard all of their action cards,
+  give you all of their trade goods, and show you all of their secret objectives." — the
+  `TURN_BEGAN` After window arms `target.duress_by = holder`; the punishment is deferred to
+  `Game::settle_extreme_duress(player, strategic)`, settled at every action branch of the
+  driver (in the synchronous branches *after* the played card resolves and consumes, in the
+  strategic branch after `begin_strategic_action`): a strategic action lifts the duress
+  quietly, any other action punishes (action cards discarded, all goods to the holder, the
+  target's secret objectives shown to the holder, `EXTREME_DURESS:<target>`), and passing
+  neither triggers nor lifts it. Ten driver tests use a prompt-keyed `TurnDecider` (recorded
+  plays as (seat, event, play-id); the action phase offers the action card first and the
+  pass only once the seat's strategy cards are spent; pool questions answered with fleet):
+  `summit_gains_two_command_tokens_at_the_start_of_the_strategy_phase` (paired arm/control,
+  same seed: arm fleet = control fleet + 2, other pools equal, the window-time
+  `ACTION_CARD_PLAYED` present only in the arm), `political_stability_keeps_the_cards_and_
+  skips_the_next_draft` (marker set and 2 cards retained mid-run; `STRATEGY_CARD_CHOSEN`
+  count 10 vs the control's 12 in
+  `without_political_stability_every_seat_returns_and_drafts`), `public_disgrace_puts_the_
+  pickers_choice_back_on_the_mat` (+ control `without_public_disgrace_the_draft_keeps_the_
+  first_choice`), `puppets_on_a_string_gives_the_passer_one_fresh_action_turn` (turn_seq 2,
+  active back on the passer, still passed, the card spent; control
+  `without_puppets_a_pass_is_final_until_the_phase_ends`), `extreme_duress_punishes_the_
+  first_nonstrategic_action` (the target plays Spy — an "Action"-window card that needs no
+  galaxy and silently no-ops: goods 4 to the holder, hand emptied, `EXTREME_DURESS:a`; control
+  `without_extreme_duress_an_action_keeps_the_target_whole`) and
+  `extreme_duress_lifts_when_the_target_takes_a_strategic_action`. The round-1 announcement
+  changed two pre-existing first-step tests to expect the `STRATEGY_PHASE_BEGAN` prefix. This
+  batch moved the behavioural baseline **v12 → v13** — the largest move since v11: nine of
+  the ten point estimates fell outside their v12 intervals (only `completion` is invariant),
+  with `faction_differentiation` and `score_spread` narrowing (Public Disgrace scrambles the
+  draft, the main source of between-game divergence, and Extreme Duress strips a punished
+  seat's goods) and `vp_pace` falling (duress punishments, stability banking a card, puppet
+  turns lengthen games); the v13 transcription is verified bit-identical by the debug-mode
+  gate test, and the release re-run reports `0 metric(s) outside the recorded bounds`
+  (dev and release recomputations are bit-identical in this batch;
+  `plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -341,17 +414,17 @@ and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`v
 
 ### Writable in a follow-up batch (state is on `GameState`, event exists)
 
-`infiltrate` (planet-gain + unit placement), `stability` (status-phase card
-return + command token), `summit` (strategy-phase start + 1 TG), `blackmarketdealing`
+`infiltrate` (planet-gain + unit placement), `blackmarketdealing`
 (transaction + sell a ship for 1 TG), `reparations` (planet taken + 1 TG),
-`reverse_engineer` (component-card discard + research), `salvage` (space combat won +
-reinforcement move), `disgrace` (strategy-card choice +
-leader return, if leader state is on `GameState`), `puppetsonastring` (turn end +
-strategy-card discard) and `extremeduress` (turn start + TG) remain. The four families
-that needed live combat bookkeeping — `mjets1`–`4`, `reflective`, `courageous`,
-`crashlanding` — closed with the combat-aftermath batch above. These are reaction cards: each
-needs a full-game scripted scenario in which the window actually fires, so this is a separate
-session, not a continuation of the component-action batches.
+`reverse_engineer` (component-card discard + research) and `salvage` (space combat won +
+reinforcement move) remain — sub-batch C3. `stability` (status-phase card return + draft
+skip), `summit` (strategy-phase start + 2 command tokens), `disgrace` (strategy-card re-choice)
+and `puppetsonastring` (extra action turn for the passer) closed with the turn/status-flow
+batch above, and the four combat-bookkeeping families — `mjets1`–`4`, `reflective`,
+`courageous`, `crashlanding` — closed with the combat-aftermath batch. These are reaction and
+turn-flow cards: each needs a full-game scripted scenario in which the window or the turn
+moment actually fires, so each group is a separate session, not a continuation of the
+component-action batches.
 
 ## FINDING — `ti4-policy` test ledger was wrong; **resolved in `873178e`**
 
@@ -385,22 +458,22 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 1028 passed, 0 failed (plus the 5 doc/other targets); the
+- `cargo test -p ti4-engine --lib`: 1038 passed, 0 failed (plus the 5 doc/other targets); the
   engine-line crates all green.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
-  green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite stays green at v12** — the combat-aftermath batch (including the
-  per-gunner cannon interleave) reproduced every v12 value inside its recorded bounds, `0
-  metric(s) outside the recorded bounds`, so no v13 re-baseline was needed
-  (`plans/evidence/M08-021.md`); the last move was v12 for the combat-dice cards. The one
-  remaining red is `fixture_capture_is_deterministic`: pre-
-  existing (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at
-  step 781 before any production-head menu of ≥3 options); it belongs to the M09-019b profile
-  module's own versioned process and is tracked, not new.
-- `cargo clippy -p ti4-model -p ti4-content -p ti4-engine --all-targets`: zero warnings in the
-  touched files (lib and tests); the remaining workspace warnings are pre-existing in untouched
-  files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, `close_vote`'s
-  length in `game.rs`, the `coverage_report` example's length).
+  green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim 188/188 — including
+  `fixture_capture_is_deterministic`, which was the last tracked red from the M09-019b profile
+  work and now passes); **ti4-sim's behavioral suite is re-baselined to v13** for this batch:
+  nine of the ten v13 point estimates fell outside their v12 intervals, so the bounds moved
+  once and both the debug-mode gate test and the release re-run now report the suite inside
+  the recorded v13 bounds (`plans/evidence/M08-021.md`).
+- `cargo clippy -p ti4-model -p ti4-engine --all-targets`: the warning set is identical to the
+  pre-batch tree (verified by stashing the batch and re-running): `effect_for` grew past 100
+  lines with the five new dispatch arms and carries the same documented
+  `#[allow(clippy::too_many_lines)]` convention as `apply_choice`; the remaining workspace
+  warnings are pre-existing in untouched files (`production.rs` method chain, `strategy.rs` /
+  `fracture.rs` casts, `close_vote`'s length in `game.rs`, the `coverage_report` example's
+  length).
 - The vote-order package was probed break → the exact new test fails → revert: the hack
   partition in `VoteWindow::new` disabled (both the unit order tests and the full-game driver
   fail on the exact (player, prompt) sequence) and the old speaker re-seating restored (the
@@ -409,9 +482,14 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
   own checkpoints. The combat-aftermath batch's four drivers double as the probes: with each
   effect's dispatch entry removed the scripted arm's board assertion fails exactly (the card
   never plays, the control arm still passes), and the `your_last_ship` boolean-accessor fix
-  was pinned by the crashlanding driver. The galaxy's both-link branch has no detecting probe —
+  was pinned by the crashlanding driver. The turn/status-flow batch's ten drivers work the
+  same way: with each card's dispatch entry removed the arm's board or event assertion fails
+  exactly while the paired control arm still passes (summit is asserted as a paired
+  arm-vs-control fleet delta of exactly 2 on the same seed, so an inert card cannot fake it),
+  and the round-1 `STRATEGY_PHASE_BEGAN` announcement is pinned by the two pre-existing
+  first-step tests. The galaxy's both-link branch has no detecting probe —
   it is indistinguishable from same-letter matching by the map's data (documented above).
-- The 12 remaining unimplemented action cards (130 of 142 implemented), grouped by the
+- The 7 remaining unimplemented action cards (135 of 142 implemented), grouped by the
   handoff's blockers plus the cards it does not group (`fire_team`, `scramble` and the Jol-Nar
   commander reroll closed the reroll group; the invasion-flow, Cancel API, Movement, Agenda,
   Turn-flow and Vote-order groups closed with the batches above):
@@ -425,10 +503,15 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
     `hack_votes_last_agenda` marker read by `VoteWindow::new`, plus the fix for a barred
     speaker being re-seated at the end of the order).
   - **Combat aftermath** (0 remaining of 8 aliases): `mjets1`–`4`, `reflective`,
-    `courageous` and `crashlanding` closed with the combat-aftermath batch above (sub-batch C1
-    of the set the handoff does not group).
-  - **Not grouped by the handoff** (12, to close in sub-batches C2 — `summit`, `stability`,
-    `disgrace`, `puppetsonastring`, `extremeduress` — and C3 — `salvage`, `reparations`,
+    `courageous` and `crashlanding` closed with the combat-aftermath batch (sub-batch C1 of
+    the set the handoff does not group).
+  - **Turn/status flow** (0 remaining of 5): `summit`, `stability`, `disgrace`,
+    `puppetsonastring` and `extremeduress` closed with the turn/status-flow batch above
+    (sub-batch C2 of the set the handoff does not group) — the three new driver moments
+    (round-1 `STRATEGY_PHASE_BEGAN`, per-seat `STRATEGY_CARDS_WOULD_RETURN`, `TURN_BEGAN`),
+    the `stability` / `duress_by` seat markers, the `PUPPET_ACTION` flag and the
+    `last_strategy_choice` hand-off.
+  - **Not grouped by the handoff** (7, to close in sub-batch C3 — `salvage`, `reparations`,
     `infiltrate`, `blackmarketdealing`, `reverse_engineer` — the remainder): `investments`
     (unmodelled attachment) and `lieinwait` (no transaction-history field) stay blocked on the
     two root causes above.

@@ -62,7 +62,11 @@ fn ask(
     table.ask_seeing(choice, &Observed::new(state, content, sources, galaxy))
 }
 
-fn gain_tokens(
+/// The 52.4 token gain, as a question: one choice per token, each into a pool of the
+/// player's. The status phase (81.5) asks it through a window; action cards that say
+/// "gain command tokens" without a pool — Summit gains two — ask it straight from their
+/// timing context.
+pub(crate) fn gain_tokens(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,

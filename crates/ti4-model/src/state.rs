@@ -465,6 +465,21 @@ pub struct Player {
     /// the marker to it.
     #[serde(default)]
     pub lost_star: Vec<u32>,
+    /// Political Stability: this player returned no strategy cards in the status phase
+    /// that set it, keeps the cards it was holding, and skips choosing cards in the
+    /// strategy phase that follows. The marker survives through the agenda phase and the
+    /// draft — that is its point — and is cleared when the action phase of that round
+    /// begins, which is when the retained cards next go back out the door (the following
+    /// round's status phase).
+    #[serde(default)]
+    pub stability: bool,
+    /// Extreme Duress: the seat under duress, and the seat whose card put it there. Set
+    /// at the start of the target's turn; a strategic action lifts it quietly, and any
+    /// other action the target takes triggers the punishment, which discards the
+    /// target's action cards, hands every trade good to the holder, and shows the secret
+    /// objectives. Passing is not an action, so it neither triggers nor lifts it.
+    #[serde(default)]
+    pub duress_by: Option<PlayerId>,
 
     // -- returning and captured units ---------------------------------------------
     /// Generic Infantry II casualties waiting on their technology card.
@@ -543,6 +558,8 @@ impl PartialEq for Player {
             && self.disable_invasion == other.disable_invasion
             && self.solar_flare == other.solar_flare
             && self.lost_star == other.lost_star
+            && self.stability == other.stability
+            && self.duress_by == other.duress_by
             && self.infantry_returning == other.infantry_returning
             && self.technology_units_returning == other.technology_units_returning
             && self.spec_ops_returning == other.spec_ops_returning
@@ -613,6 +630,8 @@ impl Player {
             disable_invasion: Vec::new(),
             solar_flare: Vec::new(),
             lost_star: Vec::new(),
+            stability: false,
+            duress_by: None,
             infantry_returning: 0,
             technology_units_returning: Vec::new(),
             spec_ops_returning: 0,
@@ -811,6 +830,9 @@ impl TransientFlags {
     pub const SKIP_NEXT_TURN: u8 = 1 << 2;
     /// Master Plan: the player whose turn is ending may act again on the same turn.
     pub const ADDITIONAL_ACTION: u8 = 1 << 3;
+    /// Puppets on a String: the player whose turn is ending, and who has passed, takes one
+    /// fresh action turn — new `turn_seq`, start-of-turn hooks — without un-passing.
+    pub const PUPPET_ACTION: u8 = 1 << 4;
 
     #[must_use]
     pub const fn has(self, flag: u8) -> bool {
@@ -995,6 +1017,13 @@ pub struct GameState {
     /// In-flight bookkeeping — not compared.
     #[serde(default)]
     pub pending_reflective_hits: Option<(SystemId, PlayerId, usize)>,
+    /// The strategy card choice just made: the picker and the card chosen. The driver
+    /// records it right before emitting `STRATEGY_CARD_CHOSEN`, and Public Disgrace reads
+    /// it back in the window that follows to put the picker's choice back on the mat and
+    /// make a different one — the event itself is consumed by the timing machinery,
+    /// which the effect cannot see. In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub last_strategy_choice: Option<(PlayerId, StrategyCardId)>,
 
     // -- agenda-phase bookkeeping (in-flight, not compared) -----------------------
     /// Veto: when played into the `AGENDA_REVEALED` window, the alias of the agenda drawn
@@ -1217,6 +1246,7 @@ impl GameState {
             pending_destructions: Vec::new(),
             last_ship_destroyed: None,
             pending_reflective_hits: None,
+            last_strategy_choice: None,
             agenda_veto_replacement: None,
             agenda_elected_override: None,
             agenda_votes: BTreeMap::new(),
