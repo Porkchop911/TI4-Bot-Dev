@@ -48,7 +48,11 @@ use crate::timing::{
 };
 
 /// Whether a card's window applies to this player, given the event.
-type Guard = fn(&Event, &PlayerId) -> bool;
+///
+/// Guards may read `GameState` because a printed window can hinge on the board, not just on
+/// the event: Crisis asks how many players have not passed, and Deadly Plot asks what the
+/// holder voted for and predicted.
+type Guard = fn(&Event, &PlayerId, &GameState) -> bool;
 
 /// Where a printed window text hooks onto the engine's events.
 #[derive(Debug, Clone, Copy)]
@@ -62,12 +66,12 @@ pub struct Window {
 }
 
 /// The event's `player` names this player — "you" in the card text.
-fn actor_is(event: &Event, player: &PlayerId) -> bool {
+fn actor_is(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
     event.text("player") == Some(player.as_str())
 }
 
 /// Somebody else — "another player", "your opponent".
-fn actor_is_not(event: &Event, player: &PlayerId) -> bool {
+fn actor_is_not(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
     event
         .text("player")
         .is_some_and(|who| who != player.as_str())
@@ -76,8 +80,8 @@ fn actor_is_not(event: &Event, player: &PlayerId) -> bool {
 /// A rival's landing on a planet this player controls — "after another player commits units
 /// to land on a planet you control." Both halves are named by the card text, so neither is
 /// optional: the committer is someone else, and the planet's controller is this player.
-fn commit_on_your_planet(event: &Event, player: &PlayerId) -> bool {
-    actor_is_not(event, player)
+fn commit_on_your_planet(event: &Event, player: &PlayerId, state: &GameState) -> bool {
+    actor_is_not(event, player, state)
         && event
             .text("controller")
             .is_some_and(|holder| holder == player.as_str())
@@ -87,8 +91,12 @@ fn commit_on_your_planet(event: &Event, player: &PlayerId) -> bool {
 /// someone else, and the card being played is not one of the four Sabotage copies — Sabotage
 /// cancels other cards being played, not itself (1.15 would otherwise let a chain of
 /// Sabotages spend the whole deck for nothing).
-fn another_players_card_is_not_sabotage(event: &Event, player: &PlayerId) -> bool {
-    actor_is_not(event, player) && !is_sabotage_play(event)
+fn another_players_card_is_not_sabotage(
+    event: &Event,
+    player: &PlayerId,
+    state: &GameState,
+) -> bool {
+    actor_is_not(event, player, state) && !is_sabotage_play(event)
 }
 
 /// The `ACTION_CARD_PLAYED` payload names one of the four Sabotage copies.
@@ -106,14 +114,46 @@ fn is_sabotage_play(event: &Event) -> bool {
 /// law, a planet, or nothing (For/Against) names no seat there, so the window is silent on it
 /// — plain `actor_is_not` would match a law alias or "for" against every chair and offer the
 /// card on an agenda that elects no one.
-fn another_player_elected(event: &Event, player: &PlayerId) -> bool {
+fn another_player_elected(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
     event
         .text("elected_player")
         .is_some_and(|who| who != player.as_str())
 }
 
+/// "If you voted for or predicted another outcome" (Deadly Plot), read at the moment the
+/// agenda's outcome would be resolved. The event's `player` is the outcome about to be
+/// resolved; the vote itself is not in the event, so the driver mirrors the ballot into
+/// `GameState.agenda_votes` before the window opens (the ballot itself lives in the vote
+/// window the driver holds). A prediction encodes its outcome up to a `|` separator, and a
+/// player who predicted gave up the vote, so the two sources never double-count.
+fn voted_or_predicted_another_outcome(event: &Event, player: &PlayerId, state: &GameState) -> bool {
+    let Some(outcome) = event.text("player") else {
+        return false;
+    };
+    let voted_other = state
+        .agenda_votes
+        .get(player)
+        .is_some_and(|voted| voted.as_str() != outcome);
+    let predicted_other = state
+        .agenda_predictions
+        .get(player)
+        .is_some_and(|prediction| prediction.split('|').next() != Some(outcome));
+    voted_other || predicted_other
+}
+
+/// "If there are at least 2 players who have not passed" (Crisis), counted at the moment a
+/// turn ends. A player who just acted has not passed and still counts; a player who just
+/// passed is marked before the turn moves, so the count is the one the window printed.
+fn at_least_two_players_have_not_passed(
+    _event: &Event,
+    _player: &PlayerId,
+    state: &GameState,
+) -> bool {
+    state.players.iter().filter(|seat| !seat.passed).count() >= 2
+}
+
 /// Anybody at all — the window applies whoever the event names.
-fn anyone(_: &Event, _: &PlayerId) -> bool {
+fn anyone(_: &Event, _: &PlayerId, _state: &GameState) -> bool {
     true
 }
 
@@ -231,6 +271,30 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             guarded("AGENDA_RESOLVED", When, another_player_elected),
         ),
         (
+            "During the agenda phase when an outcome would be resolved",
+            guarded(
+                "AGENDA_RESOLVED",
+                When,
+                voted_or_predicted_another_outcome,
+            ),
+        ),
+        (
+            "When another player would perform a strategic action",
+            guarded("STRATEGIC_ACTION_BEGAN", When, actor_is_not),
+        ),
+        (
+            "At the end of any players turn, if there are at least 2 players who have not passed",
+            guarded(
+                "TURN_PASSED",
+                After,
+                at_least_two_players_have_not_passed,
+            ),
+        ),
+        (
+            "After you perform an action",
+            guarded("ACTION_COMPLETED", After, actor_is),
+        ),
+        (
             "When you gain control of a planet",
             guarded("PLANET_CONTROL_GAINED", When, actor_is),
         ),
@@ -322,6 +386,7 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
 pub const EMITTED_EVENTS: &[&str] = &[
     "ACTION_CARD_PLAYED",
     "AGENDA_RESOLVED",
+    "ACTION_COMPLETED",
     "PLANET_CONTROL_GAINED",
     "PLAYER_PASSED",
     "SHIP_MOVED",
@@ -334,6 +399,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SPACE_COMBAT_STARTED",
     "SPACE_COMBAT_WON",
     "STRATEGY_CARD_CHOSEN",
+    "STRATEGIC_ACTION_BEGAN",
     "SYSTEM_ACTIVATED",
     "SHIP_DESTROYED",
     "STRATEGY_PHASE_BEGAN",
@@ -345,6 +411,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "RETREAT_STEP_STARTED",
     "SPACE_CANNON_HITS",
     "UNITS_COMMITTED",
+    "TURN_PASSED",
 ];
 
 /// Printed windows that cannot yet be reacted to, with the reason.
@@ -406,7 +473,7 @@ pub fn playable_now(
             window_for(content, alias).is_some_and(|window| {
                 window.event == event.event_type
                     && window.relation == relation
-                    && window.guard.is_none_or(|guard| guard(event, player))
+                    && window.guard.is_none_or(|guard| guard(event, player, state))
             })
         })
         .cloned()

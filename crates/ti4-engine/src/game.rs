@@ -6,7 +6,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
 use ti4_model::id::{PlayerId, StrategyCardId, SystemId};
-use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase};
+use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase, TransientFlags};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
@@ -977,7 +977,11 @@ impl<'a> Game<'a> {
                         serde_json::Value::String(active.to_string()),
                     );
                     self.emit_typed("PLAYER_PASSED", payload)?;
-                    self.advance_turn();
+                    // An explicit pass declines the extra action Master Plan may have granted.
+                    self.state
+                        .transient_flags
+                        .clear(TransientFlags::ADDITIONAL_ACTION);
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 // 22.1: a component action costs the whole turn, so unlike a transaction this
@@ -989,7 +993,7 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn();
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 if answer.id.starts_with("component|tech|") {
@@ -1007,7 +1011,7 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn();
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 if answer.id.starts_with("component|expedition|") {
@@ -1025,7 +1029,7 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn();
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
@@ -1036,7 +1040,7 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn();
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 if answer.kind == crate::relics::ACTION_KIND {
@@ -1058,7 +1062,7 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn();
+                    self.advance_turn()?;
                     return Ok(());
                 }
                 if let Some(partner) = crate::transactions::opens_with(&self.state, &answer) {
@@ -1085,6 +1089,36 @@ impl<'a> Game<'a> {
                 let window =
                     begin_strategic_action(&mut self.state, self.content, &active, answer)?;
                 let card = window.card().to_string();
+                // "When another player would perform a strategic action" — typed, and fired
+                // before anything is resolved, so Coup d'Etat can end the turn in time to
+                // undo the action entirely. Cleared up front so a stale value from an
+                // interrupted step cannot veto this action.
+                self.state
+                    .transient_flags
+                    .clear(TransientFlags::STRATEGIC_CANCELLED);
+                let mut payload = BTreeMap::new();
+                payload.insert(
+                    "player".to_owned(),
+                    serde_json::Value::String(active.to_string()),
+                );
+                self.emit_typed("STRATEGIC_ACTION_BEGAN", payload)?;
+                if self
+                    .state
+                    .transient_flags
+                    .has(TransientFlags::STRATEGIC_CANCELLED)
+                {
+                    // Coup d'Etat: "End that player's turn, the strategic action is not
+                    // resolved and the strategy card is not exhausted." Nothing above
+                    // changed state — the card is still in hand, unexhausted, no token
+                    // placed, no ability resolved — so passing the turn undoes the action
+                    // exactly as the card says.
+                    self.state
+                        .transient_flags
+                        .clear(TransientFlags::STRATEGIC_CANCELLED);
+                    self.emit(&format!("STRATEGIC_ACTION_CANCELLED:{card}"));
+                    self.advance_turn()?;
+                    return Ok(());
+                }
                 let outcome = crate::strategy_cards::primary(
                     &mut self.state,
                     self.content,
@@ -1782,7 +1816,11 @@ impl<'a> Game<'a> {
             self.secondary = Some(window);
             return self.result(false, None);
         }
-        self.advance_turn();
+        // A Warfare action completes when its window does, which is where the event fires;
+        // only a plain tactical action completes here.
+        if let Err(error) = self.finish_action() {
+            return self.result(false, Some(error));
+        }
         self.result(false, None)
     }
 
@@ -1850,7 +1888,9 @@ impl<'a> Game<'a> {
         let Some(choice) = choice else {
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
-            self.advance_turn();
+            if let Err(error) = self.finish_action() {
+                return self.result(false, Some(error));
+            }
             return self.result(false, None);
         };
         let follower = choice.player.clone();
@@ -1930,7 +1970,9 @@ impl<'a> Game<'a> {
         if complete {
             self.secondary = None;
             self.emit("STRATEGIC_ACTION_COMPLETE");
-            self.advance_turn();
+            if let Err(error) = self.finish_action() {
+                return self.result(false, Some(error));
+            }
         }
         self.result(true, None)
     }
@@ -2337,82 +2379,112 @@ impl<'a> Game<'a> {
                     serde_json::Value::String(outcome.clone()),
                 );
             }
+            // Mirror the ballot for a Deadly Plot guard played into the window below: the
+            // ballot itself lives in the vote window this function holds, and a guard can
+            // only read the game state.
+            self.state.agenda_votes = window.ballot().votes.clone();
             if let Err(error) = self.emit_typed("AGENDA_RESOLVED", payload) {
                 return self.result(false, Some(error));
             }
+            self.state.agenda_votes.clear();
+            let discarded = self
+                .state
+                .transient_flags
+                .has(TransientFlags::AGENDA_DISCARDED);
+            self.state
+                .transient_flags
+                .clear(TransientFlags::AGENDA_DISCARDED);
 
-            // Confusing / Confounding Legal Text, played into the window above, redirect who
-            // is the elected player. The vote's own result (`outcome`) still settles
-            // predictions and any law; the agenda's effect on the elected player and the
-            // "elected by an agenda" feat follow the redirect.
-            let effective = if let Some(override_player) = self.state.agenda_elected_override.take()
-            {
-                self.emit(&format!(
-                    "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
-                ));
-                override_player.to_string()
+            let elected_player: Option<ti4_model::id::PlayerId> = if discarded {
+                // Deadly Plot: "discard the agenda instead. The agenda is resolved with no
+                // effect and it is not replaced." The vote still happened, so the
+                // occurrence window below still opens — but the agenda's own effect, the
+                // prediction payouts, any law, and the elected feat are all suppressed. A
+                // redirect played into the same window (Confusing / Confounding) is spent
+                // on an election that has no effect, so it is dropped with it. (This
+                // engine does not draw a replacement after a resolution, so "not
+                // replaced" has nothing to suppress.)
+                self.state.agenda_elected_override = None;
+                self.state.agenda_predictions.clear();
+                self.emit(&format!("AGENDA_DISCARDED:{alias}"));
+                None
             } else {
-                outcome.clone()
+                // Confusing / Confounding Legal Text, played into the window above, redirect
+                // who is the elected player. The vote's own result (`outcome`) still settles
+                // predictions and any law; the agenda's effect on the elected player and the
+                // "elected by an agenda" feat follow the redirect.
+                let effective =
+                    if let Some(override_player) = self.state.agenda_elected_override.take() {
+                        self.emit(&format!(
+                            "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
+                        ));
+                        override_player.to_string()
+                    } else {
+                        outcome.clone()
+                    };
+
+                // Drive the Debate: "you or a planet you control are elected". The outcome
+                // names a player, a planet, or an outcome like "for" -- so both readings
+                // have to be tried, and an outcome that is neither matches nobody. Read
+                // from the (possibly redirected) elected player.
+                let elected = self.elected_seat_or_planet(&effective);
+
+                // Imperial Rider pays out before the agenda's own effect, and clears the
+                // predictions. A prediction left behind would pay again on the next agenda,
+                // for a card that was spent on this one.
+                for player in crate::action_cards::resolve_predictions(&mut self.state, &outcome) {
+                    self.emit(&format!("AGENDA_PREDICTION_CORRECT:{player}"));
+                }
+
+                // 8.20 first: an elected or "For" law stays in play, and an effect that reads
+                // the laws must see this one already there. 8.21 discards everything else.
+                if is_law(self.content, &alias) && outcome != AGAINST {
+                    self.state.enact_law(&alias, &outcome);
+                    self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
+                }
+
+                // With the game's own dice, table and map: several agendas roll, ask, or read
+                // the shape of the board, and one borrowed from nowhere would roll off a
+                // stream no seed covers. The speaker's tie-break (8.18) is asked through the
+                // same table.
+                let mut dice = std::mem::take(&mut self.dice);
+                let mut rng = self.rng.clone();
+                let galaxy = self.galaxy.clone();
+                let mut ctx = Resolving {
+                    content: self.content,
+                    sources: self.sources,
+                    dice: &mut dice,
+                    rng: &mut rng,
+                    table: &mut self.table,
+                    timing: None,
+                };
+                let effect = crate::agenda_effects::resolve_with(
+                    &mut self.state,
+                    &mut ctx,
+                    galaxy.as_ref(),
+                    &alias,
+                    &effective,
+                    window.ballot(),
+                );
+                self.dice = dice;
+                self.rng = rng;
+
+                match effect {
+                    crate::agenda_effects::Effect::Resolved { .. } => {
+                        self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
+                    }
+                    crate::agenda_effects::Effect::Unresolved { .. } => {
+                        self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
+                    }
+                    crate::agenda_effects::Effect::Deferred { .. } => {
+                        self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
+                    }
+                }
+                elected
             };
-
-            // Drive the Debate: "you or a planet you control are elected". The outcome names a
-            // player, a planet, or an outcome like "for" -- so both readings have to be tried,
-            // and an outcome that is neither matches nobody. Read from the (possibly
-            // redirected) elected player.
-            let elected_player = self.elected_seat_or_planet(&effective);
-
-            // Imperial Rider pays out before the agenda's own effect, and clears the
-            // predictions. A prediction left behind would pay again on the next agenda, for a
-            // card that was spent on this one.
-            for player in crate::action_cards::resolve_predictions(&mut self.state, &outcome) {
-                self.emit(&format!("AGENDA_PREDICTION_CORRECT:{player}"));
-            }
-
-            // 8.20 first: an elected or "For" law stays in play, and an effect that reads the
-            // laws must see this one already there. 8.21 discards everything else.
-            if is_law(self.content, &alias) && outcome != AGAINST {
-                self.state.enact_law(&alias, &outcome);
-                self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
-            }
-
-            // With the game's own dice, table and map: several agendas roll, ask, or read
-            // the shape of the board, and one borrowed from nowhere would roll off a stream no
-            // seed covers. The speaker's tie-break (8.18) is asked through the same table.
-            let mut dice = std::mem::take(&mut self.dice);
-            let mut rng = self.rng.clone();
-            let galaxy = self.galaxy.clone();
-            let mut ctx = Resolving {
-                content: self.content,
-                sources: self.sources,
-                dice: &mut dice,
-                rng: &mut rng,
-                table: &mut self.table,
-                timing: None,
-            };
-            let effect = crate::agenda_effects::resolve_with(
-                &mut self.state,
-                &mut ctx,
-                galaxy.as_ref(),
-                &alias,
-                &effective,
-                window.ballot(),
-            );
-            self.dice = dice;
-            self.rng = rng;
-
-            match effect {
-                crate::agenda_effects::Effect::Resolved { .. } => {
-                    self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
-                }
-                crate::agenda_effects::Effect::Unresolved { .. } => {
-                    self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
-                }
-                crate::agenda_effects::Effect::Deferred { .. } => {
-                    self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
-                }
-            }
             // Agenda-timed secrets are offered only after the complete agenda outcome is live:
-            // Dictate Policy therefore sees a law enacted by this agenda.
+            // Dictate Policy therefore sees a law enacted by this agenda. A Deadly Plot
+            // discard suppresses the agenda's effect, not the fact that the vote resolved.
             let occurrence = self.state.begin_feat_occurrence();
             if let Some(elected_player) = elected_player {
                 self.state
@@ -2470,9 +2542,62 @@ impl<'a> Game<'a> {
         self.result(false, None)
     }
 
-    fn advance_turn(&mut self) {
+    /// "After you perform an action" — one typed event for both kinds of action, since a
+    /// turn's action is either strategic or tactical. The payload names the player who
+    /// performed it, which is the "you" the window reads.
+    ///
+    /// # Errors
+    /// [`GameError`] when the event id space is exhausted or a decider answers illegally.
+    fn emit_action_completed(&mut self, player: &PlayerId) -> Result<(), GameError> {
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(player.to_string()),
+        );
+        self.emit_typed("ACTION_COMPLETED", payload)?;
+        Ok(())
+    }
+
+    /// The player's action is over: announce it, give Master Plan its window, pass the turn.
+    fn finish_action(&mut self) -> Result<(), GameError> {
+        if let Some(active) = self.state.active.clone() {
+            self.emit_action_completed(&active)?;
+        }
+        self.advance_turn()
+    }
+
+    /// Pass the turn on, unless the current player keeps it.
+    ///
+    /// Master Plan's "perform an additional action" is a continuation of the *same* turn, so
+    /// the retention short-circuits before anything that begins a new one: no `turn_seq`
+    /// increment, no `technology::end_turn` for the player, no transaction reset (the Fleet
+    /// Logistics reading in `phase.rs`).
+    ///
+    /// `TURN_PASSED` is the "at the end of any player's turn" moment, typed so a window can
+    /// hang off it: the payload names the player whose turn ended, and the turn has already
+    /// moved when it fires, which is what Crisis's "skip the next player's turn" needs — the
+    /// skip happens here, still inside the advance, on the seat the turn just arrived at. A
+    /// skipped turn is not a turn, so it emits `TURN_SKIPPED` and opens no end-of-turn
+    /// window of its own (a chain of Crisis cards on skipped turns is not a reading the card
+    /// supports).
+    ///
+    /// # Errors
+    /// [`GameError`] when the `TURN_PASSED` window's deciders answer illegally.
+    fn advance_turn(&mut self) -> Result<(), GameError> {
+        if self
+            .state
+            .transient_flags
+            .has(TransientFlags::ADDITIONAL_ACTION)
+        {
+            self.state
+                .transient_flags
+                .clear(TransientFlags::ADDITIONAL_ACTION);
+            self.emit("TURN_RETAINED");
+            return Ok(());
+        }
+        let ended = self.state.active.clone();
         if self.state.phase == Phase::Action
-            && let Some(active) = self.state.active.clone()
+            && let Some(active) = ended.clone()
         {
             let _ = crate::technology::end_turn(
                 &mut self.state,
@@ -2483,9 +2608,33 @@ impl<'a> Game<'a> {
                 &active,
             );
         }
-        if advance_turn(&mut self.state).is_some() {
-            self.emit("TURN_PASSED");
+        if advance_turn(&mut self.state).is_none() {
+            return Ok(());
         }
+        let Some(ended) = ended else {
+            return Ok(());
+        };
+        self.emit("TURN_PASSED");
+        let mut payload = BTreeMap::new();
+        payload.insert(
+            "player".to_owned(),
+            serde_json::Value::String(ended.to_string()),
+        );
+        self.emit_typed("TURN_PASSED", payload)?;
+        if self
+            .state
+            .transient_flags
+            .has(TransientFlags::SKIP_NEXT_TURN)
+        {
+            self.state
+                .transient_flags
+                .clear(TransientFlags::SKIP_NEXT_TURN);
+            if let Some(skipped) = self.state.active.clone() {
+                self.emit(&format!("TURN_SKIPPED:{skipped}"));
+                let _ = advance_turn(&mut self.state);
+            }
+        }
+        Ok(())
     }
 
     fn take_timed_strategy_card(
@@ -2581,7 +2730,7 @@ mod tests {
 
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
-    use ti4_model::id::PlayerId;
+    use ti4_model::id::{PlanetId, PlayerId};
     use ti4_model::state::Phase;
 
     use super::*;
@@ -5103,6 +5252,530 @@ mod tests {
         assert!(
             state.player(&b).unwrap().action_cards.is_empty(),
             "the card is spent"
+        );
+    }
+
+    // ---------- Agenda and turn flow, part 2: Deadly Plot / Coup d'Etat / Crisis / Master Plan ----------
+
+    /// The Deadly Plot fixture: a two-player agenda phase. `a` holds Deadly Plot and backs
+    /// outcome `b` with two influence-1 planets; `b` backs outcome `a` with two influence-2+
+    /// planets, so `a` is always the outcome (4+ against 2) and `a`'s vote is always for the
+    /// other one. Returns the state plus the planet ids the scripted vote answers need.
+    fn deadly_plot_state() -> (GameState, Vec<String>, Vec<String>) {
+        let content = ContentStore::embedded();
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(content, &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+
+        let catalogue = ti4_content::galaxy::all_planets(content, POK);
+        let weak: Vec<(String, String)> = catalogue
+            .iter()
+            .filter(|(_, planet)| planet.influence() == 1 && !planet.is_placed_during_play())
+            .take(2)
+            .map(|(id, planet)| {
+                (
+                    id.to_string(),
+                    planet.system_id().unwrap_or("18").to_owned(),
+                )
+            })
+            .collect();
+        let strong: Vec<(String, String)> = catalogue
+            .iter()
+            .filter(|(_, planet)| planet.influence() >= 2 && !planet.is_placed_during_play())
+            .take(2)
+            .map(|(id, planet)| {
+                (
+                    id.to_string(),
+                    planet.system_id().unwrap_or("18").to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(weak.len(), 2, "the corpus has two influence-1 planets");
+        assert_eq!(strong.len(), 2, "the corpus has two influence-2+ planets");
+
+        let a = players[0].clone();
+        let b = players[1].clone();
+        for (id, system) in &weak {
+            state
+                .system_mut(&SystemId::new(system))
+                .set_control(PlanetId::new(id), a.clone());
+        }
+        for (id, system) in &strong {
+            state
+                .system_mut(&SystemId::new(system))
+                .set_control(PlanetId::new(id), b.clone());
+        }
+        state.player_mut(&a).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("deadly_plot")];
+        state.agenda_deck = vec!["secret".to_owned()];
+
+        // `votable_planets` offers in (system, planet) map order, so the scripted answers
+        // must match that order, not the catalogue order the fixture picked in.
+        let order = |pairs: &[(String, String)]| {
+            let mut keyed: Vec<(String, String)> = pairs
+                .iter()
+                .map(|(planet, system)| (system.clone(), planet.clone()))
+                .collect();
+            keyed.sort();
+            keyed
+                .into_iter()
+                .map(|(_, planet)| planet)
+                .collect::<Vec<String>>()
+        };
+        (state, order(&weak), order(&strong))
+    }
+
+    #[test]
+    fn deadly_plot_discards_the_agenda_when_the_holder_voted_otherwise() {
+        // Deadly Plot: "If you voted for or predicted another outcome, discard the agenda
+        // instead. The agenda is resolved with no effect and it is not replaced. Then,
+        // exhaust all of your planets." `a` votes `b` with one of its two planets and keeps
+        // the other ready; `b` votes `a` with both of its stronger ones (influence 4+
+        // against 1), so the outcome is the side `a` did not back. `b` is never asked to
+        // decline: a voter who runs out of votable planets settles straight on. The guard
+        // passes, the agenda is spent on nothing — no effect, no payouts, no elected feat —
+        // and the kept planet is exhausted by the card's tail.
+        let (state, a_planets, b_planets) = deadly_plot_state();
+        let table = Table::with_default(Box::new(Scripted::new([
+            "a".to_owned(),
+            b_planets[0].clone(),
+            b_planets[1].clone(),
+            "b".to_owned(),
+            a_planets[0].clone(),
+            "decline".to_owned(),
+            "reaction:generic:AGENDA_RESOLVED:when".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "AGENDA_DISCARDED:secret") && guard < 100 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert!(
+            events.iter().any(|e| e == "AGENDA_RESOLVED:secret:a"),
+            "the vote resolved in favour of a; log {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "AGENDA_DISCARDED:secret"),
+            "the holder voted for the other outcome, so the agenda is discarded; log {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_EFFECT_RESOLVED:secret")
+                    || e.starts_with("AGENDA_EFFECT_UNRESOLVED:secret")
+                    || e.starts_with("AGENDA_EFFECT_DEFERRED:secret")),
+            "a discarded agenda resolves with no effect; log {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_PREDICTION_CORRECT:")),
+            "the payouts are suppressed with the effect; log {events:?}"
+        );
+        assert!(
+            !elected_by_an_agenda(state, &PlayerId::new("a"))
+                && !elected_by_an_agenda(state, &PlayerId::new("b")),
+            "no seat is the elected player once the election is spent on nothing; log {events:?}"
+        );
+        assert!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .action_cards
+                .is_empty(),
+            "the plot was played and spent"
+        );
+        assert!(
+            state
+                .exhausted_planets
+                .contains(&PlanetId::new(a_planets[0].as_str())),
+            "the planet a voted with is exhausted by the vote itself"
+        );
+        assert!(
+            state
+                .exhausted_planets
+                .contains(&PlanetId::new(a_planets[1].as_str())),
+            "the planet a kept ready is exhausted by the card's tail; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn deadly_plot_stays_silent_when_the_holder_backed_the_winner() {
+        // The guard is "if you voted for or predicted another outcome". On the first-option
+        // table both seats back the first candidate with all their planets, so the outcome
+        // is the side a voted for: the guard fails, the card is never offered, and the
+        // agenda resolves exactly as if the card were not there.
+        let a = PlayerId::new("a");
+        let (state, events) = agenda_run(Some(("deadly_plot", a.clone())), &["secret"]);
+
+        assert!(
+            events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_RESOLVED:secret:")),
+            "the agenda is voted on and resolves; log {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "AGENDA_DISCARDED:secret"),
+            "a's vote matched the outcome, so there is nothing to discard; log {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_EFFECT_UNRESOLVED:secret")),
+            "the agenda's effect still runs; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("deadly_plot")],
+            "the never-offered plot is still in hand; log {events:?}"
+        );
+    }
+
+    /// The Coup d'Etat fixture: a two-player action phase with no map. `b` is active and
+    /// holds exactly one strategy card (`diplomacy`), so the menu offers one strategic
+    /// action; `a` holds the action card under test when `holder` is set. Diplomacy in a
+    /// world with no planets under `b`'s control resolves without any questions.
+    fn coup_state(holder: Option<PlayerId>) -> GameState {
+        let content = ContentStore::embedded();
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(content, &players, POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(PlayerId::new("b"));
+        let b = players[1].clone();
+        state.player_mut(&b).unwrap().strategy_cards =
+            vec![ti4_model::id::StrategyCardId::new("diplomacy")];
+        if let Some(holder) = holder {
+            state.player_mut(&holder).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("coup")];
+        }
+        state
+    }
+
+    #[test]
+    fn coup_ends_the_turn_before_the_strategic_action_is_resolved() {
+        // Coup d'Etat: "When another player would perform a strategic action: End that
+        // player's turn, the strategic action is not resolved and the strategy card is not
+        // exhausted." The typed STRATEGIC_ACTION_BEGAN event fires before the card's effect
+        // runs, so the play lands in that gap: the card goes back in hand unexhausted, no
+        // token is placed, and the turn simply moves on.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let table = Table::with_default(Box::new(Scripted::new([
+            "strategic".to_owned(),
+            "reaction:generic:STRATEGIC_ACTION_BEGAN:when".to_owned(),
+        ])));
+        let mut game =
+            Game::with_table(coup_state(Some(a.clone())), ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game
+            .events
+            .iter()
+            .any(|e| e == "STRATEGIC_ACTION_CANCELLED:diplomacy")
+            && guard < 100
+        {
+            assert_eq!(game.step().error, None, "no coup step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert!(
+            events
+                .iter()
+                .any(|e| e == "STRATEGIC_ACTION_CANCELLED:diplomacy"),
+            "the strategic action is cancelled; log {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "STRATEGIC_ACTION_COMPLETE"),
+            "nothing completed: the action never resolved; log {events:?}"
+        );
+        let diplomacy = ti4_model::id::StrategyCardId::new("diplomacy");
+        let victim = state.player(&b).unwrap();
+        assert_eq!(
+            victim.strategy_cards,
+            vec![diplomacy.clone()],
+            "the strategy card is still in hand"
+        );
+        assert!(
+            !victim.exhausted_strategy_cards.contains(&diplomacy),
+            "and it is not exhausted; log {events:?}"
+        );
+        assert!(
+            victim
+                .unused_strategy_cards()
+                .iter()
+                .any(|card| card.as_str() == "diplomacy"),
+            "the cancelled action leaves the card fully usable for the next turn"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the coup was spent"
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(PlayerId::new("a")),
+            "the turn ended and moved on to the next seat"
+        );
+    }
+
+    #[test]
+    fn without_a_coup_the_same_strategic_action_completes() {
+        // The control for the coup test: with no coup in hand, b's diplomacy runs to
+        // completion — the card is exhausted and removed from hand, and the turn passes on
+        // only after the action has resolved.
+        let b = PlayerId::new("b");
+        let table = Table::with_default(Box::new(Scripted::new(["strategic".to_owned()])));
+        let mut game = Game::with_table(coup_state(None), ContentStore::embedded(), table);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "STRATEGIC_ACTION_COMPLETE") && guard < 100 {
+            assert_eq!(game.step().error, None, "no strategic step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert!(
+            events.iter().any(|e| e == "STRATEGIC_ACTION_COMPLETE"),
+            "the action resolved; log {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("STRATEGIC_ACTION_CANCELLED")),
+            "nothing was cancelled; log {events:?}"
+        );
+        let diplomacy = ti4_model::id::StrategyCardId::new("diplomacy");
+        let victim = state.player(&b).unwrap();
+        assert!(
+            victim.exhausted_strategy_cards.contains(&diplomacy),
+            "the resolved action exhausted its card"
+        );
+        assert!(
+            victim.unused_strategy_cards().is_empty(),
+            "an exhausted card is no longer a usable action; log {events:?}"
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(PlayerId::new("a")),
+            "the turn passed on; log {events:?}"
+        );
+    }
+
+    /// The Crisis fixture: an action phase; the first seat is active and holds the card
+    /// under test when `holder` is set. No map, so the only thing any seat can do is pass.
+    fn crisis_state(holder: Option<PlayerId>, players: &[PlayerId]) -> GameState {
+        let content = ContentStore::embedded();
+        let mut state = start_game(content, players, POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(players[0].clone());
+        if let Some(holder) = holder {
+            state.player_mut(&holder).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("crisis")];
+        }
+        state
+    }
+
+    #[test]
+    fn crisis_skips_the_next_players_turn() {
+        // Crisis: "At the end of any player's turn, if there are at least 2 players who have
+        // not passed: Skip the next player's turn." a passes while b and c are both unpassed,
+        // so the guard counts two; the play arms the skip, which lands on b — b never takes
+        // a turn, and c is the next seat to act. A skipped turn is not a turn: no end-of-turn
+        // window of its own.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let c = PlayerId::new("c");
+        let table = Table::with_default(Box::new(Scripted::new([
+            "pass".to_owned(),
+            "reaction:generic:TURN_PASSED:after".to_owned(),
+        ])));
+        let mut game = Game::with_table(
+            crisis_state(Some(a.clone()), &[a.clone(), b.clone(), c.clone()]),
+            ContentStore::embedded(),
+            table,
+        );
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TURN_SKIPPED:b") && guard < 100 {
+            assert_eq!(game.step().error, None, "no crisis step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert!(
+            events.iter().any(|e| e == "TURN_SKIPPED:b"),
+            "the seat after the one that passed is skipped; log {events:?}"
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(c.clone()),
+            "the turn landed on the seat after the skipped one; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the card was spent"
+        );
+        let skipped = state.player(&b).unwrap();
+        assert_eq!(
+            skipped.tactic_tokens, 3,
+            "the skipped seat never took a turn, so it spent nothing; log {events:?}"
+        );
+        assert!(
+            !skipped.passed,
+            "the skipped seat never passed either; log {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "TACTICAL_ACTION_BEGAN"),
+            "the skipped seat performed no action; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn crisis_never_fires_when_fewer_than_two_players_have_not_passed() {
+        // With two seats, the moment one has passed, the other is the only seat left that
+        // has not passed — so the "at least 2 players who have not passed" guard can never
+        // be met at either turn ending. The window is never offered and the card stays in
+        // hand through both passes.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let table = Table::with_default(Box::new(Scripted::new([
+            "pass".to_owned(),
+            "pass".to_owned(),
+        ])));
+        let mut game = Game::with_table(
+            crisis_state(Some(a.clone()), &[a.clone(), b.clone()]),
+            ContentStore::embedded(),
+            table,
+        );
+        let mut guard = 0;
+        while !(game.state.player(&a).unwrap().passed && game.state.player(&b).unwrap().passed)
+            && guard < 100
+        {
+            assert_eq!(game.step().error, None, "no pass step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert!(
+            !events.iter().any(|e| e.starts_with("TURN_SKIPPED")),
+            "with fewer than two unpassed players the guard never passes; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("crisis")],
+            "the never-offered crisis is still in hand; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().passed && state.player(&b).unwrap().passed,
+            "both seats passed regardless; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn master_plan_grants_an_additional_action_on_the_same_turn() {
+        // Master Plan: "After you perform an action: Perform an additional action." The
+        // retention is the same turn — no turn-sequence bump, no end-of-turn tech, no
+        // transaction reset — so a with two tactic tokens plays two tactical actions before
+        // the turn ever leaves the seat.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let seat = state.player_mut(&a).unwrap();
+        seat.tactic_tokens = 2;
+        seat.action_cards = vec![ti4_model::id::ActionCardId::new("master_plan")];
+        let table = Table::with_default(Box::new(Scripted::new([
+            "tactical".to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+            "reaction:generic:ACTION_COMPLETED:after".to_owned(),
+            "tactical".to_owned(),
+            ids[1].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 100 {
+            assert_eq!(game.step().error, None, "no action step should refuse");
+            guard += 1;
+        }
+        let state = &game.state;
+        let events = &game.events;
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| *e == "TACTICAL_ACTION_BEGAN")
+                .count(),
+            2,
+            "the seat took two actions before the turn moved; log {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "TURN_RETAINED"),
+            "the turn was kept, not passed; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the plan was spent on the first action"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().tactic_tokens,
+            0,
+            "both actions were paid for"
+        );
+        assert_eq!(
+            state.active.clone(),
+            Some(PlayerId::new("b")),
+            "only after the extra action did the turn pass on; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_master_plan_the_turn_passes_after_one_action() {
+        // The control: the same seat and tokens, no card in hand. One tactical action is all
+        // the turn buys — after it completes the turn moves on, and the second token stays
+        // in the pool.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        state.player_mut(&a).unwrap().tactic_tokens = 2;
+        let table = Table::with_default(Box::new(Scripted::new([
+            "tactical".to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 100 {
+            assert_eq!(game.step().error, None, "no action step should refuse");
+            guard += 1;
+        }
+        let events = &game.events;
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| *e == "TACTICAL_ACTION_BEGAN")
+                .count(),
+            1,
+            "one action per turn without the card; log {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "TURN_RETAINED"),
+            "nothing kept the turn; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().tactic_tokens,
+            1,
+            "the second token is still in the pool; log {events:?}"
+        );
+        assert_eq!(
+            game.state.active.clone(),
+            Some(PlayerId::new("b")),
+            "the turn passed on after the single action; log {events:?}"
         );
     }
 

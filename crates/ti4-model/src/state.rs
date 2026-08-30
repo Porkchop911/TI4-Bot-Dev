@@ -764,6 +764,39 @@ impl RerollEntry {
     }
 }
 
+/// Turn-flow flags set by a reaction card and consumed by the turn driver at the next
+/// boundary. A `u8` bitfield rather than bool fields: `GameState` is already at the three-
+/// bool limit the lints allow, and these four flags live and die together inside
+/// `advance_turn`. In-flight resolution data — excluded from `GameState`'s manual
+/// `PartialEq`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TransientFlags(u8);
+
+impl TransientFlags {
+    /// Deadly Plot: the agenda being resolved is discarded with no effect.
+    pub const AGENDA_DISCARDED: u8 = 1 << 0;
+    /// Coup d'Etat: the strategic action that just began is not resolved; the turn ends.
+    pub const STRATEGIC_CANCELLED: u8 = 1 << 1;
+    /// Crisis: the seat the turn is moving to has its turn skipped.
+    pub const SKIP_NEXT_TURN: u8 = 1 << 2;
+    /// Master Plan: the player whose turn is ending may act again on the same turn.
+    pub const ADDITIONAL_ACTION: u8 = 1 << 3;
+
+    #[must_use]
+    pub const fn has(self, flag: u8) -> bool {
+        self.0 & flag == flag
+    }
+
+    pub fn set(&mut self, flag: u8) {
+        self.0 |= flag;
+    }
+
+    pub fn clear(&mut self, flag: u8) {
+        self.0 &= !flag;
+    }
+}
+
 /// The whole game, as a value.
 ///
 /// `initiative_order` is derived from held strategy cards rather than stored, so it cannot
@@ -915,6 +948,25 @@ pub struct GameState {
     /// the agenda's own effect. In-flight resolution data — not compared.
     #[serde(default)]
     pub agenda_elected_override: Option<PlayerId>,
+    /// The outcome each player actually voted for on the agenda currently being resolved,
+    /// mirrored from the vote's ballot before the `AGENDA_RESOLVED` window opens and cleared
+    /// when it closes. A guard played into that window (Deadly Plot's "if you voted for or
+    /// predicted another outcome") can only read `GameState`, and the ballot itself lives in
+    /// the vote window the driver holds. In-flight resolution data — not compared.
+    #[serde(default)]
+    pub agenda_votes: BTreeMap<PlayerId, String>,
+
+    // -- turn-flow bookkeeping (in-flight, not compared) ---------------------------
+    /// Turn-flow flags set by reaction cards and consumed at the next turn boundary:
+    /// Deadly Plot discards the agenda being resolved (no effect, no payouts, no law, no
+    /// elected feat), Coup d'Etat cancels the strategic action that just began without
+    /// exhausting its card, Crisis makes the turn driver skip the seat the turn moves to,
+    /// and Master Plan keeps the same player's turn going for an additional action (same
+    /// `turn_seq`, no transaction reset — the Fleet Logistics reading in `phase.rs`).
+    /// Each flag is cleared at the point it is consumed, and an explicit pass declines the
+    /// Master Plan grant, so a stale value cannot reach the next turn or agenda.
+    #[serde(default)]
+    pub transient_flags: TransientFlags,
 
     // -- production bookkeeping ----------------------------------------------------
     /// Fighters placed by the PRODUCTION use currently resolving. Prophecy of Ixth asks how
@@ -1102,6 +1154,8 @@ impl GameState {
             last_committed_unit: None,
             agenda_veto_replacement: None,
             agenda_elected_override: None,
+            agenda_votes: BTreeMap::new(),
+            transient_flags: TransientFlags::default(),
             fighters_produced_this_use: 0,
             nonfighter_ships_produced_this_use: 0,
             units_produced_this_use: 0,

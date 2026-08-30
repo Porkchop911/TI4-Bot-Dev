@@ -10,7 +10,7 @@ use ti4_content::galaxy::Galaxy;
 use ti4_content::units::UnitType;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::{ActionCardId, PlayerId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, TransientFlags};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
@@ -391,6 +391,76 @@ fn confusing(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) 
         }
     };
     context.state.agenda_elected_override = Some(elected);
+}
+
+/// Deadly Plot: "During the agenda phase when an outcome would be resolved: If you voted for
+/// or predicted another outcome, discard the agenda instead. The agenda is resolved with no
+/// effect and it is not replaced. Then, exhaust all of your planets."
+///
+/// The guard (vote vs prediction vs the outcome about to resolve) is answered by the window
+/// machinery before the effect runs, so reaching this point means the discard applies.
+/// [`GameState::agenda_outcome_discarded`] tells the vote driver to spend the resolution on
+/// nothing: no agenda effect, no prediction payout, no law, no elected feat — but the vote
+/// itself still happened, so its occurrence window still opens. "Not replaced" has nothing
+/// to suppress in this engine: it never draws a replacement after a resolution.
+///
+/// Then the holder exhausts every planet they control — the card names "your planets",
+/// which are the ones on this player's board, not the planets the agenda would have touched.
+fn deadly_plot(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    context
+        .state
+        .transient_flags
+        .set(TransientFlags::AGENDA_DISCARDED);
+    let planets: Vec<ti4_model::id::PlanetId> = context
+        .state
+        .board
+        .values()
+        .flat_map(|system| system.planet_control.iter())
+        .filter_map(|(planet, owner)| (owner == player).then_some(planet.clone()))
+        .collect();
+    for planet in planets {
+        context.state.exhaust_planet(planet);
+    }
+}
+
+/// Coup d'Etat: "When another player would perform a strategic action: End that player's
+/// turn, the strategic action is not resolved and the strategy card is not exhausted."
+///
+/// The driver fires the typed `STRATEGIC_ACTION_BEGAN` event before it resolves anything, so
+/// setting [`GameState::strategic_action_cancelled`] here still undoes the action entirely:
+/// the card goes back to hand unexhausted, no token is placed, no ability runs, and the
+/// victim's turn simply ends.
+fn coup(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
+    context
+        .state
+        .transient_flags
+        .set(TransientFlags::STRATEGIC_CANCELLED);
+}
+
+/// Crisis: "At the end of any player's turn, if there are at least 2 players who have not
+/// passed: Skip the next player's turn."
+///
+/// The guard counts the unpassed seats at the moment a turn ends; the effect arms
+/// [`GameState::skip_next_turn`], which the turn driver consumes on the very next advance —
+/// the seat the turn just landed on is skipped and never acts.
+fn crisis(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
+    context
+        .state
+        .transient_flags
+        .set(TransientFlags::SKIP_NEXT_TURN);
+}
+
+/// Master Plan: "After you perform an action: Perform an additional action."
+///
+/// The driver fires `ACTION_COMPLETED` when the action is over, and the effect arms
+/// [`GameState::additional_action`]: the next turn advance keeps the same seat — no
+/// `turn_seq` bump, no end-of-turn tech, no transaction reset — and the player simply takes
+/// another action.
+fn master_plan(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
+    context
+        .state
+        .transient_flags
+        .set(TransientFlags::ADDITIONAL_ACTION);
 }
 
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
@@ -4083,6 +4153,10 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "veto" | "veto3" | "veto4" => Some(veto),
         "confusing" => Some(confusing),
         "confounding" => Some(confounding),
+        "deadly_plot" => Some(deadly_plot),
+        "coup" => Some(coup),
+        "crisis" => Some(crisis),
+        "master_plan" => Some(master_plan),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4255,6 +4329,10 @@ const REGISTERED_ALIASES: &[&str] = &[
     "veto4",
     "confusing",
     "confounding",
+    "deadly_plot",
+    "coup",
+    "crisis",
+    "master_plan",
     "cripple",
     "f_deployment",
     "imp_rider",

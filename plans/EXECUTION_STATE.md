@@ -22,6 +22,94 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — turn-flow cards: Deadly Plot / Coup d'Etat / Crisis / Master Plan + v11 re-baseline (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `2853165` before this batch (sub-batch B of the handoff's agenda/turn-flow group).
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the group's remaining four cards — `deadly_plot`, `coup`, `crisis`, `master_plan`.
+  This closes the agenda/turn-flow group 9/9.
+  - **New typed turn events.** `STRATEGIC_ACTION_BEGAN` (typed, before anything resolves,
+    with `player`), `TURN_PASSED` (typed, `player`), `ACTION_COMPLETED` (typed, `player`)
+    join `EMITTED_EVENTS`; the driver also emits raw `TURN_RETAINED`, `TURN_SKIPPED:<player>`
+    and `STRATEGIC_ACTION_CANCELLED:<card>`, and `close_vote` emits `AGENDA_DISCARDED:<alias>`.
+    `advance_turn` now returns `Result<(), GameError>` because its `TURN_PASSED` window can
+    trigger a decider error (a Crisis played into it); all nine call sites updated.
+  - **`TransientFlags`** (new `ti4-model` type): a `u8` bitfield
+    (`AGENDA_DISCARDED`, `STRATEGIC_CANCELLED`, `SKIP_NEXT_TURN`, `ADDITIONAL_ACTION`),
+    `#[serde(default)]`, not compared by `GameState`'s manual `PartialEq`. A bitfield rather
+    than bool fields because `GameState` was already at the three-bool lint limit
+    (`struct_excessive_bools`); each flag is cleared where it is consumed, and an explicit
+    pass declines the Master Plan grant, so no stale value can reach the next turn or agenda.
+  - **`close_vote`** mirrors the ballot's votes into `state.agenda_votes` before emitting
+    `AGENDA_RESOLVED` and clears them after (a guard can only read `GameState`, but the
+    ballot lives in the vote window the driver holds). When `AGENDA_DISCARDED` is set it
+    clears the elected-override and the holder's predictions, emits
+    `AGENDA_DISCARDED:<alias>`, and skips the agenda effect, prediction payouts, law and
+    elected feat while still running the occurrence scoring; `elected_player` stays unset.
+  - **`advance_turn`** consumes `ADDITIONAL_ACTION` first (Master Plan: emits `TURN_RETAINED`
+    and keeps the turn — same `turn_seq`, no end-of-turn processing, no transaction reset),
+    then emits the typed `TURN_PASSED` window, then `SKIP_NEXT_TURN` (Crisis: the seat the
+    turn just moved to is skipped — `TURN_SKIPPED:<player>`, no end-of-turn window).
+  - **Coup d'Etat**: the strategic branch clears the cancel flag up front (checkpoint-retry
+    safety), emits the typed `STRATEGIC_ACTION_BEGAN`, and if the flag is set emits
+    `STRATEGIC_ACTION_CANCELLED:<card>` and ends the turn — `begin_strategic_action` mutated
+    nothing, so the action is undone exactly as the card says: card in hand, unexhausted,
+    no token, no ability. `finish_action()` (typed `ACTION_COMPLETED` + `advance_turn`) is
+    wired into `close_tactical` and both `step_secondary` completion sites.
+  - **Guards** now take `&GameState` (`fn(&Event, &PlayerId, &GameState) -> bool`): new
+    `voted_or_predicted_another_outcome` (Deadly Plot: the holder's cast vote or standing
+    prediction differs from the resolved outcome) and `at_least_two_players_have_not_passed`
+    (Crisis: counts unpassed seats). `close_vote`'s discard path and the four dispatch arms
+    (+ `REGISTERED_ALIASES`) finish the group.
+- Coverage 112 → **116/142** action cards (81.7%, coverage_report, release); agendas still
+  63/63; the agenda/turn-flow group is fully closed.
+- **ti4-sim baseline moved v10 → v11** through the versioned process: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; `behavior.rs` carries the v11 transcription and
+  `plans/evidence/M08-021.md` records the pair. The largest re-baseline so far, and mostly
+  changed *play* rather than dilution (agendas that vanish, strategic actions cancelled at
+  their birth, skipped and doubled turns): `faction_differentiation` widens
+  [0.457, 1.023] → [0.431, 1.128], `score_spread` [1.636, 2.082] → [1.643, 2.091],
+  `vp_pace` barely moves (0.430 → 0.438), and every action-label share falls (the three new
+  typed events dilute the denominators, Master Plan lengthens the streams, Crisis deletes
+  turns). Six of the ten values sit outside their v10 intervals, so the value gate — not
+  just the protocol-integrity check — forced the move; after the transcription the release
+  run reports 0 metrics outside and the debug integrity check (recorded == protocol
+  recomputation, 2000 splitmix64 resamples, seed `0x9E3779B97F4A7C15`) passes. `completion`
+  stays the strict 1.0 invariant.
+- Tests: 1015 `ti4-engine` lib tests pass (was 1007): 8 new — `deadly_plot_discards_the_`
+  `agenda_when_the_holder_voted_otherwise` (a votes the loser with one planet and keeps the
+  other; b's two stronger planets win; the agenda is discarded with no effect, no law, no
+  feat, and *every* a-planet is exhausted, the kept one by the card's tail) and
+  `deadly_plot_stays_silent_when_the_holder_backed_the_winner` (control: agenda resolves
+  normally, card stays in hand); `coup_ends_the_turn_before_the_strategic_action_is_`
+  `resolved` (the action is `STRATEGIC_ACTION_CANCELLED`, the turn passes, the strategy card
+  is still in hand and still *unused*) vs `without_a_coup_the_same_strategic_action_`
+  `completes` (the card completes and is exhausted); `crisis_skips_the_next_players_turn`
+  (`TURN_SKIPPED`, the skipped seat gets no end-of-turn window, the turn lands on the third
+  player) vs `crisis_never_fires_when_fewer_than_two_players_have_not_passed` (with two
+  players the guard sees only one unpassed seat: both pass, no skip, card stays in hand);
+  `master_plan_grants_an_additional_action_on_the_same_turn` (`TURN_RETAINED`, same
+  `turn_seq`, a second action completes, then the turn passes) vs
+  `without_master_plan_the_turn_passes_after_one_action`. Eleven probes, all confirmed
+  (break → the exact test fails → revert): the four effect flags, the four driver paths
+  (skip consumption, retention, coup abort, the `close_vote` discard branch), and the two
+  new guards forced off.
+- Two driver invariants the tests pin down: a voter who runs out of votable planets settles
+  straight on (never offered a decline), and `votable_planets` offers in `(system, planet)`
+  map order — the scripts match both.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s pre-existing tracked
+  `fixture_capture_is_deterministic` (step 789, unchanged failure mode; M09-019b scope).
+- Clippy: zero warnings in every touched file under `--all-targets` (`state.rs` stays at the
+  three-bool lint limit because of `TransientFlags`); the remaining workspace warnings are
+  pre-existing in untouched files (`close_vote`'s 109/100 lines was already over the limit
+  at the batch base, 131 lines).
+- Next safe action: the handoff's remaining groups in order — the ungrouped action cards
+  (vote order: `hack`; the 25 ungrouped), then relics. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — Agenda cards: Veto / Confusing / Confounding, no re-baseline (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

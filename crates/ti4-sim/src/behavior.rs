@@ -375,12 +375,42 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v10): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v11): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v11 — recorded 2026-08-30. A change in *play* and in the event stream: four
+    // turn-flow action cards (Deadly Plot, Coup d'Etat, Crisis, Master Plan) stopped being
+    // unimplemented placeholders and became real effects, and the turn machinery now emits
+    // three typed events reaction tables can bind to (STRATEGIC_ACTION_BEGAN, TURN_PASSED,
+    // ACTION_COMPLETED).
+    //
+    // - Deadly Plot: when an agenda resolves to an outcome its holder neither voted for nor
+    //   predicted, the holder may discard the whole resolution — no effect, no payouts, no
+    //   elected feat — and then exhausts every planet it controls for the rest of the game.
+    // - Coup d'Etat: while another player's strategic action has just begun, the holder may
+    //   end that player's turn before the action resolves; the strategy card stays in hand,
+    //   unspent and unexhausted.
+    // - Crisis: when a player passes while at least two other players have not yet passed,
+    //   the next player's turn is skipped.
+    // - Master Plan: the action the holder played in grants the same turn an additional
+    //   action; an explicit pass declines the grant.
+    //
+    // The shifts are the largest of any re-baseline so far, and they are mostly changed
+    // play rather than dilution: `faction_differentiation` widens 0.457/1.023 ->
+    // 0.431/1.128 and `score_spread` 1.636/2.082 -> 1.643/2.091 (agendas that vanish,
+    // cancelled strategic actions, skipped and doubled turns give games more ways to end
+    // differently), while `vp_pace` barely moves (0.429 -> 0.438) and `completion` stays
+    // the strict 1.0 invariant. Every action-label share falls: the three new typed events
+    // dilute the denominators, Master Plan's extra actions lengthen the streams further,
+    // and Crisis deletes whole turns' worth of actions.
+    //
+    // Approved by the project owner (the engine-completion handoff's standing instruction to
+    // re-baseline when this card group lands); v10 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v10 — recorded 2026-08-30. A change in *play*: Solar Flare and Lost Star Chart stopped
     // being unimplemented placeholders and became real cards. Solar Flare keeps every
     // opponent's SPACE CANNON dark during the tactical action it was played in (the cannon
@@ -524,43 +554,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.401_234_567_901_234_46, 0.457_407_407_407_407_43),
+        (0.404_320_987_654_321, 0.469_135_802_469_135_6),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.636_447_412_017_818_3, 2.081_926_749_749_093_6),
+        (1.642_706_592_492_618_7, 2.091_334_339_506_611_5),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.457_043_640_026_736_2, 1.022_825_908_699_116),
+        (0.431_048_105_361_573_95, 1.128_489_102_437_851_6),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027_254_351_359_973_26, 0.028_915_347_118_662_844),
+        (0.022_182_742_727_545_342, 0.023_431_368_633_576_48),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.045_633_075_822_268_26, 0.046_815_506_196_700_89),
+        (0.037_706_537_934_311_78, 0.038_744_781_789_041_97),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.063_686_638_677_595_51, 0.068_447_177_906_253_25),
+        (0.052_977_861_576_177_815, 0.057_389_984_448_995_67),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.007_721_937_117_176_54, 0.008_670_826_264_797_588),
+        (0.006_865_720_716_475_376, 0.007_908_236_712_393_815),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.090_119_062_099_376_74, 0.092_514_483_160_675_76),
+        (0.074_271_797_319_864_37, 0.076_329_808_204_574_93),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.044_457_280_937_407_55, 0.045_713_353_209_724_92),
+        (0.036_546_442_684_793_755, 0.037_622_801_254_986_765),
     );
     bounds
 }

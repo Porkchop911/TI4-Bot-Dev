@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 112/142 |
+| action cards  | 34/142 | 116/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 107 of
-142 (78.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 116 of
+142 (81.7%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -210,13 +210,14 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 30 unimplemented action cards, grouped by blocking root cause
+## The 26 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
-flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (`sabo1`–`4`) and
-the Movement group (`lost_star`, `solar_flare`) and the Agenda group (`veto`/`veto3`/`veto4`,
-`confusing`, `confounding`) closed with the batches above; only `rout`, `dh1-4` and the
+flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (`sabo1`–`4`)
+and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`veto3`/`veto4`,
+`confusing`, `confounding`) and the Turn-flow group (`deadly_plot`, `coup`, `crisis`,
+`master_plan`) closed with the batches above; only `rout`, `dh1-4` and the
 live-dice half of `intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
@@ -225,8 +226,12 @@ live-dice half of `intercept` remain in the combat-dice group.
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
   `fire_team` and `scramble` left this group with the reroll group below.
 - **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
-- **Agenda outcome redirection / agenda queue** (`game.rs`): `deadly_plot`.
-- **Turn / phase driver hooks** (`game.rs`): `coup`, `crisis`, `master_plan`.
+- **Agenda outcome redirection / agenda queue** (`game.rs`): done — `deadly_plot` (the
+  `AGENDA_RESOLVED` window + the discard path in `close_vote`; see the Turn-flow group below).
+- **Turn / phase driver hooks** (`game.rs`): done — `coup`, `crisis`, `master_plan` (the
+  Turn-flow batch: `STRATEGIC_ACTION_BEGAN` / `TURN_PASSED` / `ACTION_COMPLETED` typed events
+  and the `advance_turn` retention, skip and cancellation paths; `TransientFlags` in
+  `state.rs`).
 - **Production hook**: done — `war_machine1-4` (see the scoped roll modifiers batch above).
 - **Event payload only** (the fact the effect needs is not in `GameState`): `lieinwait`
   (no transaction-history field to know two neighbours transacted).
@@ -303,14 +308,15 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
   markers removed / the dispatch entries deleted) and the Sabotage group's three were recorded at
   their own checkpoints. The galaxy's both-link branch has no detecting probe — it is
   indistinguishable from same-letter matching by the map's data (documented above).
-- The 30 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- The 26 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow, Cancel API, Movement and Agenda groups closed with the batches
-  above):
-  - **Agenda and turn flow** (4 remaining of 9): `deadly_plot`, `coup`, `crisis`,
-    `master_plan` — the five agenda cards (`veto`/`veto3`/`veto4`, `confusing`, `confounding`)
-    closed with the Agenda batch above; these four still need new window rows and turn-flow
-    hooks (`game.rs`).
+  group; the invasion-flow, Cancel API, Movement, Agenda and Turn-flow groups closed with the
+  batches above):
+  - **Agenda and turn flow** (0 remaining of 9): the five agenda cards
+    (`veto`/`veto3`/`veto4`, `confusing`, `confounding`) closed with the Agenda batch, and the
+    four turn cards (`deadly_plot`, `coup`, `crisis`, `master_plan`) closed with the Turn-flow
+    batch (new window rows, the three new typed turn events, the `TransientFlags` bitfield and
+    the `advance_turn` retention/skip/cancellation paths).
   - **Vote order** (1): `hack` — re-orderable vote sequence (`vote.rs`).
   - **Not grouped by the handoff** (25, most blocked on movement/state the handoff's groups do
     not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `dh1`–`4`, `disgrace`,
