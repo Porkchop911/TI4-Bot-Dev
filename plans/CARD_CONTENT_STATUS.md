@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 107/142 |
+| action cards  | 34/142 | 112/142 |
 | agendas       | 51/63  | 63/63  |
 
 `cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 107 of
-142 (75.4%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+142 (78.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -166,6 +166,35 @@ the test fail, then reverted).
   their last digits (the chart is inert on the base map and the flare bites only in a corner the
   bots rarely reach), with the protocol-integrity check, not the value gate, forcing the move.
 
+- Agenda (the handoff's "agenda / turn flow" group, first sub-batch): `veto`/`veto3`/`veto4`
+  (Veto) and `confusing`/`confounding` (Confusing / Confounding Legal Text). All five reuse the
+  existing `AGENDA_REVEALED` / `AGENDA_RESOLVED` window rows — no new events. **Veto** — "Discard
+  that agenda and reveal 1 agenda from the top of the deck; players vote on this agenda
+  instead": the effect (played into the `AGENDA_REVEALED` window) draws the replacement from the
+  top of the agenda deck and hands it to the driver via `GameState.agenda_veto_replacement`;
+  `Game::reveal_agenda` (a new helper called from `open_next_vote`) discards the vetoed agenda and
+  follows the replacement chain to the agenda that actually goes to a vote — a Veto on a Veto is
+  legal and the chain is bounded by the finite deck. **Confusing** — "When you are elected as the
+  outcome of an agenda: choose 1 player; that player is the elected player instead": the elected
+  seat redirects the election to a chosen seat (with two players the single other seat is taken
+  outright). **Confounding** — "When another player is elected: you are the elected player
+  instead": the holder takes the election for itself. Both record `GameState.agenda_elected
+  _override`, which `close_vote` reads after the `AGENDA_RESOLVED` window: the vote's own result
+  still settles predictions and any law, but the agenda's elected-player effect and the "elected
+  by an agenda" feat follow the redirect (`AGENDA_OUTCOME_REDIRECTED`). The `AGENDA_RESOLVED`
+  payload gains an additive `elected_player` field, set only for a real seat, so the Confounding
+  window can tell "a player was elected" from a law, a planet, or a For/Against outcome (a plain
+  "outcome is not me" guard would fire on those). Tests: `veto_reveals_the_next_agenda_instead_of
+  _the_vetoed_one` (driven over all three copies — the vetoed agenda is discarded, the
+  replacement from the deck is voted on, the vetoed agenda is never voted, the election's outcome
+  is untouched, and the card is spent), `confusing_redirects_the_election_to_a_chosen_seat`,
+  `confounding_makes_the_holder_the_elected_player` (the ballots elect a; the card redirects the
+  election to b, the seat recorded as elected), and `confounding_is_silent_on_an_agenda_that
+  _elects_no_player` (an Elect-Planet agenda names a planet, not a seat, so the window stays
+  silent and the card stays in hand). Five probes confirmed each. The group is behaviorally inert
+  for the recorded ti4-sim suite — the v10 bounds still reproduce exactly — so it needed no
+  re-baseline.
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -181,13 +210,14 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 35 unimplemented action cards, grouped by blocking root cause
+## The 30 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
 flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (`sabo1`–`4`) and
-the Movement group (`lost_star`, `solar_flare`) closed with the batches above; only `rout`,
-`dh1-4` and the live-dice half of `intercept` remain in the combat-dice group.
+the Movement group (`lost_star`, `solar_flare`) and the Agenda group (`veto`/`veto3`/`veto4`,
+`confusing`, `confounding`) closed with the batches above; only `rout`, `dh1-4` and the
+live-dice half of `intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
   keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
@@ -195,8 +225,7 @@ the Movement group (`lost_star`, `solar_flare`) closed with the batches above; o
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
   `fire_team` and `scramble` left this group with the reroll group below.
 - **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
-- **Agenda outcome redirection / agenda queue** (`game.rs`): `confounding`, `confusing`,
-  `deadly_plot`, `veto`, `veto3`, `veto4`.
+- **Agenda outcome redirection / agenda queue** (`game.rs`): `deadly_plot`.
 - **Turn / phase driver hooks** (`game.rs`): `coup`, `crisis`, `master_plan`.
 - **Production hook**: done — `war_machine1-4` (see the scoped roll modifiers batch above).
 - **Event payload only** (the fact the effect needs is not in `GameState`): `lieinwait`
@@ -250,12 +279,13 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 1003 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 1007 passed, 0 failed.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite is green after the v9 → v10 re-baseline** (Solar Flare and Lost
-  Star Chart became playable; `plans/evidence/M08-021.md`), including the protocol-integrity
-  check in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-
+  **ti4-sim's behavioral suite stays green at v10** — the Agenda cards (`veto`/`veto3`/`veto4`,
+  `confusing`, `confounding`) are behaviorally inert for the recorded suite (the v10 bounds still
+  reproduce exactly, protocol-integrity included), so this group needed no re-baseline; the last
+  move was v9 → v10 for Solar Flare / Lost Star Chart (`plans/evidence/M08-021.md`). The one remaining red is `fixture_capture_is_deterministic`: pre-
   existing (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at
   step 781 before any production-head menu of ≥3 options); it belongs to the M09-019b profile
   module's own versioned process and is tracked, not new.
@@ -263,18 +293,24 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
   touched files (lib and tests); the remaining workspace warnings are pre-existing in untouched
   files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
   `coverage_report` example's length).
-- The Movement group was probed break → the exact new test fails → revert: the cannon
-  suppression removed from `space_cannon_offense` (the card arm rolls and announces again), the
-  laws' star-flag derivation pinned off (both the game-flow and the wiring tests fail), both
-  effect-marker pushes deleted, and the dispatch entries removed (a played chart or flare
-  reports `ACTION_CARD_UNRESOLVED`). The galaxy's both-link branch has no detecting probe — it
-  is indistinguishable from same-letter matching by the map's data (documented above). The
-  Sabotage group's three probes were recorded at its own checkpoint.
-- The 35 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- The Agenda group was probed break → the exact new test fails → revert: the Veto hook disabled
+  in `reveal_agenda` (the replacement is never voted, the veto test fails), the `close_vote`
+  override ignored (both the confusing and confounding tests fail), the confusing + confounding
+  effects emptied (both fail), the Veto effect emptied (the veto test fails), and the Confounding
+  guard reverted to the buggy raw-outcome reading (it fires on an Elect-Planet agenda —
+  `AGENDA_OUTCOME_REDIRECTED` on a planet — and the guard test fails). The Movement group's four
+  probes (cannon suppression removed / the laws' star-flag derivation pinned off / both effect
+  markers removed / the dispatch entries deleted) and the Sabotage group's three were recorded at
+  their own checkpoints. The galaxy's both-link branch has no detecting probe — it is
+  indistinguishable from same-letter matching by the map's data (documented above).
+- The 30 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow, Cancel API and Movement groups closed with the batches above):
-  - **Agenda and turn flow** (9): `veto`, `veto3`, `veto4`, `confusing`, `confounding`,
-    `deadly_plot`, `coup`, `crisis`, `master_plan` — agenda redirection + queue (`game.rs`).
+  group; the invasion-flow, Cancel API, Movement and Agenda groups closed with the batches
+  above):
+  - **Agenda and turn flow** (4 remaining of 9): `deadly_plot`, `coup`, `crisis`,
+    `master_plan` — the five agenda cards (`veto`/`veto3`/`veto4`, `confusing`, `confounding`)
+    closed with the Agenda batch above; these four still need new window rows and turn-flow
+    hooks (`game.rs`).
   - **Vote order** (1): `hack` — re-orderable vote sequence (`vote.rs`).
   - **Not grouped by the handoff** (25, most blocked on movement/state the handoff's groups do
     not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `dh1`–`4`, `disgrace`,

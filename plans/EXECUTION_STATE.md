@@ -22,6 +22,55 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — Agenda cards: Veto / Confusing / Confounding, no re-baseline (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `a5b4494` before this batch and both now carry this batch as `ae1b3a4`.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **agenda/turn-flow group, first sub-batch (the agenda cards)** —
+  `veto`/`veto3`/`veto4` (Veto) and `confusing`/`confounding` (Confusing / Confounding Legal
+  Text). All five reuse the existing `AGENDA_REVEALED` / `AGENDA_RESOLVED` window rows; no new
+  events. The remaining four of the group (`deadly_plot`, `coup`, `crisis`, `master_plan`)
+  still need new window rows and turn-flow hooks and are the next sub-batch.
+  - **Veto** — the effect (played into the `AGENDA_REVEALED` window) draws the replacement
+    from the top of the agenda deck and hands it to the driver via `GameState.agenda_veto
+    _replacement`; a new helper `Game::reveal_agenda` (called from `open_next_vote`) discards
+    the vetoed agenda and follows the replacement chain to the agenda that goes to a vote (a
+    Veto on a Veto is legal; the chain is bounded by the finite deck).
+  - **Confusing / Confounding** — both record `GameState.agenda_elected_override`
+    (Confusing: the elected seat redirects to a chosen seat; Confounding: the holder takes the
+    election for itself). `close_vote` reads it after the `AGENDA_RESOLVED` window: the vote's
+    own result still settles predictions and any law, but the agenda's elected-player effect
+    and the "elected by an agenda" feat follow the redirect (`AGENDA_OUTCOME_REDIRECTED`).
+  - **Guard fix** — the `AGENDA_RESOLVED` payload gains an additive `elected_player` field,
+    set only for a real seat, so the Confounding window (`another_player_elected`) can tell
+    "a player was elected" from a law, a planet, or a For/Against outcome. A plain "outcome is
+    not me" guard would fire on those.
+- Coverage 107 → **112/142** action cards (coverage_report, release); agendas still 63/63.
+- **No re-baseline.** The five cards are behaviorally inert for the recorded ti4-sim suite — the
+  v10 bounds still reproduce exactly, protocol-integrity included — so the group needed no move
+  (the last was v9 → v10 for Solar Flare / Lost Star Chart). The debug build's
+  `the_suite_reproduces_and_stays_within_the_recorded_bounds` is green at v10.
+- Tests: 1007 `ti4-engine` lib tests pass (was 1003): `veto_reveals_the_next_agenda_instead_of
+  _the_vetoed_one` (driven over all three copies — the vetoed agenda is discarded, the
+  replacement from the deck is voted on, the vetoed agenda is never voted, the outcome is
+  untouched, the card is spent), `confusing_redirects_the_election_to_a_chosen_seat`,
+  `confounding_makes_the_holder_the_elected_player`, and `confounding_is_silent_on_an_agenda
+  _that_elects_no_player` (an Elect-Planet agenda names a planet, not a seat, so the window
+  stays silent and the card stays in hand). Five probes confirmed each (Veto hook in
+  `reveal_agenda` disabled / the `close_vote` override ignored / the confusing + confounding
+  effects emptied / the Veto effect emptied / the Confounding guard reverted to the buggy
+  raw-outcome reading → the exact test fails → revert).
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s pre-existing tracked
+  `fixture_capture_is_deterministic` (step 781, unchanged failure mode). Clippy is clean in the
+  four touched files (`game.rs`, `reactions.rs`, `action_cards.rs`, model `state.rs`); the
+  remaining workspace warnings are pre-existing in untouched files.
+- Next exact action: begin sub-batch B (`deadly_plot`, `coup`, `crisis`, `master_plan`) —
+  investigate their window texts, add the missing window-table rows and typed events, and drive
+  the strategic-action / turn-end / agenda-resolution flow hooks in `game.rs`.
+
 ### Engine completion — Cancel API: Sabotage + v9 re-baseline (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

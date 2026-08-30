@@ -325,6 +325,74 @@ fn lost_star(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) 
 /// resolved rather than `ACTION_CARD_UNRESOLVED`; do not move the cancellation here.
 fn sabotage(_: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {}
 
+/// Veto (all three copies): "When an agenda is revealed: discard that agenda and reveal 1
+/// agenda from the top of the deck. Players vote on this agenda instead."
+///
+/// The effect runs inside the `AGENDA_REVEALED` window, which the vote driver opens before
+/// it builds the vote window — so the card cannot tear down the vote that is about to open.
+/// Instead it draws the replacement from the top of the agenda deck (the two agendas revealed
+/// this phase are already out of it, so this is the next one behind them) and hands it to
+/// the driver via [`GameState::agenda_veto_replacement`]; the driver discards the revealed
+/// agenda and opens the vote on the replacement instead.
+///
+/// An empty agenda deck has nothing to reveal, and the card then does nothing: a corner that
+/// cannot arise in a full game, where the 63-card deck sheds two agendas a phase.
+fn veto(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
+    let Some(replacement) = context.state.agenda_deck.first().cloned() else {
+        return;
+    };
+    context.state.agenda_deck.remove(0);
+    context.state.agenda_veto_replacement = Some(replacement);
+}
+
+/// Confounding Legal Text: "When another player is elected as the outcome of an agenda: you
+/// are the elected player instead."
+///
+/// The holder becomes the elected player. The redirect is recorded on
+/// [`GameState::agenda_elected_override`], which the vote driver reads after the
+/// `AGENDA_RESOLVED` window closes and applies the agenda's own effect to this seat instead
+/// of the one the ballots elected.
+fn confounding(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    context.state.agenda_elected_override = Some(player.clone());
+}
+
+/// Confusing Legal Text: "When you are elected as the outcome of an agenda: choose 1 player.
+/// That player is the elected player instead."
+///
+/// The elected player redirects the election. With one other seat there is nothing to choose,
+/// so the card takes that seat outright; otherwise the choice is asked through the game's
+/// table and the redirect is recorded on [`GameState::agenda_elected_override`] for the vote
+/// driver, which applies the agenda's own effect to the chosen player.
+fn confusing(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let others: Vec<PlayerId> = context
+        .state
+        .players
+        .iter()
+        .map(|seat| seat.id.clone())
+        .filter(|id| id != player)
+        .collect();
+    if others.is_empty() {
+        return; // nobody else to redirect the election to
+    }
+    let elected = if others.len() == 1 {
+        others.into_iter().next().unwrap()
+    } else {
+        let choice = Choice::new(
+            player.clone(),
+            "Confusing Legal Text: who is the elected player instead",
+            others
+                .iter()
+                .map(|id| ChoiceOption::labelled(id.to_string(), "elect", format!("elect {id}")))
+                .collect(),
+        );
+        match context.ask_seeing(&choice) {
+            Ok(answer) => PlayerId::new(answer.id),
+            Err(_) => return,
+        }
+    };
+    context.state.agenda_elected_override = Some(elected);
+}
+
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
 ///
 /// All of them, including a gravity rift's +1 and its destruction roll. A rift's bonus is as much
@@ -4012,6 +4080,9 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "solar_flare" => Some(solar_flare),
         "lost_star" => Some(lost_star),
         "sabo1" | "sabo2" | "sabo3" | "sabo4" => Some(sabotage),
+        "veto" | "veto3" | "veto4" => Some(veto),
+        "confusing" => Some(confusing),
+        "confounding" => Some(confounding),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4179,6 +4250,11 @@ const REGISTERED_ALIASES: &[&str] = &[
     "sabo4",
     "solar_flare",
     "lost_star",
+    "veto",
+    "veto3",
+    "veto4",
+    "confusing",
+    "confounding",
     "cripple",
     "f_deployment",
     "imp_rider",

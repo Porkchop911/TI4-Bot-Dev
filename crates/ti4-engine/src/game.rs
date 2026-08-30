@@ -2168,10 +2168,46 @@ impl<'a> Game<'a> {
     /// Put the next revealed agenda to a vote, or finish the phase when none remain.
     ///
     /// An agenda whose election has no legal candidate is discarded rather than voted on —
-    /// 8.19 with an empty ballot is not a decision anyone can be asked to make.
+    /// 8.19 with an empty ballot is not a decision anyone can be asked to make. Veto, played
+    /// into the reveal window, discards the revealed agenda and reveals the one it drew from
+    /// the top of the deck; [`Self::reveal_agenda`] follows that chain to the agenda that
+    /// actually goes to a vote.
     fn open_next_vote(&mut self, mut queue: Vec<String>) -> StepResult {
         while let Some(alias) = queue.first().cloned() {
             queue.remove(0);
+            match self.reveal_agenda(&alias) {
+                Ok(Some((alias, choices))) => {
+                    let mut window = VoteWindow::new(&self.state, &alias, choices);
+                    window.open(&self.state, self.content, self.sources);
+                    self.voting = Some((Box::new(window), queue));
+                    return self.result(false, None);
+                }
+                // This agenda — and every Veto replacement it drew — elected nothing, so the
+                // queue moves on to the next slot.
+                Ok(None) => {}
+                Err(error) => return self.result(false, Some(error)),
+            }
+        }
+        self.voting = None;
+        self.emit("AGENDA_PHASE_RESOLVED");
+        self.result(false, None)
+    }
+
+    /// Reveal an agenda and follow the Veto replacement chain it triggers. Returns the agenda
+    /// to vote on and its choices, or `None` when the reveal (and every replacement) elected
+    /// nothing.
+    ///
+    /// The initial agenda is the one drawn from this phase's queue; each Veto played into a
+    /// reveal window draws its replacement from the top of the agenda deck and discards the
+    /// agenda it interrupted, and the chain continues from there. A Veto on a Veto is legal —
+    /// an agenda revealed by a Veto is still "an agenda revealed" — so the chain is a loop,
+    /// bounded by the finite deck.
+    fn reveal_agenda(
+        &mut self,
+        initial_alias: &str,
+    ) -> Result<Option<(String, Vec<String>)>, GameError> {
+        let mut alias = initial_alias.to_owned();
+        loop {
             // Cards scoped to "this agenda" hang off this counter, so it moves before the reveal
             // window opens and any of them can be played.
             self.state.agenda_seq = self.state.agenda_seq.saturating_add(1);
@@ -2179,7 +2215,7 @@ impl<'a> Game<'a> {
             let choices = outcomes(&self.state, self.content, self.sources, &alias);
             if choices.is_empty() {
                 self.emit(&format!("AGENDA_DISCARDED:{alias}"));
-                continue;
+                return Ok(None);
             }
 
             // The outcomes have to be on the state before the window opens, because a card
@@ -2191,18 +2227,16 @@ impl<'a> Game<'a> {
                 "agenda".to_owned(),
                 serde_json::Value::String(alias.clone()),
             );
-            if let Err(error) = self.emit_typed("AGENDA_REVEALED", payload) {
-                return self.result(false, Some(error));
-            }
+            self.emit_typed("AGENDA_REVEALED", payload)?;
 
-            let mut window = VoteWindow::new(&self.state, &alias, choices);
-            window.open(&self.state, self.content, self.sources);
-            self.voting = Some((Box::new(window), queue));
-            return self.result(false, None);
+            // Veto, played into the window, discards this agenda and reveals the one it drew
+            // from the top of the deck: continue the chain from the replacement.
+            let Some(replacement) = self.state.agenda_veto_replacement.take() else {
+                return Ok(Some((alias, choices)));
+            };
+            self.emit(&format!("AGENDA_DISCARDED:{alias}"));
+            alias = replacement;
         }
-        self.voting = None;
-        self.emit("AGENDA_PHASE_RESOLVED");
-        self.result(false, None)
     }
 
     /// Resolve one vote decision, applying the outcome when the vote closes.
@@ -2254,6 +2288,21 @@ impl<'a> Game<'a> {
     /// No agenda *effect* is applied: this engine has no effect registry. The oracle emits
     /// `AGENDA_EFFECT_UNRESOLVED` in exactly this situation rather than silently doing
     /// nothing, and so does this — proceeding without saying so is how a rule goes missing.
+    /// The seat the outcome names if it is a player, else the controller of the planet it
+    /// names (the "you or a planet you control are elected" reading). An outcome that is
+    /// neither — a law, "for", "against" — matches nobody.
+    fn elected_seat_or_planet(&self, outcome: &str) -> Option<PlayerId> {
+        let elected = PlayerId::new(outcome.to_owned());
+        if self.state.player(&elected).is_some() {
+            return Some(elected);
+        }
+        let planet = ti4_model::id::PlanetId::new(outcome.to_owned());
+        self.state
+            .board
+            .values()
+            .find_map(|board| board.planet_control.get(&planet).cloned())
+    }
+
     fn close_vote(&mut self) -> StepResult {
         let Some((window, queue)) = self.voting.take() else {
             unreachable!("a vote was open");
@@ -2269,7 +2318,10 @@ impl<'a> Game<'a> {
             let outcome = outcome.to_owned();
             self.emit(&format!("AGENDA_RESOLVED:{alias}:{outcome}"));
             // The outcome names a player when the agenda elects one, which is what the "when
-            // you are elected" windows read.
+            // you are elected" windows read. `elected_player` is set only for a real seat, so
+            // a window can tell "a player was elected" from an outcome that is a law, a planet,
+            // or For/Against.
+            let outcome_is_player = self.state.player(&PlayerId::new(outcome.clone())).is_some();
             let mut payload = BTreeMap::new();
             payload.insert(
                 "agenda".to_owned(),
@@ -2279,23 +2331,35 @@ impl<'a> Game<'a> {
                 "player".to_owned(),
                 serde_json::Value::String(outcome.clone()),
             );
+            if outcome_is_player {
+                payload.insert(
+                    "elected_player".to_owned(),
+                    serde_json::Value::String(outcome.clone()),
+                );
+            }
             if let Err(error) = self.emit_typed("AGENDA_RESOLVED", payload) {
                 return self.result(false, Some(error));
             }
 
+            // Confusing / Confounding Legal Text, played into the window above, redirect who
+            // is the elected player. The vote's own result (`outcome`) still settles
+            // predictions and any law; the agenda's effect on the elected player and the
+            // "elected by an agenda" feat follow the redirect.
+            let effective = if let Some(override_player) = self.state.agenda_elected_override.take()
+            {
+                self.emit(&format!(
+                    "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
+                ));
+                override_player.to_string()
+            } else {
+                outcome.clone()
+            };
+
             // Drive the Debate: "you or a planet you control are elected". The outcome names a
             // player, a planet, or an outcome like "for" -- so both readings have to be tried,
-            // and an outcome that is neither matches nobody.
-            let elected = PlayerId::new(outcome.clone());
-            let elected_player = if self.state.player(&elected).is_some() {
-                Some(elected)
-            } else {
-                let planet = ti4_model::id::PlanetId::new(outcome.clone());
-                self.state
-                    .board
-                    .values()
-                    .find_map(|board| board.planet_control.get(&planet).cloned())
-            };
+            // and an outcome that is neither matches nobody. Read from the (possibly
+            // redirected) elected player.
+            let elected_player = self.elected_seat_or_planet(&effective);
 
             // Imperial Rider pays out before the agenda's own effect, and clears the
             // predictions. A prediction left behind would pay again on the next agenda, for a
@@ -2330,7 +2394,7 @@ impl<'a> Game<'a> {
                 &mut ctx,
                 galaxy.as_ref(),
                 &alias,
-                &outcome,
+                &effective,
                 window.ballot(),
             );
             self.dice = dice;
@@ -4838,6 +4902,207 @@ mod tests {
                 "ROUND_BEGAN",
                 "STRATEGY_PHASE_BEGAN"
             ]
+        );
+    }
+
+    /// Build a two-seat agenda-phase game: both players hold influence planets (so the vote
+    /// decides by exhausted ballots rather than the speaker's tie-break), `holder` starts with
+    /// `card`, and the agenda deck holds `deck`. Drives the whole phase with the first-option
+    /// table — which takes a reaction slot when one is offered and votes the first seat with
+    /// every planet — and returns the final state and the event log.
+    fn agenda_run(
+        card: Option<(&'static str, PlayerId)>,
+        deck: &[&'static str],
+    ) -> (GameState, Vec<String>) {
+        let content = ContentStore::embedded();
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(content, &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+
+        // Two influence planets per seat, so the first seat out-votes the second and the
+        // election outcome is the first seat's.
+        let catalogue = ti4_content::galaxy::all_planets(content, POK);
+        let (mut for_a, mut for_b) = (0usize, 0usize);
+        for (id, record) in &catalogue {
+            if record.influence() > 0 && !record.is_placed_during_play() {
+                let system = record.system_id().unwrap_or("18");
+                if for_a < 2 {
+                    state
+                        .system_mut(&ti4_model::id::SystemId::new(system))
+                        .set_control(ti4_model::id::PlanetId::new(*id), players[0].clone());
+                    for_a += 1;
+                } else if for_b < 2 {
+                    state
+                        .system_mut(&ti4_model::id::SystemId::new(system))
+                        .set_control(ti4_model::id::PlanetId::new(*id), players[1].clone());
+                    for_b += 1;
+                }
+            }
+            if for_a >= 2 && for_b >= 2 {
+                break;
+            }
+        }
+
+        if let Some((alias, holder)) = card {
+            state.player_mut(&holder).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new(alias)];
+        }
+        state.agenda_deck = deck.iter().map(ToString::to_string).collect();
+
+        let mut game = Game::new(state, content);
+        let mut guard = 0;
+        while game.state.phase == Phase::Agenda && guard < 150 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+        (game.state, game.events.clone())
+    }
+
+    fn elected_by_an_agenda(state: &GameState, player: &PlayerId) -> bool {
+        state.player(player).is_some_and(|seat| {
+            seat.event_feats
+                .iter()
+                .any(|(feat, _)| *feat == ti4_model::state::Feat::ElectedByAnAgenda)
+        })
+    }
+
+    #[test]
+    fn veto_reveals_the_next_agenda_instead_of_the_vetoed_one() {
+        // Veto: "Discard that agenda and reveal 1 agenda from the top of the deck. Players
+        // vote on this agenda instead." The deck reveals secret and execution into the queue
+        // and leaves prophecy behind them; a's Veto, played when secret is revealed, discards
+        // secret and puts prophecy to the vote instead. The election's outcome is untouched —
+        // only which agenda is decided changes. All three copies are the same card, so each is
+        // driven end to end.
+        let a = PlayerId::new("a");
+        for copy in ["veto", "veto3", "veto4"] {
+            let (state, events) = agenda_run(
+                Some((copy, a.clone())),
+                &["secret", "execution", "prophecy"],
+            );
+
+            assert!(
+                events.iter().any(|e| e == "AGENDA_DISCARDED:secret"),
+                "{copy}: the vetoed agenda is discarded; log {events:?}"
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.starts_with("AGENDA_RESOLVED:prophecy:")),
+                "{copy}: the replacement from the top of the deck is voted on; log {events:?}"
+            );
+            assert!(
+                !events
+                    .iter()
+                    .any(|e| e.starts_with("AGENDA_RESOLVED:secret:")),
+                "{copy}: the vetoed agenda is never put to a vote; log {events:?}"
+            );
+            assert!(
+                !events
+                    .iter()
+                    .any(|e| e.starts_with("AGENDA_OUTCOME_REDIRECTED")),
+                "{copy}: Veto changes which agenda is decided, not who is elected"
+            );
+            assert!(
+                state.player(&a).unwrap().action_cards.is_empty(),
+                "{copy}: the Veto is spent"
+            );
+            assert!(
+                !events
+                    .iter()
+                    .any(|e| e.starts_with("AGENDA_EFFECT_UNRESOLVED:")),
+                "{copy}: every revealed agenda still resolves"
+            );
+        }
+    }
+
+    #[test]
+    fn confusing_redirects_the_election_to_a_chosen_seat() {
+        // Confusing Legal Text: "When you are elected as the outcome of an agenda: choose 1
+        // player. That player is the elected player instead." The ballots elect a; a's
+        // Confusing, played into the resolution window, redirects the election to the one
+        // other seat. The ballots' result (a) still stands in the log, but the elected-player
+        // effect and the feat go to the chosen seat.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let (state, events) = agenda_run(Some(("confusing", a.clone())), &["secret"]);
+
+        assert!(
+            events.iter().any(|e| e == "AGENDA_RESOLVED:secret:a"),
+            "the ballots elected a; log {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "AGENDA_OUTCOME_REDIRECTED:a:b"),
+            "a's Confusing redirects the election to the other seat; log {events:?}"
+        );
+        assert!(
+            elected_by_an_agenda(&state, &b),
+            "the chosen seat is the one recorded as elected"
+        );
+        assert!(
+            !elected_by_an_agenda(&state, &a),
+            "the seat the ballots named is no longer the elected player"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the card is spent"
+        );
+    }
+
+    #[test]
+    fn confounding_is_silent_on_an_agenda_that_elects_no_player() {
+        // The window is "when ANOTHER PLAYER is elected". An agenda that elects a planet —
+        // `disarmament` — names a planet, not a seat, so Confounding must not be offered on it.
+        // The guard reads the `elected_player` payload, which the driver sets only for a real
+        // seat; a plain "outcome is not me" guard would match a planet (or a law, or "for")
+        // against every chair and let the card fire on an agenda that elects no player.
+        let b = PlayerId::new("b");
+        let (state, events) = agenda_run(Some(("confounding", b.clone())), &["disarmament"]);
+
+        assert!(
+            events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_RESOLVED:disarmament:")),
+            "the planet agenda still votes and resolves; log {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("AGENDA_OUTCOME_REDIRECTED")),
+            "a planet was elected, not a player, so there is nothing to redirect; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&b).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("confounding")],
+            "the never-offered Confounding is still in hand; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn confounding_makes_the_holder_the_elected_player() {
+        // Confounding Legal Text: "When another player is elected as the outcome of an agenda:
+        // you are the elected player instead." The ballots elect a; b's Confounding, played
+        // into the resolution window, takes the election for b. The window is silent on an
+        // agenda that elects no player, so only a real other-player election offers it.
+        let b = PlayerId::new("b");
+        let (state, events) = agenda_run(Some(("confounding", b.clone())), &["secret"]);
+
+        assert!(
+            events.iter().any(|e| e == "AGENDA_RESOLVED:secret:a"),
+            "the ballots elected a, another player from b's seat; log {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "AGENDA_OUTCOME_REDIRECTED:a:b"),
+            "b's Confounding takes the election for itself; log {events:?}"
+        );
+        assert!(
+            elected_by_an_agenda(&state, &b),
+            "the holder is recorded as the elected player"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card is spent"
         );
     }
 

@@ -902,6 +902,20 @@ pub struct GameState {
     #[serde(default)]
     pub last_committed_unit: Option<(PlayerId, SystemId, PlanetId, Unit)>,
 
+    // -- agenda-phase bookkeeping (in-flight, not compared) -----------------------
+    /// Veto: when played into the `AGENDA_REVEALED` window, the alias of the agenda drawn
+    /// from the top of the agenda deck that replaces the one just revealed. The revealed
+    /// agenda is already out of the deck (drawn at the start of the agenda phase), so this
+    /// is the next one behind it. Consumed and cleared by the vote driver before it builds
+    /// the vote window. In-flight resolution data — not compared.
+    #[serde(default)]
+    pub agenda_veto_replacement: Option<String>,
+    /// Confusing / Confounding Legal Text: the player who is the elected player after the
+    /// card redirects the outcome. Consumed and cleared by the vote driver before it applies
+    /// the agenda's own effect. In-flight resolution data — not compared.
+    #[serde(default)]
+    pub agenda_elected_override: Option<PlayerId>,
+
     // -- production bookkeeping ----------------------------------------------------
     /// Fighters placed by the PRODUCTION use currently resolving. Prophecy of Ixth asks how
     /// many fighters were *produced*, which the board cannot answer — fighters already
@@ -1086,6 +1100,8 @@ impl GameState {
             reroll_staging: BTreeMap::new(),
             last_reroll_player: None,
             last_committed_unit: None,
+            agenda_veto_replacement: None,
+            agenda_elected_override: None,
             fighters_produced_this_use: 0,
             nonfighter_ships_produced_this_use: 0,
             units_produced_this_use: 0,

@@ -99,6 +99,19 @@ fn is_sabotage_play(event: &Event) -> bool {
     )
 }
 
+/// "When another player is elected as the outcome of an agenda" (Confounding Legal Text).
+///
+/// The window reads the event's `elected_player` payload rather than the raw outcome in
+/// `player`: the driver sets it only when the outcome is a real seat. An agenda that elects a
+/// law, a planet, or nothing (For/Against) names no seat there, so the window is silent on it
+/// — plain `actor_is_not` would match a law alias or "for" against every chair and offer the
+/// card on an agenda that elects no one.
+fn another_player_elected(event: &Event, player: &PlayerId) -> bool {
+    event
+        .text("elected_player")
+        .is_some_and(|who| who != player.as_str())
+}
+
 /// Anybody at all — the window applies whoever the event names.
 fn anyone(_: &Event, _: &PlayerId) -> bool {
     true
@@ -215,7 +228,7 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "When another player is elected as the outcome of an agenda",
-            guarded("AGENDA_RESOLVED", When, actor_is_not),
+            guarded("AGENDA_RESOLVED", When, another_player_elected),
         ),
         (
             "When you gain control of a planet",
