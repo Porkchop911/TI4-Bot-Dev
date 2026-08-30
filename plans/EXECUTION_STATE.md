@@ -22,6 +22,68 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — invasion-flow cards + v8 re-baseline (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `967f464` before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **invasion-flow group** — Blitz, Disable, Parley, Ghost Squad. The three
+  window rows already existed in `window_table()`; this group added the effects:
+  - `blitz` — at invasion start: each of the invader's non-fighter ships in the active system
+    without BOMBARDMENT gains BOMBARDMENT 6 until the end of the invasion. `roll_bombard_plan`
+    precomputes the blitzed seats (via the `Player.blitz_invasion` activation marker) and grants
+    such ships `(6, 1)`; the Bunker −4 penalty still applies to the blitzed roll.
+  - `disable` — at invasion start in a system containing 1+ opponent PDS units: those PDS units
+    lose PLANETARY SHIELD and SPACE CANNON during this invasion. `bombardable` skips the shields
+    of holders marked with `Player.disable_invasion`; `space_cannon_offense` gates their cannons
+    (the cannon step precedes INVASION_BEGAN, so the clause is inert in driven play but
+    implemented for textual fidelity). The effect re-verifies the window text before marking.
+  - `parley` — after another player commits units to land on a planet you control: the committed
+    units return to the space area. The Committing stage records
+    `GameState.last_committed_unit` (invader, system, planet, unit) right before the
+    `UNITS_COMMITTED` emit; the effect hands that unit back to space, then combat proceeds
+    against what is left on the planet.
+  - `ghost_squad` — same window: move any number of your ground forces from any planet you
+    control in the active system to any other planet you control. Whole (planet, type) groups
+    move; the holder is re-asked until an explicit decline.
+  - Markers: `Player.blitz_invasion` / `Player.disable_invasion` are per-seat `Vec<u32>` keyed by
+    the invasion's activation seq (the `bunker_invasion` / `war_machine_use` precedent),
+    `#[serde(default)]`, in `PartialEq`; they lapse when the next tactical action begins, so no
+    end-of-invasion cleanup is needed. `last_committed_unit` is `#[serde(default)]` and not
+    compared (a hand-off, not state a decider acts on).
+  - Guard: the shared "after another player commits units to land on a planet you control" row is
+    narrowed by `commit_on_your_planet = actor_is_not && controller_is`, so Parley/Ghost Squad
+    fire only when the card holder actually controls the landed-on planet.
+- Coverage 97 → **101/142** action cards (coverage_report, release); agendas still 63/63.
+- **ti4-sim baseline moved v7 → v8** through the same versioned process: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; `behavior.rs` now carries the v8 transcription and
+  `plans/evidence/M08-021.md` records the pair. Cause: the bots now play the new cards —
+  `faction_differentiation` and `score_spread` widen (upper bounds rise: a blitzed 6, an
+  unshielded PDS, a returned landing and an evacuated garrison give invasions more ways to end
+  differently), with sub-thousandth drifts in the action-mix shares. `completion` stays the
+  strict 1.0 invariant; the debug-build integrity check (recorded == protocol recomputation,
+  2000 splitmix64 resamples, seed `0x9E3779B97F4A7C15`) passes.
+- Tests: 998 `ti4-engine` lib tests pass (was 994): `blitz_grants_bombardment_to_the_invaders_
+  non_bombarding_ships` and `disable_strips_the_opponents_pds_effects_for_the_invasion`
+  (game-level `Game::step` drivers with cardless control arms) plus
+  `parley_returns_the_committed_unit_to_space` and
+  `ghost_squad_relocates_the_holders_forces_before_the_fight` (window-level `InvasionWindow`
+  committing-stage drivers with cardless control arms). All four probed (break the effect → the
+  test fails → revert: the blitz grant arm, the disable filter, the parley marker hand-off, the
+  ghost squad move loop).
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s `fixture_capture_is_deterministic`
+  — the same pre-existing tracked failure, now at step 782 (was 786: the new cards change the
+  replay trajectory, not its failure mode). M09-019b scope, not part of this batch.
+- Clippy: zero warnings in every touched file under `--all-targets` (lib and tests): `ti4-model`
+  state, `combat`, `invasion`, `game`, `reactions`, `action_cards`, `behavior` (docs only) — the
+  pass also cleared the long test functions by lifting the window-drive boilerplate into a shared
+  `drive_invasion` helper and per-test run helpers, and moved the alias list to a const.
+- Next safe action: the handoff's remaining groups in order — Cancel API (`sabo1`–`4`),
+  Movement (`lost_star`, `solar_flare`), Agenda/turn flow (9 cards), remaining relics. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — reroll dice group (commit B) + v7 re-baseline (2026-08-29)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

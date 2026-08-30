@@ -1,7 +1,7 @@
 # Card content — completion status (second implementer, Phase 7)
 
 Status: **continuing the engine-completion plan** on `wp/engine-completion` (merged back to
-`wp/r01-review-viewer-contract` too), updated 2026-08-29 after the handoff in
+`wp/r01-review-viewer-contract` too), updated 2026-08-30 after the handoff in
 `plans/HANDOFF_ENGINE_COMPLETION.md` expanded this work past the two owned files.
 
 Mission per `plans/PI_BRIEF_CARD_CONTENT.md`: action-card effects (baseline 34/142) and agenda
@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 97/142 |
+| action cards  | 34/142 | 101/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 97 of 142
-(68.3%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 101 of
+142 (71.1%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -90,6 +90,28 @@ the test fail, then reverted).
   had made reachable; it also moved the ti4-sim behavioural baseline v5 → v6
   (`plans/evidence/M08-021.md`).
 
+- Invasion-flow cards (the handoff's next group): `blitz` (at invasion start: each of the
+  invader's non-fighter ships in the active system without BOMBARDMENT gains BOMBARDMENT 6 until
+  the end of the invasion — `roll_bombard_plan` grants `(6, 1)` to such a ship; the Bunker −4
+  penalty still applies to the blitzed roll), `disable` (at invasion start in a system holding
+  ≥1 opponent PDS unit: those PDS units lose PLANETARY SHIELD and SPACE CANNON during this
+  invasion — `bombardable` skips their shields and `space_cannon_offense` gates their cannons;
+  the effect re-verifies the window text before marking), `parley` (after another player commits
+  units to land on a planet you control: the committed units return to the space area — the
+  Committing stage records `GameState.last_committed_unit` before the `UNITS_COMMITTED` emit and
+  the effect hands the unit back to space before any combat), and `ghost_squad` (same window:
+  move any number of your ground forces from any planet you control in the active system to any
+  other planet you control — whole (planet, type) groups, re-asked with an explicit decline).
+  The window rows already existed in `window_table()`; this group added the effects, the
+  per-seat activation-scoped markers `Player.blitz_invasion` / `Player.disable_invasion` (the
+  `bunker_invasion` / `war_machine_use` precedent — the marker lapses when the next tactical
+  action begins, so no end-of-invasion cleanup), the `last_committed_unit` hand-off, and the
+  `commit_on_your_planet` guard narrowing the shared UNITS_COMMITTED row to landings on a planet
+  the card holder controls. Tests drive the engine's own paths (the `Game::step` driver for
+  blitz/disable, the `InvasionWindow` committing-stage driver for parley/ghost squad, both with
+  a cardless control arm), and each effect was probed (break → the new test fails → revert). The
+  group moved the ti4-sim behavioural baseline v7 → v8 (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -105,18 +127,18 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 60 unimplemented action cards, grouped by blocking root cause
+## The 41 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
-state or flow the effect needs, which lives in files outside the ownership scope.
+state or flow the effect needs, which lives in files outside the ownership scope. The invasion
+flow group (`blitz`, `disable`, `parley`, `ghost_squad`) closed with the batch above; only
+`rout`, `dh1-4` and the live-dice half of `intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
   keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
   `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
   `fire_team` and `scramble` left this group with the reroll group below.
-- **Invasion flow** (`invasion.rs`): `blitz`, `disable`, `ghost_squad`, `parley` (bunker landed
-  with the scoped roll modifiers above).
 - **Movement rules / system activation** (`movement.rs`): `lost_star`, `solar_flare`.
 - **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
 - **Agenda outcome redirection / agenda queue** (`game.rs`): `confounding`, `confusing`,
@@ -175,26 +197,25 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 994 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 998 passed, 0 failed.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
-  green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 51 non-fixture tests);
-  **ti4-sim's behavioral suite is green after the v6 → v7 re-baseline** (commit B's reroll
+  green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
+  **ti4-sim's behavioral suite is green after the v7 → v8 re-baseline** (the invasion-flow
   cards became playable; `plans/evidence/M08-021.md`), including the protocol-integrity check
   in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-existing
-  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 786
+  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 782
   before any production-head menu of ≥3 options); it belongs to the M09-019b profile module's
   own versioned process and is tracked, not new.
-- `cargo clippy -p ti4-model -p ti4-engine`: zero warnings in the touched files (the rework also
-  cleared the long-function warnings the previous batches left in `invasion.rs`; the one
-  remaining workspace warning is pre-existing in untouched `production.rs`).
-- Both coexistence behaviors probed (break → the new test fails → revert): a `resolve` that
-  ignored the decider's answer (`ScriptDiverged` at the second unit), and a 7.2 cap that
-  spilled hits across owners (4 kills instead of 3).
-- The 45 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- `cargo clippy -p ti4-model -p ti4-engine --all-targets`: zero warnings in the touched files
+  (lib and tests); the remaining workspace warnings are pre-existing in untouched files
+  (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
+  `coverage_report` example's length).
+- All four invasion-flow effects probed (break → the new test fails → revert): the blitz
+  grant arm removed, the disable filter forced off, the parley marker hand-off skipped, and the
+  ghost squad move loop short-circuited.
+- The 41 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group in this batch):
-  - **Invasion flow** (4): `blitz`, `disable`, `parley`, `ghost_squad` — need commit
-    undo/modify (`invasion.rs`).
+  group; the invasion-flow group closed with this batch):
   - **Cancel API** (4): `sabo1`–`4` — a card effect that *sets* the `cancelled` flag.
   - **Movement** (2): `lost_star`, `solar_flare` — `wormholes_all_linked`-style galaxy scoping
     (`movement.rs`/`laws`).

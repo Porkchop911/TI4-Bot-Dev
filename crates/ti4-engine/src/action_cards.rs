@@ -11,6 +11,7 @@ use ti4_content::units::UnitType;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::state::GameState;
+use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 
@@ -1098,6 +1099,206 @@ fn war_machine(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     let activation = context.state.activation_seq;
     if let Some(seat) = context.state.player_mut(player) {
         seat.war_machine_use.push(activation);
+    }
+}
+
+/// Blitz: "Each of your non-fighter ships in the active system that do not have BOMBARDMENT
+/// gain BOMBARDMENT 6 until the end of the invasion."
+///
+/// The window opens before the invasion window is built, and that window's bombardment plan
+/// (49.1) reads the marker, so a non-fighter ship without BOMBARDMENT rolls one die that hits
+/// on 6. The marker is keyed to the activation that owns the invasion, the same way Bunker's
+/// is, so it cannot leak into a later activation.
+fn blitz(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.blitz_invasion.push(activation);
+    }
+}
+
+/// Disable: "Your opponents' PDS units lose PLANETARY SHIELD and SPACE CANNON during this
+/// invasion."
+///
+/// The window text promises a system holding 1 or more of your opponents' PDS, but the table
+/// maps that wording to the same bare invasion-start row as Blitz — per-card narrowing is not
+/// modelled in the table — so the effect re-checks the promise before marking. The marker is
+/// read by the bombardment plan (the shield) and the space-cannon guns (the cannon); both are
+/// keyed to the activation that owns the invasion.
+fn disable(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(system) = context.state.active_system.clone() else {
+        return;
+    };
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let board = context.state.system_state(&system);
+    let has_opponent_pds = board
+        .planet_units
+        .values()
+        .flatten()
+        .chain(&board.units)
+        .any(|unit| {
+            &unit.owner != player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| kind.base_type() == "pds")
+        });
+    if !has_opponent_pds {
+        return;
+    }
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.disable_invasion.push(activation);
+    }
+}
+
+/// Parley: "Return the committed units to the space area."
+///
+/// The commit step records the unit it just placed in `last_committed_unit` before emitting
+/// `UNITS_COMMITTED`, so this reads it back and hands the unit to the space area of the same
+/// system. The window fires per landing, so the marker always names the unit the window is
+/// about; clearing it on the way out lets a later landing re-arm it.
+fn parley(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) {
+    let Some((owner, system, planet, unit)) = context.state.last_committed_unit.take() else {
+        return;
+    };
+    if unit.owner != owner {
+        return;
+    }
+    let board = context.state.system_mut(&system);
+    let standing = board
+        .planet_units
+        .get(&planet)
+        .is_some_and(|units| units.contains(&unit));
+    if !standing {
+        // An earlier window in the same emission took the unit from the planet, so there is
+        // nothing left to return.
+        return;
+    }
+    if let Some(units) = board.planet_units.get_mut(&planet)
+        && let Some(index) = units.iter().position(|u| *u == unit)
+    {
+        units.remove(index);
+    }
+    board.units.push(unit);
+}
+
+/// One Ghost Squad selection moves every unit of one ground-force type from one of the
+/// player's planets in the system to another; these are the selectable moves, in
+/// deterministic order.
+fn ghost_squad_moves(
+    board: &ti4_model::state::SystemState,
+    player: &PlayerId,
+    types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType>,
+) -> Vec<crate::choice::ChoiceOption> {
+    let own: Vec<ti4_model::id::PlanetId> = board
+        .planet_control
+        .iter()
+        .filter(|(_, controller)| **controller == *player)
+        .map(|(planet, _)| planet.clone())
+        .collect();
+    let mut options: Vec<crate::choice::ChoiceOption> = Vec::new();
+    for from in &own {
+        let on_from: Vec<&Unit> = board
+            .on_planet(from)
+            .iter()
+            .filter(|unit| {
+                unit.owner == *player
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ground_force)
+            })
+            .collect();
+        if on_from.is_empty() {
+            continue;
+        }
+        for to in &own {
+            if to == from {
+                continue;
+            }
+            for kind in on_from
+                .iter()
+                .map(|unit| unit.type_id.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+            {
+                let count = on_from
+                    .iter()
+                    .filter(|u| u.type_id.as_str() == kind)
+                    .count();
+                options.push(crate::choice::ChoiceOption::labelled(
+                    format!("move|{from}|{to}|{kind}"),
+                    "move",
+                    format!("move {count} {kind} from {from} to {to}"),
+                ));
+            }
+        }
+    }
+    options
+}
+
+/// Ghost Squad: "Move any number of your ground forces from any planet you control in the
+/// active system to any other planet you control in the active system."
+///
+/// One selection moves every unit of one type from one of your planets to another, and the
+/// decider is asked again after each move — "any number" is the sum of the selections, and
+/// declining ends the effect. A selection is written `move|<from>|<to>|<type>`; the offer
+/// always carries a decline option so a single remaining move cannot move on its own.
+fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(system) = context.state.active_system.clone() else {
+        return;
+    };
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    loop {
+        let options = ghost_squad_moves(&context.state.system_state(&system), player, &types);
+        if options.is_empty() {
+            return;
+        }
+        let mut offered = options.clone();
+        offered.push(crate::choice::ChoiceOption::decline());
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            format!("Ghost Squad: move ground forces in {system}"),
+            offered,
+        );
+        let Ok(answer) = context.ask_seeing(&choice) else {
+            return;
+        };
+        if answer.is_decline() {
+            return;
+        }
+        let Some((from, to, kind)) = answer.id.strip_prefix("move|").and_then(|rest| {
+            let mut parts = rest.split('|');
+            let (from, to, kind) = (parts.next()?, parts.next()?, parts.next()?);
+            (parts.next().is_none()).then_some((from, to, kind))
+        }) else {
+            return;
+        };
+        let from = ti4_model::id::PlanetId::new(from);
+        let to = ti4_model::id::PlanetId::new(to);
+        let moved: Vec<Unit> = context
+            .state
+            .system_state(&system)
+            .on_planet(&from)
+            .iter()
+            .filter(|unit| {
+                unit.owner == *player
+                    && unit.type_id.as_str() == kind
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_ground_force)
+            })
+            .cloned()
+            .collect();
+        if moved.is_empty() {
+            return;
+        }
+        let board = context.state.system_mut(&system);
+        if let Some(units) = board.planet_units.get_mut(&from) {
+            units.retain(|unit| !moved.iter().any(|m| m == unit));
+        }
+        board
+            .planet_units
+            .entry(to.clone())
+            .or_default()
+            .extend(moved.iter().cloned());
     }
 }
 
@@ -3828,6 +4029,10 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "fire_team" => Some(fire_team),
         "scramble" => Some(scramble),
         "war_machine1" | "war_machine2" | "war_machine3" | "war_machine4" => Some(war_machine),
+        "blitz" => Some(blitz),
+        "disable" => Some(disable),
+        "parley" => Some(parley),
+        "ghost_squad" => Some(ghost_squad),
         "decoy" => Some(decoy_operation),
         "emergency" => Some(emergency_repairs),
         "upgrade" => Some(upgrade_ship),
@@ -3913,108 +4118,115 @@ fn scramble(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) 
     crate::combat::apply_reroll_dice(context.dice, context.rng, set, &picks, "scramble frequency");
 }
 
+/// The aliases whose effects are registered in `effect_for`.
+const REGISTERED_ALIASES: &[&str] = &[
+    "fs1",
+    "fs2",
+    "fs3",
+    "fs4",
+    "cripple",
+    "f_deployment",
+    "imp_rider",
+    "const_rider",
+    "diplo_rider",
+    "lead_rider",
+    "politic_rider",
+    "tech_rider",
+    "trade_rider",
+    "war_rider",
+    "sanction",
+    "assassin",
+    "insider",
+    "abs",
+    "dp1",
+    "dp2",
+    "dp3",
+    "dp4",
+    "insub",
+    "messiah",
+    "mining_initiative",
+    "mb1",
+    "mb2",
+    "mb3",
+    "mb4",
+    "nav_suite",
+    "harness",
+    "economic_initiative",
+    "industrial_initiative",
+    "f_conscription",
+    "impersonation",
+    "plagiarize",
+    "arch_expedition",
+    "divert_funding",
+    "probe",
+    "refit",
+    "scuttle",
+    "seize",
+    "exchangeprogram",
+    "mercenarycontract",
+    "piratefleet",
+    "piratecontract1",
+    "piratecontract2",
+    "piratecontract3",
+    "piratecontract4",
+    "brilliance",
+    "overrule",
+    "strategize1",
+    "strategize2",
+    "strategize3",
+    "strategize4",
+    "rally",
+    "fsb",
+    "counterstroke",
+    "distinguished",
+    "bribery",
+    "sh1",
+    "sh2",
+    "sh3",
+    "sh4",
+    "intercept",
+    "f_prototype",
+    "bunker",
+    "fire_team",
+    "scramble",
+    "war_machine1",
+    "war_machine2",
+    "war_machine3",
+    "war_machine4",
+    "decoy",
+    "emergency",
+    "upgrade",
+    "experimental",
+    "reveal_prototype",
+    "s_retreat1",
+    "s_retreat2",
+    "s_retreat3",
+    "s_retreat4",
+    "repeal",
+    "silence_space",
+    "unexpected",
+    "ghost_ship",
+    "meltdown",
+    "plague",
+    "spy",
+    "unstable",
+    "uprising",
+    "f_researched",
+    "jamming",
+    "lucky",
+    "rescue",
+    "tactical",
+    "war_effort",
+    "blitz",
+    "disable",
+    "parley",
+    "ghost_squad",
+];
+
 /// Aliases with a registered effect.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec![
-        "fs1",
-        "fs2",
-        "fs3",
-        "fs4",
-        "cripple",
-        "f_deployment",
-        "imp_rider",
-        "const_rider",
-        "diplo_rider",
-        "lead_rider",
-        "politic_rider",
-        "tech_rider",
-        "trade_rider",
-        "war_rider",
-        "sanction",
-        "assassin",
-        "insider",
-        "abs",
-        "dp1",
-        "dp2",
-        "dp3",
-        "dp4",
-        "insub",
-        "messiah",
-        "mining_initiative",
-        "mb1",
-        "mb2",
-        "mb3",
-        "mb4",
-        "nav_suite",
-        "harness",
-        "economic_initiative",
-        "industrial_initiative",
-        "f_conscription",
-        "impersonation",
-        "plagiarize",
-        "arch_expedition",
-        "divert_funding",
-        "probe",
-        "refit",
-        "scuttle",
-        "seize",
-        "exchangeprogram",
-        "mercenarycontract",
-        "piratefleet",
-        "piratecontract1",
-        "piratecontract2",
-        "piratecontract3",
-        "piratecontract4",
-        "brilliance",
-        "overrule",
-        "strategize1",
-        "strategize2",
-        "strategize3",
-        "strategize4",
-        "rally",
-        "fsb",
-        "counterstroke",
-        "distinguished",
-        "bribery",
-        "sh1",
-        "sh2",
-        "sh3",
-        "sh4",
-        "intercept",
-        "f_prototype",
-        "bunker",
-        "fire_team",
-        "scramble",
-        "war_machine1",
-        "war_machine2",
-        "war_machine3",
-        "war_machine4",
-        "decoy",
-        "emergency",
-        "upgrade",
-        "experimental",
-        "reveal_prototype",
-        "s_retreat1",
-        "s_retreat2",
-        "s_retreat3",
-        "s_retreat4",
-        "repeal",
-        "silence_space",
-        "unexpected",
-        "ghost_ship",
-        "meltdown",
-        "plague",
-        "spy",
-        "unstable",
-        "uprising",
-        "f_researched",
-        "jamming",
-        "lucky",
-        "rescue",
-        "tactical",
-        "war_effort",
-    ]
+    REGISTERED_ALIASES.to_vec()
 }
 
 /// This player's ships move one further during `activation`, from Flank Speed.

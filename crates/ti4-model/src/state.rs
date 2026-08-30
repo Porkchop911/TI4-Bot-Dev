@@ -419,6 +419,17 @@ pub struct Player {
     /// action, so the activation scopes the marker to that step.
     #[serde(default)]
     pub war_machine_use: Vec<u32>,
+    /// Blitz: one entry per copy, each the [`GameState::activation_seq`] of the invasion in
+    /// which that player's non-fighter ships without BOMBARDMENT roll BOMBARDMENT 6. An
+    /// invasion belongs to exactly one activation, so the marker lapses when the next
+    /// tactical action begins.
+    #[serde(default)]
+    pub blitz_invasion: Vec<u32>,
+    /// Disable: one entry per copy, each the [`GameState::activation_seq`] of the invasion in
+    /// which that player's opponents' PDS units lose PLANETARY SHIELD and SPACE CANNON. As
+    /// with Blitz, the activation scopes the marker to the invasion it was played in.
+    #[serde(default)]
+    pub disable_invasion: Vec<u32>,
 
     // -- returning and captured units ---------------------------------------------
     /// Generic Infantry II casualties waiting on their technology card.
@@ -490,6 +501,8 @@ impl PartialEq for Player {
             && self.fighter_bonus_round == other.fighter_bonus_round
             && self.bunker_invasion == other.bunker_invasion
             && self.war_machine_use == other.war_machine_use
+            && self.blitz_invasion == other.blitz_invasion
+            && self.disable_invasion == other.disable_invasion
             && self.infantry_returning == other.infantry_returning
             && self.technology_units_returning == other.technology_units_returning
             && self.spec_ops_returning == other.spec_ops_returning
@@ -553,6 +566,8 @@ impl Player {
             fighter_bonus_round: Vec::new(),
             bunker_invasion: Vec::new(),
             war_machine_use: Vec::new(),
+            blitz_invasion: Vec::new(),
+            disable_invasion: Vec::new(),
             infantry_returning: 0,
             technology_units_returning: Vec::new(),
             spec_ops_returning: 0,
@@ -863,6 +878,13 @@ pub struct GameState {
     /// Scramble Frequency. Cleared with the staging. Not compared.
     #[serde(default)]
     pub last_reroll_player: Option<PlayerId>,
+    /// The unit most recently committed to a planet: its owner, the system, the planet and
+    /// the unit itself. The commit step records this before emitting `UNITS_COMMITTED`, and
+    /// Parley reads it back to return the unit to the space area. Every later landing
+    /// overwrites it before its window opens, and Parley clears it when it acts, so a stale
+    /// value is never read. In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub last_committed_unit: Option<(PlayerId, SystemId, PlanetId, Unit)>,
 
     // -- production bookkeeping ----------------------------------------------------
     /// Fighters placed by the PRODUCTION use currently resolving. Prophecy of Ixth asks how
@@ -1047,6 +1069,7 @@ impl GameState {
             combat_draw_round: None,
             reroll_staging: BTreeMap::new(),
             last_reroll_player: None,
+            last_committed_unit: None,
             fighters_produced_this_use: 0,
             nonfighter_ships_produced_this_use: 0,
             units_produced_this_use: 0,

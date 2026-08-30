@@ -3119,6 +3119,266 @@ mod tests {
         );
     }
 
+    /// `tactical_fixture` plus a landable, non-station planet of the activated system, so an
+    /// invasion test has somewhere for ground forces to go.
+    fn invasion_fixture() -> (
+        GameState,
+        ti4_content::galaxy::Galaxy,
+        ti4_model::id::SystemId,
+        ti4_model::id::PlanetId,
+    ) {
+        let (state, galaxy, ids) = tactical_fixture();
+        let content = ContentStore::embedded();
+        let (system, planet) = ids
+            .iter()
+            .find_map(|system| {
+                let record = content
+                    .get(
+                        ti4_model::content_types::ContentType::Systems,
+                        system.as_str(),
+                    )
+                    .expect("the fixture system is in the corpus");
+                record
+                    .strings("planets")
+                    .into_iter()
+                    .find(|name| !ti4_content::galaxy::is_space_station(content, name, POK))
+                    .map(|name| (system.clone(), ti4_model::id::PlanetId::new(name)))
+            })
+            .expect("the fixture has a system with a non-station planet");
+        (state, galaxy, system, planet)
+    }
+
+    #[test]
+    fn blitz_grants_bombardment_to_the_invaders_non_bombarding_ships() {
+        // Blitz: "Each of your non-fighter ships in the active system that do not have
+        // BOMBARDMENT gain BOMBARDMENT 6 until the end of the invasion." The invader's
+        // destroyer has no BOMBARDMENT of its own; the dreadnought hits on 5. In the
+        // invader's roll the destroyer's granted die (a 6) destroys one of the defender's
+        // infantry and the dreadnought's 3 destroys nothing. Without the card only the
+        // dreadnought can bombard at all — its 3 is a miss — and both infantry survive.
+        let run = |with_card: bool| -> (
+            GameState,
+            Dice,
+            ti4_model::id::SystemId,
+            ti4_model::id::PlanetId,
+        ) {
+            let (mut state, galaxy, system, planet) = invasion_fixture();
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            // The invader's ships stand in the system to be activated, so the movement step
+            // has nothing to do; the defender's two infantry take a hit in placed order.
+            crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+            crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+            if with_card {
+                state.player_mut(&a).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("blitz")];
+            }
+            // Preload feeds the rolls in order: the destroyer's granted roll first, then the
+            // dreadnought's own.
+            let preload: Vec<u32> = if with_card { vec![6, 3] } else { vec![3] };
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    system.to_string(),
+                    "done_moving".to_owned(),
+                    "reaction:generic:INVASION_BEGAN:after".to_owned(),
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    system.to_string(),
+                    "done_moving".to_owned(),
+                ]
+            };
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            game.dice = Dice::from_faces(preload);
+            for _ in 0..16 {
+                let result = game.step();
+                assert_eq!(result.error, None, "no tactical step should refuse");
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran every step it has and closed; log was {:?}",
+                game.events
+            );
+            (game.state, game.dice, system, planet)
+        };
+
+        // No card: the shield-less planet is bombarded by the dreadnought alone, its 3
+        // misses, and the defender keeps both infantry.
+        let (state, dice, system, planet) = run(false);
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            2,
+            "the 3 destroys nothing, so both infantry survive; log was {:?}",
+            dice.rolled("bombardment")
+                .iter()
+                .map(|roll| format!("{} {:?}", roll.reason, roll.faces))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            dice.rolled("bombardment")
+                .iter()
+                .all(|roll| roll.faces == [3]),
+            "only the dreadnought has BOMBARDMENT without the card"
+        );
+        assert!(
+            state
+                .player(&PlayerId::new("a"))
+                .unwrap()
+                .blitz_invasion
+                .is_empty(),
+            "no card, no marker"
+        );
+
+        // With Blitz: the destroyer rolls a granted die that hits on 6 (a 6) and takes one
+        // infantry; the dreadnought's 3 still misses. The card is spent and the marker is
+        // keyed to the activation that owns the invasion.
+        let (state, dice, _, _) = run(true);
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            1,
+            "the destroyer's granted 6 destroyed one infantry; log was {:?}",
+            dice.rolled("bombardment")
+                .iter()
+                .map(|roll| format!("{} {:?}", roll.reason, roll.faces))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            dice.rolled("bombardment").len(),
+            2,
+            "the destroyer's granted roll ran beside the dreadnought's own"
+        );
+        let seat = state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(
+            seat.blitz_invasion.len(),
+            1,
+            "the marker fired once, for this invasion"
+        );
+        assert!(seat.action_cards.is_empty(), "the card was spent");
+    }
+
+    #[test]
+    fn disable_strips_the_opponents_pds_effects_for_the_invasion() {
+        // Disable: "Your opponents' PDS units lose PLANETARY SHIELD and SPACE CANNON during
+        // this invasion." The defender's PDS shields the planet, so without the card the
+        // invader's dreadnought cannot bombard at all. The PDS's own cannon fires first, but
+        // its preloaded 3 is below its hit value, so the invader's ships survive either way.
+        // With the card the shield is stripped: the dreadnought's 5 destroys one of the
+        // defender's infantry (placed before the PDS, so it takes the hit in placed order),
+        // and the PDS itself stands on the planet.
+        let run = |with_card: bool| -> (
+            GameState,
+            Dice,
+            ti4_model::id::SystemId,
+            ti4_model::id::PlanetId,
+        ) {
+            let (mut state, galaxy, system, planet) = invasion_fixture();
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+            crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &b, 1);
+            if with_card {
+                state.player_mut(&a).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("disable")];
+            }
+            // The cannon's roll first (a 3, below its 6), then — only with the card — the
+            // dreadnought's bombardment (a 5, a hit against the shield-less planet).
+            let preload: Vec<u32> = if with_card { vec![3, 5] } else { vec![3] };
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    system.to_string(),
+                    "done_moving".to_owned(),
+                    "reaction:generic:INVASION_BEGAN:after".to_owned(),
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    system.to_string(),
+                    "done_moving".to_owned(),
+                ]
+            };
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            game.dice = Dice::from_faces(preload);
+            for _ in 0..16 {
+                let result = game.step();
+                assert_eq!(result.error, None, "no tactical step should refuse");
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran every step it has and closed; log was {:?}",
+                game.events
+            );
+            (game.state, game.dice, system, planet)
+        };
+
+        // No card: the PDS shields the planet, so no bombardment roll is ever made and the
+        // defender keeps everything on it.
+        let (state, dice, system, planet) = run(false);
+        assert!(
+            dice.rolled("bombardment").is_empty(),
+            "the planetary shield blocks bombardment entirely"
+        );
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(on_planet.len(), 3, "2 infantry and the PDS all stand");
+        assert_eq!(
+            dice.rolled("space cannon").len(),
+            1,
+            "the PDS's own cannon still fired, harmlessly"
+        );
+
+        // With Disable: the shield is gone for this invasion, so the dreadnought's 5 takes
+        // one infantry; the PDS remains, the card is spent, and the marker is keyed to the
+        // activation that owns the invasion.
+        let (state, dice, _, _) = run(true);
+        assert_eq!(
+            dice.rolled("bombardment").len(),
+            1,
+            "with the shield stripped, the dreadnought's roll went off"
+        );
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            2,
+            "one infantry fell to the 5; the PDS itself is not a bombardment victim here"
+        );
+        let still_shielded = state
+            .system_state(&system)
+            .on_planet(&planet)
+            .iter()
+            .filter(|unit| unit.type_id.as_str() == "pds")
+            .count();
+        assert_eq!(
+            still_shielded, 1,
+            "the PDS structure survived the bombardment"
+        );
+        let seat = state.player(&PlayerId::new("a")).unwrap();
+        assert_eq!(seat.disable_invasion.len(), 1, "the marker fired once");
+        assert!(seat.action_cards.is_empty(), "the card was spent");
+    }
+
     /// Drive a tactical action through to the production step and report the budget the step
     /// was offered. `reaction`, when set, is the answer to the one question the production
     /// window asks the holder of a playable card (playing is optional, so even a single
@@ -3146,24 +3406,24 @@ mod tests {
                 "done_producing".to_owned(),
             ],
         };
-        let table = Table::with_default(Box::new(Scripted::new(answers.into_iter())));
+        let table = Table::with_default(Box::new(Scripted::new(answers)));
         let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
 
         let mut budget: Option<u32> = None;
         for _ in 0..80 {
-            if let Some(choice) = game.legal_options() {
-                if choice.prompt.starts_with("produce in ") {
-                    let figure = choice
-                        .prompt
-                        .rsplit(" (")
-                        .next()
-                        .expect("the prompt carries its budget")
-                        .strip_suffix(" left)")
-                        .expect("the prompt carries its budget")
-                        .parse()
-                        .expect("the budget is a plain integer");
-                    budget = Some(figure);
-                }
+            if let Some(choice) = game.legal_options()
+                && choice.prompt.starts_with("produce in ")
+            {
+                let figure = choice
+                    .prompt
+                    .rsplit(" (")
+                    .next()
+                    .expect("the prompt carries its budget")
+                    .strip_suffix(" left)")
+                    .expect("the prompt carries its budget")
+                    .parse()
+                    .expect("the budget is a plain integer");
+                budget = Some(figure);
             }
             assert_eq!(game.step().error, None, "no tactical step should refuse");
             if game

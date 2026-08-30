@@ -73,6 +73,16 @@ fn actor_is_not(event: &Event, player: &PlayerId) -> bool {
         .is_some_and(|who| who != player.as_str())
 }
 
+/// A rival's landing on a planet this player controls — "after another player commits units
+/// to land on a planet you control." Both halves are named by the card text, so neither is
+/// optional: the committer is someone else, and the planet's controller is this player.
+fn commit_on_your_planet(event: &Event, player: &PlayerId) -> bool {
+    actor_is_not(event, player)
+        && event
+            .text("controller")
+            .is_some_and(|holder| holder == player.as_str())
+}
+
 /// Anybody at all — the window applies whoever the event names.
 fn anyone(_: &Event, _: &PlayerId) -> bool {
     true
@@ -268,7 +278,7 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "After another player commits units to land on a planet you control",
-            guarded("UNITS_COMMITTED", After, actor_is_not),
+            guarded("UNITS_COMMITTED", After, commit_on_your_planet),
         ),
     ]
     .into_iter()

@@ -101,10 +101,24 @@ pub fn bombardable(
     if crate::leaders::ignores_planetary_shield(state, invader) {
         return true;
     }
+    // Disable: "your opponents' PDS units lose PLANETARY SHIELD ... during this invasion."
+    // The markers are keyed to the activation that owns the invasion, so only Disable cards
+    // played for *this* invasion matter. A shield survives only while every Disable in play
+    // belongs to the shield's own owner — an opponent's copy strips it.
+    let disabled_holders: Vec<PlayerId> = state
+        .players
+        .iter()
+        .filter(|seat| seat.disable_invasion.contains(&state.activation_seq))
+        .map(|seat| seat.id.clone())
+        .collect();
     !board.on_planet(planet).iter().any(|unit| {
-        types
+        if !types
             .get(unit.type_id.as_str())
             .is_some_and(UnitType::planetary_shield)
+        {
+            return false;
+        }
+        !disabled_holders.iter().any(|holder| holder != &unit.owner)
     })
 }
 
@@ -179,6 +193,13 @@ fn roll_bombard_plan(
     // Every unit's roll, kept for the reroll windows the bombardment opens (Agnlan Oln,
     // Scramble Frequency): one entry per bombarding unit, tagged with its planet.
     let mut staged = Vec::new();
+    // Blitz: "each of your non-fighter ships in the active system that do not have
+    // BOMBARDMENT gain BOMBARDMENT 6 until the end of the invasion." The card's window
+    // opened before this plan was built, so the marker, if present, applies to every roll
+    // below; it is keyed to the activation that owns the invasion.
+    let blitzed = state
+        .player(invader)
+        .is_some_and(|seat| seat.blitz_invasion.contains(&state.activation_seq));
     for planet in planets {
         if !bombardable(state, content, sources, system, &planet, invader) {
             continue;
@@ -199,10 +220,13 @@ fn roll_bombard_plan(
             let Some(kind) = types.get(unit.type_id.as_str()) else {
                 continue;
             };
-            let Some(value) = kind.bombard_hits_on() else {
-                continue;
+            let (value, count) = match kind.bombard_hits_on() {
+                Some(value) => (value, usize::try_from(kind.bombard_dice()).unwrap_or(0)),
+                // Blitz grants BOMBARDMENT 6 — one die — to a non-fighter ship with no
+                // bombard value of its own.
+                None if blitzed && kind.is_ship() && !kind.is_fighter() => (6, 1),
+                None => continue,
             };
-            let count = usize::try_from(kind.bombard_dice()).unwrap_or(0);
             if count == 0 {
                 continue;
             }
@@ -1883,6 +1907,15 @@ impl Window for InvasionWindow {
                     };
                     let troops = landable(state, content, sources, &self.invader, &self.system);
                     if let Some(unit) = troops.get(index).cloned() {
+                        // Parley reads the landing back through this marker: the emission's
+                        // AFTER window resolves before the commit step continues, and the
+                        // marker is the one fact the effect can trust.
+                        state.last_committed_unit = Some((
+                            self.invader.clone(),
+                            self.system.clone(),
+                            planet.clone(),
+                            unit.clone(),
+                        ));
                         state
                             .system_mut(&self.system)
                             .remove(std::slice::from_ref(&unit));
@@ -3551,6 +3584,65 @@ mod tests {
         resolver
     }
 
+    /// Builds the manual invasion window the card tests drive, and runs it to completion.
+    /// `script` is the exact answer to every question the run makes (window offers, commit
+    /// offers, card offers); `dice` and `rng` pin the rolls. Returns the questions that were
+    /// offered, in order.
+    fn drive_invasion(
+        state: &mut GameState,
+        system: &SystemId,
+        stage: Stage,
+        report: InvasionReport,
+        script: Vec<String>,
+        dice: &mut Dice,
+        rng: &mut GameRng,
+    ) -> Vec<Vec<String>> {
+        let a = invader();
+        let b = holder();
+        let content = ContentStore::embedded();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let decider = RecordingScripted {
+            inner: crate::choice::Scripted::new(script),
+            seen: seen.clone(),
+        };
+        let mut table = Table::with_default(Box::new(decider));
+        let mut resolver = armed_resolver(state, vec![a.clone(), b.clone()]);
+        let mut event_sequence = crate::event::EventSequence::new();
+        let mut window = InvasionWindow {
+            invader: a,
+            system: system.clone(),
+            stage,
+            report,
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
+        };
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice,
+            rng,
+            table: &mut table,
+            timing: Some(crate::choice::TimingHandle {
+                resolver: &mut resolver,
+                sequence: &mut event_sequence,
+                galaxy: None,
+            }),
+        };
+        while !window.is_done() {
+            window
+                .drive(state, &mut ctx)
+                .expect("the script only picks what is offered");
+            while window.take_scoring_occurrence().is_some() {}
+            window.settle(state, &mut ctx);
+        }
+        seen.borrow().clone()
+    }
+
     #[test]
     fn fire_team_rerolls_your_own_ground_dice_before_anyone_is_removed() {
         // Fire Team: "After your ground forces make combat rolls during a round of ground
@@ -3577,12 +3669,10 @@ mod tests {
                 state.player_mut(&b).unwrap().action_cards =
                     vec![ti4_model::id::ActionCardId::new("fire_team")];
             }
-            let content = ContentStore::embedded();
             // The preload feeds the two initial rolls only; a reroll re-draws from the seeded
             // stream (see Dice::reroll), and seed 4's first DICE-domain draw is an 8.
             let mut dice = Dice::from_faces([8u32, 3]);
             let mut rng = GameRng::new(4);
-            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let script: Vec<String> = if with_card {
                 vec![
                     "fight".to_owned(),
@@ -3592,56 +3682,24 @@ mod tests {
             } else {
                 vec!["fight".to_owned()]
             };
-            let decider = RecordingScripted {
-                inner: crate::choice::Scripted::new(script),
-                seen: seen.clone(),
-            };
-            let mut table = Table::with_default(Box::new(decider));
-            let mut resolver = armed_resolver(&state, vec![a.clone(), b.clone()]);
-            let mut event_sequence = crate::event::EventSequence::new();
-            let mut window = InvasionWindow {
-                invader: a.clone(),
-                system: system.clone(),
-                stage: Stage::Fighting {
+            let asks = drive_invasion(
+                &mut state,
+                &system,
+                Stage::Fighting {
                     planets: vec![planet.clone()],
                     index: 0,
                     defender: b.clone(),
                 },
-                report: InvasionReport {
+                InvasionReport {
                     // The manual window models a committed landing, so a surviving invader can
                     // establish control the way the Committing stage would record it.
                     committed: vec![planet.clone()],
                     ..InvasionReport::default()
                 },
-                pending_scoring_occurrences: std::collections::VecDeque::new(),
-                current_ground_occurrence: None,
-                notes_at_tactical_start: crate::combat::note_holdings(&state),
-                bombard_plan: Vec::new(),
-                bombard_index: 0,
-                bombard_occurrence: state.begin_feat_occurrence(),
-                bombard_announced: true,
-            };
-            let mut ctx = Resolving {
-                content,
-                sources: POK,
-                dice: &mut dice,
-                rng: &mut rng,
-                table: &mut table,
-                timing: Some(crate::choice::TimingHandle {
-                    resolver: &mut resolver,
-                    sequence: &mut event_sequence,
-                    galaxy: None,
-                }),
-            };
-            while !window.is_done() {
-                window
-                    .drive(&mut state, &mut ctx)
-                    .expect("the script only picks what is offered");
-                while window.take_scoring_occurrence().is_some() {}
-                window.settle(&mut state, &mut ctx);
-            }
-            let asks = seen.borrow().clone();
-            let _ = window;
+                script,
+                &mut dice,
+                &mut rng,
+            );
             (asks, state, dice)
         };
 
@@ -3706,6 +3764,278 @@ mod tests {
         );
     }
 
+    /// A system with two non-station planets, so a relocation has somewhere to go.
+    fn dual_arena() -> (GameState, SystemId, PlanetId, PlanetId) {
+        let content = ContentStore::embedded();
+        let (system, planets) = ti4_content::galaxy::all_systems(content, POK)
+            .iter()
+            .find_map(|(name, _)| {
+                let record = content.get(ti4_model::content_types::ContentType::Systems, name)?;
+                let planets: Vec<PlanetId> = record
+                    .strings("planets")
+                    .into_iter()
+                    .map(PlanetId::new)
+                    .filter(|planet| {
+                        !ti4_content::galaxy::is_space_station(content, planet.as_str(), POK)
+                    })
+                    .collect();
+                (planets.len() >= 2).then(|| (SystemId::new(*name), planets))
+            })
+            .expect("the corpus has a two-planet system");
+        let mut state = start_game(content, &[invader(), holder()], POK, None).unwrap();
+        // The driver activates the system before opening the invasion window; card effects
+        // read the state's active system, as in play.
+        state.active_system = Some(system.clone());
+        (state, system, planets[0].clone(), planets[1].clone())
+    }
+    /// The parley test arena: the invader holds one infantry in space, the holder two on the
+    /// planet he controls. The cardless arm ends in a ground round (one die for the
+    /// invader's infantry, two for the defender's, all hitting on 8); the parley arm rolls
+    /// nothing and is asked to commit twice — once before the landing, then again after
+    /// Parley puts the unit back in space, where it can be committed again.
+    fn parley_run(with_card: bool) -> (Vec<Vec<String>>, GameState) {
+        let a = invader();
+        let b = holder();
+        let (mut state, system, planet) = arena();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
+        on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+        in_space(&mut state, &system, "infantry", &a, 1);
+        if with_card {
+            state.player_mut(&b).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("parley")];
+        }
+        let (mut dice, mut rng) = if with_card {
+            (Dice::new(), GameRng::new(5))
+        } else {
+            (Dice::from_faces([8u32, 8, 8]), GameRng::new(5))
+        };
+        let script: Vec<String> = if with_card {
+            vec![
+                format!("commit|0|{planet}"),
+                "reaction:generic:UNITS_COMMITTED:after".to_owned(),
+                "done_committing".to_owned(),
+            ]
+        } else {
+            vec![format!("commit|0|{planet}"), "fight".to_owned()]
+        };
+        let asks = drive_invasion(
+            &mut state,
+            &system,
+            Stage::Committing,
+            InvasionReport::default(),
+            script,
+            &mut dice,
+            &mut rng,
+        );
+        (asks, state)
+    }
+
+    #[test]
+    fn parley_returns_the_committed_unit_to_space() {
+        // Parley: "Return the committed units to the space area." The invader lands one
+        // infantry on the holder's planet, which stands over the holder's two. With Parley
+        // the landing unit returns to space before any combat — both defender infantry stand
+        // and the invader's infantry survives; without the card both sides roll 8 and die.
+        let a = invader();
+        let b = holder();
+        let run = |with_card: bool| parley_run(with_card);
+
+        // The cardless landing: both 8s kill and the invader's unit dies on the planet. Both
+        // arms ran on the same deterministic arena, so its coordinates can be re-derived.
+        let (asks, state) = run(false);
+        let (_, system, planet) = arena();
+        let commit_offer = vec![format!("commit|0|{planet}"), "done_committing".to_owned()];
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            1,
+            "the invader's unit died; one defender infantry stands"
+        );
+        assert_eq!(on_planet[0].owner, b);
+        assert_eq!(
+            asks,
+            vec![commit_offer.clone(), vec!["fight".to_owned()]],
+            "commit, then the fight"
+        );
+
+        // With Parley: the landing unit is back in space, nothing is fought, both defender
+        // infantry stand, the planet is still the holder's, and the invader took nothing.
+        let (asks, state) = run(true);
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            2,
+            "both defender infantry stand; the committed unit never landed"
+        );
+        assert!(on_planet.iter().all(|unit| unit.owner == b));
+        let in_space = state
+            .system_state(&system)
+            .units_of(&a)
+            .into_iter()
+            .filter(|unit| unit.type_id.as_str() == "infantry")
+            .count();
+        assert_eq!(in_space, 1, "the committed unit is back in the space area");
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&b),
+            "the invader took nothing"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card was spent"
+        );
+        assert_eq!(
+            state.last_committed_unit, None,
+            "Parley cleared the marker it acted on"
+        );
+        let reaction_offer = vec![
+            "reaction:generic:UNITS_COMMITTED:after".to_owned(),
+            "decline".to_owned(),
+        ];
+        assert_eq!(
+            asks,
+            vec![commit_offer.clone(), reaction_offer, commit_offer],
+            "commit, the reaction offer, then the commit offer again and the pass"
+        );
+    }
+
+    /// The ghost squad test arena: the holder controls two planets with two of his infantry
+    /// on the first; the invader holds one infantry in space. The cardless arm ends in a
+    /// ground round (one die for the invader, two for the defender, all hitting on 8); the
+    /// card arm commits, answers the reaction, makes the move, then declines the reverse.
+    fn ghost_run(with_card: bool) -> (Vec<Vec<String>>, GameState, SystemId, PlanetId, PlanetId) {
+        let a = invader();
+        let b = holder();
+        let (mut state, system, planet, other) = dual_arena();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
+        state
+            .system_mut(&system)
+            .set_control(other.clone(), b.clone());
+        on_planet(&mut state, &system, &planet, "infantry", &b, 2);
+        in_space(&mut state, &system, "infantry", &a, 1);
+        if with_card {
+            state.player_mut(&b).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("ghost_squad")];
+        }
+        let (mut dice, mut rng) = if with_card {
+            (Dice::new(), GameRng::new(5))
+        } else {
+            (Dice::from_faces([8u32, 8, 8]), GameRng::new(5))
+        };
+        let commit = format!("commit|0|{planet}");
+        let script: Vec<String> = if with_card {
+            vec![
+                commit,
+                "reaction:generic:UNITS_COMMITTED:after".to_owned(),
+                format!("move|{planet}|{other}|infantry"),
+                "decline".to_owned(),
+            ]
+        } else {
+            vec![commit, "fight".to_owned()]
+        };
+        let asks = drive_invasion(
+            &mut state,
+            &system,
+            Stage::Committing,
+            InvasionReport::default(),
+            script,
+            &mut dice,
+            &mut rng,
+        );
+        (asks, state, system, planet, other)
+    }
+
+    #[test]
+    fn ghost_squad_relocates_the_holders_forces_before_the_fight() {
+        // Ghost Squad: "Move any number of your ground forces from any planet you control
+        // in the active system to any other planet you control in the active system." The
+        // invader lands on the planet holding the holder's two infantry. With the card the
+        // holder moves both infantry to his other planet before any combat: the invader's
+        // lone infantry takes the first planet alone. Without it, both sides roll 8, the
+        // invader's unit dies, and the holder keeps the first planet.
+        let a = invader();
+        let b = holder();
+        let run = |with_card: bool| ghost_run(with_card);
+
+        // The cardless landing: both 8s kill, the invader's unit dies on the first planet,
+        // one defender infantry stands, and the holder keeps both planets.
+        let (asks, state, system, planet, other) = run(false);
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            1,
+            "the invader's unit died; one defender infantry stands"
+        );
+        assert_eq!(on_planet[0].owner, b);
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&b),
+            "the invader held nothing of its own on the planet, so it took nothing"
+        );
+        assert!(
+            state.system_state(&system).on_planet(&other).is_empty(),
+            "nothing was moved"
+        );
+        let commit_offer = vec![
+            format!("commit|0|{planet}"),
+            format!("commit|0|{other}"),
+            "done_committing".to_owned(),
+        ];
+        assert_eq!(
+            asks,
+            vec![commit_offer.clone(), vec!["fight".to_owned()]],
+            "commit, then the fight; got {asks:?}"
+        );
+
+        // With Ghost Squad: both infantry move to the second planet before any combat; the
+        // invader's infantry stands on the first planet alone and takes it.
+        let (asks, state, _, _, _) = run(true);
+        let on_planet = state.system_state(&system).on_planet(&planet).to_vec();
+        assert_eq!(
+            on_planet.len(),
+            1,
+            "only the invader's infantry stands on the first planet"
+        );
+        assert_eq!(on_planet[0].owner, a);
+        let moved: Vec<Unit> = state.system_state(&system).on_planet(&other).to_vec();
+        assert_eq!(moved.len(), 2, "both of the holder's infantry relocated");
+        assert!(moved.iter().all(|unit| unit.owner == b));
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&planet),
+            Some(&a),
+            "the invader holds the first planet: no defender ground was there to fight"
+        );
+        assert_eq!(
+            state.system_state(&system).planet_control.get(&other),
+            Some(&b),
+            "the holder still controls the planet the forces moved to"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card was spent"
+        );
+        let move_offer = |from: &PlanetId, to: &PlanetId| {
+            vec![format!("move|{from}|{to}|infantry"), "decline".to_owned()]
+        };
+        let reaction_offer = vec![
+            "reaction:generic:UNITS_COMMITTED:after".to_owned(),
+            "decline".to_owned(),
+        ];
+        assert_eq!(
+            asks,
+            vec![
+                commit_offer,
+                reaction_offer,
+                move_offer(&planet, &other),
+                move_offer(&other, &planet),
+            ],
+            "commit, the reaction offer, the move, then the reverse move the holder declines; got {asks:?}"
+        );
+    }
     #[test]
     fn scramble_frequency_rerolls_all_of_the_rollers_dice() {
         // Scramble Frequency: "After another player makes a BOMBARDMENT, SPACE CANNON, or

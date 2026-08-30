@@ -677,6 +677,17 @@ pub fn space_cannon_offense(
         let Some(value) = kind.space_cannon_hits_on() else {
             continue;
         };
+        // Disable strips SPACE CANNON from opponents' PDS during the invasion. In the driven
+        // game the cannon step precedes the invasion window, so this binds only callers that
+        // fire the guns after the card has played; it keeps the two PDS effects of the card
+        // in lockstep either way.
+        if kind.base_type() == "pds"
+            && state.players.iter().any(|seat| {
+                seat.id != unit.owner && seat.disable_invasion.contains(&state.activation_seq)
+            })
+        {
+            continue;
+        }
         let count = usize::try_from(kind.space_cannon_dice()).unwrap_or(0);
         if count == 0 {
             continue;
