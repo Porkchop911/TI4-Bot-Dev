@@ -649,6 +649,17 @@ pub fn space_cannon_offense(
     system: &SystemId,
     active: &PlayerId,
 ) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
+    // Solar Flare: during the named tactical action, other players cannot use SPACE CANNON
+    // against the active player's ships. Every gun below belongs to another player and fires
+    // at the active player's ships, which is exactly what the card forbids, so the whole step
+    // is suppressed rather than gun by gun. The marker is activation-scoped, like the card's
+    // "this tactical action" wording.
+    if state
+        .player(active)
+        .is_some_and(|seat| seat.solar_flare.contains(&state.activation_seq))
+    {
+        return Vec::new();
+    }
     let types = catalogue(content, sources);
     let board = state.system_state(system);
 

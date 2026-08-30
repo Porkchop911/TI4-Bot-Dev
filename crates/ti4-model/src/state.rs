@@ -430,6 +430,18 @@ pub struct Player {
     /// with Blitz, the activation scopes the marker to the invasion it was played in.
     #[serde(default)]
     pub disable_invasion: Vec<u32>,
+    /// Solar Flare: one entry per copy, each the [`GameState::activation_seq`] of the tactical
+    /// action whose movement step no opponent's SPACE CANNON may fire at this player's ships.
+    /// The engine's cannon step is the one that belongs to that action, so the activation
+    /// scopes the marker to it.
+    #[serde(default)]
+    pub solar_flare: Vec<u32>,
+    /// Lost Star Chart: one entry per copy, each the [`GameState::activation_seq`] of the
+    /// tactical action in which systems containing both an alpha and a beta wormhole are
+    /// adjacent to each other. The card names this tactical action, so the activation scopes
+    /// the marker to it.
+    #[serde(default)]
+    pub lost_star: Vec<u32>,
 
     // -- returning and captured units ---------------------------------------------
     /// Generic Infantry II casualties waiting on their technology card.
@@ -503,6 +515,8 @@ impl PartialEq for Player {
             && self.war_machine_use == other.war_machine_use
             && self.blitz_invasion == other.blitz_invasion
             && self.disable_invasion == other.disable_invasion
+            && self.solar_flare == other.solar_flare
+            && self.lost_star == other.lost_star
             && self.infantry_returning == other.infantry_returning
             && self.technology_units_returning == other.technology_units_returning
             && self.spec_ops_returning == other.spec_ops_returning
@@ -568,6 +582,8 @@ impl Player {
             war_machine_use: Vec::new(),
             blitz_invasion: Vec::new(),
             disable_invasion: Vec::new(),
+            solar_flare: Vec::new(),
+            lost_star: Vec::new(),
             infantry_returning: 0,
             technology_units_returning: Vec::new(),
             spec_ops_returning: 0,

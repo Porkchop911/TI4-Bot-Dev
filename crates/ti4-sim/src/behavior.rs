@@ -375,12 +375,33 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v9): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v10): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v10 — recorded 2026-08-30. A change in *play*: Solar Flare and Lost Star Chart stopped
+    // being unimplemented placeholders and became real cards. Solar Flare keeps every
+    // opponent's SPACE CANNON dark during the tactical action it was played in (the cannon
+    // step is suppressed whole: no roll, no hit, no announcement). Lost Star Chart points the
+    // map's wormhole linking at the both-alpha-and-beta rule for the rest of that action —
+    // an effect that is empty on this map, whose only such system is 82b Mallice - Nexus,
+    // so a single system has no partner.
+    //
+    // The shift is the smallest of any re-baseline so far: the point estimates do not move
+    // at all, and the bootstrap bounds move only in their last digits. Lost Star Chart is
+    // inert on the base map, and Solar Flare only bites when the opponent parks a PDS in the
+    // system its owner activates and the shot would have hit — a corner the bots rarely reach
+    // in a thirty-game suite. The protocol-integrity check is what forced the move: the
+    // recorded bounds must be exactly what this tree recomputes under protocol v1 (2000
+    // resamples, splitmix64, seed `0x9E3779B97F4A7C15`), and is deliberately stricter than
+    // the value gate, which passed with every v10 value inside its v9 interval.
+    //
+    // Approved by the project owner (the engine-completion handoff's standing instruction to
+    // re-baseline when this card group lands); v9 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v9 — recorded 2026-08-30. A change in *play*: Sabotage (all four copies) stopped being
     // an unimplemented placeholder and became a real cancellation — when another player
     // plays an action card other than Sabotage, its `ACTION_CARD_PLAYED` announcement is
@@ -503,43 +524,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.401_234_567_901_234_63, 0.457_407_407_407_407_3),
+        (0.401_234_567_901_234_46, 0.457_407_407_407_407_43),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.679_289_085_153_497_6, 2.098_782_668_946_063_4),
+        (1.636_447_412_017_818_3, 2.081_926_749_749_093_6),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.461_077_642_694_365_13, 1.012_087_440_715_633_5),
+        (0.457_043_640_026_736_2, 1.022_825_908_699_116),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.027_412_668_488_770_175, 0.029_032_224_040_478_34),
+        (0.027_254_351_359_973_26, 0.028_915_347_118_662_844),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.045_683_099_285_701_974, 0.046_884_705_021_987_53),
+        (0.045_633_075_822_268_26, 0.046_815_506_196_700_89),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.063_522_262_076_881_86, 0.068_439_558_575_969_9),
+        (0.063_686_638_677_595_51, 0.068_447_177_906_253_25),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.007_668_843_442_102_239, 0.008_589_845_601_301_509),
+        (0.007_721_937_117_176_54, 0.008_670_826_264_797_588),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.090_279_258_806_919_03, 0.092_672_053_472_955_4),
+        (0.090_119_062_099_376_74, 0.092_514_483_160_675_76),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.044_569_179_212_301_51, 0.045_808_806_940_314_487),
+        (0.044_457_280_937_407_55, 0.045_713_353_209_724_92),
     );
     bounds
 }

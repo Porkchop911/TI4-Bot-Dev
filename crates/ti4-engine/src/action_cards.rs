@@ -279,6 +279,39 @@ fn flank_speed(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     }
 }
 
+/// Solar Flare: "During the 'Movement' step of this tactical action, other players cannot use
+/// SPACE CANNON against your ships."
+///
+/// The engine's cannon step is the one that belongs to the named tactical action, so the marker
+/// is activation-scoped like the card's wording. [`crate::combat::space_cannon_offense`] reads
+/// it and suppresses the whole step: every gun in that step belongs to another player and fires
+/// at this player's ships, which is exactly what the card forbids.
+fn solar_flare(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.solar_flare.push(activation);
+    }
+}
+
+/// Lost Star Chart: "During this tactical action, systems that contain alpha and beta wormholes
+/// are adjacent to each other."
+///
+/// The adjacency itself is a switch on the map, re-derived every step by
+/// [`crate::laws::apply_to_galaxy`] from the active player's marker — the same shape as the
+/// wormhole laws, so no movement path can consult a map that forgot the card. The marker scopes
+/// the effect to the tactical action the card was played in.
+///
+/// On this map 82b Mallice - Nexus is the only system carrying both an alpha and a beta
+/// wormhole, so the card changes no actual adjacency in a base game: a single system has no
+/// partner. The switch and the marker are still implemented as printed, and the link rule is
+/// pinned by the galaxy's own tests.
+fn lost_star(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let activation = context.state.activation_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.lost_star.push(activation);
+    }
+}
+
 /// Sabotage: "When another player plays an action card other than 'Sabotage': cancel that
 /// action card."
 ///
@@ -3976,6 +4009,8 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         // fourth copy left off a list stays unplayable for ever with no symptom.
         "mb1" | "mb2" | "mb3" | "mb4" => Some(morale_boost),
         "fs1" | "fs2" | "fs3" | "fs4" => Some(flank_speed),
+        "solar_flare" => Some(solar_flare),
+        "lost_star" => Some(lost_star),
         "sabo1" | "sabo2" | "sabo3" | "sabo4" => Some(sabotage),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
@@ -4142,6 +4177,8 @@ const REGISTERED_ALIASES: &[&str] = &[
     "sabo2",
     "sabo3",
     "sabo4",
+    "solar_flare",
+    "lost_star",
     "cripple",
     "f_deployment",
     "imp_rider",

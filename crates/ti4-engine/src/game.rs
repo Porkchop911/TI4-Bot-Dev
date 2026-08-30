@@ -3472,6 +3472,206 @@ mod tests {
         );
     }
 
+    #[test]
+    fn solar_flare_keeps_the_opponents_space_cannon_dark_for_the_action() {
+        // Solar Flare: "During the 'Movement' step of this tactical action, other players
+        // cannot use SPACE CANNON against your ships." A's cruiser sits in the system he
+        // activates, and B's PDS is the gun that would shoot it in the action's cannon step.
+        // With the flare the step never happens — no roll, no hit, no announcement; without
+        // it the PDS fires. The card's marker is activation-scoped, so it cannot keep the
+        // gun dark in a later action.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>, Vec<String>, bool) {
+            let (mut state, galaxy, ids) = tactical_fixture();
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "pds", &b, 1);
+            if with_card {
+                state.player_mut(&a).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("solar_flare")];
+            }
+            // A: start the action, activate, play the flare in his own after window (with the
+            // card), then declare the empty movement step done.
+            let mut script = vec![TACTICAL_ACTION_ID.to_owned(), ids[0].to_string()];
+            if with_card {
+                script.push("reaction:generic:SYSTEM_ACTIVATED:after".to_owned());
+            }
+            script.push("done_moving".to_owned());
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // PDS I hits on 6: pin the gun's single die so the control arm's shot is a hit.
+            game.dice = Dice::from_faces([6]);
+
+            for _ in 0..40 {
+                let result = game.step();
+                assert_eq!(
+                    result.error, None,
+                    "no tactical step should refuse; log was {:?}",
+                    game.events
+                );
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran every step it has and closed; log was {:?}",
+                game.events
+            );
+            (
+                game.state.clone(),
+                game.events.clone(),
+                game.dice
+                    .history()
+                    .iter()
+                    .map(|roll| roll.reason.clone())
+                    .collect(),
+                game.state
+                    .system_state(&ids[0])
+                    .units
+                    .iter()
+                    .any(|unit| unit.owner == a && unit.type_id.as_str() == "cruiser"),
+            )
+        };
+
+        // Without the flare the PDS fires and its hit is announced.
+        let (state, events, rolls, _cruiser) = run(false);
+        assert!(
+            rolls.iter().any(|reason| reason == "space cannon"),
+            "the PDS rolled its gun: {rolls:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "SPACE_CANNON_HITS"),
+            "the shot was announced"
+        );
+        assert!(
+            state.player(&a).unwrap().solar_flare.is_empty(),
+            "no card, no marker"
+        );
+
+        // With the flare the gun never fires during the action: no roll, no announcement,
+        // and the cruiser that the shot was aimed at is still there when the action ends.
+        let (state, events, rolls, cruiser) = run(true);
+        assert!(
+            !rolls.iter().any(|reason| reason == "space cannon"),
+            "the flare keeps every opponent gun dark: {rolls:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "SPACE_CANNON_HITS"),
+            "no shot, no announcement"
+        );
+        let seat = state.player(&a).unwrap();
+        assert_eq!(
+            seat.solar_flare,
+            vec![state.activation_seq],
+            "the marker scopes the card to the action it was played in"
+        );
+        assert!(seat.action_cards.is_empty(), "the card was spent");
+        assert!(cruiser, "the aimed-at ship survived the dark cannon step");
+    }
+
+    #[test]
+    fn lost_star_points_the_map_at_the_chart_for_the_players_action() {
+        // Lost Star Chart: "During this tactical action, systems that contain alpha and beta
+        // wormholes are adjacent to each other." The adjacency is a switch on the map that
+        // `laws::apply_to_galaxy` re-derives every step from the active player's marker, so
+        // this test drives the real tactical action and pins the wiring: the map points at
+        // the chart while the chart-holder's action is in flight, and at nothing else.
+        //
+        // On this map 82b Mallice - Nexus is the only system carrying both wormholes, so the
+        // card changes no actual adjacency in a base game — a single system has no partner.
+        // The switch is still implemented as printed, and the link rule itself is pinned by
+        // the galaxy's own tests (`the_star_chart_rule_links_the_both_wormhole_systems`).
+        let a = PlayerId::new("a");
+        let run = |with_card: bool| -> (GameState, Vec<String>, bool) {
+            let (mut state, galaxy, ids) = tactical_fixture();
+            if with_card {
+                state.player_mut(&a).unwrap().action_cards =
+                    vec![ti4_model::id::ActionCardId::new("lost_star")];
+            }
+            // A: start the action, activate, play the chart in his own after window (with the
+            // card), then declare the empty movement step done.
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    ids[0].to_string(),
+                    "reaction:generic:SYSTEM_ACTIVATED:after".to_owned(),
+                    "done_moving".to_owned(),
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID.to_owned(),
+                    ids[0].to_string(),
+                    "done_moving".to_owned(),
+                ]
+            };
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+            let mut pointed_at_chart = false;
+            for _ in 0..16 {
+                // The switch is re-derived at the top of every step, so the value it held
+                // during the step is what the step's movement actually used. Sampling
+                // before and after each step sees it either way: the step that completes
+                // the action is also the step whose top set it.
+                let map_points =
+                    |game: &Game<'_>| game.galaxy.as_ref().is_some_and(|g| g.wormhole_star_links);
+                if map_points(&game) {
+                    pointed_at_chart = true;
+                }
+                let result = game.step();
+                assert_eq!(
+                    result.error, None,
+                    "no tactical step should refuse; log was {:?}",
+                    game.events
+                );
+                if map_points(&game) {
+                    pointed_at_chart = true;
+                }
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran every step it has and closed; log was {:?}",
+                game.events
+            );
+            (game.state, game.events, pointed_at_chart)
+        };
+
+        // Without the card the map never points at the chart.
+        let (state, _events, pointed) = run(false);
+        assert!(!pointed, "nothing on the map links without the card");
+        assert!(
+            state.player(&a).unwrap().lost_star.is_empty(),
+            "no card, no marker"
+        );
+
+        // With the card the map points at the chart while the action is in flight, the marker
+        // records exactly that activation, the card is spent, and a played chart is a
+        // resolved card, not a registry gap.
+        let (state, events, pointed) = run(true);
+        assert!(
+            pointed,
+            "the map pointed at the chart during its action; log was {events:?}"
+        );
+        let seat = state.player(&a).unwrap();
+        assert_eq!(
+            seat.lost_star,
+            vec![state.activation_seq],
+            "the marker scopes the card to the action it was played in"
+        );
+        assert!(seat.action_cards.is_empty(), "the card was spent");
+        assert!(events.iter().any(|e| e == "ACTION_CARD_PLAYED"));
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_UNRESOLVED"),
+            "a played chart is not an unimplemented card"
+        );
+    }
+
     /// Drive a tactical action through to the production step and report the budget the step
     /// was offered. `reaction`, when set, is the answer to the one question the production
     /// window asks the holder of a playable card (playing is optional, so even a single

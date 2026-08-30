@@ -72,6 +72,72 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   `solar_flare`), Agenda/turn flow (9 cards), remaining relics. Read
   `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
 
+### Engine completion — Movement cards + v10 re-baseline (2026-08-30)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `bd7b8f7` before this batch.
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **Movement group** — Solar Flare (all copies, `solar_flare`) and Lost
+  Star Chart (`lost_star`). Both are played in the existing "After you activate a system"
+  window of the owner's own tactical action and set an activation-scoped marker on the seat
+  (`Player.solar_flare` / `Player.lost_star`, the `blitz_invasion` / `war_machine_use` shape —
+  the marker lapses when the next tactical action begins, so no cleanup):
+  - **Solar Flare** — "During the 'Movement' step of this tactical action, other players cannot
+    use SPACE CANNON against your ships": `combat::space_cannon_offense` reads the marker and
+    suppresses the whole cannon step (no roll, no hit, no `SPACE_CANNON_HITS`). The engine's
+    cannon step is the one that belongs to the named action, and every gun in it is another
+    player's firing at the active player's ships — exactly what the card forbids.
+  - **Lost Star Chart** — "During this tactical action, systems that contain alpha and beta
+    wormholes are adjacent to each other": a new switch `Galaxy.wormhole_star_links`, re-derived
+    at the top of every `Game::step` by `laws::apply_to_galaxy` from the active player's marker
+    (no movement path can consult a map that forgot the card); `Galaxy::wormhole_partners`
+    treats a both-wormhole system as linked to every other both-wormhole system while the
+    switch is on. **On this map the effect is empty by the data**: 82b Mallice - Nexus is the
+    only system carrying both an alpha and a beta wormhole, so a single such system has no
+    partner; the rule is implemented as printed and pinned by the galaxy's own test. The
+    historical oracle never implemented the card (policy weight 0.0 in every recorded
+    baseline), so no oracle semantics were carried over.
+- Coverage 105 → **107/142** action cards (coverage_report, release); agendas still 63/63.
+- **ti4-sim baseline moved v9 → v10** through the same versioned process: `rebaseline_behavior`
+  (release, LIBTORCH) printed old vs new; `behavior.rs` now carries the v10 transcription and
+  `plans/evidence/M08-021.md` records the pair. The shift is the smallest of any re-baseline so
+  far: the point estimates do not move at all and the bootstrap bounds move only in their last
+  digits (the chart is inert on the base map; the flare bites only when the opponent parks a
+  PDS in the system its owner activates and the shot would have hit, a corner the bots rarely
+  reach in a thirty-game suite). Every v10 value sits inside its v9 interval (value gate
+  green); what forced the move is the protocol-integrity check (recorded == protocol
+  recomputation, 2000 splitmix64 resamples, seed `0x9E3779B97F4A7C15`). `completion` stays
+  the strict 1.0 invariant.
+- Tests: 1003 `ti4-engine` lib tests pass (was 1000): `solar_flare_keeps_the_opponents_space_
+  cannon_dark_for_the_action` (a `Game::step` driver — A's cruiser and B's PDS in the activated
+  system: the control arm rolls the gun, announces `SPACE_CANNON_HITS`, and loses nothing of
+  B's; the card arm rolls and announces nothing and the cruiser is still in the system when
+  the action ends; pins the marker and the spent card), `lost_star_points_the_map_at_the_
+  chart_for_the_players_action` (the game's map points at the chart during the owner's action
+  and not otherwise; a played chart is a resolved card, not `ACTION_CARD_UNRESOLVED`; control
+  arm never points), `laws::the_star_chart_reaches_the_map_through_the_active_players_marker`
+  (the laws wiring: on for the active player's matching activation, off for a different
+  `activation_seq`, off when another player is active), and the galaxy-level
+  `the_star_chart_rule_links_the_both_wormhole_systems` (a both-wormhole system links to every
+  other such system, off-link kinds still pair by letter, the switch alone changes nothing on
+  a map with no such system). Probes: cannon suppression removed (card arm rolls again), the
+  laws' flag derivation pinned off (game-flow + wiring tests fail), both effect-marker pushes
+  deleted, dispatch entries removed (the exact test fails each time → revert). The galaxy's
+  both-link branch has no detecting probe — it is indistinguishable from same-letter matching
+  by the map's data (documented in the test's doc comment).
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s `fixture_capture_is_deterministic`
+  — the same pre-existing tracked failure, still at step 781 (failure mode unchanged). M09-019b
+  scope, not part of this batch.
+- Clippy: zero warnings in every touched file under `--all-targets` (`action_cards`,
+  `combat`, `laws`, `game` tests, `ti4-model` state, `ti4-content` galaxy, `behavior` docs);
+  the remaining workspace warnings are pre-existing in untouched files.
+- Next safe action: the handoff's remaining groups in order — Agenda/turn flow (`veto`,
+  `veto3`, `veto4`, `confusing`, `confounding`, `deadly_plot`, `coup`, `crisis`,
+  `master_plan`), then the remaining ungrouped cards. Read
+  `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment restructuring.
+
 ### Engine completion — invasion-flow cards + v8 re-baseline (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

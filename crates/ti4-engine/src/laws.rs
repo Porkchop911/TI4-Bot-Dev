@@ -256,23 +256,29 @@ pub fn draws_at_status_end(state: &GameState, player: &PlayerId) -> bool {
 /// unit, at the point the ability would be used.
 #[must_use]
 pub fn mech_abilities_suppressed(state: &GameState, base_type: &str, ability: &str) -> bool {
-    base_type == "mech"
-        && active(state, "articles_war")
-        && !ability.eq_ignore_ascii_case("sustain")
+    base_type == "mech" && active(state, "articles_war") && !ability.eq_ignore_ascii_case("sustain")
 }
 
-/// Point the map at what the wormhole laws say.
+/// Point the map at what the wormhole laws say — and at what the active player's cards say.
 ///
-/// `Galaxy` already carries both switches — `wormholes_off` for "alpha and beta wormholes have no
-/// effect during movement", and `wormholes_all_linked` for "all systems that contain either an
+/// `Galaxy` already carries the law switches — `wormholes_off` for "alpha and beta wormholes have
+/// no effect during movement", and `wormholes_all_linked` for "all systems that contain either an
 /// alpha or beta wormhole are adjacent to each other", complete with the ALPHA/BETA restriction
-/// both laws share. Neither was ever set from a law, so both laws were inert.
+/// both laws share. `wormhole_star_links` carries Lost Star Chart: while the active player's
+/// tactical action carries the card's marker, systems that contain both an alpha and a beta
+/// wormhole are adjacent to each other. The marker is activation-scoped, so a card played in an
+/// earlier action cannot link the map of a later one.
 ///
 /// Applied to the owned map rather than threaded through movement: every route query already reads
 /// the galaxy, so setting it here means no movement path can consult the wrong one.
 pub fn apply_to_galaxy(state: &GameState, galaxy: &mut ti4_content::galaxy::Galaxy) {
     galaxy.wormholes_off = wormholes_suppressed(state);
     galaxy.wormholes_all_linked = wormholes_all_connected(state);
+    galaxy.wormhole_star_links = state
+        .active
+        .as_ref()
+        .and_then(|acting| state.player(acting))
+        .is_some_and(|seat| seat.lost_star.contains(&state.activation_seq));
 }
 
 /// Laws this engine can enact but not enforce — the honest coverage gap.
@@ -358,7 +364,10 @@ mod tests {
 
     #[test]
     fn representative_government_replaces_influence_with_one_vote() {
-        assert_eq!(crate::vote::flat_vote_amount(&enacted("rep_govt", "For")), Some(1));
+        assert_eq!(
+            crate::vote::flat_vote_amount(&enacted("rep_govt", "For")),
+            Some(1)
+        );
         assert_eq!(
             crate::vote::flat_vote_amount(&enacted("representative_government", "For")),
             Some(1)
@@ -379,11 +388,53 @@ mod tests {
         assert!(!galaxy.wormholes_all_linked);
 
         apply_to_galaxy(&enacted("wormhole_recon", "For"), &mut galaxy);
-        assert!(galaxy.wormholes_all_linked, "Wormhole Reconstruction joins them");
+        assert!(
+            galaxy.wormholes_all_linked,
+            "Wormhole Reconstruction joins them"
+        );
         assert!(!galaxy.wormholes_off, "and re-opens what the ban had shut");
 
         apply_to_galaxy(&crate::fixtures::game(&["a"]), &mut galaxy);
         assert!(!galaxy.wormholes_off && !galaxy.wormholes_all_linked);
+    }
+
+    #[test]
+    fn the_star_chart_reaches_the_map_through_the_active_players_marker() {
+        // Lost Star Chart keeps its effect on the player who played it, for the tactical
+        // action it was played in: the marker sits on that seat, and the map reads it only
+        // while that player is the one acting in that activation.
+        let mut galaxy = crate::fixtures::plain_hub().galaxy;
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let a = ti4_model::id::PlayerId::new("a");
+        let b = ti4_model::id::PlayerId::new("b");
+
+        state.active = Some(a.clone());
+        state.activation_seq = 7;
+        apply_to_galaxy(&state, &mut galaxy);
+        assert!(
+            !galaxy.wormhole_star_links,
+            "without the card the map does not link"
+        );
+
+        state.player_mut(&a).unwrap().lost_star.push(7);
+        apply_to_galaxy(&state, &mut galaxy);
+        assert!(
+            galaxy.wormhole_star_links,
+            "the chart links the map during its action"
+        );
+
+        // A marker from an earlier activation is not the current action's: the chart cannot
+        // link the map of a later tactical action.
+        state.activation_seq = 8;
+        apply_to_galaxy(&state, &mut galaxy);
+        assert!(!galaxy.wormhole_star_links);
+
+        // The card belongs to the player who played it. B acting in the same activation
+        // inherits nothing from A's chart.
+        state.activation_seq = 7;
+        state.active = Some(b);
+        apply_to_galaxy(&state, &mut galaxy);
+        assert!(!galaxy.wormhole_star_links);
     }
 
     fn enacted(alias: &str, elected: &str) -> GameState {
@@ -401,15 +452,27 @@ mod tests {
     fn an_attached_law_changes_what_a_planet_can_pay() {
         let content = ti4_content::ContentStore::embedded();
         let planet = ti4_model::id::PlanetId::new("bellatrix");
-        let printed_resources =
-            crate::production::planet_value(content, ALL_SOURCES, &planet, crate::production::Spend::Resources);
-        let printed_influence =
-            crate::production::planet_value(content, ALL_SOURCES, &planet, crate::production::Spend::Influence);
+        let printed_resources = crate::production::planet_value(
+            content,
+            ALL_SOURCES,
+            &planet,
+            crate::production::Spend::Resources,
+        );
+        let printed_influence = crate::production::planet_value(
+            content,
+            ALL_SOURCES,
+            &planet,
+            crate::production::Spend::Influence,
+        );
 
         let state = enacted("core_mining", "bellatrix");
         assert_eq!(
             crate::production::planet_value_now(
-                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                &state,
+                content,
+                ALL_SOURCES,
+                &planet,
+                crate::production::Spend::Resources
             ),
             printed_resources + 2,
             "Core Mining adds two resources"
@@ -418,7 +481,11 @@ mod tests {
         let state = enacted("senate_sanctuary", "bellatrix");
         assert_eq!(
             crate::production::planet_value_now(
-                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Influence
+                &state,
+                content,
+                ALL_SOURCES,
+                &planet,
+                crate::production::Spend::Influence
             ),
             printed_influence + 2,
             "Senate Sanctuary adds two influence"
@@ -428,10 +495,18 @@ mod tests {
         assert_eq!(
             (
                 crate::production::planet_value_now(
-                    &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                    &state,
+                    content,
+                    ALL_SOURCES,
+                    &planet,
+                    crate::production::Spend::Resources
                 ),
                 crate::production::planet_value_now(
-                    &state, content, ALL_SOURCES, &planet, crate::production::Spend::Influence
+                    &state,
+                    content,
+                    ALL_SOURCES,
+                    &planet,
+                    crate::production::Spend::Influence
                 )
             ),
             (printed_resources + 1, printed_influence + 1),
@@ -442,7 +517,11 @@ mod tests {
         let state = enacted("core_mining", "somewhere_else");
         assert_eq!(
             crate::production::planet_value_now(
-                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                &state,
+                content,
+                ALL_SOURCES,
+                &planet,
+                crate::production::Spend::Resources
             ),
             printed_resources
         );
@@ -464,14 +543,24 @@ mod tests {
             .expect("the corpus has hazardous planets");
 
         let state = enacted("conventions", "For");
-        assert!(bombardment_forbidden(&state, content, ALL_SOURCES, &cultural));
+        assert!(bombardment_forbidden(
+            &state,
+            content,
+            ALL_SOURCES,
+            &cultural
+        ));
         assert!(
             !bombardment_forbidden(&state, content, ALL_SOURCES, &hazardous),
             "only cultural planets are protected"
         );
 
         let quiet = crate::fixtures::game(&["a"]);
-        assert!(!bombardment_forbidden(&quiet, content, ALL_SOURCES, &cultural));
+        assert!(!bombardment_forbidden(
+            &quiet,
+            content,
+            ALL_SOURCES,
+            &cultural
+        ));
     }
 
     /// Homeland Defense Act removes the PDS cap; Demilitarized Zone bars the planet entirely.
@@ -532,7 +621,6 @@ mod tests {
         assert!(flat_votes(&enacted("representative_government", "For")));
         assert!(!flat_votes(&crate::fixtures::game(&["a"])));
     }
-
 
     use ti4_model::content_types::POK;
 

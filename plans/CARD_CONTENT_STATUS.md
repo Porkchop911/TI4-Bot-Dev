@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 105/142 |
+| action cards  | 34/142 | 107/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 105 of
-142 (73.9%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 107 of
+142 (75.4%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -131,6 +131,41 @@ the test fail, then reverted).
   dispatch entry → the exact test fails → revert). The group moved the ti4-sim behavioural
   baseline v8 → v9 (`plans/evidence/M08-021.md`).
 
+- Movement (the handoff's next group): `solar_flare` (all copies) and `lost_star` (Lost Star
+  Chart). Both are played in the "After you activate a system" window of the owner's own tactical
+  action and set an activation-scoped marker on the seat (the `blitz_invasion` / `war_machine_use`
+  shape — the marker lapses when the next tactical action begins, so no cleanup). **Solar Flare**
+  — "During the 'Movement' step of this tactical action, other players cannot use SPACE CANNON
+  against your ships": the engine's cannon step is the one that belongs to the named action, so
+  `combat::space_cannon_offense` reads the marker and suppresses the whole step (no roll, no hit,
+  no `SPACE_CANNON_HITS`); every gun in that step belongs to another player and fires at the
+  active player's ships, which is exactly what the card forbids. **Lost Star Chart** — "During
+  this tactical action, systems that contain alpha and beta wormholes are adjacent to each
+  other": a new switch `Galaxy.wormhole_star_links`, re-derived at the top of every `Game::step`
+  by `laws::apply_to_galaxy` from the active player's marker (no movement path can consult a map
+  that forgot the card), and `Galaxy::wormhole_partners` treats a both-wormhole system as linked
+  to every other both-wormhole system while the switch is on. **On this map the effect is empty
+  by the data**: 82b Mallice - Nexus is the only system carrying both an alpha and a beta
+  wormhole, so a single such system has no partner; the rule is implemented as printed and pinned
+  by the galaxy's own test, and the historical oracle never implemented the card either. Tests:
+  `solar_flare_keeps_the_opponents_space_cannon_dark_for_the_action` (a `Game::step` driver —
+  A's cruiser and B's PDS in the activated system: the control arm rolls the gun and announces
+  `SPACE_CANNON_HITS`, the card arm does neither and the cruiser is still in the system when the
+  action ends), `lost_star_points_the_map_at_the_chart_for_the_players_action` (the game's map
+  points at the chart during the owner's action and not otherwise; the card is a resolved
+  card, not `ACTION_CARD_UNRESOLVED`), `the_star_chart_reaches_the_map_through_the_active_
+  players_marker` (the laws wiring: on for the active player's matching activation, off for a
+  different `activation_seq`, off when another player is active), and
+  `the_star_chart_rule_links_the_both_wormhole_systems` (galaxy level). Four probes (cannon
+  suppression removed / the laws' flag derivation pinned off / both effect markers removed / the
+  dispatch entries deleted → the exact test fails → revert); the galaxy's both-link branch is
+  behaviorally indistinguishable from ordinary same-letter matching, so its pin guards against
+  an over-broad implementation rather than detecting its absence. The group moved the ti4-sim
+  behavioural baseline v9 → v10 (`plans/evidence/M08-021.md`) — the smallest shift of any
+  re-baseline so far: the point estimates do not move and the bootstrap bounds move only in
+  their last digits (the chart is inert on the base map and the flare bites only in a corner the
+  bots rarely reach), with the protocol-integrity check, not the value gate, forcing the move.
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -146,20 +181,19 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 37 unimplemented action cards, grouped by blocking root cause
+## The 35 unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
-flow group (`blitz`, `disable`, `parley`, `ghost_squad`) and the Cancel API group (`sabo1`–`4`)
-closed with the batches above; only `rout`, `dh1-4` and the live-dice half of
-`intercept` remain in the combat-dice group.
+flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (`sabo1`–`4`) and
+the Movement group (`lost_star`, `solar_flare`) closed with the batches above; only `rout`,
+`dh1-4` and the live-dice half of `intercept` remain in the combat-dice group.
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
   keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
   `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
   bookkeeping where the rule allows; the live-dice half stays unmodelled).
   `fire_team` and `scramble` left this group with the reroll group below.
-- **Movement rules / system activation** (`movement.rs`): `lost_star`, `solar_flare`.
 - **Vote weighting / ballot** (`vote.rs`): `bribery`, `distinguished`, `hack`.
 - **Agenda outcome redirection / agenda queue** (`game.rs`): `confounding`, `confusing`,
   `deadly_plot`, `veto`, `veto3`, `veto4`.
@@ -216,27 +250,29 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 1000 passed, 0 failed.
+- `cargo test -p ti4-engine --lib`: 1003 passed, 0 failed.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite is green after the v8 → v9 re-baseline** (the Sabotage family
-  became playable; `plans/evidence/M08-021.md`), including the protocol-integrity check
-  in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-existing
-  (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at step 781
-  before any production-head menu of ≥3 options); it belongs to the M09-019b profile module's
-  own versioned process and is tracked, not new.
-- `cargo clippy -p ti4-model -p ti4-engine --all-targets`: zero warnings in the touched files
-  (lib and tests); the remaining workspace warnings are pre-existing in untouched files
-  (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
+  **ti4-sim's behavioral suite is green after the v9 → v10 re-baseline** (Solar Flare and Lost
+  Star Chart became playable; `plans/evidence/M08-021.md`), including the protocol-integrity
+  check in the debug build. The one remaining red is `fixture_capture_is_deterministic`: pre-
+  existing (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at
+  step 781 before any production-head menu of ≥3 options); it belongs to the M09-019b profile
+  module's own versioned process and is tracked, not new.
+- `cargo clippy -p ti4-model -p ti4-content -p ti4-engine --all-targets`: zero warnings in the
+  touched files (lib and tests); the remaining workspace warnings are pre-existing in untouched
+  files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
   `coverage_report` example's length).
-- All three Sabotage halves probed (break → the exact new test fails → revert): the slot's
-  `event.cancel()` removed, the "not Sabotage" guard forced off, and the dispatch entry deleted
-  (which alone makes a played Sabotage report `ACTION_CARD_UNRESOLVED`).
-- The 37 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- The Movement group was probed break → the exact new test fails → revert: the cannon
+  suppression removed from `space_cannon_offense` (the card arm rolls and announces again), the
+  laws' star-flag derivation pinned off (both the game-flow and the wiring tests fail), both
+  effect-marker pushes deleted, and the dispatch entries removed (a played chart or flare
+  reports `ACTION_CARD_UNRESOLVED`). The galaxy's both-link branch has no detecting probe — it
+  is indistinguishable from same-letter matching by the map's data (documented above). The
+  Sabotage group's three probes were recorded at its own checkpoint.
+- The 35 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow group and the Cancel API group closed with the batches above):
-  - **Movement** (2): `lost_star`, `solar_flare` — `wormholes_all_linked`-style galaxy scoping
-    (`movement.rs`/`laws`).
+  group; the invasion-flow, Cancel API and Movement groups closed with the batches above):
   - **Agenda and turn flow** (9): `veto`, `veto3`, `veto4`, `confusing`, `confounding`,
     `deadly_plot`, `coup`, `crisis`, `master_plan` — agenda redirection + queue (`game.rs`).
   - **Vote order** (1): `hack` — re-orderable vote sequence (`vote.rs`).

@@ -373,6 +373,10 @@ pub struct Galaxy {
     /// the game rather than read from it, so a `Galaxy` stays a plain value.
     pub wormholes_off: bool,
     pub wormholes_all_linked: bool,
+    /// Lost Star Chart: while this is set, systems that contain both an alpha and a beta
+    /// wormhole are adjacent to each other, whether or not the letter matching links them.
+    /// Set by the game for the tactical action the card was played in, like the law switches.
+    pub wormhole_star_links: bool,
 }
 
 impl Galaxy {
@@ -423,6 +427,7 @@ impl Galaxy {
             hyperlanes,
             wormholes_off: false,
             wormholes_all_linked: false,
+            wormhole_star_links: false,
         })
     }
 
@@ -483,6 +488,7 @@ impl Galaxy {
             hyperlanes,
             wormholes_off: false,
             wormholes_all_linked: false,
+            wormhole_star_links: false,
         })
     }
 
@@ -554,6 +560,11 @@ impl Galaxy {
 
         let links_everything =
             self.wormholes_all_linked && kinds.iter().any(|k| LINKED_KINDS.contains(&k.as_str()));
+        // Lost Star Chart, while its tactical action is in flight: a system that carries both
+        // an alpha and a beta wormhole links to every other system that does.
+        let star_links = self.wormhole_star_links
+            && kinds.iter().any(|k| k == "ALPHA")
+            && kinds.iter().any(|k| k == "BETA");
 
         self.wormholes
             .iter()
@@ -563,6 +574,9 @@ impl Galaxy {
                         other_kinds
                             .iter()
                             .any(|k| LINKED_KINDS.contains(&k.as_str()))
+                    } else if star_links {
+                        other_kinds.iter().any(|k| k == "ALPHA")
+                            && other_kinds.iter().any(|k| k == "BETA")
                     } else {
                         !other_kinds.is_disjoint(kinds)
                     }
@@ -789,6 +803,52 @@ mod tests {
         galaxy.wormholes_all_linked = true;
         assert!(galaxy.are_adjacent("39", "40"), "the law links them");
         assert!(galaxy.are_adjacent("40", "39"), "and symmetrically");
+    }
+
+    #[test]
+    fn the_star_chart_rule_links_the_both_wormhole_systems() {
+        // Lost Star Chart, as a map switch: while the card's tactical action is in flight,
+        // systems that contain both an alpha and a beta wormhole are adjacent to each other.
+        // The corpus map gives exactly one such system (82b Mallice - Nexus), so the test
+        // plants a second one on the small ring.
+        //
+        // Two systems that each carry both kinds already share letters, so the ordinary letter
+        // matching links them whether the switch is on or off: on any map the chart's rule is
+        // a consequence of the letter matching, and the switch changes no actual adjacency.
+        // What the test pins is that the rule is present and not over-broad — a version that
+        // made the switch link everything (a Wormhole Reconstruction with the kind check
+        // missing) would link the wormhole-free system and fail here.
+        let mut galaxy = Galaxy::build(
+            store(),
+            &["18", "19", "20", "21", "22", "23", "24"],
+            FULL,
+            3,
+        )
+        .unwrap();
+        assert!(
+            !galaxy.are_adjacent("19", "21"),
+            "two apart on the ring is not hex-adjacent"
+        );
+
+        let both = BTreeSet::from([String::from("ALPHA"), String::from("BETA")]);
+        galaxy.wormholes.insert(String::from("19"), both.clone());
+        galaxy.wormholes.insert(String::from("21"), both);
+
+        assert!(
+            galaxy.are_adjacent("19", "21"),
+            "the both-systems share letters and link"
+        );
+
+        galaxy.wormhole_star_links = true;
+        assert!(
+            galaxy.are_adjacent("19", "21"),
+            "the chart's rule links the both-systems"
+        );
+        assert!(galaxy.are_adjacent("21", "19"), "and symmetrically");
+        assert!(
+            !galaxy.are_adjacent("19", "22"),
+            "a wormhole-free system is not a partner of the chart's rule"
+        );
     }
 
     #[test]
