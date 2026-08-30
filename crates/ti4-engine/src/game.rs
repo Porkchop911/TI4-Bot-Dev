@@ -210,16 +210,10 @@ impl AftermathWindow {
             payload.insert("hits".to_owned(), i64::try_from(*hits).unwrap_or(0).into());
             let _ = ctx.emit(state, "SPACE_CANNON_HITS", payload);
         }
-        for (_, hits) in cannon {
+        let (content, sources, galaxy) = (ctx.content, ctx.sources, galaxy);
+        for (gunner, hits) in cannon {
             crate::combat::absorb_hits_seeing(
-                state,
-                ctx.content,
-                ctx.sources,
-                galaxy,
-                ctx.table,
-                player,
-                system,
-                hits,
+                state, content, sources, galaxy, ctx, player, system, &gunner, hits,
             )?;
         }
         let mut pending_event_scoring = None;
@@ -250,7 +244,7 @@ impl AftermathWindow {
             window = window.with_galaxy(galaxy.clone());
         }
         if pending_event_scoring.is_none() {
-            window.settle_open(state, ctx);
+            window.settle_open(state, ctx)?;
         }
         Ok(Self {
             player: player.clone(),
@@ -313,10 +307,14 @@ impl AftermathWindow {
         clippy::too_many_lines,
         reason = "one arm per aftermath stage, read as a table"
     )]
-    fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+    fn settle(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+    ) -> Result<(), crate::combat::CombatError> {
         loop {
             if self.pending_event_scoring.is_some() {
-                return;
+                return Ok(());
             }
             match &mut self.stage {
                 Aftermath::Fighting(window) => {
@@ -324,18 +322,18 @@ impl AftermathWindow {
                         .pending_choice(state, ctx.content, ctx.sources)
                         .is_some()
                     {
-                        return;
+                        return Ok(());
                     }
                     if let Some(occurrence) = window.take_scoring_occurrence() {
                         self.pending_event_scoring =
                             Some((occurrence, EventScoreLimit::OnePerPlayer));
-                        return;
+                        return Ok(());
                     }
                     if window.outcome().is_none() {
                         // A scoring pause can leave the combat at an automatic transition
                         // (currently the ordinary dice immediately after barrage). Drive that
                         // transition before deciding whether the aftermath may invade.
-                        window.settle_open(state, ctx);
+                        window.settle_open(state, ctx)?;
                         continue;
                     }
                     // 49: an invasion only happens if the active player still holds the space.
@@ -360,7 +358,7 @@ impl AftermathWindow {
                         {
                             self.pending_event_scoring =
                                 Some((occurrence, EventScoreLimit::OnePerPlayer));
-                            return;
+                            return Ok(());
                         }
                     }
                     if let Some(outcome) = window.outcome()
@@ -425,7 +423,7 @@ impl AftermathWindow {
                                 EventScoreLimit::AnyPerPlayer
                             },
                         ));
-                        return;
+                        return Ok(());
                     }
                     window.settle(state, ctx);
                     if let Some((occurrence, combat)) = window.take_scoring_occurrence() {
@@ -437,16 +435,16 @@ impl AftermathWindow {
                                 EventScoreLimit::AnyPerPlayer
                             },
                         ));
-                        return;
+                        return Ok(());
                     }
                     if window
                         .pending_choice(state, ctx.content, ctx.sources)
                         .is_some()
                     {
-                        return;
+                        return Ok(());
                     }
                     if !window.is_done() {
-                        return;
+                        return Ok(());
                     }
                     self.log.push("INVASION_RESOLVED".to_owned());
                     // The production window opens before the step makes its first choice, so a
@@ -460,16 +458,16 @@ impl AftermathWindow {
                         .pending_choice(state, ctx.content, ctx.sources)
                         .is_some()
                     {
-                        return;
+                        return Ok(());
                     }
                     // The "when 1 or more of your units use PRODUCTION" window already opened
                     // when the step began, before its first choice was built; nothing else is
                     // owed once the step ends.
                     self.log.push("PRODUCTION_RESOLVED".to_owned());
                     self.stage = Aftermath::Done;
-                    return;
+                    return Ok(());
                 }
-                Aftermath::Done => return,
+                Aftermath::Done => return Ok(()),
             }
         }
     }
@@ -502,7 +500,8 @@ impl Window for AftermathWindow {
             Aftermath::Producing(window) => window.resolve(state, ctx, answer)?,
             Aftermath::Done => {}
         }
-        self.settle(state, ctx);
+        self.settle(state, ctx)
+            .map_err(crate::combat::CombatError::into_illegal_choice)?;
         Ok(())
     }
 }
@@ -1661,10 +1660,7 @@ impl<'a> Game<'a> {
             notes_at_start,
         );
         let mut window = match opened {
-            Ok(mut window) => {
-                window.settle(&mut self.state, &mut ctx);
-                window
-            }
+            Ok(window) => window,
             Err(error) => {
                 self.dice = dice;
                 self.rng = rng;
@@ -1672,7 +1668,12 @@ impl<'a> Game<'a> {
                 return self.result(false, Some(error));
             }
         };
-        window.settle(&mut self.state, &mut ctx);
+        if let Err(error) = window.settle(&mut self.state, &mut ctx) {
+            self.dice = dice;
+            self.rng = rng;
+            self.mirror_timing_log(logged);
+            return self.result(false, Some(error.into()));
+        }
         self.dice = dice;
         self.rng = rng;
         self.mirror_timing_log(logged);
@@ -1695,6 +1696,10 @@ impl<'a> Game<'a> {
     }
 
     /// Resolve one decision of the post-movement sequence.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one case per aftermath stage, read as a table"
+    )]
     fn step_aftermath(&mut self) -> StepResult {
         let Some(choice) = self.legal_options() else {
             // An event-scoped scoring pause can leave combat in an automatic intermediate
@@ -1720,7 +1725,12 @@ impl<'a> Game<'a> {
                         galaxy: galaxy.as_ref(),
                     }),
                 };
-                window.settle(&mut self.state, &mut ctx);
+                if let Err(error) = window.settle(&mut self.state, &mut ctx) {
+                    self.dice = dice;
+                    self.rng = rng;
+                    self.mirror_timing_log(logged);
+                    return self.result(false, Some(error.into()));
+                }
             }
             self.dice = dice;
             self.rng = rng;
@@ -3182,6 +3192,29 @@ mod tests {
         (state, galaxy, ids)
     }
 
+    /// A tactical fixture whose combat actually fights: ids[0] is the hub of the seven-system
+    /// galaxy, adjacent to every other one, so a's dummy fighter in each of them leaves the
+    /// defender (b) with nowhere to retreat to — the defender is never asked to announce —
+    /// while the attacker (a) can always retreat and is asked every round. Cards are granted
+    /// straight into the hands, skipping the draft.
+    fn combat_fixture(a_cards: &[&str], b_cards: &[&str]) -> (GameState, Galaxy, Vec<SystemId>) {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        for id in ids.iter().skip(1) {
+            crate::fixtures::put(&mut state, id, "fighter", &a, 1);
+        }
+        state.player_mut(&a).unwrap().action_cards = a_cards
+            .iter()
+            .map(|alias| ti4_model::id::ActionCardId::new(*alias))
+            .collect();
+        state.player_mut(&b).unwrap().action_cards = b_cards
+            .iter()
+            .map(|alias| ti4_model::id::ActionCardId::new(*alias))
+            .collect();
+        (state, galaxy, ids)
+    }
+
     #[test]
     fn a_tactical_action_is_not_offered_without_a_map() {
         // Without a galaxy there is no board to activate anything on, so the action is never
@@ -4088,6 +4121,458 @@ mod tests {
                 .iter()
                 .any(|alias| alias.as_str() == "dyp"),
             "the later combat secret remains unscored"
+        );
+    }
+
+    /// A decider that records every (player, prompt, option ids) it answers, then answers from
+    /// a scripted queue: the recorded choices are what the engine *offered*, so a test can
+    /// assert on the shape of a decision (a forced retreat lists no "stay") independent of the
+    /// answer it got.
+    /// The (player, prompt, option ids) of every question a decider answered.
+    type SeenLog = Vec<(String, String, Vec<String>)>;
+
+    struct ObservingDecider {
+        inner: Scripted,
+        seen: std::rc::Rc<std::cell::RefCell<SeenLog>>,
+    }
+
+    impl Decider for ObservingDecider {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen.borrow_mut().push((
+                choice.player.to_string(),
+                choice.prompt.clone(),
+                choice.ids().into_iter().map(str::to_owned).collect(),
+            ));
+            self.inner.choose(choice)
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per pause-stage transition"
+    )]
+    fn waylay_widens_the_owners_barrage_hits_to_all_ships() {
+        // Waylay: "Before you roll dice for ANTI-FIGHTER BARRAGE: hits from this roll are
+        // produced against all ships (not just fighters)." A's two destroyers make one
+        // guaranteed barrage hit. Without the card the hit takes a fighter; with it the hit
+        // is assigned like any other, and B spends it on the cruiser instead.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["waylay"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 2);
+            crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 2);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 1);
+
+            // B's ships in unit order: fighter, fighter, cruiser. The barrage hit is assigned
+            // before the fleet's, so the test arm's two of B's decisions are cruiser, fighter.
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "reaction:generic:ANTI_FIGHTER_BARRAGE_STARTED:when",
+                    "destroy|2",
+                    "destroy|0",
+                    "stay",
+                    "retreat",
+                    "02",
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "destroy|0",
+                    "stay",
+                    "retreat",
+                    "02",
+                ]
+            }
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // Barrage: four faces, one hit. Fleet: A [hit, miss] both arms; B misses
+            // everywhere. The survivor counts make the last round one B die short in the
+            // test arm, so the two arms pin different tails.
+            // Both arms pin the same faces: one barrage hit, one fleet hit in round one,
+            // then nothing. The waylay changes *where* the one barrage hit lands, not how
+            // many dice leave the bag, so the same array serves both.
+            let faces: [u32; 17] = [
+                10, 1, 1, 1, // A's four barrage dice: one hit
+                10, 1, // A's first fleet round: one hit
+                1, 1, 1, // B's first fleet round
+                1, 1, // A's second round
+                1, 1, // B's second round
+                1, 1, // A's third round
+                1, 1, // B's third round
+            ];
+            game.dice = Dice::from_faces(faces);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "the combat settled; log: {:?}",
+                game.events
+            );
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        // Control: the barrage hit takes a fighter automatically, the fleet hit the other.
+        let (state, events) = run(false);
+        assert!(
+            events
+                .iter()
+                .filter(|e| *e == "ANTI_FIGHTER_BARRAGE_STARTED")
+                .count()
+                == 2,
+            "both sides' barrages were announced; log: {events:?}"
+        );
+        let board = state.system_state(&SystemId::new("01"));
+        let survivors: Vec<&str> = board
+            .units
+            .iter()
+            .filter(|unit| unit.owner == b)
+            .map(|unit| unit.type_id.as_str())
+            .collect();
+        assert_eq!(
+            survivors,
+            vec!["cruiser"],
+            "both fighters die: the barrage takes one, the fleet hit the other; {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().waylay_barrage_round,
+            None,
+            "no card, no marker"
+        );
+
+        // Test arm: the barrage hit is assigned, and B sinks the cruiser with it.
+        let (state, events) = run(true);
+        assert_eq!(
+            state.player(&a).unwrap().waylay_barrage_round,
+            Some(1),
+            "the marker keys to the round the barrage was rolled in"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "the card is spent; log: {events:?}"
+        );
+        let board = state.system_state(&SystemId::new("01"));
+        let survivors: Vec<&str> = board
+            .units
+            .iter()
+            .filter(|unit| unit.owner == b)
+            .map(|unit| unit.type_id.as_str())
+            .collect();
+        assert_eq!(
+            survivors,
+            vec!["fighter"],
+            "the waylay hit took the cruiser; log: {events:?}"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per pause-stage transition"
+    )]
+    fn rout_forces_the_opponents_retreat_announcement() {
+        // Rout: "your opponent must announce a retreat, if able," played by the defender at
+        // the start of the announcement step. Without it the attacker stays and the fight
+        // runs three rounds; with it the attacker's only option is to retreat, and the fight
+        // is one round long. The defender's forced-ness is asserted on the options offered,
+        // not just on the answer: a decider that only sees the answer could not tell a
+        // forced retreat from a voluntary one.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>, SeenLog) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(&[], if with_card { &["rout"] } else { &[] });
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 2);
+
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let script: Vec<String> = if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "reaction:generic:RETREAT_STEP_STARTED:after",
+                    "retreat",
+                    "02",
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "stay",
+                    "retreat",
+                    "02",
+                ]
+            }
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let decider = ObservingDecider {
+                inner: Scripted::new(script),
+                seen: seen.clone(),
+            };
+            let table = Table::with_default(Box::new(decider));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            let faces: [u32; 18] = if with_card {
+                [
+                    1, 1, // A's fleet, the single round that happens
+                    1, 1, 1, 1, // B's fleet
+                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // padding, never drawn
+                ]
+            } else {
+                // Each of the three rounds rolls both fleets; round three's misses precede
+                // the voluntary retreat that ends the fight.
+                [
+                    1, 1, 1, 1, 1, 1, // round one
+                    1, 1, 1, 1, 1, 1, // round two
+                    1, 1, 1, 1, 1, 1, // round three
+                ]
+            };
+            game.dice = Dice::from_faces(faces);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "log: {:?}",
+                game.events
+            );
+            (
+                game.state.clone(),
+                game.events.clone(),
+                seen.borrow().clone(),
+            )
+        };
+
+        // Control: the attacker stays twice and retreats voluntarily on round three.
+        let (state, events, offered) = run(false);
+        let rounds = events
+            .iter()
+            .filter(|e| *e == "COMBAT_ROUND_STARTED")
+            .count();
+        assert_eq!(rounds, 3, "control: {events:?}");
+        let announcements: Vec<Vec<String>> = offered
+            .iter()
+            .filter(|(_, prompt, _)| prompt.starts_with("announce a retreat"))
+            .map(|(_, _, options)| options.clone())
+            .collect();
+        assert_eq!(
+            announcements,
+            vec![
+                vec!["stay".to_owned(), "retreat".to_owned()],
+                vec!["stay".to_owned(), "retreat".to_owned()],
+                vec!["stay".to_owned(), "retreat".to_owned()],
+            ],
+            "no rout: every announcement offers both options; {offered:?}"
+        );
+        assert!(
+            state.player(&b).unwrap().rout_round.is_none(),
+            "no card, no marker"
+        );
+
+        // Test arm: the defender's Rout leaves the attacker no choice on round one.
+        let (state, events, offered) = run(true);
+        let rounds = events
+            .iter()
+            .filter(|e| *e == "COMBAT_ROUND_STARTED")
+            .count();
+        assert_eq!(
+            rounds, 1,
+            "the forced retreat ends the fight in one round; {events:?}"
+        );
+        let announcements: Vec<Vec<String>> = offered
+            .iter()
+            .filter(|(_, prompt, _)| prompt.starts_with("announce a retreat"))
+            .map(|(_, _, options)| options.clone())
+            .collect();
+        assert_eq!(
+            announcements,
+            vec![vec!["retreat".to_owned()]],
+            "the forced announcement offers retreat and nothing else; {offered:?}"
+        );
+        assert_eq!(
+            state.player(&b).unwrap().rout_round,
+            Some(0),
+            "the marker keys to the round counter as it stands when the announcement step
+             opens, which the window compares before that round's dice increment it"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card is spent"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per pause-stage transition"
+    )]
+    fn direct_hit_destroys_the_ship_that_sustained_the_holders_hit() {
+        // Direct Hit: "after another player's ship uses SUSTAIN DAMAGE to cancel a hit
+        // produced by your units or abilities: destroy that ship." Every die is pinned to
+        // 10, which hits on any threshold: A's cruiser (two dice) scores twice on B, and
+        // B's lone die scores once on A. The defender's hits assign first: B's
+        // dreadnought cancels one of A's hits, and in the test arm the card then destroys
+        // the dreadnought that just sustained it; the remaining hits trade away, the
+        // combat ends in round one, and B keeps the fighter. Without the card B instead
+        // keeps the damaged dreadnought and trades the fighter, and the dreadnought is
+        // what survives.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["dh1"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "dreadnought", &b, 1);
+            crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 1);
+
+            // B's units in board order: A's cruiser, then the dreadnought (sustain option
+            // "sustain|1") and the fighter (destruction option "destroy|1"). B has no
+            // retreat destination, so only A is ever asked to announce.
+            let script: Vec<String> = (if with_card {
+                [
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                    "reaction:generic:SUSTAIN_DAMAGE_USED:after",
+                ]
+            } else {
+                [
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                    "destroy|1",
+                ]
+            })
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // One combat round draws A's two dice and B's one; the rest is never drawn.
+            game.dice = Dice::from_faces([
+                10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            ]);
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "the combat settled; log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        let (state, events) = run(true);
+        let ships = |state: &GameState, owner: &PlayerId| -> Vec<(String, bool)> {
+            state
+                .system_state(&SystemId::new("01"))
+                .units
+                .iter()
+                .filter(|unit| unit.owner == *owner)
+                .map(|unit| (unit.type_id.to_string(), unit.sustained_damage))
+                .collect()
+        };
+        assert_eq!(ships(&state, &a), Vec::<(String, bool)>::new());
+        assert_eq!(
+            ships(&state, &b),
+            vec![("fighter".to_owned(), false)],
+            "Direct Hit destroyed the sustained dreadnought and B keeps the fighter;
+             log: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e == &"COMBAT_ROUND_STARTED")
+                .count(),
+            1,
+            "the card ends the fight in round one; log: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            2,
+            "dreadnought (card) and A's cruiser (B's hit); log: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e == &"SUSTAIN_DAMAGE_USED")
+                .count(),
+            1,
+            "the dreadnought cancels exactly one hit before the card destroys it;
+             log: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the card was played; log: {events:?}"
+        );
+        assert!(state.player(&a).unwrap().action_cards.is_empty());
+
+        let (state, events) = run(false);
+        assert_eq!(ships(&state, &a), Vec::<(String, bool)>::new());
+        assert_eq!(
+            ships(&state, &b),
+            vec![
+                ("dreadnought".to_owned(), true),
+                ("fighter".to_owned(), false),
+            ],
+            "without the card the sustained dreadnought survives damaged; log: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e == &"COMBAT_ROUND_STARTED")
+                .count(),
+            1,
+            "log: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            1,
+            "A's cruiser is the only loss; log: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "no card, no play; log: {events:?}"
         );
     }
 

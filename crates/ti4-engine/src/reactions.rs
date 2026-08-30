@@ -87,6 +87,18 @@ fn commit_on_your_planet(event: &Event, player: &PlayerId, state: &GameState) ->
             .is_some_and(|holder| holder == player.as_str())
 }
 
+/// "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your units
+/// or abilities." The sustained ship belongs to someone else (the window's `actor_is_not`
+/// half), but that half alone is not enough: any sustained hit on a rival's fleet would
+/// qualify. The event's `producer` names the player whose unit or ability produced the
+/// cancelled hit, and only the holder's own production counts.
+fn direct_hit_guard(event: &Event, player: &PlayerId, state: &GameState) -> bool {
+    actor_is_not(event, player, state)
+        && event
+            .text("producer")
+            .is_some_and(|who| who == player.as_str())
+}
+
 /// "When another player plays an action card other than 'Sabotage'": the committer is
 /// someone else, and the card being played is not one of the four Sabotage copies — Sabotage
 /// cancels other cards being played, not itself (1.15 would otherwise let a chain of
@@ -339,7 +351,11 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "After another player's ship uses SUSTAIN DAMAGE to cancel a hit produced by your units or abilities",
-            guarded("SUSTAIN_DAMAGE_USED", After, actor_is_not),
+            guarded("SUSTAIN_DAMAGE_USED", After, direct_hit_guard),
+        ),
+        (
+            "Before you roll dice for ANTI-FIGHTER BARRAGE",
+            guarded("ANTI_FIGHTER_BARRAGE_STARTED", When, actor_is),
         ),
         (
             "At the start of the strategy phase",
@@ -404,6 +420,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "SHIP_DESTROYED",
     "STRATEGY_PHASE_BEGAN",
     "SUSTAIN_DAMAGE_USED",
+    "ANTI_FIGHTER_BARRAGE_STARTED",
     "GROUND_ROLLS_MADE",
     "HITS_TO_ASSIGN",
     "UNIT_ABILITY_ROLLED",
@@ -542,6 +559,27 @@ pub fn announce(
             .event_sequence
             .next("ACTION_CARD_UNRESOLVED", payload)?;
         resolver.emit_with_context(context, unresolved, |_, _| {})?;
+    }
+    // An effect may have staged a destruction (Direct Hit destroys the sustained ship from
+    // inside the window, where it holds no resolver): announce each removal through the game's
+    // resolver now, so the event's own WHEN and AFTER windows open around it. The ship is off
+    // the board before this runs, so `last` is read from the position a reacting card would see.
+    for (system, owner, unit_type) in std::mem::take(&mut context.state.pending_destructions) {
+        let remaining = crate::combat::ships_of(
+            context.state,
+            context.content,
+            context.sources,
+            &owner,
+            &system,
+        )
+        .len();
+        let mut payload = BTreeMap::new();
+        payload.insert("system".to_owned(), system.to_string().into());
+        payload.insert("player".to_owned(), owner.to_string().into());
+        payload.insert("unit".to_owned(), unit_type.to_string().into());
+        payload.insert("last".to_owned(), (remaining == 0).into());
+        let destroyed = context.event_sequence.next("SHIP_DESTROYED", payload)?;
+        resolver.emit_with_context(context, destroyed, |_, _| {})?;
     }
     Ok(true)
 }

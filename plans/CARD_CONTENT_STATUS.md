@@ -14,11 +14,11 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 117/142 |
+| action cards  | 34/142 | 123/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 117 of
-142 (82.4%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
+`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 123 of
+142 (86.6%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
 exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
@@ -56,6 +56,21 @@ exploration/relics/objectives/leaders/abilities.
 After the handoff, the engine-completion line (hook `873178e` + handoff `3f2d27b`) was fast-
 forwarded into this branch and continued here; `cc40c70` was merged back into
 `wp/engine-completion` (clean fast-forward) so both branches agree.
+
+- Combat-dice group (Direct Hit `dh1`–`dh4`, `rout`, `waylay`): the three card families above,
+  closed in one package. `CombatWindow::settle` / `settle_open` / `roll_round` and the AFB
+  application now thread `&mut Resolving` (or build a stub with `timing: None`) so a Waylay
+  casualty can be *chosen* through the real question/decider path; `absorb_hits` /
+  `offer_sustain` / `apply_barrage` / `anti_fighter_barrage(_at)` return `CombatError` and the
+  driver surfaces it as `GameError::Combat`. The registry's `action cards` ledger row is now
+  source-aware (aliases count only if the card is in the playset's sources), which the
+  expansion-only aliases required. Three full-game driver tests drive the engine's own combat
+  (pinned dice, `ObservingDecider` to assert the offered shape of a forced retreat); each of
+  the four probe breakages (Direct Hit effect no-op, `pending_destructions` drain disabled,
+  Waylay routed back to `destroy_fighters`, Rout's forced options disabled) fails the exact
+  test and reverts clean. Known gaps recorded below: AFB auto-destruction stays silent
+  (`destroy_fighters` emits no `SHIP_DESTROYED`, pre-existing) and the battlestation's stub
+  resolver still closes SUSTAIN windows without a decider.
 
 - Scoped roll modifiers + production window timing: `f_prototype` (marker `fighter_bonus_round`,
   consumed in `combat::effective_hits_on` and the anti-fighter barrage, fighter units only,
@@ -242,14 +257,23 @@ flow group (`blitz`, `disable`, `parley`, `ghost_squad`), the Cancel API group (
 and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`veto3`/`veto4`,
 `confusing`, `confounding`), the Turn-flow group (`deadly_plot`, `coup`, `crisis`,
 `master_plan`) and the Vote-order group (`bribery`/`distinguished` via `vote::add_votes` in
-`cc40c70`, `hack` in the batch above) closed with the batches above; only `rout`, `dh1-4` and
-the live-dice half of `intercept` remain in the combat-dice group.
+`cc40c70`, `hack` in the batch above) closed with the batches above; the combat-dice group closed with the batch below (`rout`,
+`dh1-4`, `waylay`; `intercept` already closed with `cc40c70`).
 
 - **Combat dice / hit-assignment / retreat flow** (state local to `combat.rs`; the model only
-  keeps per-round bookkeeping, not live dice or retreats): `rout`, `dh1-4`,
-  `intercept` (now played via `combat::grant_hit_cancellation` / `combat::bar_retreat`
-  bookkeeping where the rule allows; the live-dice half stays unmodelled).
-  `fire_team` and `scramble` left this group with the reroll group below.
+  keeps per-round bookkeeping, not live dice or retreats): **done** — `rout` (marker
+  `rout_round` on the defender's seat, scoped to `combat_round_seq`; the window's Announcing
+  step offers the attacker `["retreat"]` only), `dh1`–`dh4` (the sustain window records
+  `GameState.last_sustain = (system, victim, unit type, producer)` before emitting
+  `SUSTAIN_DAMAGE_USED`; the effect stages the removal in
+  `GameState.pending_destructions` and the card's resolution step drains it through the game's
+  resolver, so the `SHIP_DESTROYED` event opens its own WHEN/AFTER windows) and `waylay`
+  (marker `waylay_barrage_round`, self-buff on the holder's own round-1 barrage roll via the
+  new per-side `ANTI_FIGHTER_BARRAGE_STARTED` event; that side's barrage hits are assigned
+  like ordinary hits — SUSTAIN first, then the owner picks — instead of silently taking
+  fighters). `intercept` closed earlier via `combat::grant_hit_cancellation` /
+  `combat::bar_retreat` bookkeeping. `fire_team` and `scramble` left this group with the
+  reroll group below.
 - **Vote weighting / ballot** (`vote.rs`): done — `bribery`/`distinguished` (the `cc40c70`
   batch, via `vote::add_votes` scoped by `agenda_seq`) and `hack` (the vote-order batch above).
   The only documented gap left: a bonus whose vote is already banked when `VOTES_CAST` fires
@@ -275,9 +299,7 @@ token), `courageous` (ship destroyed + reinforcement move), `stability` (status-
 return + command token), `summit` (strategy-phase start + 1 TG), `blackmarketdealing`
 (transaction + sell a ship for 1 TG), `reparations` (planet taken + 1 TG),
 `reverse_engineer` (component-card discard + research), `salvage` (space combat won +
-reinforcement move), `mjets1-4` (space-cannon window + ship move), `waylay` (a roll-site
-modifier on the anti-fighter barrage: hits from the roll are produced against all ships, not
-just fighters — the `f_prototype` shape, at the AFB roll), `disgrace` (strategy-card choice +
+reinforcement move), `mjets1-4` (space-cannon window + ship move), `disgrace` (strategy-card choice +
 leader return, if leader state is on `GameState`), `puppetsonastring` (turn end +
 strategy-card discard), `extremeduress` (turn start + TG), `reflective` (produce 2 hits
 against the opponent's ships in the active system, when one of the holder's ships uses SUSTAIN
@@ -341,7 +363,7 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
   probes, the Sabotage group's three and the Turn-flow group's eleven were recorded at their
   own checkpoints. The galaxy's both-link branch has no detecting probe — it is
   indistinguishable from same-letter matching by the map's data (documented above).
-- The 25 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
+- The 19 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
   it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
   group; the invasion-flow, Cancel API, Movement, Agenda, Turn-flow and Vote-order groups closed
   with the batches above):
@@ -354,8 +376,8 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
     batch (via `vote::add_votes`) and `hack` closed with the vote-order batch (the
     `hack_votes_last_agenda` marker read by `VoteWindow::new`, plus the fix for a barred
     speaker being re-seated at the end of the order).
-  - **Not grouped by the handoff** (25, most blocked on movement/state the handoff's groups do
-    not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `dh1`–`4`, `disgrace`,
+  - **Not grouped by the handoff** (19, most blocked on movement/state the handoff's groups do
+    not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `disgrace`,
     `extremeduress`, `infiltrate`, `investments`, `lieinwait`, `mjets1`–`4`,
-    `puppetsonastring`, `reflective`, `reparations`, `reverse_engineer`, `rout`, `salvage`,
-    `stability`, `summit`, `waylay`.
+    `puppetsonastring`, `reflective`, `reparations`, `reverse_engineer`, `salvage`,
+    `stability`, `summit`.

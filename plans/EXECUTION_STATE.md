@@ -22,6 +22,88 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — combat dice: Direct Hit / Rout / Waylay, v11 holds (2026-08-31)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `977a5e7` before this batch (the vote-order commit).
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): the handoff's **combat-dice group** — `dh1`–`dh4` (Direct Hit), `rout` (Rout) and
+  `waylay` (Waylay). This closes the group: the only other member, `intercept`, was already
+  closed with `cc40c70`.
+  - **Direct Hit** ("After another player's ship uses SUSTAIN DAMAGE to cancel a hit
+    produced by your units or abilities: destroy that ship."). The sustain window records
+    `GameState.last_sustain = (system, victim, unit type, producer)` *before* emitting
+    `SUSTAIN_DAMAGE_USED` (a reacting card cannot read the payload of the event that summoned
+    it); `Pending.producer` carries the hit's source player end to end. The effect stages
+    the removal in the new in-flight slot `GameState.pending_destructions`
+    (`#[serde(default)]`, not compared); the card's resolution step
+    (`reactions::announce`) drains it through the game's resolver, so the destruction is a
+    real `SHIP_DESTROYED` event that opens its own WHEN/AFTER windows — strictly narrower
+    than the battlestation stub-resolver SUSTAIN gap. Guard: `direct_hit_guard` =
+    `actor_is_not` + `event.text("producer") == player` (only the hit's producer may play).
+  - **Rout** ("Your opponent must announce a retreat, if able"). Marker
+    `Player.rout_round` (defender's seat) = `combat_round_seq` at play time; the window's
+    Announcing step offers the attacker `["retreat"]` only while the marker matches the
+    in-stage counter — the monotonic counter self-expires the marker at the next round and
+    across combats, no cleanup. (Round N's Announcing stage runs at `combat_round_seq = N-1`;
+    both sides read the same stable in-stage value.)
+  - **Waylay** ("Before you roll dice for ANTI-FIGHTER BARRAGE: hits from this roll are
+    produced against all ships (not just fighters)"). Self-buff on the holder's *own*
+    round-1 barrage roll (`actor_is` on the new per-side `ANTI_FIGHTER_BARRAGE_STARTED`
+    event, emitted in `roll_round` before each side's dice leave the bag, so the card cannot
+    see or shape them); marker `Player.waylay_barrage_round`. That side's barrage hits are
+    then assigned like ordinary hits — SUSTAIN first, then the owner chooses the losses —
+    via `absorb_hits_seeing` instead of the silent `destroy_fighters`.
+  - **Seams.** `CombatWindow::settle` / `settle_open` / `roll_round` and `apply_barrage` /
+    `anti_fighter_barrage` / `anti_fighter_barrage_at` now thread `&mut Resolving` (synchronous
+    callers build a stub with `timing: None`, whose `emit` records nothing) and return
+    `CombatError`; the driver surfaces it as the pre-existing `GameError::Combat`. The
+    registry's `action cards` ledger row is now source-aware (aliases count only if in the
+    playset's sources) — required because `dh1`–`4`/`rout`/`waylay` are expansion-only and
+    `implemented_never_exceeds_total` compares against the POK total.
+- Coverage 117 → **123/142** action cards (86.6%, coverage_report, release); agendas still
+  63/63; reaction windows still 0 unsupported.
+- **Re-baseline v12.** The release `rebaseline_behavior` run (LIBTORCH) reported
+  `0 metric(s) outside the recorded bounds` — every point estimate stayed inside its v11
+  interval — but the bootstrap intervals themselves moved (the bots now hold and play the
+  combat cards; `faction_differentiation`'s lower bound rises 0.431 -> 0.541,
+  `score_spread`'s upper bound 2.091 -> 2.256), so the gate test's protocol-integrity check
+  forced the move, exactly as v8 -> v9. The v12 transcription into `behavior.rs` was
+  verified bit-identical by the debug-mode gate test passing against it; v11/v12 side by
+  side in `plans/evidence/M08-021.md`.
+- Tests: 1024 `ti4-engine` lib tests pass (was 1021): three full-game drivers in `game.rs`
+  built on `combat_fixture` (a tactical fixture with the attacker seeded in every adjacent
+  system so the defender has no retreat destination) plus `ObservingDecider`, which records
+  the offered (player, prompt, option ids) of every question before answering from a
+  `Scripted` queue — so the tests assert the *offered shape*, not just the outcome:
+  `waylay_widens_the_owners_barrage_hits_to_all_ships` (pinned AFB hit lands on the cruiser
+  with the card, on a fighter without; both fighters still die either way, so the cruiser's
+  fate is the discriminator), `rout_forces_the_opponents_retreat_announcement` (the forced
+  announcement offers `["retreat"]` only; control offers stay and retreat), and
+  `direct_hit_destroys_the_ship_that_sustained_the_holders_hit` (all-10 dice: B's
+  dreadnought sustains one hit, the card destroys it; the control arm keeps the damaged
+  dreadnought — that ship's fate is the discriminator). Four probes (break → the exact test
+  fails → revert): Direct Hit effect no-op, `pending_destructions` drain disabled, Waylay
+  routed back to `destroy_fighters`, Rout's forced options disabled.
+- Known gaps (documented, not fixed here): `destroy_fighters` still emits no
+  `SHIP_DESTROYED` for AFB auto-destruction (pre-existing at `977a5e7`; "after 1 of your
+  ships is destroyed" windows therefore never fire on AFB kills — fixing it would change
+  reaction-card behavior across the board, a separate scope); the battlestation's stub
+  resolver still closes SUSTAIN windows without a decider.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s pre-existing tracked
+  `fixture_capture_is_deterministic` (unchanged failure mode; M09-019b scope).
+- Clippy: zero new warnings in every touched file under `--all-targets` (test functions
+  carry the conventional `too_many_lines` allows; `step_aftermath` — touched by the driver
+  restructure and already over the line limit at `977a5e7` — now carries one too). The
+  remaining workspace warnings are pre-existing in untouched files.
+- Next safe action: the handoff's remaining groups in order — the 19 ungrouped action cards
+  (the follow-up-batch list in `plans/CARD_CONTENT_STATUS.md`, each a full-game scripted
+  scenario; note `reflective` binds to the existing `SUSTAIN_DAMAGE_USED` event), then
+  relics. Read `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any payment
+  restructuring.
+
 ### Engine completion — vote order: Hack Election + the barred-speaker fix, v11 holds (2026-08-30)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

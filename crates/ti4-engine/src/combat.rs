@@ -369,6 +369,10 @@ pub fn roll_fleet(
 /// The argument list is long because a combat step needs the state, the corpus it is read
 /// against, both halves of the pinned random source, and both sides. Bundling them into a
 /// context struct would hide which of them this step actually mutates.
+///
+/// # Errors
+///
+/// A Waylay casualty answer that the table rejects, or a dice source that runs dry.
 #[allow(
     clippy::too_many_arguments,
     reason = "one parameter per genuinely distinct input"
@@ -382,12 +386,12 @@ pub fn anti_fighter_barrage(
     system: &SystemId,
     attacker: &PlayerId,
     defender: &PlayerId,
-) -> Vec<(PlayerId, usize)> {
+) -> Result<Vec<(PlayerId, usize)>, CombatError> {
     let occurrence = state.begin_feat_occurrence();
     anti_fighter_barrage_at(
         state, content, sources, dice, rng, system, attacker, defender, occurrence,
     )
-    .0
+    .map(|(resolved, _)| resolved)
 }
 
 /// Roll one side's anti-fighter barrage and stage the roll for the reroll windows.
@@ -467,12 +471,14 @@ fn apply_barrage(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    ctx: &mut Resolving<'_>,
     system: &SystemId,
     attacker: &PlayerId,
     defender: &PlayerId,
     results: &[(PlayerId, usize)],
     occurrence: FeatOccurrence,
-) -> Vec<PlayerId> {
+) -> Result<Vec<PlayerId>, CombatError> {
     let mut feat_players = Vec::new();
     for (player, hits) in results {
         let target = if player == attacker {
@@ -485,13 +491,29 @@ fn apply_barrage(
         // combat: by then ordinary combat rounds have taken fighters too, and nothing would say
         // which step emptied the system.
         let before = fighters_of(state, content, sources, target, system);
-        destroy_fighters(state, content, sources, target, system, *hits);
+        if *hits > 0 {
+            // Waylay ("hits from this roll are produced against all ships (not just
+            // fighters)", played before this side's barrage roll): the hits are assigned
+            // like any other combat hits — SUSTAIN DAMAGE first, then the target's owner
+            // chooses the losses — instead of taking fighters in unit order.
+            let waylay = state
+                .player(player)
+                .and_then(|seat| seat.waylay_barrage_round)
+                .is_some_and(|played| played == state.combat_round_seq);
+            if waylay {
+                absorb_hits_seeing(
+                    state, content, sources, galaxy, ctx, target, system, player, *hits,
+                )?;
+            } else {
+                destroy_fighters(state, content, sources, target, system, *hits);
+            }
+        }
         if before > 0 && fighters_of(state, content, sources, target, system) == 0 {
             state.record_event_feat(player, Feat::BarrageTookTheLastFighters, occurrence);
             feat_players.push(player.clone());
         }
     }
-    feat_players
+    Ok(feat_players)
 }
 
 /// Resolve anti-fighter barrage without the reroll windows: roll both sides and apply. The
@@ -499,9 +521,17 @@ fn apply_barrage(
 /// same [`roll_barrage_side`] with the windows opened in between, so the two paths cannot
 /// disagree about the dice. The staging left behind is stale by construction and is cleared
 /// at the start of the next windowed roll.
+///
+/// Without the caller's timing machinery there is no resolver to ask a Waylay casualty
+/// choice to, so the synchronous path answers its own questions with the table's default
+/// decider. The stale-staging and dice guarantees above are unaffected.
 #[allow(
     clippy::too_many_arguments,
     reason = "one parameter per genuinely distinct input"
+)]
+#[allow(
+    clippy::type_complexity,
+    reason = "hits and feat players are one result pair, not a new type"
 )]
 fn anti_fighter_barrage_at(
     state: &mut GameState,
@@ -513,7 +543,7 @@ fn anti_fighter_barrage_at(
     attacker: &PlayerId,
     defender: &PlayerId,
     occurrence: FeatOccurrence,
-) -> (Vec<(PlayerId, usize)>, Vec<PlayerId>) {
+) -> Result<(Vec<(PlayerId, usize)>, Vec<PlayerId>), CombatError> {
     let mut pending = Vec::new();
     for player in [attacker, defender] {
         let hits = roll_barrage_side(state, content, sources, dice, rng, system, player);
@@ -522,10 +552,19 @@ fn anti_fighter_barrage_at(
         }
     }
     let resolved = pending.clone();
+    let mut table = Table::new();
+    let mut ctx = Resolving {
+        content,
+        sources,
+        dice,
+        rng,
+        table: &mut table,
+        timing: None,
+    };
     let feat_players = apply_barrage(
-        state, content, sources, system, attacker, defender, &pending, occurrence,
-    );
-    (resolved, feat_players)
+        state, content, sources, None, &mut ctx, system, attacker, defender, &pending, occurrence,
+    )?;
+    Ok((resolved, feat_players))
 }
 
 /// Fighters this player has in the space area of a system.
@@ -817,9 +856,10 @@ fn offer_sustain(
     content: &ContentStore,
     sources: SourceSet,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
-    table: &mut Table,
+    ctx: &mut Resolving<'_>,
     player: &PlayerId,
     system: &SystemId,
+    producer: &PlayerId,
     mut hits: usize,
 ) -> Result<usize, CombatError> {
     let types = catalogue(content, sources);
@@ -872,7 +912,9 @@ fn offer_sustain(
         ));
 
         let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options);
-        let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+        let answer = ctx
+            .table
+            .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
         if answer.is_decline() {
             return Ok(hits);
         }
@@ -884,9 +926,11 @@ fn offer_sustain(
             return Ok(hits);
         };
         if let Some(unit) = state.system_mut(system).units.get_mut(index) {
+            let kind = unit.type_id.to_string();
             *unit = unit.sustained();
+            pay_sustain_commander(state, content, player);
+            emit_sustain_used(state, ctx, system, player, &kind, producer);
         }
-        pay_sustain_commander(state, content, player);
         hits = hits.saturating_sub(1);
     }
     Ok(hits)
@@ -905,9 +949,25 @@ pub fn absorb_hits(
     table: &mut Table,
     player: &PlayerId,
     system: &SystemId,
+    producer: &PlayerId,
     hits: usize,
 ) -> Result<(), CombatError> {
-    absorb_hits_seeing(state, content, sources, None, table, player, system, hits)
+    // The windowless path: the resolver carries the table the questions go to but no timing
+    // machinery, so a sustained hit announces nothing and cannot be reacted to. The dice and
+    // roller are never touched on this path and exist only to satisfy the handle's shape.
+    let mut dice = crate::dice::Dice::new();
+    let mut rng = crate::rng::GameRng::new(0);
+    let mut ctx = Resolving {
+        content,
+        sources,
+        dice: &mut dice,
+        rng: &mut rng,
+        table,
+        timing: None,
+    };
+    absorb_hits_seeing(
+        state, content, sources, None, &mut ctx, player, system, producer, hits,
+    )
 }
 
 /// Absorb hits with the public map attached to every learned casualty decision.
@@ -923,20 +983,22 @@ pub fn absorb_hits_seeing(
     content: &ContentStore,
     sources: SourceSet,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
-    table: &mut Table,
+    ctx: &mut Resolving<'_>,
     player: &PlayerId,
     system: &SystemId,
+    producer: &PlayerId,
     hits: usize,
 ) -> Result<(), CombatError> {
-    let mut remaining =
-        offer_sustain(state, content, sources, galaxy, table, player, system, hits)?;
+    let mut remaining = offer_sustain(
+        state, content, sources, galaxy, ctx, player, system, producer, hits,
+    )?;
 
     while remaining > 0 {
         let alive = ships_of(state, content, sources, player, system);
         if alive.is_empty() {
             return Ok(()); // 15.2a
         }
-        let casualty = choose_casualty(state, content, sources, galaxy, table, player, &alive)?;
+        let casualty = choose_casualty(state, content, sources, galaxy, ctx.table, player, &alive)?;
         state
             .system_mut(system)
             .remove(std::slice::from_ref(&casualty));
@@ -987,18 +1049,45 @@ fn emit_retreat_declared(
     let _ = ctx.emit(state, "RETREAT_DECLARED", payload);
 }
 
+impl CombatError {
+    /// Windows mid-answer only ever surface a choice failure; a combat that merely ran past
+    /// the round limit is reported by the standalone driver, never by a window. The second
+    /// arm maps that impossible case to an honest "no options" refusal rather than a panic.
+    pub(crate) fn into_illegal_choice(self) -> IllegalChoice {
+        match self {
+            CombatError::IllegalChoice(error) => error,
+            CombatError::Unresolved(system) => IllegalChoice::NoOptions {
+                player: PlayerId::new(""),
+                prompt: format!("combat in {system} did not settle"),
+            },
+        }
+    }
+}
+
 /// Both sustain windows read the moment, and both need the unit, so the event names it.
+/// The `producer` is the player whose unit or ability produced the cancelled hit — Direct
+/// Hit's window only opens for the producer, not for any sustained hit on a rival's fleet.
+/// The handoff [`GameState::last_sustain`] is recorded first: the effect cannot see the
+/// event once the window has run.
 fn emit_sustain_used(
     state: &mut GameState,
     ctx: &mut Resolving<'_>,
     system: &SystemId,
     player: &PlayerId,
     unit: &str,
+    producer: &PlayerId,
 ) {
+    state.last_sustain = Some((
+        system.clone(),
+        player.clone(),
+        ti4_model::id::UnitTypeId::new(unit),
+        producer.clone(),
+    ));
     let mut payload = std::collections::BTreeMap::new();
     payload.insert("system".to_owned(), system.to_string().into());
     payload.insert("player".to_owned(), player.to_string().into());
     payload.insert("unit".to_owned(), unit.to_owned().into());
+    payload.insert("producer".to_owned(), producer.to_string().into());
     let _ = ctx.emit(state, "SUSTAIN_DAMAGE_USED", payload);
 }
 
@@ -1185,6 +1274,9 @@ pub fn retreat_to(
 struct Pending {
     player: PlayerId,
     hits: usize,
+    /// Whose roll produced these hits: the `producer` of the SUSTAIN DAMAGE use that
+    /// cancels them, and what Direct Hit keys on.
+    producer: PlayerId,
 }
 
 /// Where an open space combat has reached.
@@ -1403,13 +1495,17 @@ impl CombatWindow {
     }
 
     /// Roll a round and queue both sides' hits, or finish.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one windowed step per side, read as a table"
+    )]
     fn roll_round(
         &mut self,
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
         round: u32,
         run_barrage: bool,
-    ) {
+    ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
         if run_barrage {
             state.combat_round_seq = state.combat_round_seq.saturating_add(1);
@@ -1444,6 +1540,14 @@ impl CombatWindow {
             // rerolled dice only afterwards.
             let mut results: Vec<(PlayerId, usize)> = Vec::new();
             for side in [self.attacker.clone(), self.defender.clone()] {
+                // "Before you roll dice for ANTI-FIGHTER BARRAGE": Waylay binds here,
+                // per side, before that side's dice leave the bag. The dice are rolled
+                // only after the window, so the card cannot see or shape them.
+                let mut payload = std::collections::BTreeMap::new();
+                payload.insert("system".to_owned(), self.system.to_string().into());
+                payload.insert("player".to_owned(), side.to_string().into());
+                payload.insert("round".to_owned(), i64::from(round).into());
+                let _ = ctx.emit(state, "ANTI_FIGHTER_BARRAGE_STARTED", payload);
                 let _ = roll_barrage_side(
                     state,
                     content,
@@ -1467,21 +1571,23 @@ impl CombatWindow {
                 state,
                 content,
                 sources,
+                self.galaxy.as_ref(),
+                ctx,
                 &self.system,
                 &self.attacker,
                 &self.defender,
                 &results,
                 occurrence,
-            );
+            )?;
             if !feat_players.is_empty() {
                 self.pending_scoring_occurrence = Some(occurrence);
                 self.stage = Stage::RollingAfterBarrage { round };
-                return;
+                return Ok(());
             }
             if self.over(state, content, sources) {
                 // 78.3a: a barrage can end the fight before any combat die is rolled.
                 self.stage = self.conclude(state, content, sources, round);
-                return;
+                return Ok(());
             }
         }
 
@@ -1510,10 +1616,12 @@ impl CombatWindow {
             Pending {
                 player: self.defender.clone(),
                 hits: attacker_hits,
+                producer: self.attacker.clone(),
             },
             Pending {
                 player: self.attacker.clone(),
                 hits: defender_hits,
+                producer: self.defender.clone(),
             },
         ]
         .into_iter()
@@ -1521,12 +1629,20 @@ impl CombatWindow {
         .collect();
 
         self.stage = Stage::Sustaining { queue, round };
-        self.settle(state, ctx);
+        self.settle(state, ctx)
     }
 
     /// Settle a freshly opened window, so a fight that is already over reports so.
-    pub fn settle_open(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
-        self.settle(state, ctx);
+    ///
+    /// # Errors
+    ///
+    /// A Waylay casualty answer that the table rejects, or a dice source that runs dry.
+    pub fn settle_open(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+    ) -> Result<(), CombatError> {
+        self.settle(state, ctx)
     }
 
     /// Advance past anything with no decision left in it.
@@ -1538,7 +1654,11 @@ impl CombatWindow {
         clippy::too_many_lines,
         reason = "one arm per combat stage, read as a table"
     )]
-    fn settle(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
+    fn settle(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+    ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
         loop {
             match self.stage.clone() {
@@ -1547,7 +1667,7 @@ impl CombatWindow {
                         // Both sides absorbed: the round is over.
                         if self.over(state, content, sources) || round >= MAX_ROUNDS {
                             self.stage = self.conclude(state, content, sources, round);
-                            return;
+                            return Ok(());
                         }
                         // 78.7: those who announced now leave, before the next round.
                         let leaving = std::mem::take(&mut self.pending_retreats);
@@ -1624,7 +1744,7 @@ impl CombatWindow {
                         self.stage = Stage::Sustaining { queue: rest, round };
                         continue;
                     }
-                    return;
+                    return Ok(());
                 }
                 Stage::Announcing {
                     round,
@@ -1643,11 +1763,11 @@ impl CombatWindow {
                     }
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
-                        return;
+                        return Ok(());
                     }
                     // 78.4c: a player with nowhere to go is not asked.
                     if !self.retreats(state, content, sources, &asking).is_empty() {
-                        return;
+                        return Ok(());
                     }
                     if asking == self.defender && !announced.contains(&self.defender) {
                         self.stage = Stage::Announcing {
@@ -1665,7 +1785,7 @@ impl CombatWindow {
                         // Everyone who announced has gone.
                         if self.over(state, content, sources) || round >= MAX_ROUNDS {
                             self.stage = self.conclude(state, content, sources, round);
-                            return;
+                            return Ok(());
                         }
                         self.stage = Stage::Announcing {
                             round: round + 1,
@@ -1693,28 +1813,29 @@ impl CombatWindow {
                                 leaving: rest,
                             };
                         }
-                        _ => return,
+                        _ => return Ok(()),
                     }
                 }
                 Stage::Rolling { round } => {
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
-                        return;
+                        return Ok(());
                     }
-                    self.roll_round(state, ctx, round, true);
-                    return;
+                    self.roll_round(state, ctx, round, true)?;
+                    return Ok(());
                 }
                 Stage::RollingAfterBarrage { round } => {
-                    self.roll_round(state, ctx, round, false);
-                    return;
+                    self.roll_round(state, ctx, round, false)?;
+                    return Ok(());
                 }
-                Stage::Done(_) => return,
+                Stage::Done(_) => return Ok(()),
             }
         }
     }
 }
 
 impl Window for CombatWindow {
+    #[allow(clippy::too_many_lines, reason = "one arm per stage, read as a table")]
     fn pending_choice(
         &self,
         state: &GameState,
@@ -1727,13 +1848,31 @@ impl Window for CombatWindow {
                 if self.retreats(state, content, sources, asking).is_empty() {
                     return None; // 78.4c: nothing to retreat to, so nothing to announce
                 }
-                Some(Choice::new(
-                    asking.clone(),
-                    format!("announce a retreat from {}", self.system),
+                // Rout ("your opponent must announce a retreat, if able", played at the start
+                // of this step by the defender): the opponent's retreat is forced, so
+                // "stay" is not on the table for them this round. The defender's marker is
+                // scoped to `combat_round_seq` and cannot match any later round or combat.
+                let forced = asking == &self.attacker
+                    && state
+                        .player(&self.defender)
+                        .and_then(|seat| seat.rout_round)
+                        .is_some_and(|played| played == state.combat_round_seq);
+                let options = if forced {
+                    vec![ChoiceOption::labelled(
+                        "retreat",
+                        RETREAT_KIND,
+                        "retreat (forced)",
+                    )]
+                } else {
                     vec![
                         ChoiceOption::labelled("stay", RETREAT_KIND, "stay and fight"),
                         ChoiceOption::labelled("retreat", RETREAT_KIND, "announce a retreat"),
-                    ],
+                    ]
+                };
+                Some(Choice::new(
+                    asking.clone(),
+                    format!("announce a retreat from {}", self.system),
+                    options,
                 ))
             }
             Stage::Retreating { leaving, .. } => {
@@ -1819,6 +1958,10 @@ impl Window for CombatWindow {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one arm per answer kind, read as a table"
+    )]
     fn resolve(
         &mut self,
         state: &mut GameState,
@@ -1868,6 +2011,10 @@ impl Window for CombatWindow {
                 let front_player = queue
                     .first()
                     .map_or_else(|| self.defender.clone(), |front| front.player.clone());
+                // Whose roll produced the hit being cancelled: Direct Hit keys on it.
+                let front_producer = queue
+                    .first()
+                    .map_or_else(|| self.defender.clone(), |front| front.producer.clone());
                 if option.is_decline() {
                     self.stage = Stage::Assigning { queue, round };
                 } else if let Some(index) = option
@@ -1888,7 +2035,14 @@ impl Window for CombatWindow {
                     // DAMAGE" and "after another player's ship uses SUSTAIN DAMAGE to cancel a hit
                     // produced by your units". Both need the *unit*, so the event names it.
                     if let Some(kind) = sustained {
-                        emit_sustain_used(state, ctx, &self.system, &front_player, &kind);
+                        emit_sustain_used(
+                            state,
+                            ctx,
+                            &self.system,
+                            &front_player,
+                            &kind,
+                            &front_producer,
+                        );
                     }
                     if let Some(front) = queue.first_mut() {
                         front.hits = front.hits.saturating_sub(1);
@@ -1928,7 +2082,8 @@ impl Window for CombatWindow {
                 self.stage = Stage::Sustaining { queue, round };
             }
         }
-        self.settle(state, ctx);
+        self.settle(state, ctx)
+            .map_err(CombatError::into_illegal_choice)?;
         Ok(())
     }
 }
@@ -1963,7 +2118,7 @@ pub fn resolve(
         timing: None,
     };
     // Opening does not roll; settle once so a fight that is already over reports so.
-    window.settle(state, &mut ctx);
+    window.settle(state, &mut ctx)?;
     while window.outcome().is_none() {
         window.drive(state, &mut ctx)?;
         if window.outcome().is_some() {
@@ -1972,7 +2127,7 @@ pub fn resolve(
         // The synchronous API has no outer Game scoring window. Preserve the occurrence facts,
         // consume the pause, and continue the same combat to completion.
         let _ = window.take_scoring_occurrence();
-        window.settle_open(state, &mut ctx);
+        window.settle_open(state, &mut ctx)?;
     }
     complete_window(state, content, sources, system, &before, &window)
         .ok_or_else(|| CombatError::Unresolved(system.clone()))
@@ -2493,7 +2648,8 @@ mod tests {
                 &system,
                 &attacker(),
                 &defender(),
-            );
+            )
+            .unwrap();
 
             let left = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
             assert!(
@@ -2531,7 +2687,8 @@ mod tests {
             &system,
             &attacker(),
             &defender(),
-        );
+        )
+        .unwrap();
 
         assert!(fired.is_empty());
         assert_eq!(dice.count(), 0);
@@ -2568,7 +2725,7 @@ mod tests {
         // Whatever the dice said, both sides' rolls were taken before any fighter was removed:
         // each side that scored a hit is recorded, even if it lost its own fighter.
         assert!(
-            fired.len() <= 2,
+            fired.unwrap().len() <= 2,
             "at most one entry per side, and both were rolled"
         );
     }
@@ -2590,7 +2747,8 @@ mod tests {
             &system,
             &attacker(),
             &defender(),
-        );
+        )
+        .unwrap();
 
         assert!(ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).len() <= 1);
     }
@@ -3022,6 +3180,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             2,
         )
         .unwrap();
@@ -3046,6 +3205,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             9,
         )
         .unwrap();
@@ -3067,6 +3227,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             1,
         )
         .unwrap();
@@ -3089,6 +3250,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             1,
         )
         .unwrap();
@@ -3115,6 +3277,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             1,
         )
         .unwrap();
@@ -3225,7 +3388,7 @@ mod tests {
             table: &mut inner,
             timing: None,
         };
-        window.settle(&mut state, &mut ctx);
+        window.settle(&mut state, &mut ctx).unwrap();
 
         let mut steps = 0;
         while let Some(choice) = window.pending_choice(&state, ContentStore::embedded(), POK) {
@@ -3274,7 +3437,7 @@ mod tests {
         // How many choices had been asked when the first scoring pause was consumed (M07-023
         // review Q1): tests use this to assert that a choice came after the pause.
         let mut asks_before_pause: Option<usize> = None;
-        window.settle(state, &mut ctx);
+        window.settle(state, &mut ctx).unwrap();
         while window.outcome().is_none() {
             if let Some(choice) = window.pending_choice(state, content, POK) {
                 let answer = table.ask(&choice).unwrap();
@@ -3286,7 +3449,7 @@ mod tests {
                 if asks_before_pause.is_none() && occurrence.is_some() {
                     asks_before_pause = Some(table.log.records.len());
                 }
-                window.settle_open(state, &mut ctx);
+                window.settle_open(state, &mut ctx).unwrap();
             }
         }
         let outcome = crate::combat::complete_window(state, content, POK, system, &before, &window)
@@ -3511,6 +3674,7 @@ mod tests {
             &mut table,
             &defender(),
             &system,
+            &attacker(),
             1,
         )
         .unwrap();
@@ -3521,6 +3685,7 @@ mod tests {
             &mut table,
             &attacker(),
             &system,
+            &defender(),
             1,
         )
         .unwrap();

@@ -99,7 +99,18 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
             // *Effects*, not playability: a reaction card can be played into its window and
             // still have no effect, which is announced unresolved rather than passed off as
             // resolved. The oracle registers 35 of these; this counts what is ported.
-            implemented: crate::action_cards::registered_aliases().len(),
+            //
+            // Filtered by source: some ported cards (the Coexistence batch first) exist only
+            // in the expansion, and an unfiltered count would report more handlers than a
+            // POK-only corpus has cards.
+            implemented: crate::action_cards::registered_aliases()
+                .iter()
+                .filter(|alias| {
+                    content
+                        .get(ContentType::ActionCards, alias)
+                        .is_some_and(|record| record.in_sources(sources))
+                })
+                .count(),
         },
         Coverage {
             registry: "reaction windows",

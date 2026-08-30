@@ -375,12 +375,39 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v11): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v12): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v12 — recorded 2026-08-31. A change in *play* and in the event stream: the combat-dice
+    // cards (Direct Hit `dh1`–`dh4`, Rout, Waylay) stopped being unimplemented placeholders,
+    // and the anti-fighter barrage now emits a per-side `ANTI_FIGHTER_BARRAGE_STARTED` event
+    // the reaction tables can bind to (Waylay).
+    //
+    // - Direct Hit: after another player's ship uses SUSTAIN DAMAGE on a hit the holder
+    //   produced, the holder destroys that ship (the removal is announced as a first-class
+    //   `SHIP_DESTROYED` event).
+    // - Rout: the opponent must announce a retreat at the start of the round's retreat
+    //   step, if able — "stay" leaves the table for them.
+    // - Waylay: the holder's own barrage hits land on all ships, not just fighters, so a
+    //   casualty the silent AFB path would have absorbed in a fighter is now *chosen*.
+    //
+    // Every point estimate stays inside its v11 interval, but the bootstrap intervals
+    // themselves moved: the bots now hold and play these cards, so fights that used to
+    // evaporate on a fighter trade can now split across ship types, and the new event
+    // dilutes the stream denominators a little further. `faction_differentiation`'s lower
+    // bound rises (0.431 -> 0.541) and `score_spread`'s upper bound rises (2.091 -> 2.256) —
+    // the new cards give combats more ways to end differently; the action-label intervals
+    // drift by a few thousandths either way, and `vp_pace`'s lower bound rises (0.404 ->
+    // 0.419). `completion` stays the strict 1.0 invariant. The protocol-integrity check is
+    // what forced the move, as in v8 -> v9.
+    //
+    // Approved by the project owner (the engine-completion handoff's standing instruction to
+    // re-baseline when this card group lands); v11 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v11 — recorded 2026-08-30. A change in *play* and in the event stream: four
     // turn-flow action cards (Deadly Plot, Coup d'Etat, Crisis, Master Plan) stopped being
     // unimplemented placeholders and became real effects, and the turn machinery now emits
@@ -554,43 +581,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.404_320_987_654_321, 0.469_135_802_469_135_6),
+        (0.418_518_518_518_518_46, 0.469_135_802_469_135_8),
     );
     // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
     // strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.642_706_592_492_618_7, 2.091_334_339_506_611_5),
+        (1.789_654_222_677_076_6, 2.256_097_413_616_241_3),
     );
     // V3: the spec's across-faction quantity — recorded from the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.431_048_105_361_573_95, 1.128_489_102_437_851_6),
+        (0.540_804_156_606_131_5, 1.092_680_473_552_973_6),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.022_182_742_727_545_342, 0.023_431_368_633_576_48),
+        (0.022_358_650_884_480_753, 0.023_749_351_115_843_878),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.037_706_537_934_311_78, 0.038_744_781_789_041_97),
+        (0.037_194_108_887_409_1, 0.038_318_538_557_952_73),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.052_977_861_576_177_815, 0.057_389_984_448_995_67),
+        (0.052_551_012_984_781_47, 0.057_426_540_380_078_66),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.006_865_720_716_475_376, 0.007_908_236_712_393_815),
+        (0.006_521_578_455_494_587_5, 0.007_401_496_696_007_541),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.074_271_797_319_864_37, 0.076_329_808_204_574_93),
+        (0.073_462_200_240_759_28, 0.075_720_372_571_464_06),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.036_546_442_684_793_755, 0.037_622_801_254_986_765),
+        (0.036_240_269_212_850_916, 0.037_398_112_365_993_12),
     );
     bounds
 }

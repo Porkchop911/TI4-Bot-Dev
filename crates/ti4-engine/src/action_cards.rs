@@ -477,6 +477,70 @@ fn hack_election(context: &mut crate::timing::TimingContext<'_>, player: &Player
     }
 }
 
+/// Rout: "your opponent must announce a retreat, if able."
+///
+/// The card is played in the window that opens when the retreat announcement step begins, so
+/// the marker keys off the same `combat_round_seq` the window compares at announce time. The
+/// combat window hands the defender a single forced `retreat` option instead of `stay`/`retreat`
+/// when the marker matches; a defender that cannot legally retreat simply keeps fighting, which
+/// is what "if able" says.
+fn rout(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let round = context.state.combat_round_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.rout_round = Some(round);
+    }
+}
+
+/// Waylay: "before you roll dice for ANTI-FIGHTER BARRAGE: hits from this roll are produced
+/// against all ships (not just fighters)."
+///
+/// The holder plays it against their own upcoming barrage roll, so the marker keys off the
+/// round the barrage is rolled in and the combat window routes that side's barrage hits through
+/// the ordinary casualty absorption (owner-chosen, sustain-eligible) instead of auto-destroying
+/// fighters.
+fn waylay(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let round = context.state.combat_round_seq;
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.waylay_barrage_round = Some(round);
+    }
+}
+
+/// Direct Hit (dh1-dh4): "after another player's ship uses SUSTAIN DAMAGE to cancel a hit
+/// produced by your units or abilities: destroy that ship."
+///
+/// The combat window records the just-sustained hit in [`GameState::last_sustain`] before
+/// emitting `SUSTAIN_DAMAGE_USED`, because a reacting card cannot read the payload of the event
+/// that summoned it. The victim is the sustained ship: the first ship of that type the owner
+/// still has in the system, in unit order (unit order is the stable projection the rules use
+/// everywhere else, so no hidden tie-break is introduced).
+///
+/// The destruction is staged in [`GameState::pending_destructions`] and announced by the card's
+/// own resolution step, which does hold the game's resolver: the event goes through the timing
+/// machinery like any other, opening its WHEN and AFTER windows. A ship destroyed this way is
+/// off the board before the announcement, so `last` is read from the position a reacting card
+/// would see.
+fn direct_hit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((system, victim, unit_type, producer)) = context.state.last_sustain.clone() else {
+        return; // no sustain was just used; the guard should have kept this window closed
+    };
+    if &producer != player {
+        return; // defence in depth: the window guard already checks this
+    }
+    let board = context.state.system_mut(&system);
+    let index = board
+        .units
+        .iter()
+        .position(|unit| unit.owner == victim && unit.type_id == unit_type);
+    let Some(index) = index else {
+        return; // the sustained ship left the system in the meantime; nothing to destroy
+    };
+    board.units.remove(index);
+    context
+        .state
+        .pending_destructions
+        .push((system, victim, unit_type));
+}
+
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
 ///
 /// All of them, including a gravity rift's +1 and its destruction roll. A rift's bonus is as much
@@ -1843,15 +1907,28 @@ fn experimental_battlestation(context: &mut crate::timing::TimingContext<'_>, pl
     let Some(target) = context.state.active.clone() else {
         return;
     };
+    // A card effect has no resolver of its own: the hits apply on a stub resolver, so a
+    // sustained hit here announces nothing and opens no window.
+    let crate::timing::TimingContext {
+        state,
+        content,
+        sources,
+        table,
+        dice,
+        rng,
+        galaxy,
+        ..
+    } = context;
+    let mut ctx = crate::choice::Resolving {
+        content,
+        sources: *sources,
+        dice,
+        rng,
+        table,
+        timing: None,
+    };
     let _ = crate::combat::absorb_hits_seeing(
-        context.state,
-        context.content,
-        context.sources,
-        context.galaxy,
-        context.table,
-        &target,
-        &system,
-        hits,
+        state, content, *sources, *galaxy, &mut ctx, &target, &system, player, hits,
     );
 }
 
@@ -4172,6 +4249,9 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "crisis" => Some(crisis),
         "master_plan" => Some(master_plan),
         "hack" => Some(hack_election),
+        "rout" => Some(rout),
+        "waylay" => Some(waylay),
+        "dh1" | "dh2" | "dh3" | "dh4" => Some(direct_hit),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4346,6 +4426,12 @@ const REGISTERED_ALIASES: &[&str] = &[
     "confounding",
     "deadly_plot",
     "hack",
+    "dh1",
+    "dh2",
+    "dh3",
+    "dh4",
+    "rout",
+    "waylay",
     "coup",
     "crisis",
     "master_plan",
@@ -5291,7 +5377,8 @@ mod tests {
         let mut dice = crate::dice::Dice::from_faces([7, 8, 6, 6]);
         let pending = crate::combat::anti_fighter_barrage(
             &mut state, store, POK, &mut dice, &mut rng, &system, &a, &b,
-        );
+        )
+        .unwrap();
         assert_eq!(pending, Vec::<(PlayerId, usize)>::new());
 
         // The card effect stamps the marker for the round it is played in.

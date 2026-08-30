@@ -359,6 +359,21 @@ pub struct Player {
     /// reveal without any cleanup.
     #[serde(default)]
     pub hack_votes_last_agenda: Option<u32>,
+
+    /// Rout ("At the start of the 'Announce Retreats' step of space combat, if you are the
+    /// defender: your opponent must announce a retreat, if able."): the
+    /// [`GameState::combat_round_seq`] the card was played into, i.e. the round whose
+    /// Announcing step the opponent's retreat was forced in. Scopes itself the way
+    /// `extra_votes_agenda` does: the counter only moves forward, so a marker from an earlier
+    /// round (or an earlier combat) can never match again.
+    #[serde(default)]
+    pub rout_round: Option<u32>,
+
+    /// Waylay ("Before you roll dice for ANTI-FIGHTER BARRAGE: hits from this roll are
+    /// produced against all ships (not just fighters)."): the [`GameState::combat_round_seq`
+    /// ] the card was played into, i.e. the round whose barrage roll may target every ship.
+    #[serde(default)]
+    pub waylay_barrage_round: Option<u32>,
     /// Hits this seat may cancel before assigning them, in the combat round numbered here
     /// (Shields Holding). Consumed as they are cancelled.
     #[serde(default)]
@@ -502,6 +517,8 @@ impl PartialEq for Player {
             && self.combat_bonus_round == other.combat_bonus_round
             && self.extra_votes_agenda == other.extra_votes_agenda
             && self.hack_votes_last_agenda == other.hack_votes_last_agenda
+            && self.rout_round == other.rout_round
+            && self.waylay_barrage_round == other.waylay_barrage_round
             && self.cancel_hits_round == other.cancel_hits_round
             && self.retreat_barred_round == other.retreat_barred_round
             && self.extra_die_round == other.extra_die_round
@@ -570,6 +587,8 @@ impl Player {
             combat_bonus_round: None,
             extra_votes_agenda: None,
             hack_votes_last_agenda: None,
+            rout_round: None,
+            waylay_barrage_round: None,
             cancel_hits_round: None,
             retreat_barred_round: None,
             extra_die_round: None,
@@ -944,6 +963,22 @@ pub struct GameState {
     /// value is never read. In-flight bookkeeping — not compared.
     #[serde(default)]
     pub last_committed_unit: Option<(PlayerId, SystemId, PlanetId, Unit)>,
+    /// The most recent SUSTAIN DAMAGE use: the system, the player whose ship sustained,
+    /// the unit type that did it, and the player whose unit or ability produced the hit it
+    /// cancelled. Both emission sites (the combat window's sustain stage and the
+    /// absorption path) record it right before emitting `SUSTAIN_DAMAGE_USED`, and Direct
+    /// Hit reads it back in the window that follows — the event itself is consumed by the
+    /// timing machinery, which the effect cannot see. In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub last_sustain: Option<(SystemId, PlayerId, UnitTypeId, PlayerId)>,
+    /// Destructions staged by a card effect to be announced once the card's own resolution is
+    /// complete. A Direct Hit destroys a ship from inside a timing-window effect, which holds no
+    /// resolver of its own, so it records the removal here and the card-announce step emits the
+    /// `SHIP_DESTROYED` event through the game's resolver on its behalf. The tuple carries the
+    /// system, the owner, and the destroyed unit's type; the `last` fact is recomputed at
+    /// emission time from the board, which nothing else has touched in between. In-flight — not compared.
+    #[serde(default)]
+    pub pending_destructions: Vec<(SystemId, PlayerId, UnitTypeId)>,
 
     // -- agenda-phase bookkeeping (in-flight, not compared) -----------------------
     /// Veto: when played into the `AGENDA_REVEALED` window, the alias of the agenda drawn
@@ -1162,6 +1197,8 @@ impl GameState {
             reroll_staging: BTreeMap::new(),
             last_reroll_player: None,
             last_committed_unit: None,
+            last_sustain: None,
+            pending_destructions: Vec::new(),
             agenda_veto_replacement: None,
             agenda_elected_override: None,
             agenda_votes: BTreeMap::new(),
