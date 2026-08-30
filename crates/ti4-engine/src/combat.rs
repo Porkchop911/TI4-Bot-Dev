@@ -929,7 +929,7 @@ fn offer_sustain(
             let kind = unit.type_id.to_string();
             *unit = unit.sustained();
             pay_sustain_commander(state, content, player);
-            emit_sustain_used(state, ctx, system, player, &kind, producer);
+            emit_sustain_used(state, ctx, galaxy, system, player, &kind, producer)?;
         }
         hits = hits.saturating_sub(1);
     }
@@ -989,6 +989,10 @@ pub fn absorb_hits_seeing(
     producer: &PlayerId,
     hits: usize,
 ) -> Result<(), CombatError> {
+    // Shields Holding and Maneuvering Jets friends cancel hits before any are assigned: the
+    // round-scoped pool they grant into is spent here, the way the combat window's queue
+    // spends it, so a cancelled cannon or barrage hit is one nobody has to absorb.
+    let hits = hits.saturating_sub(spend_cancellations(state, player, hits));
     let mut remaining = offer_sustain(
         state, content, sources, galaxy, ctx, player, system, producer, hits,
     )?;
@@ -1015,7 +1019,8 @@ pub fn absorb_hits_seeing(
 /// racing to describe the same removal.
 ///
 /// Called after the unit is off the board, so `last` is read from the position a reacting card
-/// would see.
+/// would see. The handoff [`GameState::last_ship_destroyed`] is recorded first: an effect that
+/// needs to know *which* ship was destroyed cannot read the event once the window has run.
 fn announce_ship_destroyed(
     state: &mut GameState,
     ctx: &mut Resolving<'_>,
@@ -1026,6 +1031,7 @@ fn announce_ship_destroyed(
     sources: SourceSet,
 ) {
     let remaining = ships_of(state, content, sources, owner, system).len();
+    state.last_ship_destroyed = Some((system.clone(), owner.clone(), destroyed.type_id.clone()));
     let mut payload = std::collections::BTreeMap::new();
     payload.insert("system".to_owned(), system.to_string().into());
     payload.insert("player".to_owned(), owner.to_string().into());
@@ -1069,14 +1075,26 @@ impl CombatError {
 /// Hit's window only opens for the producer, not for any sustained hit on a rival's fleet.
 /// The handoff [`GameState::last_sustain`] is recorded first: the effect cannot see the
 /// event once the window has run.
+///
+/// Reflective Shielding, played in the window the emission just opened, stages hits against
+/// the sustained hit's producer ("your opponent"). The window has closed by the time this
+/// runs, so the victim's absorption — with its own sustain offers and loss choices — can now
+/// run against the same resolver. The drain lives here rather than at the two sustain sites
+/// because the combat window's queue and the absorption path both apply a sustain through
+/// this one emission, and a reflective hit must answer either.
+///
+/// # Errors
+///
+/// [`CombatError::IllegalChoice`] when the decider refuses the victim's loss choice.
 fn emit_sustain_used(
     state: &mut GameState,
     ctx: &mut Resolving<'_>,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     system: &SystemId,
     player: &PlayerId,
     unit: &str,
     producer: &PlayerId,
-) {
+) -> Result<(), CombatError> {
     state.last_sustain = Some((
         system.clone(),
         player.clone(),
@@ -1089,10 +1107,26 @@ fn emit_sustain_used(
     payload.insert("unit".to_owned(), unit.to_owned().into());
     payload.insert("producer".to_owned(), producer.to_string().into());
     let _ = ctx.emit(state, "SUSTAIN_DAMAGE_USED", payload);
+    if let Some((sys, victim, hits)) = std::mem::take(&mut state.pending_reflective_hits)
+        && victim != *player
+    {
+        absorb_hits_seeing(
+            state,
+            ctx.content,
+            ctx.sources,
+            galaxy,
+            ctx,
+            &victim,
+            &sys,
+            player,
+            hits,
+        )?;
+    }
+    Ok(())
 }
 
 /// 78.6: the owning player chooses which of their own units dies.
-fn choose_casualty(
+pub(crate) fn choose_casualty(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -2038,11 +2072,13 @@ impl Window for CombatWindow {
                         emit_sustain_used(
                             state,
                             ctx,
+                            self.galaxy.as_ref(),
                             &self.system,
                             &front_player,
                             &kind,
                             &front_producer,
-                        );
+                        )
+                        .map_err(CombatError::into_illegal_choice)?;
                     }
                     if let Some(front) = queue.first_mut() {
                         front.hits = front.hits.saturating_sub(1);

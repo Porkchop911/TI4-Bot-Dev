@@ -22,6 +22,101 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — combat aftermath: Maneuvering Jets / Reflective Shielding / Courageous to the End / Crash Landing, v12 holds (2026-08-31)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `1cbecd6` before this batch (the combat-dice commit).
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): **sub-batch C1 of the handoff's "not grouped" action-card set** — the four
+  reaction families that need live combat bookkeeping the model otherwise does not keep:
+  `mjets1`–`4` (Maneuvering Jets), `reflective` (Reflective Shielding), `courageous`
+  (Courageous to the End), `crashlanding` (Crash Landing).
+  - **Model fields** (`ti4-model` `GameState`, all `#[serde(default)]`, in-flight so excluded
+    from the manual `PartialEq`, `None` on a fresh state): `last_ship_destroyed =
+    (system, owner, unit type)` — recorded by both announce paths (`combat::
+    announce_ship_destroyed` and the `reactions::announce` `pending_destructions` drain) right
+    before the `SHIP_DESTROYED` emit, because the event payload is consumed by the timing
+    machinery and invisible to effects — and `pending_reflective_hits = (system, victim,
+    hit count)`, staged by the card and drained by the engine.
+  - **Maneuvering Jets** ("When the opponent's space cannon hits a ship: cancel the hits").
+    The cannon step now **interleaves per gunner**: `AftermathWindow::new` rolls one gunner's
+    cannon, emits that gunner's `SPACE_CANNON_HITS` and immediately absorbs that gunner's hits
+    (`combat::absorb_hits_seeing`), instead of the old two-pass roll-all-then-ask-all — so a
+    grant played in gunner G's window cancels G's hits. Grants use the shields batch' `combat:
+    :grant_hit_cancellation` (two cancellable hits per copy) spent in `absorb_hits_seeing`.
+  - **Reflective Shielding** ("When one of your ships uses SUSTAIN DAMAGE: that ship is hit 2
+    times"). Both sustain-application paths (the direct `offer_sustain` and the settle
+    window's `Stage::Sustaining` arm) now converge on `combat::emit_sustain_used`, which
+    records `last_sustain`, emits `SUSTAIN_DAMAGE_USED`, and then drains a staged
+    `pending_reflective_hits` through the real `absorb_hits_seeing` (sustain → cancellations →
+    owner's destroy choice) when the producer's owner is not the holder. The When-window
+    effect verifies the producer is the holder's own ship — a space-cannon hit is recorded
+    with unit `"cannon"`, so cannon damage is not the holder's ship and the card is silent —
+    and stages the two hits against the producer.
+  - **Courageous to the End** ("When your last ship in the active system is destroyed: roll 2
+    dice; for each die equal or lower than the destroyed ship's value, the opponent chooses
+    one of their ships in the active system to destroy"). The After-window effect infers the
+    opponent as the other combatant, rolls its two dice through the effect's real resolver,
+    and takes each successful die through the engine's own `choose_casualty` (owner chooses,
+    no decline) on the opponent's surviving ships; losses go to `pending_destructions` (the
+    Direct Hit convention) so each is announced as its own `SHIP_DESTROYED` event with its own
+    WHEN/AFTER windows.
+  - **Crash Landing** ("When your last ship in the active system is destroyed: move 1 of your
+    ground forces in the active system from the space area to an eligible planet"). The
+    When-window effect moves one of the holder's ground-force types in space (auto-picked
+    when the holder has exactly one such type, else chosen) to an eligible planet of the
+    active system — never Mecatol Rex, auto-picked when exactly one planet, else chosen with
+    no decline — and records `board.coexisting[planet]` when other units are already there.
+    **Bug fixed along the way**: the `your_last_ship` guard read the event's `"last"` payload
+    through the integer accessor, which returns `None` for a boolean payload — the window
+    never opened for the effect; it now uses `event.boolean`.
+- Coverage 123 → **130/142** action cards (91.5%, coverage_report, release); agendas still
+  63/63; reaction windows still 0 unsupported.
+- **No re-baseline.** The release `rebaseline_behavior` run (LIBTORCH) reported `0 metric(s)
+  outside the recorded bounds` — every point estimate stayed inside its v12 interval, the
+  protocol-recomputed intervals drifting only a few thousandths (`score_spread`'s upper bound
+  easing 2.256 -> 2.178) — so v12 still holds and no v13 was needed: the interleave reorders
+  scripted question order, and the four new cards bite only in fights their holders happen to
+  bring into. The run is recorded side by side in `plans/evidence/M08-021.md`.
+- Tests: 1028 `ti4-engine` lib tests pass (was 1024): four full-game scripted drivers in
+  `game.rs` (pinned dice, `ObservingDecider` queue, each with a cardless control arm) —
+  `maneuvering_jets_cancels_a_hit_from_the_opponents_cannon_roll` (a PDS-vs-cruiser fight: a
+  degenerate combat with no `SPACE_COMBAT_RESOLVED`, the gun fires at the only ship present;
+  the card arm keeps the cruiser, the control arm loses it),
+  `reflective_shielding_turns_the_holds_sustain_into_hits_on_the_producer` (dreadnought pair,
+  all-10 dice: B sustains A's hit, A sustains B's, the drain makes B absorb 2 — cruiser of
+  the scripted choice, dreadnought auto — and loses both),
+  `courageous_to_the_end_makes_the_opponent_choose_the_revenge_losses` (B fields four ships
+  and **no fighters anywhere** — a destroyer's AFB barrage would consume pinned faces;
+  B's dreadnought sustains A's hit, the four B dice take A's last cruiser, the two revenge
+  dice make B surrender cruiser and destroyer and keep dreadnought + carrier) and
+  `crashlanding_lands_the_holders_ground_force_when_their_last_ship_falls` (a two-ship
+  fixture — a lone fighter in space would trip the fleet-capacity question on the Movement
+  step; B declines to sustain and falls, A's cruiser falls as the last ship, A's infantry
+  lands on the occupied planet and coexists with B's garrison). Pin-queue accounting is
+  spelled out in each test's doc comment (fleet dice + AFB barrage + revenge dice in ask
+  order). The four drivers double as the probes: with each dispatch entry removed the scripted
+  arm's board assertion fails exactly while the control arm still passes.
+- Known gaps (unchanged from the combat-dice batch): `destroy_fighters` still emits no
+  `SHIP_DESTROYED` for AFB auto-destruction, so "after 1 of your ships is destroyed" windows
+  never fire on AFB kills; the battlestation's stub resolver still closes SUSTAIN windows
+  without a decider.
+- Workspace (LIBTORCH): every crate green except `ti4-sim`'s pre-existing tracked
+  `fixture_capture_is_deterministic` (unchanged failure mode; M09-019b scope). Scratch
+  examples deleted; `behavior.rs` untouched (no version move).
+- Clippy: zero new warnings in every touched file under `--all-targets` (`action_cards`,
+  `combat`, `game` tests, `reactions`, `ti4-model` state); the remaining workspace warnings
+  are pre-existing in untouched files (`close_vote`'s length, `production.rs` method chain,
+  `strategy.rs` / `fracture.rs` casts, the `coverage_report` example's length).
+- Next safe action: sub-batch C2 of the handoff's ungrouped set — `summit`, `stability`,
+  `disgrace`, `puppetsonastring`, `extremeduress` (turn/status flow), then C3 — `salvage`,
+  `reparations`, `infiltrate`, `blackmarketdealing`, `reverse_engineer` (economic/control);
+  `investments` and `lieinwait` stay blocked on unmodelled attachment / no transaction
+  history. Then relics. Read `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md` before any
+  payment restructuring.
+
 ### Engine completion — combat dice: Direct Hit / Rout / Waylay, v11 holds (2026-08-31)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

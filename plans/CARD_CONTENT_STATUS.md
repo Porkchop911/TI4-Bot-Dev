@@ -14,12 +14,12 @@ effects (baseline 51/63) in the two owned files only:
 
 | area          | before | after  |
 |---------------|--------|--------|
-| action cards  | 34/142 | 123/142 |
+| action cards  | 34/142 | 130/142 |
 | agendas       | 51/63  | 63/63  |
 
-`cargo run --release -p ti4-engine --example coverage_report` (final run): action cards 123 of
-142 (86.6%), agendas 63 of 63, reaction windows 0 unsupported, plus the unchanged rows for
-exploration/relics/objectives/leaders/abilities.
+`cargo run --release -p ti4-engine --example coverage_report` (final run, after the combat-
+aftermath batch): action cards 130 of 142 (91.5%), agendas 63 of 63, reaction windows 0
+unsupported, plus the unchanged rows for exploration/relics/objectives/leaders/abilities.
 
 ## Commits (oldest first)
 
@@ -234,6 +234,53 @@ the test fail, then reverted).
   re-baseline run reproduced all ten v11 values to the last digit, 0 metrics outside, so no
   v12 was needed (`plans/evidence/M08-021.md`).
 
+- Combat aftermath (sub-batch C1 of the handoff's "not grouped" set): `mjets1`–`4` (Maneuvering
+  Jets), `reflective` (Reflective Shielding), `courageous` (Courageous to the End) and
+  `crashlanding` (Crash Landing) — the four reaction families that need live combat bookkeeping
+  the model does not otherwise keep. Three in-flight model fields added in `ti4-model` (all
+  `#[serde(default)]`, in-flight so excluded from `GameState` comparison, `None`/empty on a
+  fresh state): `last_ship_destroyed = (system, owner, unit type)` (the announce paths record it
+  before emitting `SHIP_DESTROYED` — the event payload is consumed by the timing machinery and
+  invisible to effects, so the field is the hand-off), `pending_reflective_hits =
+  (system, victim, hit count)` and the pre-existing `last_sustain` / `pending_destructions`
+  conventions from the combat-dice batch. **Maneuvering Jets** — "When the opponent's space
+  cannon hits a ship: cancel the hits": the cannon step now interleaves per gunner —
+  `AftermathWindow::new` rolls one gunner's cannon, emits that gunner's `SPACE_CANNON_HITS` and
+  immediately absorbs that gunner's hits — so a grant played in gunner G's window cancels G's
+  hits (`combat::grant_hit_cancellation` / `spend_cancellations` in `absorb_hits_seeing`, the
+  shields API). **Reflective Shielding** — "When one of your ships uses SUSTAIN DAMAGE: that ship
+  is hit 2 times": both sustain-application paths (the direct `offer_sustain` and the settle
+  window's Sustaining arm) now converge on `emit_sustain_used`, which records `last_sustain`
+  and, after emitting `SUSTAIN_DAMAGE_USED`, drains a staged `pending_reflective_hits` through
+  the real `absorb_hits_seeing` (sustain → cancellation → owner-destroy choice) when the
+  producer's owner is not the holder. The When-window effect verifies the producer is the
+  holder's ship — a space-cannon hit is recorded with unit `"cannon"`, so cannon damage is not
+  the holder's ship and the card is silent — and stages the two hits. **Courageous to the End** —
+  "When your last ship in the active system is destroyed: roll 2 dice; for each die equal or
+  lower than the destroyed ship's value, the opponent chooses one of their ships in the system
+  to destroy": the After-window effect infers the opponent as the other combatant, rolls
+  through the effect's real resolver, and takes each successful hit through the engine's own
+  `choose_casualty` (the owner chooses, no decline); losses go to `pending_destructions` (the
+  Direct Hit convention) so each is announced as its own `SHIP_DESTROYED` with its own windows.
+  **Crash Landing** — "When your last ship in the active system is destroyed: move 1 of your
+  ground forces in the system from the space area to an eligible planet": the When-window
+  effect moves one of the holder's ground-force types in space (auto-picked when the holder has
+  exactly one such type, else chosen) to an eligible planet of the active system (never
+  Mecatol Rex; auto-picked when exactly one, else chosen, no decline) and records
+  `coexisting[planet]` when other units are already there. A bug fixed along the way: the
+  `your_last_ship` guard read the `"last"` payload through the integer accessor, which returns
+  `None` for a boolean payload — the window never opened for the effect; it now uses
+  `event.boolean`. Four full-game scripted drivers (pinned dice, `ObservingDecider` queue with
+  a cardless control arm each): mjets on a PDS-vs-cruiser fight (a degenerate combat with no
+  `SPACE_COMBAT_RESOLVED` — the gun fires at the only ship present), reflective on a
+  dreadnought pair (B sustains A's hit, A sustains B's, the drain makes B absorb 2), courageous
+  on a four-ship B (no fighters anywhere: a destroyer's AFB barrage would consume pinned faces)
+  and crashlanding on a two-ship fixture (a lone fighter in space trips the fleet-capacity
+  question on the Movement step; the landed infantry coexists on the planet). The release
+  re-baseline reproduced every v12 value inside its recorded bounds, `0 metric(s) outside the
+  recorded bounds`, so no v13 was needed: the interleave changes scripted question order but
+  not the bots' learned play inside the bounds (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -249,7 +296,7 @@ the test fail, then reverted).
 - **Overrule / Strategize**: a `FreeTactical` outcome records `state.active` +
   `state.active_system`; the move and its windows belong to the driver.
 
-## The 25 unimplemented action cards, grouped by blocking root cause
+## The unimplemented action cards, grouped by blocking root cause
 
 Each window below is mapped to an engine event (Phase 8: 0 unsupported windows); the block is the
 state or flow the effect needs, which lives in files outside the ownership scope. The invasion
@@ -294,19 +341,17 @@ and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`v
 
 ### Writable in a follow-up batch (state is on `GameState`, event exists)
 
-`infiltrate` (planet-gain + unit placement), `crashlanding` (last-ship-destroyed + command
-token), `courageous` (ship destroyed + reinforcement move), `stability` (status-phase card
+`infiltrate` (planet-gain + unit placement), `stability` (status-phase card
 return + command token), `summit` (strategy-phase start + 1 TG), `blackmarketdealing`
 (transaction + sell a ship for 1 TG), `reparations` (planet taken + 1 TG),
 `reverse_engineer` (component-card discard + research), `salvage` (space combat won +
-reinforcement move), `mjets1-4` (space-cannon window + ship move), `disgrace` (strategy-card choice +
+reinforcement move), `disgrace` (strategy-card choice +
 leader return, if leader state is on `GameState`), `puppetsonastring` (turn end +
-strategy-card discard), `extremeduress` (turn start + TG), `reflective` (produce 2 hits
-against the opponent's ships in the active system, when one of the holder's ships uses SUSTAIN
-DAMAGE — the `SUSTAIN_DAMAGE_USED` event and its When/After window rows already exist, so the
-effect has a live binding point). These are reaction cards: each needs a full-game scripted
-scenario in which the window actually fires, so this is a separate session, not a continuation
-of the component-action batches.
+strategy-card discard) and `extremeduress` (turn start + TG) remain. The four families
+that needed live combat bookkeeping — `mjets1`–`4`, `reflective`, `courageous`,
+`crashlanding` — closed with the combat-aftermath batch above. These are reaction cards: each
+needs a full-game scripted scenario in which the window actually fires, so this is a separate
+session, not a continuation of the component-action batches.
 
 ## FINDING — `ti4-policy` test ledger was wrong; **resolved in `873178e`**
 
@@ -340,33 +385,36 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
 
 ## Verification state at this checkpoint
 
-- `cargo test -p ti4-engine --lib`: 1021 passed, 0 failed (plus the 5 doc/other targets); the
+- `cargo test -p ti4-engine --lib`: 1028 passed, 0 failed (plus the 5 doc/other targets); the
   engine-line crates all green.
 - `cargo test --workspace` (LIBTORCH at `out/libtorch-2.9.1-cpu`): every engine-line crate
   green (ti4-model, ti4-content, ti4-engine, ti4-policy, ti4-sim's 52 non-fixture tests);
-  **ti4-sim's behavioral suite stays green at v11** — the vote-order package (Hack Election +
-  the barred-speaker fix) reproduced all ten v11 values to the last digit in the release
-  re-baseline run, `0 metric(s) outside the recorded bounds`, so no v12 re-baseline was needed
-  (`plans/evidence/M08-021.md`); the last move was v11 for the turn-flow cards. The one
+  **ti4-sim's behavioral suite stays green at v12** — the combat-aftermath batch (including the
+  per-gunner cannon interleave) reproduced every v12 value inside its recorded bounds, `0
+  metric(s) outside the recorded bounds`, so no v13 re-baseline was needed
+  (`plans/evidence/M08-021.md`); the last move was v12 for the combat-dice cards. The one
   remaining red is `fixture_capture_is_deterministic`: pre-
   existing (same failure mode on the pre-change tree — seed `919_601`'s replay now finishes at
   step 781 before any production-head menu of ≥3 options); it belongs to the M09-019b profile
   module's own versioned process and is tracked, not new.
 - `cargo clippy -p ti4-model -p ti4-content -p ti4-engine --all-targets`: zero warnings in the
   touched files (lib and tests); the remaining workspace warnings are pre-existing in untouched
-  files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, the
-  `coverage_report` example's length).
+  files (`production.rs` method chain, `strategy.rs` / `fracture.rs` casts, `close_vote`'s
+  length in `game.rs`, the `coverage_report` example's length).
 - The vote-order package was probed break → the exact new test fails → revert: the hack
   partition in `VoteWindow::new` disabled (both the unit order tests and the full-game driver
   fail on the exact (player, prompt) sequence) and the old speaker re-seating restored (the
   barred-speaker test fails). The Agenda group's five probes, the Movement group's four
   probes, the Sabotage group's three and the Turn-flow group's eleven were recorded at their
-  own checkpoints. The galaxy's both-link branch has no detecting probe — it is
-  indistinguishable from same-letter matching by the map's data (documented above).
-- The 19 remaining unimplemented action cards, grouped by the handoff's blockers plus the cards
-  it does not group (`fire_team`, `scramble` and the Jol-Nar commander reroll closed the reroll
-  group; the invasion-flow, Cancel API, Movement, Agenda, Turn-flow and Vote-order groups closed
-  with the batches above):
+  own checkpoints. The combat-aftermath batch's four drivers double as the probes: with each
+  effect's dispatch entry removed the scripted arm's board assertion fails exactly (the card
+  never plays, the control arm still passes), and the `your_last_ship` boolean-accessor fix
+  was pinned by the crashlanding driver. The galaxy's both-link branch has no detecting probe —
+  it is indistinguishable from same-letter matching by the map's data (documented above).
+- The 12 remaining unimplemented action cards (130 of 142 implemented), grouped by the
+  handoff's blockers plus the cards it does not group (`fire_team`, `scramble` and the Jol-Nar
+  commander reroll closed the reroll group; the invasion-flow, Cancel API, Movement, Agenda,
+  Turn-flow and Vote-order groups closed with the batches above):
   - **Agenda and turn flow** (0 remaining of 9): the five agenda cards
     (`veto`/`veto3`/`veto4`, `confusing`, `confounding`) closed with the Agenda batch, and the
     four turn cards (`deadly_plot`, `coup`, `crisis`, `master_plan`) closed with the Turn-flow
@@ -376,8 +424,11 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
     batch (via `vote::add_votes`) and `hack` closed with the vote-order batch (the
     `hack_votes_last_agenda` marker read by `VoteWindow::new`, plus the fix for a barred
     speaker being re-seated at the end of the order).
-  - **Not grouped by the handoff** (19, most blocked on movement/state the handoff's groups do
-    not cover): `blackmarketdealing`, `courageous`, `crashlanding`, `disgrace`,
-    `extremeduress`, `infiltrate`, `investments`, `lieinwait`, `mjets1`–`4`,
-    `puppetsonastring`, `reflective`, `reparations`, `reverse_engineer`, `salvage`,
-    `stability`, `summit`.
+  - **Combat aftermath** (0 remaining of 8 aliases): `mjets1`–`4`, `reflective`,
+    `courageous` and `crashlanding` closed with the combat-aftermath batch above (sub-batch C1
+    of the set the handoff does not group).
+  - **Not grouped by the handoff** (12, to close in sub-batches C2 — `summit`, `stability`,
+    `disgrace`, `puppetsonastring`, `extremeduress` — and C3 — `salvage`, `reparations`,
+    `infiltrate`, `blackmarketdealing`, `reverse_engineer` — the remainder): `investments`
+    (unmodelled attachment) and `lieinwait` (no transaction-history field) stay blocked on the
+    two root causes above.

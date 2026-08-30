@@ -199,19 +199,19 @@ impl AftermathWindow {
         let before_cannon =
             crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system);
         let gunners: Vec<PlayerId> = cannon.iter().map(|(who, _)| who.clone()).collect();
-        // "Before you assign hits produced by another player's SPACE CANNON roll." Emitted per
-        // firing player, before any of their hits are absorbed -- the window is what stands between
-        // the roll and the loss, and space cannon previously resolved straight through.
-        for (gunner, hits) in &cannon {
+        // "Before you assign hits produced by another player's SPACE CANNON roll." Emitted
+        // per firing player and immediately followed by that player's absorption, so a card
+        // played in the window (Maneuvering Jets) cancels a hit of *this* roll rather than
+        // whatever absorption happens next -- and the window is what stands between the roll
+        // and the loss, which space cannon previously resolved straight through.
+        let (content, sources, galaxy) = (ctx.content, ctx.sources, galaxy);
+        for (gunner, hits) in cannon {
             let mut payload = std::collections::BTreeMap::new();
             payload.insert("system".to_owned(), system.to_string().into());
             payload.insert("player".to_owned(), player.to_string().into());
             payload.insert("gunner".to_owned(), gunner.to_string().into());
-            payload.insert("hits".to_owned(), i64::try_from(*hits).unwrap_or(0).into());
+            payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
             let _ = ctx.emit(state, "SPACE_CANNON_HITS", payload);
-        }
-        let (content, sources, galaxy) = (ctx.content, ctx.sources, galaxy);
-        for (gunner, hits) in cannon {
             crate::combat::absorb_hits_seeing(
                 state, content, sources, galaxy, ctx, player, system, &gunner, hits,
             )?;
@@ -4570,6 +4570,527 @@ mod tests {
             1,
             "A's cruiser is the only loss; log: {events:?}"
         );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "no card, no play; log: {events:?}"
+        );
+    }
+
+    #[test]
+    fn maneuvering_jets_cancels_a_hit_from_the_opponents_cannon_roll() {
+        // Maneuvering Jets: "before you assign hits produced by another player's SPACE CANNON
+        // roll: cancel 1 hit." B's PDS fires one die that hits A's cruiser. With the card the
+        // hit is cancelled before anything is assigned, so the cruiser keeps fighting; without
+        // it the single hit takes the cruiser (the cannon path removes ships without an
+        // announcement, a known gap shared with the anti-fighter barrage).
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["mjets1"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "pds", &b, 1);
+
+            // B has no ships, so the combat window ends as soon as it opens: nobody is ever
+            // asked to announce, and only the cannon's one die leaves the bag.
+            let script: Vec<String> = (if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "reaction:generic:SPACE_CANNON_HITS:when",
+                ]
+            } else {
+                vec![TACTICAL_ACTION_ID, ids[0].as_str(), "done_moving"]
+            })
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            game.dice =
+                Dice::from_faces([10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_CANNON_HITS"),
+                "the roll announced before its hits were assigned; log: {:?}",
+                game.events
+            );
+            // A degenerate combat (no opposing fleet) concludes silently, so the action
+            // completing is the observable end.
+            assert!(
+                game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+                "the action ran to completion; log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        // Test arm: the hit is cancelled, the cruiser survives.
+        let (state, events) = run(true);
+        let space = |state: &GameState, owner: &PlayerId| -> Vec<String> {
+            state
+                .system_state(&SystemId::new("01"))
+                .units
+                .iter()
+                .filter(|unit| unit.owner == *owner)
+                .map(|unit| unit.type_id.to_string())
+                .collect()
+        };
+        assert_eq!(
+            space(&state, &a),
+            vec!["cruiser".to_owned()],
+            "the cancelled hit left the cruiser untouched; log: {events:?}"
+        );
+        assert_eq!(space(&state, &b), vec!["pds".to_owned()]);
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the card was played; log: {events:?}"
+        );
+        assert!(state.player(&a).unwrap().action_cards.is_empty());
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            0,
+            "a cancelled hit destroys nothing; log: {events:?}"
+        );
+
+        // Control: the hit lands on the single cruiser and takes it.
+        let (state, events) = run(false);
+        assert_eq!(
+            space(&state, &a),
+            Vec::<String>::new(),
+            "the uncancelled hit took the cruiser; log: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "no card, no play; log: {events:?}"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per stage of the sustained exchange"
+    )]
+    fn reflective_shielding_turns_the_holds_sustain_into_hits_on_the_producer() {
+        // Reflective Shielding: "when one of your ships uses SUSTAIN DAMAGE during combat:
+        // produce 2 hits against your opponent's ships in the active system." Every die is
+        // pinned to 10, which hits on any threshold: A's dreadnought scores once on B, and B
+        // scores twice on A. B's dreadnought cancels A's hit. A's dreadnought then cancels
+        // one of B's two; in the test arm the card turns the cancelled hit into two of its
+        // own, and B — the sustained hit's producer — absorbs them: the cruiser is chosen, the
+        // damaged dreadnought takes the second, and B is empty. A's second hit still lands,
+        // and the fight ends in round one. Without the card B keeps both ships and A's
+        // dreadnought is the only loss.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["reflective"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "dreadnought", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "dreadnought", &b, 1);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 1);
+
+            // Board order: A's dreadnought (sustain "sustain|0"), B's ("sustain|1"), B's
+            // cruiser (destruction option "destroy|1" to B, whose own list is owner-filtered).
+            // B has no retreat destination, so only A is ever asked to announce.
+            let script: Vec<String> = (if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                    "sustain|0",
+                    "reaction:generic:SUSTAIN_DAMAGE_USED:when",
+                    "destroy|1",
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                    "sustain|0",
+                ]
+            })
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // A's one die, then B's two; the combat ends in round one, so nothing else draws.
+            game.dice = Dice::from_faces([
+                10, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            ]);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "the combat settled; log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        let ships = |state: &GameState, owner: &PlayerId| -> Vec<(String, bool)> {
+            state
+                .system_state(&SystemId::new("01"))
+                .units
+                .iter()
+                .filter(|unit| unit.owner == *owner)
+                .map(|unit| (unit.type_id.to_string(), unit.sustained_damage))
+                .collect()
+        };
+
+        // Test arm: the sustained hit reflects; B absorbs the two hits it earned back.
+        let (state, events) = run(true);
+        assert_eq!(
+            ships(&state, &b),
+            Vec::<(String, bool)>::new(),
+            "the reflected hits took the cruiser and the damaged dreadnought;
+             log: {events:?}"
+        );
+        assert_eq!(
+            ships(&state, &a),
+            Vec::<(String, bool)>::new(),
+            "A's second hit still landed on the sustained dreadnought; log: {events:?}"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e == &"SUSTAIN_DAMAGE_USED")
+                .count(),
+            2,
+            "both dreadnoughts cancelled one hit; log: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            1,
+            "only A's dreadnought was announced: B's losses came through the
+             absorption path, which stays silent like the barrage; log: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the card was played; log: {events:?}"
+        );
+        assert!(state.player(&a).unwrap().action_cards.is_empty());
+
+        // Control: B keeps the damaged dreadnought and the cruiser.
+        let (state, events) = run(false);
+        assert_eq!(
+            ships(&state, &b),
+            vec![
+                ("dreadnought".to_owned(), true),
+                ("cruiser".to_owned(), false),
+            ],
+            "nothing reflected, so B's ships survive the round; log: {events:?}"
+        );
+        assert_eq!(
+            ships(&state, &a),
+            Vec::<(String, bool)>::new(),
+            "A's second hit still landed; log: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "no card, no play; log: {events:?}"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per die of the revenge roll"
+    )]
+    fn courageous_to_the_end_makes_the_opponent_choose_the_revenge_losses() {
+        // Courageous to the End: "after 1 of your ships is destroyed during a space combat:
+        // roll 2 dice. For each result equal to or higher than that ship's combat value,
+        // your opponent must choose and destroy 1 of their ships." A's lone cruiser scores
+        // on one of B's four ships, which B cancels with the dreadnought's sustain; all
+        // four of B's dice score on the cruiser, which falls as A's last ship. In the test
+        // arm the card rolls two revenge dice at the cruiser's combat value (7): both
+        // succeed on face 10, and B chooses the cruiser and the destroyer, keeping the
+        // damaged dreadnought and the carrier. Without the card B keeps all four ships.
+        // No fighters, so no space-capacity removal is asked during the move.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["courageous"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "dreadnought", &b, 1);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 1);
+            crate::fixtures::put(&mut state, &ids[0], "destroyer", &b, 1);
+            crate::fixtures::put(&mut state, &ids[0], "carrier", &b, 1);
+
+            // Only A is asked to announce: A's fighters in the six other systems give it
+            // retreat destinations, while B is anchored in the system and skipped (78.4c).
+            // B's owner-filtered revenge order: dreadnought "destroy|0", cruiser
+            // "destroy|1", destroyer "destroy|2", carrier "destroy|3"; after the first
+            // loss the list reindexes, so the destroyer is "destroy|1" again.
+            let script: Vec<String> = (if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                    "reaction:generic:SHIP_DESTROYED:after",
+                    "destroy|1",
+                    "destroy|1",
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "sustain|1",
+                ]
+            })
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // A's die, B's four, B's destroyer ANTI-FIGHTER BARRAGE (two dice, no A
+            // fighters to hit), then the card's two revenge dice; nothing else draws.
+            game.dice = Dice::from_faces([
+                10, 10, 10, 10, 10, 10, 10, 10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            ]);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "the combat settled; log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        let space = |state: &GameState, owner: &PlayerId| -> Vec<String> {
+            state
+                .system_state(&SystemId::new("01"))
+                .units
+                .iter()
+                .filter(|unit| unit.owner == *owner)
+                .map(|unit| unit.type_id.to_string())
+                .collect()
+        };
+
+        // Test arm: both revenge dice meet the cruiser's value; B loses the two ships it
+        // chooses, keeping the damaged dreadnought and the carrier.
+        let (state, events) = run(true);
+        assert_eq!(
+            space(&state, &b),
+            vec!["dreadnought".to_owned(), "carrier".to_owned()],
+            "the card's dice took the chosen cruiser and destroyer;
+             log: {events:?}"
+        );
+        assert_eq!(space(&state, &a), Vec::<String>::new());
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            3,
+            "A's auto-casualty plus the card's two staged losses, all announced;
+             log: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the card was played; log: {events:?}"
+        );
+        assert!(state.player(&a).unwrap().action_cards.is_empty());
+
+        // Control: the round's own hits are all that lands, and the dreadnought's sustain
+        // soaks A's one; B keeps all four ships.
+        let (state, events) = run(false);
+        assert_eq!(
+            space(&state, &b),
+            vec![
+                "dreadnought".to_owned(),
+                "cruiser".to_owned(),
+                "destroyer".to_owned(),
+                "carrier".to_owned(),
+            ],
+            "without the card the round took A's ship only;
+             log: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            1,
+            "A's last ship is the only announced loss; log: {events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "no card, no play; log: {events:?}"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one run closure plus one assertion per placement fact of the landing"
+    )]
+    fn crashlanding_lands_the_holders_ground_force_when_their_last_ship_falls() {
+        // Crash Landing: "when your last ship in the active system is destroyed: place 1 of
+        // your ground forces from the space area of the active system onto a planet in that
+        // system (other than Mecatol Rex). If the planet contains other players' units, place
+        // your ground forces into coexistence." Every die is pinned to 10: A's cruiser scores
+        // on B's dreadnought, and B's dreadnought scores on A's cruiser, so both sides are
+        // empty when the round ends. In the test arm A's lone ship was their last, so the
+        // infantry in A's space area lands on Jord — the system's only planet — and joins
+        // B's infantry there in coexistence. Without the card the infantry stays in the
+        // space area and nothing coexists.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let run = |with_card: bool| -> (GameState, Vec<String>) {
+            let (mut state, galaxy, ids) =
+                combat_fixture(if with_card { &["crashlanding"] } else { &[] }, &[]);
+            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "infantry", &a, 1);
+            crate::fixtures::put(&mut state, &ids[0], "dreadnought", &b, 1);
+            crate::fixtures::put_on_planet(
+                &mut state,
+                &ids[0],
+                &PlanetId::new("jord"),
+                "infantry",
+                &b,
+                1,
+            );
+
+            // B has no retreat destination, so only A is ever asked to announce.
+            // A alone is asked to announce (it holds the fighters in the other systems);
+            // B's dreadnought could sustain A's one hit, so the script declines and the
+            // hit lands.
+            let script: Vec<String> = (if with_card {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "decline",
+                    "reaction:generic:SHIP_DESTROYED:when",
+                ]
+            } else {
+                vec![
+                    TACTICAL_ACTION_ID,
+                    ids[0].as_str(),
+                    "done_moving",
+                    "stay",
+                    "decline",
+                ]
+            })
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let table = Table::with_default(Box::new(Scripted::new(script)));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            // A's die, B's die; the combat ends in round one, so nothing else draws.
+            game.dice =
+                Dice::from_faces([10, 10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+
+            for _ in 0..60 {
+                assert_eq!(game.step().error, None, "log: {:?}", game.events);
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            assert!(
+                game.events.iter().any(|e| e == "SPACE_COMBAT_RESOLVED"),
+                "the combat settled; log: {:?}",
+                game.events
+            );
+            (game.state.clone(), game.events.clone())
+        };
+
+        let space = |state: &GameState, owner: &PlayerId| -> Vec<String> {
+            state
+                .system_state(&SystemId::new("01"))
+                .units
+                .iter()
+                .filter(|unit| unit.owner == *owner)
+                .map(|unit| unit.type_id.to_string())
+                .collect()
+        };
+        let on_jord = |state: &GameState| -> Vec<String> {
+            state
+                .system_state(&SystemId::new("01"))
+                .planet_units
+                .get(&PlanetId::new("jord"))
+                .map(|units| {
+                    units
+                        .iter()
+                        .map(|unit| format!("{}:{}", unit.owner, unit.type_id))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let jord_coexisting = |state: &GameState| -> Vec<String> {
+            state
+                .system_state(&SystemId::new("01"))
+                .coexisting
+                .get(&PlanetId::new("jord"))
+                .map(|players| players.iter().map(ToString::to_string).collect())
+                .unwrap_or_default()
+        };
+
+        // Test arm: A's last ship fell, so the infantry lands on Jord and coexists.
+        let (state, events) = run(true);
+        assert_eq!(
+            space(&state, &a),
+            Vec::<String>::new(),
+            "the infantry left the space area with the last ship gone; log: {events:?}"
+        );
+        assert_eq!(
+            on_jord(&state),
+            vec!["b:infantry".to_owned(), "a:infantry".to_owned()],
+            "the landing put A's infantry on Jord beside B's; log: {events:?}"
+        );
+        assert_eq!(
+            jord_coexisting(&state),
+            vec!["a".to_owned()],
+            "B's infantry was there, so A coexists rather than controls; log: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|e| e == &"SHIP_DESTROYED").count(),
+            2,
+            "each side's last ship; log: {events:?}"
+        );
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
+            "the card was played; log: {events:?}"
+        );
+        assert!(state.player(&a).unwrap().action_cards.is_empty());
+
+        // Control: the infantry never leaves the space area.
+        let (state, events) = run(false);
+        assert_eq!(
+            space(&state, &a),
+            vec!["infantry".to_owned()],
+            "no card, no landing; log: {events:?}"
+        );
+        assert_eq!(on_jord(&state), vec!["b:infantry".to_owned()]);
+        assert_eq!(jord_coexisting(&state), Vec::<String>::new());
         assert!(
             !events.iter().any(|e| e == "ACTION_CARD_PLAYED"),
             "no card, no play; log: {events:?}"

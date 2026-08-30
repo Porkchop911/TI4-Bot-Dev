@@ -979,6 +979,22 @@ pub struct GameState {
     /// emission time from the board, which nothing else has touched in between. In-flight — not compared.
     #[serde(default)]
     pub pending_destructions: Vec<(SystemId, PlayerId, UnitTypeId)>,
+    /// The most recent destroyed ship: the system, the owner, and the unit type. Both
+    /// emission sites (the combat window's casualty step and the card-announce drain of
+    /// staged destructions) record it right before emitting `SHIP_DESTROYED`, and cards that
+    /// react to a destruction and need to know *which* ship it was — Courageous to the End
+    /// rolls against that ship's combat value, Crash Landing acts on the system — read it
+    /// back: the event itself is consumed by the timing machinery, which the effect cannot
+    /// see. In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub last_ship_destroyed: Option<(SystemId, PlayerId, UnitTypeId)>,
+    /// Hits staged by Reflective Shielding to be absorbed once the sustain window that played
+    /// the card has closed: the system, the victim (the sustained hit's producer — "your
+    /// opponent" in the card text) and the count. The sustain step drains it straight after
+    /// the emission, so the victim's own sustain answers and loss choices still happen.
+    /// In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub pending_reflective_hits: Option<(SystemId, PlayerId, usize)>,
 
     // -- agenda-phase bookkeeping (in-flight, not compared) -----------------------
     /// Veto: when played into the `AGENDA_REVEALED` window, the alias of the agenda drawn
@@ -1199,6 +1215,8 @@ impl GameState {
             last_committed_unit: None,
             last_sustain: None,
             pending_destructions: Vec::new(),
+            last_ship_destroyed: None,
+            pending_reflective_hits: None,
             agenda_veto_replacement: None,
             agenda_elected_override: None,
             agenda_votes: BTreeMap::new(),

@@ -541,6 +541,264 @@ fn direct_hit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         .push((system, victim, unit_type));
 }
 
+/// Maneuvering Jets, four physical copies: "before you assign hits produced by another
+/// player's SPACE CANNON roll: cancel 1 hit."
+///
+/// The cancellation is a round-scoped grant on the seat (the same mechanism Shields Holding
+/// uses), and the cannon step spends it before any hit is assigned — a cancelled hit is one
+/// nobody has to absorb. The window fires right before that gunner's hits are absorbed, so a
+/// grant made in it cancels hits of that roll rather than of some other absorption.
+fn maneuvering_jets(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    crate::combat::grant_hit_cancellation(context.state, player, 1);
+}
+
+/// Reflective Shielding: "when one of your ships uses SUSTAIN DAMAGE during combat: produce 2
+/// hits against your opponent's ships in the active system."
+///
+/// The sustained hit is read from the [`GameState::last_sustain`] handoff the sustain step
+/// records before emitting the event that opens this window, and the opponent is the sustained
+/// hit's producer: in a fleet fight that is the rival, and in a cannon step the firing player —
+/// either way, exactly the ship the card text names. The hits are staged in
+/// [`GameState::pending_reflective_hits`], which the sustain step drains the moment the window
+/// that plays this card has closed, so the opponent's own sustain answers and loss choices
+/// still happen through the ordinary question path.
+fn reflective(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((system, victim, _unit_type, producer)) = context.state.last_sustain.clone() else {
+        return; // no sustain was just used; the guard should have kept this window closed
+    };
+    if &victim != player || &producer == player {
+        return; // defence in depth: the window guard already checks it was your ship
+    }
+    context.state.pending_reflective_hits = Some((system, producer, 2));
+}
+
+/// Courageous to the End: "after 1 of your ships is destroyed during a space combat: roll 2
+/// dice. For each result equal to or higher than that ship's combat value, your opponent must
+/// choose and destroy 1 of their ships."
+///
+/// The destroyed ship is read from the [`GameState::last_ship_destroyed`] handoff. "Your
+/// opponent" is the other ship-bearing combatant of the active system, inferred from the board
+/// the way Intercept names the declarant — the holder may have lost the ship that was their
+/// last one, so the check runs against the board as it is *now*, and a combat with no ships
+/// left for anyone ends with no one to choose a loss. The window's guard cannot see "during a
+/// space combat", so the effect's own checks are the binding: a destruction staged outside a
+/// fight (a Direct Hit during a tactical action) still acts, against whoever else has ships in
+/// the system. Each successful die asks that opponent to choose one of their own ships to
+/// destroy (the ordinary casualty question), and each loss is staged in
+/// [`GameState::pending_destructions`] so the card's resolution step announces it as a
+/// first-class `SHIP_DESTROYED` through the game's resolver. A refused or invalid answer stops
+/// the card where it is, like every other window effect that asks.
+fn courageous(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((system, victim, unit_type)) = context.state.last_ship_destroyed.clone() else {
+        return;
+    };
+    if &victim != player {
+        return; // defence in depth: the window guard already checks this
+    }
+    let combatants =
+        crate::combat::combatants(context.state, context.content, context.sources, &system);
+    let Some(opponent) = combatants.iter().find(|combatant| **combatant != *player) else {
+        return; // no opponent in the system, so no one to choose a loss
+    };
+    let unit = Unit::new(unit_type, victim.clone());
+    let Some(combat_value) = crate::combat::hits_on(context.content, context.sources, &unit) else {
+        return;
+    };
+    let roll = context
+        .dice
+        .roll(context.rng, 2, "courageous to the end", None);
+    for face in roll.faces {
+        if i64::from(face) < combat_value {
+            continue;
+        }
+        let alive = crate::combat::ships_of(
+            context.state,
+            context.content,
+            context.sources,
+            opponent,
+            &system,
+        );
+        if alive.is_empty() {
+            break;
+        }
+        let Ok(casualty) = crate::combat::choose_casualty(
+            context.state,
+            context.content,
+            context.sources,
+            context.galaxy,
+            context.table,
+            opponent,
+            &alive,
+        ) else {
+            break; // the decider refused to choose a loss; the card stops where it is
+        };
+        let board = context.state.system_mut(&system);
+        if let Some(index) = board.units.iter().position(|unit| unit == &casualty) {
+            board.units.remove(index);
+        }
+        context.state.pending_destructions.push((
+            system.clone(),
+            opponent.clone(),
+            casualty.type_id,
+        ));
+    }
+}
+
+/// Crash Landing: "when your last ship in the active system is destroyed: place 1 of your
+/// ground forces from the space area of the active system onto a planet in that system
+/// (other than Mecatol Rex). If the planet contains other players' units, place your ground
+/// forces into coexistence."
+///
+/// The window fires on the `last` fact the combat window recomputes from the board before it
+/// emits `SHIP_DESTROYED`, and the system is read from the `last_ship_destroyed` handoff.
+/// "Other than Mecatol Rex" is resolved by name in the planet catalogue: both the base-game
+/// planet and its expansion variants carry that name. A question with exactly one possible
+/// answer is not asked — the card does the only thing it can do; with several, the holder
+/// chooses, without decline, because the landing is mandatory.
+fn crashlanding(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((system, victim, _unit_type)) = context.state.last_ship_destroyed.clone() else {
+        return;
+    };
+    if &victim != player {
+        return; // defence in depth: the window guard already checked it was your last ship
+    }
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    // What can land: the holder's ground forces in the system's space area.
+    let kinds: std::collections::BTreeSet<String> = context
+        .state
+        .system_state(&system)
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.owner == *player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ground_force)
+        })
+        .map(|unit| unit.type_id.to_string())
+        .collect();
+    if kinds.is_empty() {
+        return; // nothing to land
+    }
+    // Where it can land: the system's planets, other than Mecatol Rex.
+    let planets: Vec<ti4_content::galaxy::Planet> =
+        ti4_content::galaxy::planets_in(context.content, system.as_str(), context.sources)
+            .into_iter()
+            .filter(|planet| {
+                context
+                    .content
+                    .get(ContentType::Planets, planet.id())
+                    .is_none_or(|record| record.text("name") != Some("Mecatol Rex"))
+            })
+            .collect();
+    if planets.is_empty() {
+        return; // nowhere to land
+    }
+    let Some(kind) = choose_crashlanding_ground(context, player, &system, &kinds) else {
+        return;
+    };
+    let Some(planet_id) = choose_crashlanding_planet(context, player, &system, &planets) else {
+        return;
+    };
+    // Move one unit of the chosen type from the space area onto the chosen planet.
+    let board = context.state.system_mut(&system);
+    let index = board
+        .units
+        .iter()
+        .position(|unit| unit.owner == *player && unit.type_id.as_str() == kind)
+        .expect("checked above");
+    let landed = board.units.remove(index);
+    let others_there = board
+        .planet_units
+        .get(&planet_id)
+        .is_some_and(|units| units.iter().any(|unit| unit.owner != *player));
+    board
+        .planet_units
+        .entry(planet_id.clone())
+        .or_default()
+        .push(Unit::new(landed.type_id, player.clone()));
+    if others_there {
+        board
+            .coexisting
+            .entry(planet_id)
+            .or_default()
+            .insert(player.clone());
+    }
+}
+
+/// Crash Landing's first decision: which of the holder's ground forces in space lands.
+/// A lone kind is not a decision, so it is taken without asking.
+fn choose_crashlanding_ground(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    system: &ti4_model::id::SystemId,
+    kinds: &std::collections::BTreeSet<String>,
+) -> Option<String> {
+    if kinds.len() == 1 {
+        return kinds.first().cloned();
+    }
+    let unit_name = |kind: &str| {
+        context
+            .content
+            .get(ContentType::Units, kind)
+            .and_then(|record| record.text("name"))
+            .unwrap_or(kind)
+            .to_owned()
+    };
+    let options: Vec<crate::choice::ChoiceOption> = kinds
+        .iter()
+        .map(|kind| {
+            crate::choice::ChoiceOption::labelled(
+                format!("ground|{kind}"),
+                "crashlanding_ground",
+                unit_name(kind),
+            )
+        })
+        .collect();
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        format!("Crash Landing: choose a ground force in {system}"),
+        options,
+    );
+    let Ok(answer) = context.ask_seeing(&choice) else {
+        return None;
+    };
+    answer.id.strip_prefix("ground|").map(str::to_owned)
+}
+
+/// Crash Landing's second decision: which planet the ground force lands on. A lone
+/// eligible planet is not a decision, so it is taken without asking.
+fn choose_crashlanding_planet(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    system: &ti4_model::id::SystemId,
+    planets: &[ti4_content::galaxy::Planet],
+) -> Option<ti4_model::id::PlanetId> {
+    if planets.len() == 1 {
+        return Some(ti4_model::id::PlanetId::new(planets[0].id()));
+    }
+    let options: Vec<crate::choice::ChoiceOption> = planets
+        .iter()
+        .map(|planet| {
+            crate::choice::ChoiceOption::labelled(
+                format!("planet|{}", planet.id()),
+                "crashlanding_planet",
+                planet.name().unwrap_or(planet.id()),
+            )
+        })
+        .collect();
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        format!("Crash Landing: choose a planet in {system}"),
+        options,
+    );
+    let Ok(answer) = context.ask_seeing(&choice) else {
+        return None;
+    };
+    let id = answer.id.strip_prefix("planet|")?;
+    Some(ti4_model::id::PlanetId::new(id))
+}
+
 /// Nav Suite: "during the Movement step of this tactical action, ignore the effect of anomalies."
 ///
 /// All of them, including a gravity rift's +1 and its destruction roll. A rift's bonus is as much
@@ -4252,6 +4510,10 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "rout" => Some(rout),
         "waylay" => Some(waylay),
         "dh1" | "dh2" | "dh3" | "dh4" => Some(direct_hit),
+        "mjets1" | "mjets2" | "mjets3" | "mjets4" => Some(maneuvering_jets),
+        "reflective" => Some(reflective),
+        "courageous" => Some(courageous),
+        "crashlanding" => Some(crashlanding),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "f_researched" => Some(focused_research),
@@ -4432,6 +4694,13 @@ const REGISTERED_ALIASES: &[&str] = &[
     "dh4",
     "rout",
     "waylay",
+    "mjets1",
+    "mjets2",
+    "mjets3",
+    "mjets4",
+    "reflective",
+    "courageous",
+    "crashlanding",
     "coup",
     "crisis",
     "master_plan",

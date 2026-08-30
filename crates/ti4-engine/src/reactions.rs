@@ -132,6 +132,13 @@ fn another_player_elected(event: &Event, player: &PlayerId, _state: &GameState) 
         .is_some_and(|who| who != player.as_str())
 }
 
+/// "When your last ship in the active system is destroyed": the destroyed ship belongs to
+/// this player, and it was their last one in the system -- the `last` fact the combat window
+/// recomputes from the board right before the emission (Crash Landing).
+fn your_last_ship(event: &Event, player: &PlayerId, state: &GameState) -> bool {
+    actor_is(event, player, state) && event.boolean("last") == Some(true)
+}
+
 /// "If you voted for or predicted another outcome" (Deadly Plot), read at the moment the
 /// agenda's outcome would be resolved. The event's `player` is the outcome about to be
 /// resolved; the vote itself is not in the event, so the driver mirrors the ballot into
@@ -343,7 +350,7 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "When your last ship in the active system is destroyed",
-            guarded("SHIP_DESTROYED", When, actor_is),
+            guarded("SHIP_DESTROYED", When, your_last_ship),
         ),
         (
             "When one of your ships uses SUSTAIN DAMAGE during combat",
@@ -573,6 +580,10 @@ pub fn announce(
             &system,
         )
         .len();
+        // The same handoff the combat window's own emissions make: a reacting effect that
+        // needs to know which ship was destroyed cannot read the event once the window runs.
+        context.state.last_ship_destroyed =
+            Some((system.clone(), owner.clone(), unit_type.clone()));
         let mut payload = BTreeMap::new();
         payload.insert("system".to_owned(), system.to_string().into());
         payload.insert("player".to_owned(), owner.to_string().into());
