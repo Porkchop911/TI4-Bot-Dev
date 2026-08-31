@@ -6,6 +6,9 @@
 >
 > Kept for the reasoning, which still holds — the defect class, the verification standard and the
 > baseline discipline are all unchanged. What is left is in "Still open" at the bottom.
+>
+> The dice cluster listed below was implemented twice, concurrently. The owner kept the version
+> written in the main checkout; mine was removed in `acb898b`.
 
 Written 2026-08-31. Supersedes `plans/HANDOFF_ENGINE_COMPLETION.md`, whose numbers are stale.
 Companions: `plans/ENGINE_COMPLETION_PLAN.md`, `engine-rules-audit.md`.
@@ -216,17 +219,23 @@ duplicate introduced in `34b7b0d`, and had not been running since. Restored, and
 card was fine, only the test was switched off. Nothing else in that file changed.
 
 
-## Still open (2026-08-31)
+## Still open (2026-08-31, end of session)
 
-Nothing in the content scope. What remains is elsewhere:
-
-- **Phase 9 of `ENGINE_COMPLETION_PLAN.md`: 79 rule topics never verified.** The audit checked 30 of
-  109. The remaining 79 are unverified rather than known-wrong, which is a different and smaller
-  claim than "complete".
-- **Two open bugs**: `BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT` and
-  `BUG_2026-08-29_PROMISSORY_NOTE_TRANSACTION_OFFERS`.
-- **Merge `wp/engine-completion` back into `wp/r01-review-viewer-contract`.** Still not done.
+- **Phase 9: 63 rule topics still unverified.** Sixteen were checked against the rules text this
+  session and found **seven defects in fourteen in-scope topics**. At that rate the remaining 63
+  hold real bugs, so they are worth finishing; see the Phase 9 section of `engine-rules-audit.md`
+  for what was checked and what it cost.
+- **One rule found and deliberately not fixed**: 16.3c, "at the end of combat, any excess units are
+  removed". `over_capacity` answers correctly; there is no caller after combat, so a carrier
+  destroyed in a fight leaves its cargo standing and a stranded ground force can still invade.
+  Wiring it there was tried and reverted -- Crash Landing and three other cards move units from
+  windows that settle after the combat window closes, and enforcing first removes what they are
+  about to rescue. Needs its own ordering change. Recorded in `fleet.rs`.
+- **Two simplifications**: 95.1 pickup from systems moved *through* (origin only here), and 68.3b
+  producing one unit of a two-for-one pair at full cost (not offered).
 - **Training is still paused** by the owner's decision.
+
+Both bugs are closed and the branch is merged.
 
 ### Simplifications recorded rather than hidden
 
