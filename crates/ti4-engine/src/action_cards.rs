@@ -1075,13 +1075,13 @@ fn crashlanding(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
         return; // nothing to land
     }
     // Where it can land: the system's planets, other than Mecatol Rex.
-    let planets: Vec<ti4_content::galaxy::Planet> =
-        ti4_content::galaxy::planets_in(context.content, system.as_str(), context.sources)
+    let planets: Vec<ti4_model::id::PlanetId> =
+        crate::planets::in_system(context.state, context.content, context.sources, &system)
             .into_iter()
             .filter(|planet| {
                 context
                     .content
-                    .get(ContentType::Planets, planet.id())
+                    .get(ContentType::Planets, planet.as_str())
                     .is_none_or(|record| record.text("name") != Some("Mecatol Rex"))
             })
             .collect();
@@ -1166,18 +1166,26 @@ fn choose_crashlanding_planet(
     context: &mut crate::timing::TimingContext<'_>,
     player: &PlayerId,
     system: &ti4_model::id::SystemId,
-    planets: &[ti4_content::galaxy::Planet],
+    planets: &[ti4_model::id::PlanetId],
 ) -> Option<ti4_model::id::PlanetId> {
     if planets.len() == 1 {
-        return Some(ti4_model::id::PlanetId::new(planets[0].id()));
+        return Some(planets[0].clone());
     }
     let options: Vec<crate::choice::ChoiceOption> = planets
         .iter()
         .map(|planet| {
+            let name = ti4_content::galaxy::planet(
+                context.content,
+                planet.as_str(),
+                context.sources,
+            )
+            .and_then(|record| record.name())
+            .unwrap_or(planet.as_str())
+            .to_owned();
             crate::choice::ChoiceOption::labelled(
-                format!("planet|{}", planet.id()),
+                format!("planet|{planet}"),
                 "crashlanding_planet",
-                planet.name().unwrap_or(planet.id()),
+                name,
             )
         })
         .collect();

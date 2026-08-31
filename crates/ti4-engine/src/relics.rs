@@ -173,7 +173,7 @@ pub fn nanoforge_bonus(state: &GameState, planet: &ti4_model::id::PlanetId) -> i
 /// they charge is the cost, and a prerequisite check would charge twice.
 ///
 /// `colour` narrows the offer when a card demands one.
-fn grant_chosen_technology(
+pub(crate) fn grant_chosen_technology(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,

@@ -359,6 +359,13 @@ pub struct Player {
     pub relic_fragments: BTreeMap<String, i32>,
     /// Relics held faceup in the play area. Cannot be traded (LRR 73.4).
     pub relics: Vec<RelicId>,
+    /// Exploration cards placed faceup in the play area, which carry their own ACTION.
+    ///
+    /// Two Enigmatic Device cards say "place this card faceup in your play area" and then print an
+    /// ACTION. They are not relics -- they do not count for a relic objective and no relic effect
+    /// reaches them -- so they are held separately rather than borrowing `relics` for the ride.
+    #[serde(default)]
+    pub exploration_cards: Vec<String>,
     /// Firmament plot cards, represented by the control token on each facedown card.
     pub plots: Vec<String>,
     /// Secret aliases scored as plots. They do not count against the secret limit.
@@ -628,6 +635,7 @@ impl Player {
             breakthrough: None,
             relic_fragments: BTreeMap::new(),
             relics: Vec::new(),
+            exploration_cards: Vec::new(),
             plots: Vec::new(),
             plot_objectives: BTreeSet::new(),
             public_objectives_forbidden: false,
@@ -973,6 +981,28 @@ pub struct GameState {
     /// Creuss wormhole token kind to system. Dynamic wormholes are board state, not printed
     /// tile data, and Wormhole Generator can move either token. Not compared.
     pub wormhole_tokens: BTreeMap<String, SystemId>,
+    /// The ion storm token: where it sits, and which face is up (`ALPHA` or `BETA`).
+    ///
+    /// Its own field rather than an entry in `wormhole_tokens`, which is keyed by kind and so holds
+    /// one system per kind. The ion storm shows alpha or beta and can coexist with a Creuss token
+    /// of the same letter somewhere else, which that map cannot express.
+    #[serde(default)]
+    pub ion_storm: Option<(SystemId, String)>,
+    /// Planets placed onto a tile during play, mapped to the system they were placed in.
+    ///
+    /// Twelve planets in the corpus have no printed `tileId` (Mirage, Custodia Vigilia, the ocean
+    /// planets) because they arrive from a deck rather than from the map. The corpus therefore
+    /// cannot answer "which planets are in this system" for them, and this overlay is what does --
+    /// see `ti4_engine::planets::in_system`, which unions the two.
+    #[serde(default)]
+    pub placed_planets: BTreeMap<PlanetId, SystemId>,
+    /// Players whose influence currently pays a unit's cost as if it were resources (Freelancers).
+    ///
+    /// Held as a set rather than a flag because more than one seat can be mid-production in a
+    /// nested resolution, and cleared by the effect that set it -- its life is one production, not
+    /// one window, which is why it needs no sequence number the way `combat_bonus_round` does.
+    #[serde(default)]
+    pub influence_pays_for_units: BTreeSet<PlayerId>,
     /// Systems holding a Crimson breach placed by Exile II.
     pub breach_tokens: BTreeSet<SystemId>,
     /// The system the Thunder's Edge planet token was placed in, once the expedition
@@ -1301,6 +1331,9 @@ impl GameState {
             fracture_in_play: false,
             ingress_tokens: BTreeSet::new(),
             wormhole_tokens: BTreeMap::new(),
+            ion_storm: None,
+            placed_planets: BTreeMap::new(),
+            influence_pays_for_units: BTreeSet::new(),
             breach_tokens: BTreeSet::new(),
             thunders_edge_system: None,
             galactic_event: None,
@@ -1359,6 +1392,8 @@ impl GameState {
             && self.laws == other.laws
             && self.expedition_slices == other.expedition_slices
             && self.wormhole_tokens == other.wormhole_tokens
+            && self.ion_storm == other.ion_storm
+            && self.placed_planets == other.placed_planets
             && self.gravleash_move_values == other.gravleash_move_values
             && self.agenda_choices == other.agenda_choices
             && self.agenda_predictions == other.agenda_predictions

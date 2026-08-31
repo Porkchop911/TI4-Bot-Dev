@@ -381,6 +381,24 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v19 — 2026-08-31. The last seven exploration cards, and the wormhole tokens that were being
+    // placed and ignored.
+    //
+    // The cards: Mirage (a planet placed onto a tile during play), Freelancers x3 (produce a unit,
+    // paying with influence), the two Enigmatic Devices (a component action from the play area) and
+    // the ion storm (a wormhole that flips).
+    //
+    // The movement is mostly the last of those, and not because the ion storm is common. Making it
+    // work meant making token wormholes count for adjacency at all, and `state.wormhole_tokens` had
+    // been written by three separate effects and read by nothing -- so every gamma token this
+    // engine had ever placed connected precisely nothing. They connect now.
+    //
+    // A change in play, and the signature is the opposite of the last one:
+    // `share_SPACE_COMBAT_RESOLVED` rises [0.0056, 0.0064] -> [0.0059, 0.0065] while `vp_pace`
+    // falls [0.411, 0.457] -> [0.396, 0.451] and `score_spread` falls [1.743, 2.109] ->
+    // [1.523, 1.968]. Routes that were closed are open, so fleets reach each other sooner and
+    // spend turns fighting rather than scoring.
+    //
     // v18 — 2026-08-31. Three cards that make spending cheaper: Xxekir Grom (a planet pays its
     // resources and influence together), Jol-Nar's Specialist Compounds (exhaust a technology
     // specialty instead of paying) and Doctor Sucaban (infantry pay for research, one each).
@@ -704,43 +722,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.411_111_111_111_111_2, 0.457_407_407_407_407_43),
+        (0.395_943_562_610_229_4, 0.450_881_834_215_167_64),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.742_600_884_902_481_9, 2.108_889_237_233_979_6),
+        (1.523_266_173_373_753_8, 1.968_033_678_047_652_2),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.528_245_406_867_436, 1.043_439_232_585_571),
+        (0.457_617_285_782_468_5, 0.917_659_395_109_154_4),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_695_546_546_093_144, 0.021_091_628_185_790_49),
+        (0.019_541_374_428_105_107, 0.020_549_955_608_405_84),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_512_828_201_471_65, 0.034_294_829_927_279_27),
+        (0.032_982_250_873_498_674, 0.033_910_339_029_203_19),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.047_436_267_934_186_46, 0.050_667_341_236_386_984),
+        (0.046_837_750_445_034_58, 0.050_782_678_379_739_314),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_594_277_853_066_971, 0.006_401_080_046_270_02),
+        (0.005_894_335_749_348_045, 0.006_540_321_787_121_008),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.066_048_834_738_352_9, 0.067_574_077_823_187_94),
+        (0.065_081_063_403_087_86, 0.066_952_929_053_567_84),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_533_705_296_959_68, 0.033_301_603_034_615_56),
+        (0.032_083_548_380_976_81, 0.033_061_097_430_127_51),
     );
     bounds
 }

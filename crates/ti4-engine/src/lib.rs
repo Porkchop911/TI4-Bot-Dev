@@ -55,6 +55,7 @@ pub mod objectives;
 pub mod opening;
 pub mod payment;
 pub mod phase;
+pub mod planets;
 pub mod production;
 pub mod promissory;
 pub mod reactions;

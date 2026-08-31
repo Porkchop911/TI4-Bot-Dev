@@ -213,6 +213,111 @@ fn pay_with_mech_or_infantry(
     true
 }
 
+/// Component actions from exploration cards held faceup in the play area.
+///
+/// Only the two Enigmatic Device cards print one. Offered on the same 22.3 terms as a relic action:
+/// withheld when its six resources cannot be paid, because an action that cannot fully resolve is
+/// never offered.
+#[must_use]
+pub fn available_actions(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<crate::choice::ChoiceOption> {
+    let Some(seat) = state.player(player) else {
+        return Vec::new();
+    };
+    seat.exploration_cards
+        .iter()
+        .filter(|card| matches!(card.as_str(), "ed1" | "ed2"))
+        .filter(|_| {
+            crate::production::available(
+                state,
+                content,
+                sources,
+                player,
+                crate::production::Spend::Resources,
+            ) >= ENIGMATIC_DEVICE_COST
+        })
+        .map(|card| {
+            crate::choice::ChoiceOption::labelled(
+                format!("{PLAY_AREA_PREFIX}{card}"),
+                crate::relics::ACTION_KIND,
+                "spend 6 resources to research a technology".to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// Resolve a component action offered by [`available_actions`].
+pub fn perform_action(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+    option: &crate::choice::ChoiceOption,
+) -> bool {
+    let Some(card) = option.id.strip_prefix(PLAY_AREA_PREFIX) else {
+        return false;
+    };
+    if !state
+        .player(player)
+        .is_some_and(|seat| seat.exploration_cards.iter().any(|held| held == card))
+    {
+        return false;
+    }
+    // Paid before the question, as the relic is: 22.3 does not offer an action that cannot fully
+    // resolve, and asking which technology before knowing it can be paid for spends a decision on
+    // nothing.
+    if !crate::production::pay(
+        state,
+        content,
+        sources,
+        table,
+        player,
+        ENIGMATIC_DEVICE_COST,
+        crate::production::Spend::Resources,
+    )
+    .unwrap_or(false)
+    {
+        return false;
+    }
+    if let Some(seat) = state.player_mut(player)
+        && let Some(at) = seat.exploration_cards.iter().position(|held| held == card)
+    {
+        seat.exploration_cards.remove(at); // purged
+    }
+    crate::relics::grant_chosen_technology(state, content, sources, table, player, None)
+}
+
+/// The Enigmatic Device's price, on the relic and on both exploration cards.
+const ENIGMATIC_DEVICE_COST: i64 = 6;
+
+/// Marks a play-area exploration card's action apart from every other option id.
+const PLAY_AREA_PREFIX: &str = "play_area:";
+
+/// Flip the ion storm after a move that used it.
+///
+/// > At the end of the "Move Ships" or "Retreat" substep of a tactical action during which 1 or
+/// > more of your ships use the ion storm wormhole, flip the ion storm token to its opposing side.
+///
+/// "Use the wormhole" means the move crossed it, which is true when the storm's system is one of
+/// the two ends of a wormhole hop -- the move's origin or its destination. Returns whether it
+/// flipped.
+pub fn flip_ion_storm(state: &mut GameState, from: &ti4_model::id::SystemId, to: &ti4_model::id::SystemId) -> bool {
+    let Some((system, face)) = state.ion_storm.as_ref() else {
+        return false;
+    };
+    if system != from && system != to {
+        return false;
+    }
+    let flipped = if face == "ALPHA" { "BETA" } else { "ALPHA" };
+    state.ion_storm = Some((system.clone(), flipped.to_owned()));
+    true
+}
+
 /// Exploration cards this engine resolves.
 ///
 /// The rest are drawn, announced [`Explored::Unresolved`], and do nothing — the registry design
@@ -220,10 +325,10 @@ fn pay_with_mech_or_infantry(
 #[must_use]
 pub fn registered_cards() -> Vec<&'static str> {
     vec![
-        "aw1", "aw2", "aw3", "aw4", "cm1", "cm2", "cm3", "dv1", "dv2", "dw", "ent", "exp1", "exp2",
-        "exp3", "fb1", "fb2", "fb3", "fb4", "gamma", "gw", "kel1", "kel2", "lc1", "lc2", "lf1",
-        "lf2", "lf3", "lf4", "majent", "minent", "mo1", "mo2", "mo3", "ms1", "ms2", "vfs1", "vfs2",
-        "vfs3",
+        "aw1", "aw2", "aw3", "aw4", "cm1", "cm2", "cm3", "dv1", "dv2", "dw", "ed1", "ed2", "ent",
+        "exp1", "exp2", "exp3", "fb1", "fb2", "fb3", "fb4", "frln1", "frln2", "frln3", "gamma",
+        "gw", "ion", "kel1", "kel2", "lc1", "lc2", "lf1", "lf2", "lf3", "lf4", "majent", "minent",
+        "mirage", "mo1", "mo2", "mo3", "ms1", "ms2", "vfs1", "vfs2", "vfs3",
     ]
 }
 
@@ -278,6 +383,83 @@ fn resolve_instant(
                 .wormhole_tokens
                 .insert("GAMMA".to_owned(), system);
             return true;
+        }
+        "ion" => {
+            // "Place the ion storm token in this system with either side faceup. Then, place this
+            // card in the common play area."
+            //
+            // The token is a wormhole showing alpha or beta, and which side is up is the player's
+            // choice. The flip clause -- after ships move through it -- is handled by
+            // `flip_ion_storm`, called from the tactical action.
+            let Some(here) = planet else {
+                return false;
+            };
+            let Some(system) = ti4_content::galaxy::planet(content, here.as_str(), sources)
+                .and_then(|record| record.system_id())
+                .map(ti4_model::id::SystemId::new)
+            else {
+                return false;
+            };
+            let face = ask(
+                ctx,
+                state,
+                player,
+                "Ion Storm: which side faceup",
+                &[("ALPHA", "alpha wormhole"), ("BETA", "beta wormhole")],
+            )
+            .unwrap_or_else(|| "ALPHA".to_owned());
+            state.ion_storm = Some((system, face));
+            return true;
+        }
+        "ed1" | "ed2" => {
+            // "Place this card faceup in your play area. ACTION: You may spend 6 resource and purge
+            // this card to research 1 technology."
+            //
+            // The exploring is over once the card is placed; the ACTION comes later, from
+            // `available_actions`. Same text as the Enigmatic Device relic, and the same helper
+            // resolves both -- but it is not a relic, so it lives in its own place rather than
+            // borrowing the relic list and picking up every relic effect on the way.
+            if let Some(seat) = state.player_mut(player) {
+                seat.exploration_cards.push(card.to_owned());
+            }
+            return true;
+        }
+        "mirage" => {
+            // "Place the Mirage planet token in this system. Gain the Mirage planet card and ready
+            // it. Then, purge this card."
+            //
+            // The system comes from the planet being explored, which is the only "this system"
+            // there is: exploration always happens on a planet, and Mirage joins it on its tile.
+            let Some(here) = planet else {
+                return false; // 22.3: no planet explored means no system to place it in
+            };
+            let Some(system) = ti4_content::galaxy::planet(content, here.as_str(), sources)
+                .and_then(|record| record.system_id())
+                .map(ti4_model::id::SystemId::new)
+            else {
+                return false;
+            };
+            return crate::planets::place(state, &system, &PlanetId::new("mirage"), player);
+        }
+        "frln1" | "frln2" | "frln3" => {
+            // Freelancers: "You may produce 1 unit in this system. You may spend influence as if it
+            // were resources to produce this unit."
+            //
+            // One unit, not one purchase, and the influence clause is a substitution at the paying
+            // site rather than a different kind of bill -- `Spend::Influence` already exists, so
+            // what this needs is for the production window to accept it.
+            let Some(here) = planet else {
+                return false;
+            };
+            let Some(system) = ti4_content::galaxy::planet(content, here.as_str(), sources)
+                .and_then(|record| record.system_id())
+                .map(ti4_model::id::SystemId::new)
+            else {
+                return false;
+            };
+            return crate::production::produce_one_paying_with_influence(
+                state, ctx, player, &system,
+            );
         }
         "dw" => {
             // Draw 1 relic, through `relics::gain` — a relic can be worth a point the moment it
@@ -910,13 +1092,190 @@ mod tests {
         assert!(state.player(&player()).unwrap().relics.is_empty());
     }
 
+    /// Mirage joins the system it was explored in, controlled and readied.
     #[test]
-    fn the_unresolved_exploration_cards_are_reported() {
-        let missing = unimplemented(ContentStore::embedded(), POK);
-        assert!(!missing.is_empty(), "most instants are still unresolved");
-        for card in registered_cards() {
-            assert!(!missing.contains(&card.to_owned()));
+    fn mirage_is_placed_and_gained() {
+        let (mut state, planet) = holder(0, 0);
+        let system = ti4_content::galaxy::planet(ContentStore::embedded(), planet.as_str(), POK)
+            .and_then(|record| record.system_id())
+            .map(ti4_model::id::SystemId::new)
+            .expect("the explored planet sits on a tile");
+        let mirage = PlanetId::new("mirage");
+
+        resolve_card(&mut state, &player(), Some(&planet), "mirage", &[]);
+
+        assert_eq!(
+            state.placed_planets.get(&mirage),
+            Some(&system),
+            "the token went into the explored system"
+        );
+        assert!(
+            crate::planets::in_system(&state, ContentStore::embedded(), POK, &system)
+                .contains(&mirage),
+            "and the system now has it"
+        );
+        assert!(
+            state
+                .controlled_planets(&player())
+                .into_iter()
+                .any(|(_, held)| *held == mirage),
+            "and the card was gained"
+        );
+        assert!(
+            !state.exhausted_planets.contains(&mirage),
+            "readied, as the card says"
+        );
+    }
+
+    /// A gamma token makes its system adjacent to the other gamma systems.
+    ///
+    /// The reason this test exists: `wormhole_tokens` was written by three separate effects and
+    /// read by nothing, so every gamma token this engine placed connected precisely nothing. The
+    /// assertion is about *adjacency*, not about the map being written to, because the map being
+    /// written to was already true and was not enough.
+    #[test]
+    fn a_gamma_token_actually_connects_its_system() {
+        let hub = crate::fixtures::plain_hub();
+        let (a, b) = (hub.outer[0].clone(), hub.outer[2].clone());
+        let mut galaxy = hub.galaxy;
+        assert!(
+            !galaxy.are_adjacent(&a, &b),
+            "two ring seats are not adjacent to begin with"
+        );
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .wormhole_tokens
+            .insert("GAMMA".to_owned(), ti4_model::id::SystemId::new(&a));
+        state
+            .wormhole_tokens
+            .insert("GAMMA2".to_owned(), ti4_model::id::SystemId::new(&b));
+        // Both entries are gamma tokens; the map is keyed by kind, so the second needs its own key.
+        state.wormhole_tokens.remove("GAMMA2");
+        state.ion_storm = Some((ti4_model::id::SystemId::new(&b), "GAMMA".to_owned()));
+
+        crate::laws::apply_to_galaxy(&state, &mut galaxy);
+        assert!(
+            galaxy.are_adjacent(&a, &b),
+            "a gamma token at each end links them"
+        );
+    }
+
+    /// The ion storm flips when a move uses it, and not when a move ignores it.
+    #[test]
+    fn the_ion_storm_flips_only_for_moves_that_touch_it() {
+        let mut state = crate::fixtures::game(&["a"]);
+        let (here, elsewhere, far) = (
+            ti4_model::id::SystemId::new("18"),
+            ti4_model::id::SystemId::new("19"),
+            ti4_model::id::SystemId::new("20"),
+        );
+        state.ion_storm = Some((here.clone(), "ALPHA".to_owned()));
+
+        assert!(!flip_ion_storm(&mut state, &elsewhere, &far), "not touched");
+        assert_eq!(
+            state.ion_storm.as_ref().map(|(_, face)| face.as_str()),
+            Some("ALPHA")
+        );
+
+        assert!(flip_ion_storm(&mut state, &elsewhere, &here), "arrived at it");
+        assert_eq!(
+            state.ion_storm.as_ref().map(|(_, face)| face.as_str()),
+            Some("BETA"),
+            "and it shows the other side"
+        );
+        assert!(flip_ion_storm(&mut state, &here, &far), "left from it");
+        assert_eq!(
+            state.ion_storm.as_ref().map(|(_, face)| face.as_str()),
+            Some("ALPHA"),
+            "and back again"
+        );
+    }
+
+    /// An Enigmatic Device explored goes to the play area and is offered as an action there.
+    #[test]
+    fn an_enigmatic_device_becomes_a_component_action() {
+        let (mut state, planet) = holder(0, 0);
+        resolve_card(&mut state, &player(), Some(&planet), "ed1", &[]);
+        assert_eq!(
+            state.player(&player()).unwrap().exploration_cards,
+            vec!["ed1".to_owned()],
+            "the card is faceup in the play area"
+        );
+
+        // 22.3: not offered while its six resources cannot be paid.
+        assert!(
+            available_actions(&state, ContentStore::embedded(), POK, &player()).is_empty(),
+            "a seat that cannot pay is not offered it"
+        );
+        if let Some(seat) = state.player_mut(&player()) {
+            seat.trade_goods = 6;
         }
+        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        assert_eq!(offered.len(), 1, "and a seat that can pay is");
+
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::FirstOption));
+        let before = state.player(&player()).unwrap().technologies.len();
+        // Measured as spending power, not as trade goods: the seat also controls a planet, so a
+        // correct payment draws on both and a trade-good count alone would read as underpaying.
+        let purse = crate::production::available(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player(),
+            crate::production::Spend::Resources,
+        );
+        assert!(perform_action(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &player(),
+            &offered[0],
+        ));
+        assert_eq!(
+            state.player(&player()).unwrap().technologies.len(),
+            before + 1,
+            "a technology arrived"
+        );
+        assert_eq!(
+            crate::production::available(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &player(),
+                crate::production::Spend::Resources,
+            ),
+            purse - 6,
+            "six resources were spent"
+        );
+        assert!(
+            state.player(&player()).unwrap().exploration_cards.is_empty(),
+            "and the card is purged, so it cannot be used twice"
+        );
+    }
+
+    /// Every exploration card in the corpus is resolved.
+    ///
+    /// This used to assert the opposite -- `!missing.is_empty()`, "most instants are still
+    /// unresolved" -- which was true when written and expired the moment the last one landed. The
+    /// second assertion is what stops the first from passing vacuously: `unimplemented` returning
+    /// an empty list because it found no cards at all would be a broken query, not full coverage.
+    #[test]
+    fn every_exploration_card_is_resolved() {
+        let missing = unimplemented(ContentStore::embedded(), POK);
+        assert!(missing.is_empty(), "unresolved: {missing:?}");
+
+        let instants = ContentStore::embedded()
+            .records(ContentType::Explores)
+            .iter()
+            .filter(|record| record.in_sources(POK))
+            .filter(|record| !matches!(record.text("resolution"), Some("Fragment" | "Attach")))
+            .count();
+        assert!(
+            instants > 30,
+            "the corpus really does have instants to cover ({instants})"
+        );
     }
 
     #[test]

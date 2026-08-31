@@ -377,6 +377,13 @@ pub struct Galaxy {
     /// wormhole are adjacent to each other, whether or not the letter matching links them.
     /// Set by the game for the tactical action the card was played in, like the law switches.
     pub wormhole_star_links: bool,
+    /// Wormholes placed by tokens rather than printed on a tile: the Creuss tokens, the gamma
+    /// tokens from Gamma Wormhole / Gamma Relay / Nexus Sovereignty, and the ion storm.
+    ///
+    /// Replaced wholesale by the game each step, like the switches above, because a token can
+    /// *move* or flip -- the ion storm turns from alpha to beta -- and a set that only ever grew
+    /// would leave the old face connected for ever.
+    pub token_wormholes: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Galaxy {
@@ -426,6 +433,7 @@ impl Galaxy {
             wormholes,
             hyperlanes,
             wormholes_off: false,
+            token_wormholes: BTreeMap::new(),
             wormholes_all_linked: false,
             wormhole_star_links: false,
         })
@@ -487,6 +495,7 @@ impl Galaxy {
             wormholes,
             hyperlanes,
             wormholes_off: false,
+            token_wormholes: BTreeMap::new(),
             wormholes_all_linked: false,
             wormhole_star_links: false,
         })
@@ -551,37 +560,52 @@ impl Galaxy {
     }
 
     fn wormhole_partners(&self, system_id: &str) -> BTreeSet<&str> {
-        let Some(kinds) = self.wormholes.get(system_id) else {
-            return BTreeSet::new();
-        };
+        let kinds = self.wormhole_kinds(system_id);
         if kinds.is_empty() {
             return BTreeSet::new();
         }
 
         let links_everything =
-            self.wormholes_all_linked && kinds.iter().any(|k| LINKED_KINDS.contains(&k.as_str()));
+            self.wormholes_all_linked && kinds.iter().any(|k| LINKED_KINDS.contains(k));
         // Lost Star Chart, while its tactical action is in flight: a system that carries both
         // an alpha and a beta wormhole links to every other system that does.
         let star_links = self.wormhole_star_links
-            && kinds.iter().any(|k| k == "ALPHA")
-            && kinds.iter().any(|k| k == "BETA");
+            && kinds.contains("ALPHA")
+            && kinds.contains("BETA");
 
-        self.wormholes
-            .iter()
-            .filter(|(other, other_kinds)| {
-                other.as_str() != system_id
-                    && if links_everything {
-                        other_kinds
-                            .iter()
-                            .any(|k| LINKED_KINDS.contains(&k.as_str()))
-                    } else if star_links {
-                        other_kinds.iter().any(|k| k == "ALPHA")
-                            && other_kinds.iter().any(|k| k == "BETA")
-                    } else {
-                        !other_kinds.is_disjoint(kinds)
-                    }
+        // Every system that has a wormhole from either source. A token can put the first wormhole
+        // on a tile that has none printed, so this cannot iterate `self.wormholes` alone.
+        let holders: BTreeSet<&str> = self
+            .wormholes
+            .keys()
+            .chain(self.token_wormholes.keys())
+            .map(String::as_str)
+            .collect();
+        holders
+            .into_iter()
+            .filter(|other| {
+                if *other == system_id {
+                    return false;
+                }
+                let other_kinds = self.wormhole_kinds(other);
+                if links_everything {
+                    other_kinds.iter().any(|k| LINKED_KINDS.contains(k))
+                } else if star_links {
+                    other_kinds.contains("ALPHA") && other_kinds.contains("BETA")
+                } else {
+                    !other_kinds.is_disjoint(&kinds)
+                }
             })
-            .map(|(other, _)| other.as_str())
+            .collect()
+    }
+
+    /// The wormhole kinds at a system: printed on the tile, plus any placed there by a token.
+    fn wormhole_kinds(&self, system_id: &str) -> BTreeSet<&str> {
+        self.wormholes
+            .get(system_id)
+            .into_iter()
+            .chain(self.token_wormholes.get(system_id))
+            .flat_map(|kinds| kinds.iter().map(String::as_str))
             .collect()
     }
 }

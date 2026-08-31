@@ -447,7 +447,20 @@ fn landable_planets(
     record
         .strings("planets")
         .into_iter()
+        .map(ToOwned::to_owned)
+        // Planets placed onto this tile during play (Mirage). They are not in the system record --
+        // that is what "placed during play" means -- so without this an invasion cannot reach one.
+        // Appended rather than merged, which keeps the record's canonical order for the printed
+        // planets and puts the arrival last, where it arrived.
+        .chain(
+            state
+                .placed_planets
+                .iter()
+                .filter(|(_, went)| *went == system)
+                .map(|(planet, _)| planet.to_string()),
+        )
         .filter_map(|name| {
+            let name = name.as_str();
             // Scope filter mirrors planets_in: a planet outside the active source set is not on
             // this board. (Every system's planets come from one source, so this either keeps or
             // drops the whole array — never a subset.)
@@ -523,7 +536,7 @@ pub fn commit_ground_forces(
     invader: &PlayerId,
     system: &SystemId,
 ) -> Result<Vec<PlanetId>, IllegalChoice> {
-    if ti4_content::galaxy::planets_in(content, system.as_str(), sources).is_empty() {
+    if crate::planets::in_system(state, content, sources, system).is_empty() {
         return Ok(Vec::new());
     }
 

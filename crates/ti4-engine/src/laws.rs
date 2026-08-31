@@ -365,6 +365,30 @@ pub fn apply_to_galaxy(state: &GameState, galaxy: &mut ti4_content::galaxy::Gala
         .as_ref()
         .and_then(|acting| state.player(acting))
         .is_some_and(|seat| seat.lost_star.contains(&state.activation_seq));
+
+    // Wormholes that came from tokens rather than from the map: the gamma tokens placed by Gamma
+    // Wormhole, Gamma Relay and Nexus Sovereignty, and the ion storm's current face.
+    //
+    // Rebuilt from scratch every step rather than added to, because a token can flip: the ion storm
+    // turns from alpha to beta, and a set that only grew would leave the old face connected.
+    //
+    // Until this existed `state.wormhole_tokens` was written by three separate effects and read by
+    // nothing, so every gamma token placed in this engine connected precisely nothing.
+    galaxy.token_wormholes.clear();
+    for (kind, system) in &state.wormhole_tokens {
+        galaxy
+            .token_wormholes
+            .entry(system.to_string())
+            .or_default()
+            .insert(kind.clone());
+    }
+    if let Some((system, face)) = state.ion_storm.as_ref() {
+        galaxy
+            .token_wormholes
+            .entry(system.to_string())
+            .or_default()
+            .insert(face.clone());
+    }
 }
 
 /// Laws this engine can enact but not enforce — the honest coverage gap.

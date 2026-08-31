@@ -939,6 +939,12 @@ impl<'a> Game<'a> {
             self.galaxy.as_ref(),
             active,
         ));
+        choice.options.extend(crate::exploration::available_actions(
+            &self.state,
+            self.content,
+            self.sources,
+            active,
+        ));
         choice.options.extend(crate::technology::component_actions(
             &self.state,
             self.content,
@@ -1099,6 +1105,23 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
+                    self.advance_turn()?;
+                    return Ok(());
+                }
+                if answer.kind == crate::relics::ACTION_KIND
+                    && crate::exploration::perform_action(
+                        &mut self.state,
+                        self.content,
+                        self.sources,
+                        &mut self.table,
+                        &active,
+                        &answer,
+                    )
+                {
+                    // An Enigmatic Device from the exploration deck, not a relic. It shares the
+                    // relic action kind because it is the same kind of thing to a decider -- a
+                    // component action from a card in the play area -- and `perform_action`
+                    // declines anything that is not one of its own.
                     self.advance_turn()?;
                     return Ok(());
                 }
@@ -1568,6 +1591,18 @@ impl<'a> Game<'a> {
                         return Ok(self.result(true, None));
                     }
                     let outcome = self.sail(&origin, &ship, &path, cargo);
+                    // The ion storm flips when ships use it. "Use the wormhole" means the move
+                    // crossed it, so the storm's system has to be one end of the hop -- checked
+                    // against the origin and the destination rather than the whole path, because a
+                    // ship passing *through* the storm's system by ordinary hex adjacency has not
+                    // used the wormhole at all.
+                    if let Some(destination) = self.state.active_system.clone() {
+                        crate::exploration::flip_ion_storm(
+                            &mut self.state,
+                            &origin,
+                            &destination,
+                        );
+                    }
                     self.note_arrival(&window.player, &outcome);
                     self.emit(match outcome {
                         MoveOutcome::Arrived { .. } => "SHIP_MOVED",

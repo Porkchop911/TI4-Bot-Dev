@@ -222,10 +222,16 @@ fn payment_faces(
     let Some(seat) = state.player(player) else {
         return faces;
     };
-    let Some(breakthrough) = seat.breakthrough.as_ref() else {
-        return faces;
-    };
-    if breakthrough.as_str() != "xxchabt" {
+    // Freelancers: "You may spend influence as if it were resources to produce this unit." The
+    // same shape as Archon's Gift below -- a second face on the planet card -- so it is the same
+    // code, and a caller cannot honour one and forget the other.
+    let freelancers =
+        kind == Spend::Resources && state.influence_pays_for_units.contains(player);
+    let archons_gift = seat
+        .breakthrough
+        .as_ref()
+        .is_some_and(|held| held.as_str() == "xxchabt");
+    if !freelancers && !archons_gift {
         return faces;
     }
     let alternate_kind = match kind {
@@ -943,6 +949,32 @@ pub fn produce_one(
 /// two commonest units in the game cost double what the rules ask, which is not a rounding
 /// detail: it is most of an early fleet.
 #[must_use]
+/// Freelancers: produce one unit here, with influence spending as if it were resources.
+///
+/// Wraps [`produce_one`] rather than duplicating it -- the card changes only what may pay, and the
+/// substitution is a face on the planet card, which `payment_faces` already knows how to add. The
+/// permission is cleared on every path out, including the failing ones: it is scoped to this one
+/// production, and a permission left behind would quietly apply to the next.
+pub fn produce_one_paying_with_influence(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> bool {
+    state.influence_pays_for_units.insert(player.clone());
+    let made = produce_one(
+        state,
+        ctx.content,
+        ctx.sources,
+        None,
+        ctx.table,
+        player,
+        system,
+    );
+    state.influence_pays_for_units.remove(player);
+    made.unwrap_or(false)
+}
+
 pub fn price_of(kind: &UnitType<'_>) -> (i64, usize) {
     price_of_under(None, kind)
 }
