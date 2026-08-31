@@ -963,7 +963,95 @@ fn warfare_primary(
     );
     let system = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
     state.system_mut(&system).command_tokens.remove(player);
-    gain_tokens(state, content, sources, galaxy, table, player, 1)
+    gain_tokens(state, content, sources, galaxy, table, player, 1)?;
+    // "Then, the active player can redistribute their command tokens." A separate sentence from the
+    // gain above and a separate decision: the token just recovered goes into a pool of the player's
+    // choice, and *then* every token they hold may be moved between pools.
+    redistribute_tokens(state, content, sources, galaxy, table, player)?;
+    Ok(())
+}
+
+/// Warfare's second half: move any number of command tokens between your own pools.
+///
+/// Offered one move at a time until the player declines, which is what "redistribute" allows and
+/// what keeps each move a decision a policy can see. Bounded by the tokens actually held, so a
+/// decider that never declines still terminates.
+fn redistribute_tokens(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<Ability, IllegalChoice> {
+    use ti4_model::state::TokenPool;
+    const POOLS: [(TokenPool, &str); 3] = [
+        (TokenPool::Tactic, "tactic"),
+        (TokenPool::Fleet, "fleet"),
+        (TokenPool::Strategic, "strategy"),
+    ];
+    let held = |state: &GameState, pool: TokenPool| -> i32 {
+        state.player(player).map_or(0, |seat| match pool {
+            TokenPool::Tactic => seat.tactic_tokens,
+            TokenPool::Fleet => seat.fleet_tokens,
+            TokenPool::Strategic => seat.strategic_tokens,
+        })
+    };
+    let total: i32 = POOLS.iter().map(|(pool, _)| held(state, *pool)).sum();
+    for _ in 0..total.max(0) {
+        let mut options = Vec::new();
+        for (from, from_name) in POOLS {
+            if held(state, from) <= 0 {
+                continue;
+            }
+            for (to, to_name) in POOLS {
+                if from_name == to_name {
+                    continue;
+                }
+                let _ = to;
+                options.push(ChoiceOption::labelled(
+                    format!("move|{from_name}|{to_name}"),
+                    "redistribute",
+                    format!("move a token from {from_name} to {to_name}"),
+                ));
+            }
+        }
+        if options.is_empty() {
+            break;
+        }
+        options.push(ChoiceOption::decline());
+        let choice = Choice::new(
+            player.clone(),
+            "Warfare: redistribute your command tokens",
+            options,
+        );
+        let answer = ask(state, content, sources, galaxy, table, &choice)?;
+        if answer.is_decline() {
+            break;
+        }
+        let Some((from_name, to_name)) = answer
+            .id
+            .strip_prefix("move|")
+            .and_then(|rest| rest.split_once('|'))
+        else {
+            break;
+        };
+        let pool_of = |name: &str| {
+            POOLS
+                .iter()
+                .find(|(_, label)| *label == name)
+                .map(|(pool, _)| *pool)
+        };
+        let (Some(from), Some(to)) = (pool_of(from_name), pool_of(to_name)) else {
+            break;
+        };
+        if let Some(seat) = state.player_mut(player)
+            && seat.spend_token(from)
+        {
+            seat.gain_token(to, 1);
+        }
+    }
+    Ok(Ability::Resolved)
 }
 
 fn imperial_primary(
@@ -1206,6 +1294,49 @@ pub fn secondary(
 
 #[cfg(test)]
 mod tests {
+
+    /// Warfare's primary redistributes tokens between pools, which is its second sentence.
+    ///
+    /// "The active player removes any one of their command tokens from the game board. Then, that
+    /// player gains that command token... Then, the active player can redistribute their command
+    /// tokens." The recall was implemented and the redistribution was not, so a Warfare was worth
+    /// one token and never the pool shuffle that makes the card interesting.
+    #[test]
+    fn warfare_lets_the_player_move_tokens_between_pools() {
+        use ti4_model::state::TokenPool;
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.tactic_tokens = 1;
+            seat.fleet_tokens = 0;
+            seat.strategic_tokens = 0;
+        }
+
+        // One move then stop: the first option moves tactic -> fleet, the second answer declines.
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
+            "move|tactic|fleet".to_owned(),
+        ])));
+        redistribute_tokens(
+            &mut state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            None,
+            &mut table,
+            &player,
+        )
+        .expect("redistribution resolves");
+
+        let seat = state.player(&player).expect("seated");
+        assert_eq!(seat.tactic_tokens, 0, "the token left the tactic pool");
+        assert_eq!(seat.fleet_tokens, 1, "and arrived in the fleet pool");
+        assert_eq!(
+            seat.tactic_tokens + seat.fleet_tokens + seat.strategic_tokens,
+            1,
+            "redistribution moves tokens, it does not mint them"
+        );
+        let _ = TokenPool::Tactic;
+    }
     use super::*;
     use crate::fixtures::{a_placed_planet, game, plain_hub, put_on_planet};
     use ti4_model::content_types::POK;

@@ -131,7 +131,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Defender | ? | |
 | Deploy | VERIFIED | 20.1-20.5; the two in-scope DEPLOY mechs (Sol, Letnev) are implemented |
 | Destroyed | ? | |
-| Diplomacy | ? | `strategy_cards.rs` |
+| Diplomacy | VERIFIED | both halves: opponents place a token in the chosen system, then ready two planets |
 | Elimination | **ABSENT** | no code; harmless at a 4-round horizon |
 | Entropic Scars | **ABSENT** | 9 rules, none implemented; anomaly tiles are in the corpus |
 | Exhausted | ? | |
@@ -147,14 +147,14 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Ground Combat | VERIFIED | 42.1-42.4; burst icons roll per die. Fragile now applies here (was space-only), and the Shield Paling mech lifts it |
 | Ground Forces | OK | cannot be committed to stations (rule 5) — phase 1 |
 | Hyperlanes | ? | |
-| Imperial | ? | |
+| Imperial | VERIFIED | primary scores a public then Mecatol/secret; 45.4 counts hand *and* scored and returns an unscored one |
 | Infantry Tokens | OK | as fighter tokens |
 | Influence | ? | |
 | Initiative Order | ? | |
 | Invasion | OK | stations excluded; coexistence combat chain 9-12 implemented |
 | Leader Sheet | ? | |
 | Leaders | **PARTIAL** | 3 unimplemented across the six trained factions |
-| Leadership | ? | |
+| Leadership | VERIFIED | three tokens then three influence each, and the secondary spends no strategy token (52.3) |
 | Legendary Planets | **PARTIAL** | counted for objectives; no legendary ability is implemented |
 | Mecatol Rex | ? | |
 | Mechs | **PARTIAL** | all six in-scope mech abilities implemented 2026-08-31; they were counted by nothing before, see `unimplemented_mechs` |
@@ -169,7 +169,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | PDS | **PARTIAL** | PDS II's adjacent-system clause was **absent**, added 2026-08-31 |
 | Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
 | Planetary Shield | **PARTIAL** | 63.1 and 63.3 present; 63.2 (the shield stops Harrow) was **absent**, added 2026-08-31 |
-| Politics | ? | |
+| Politics | VERIFIED | speaker, two action cards, and the top two agendas reordered |
 | Producing Units | **PARTIAL** | 68.10 (no ships in a blockaded system) was **absent** from the production path, added 2026-08-31; 68.3b (produce one of a pair, pay full) not offered |
 | Production | **PARTIAL** | 68.1.3 combined bill fixed 2026-08-31; see Producing Units |
 | Promissory Notes | ? | |
@@ -187,7 +187,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Speaker | ? | |
 | Status Phase | ? | `status.rs` |
 | Strategic Action | ? | |
-| Strategy Card | ? | |
+| Strategy Card | VERIFIED | initiative order, exhaustion, and the secondary token gate (52.3 exempts Leadership) |
 | Strategy Phase | ? | |
 | Structures | OK | not placeable on stations (rule 5) — phase 1 |
 | Supernova | VERIFIED | 86.1 bar and the Magmus Reactor exemption |
@@ -195,28 +195,28 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
 | System Tiles | ? | |
 | Tactical Action | ? | `tactical.rs` |
-| Technology | ? | |
-| Technology (S.C.) | ? | |
-| Trade | ? | |
+| Technology | VERIFIED | 90.1-90.23: colours, faction restriction, prerequisites, specialties, unit upgrades have no colour |
+| Technology (S.C.) | VERIFIED | with Technology; the secondary charges four resources and Jol-Nar substitutes the primary |
+| Trade | VERIFIED | three trade goods, replenish, and chosen players replenish too |
 | Trade Goods | ? | |
 | Transactions | **PARTIAL** | station-to-station (rule 10) absent |
 | Transport | **PARTIAL** | 95.5 (no pickup from your own command token) was **absent**, added 2026-08-31; 95.1 pickup *en route* is still origin-only |
 | Units | ? | |
-| Unit Upgrades | ? | |
+| Unit Upgrades | VERIFIED | with Technology (90.7-90.10) |
 | Victory Points | ? | |
-| Warfare | ? | |
+| Warfare | **PARTIAL** | recall and pool gain present; "then redistribute your command tokens" was **absent**, added 2026-08-31 |
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
 | Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**55 unverified** (was 79).
+**45 unverified** (was 79).
 
 ## Phase 9 verification, 2026-08-31
 
 Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Eleven defects in twenty-two in-scope topics.** That is close to the base rate this audit warned
+**Twelve defects in thirty-two in-scope topics.** That is close to the base rate this audit warned
 about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
 "probably fine":
 
@@ -234,6 +234,7 @@ about, and it is the reason the remaining 63 rows should still be read as "not c
 | PDS II / Indomitus | "SPACE CANNON against ships in adjacent systems" — `space_cannon_offense` read only the activated system | added |
 | mech abilities | four of six in-scope mechs unimplemented, and counted by no coverage helper because the ability is printed on the unit | added |
 | 27.2a | the custodians token — and its victory point — could be taken with six influence and no ground forces to commit | fixed |
+| Warfare | "then, the active player can redistribute their command tokens" — the recall was implemented, the redistribution was not | added |
 
 Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
 Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.
