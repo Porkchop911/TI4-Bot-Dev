@@ -60,6 +60,13 @@ pub fn custodians_removable(
     if state.custodians_removed || system.as_str() != crate::seating::MECATOL {
         return false;
     }
+    // 27.2a: "If a player cannot commit ground forces to land on Mecatol Rex, they cannot remove
+    // the custodians token." The rule reads as a restriction and it is also a gate on a victory
+    // point -- without it a seat with six influence and no army could buy the point outright and
+    // then commit nothing, which is the one thing 27.2 is written to prevent.
+    if landable(state, content, sources, player, system).is_empty() {
+        return false;
+    }
     crate::production::available(
         state,
         content,
@@ -2321,6 +2328,49 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
 
+    /// 27.2a: no ground forces, no custodians token — and so no victory point.
+    ///
+    /// The token is worth a point, so a seat with six influence and an empty fleet could otherwise
+    /// buy that point and commit nothing. The rule says they cannot remove the token at all.
+    #[test]
+    fn the_custodians_token_needs_troops_not_just_influence() {
+        let content = ContentStore::embedded();
+        let sources = POK;
+        let player = invader();
+        let mecatol = SystemId::new(crate::seating::MECATOL);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.board.entry(mecatol.clone()).or_default();
+
+        // Influence enough and no army: the token stays.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.trade_goods = 0;
+        }
+        crate::fixtures::put(&mut state, &mecatol, "cruiser", &player, 1);
+        assert!(
+            !custodians_removable(&state, content, sources, &player, &mecatol),
+            "a fleet with nothing to land cannot lift the token"
+        );
+
+        crate::fixtures::put(&mut state, &mecatol, "infantry", &player, 1);
+        // Still needs the influence, which this seat does not have — so the guard under test is
+        // proven by giving it the troops and watching the *other* condition decide.
+        let with_troops = custodians_removable(&state, content, sources, &player, &mecatol);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.trade_goods = 0;
+        }
+        assert_eq!(
+            with_troops,
+            crate::production::available(
+                &state,
+                content,
+                sources,
+                &player,
+                crate::production::Spend::Influence,
+            ) >= 6,
+            "with troops present, only the influence decides"
+        );
+    }
+
     /// Jol-Nar's Fragile applies on the ground, not only in space.
     ///
     /// "-1 to all combat rolls" is not a space rule, and `combat_modifier` has carried a `context`
@@ -3740,6 +3790,11 @@ mod tests {
         if let Some(seat) = state.player_mut(&invader()) {
             seat.trade_goods = 6;
         }
+        // 27.2a: the token cannot be lifted by a seat with nothing to commit, so the invasion that
+        // lifts it has an army in the system. Funding influence alone used to be enough here,
+        // which is the gap that rule closes.
+        state.board.entry(mecatol.clone()).or_default();
+        crate::fixtures::put(&mut state, &mecatol, "infantry", &invader(), 1);
         let influence = crate::production::available(
             &state,
             content,

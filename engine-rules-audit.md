@@ -119,14 +119,14 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 9-13 done; only 7/7.1 bombardment target choice outstanding |
 | Combat | ? | `combat.rs`, 3110 lines |
 | Command Sheet | OK | `TokenPool`, `tactic_tokens` etc. in `state.rs` |
-| Command Tokens | ? | |
+| Command Tokens | **PARTIAL** | 20.1-20.3, 20.6, 20.7a, 20.9 present; 20.4/20.4a (limited by tokens in reinforcements) not modelled — pools can grow without bound |
 | Commodities | **PARTIAL** | exists; space-station +1 (rule 8) and convert (rule 12) absent |
 | Component Action | ? | |
 | Component Limitations | OK | `supply.rs`, LRR 31.4, with the fighter/infantry exemption correct |
 | Construction | OK | stations excluded (rule 5) — phase 1 |
 | Control | OK | station control is sole occupancy, reconciled per step — phase 1 |
 | Cost | ? | |
-| Custodians Token | ? | `invasion.rs` keeps Mecatol off the table until removed |
+| Custodians Token | **PARTIAL** | 27.1-27.5 present; 27.2a (no removal without ground forces to commit) was **absent**, added 2026-08-31 |
 | Deals | ? | |
 | Defender | ? | |
 | Deploy | VERIFIED | 20.1-20.5; the two in-scope DEPLOY mechs (Sol, Letnev) are implemented |
@@ -206,17 +206,17 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Victory Points | ? | |
 | Warfare | ? | |
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
-| Wormholes | ? | |
+| Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**58 unverified** (was 79).
+**55 unverified** (was 79).
 
 ## Phase 9 verification, 2026-08-31
 
 Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Ten defects in nineteen in-scope topics.** That is close to the base rate this audit warned
+**Eleven defects in twenty-two in-scope topics.** That is close to the base rate this audit warned
 about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
 "probably fine":
 
@@ -233,6 +233,7 @@ about, and it is the reason the remaining 63 rows should still be read as "not c
 | Fragile | Jol-Nar's -1 applied in space only; `combat_modifier`'s `context` parameter had one caller and it passed "space" | fixed |
 | PDS II / Indomitus | "SPACE CANNON against ships in adjacent systems" — `space_cannon_offense` read only the activated system | added |
 | mech abilities | four of six in-scope mechs unimplemented, and counted by no coverage helper because the ability is printed on the unit | added |
+| 27.2a | the custodians token — and its victory point — could be taken with six influence and no ground forces to commit | fixed |
 
 Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
 Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.
