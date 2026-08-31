@@ -1130,6 +1130,23 @@ pub fn placements(
     kind: &UnitType<'_>,
 ) -> Vec<String> {
     if kind.is_ship() {
+        // 68.10: "A player cannot produce ships in a system that contains other players' ships."
+        // 68.10a keeps ground forces available, which is why this sits on the ship branch rather
+        // than at the top: a blockaded space dock still makes infantry.
+        //
+        // The blockade was checked in the bot-facing "what could I build here" helper and nowhere
+        // in the path that actually produces, so a blockaded dock built ships in play while the
+        // helper said it could not.
+        let types = catalogue(content, sources);
+        let blockaded = state.system_state(system).units.iter().any(|unit| {
+            unit.owner != *player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+        });
+        if blockaded {
+            return Vec::new();
+        }
         return vec![SPACE.to_owned()]; // 68.2
     }
     // Entropic scars rule 2: PRODUCTION is a unit ability, so a space dock inside a scar produces
@@ -1755,6 +1772,45 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// 68.10: no producing *ships* in a system that contains another player's ships.
+    ///
+    /// 68.10a keeps ground forces available, which is why the guard belongs on the ship branch of
+    /// `placements` rather than on the system: a blockaded space dock still makes infantry.
+    #[test]
+    fn a_blockaded_system_produces_ground_forces_but_no_ships() {
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let (mine, theirs) = (PlayerId::new("a"), PlayerId::new("b"));
+        let mut state = crate::fixtures::game(&["a", "b"]);
+
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state.board.entry(system.clone()).or_default();
+        if let Some(here) = state.board.get_mut(&system) {
+            here.set_control(planet.clone(), mine.clone());
+            here.planet_units.entry(planet.clone()).or_default().push(
+                ti4_model::units::Unit::new(UnitTypeId::new("spacedock"), mine.clone()),
+            );
+        }
+        let types = catalogue(content, sources);
+        let cruiser = types.get("cruiser").copied().expect("a cruiser");
+        let infantry = types.get("infantry").copied().expect("an infantry");
+
+        assert!(
+            !placements(&state, content, sources, &mine, &system, &cruiser).is_empty(),
+            "uncontested, the dock builds ships"
+        );
+
+        crate::fixtures::put(&mut state, &system, "destroyer", &theirs, 1);
+        assert!(
+            placements(&state, content, sources, &mine, &system, &cruiser).is_empty(),
+            "an enemy ship blockades ship production"
+        );
+        assert!(
+            !placements(&state, content, sources, &mine, &system, &infantry).is_empty(),
+            "but ground forces are still produced (68.10a)"
+        );
+    }
 
     /// Four infantry in one use of PRODUCTION cost two resources, from one two-resource planet.
     ///

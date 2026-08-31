@@ -381,6 +381,18 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v25 — 2026-08-31. Phase 9, third batch. 68.10 -- "a player cannot produce ships in a system
+    // that contains other players' ships" -- was checked in the bot-facing "what could I build
+    // here" helper and nowhere in the path that actually produces. Blockaded space docks built
+    // ships.
+    //
+    // A change in play, and a clear one: `vp_pace` falls [0.394, 0.451] -> [0.385, 0.437] and
+    // `share_SPACE_COMBAT_RESOLVED` falls with it. Fewer ships get built, so there is less to fight
+    // with and objectives arrive later.
+    //
+    // Two other fixes in this batch move nothing on their own -- Non-Euclidean Shielding needs the
+    // technology, and the Harrow gate needs L1Z1X facing a shield.
+    //
     // v24 — 2026-08-31. Phase 9 verification, first batch. Three rules defects found by reading the
     // rules text against the code:
     //
@@ -785,43 +797,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.394_444_444_444_444_54, 0.450_617_283_950_617_23),
+        (0.385_185_185_185_185, 0.437_037_037_037_037_06),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.675_763_218_528_303_1, 2.072_748_325_667_282_3),
+        (1.624_361_159_554_715_8, 2.017_043_009_458_304_5),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.570_466_562_355_263_7, 0.996_986_199_243_240_1),
+        (0.521_275_738_032_884_4, 1.035_243_157_457_091_7),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_562_535_067_487_06, 0.020_805_796_323_261_707),
+        (0.019_541_892_175_368_124, 0.020_835_240_694_250_426),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_497_493_652_491_265, 0.033_677_474_220_117_83),
+        (0.032_544_252_442_214_4, 0.033_561_588_672_013_66),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.048_671_960_068_243_834, 0.052_315_441_138_903_21),
+        (0.048_600_412_532_632_71, 0.052_143_091_009_065_97),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_628_434_533_801_073, 0.006_526_375_204_894_874),
+        (0.005_448_664_082_191_453, 0.006_304_210_827_518_182),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.064_171_602_645_634_44, 0.066_446_551_562_845_89),
+        (0.064_363_664_020_643_32, 0.066_285_973_570_621_52),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.031_691_223_989_475_71, 0.032_791_393_181_330_35),
+        (0.031_808_039_678_822_43, 0.032_728_886_021_080_476),
     );
     bounds
 }

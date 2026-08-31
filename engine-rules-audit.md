@@ -115,7 +115,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Bombardment | **PARTIAL** | hits grouped per unit, no spillover (7.2) — phase 2; 7/7.1 choice outstanding |
 | Breakthroughs | **PARTIAL** | 2 of 31 have effects; breakthrough roll (rule 3) absent |
 | Capacity | **PARTIAL** | 16.3 fixed 2026-08-31 (ground forces were never excess); 16.3c end-of-combat removal still missing, see `fleet.rs` |
-| Capture | ? | |
+| Capture | OUT OF SCOPE | every capture effect in the corpus is Vuil'raith Cabal, which is not one of the six trained factions |
 | Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 9-13 done; only 7/7.1 bombardment target choice outstanding |
 | Combat | ? | `combat.rs`, 3110 lines |
 | Command Sheet | OK | `TokenPool`, `tactic_tokens` etc. in `state.rs` |
@@ -138,7 +138,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Expedition | ? | `thunders_edge.rs`, 6 slices |
 | Exploration | ? | 71 of 80 cards |
 | Fighter Tokens | OK | intentionally uncapped, `supply.rs` documents why |
-| Fleet Pool | ? | `fleet.rs` |
+| Fleet Pool | VERIFIED | 37.1-37.6; Letnev's Armada lifts the cap after Fleet Regulations caps it |
 | The Fracture | **ABSENT** | 15 rules, none implemented |
 | Frontier Tokens | OK | station-only tiles take a token (rule 14) — phase 1 |
 | Game Board | ? | |
@@ -170,8 +170,8 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
 | Planetary Shield | **PARTIAL** | 63.1 and 63.3 present; 63.2 (the shield stops Harrow) was **absent**, added 2026-08-31 |
 | Politics | ? | |
-| Producing Units | ? | |
-| Production | ? | `production.rs` |
+| Producing Units | **PARTIAL** | 68.10 (no ships in a blockaded system) was **absent** from the production path, added 2026-08-31; 68.3b (produce one of a pair, pay full) not offered |
+| Production | **PARTIAL** | 68.1.3 combined bill fixed 2026-08-31; see Producing Units |
 | Promissory Notes | ? | |
 | Purge | ? | |
 | Readied | ? | |
@@ -209,7 +209,34 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormholes | ? | |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**79 unverified**.
+**63 unverified** (was 79).
+
+## Phase 9 verification, 2026-08-31
+
+Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
+the code — pass 1 of the method above, the only pass that establishes correctness.
+
+**Seven defects in fourteen in-scope topics.** That is close to the base rate this audit warned
+about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
+"probably fine":
+
+| Rule | Defect | Status |
+|---|---|---|
+| 16.3 | fighters and ground forces share one capacity total; ground forces were never counted as excess | fixed |
+| 16.3c | excess removed at the *end* of combat — enforcement runs before combat and never after | **open**, see `fleet.rs` |
+| 59.5 | the nebula defender's +1 to each combat roll | added |
+| 15.7 | Non-Euclidean Shielding cancels two hits, not one | added |
+| 63.2 | a planetary shield stops L1Z1X's Harrow | added |
+| 95.5 | no pickup from a system holding your own command token | added |
+| 68.10 | no ship production in a system holding another player's ships | added |
+| Thalnos scope | both cards say "during each combat round"; they reached space cannon, barrage and bombardment | fixed |
+
+Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
+Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.
+
+Two simplifications recorded rather than hidden: 95.1 allows pickup from each system a ship moves
+*through* and this engine offers only the origin (a narrower offer, not an illegal one); and 68.3b
+lets a player produce one unit of a two-for-one pair and pay the full cost, which is not offered.
 
 Originally **8 wrong**, **6 absent**, **11 partial**, **4 verified**, **80 unverified**. Every
 verified defect is fixed; coexistence moved from absent to partial. Progress against

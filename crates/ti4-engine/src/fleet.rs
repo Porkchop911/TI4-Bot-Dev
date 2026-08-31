@@ -24,8 +24,8 @@ pub fn counts_against_supply(kind: &UnitType<'_>) -> bool {
 /// How many non-fighter ships this player may keep in one system.
 ///
 /// The fleet pool is the command tokens in it, capped by any law that caps it — Fleet
-/// Regulations holds it to four however many tokens a player has piled up. Faction abilities
-/// that raise it are still unimplemented.
+/// Regulations holds it to four however many tokens a player has piled up — and then lifted by any
+/// faction ability that raises it (Letnev's Armada, +2).
 #[must_use]
 pub fn limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
     let base = state.player(player).map_or(0, |seat| seat.fleet_tokens);
