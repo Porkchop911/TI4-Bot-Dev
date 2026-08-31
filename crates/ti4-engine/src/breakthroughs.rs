@@ -30,7 +30,7 @@
 //! | xxcha  | Archon's Gift | resources and influence are interchangeable | done |
 //! | l1z1x  | Fealty Uplink | gaining a planet places infantry equal to its influence | done |
 //! | sol    | Bellum Gloriosum | free ground/fighters with a capacity ship | outstanding |
-//! | hacan  | Auto-Factories | a fleet token for producing 3+ non-fighter ships | outstanding |
+//! | hacan  | Auto-Factories | a fleet token for producing 3+ non-fighter ships | done |
 //! | jolnar | Specialist Compounds | exhaust a specialty planet instead of paying to research | outstanding |
 
 use ti4_content::ContentStore;
@@ -42,7 +42,7 @@ use ti4_model::units::Unit;
 /// The breakthrough aliases whose printed abilities this module implements.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["letnevbt", "xxchabt", "l1z1xbt"]
+    vec!["hacanbt", "letnevbt", "xxchabt", "l1z1xbt"]
 }
 
 /// Breakthroughs belonging to the trained factions whose abilities are not implemented.
@@ -60,6 +60,45 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet, factions: &[&st
         .filter(|alias| !known.contains(alias))
         .map(BreakthroughId::new)
         .collect()
+}
+
+/// Hacan, Auto-Factories: producing three or more non-fighter ships adds a fleet token.
+///
+/// > When you produce 3 or more non-fighter ships, place 1 command token from your reinforcements
+/// > into your fleet pool.
+///
+/// Counted over the whole use of PRODUCTION rather than per placement: "when you produce 3 or more"
+/// is one condition on one use, and checking per placement would pay three times for three ships.
+/// The corpus note says the token arrives *before* fleet limits are resolved, which is why this is
+/// called where the use finishes rather than after supply is enforced.
+///
+/// Returns whether a token was placed.
+pub fn on_production_finished(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    produced: &[(UnitTypeId, String)],
+) -> bool {
+    if !holds(state, player, "hacanbt") {
+        return false;
+    }
+    let types = ti4_content::units::catalogue(content, sources);
+    let ships = produced
+        .iter()
+        .filter(|(kind, _)| {
+            types.get(kind.as_str()).is_some_and(|unit| {
+                unit.is_ship() && !unit.is_fighter()
+            })
+        })
+        .count();
+    if ships < 3 {
+        return false;
+    }
+    if let Some(seat) = state.player_mut(player) {
+        seat.gain_token(ti4_model::state::TokenPool::Fleet, 1);
+    }
+    true
 }
 
 /// Whether this player holds this breakthrough.
@@ -150,6 +189,51 @@ mod tests {
         );
     }
 
+    /// Auto-Factories pays once for a use of three or more non-fighter ships, and not below three.
+    #[test]
+    fn auto_factories_pays_once_for_three_non_fighter_ships() {
+        use ti4_model::state::TokenPool;
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = seat_with("hacanbt");
+
+        let made = |kinds: &[&str]| -> Vec<(UnitTypeId, String)> {
+            kinds
+                .iter()
+                .map(|k| (UnitTypeId::new(*k), "space".to_owned()))
+                .collect()
+        };
+
+        let before = state.player(&player).expect("seated").tokens(TokenPool::Fleet);
+        assert!(
+            !on_production_finished(
+                &mut state, content, ALL_SOURCES, &player,
+                &made(&["cruiser", "cruiser"])
+            ),
+            "two is not three"
+        );
+        assert!(
+            !on_production_finished(
+                &mut state, content, ALL_SOURCES, &player,
+                &made(&["cruiser", "cruiser", "fighter", "fighter"])
+            ),
+            "fighters are not non-fighter ships"
+        );
+        assert_eq!(
+            state.player(&player).expect("seated").tokens(TokenPool::Fleet),
+            before
+        );
+
+        assert!(on_production_finished(
+            &mut state, content, ALL_SOURCES, &player,
+            &made(&["cruiser", "destroyer", "carrier"])
+        ));
+        assert_eq!(
+            state.player(&player).expect("seated").tokens(TokenPool::Fleet),
+            before + 1,
+            "one token for the use, however many ships above three"
+        );
+    }
+
     #[test]
     fn without_the_breakthrough_nothing_is_placed() {
         let content = ti4_content::ContentStore::embedded();
@@ -208,6 +292,6 @@ mod tests {
         );
         let mut names: Vec<&str> = missing.iter().map(BreakthroughId::as_str).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["hacanbt", "jolnarbt", "solbt"]);
+        assert_eq!(names, vec!["jolnarbt", "solbt"]);
     }
 }

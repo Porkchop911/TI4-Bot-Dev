@@ -1194,6 +1194,9 @@ pub struct ProductionWindow {
     remaining: i64,
     stage: Stage,
     report: ProductionReport,
+    /// Whether the end-of-use effects have fired, so they fire once per use rather than once per
+    /// path that reaches `Done`.
+    settled: bool,
 }
 
 impl ProductionWindow {
@@ -1217,6 +1220,7 @@ impl ProductionWindow {
                 Stage::Done
             },
             report: ProductionReport::default(),
+            settled: false,
         }
     }
 
@@ -1494,6 +1498,17 @@ impl Window for ProductionWindow {
             }
         }
         self.settle(state, content, sources);
+        // After `settle`, not before: the loop inside it can be what reaches `Done`, and a check
+        // ahead of it would miss exactly the uses that ended without another question.
+        //
+        // Auto-Factories reads the whole use of PRODUCTION, so it fires once where the use ends
+        // rather than at each placement -- three ships pay once, not three times. Several paths
+        // reach `Done`, so this is a flag rather than a call at each of them.
+        if matches!(self.stage, Stage::Done) && !self.settled {
+            self.settled = true;
+            let (who, made) = (self.player.clone(), self.report.produced.clone());
+            crate::breakthroughs::on_production_finished(state, content, sources, &who, &made);
+        }
         Ok(())
     }
 }
