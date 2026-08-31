@@ -46,6 +46,10 @@ fn main() {
             .collect(),
     );
     show(
+        "mech abilities",
+        ti4_engine::faction_abilities::unimplemented_mechs(content, sources, FACTIONS),
+    );
+    show(
         "action cards",
         ti4_engine::action_cards::unimplemented(content)
             .iter()

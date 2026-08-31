@@ -161,6 +161,169 @@ struct BombardPlan {
     victims: std::collections::BTreeSet<PlayerId>,
 }
 
+/// A unit's ground-combat threshold, with the faction shift applied.
+///
+/// Jol-Nar's Fragile is "-1 to all combat rolls" and Sardakk's Unrelenting is "+1" -- neither says
+/// "in space". `combat_modifier` has carried a `context` parameter since it was written, and its
+/// only caller passed "space", so ground combat rolled the printed value and Jol-Nar infantry
+/// fought at full strength everywhere.
+///
+/// A shift applies to the *roll*, so it moves the threshold the other way, exactly as the space
+/// path does.
+#[must_use]
+pub fn ground_combat_value(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+    unit_type: &str,
+) -> Option<i64> {
+    let printed = catalogue(content, sources)
+        .get(unit_type)
+        .and_then(ti4_content::units::UnitType::combat_hits_on)?;
+    let mut faction = crate::faction_abilities::combat_modifier(state, content, player, "ground");
+
+    // Jol-Nar's Shield Paling mech: "Your infantry on this planet are not affected by your Fragile
+    // faction ability." Only infantry, and only on the planet the mech is standing on -- which is
+    // why this is decided per planet rather than per seat.
+    if faction < 0 && unit_type.contains("infantry") && shield_paling(state, player, system, planet)
+    {
+        faction = 0;
+    }
+    Some(printed - faction)
+}
+
+/// Whether a Jol-Nar Shield Paling mech is on this planet, shielding its owner's infantry.
+fn shield_paling(
+    state: &GameState,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+) -> bool {
+    state
+        .system_state(system)
+        .on_planet_of(planet, player)
+        .into_iter()
+        .any(|unit| unit.type_id.as_str() == "jolnar_mech")
+}
+
+/// Letnev's Dunlain Reaper mech, offered at the start of each ground-combat round.
+///
+/// > DEPLOY: At the start of a round of ground combat, you may spend 2 resources to replace 1 of
+/// > your infantry in that combat with 1 mech from your reinforcements.
+///
+/// 20.3 -- a DEPLOY ability places a unit from reinforcements -- so the swap is gated on supply,
+/// and 20.5 makes it once per timing window, which one round is. Offered only to a player who
+/// actually has an infantry in this combat, since that is what the mech replaces.
+fn dunlain_reaper(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+) {
+    const MECH: &str = "letnev_mech";
+    const COST: i64 = 2;
+    let holds_mech_unit = state
+        .player(player)
+        .is_some_and(|seat| seat.faction.as_str() == "letnev");
+    if !holds_mech_unit {
+        return;
+    }
+    let Some(infantry) = state
+        .system_state(system)
+        .on_planet_of(planet, player)
+        .into_iter()
+        .find(|unit| unit.type_id.as_str().contains("infantry"))
+        .cloned()
+    else {
+        return; // nothing to replace
+    };
+    // 31.4 and 20.4: no mech in reinforcements, no deploy.
+    if crate::supply::allowed(state, ctx.content, ctx.sources, player, &ti4_model::id::UnitTypeId::new(MECH), 1) == 0 {
+        return;
+    }
+    if crate::production::available(
+        state,
+        ctx.content,
+        ctx.sources,
+        player,
+        crate::production::Spend::Resources,
+    ) < COST
+    {
+        return; // 22.3: not offered when it cannot be paid for
+    }
+
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        format!("Dunlain Reaper: spend 2 resources to replace an infantry on {planet}"),
+        vec![
+            crate::choice::ChoiceOption::labelled(
+                "deploy".to_owned(),
+                "unit",
+                "deploy the mech".to_owned(),
+            ),
+            crate::choice::ChoiceOption::decline(),
+        ],
+    );
+    let Ok(answer) = ctx.table.ask(&choice) else {
+        return;
+    };
+    if answer.is_decline() {
+        return;
+    }
+    if !crate::production::pay(
+        state,
+        ctx.content,
+        ctx.sources,
+        ctx.table,
+        player,
+        COST,
+        crate::production::Spend::Resources,
+    )
+    .unwrap_or(false)
+    {
+        return;
+    }
+    if let Some(here) = state.board.get_mut(system)
+        && let Some(stack) = here.planet_units.get_mut(planet)
+        && let Some(at) = stack.iter().position(|unit| *unit == infantry)
+    {
+        stack[at] = Unit::new(ti4_model::id::UnitTypeId::new(MECH), player.clone());
+    }
+}
+
+/// The invader's units that may bombard `planet` this invasion.
+///
+/// Ordinarily the ships in the space area (49.1). L1Z1X's Anihilator mech is the exception:
+/// "While not participating in ground combat, this unit can use its BOMBARDMENT ability on planets
+/// in its system as if it were a ship." So a mech standing on some *other* planet joins the
+/// bombardment, and one standing on the planet it would be shooting at does not -- that is what
+/// participating in the ground combat means here.
+fn bombarders(
+    state: &GameState,
+    invader: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+) -> Vec<Unit> {
+    let board = state.system_state(system);
+    let mut found: Vec<Unit> = board.units_of(invader).into_iter().cloned().collect();
+    for (where_it_stands, standing) in &board.planet_units {
+        if where_it_stands == planet {
+            continue; // it is in the ground combat for this planet, so it does not bombard it
+        }
+        found.extend(
+            standing
+                .iter()
+                .filter(|unit| &unit.owner == invader && unit.type_id.as_str() == "l1z1x_mech")
+                .cloned(),
+        );
+    }
+    found
+}
+
 /// Roll the invader's bombarding ships on every planet they can reach (49.1).
 ///
 /// The dice-consuming half of the bombardment: both the invasion window and this synchronous
@@ -216,7 +379,7 @@ fn roll_bombard_plan(
         }
 
         let mut groups: Vec<usize> = Vec::new();
-        for unit in state.system_state(system).units_of(invader) {
+        for unit in bombarders(state, invader, system, &planet) {
             let Some(kind) = types.get(unit.type_id.as_str()) else {
                 continue;
             };
@@ -407,6 +570,7 @@ fn apply_bombard_plan(
     }
     Ok((killed, noted))
 }
+
 /// Ground forces this player has in the system's space area, available to land.
 #[must_use]
 pub fn landable(
@@ -616,9 +780,12 @@ fn roll_ground(
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
         };
-        let Some(value) = kind.combat_hits_on() else {
+        let Some(value) =
+            ground_combat_value(state, content, sources, player, system, planet, unit.type_id.as_str())
+        else {
             continue;
         };
+        let _ = kind;
         let slot = fighting.entry(value).or_insert((0, std::collections::BTreeMap::new()));
         slot.0 += kind.combat_dice();
         *slot.1.entry(unit.type_id.to_string()).or_insert(0) += 1;
@@ -1352,8 +1519,14 @@ impl InvasionWindow {
         defender: PlayerId,
     ) {
         let (content, sources) = (ctx.content, ctx.sources);
-        // 42.2: hits are simultaneous, so both sides roll before either loses anything.
         let planet = planets[index].clone();
+        // Letnev's Dunlain Reaper: "DEPLOY: At the start of a round of ground combat, you may spend
+        // 2 resources to replace 1 of your infantry in that combat with 1 mech from your
+        // reinforcements." Before the dice, so the mech fights the round it arrives for.
+        for who in [self.invader.clone(), defender.clone()] {
+            dunlain_reaper(state, ctx, &who, &self.system, &planet);
+        }
+        // 42.2: hits are simultaneous, so both sides roll before either loses anything.
         let attacker_hits = roll_ground(
             state,
             content,
@@ -2147,6 +2320,112 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// Jol-Nar's Fragile applies on the ground, not only in space.
+    ///
+    /// "-1 to all combat rolls" is not a space rule, and `combat_modifier` has carried a `context`
+    /// parameter for exactly this. Its only caller passed "space", so ground combat rolled the
+    /// printed value: Jol-Nar infantry fought at full strength on every planet in the game.
+    #[test]
+    fn jol_nar_infantry_are_fragile_on_the_ground_too() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena();
+        let player = invader();
+        if let Some(seat) = state.player_mut(&player) {
+            seat.faction = ti4_model::id::FactionId::new("jolnar");
+        }
+        on_planet(&mut state, &system, &planet, "infantry", &player, 1);
+
+        let printed = catalogue(content, POK)
+            .get("infantry")
+            .and_then(ti4_content::units::UnitType::combat_hits_on)
+            .expect("infantry have a combat value");
+        assert_eq!(
+            ground_combat_value(&state, content, POK, &player, &system, &planet, "infantry"),
+            Some(printed + 1),
+            "Fragile is -1 to the roll, so the threshold rises by one"
+        );
+
+        if let Some(seat) = state.player_mut(&player) {
+            seat.faction = ti4_model::id::FactionId::new("sol");
+        }
+        assert_eq!(
+            ground_combat_value(&state, content, POK, &player, &system, &planet, "infantry"),
+            Some(printed),
+            "and another faction rolls the printed value"
+        );
+    }
+
+    /// L1Z1X's Anihilator mech bombards from the ground, but not the planet it is standing on.
+    ///
+    /// "While not participating in ground combat, this unit can use its BOMBARDMENT ability on
+    /// planets in its system as if it were a ship." Standing on the planet it would shoot at *is*
+    /// participating, so the mech joins the bombardment of every other planet and not that one.
+    #[test]
+    fn an_anihilator_mech_bombards_other_planets_in_its_system() {
+        let (mut state, system, planet) = arena();
+        let player = invader();
+        let elsewhere = PlanetId::new("a_different_planet");
+        on_planet(&mut state, &system, &elsewhere, "l1z1x_mech", &player, 1);
+
+        let from_elsewhere = bombarders(&state, &player, &system, &planet);
+        assert!(
+            from_elsewhere
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "l1z1x_mech"),
+            "a mech on another planet joins the bombardment"
+        );
+
+        let at_home = bombarders(&state, &player, &system, &elsewhere);
+        assert!(
+            !at_home
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "l1z1x_mech"),
+            "but it does not bombard the planet it is standing on"
+        );
+    }
+
+    /// Jol-Nar's Shield Paling mech lifts Fragile from the infantry standing with it.
+    ///
+    /// One of four in-scope mech abilities that no coverage helper counted, so none of them showed
+    /// up as a gap. Only infantry, only that planet: the mech itself still rolls Fragile, and
+    /// infantry on the next planet over are unhelped.
+    #[test]
+    fn a_shield_paling_lifts_fragile_from_the_infantry_beside_it() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena();
+        let player = invader();
+        if let Some(seat) = state.player_mut(&player) {
+            seat.faction = ti4_model::id::FactionId::new("jolnar");
+        }
+        on_planet(&mut state, &system, &planet, "infantry", &player, 1);
+        let printed = catalogue(content, POK)
+            .get("infantry")
+            .and_then(ti4_content::units::UnitType::combat_hits_on)
+            .expect("infantry have a combat value");
+
+        assert_eq!(
+            ground_combat_value(&state, content, POK, &player, &system, &planet, "infantry"),
+            Some(printed + 1),
+            "Fragile applies without the mech"
+        );
+
+        on_planet(&mut state, &system, &planet, "jolnar_mech", &player, 1);
+        assert_eq!(
+            ground_combat_value(&state, content, POK, &player, &system, &planet, "infantry"),
+            Some(printed),
+            "and the mech lifts it"
+        );
+        let mech_printed = catalogue(content, POK)
+            .get("jolnar_mech")
+            .and_then(ti4_content::units::UnitType::combat_hits_on)
+            .expect("the mech has a combat value");
+        assert_eq!(
+            ground_combat_value(&state, content, POK, &player, &system, &planet, "jolnar_mech"),
+            Some(mech_printed + 1),
+            "but only for infantry: the mech itself is still Fragile"
+        );
+    }
 
     /// 63.2: a planetary shield stops Harrow, as it stops any other bombardment.
     ///

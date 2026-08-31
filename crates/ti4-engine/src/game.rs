@@ -171,6 +171,7 @@ impl AftermathWindow {
             ctx.rng,
             system,
             player,
+            galaxy,
         );
         // Reroll windows (Agnlan Oln, Scramble Frequency): one per firing player, opened
         // between the rolls and the absorption. The hits are then read from the possibly

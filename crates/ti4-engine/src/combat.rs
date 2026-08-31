@@ -1119,6 +1119,38 @@ fn destroy_fighters(
 /// Returns the hits produced per firing player, for the caller to absorb. They are kept separate
 /// from combat hits because the two are answered by different cards, which is the distinction
 /// [`absorb_hits`] exists to preserve.
+/// Guns in *adjacent* systems that may fire into this one.
+///
+/// PDS II ("you may use this unit's SPACE CANNON against ships that are in adjacent systems") and
+/// Xxcha's Indomitus mech, which prints the same clause. Both stand on planets, so only planets are
+/// searched; and both belong to somebody other than the active player, since space cannon offence
+/// fires at the seat that activated the system.
+fn reaching_guns(
+    state: &GameState,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    system: &SystemId,
+    active: &PlayerId,
+) -> Vec<Unit> {
+    const REACHES: [&str; 2] = ["pds2", "xxcha_mech"];
+    let Some(galaxy) = galaxy else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for neighbour in galaxy.adjacent(system.as_str()) {
+        let board = state.system_state(&SystemId::new(neighbour));
+        for standing in board.planet_units.values() {
+            found.extend(
+                standing
+                    .iter()
+                    .filter(|unit| &unit.owner != active)
+                    .filter(|unit| REACHES.contains(&unit.type_id.as_str()))
+                    .cloned(),
+            );
+        }
+    }
+    found
+}
+
 pub fn space_cannon_offense(
     state: &mut GameState,
     content: &ContentStore,
@@ -1127,6 +1159,7 @@ pub fn space_cannon_offense(
     rng: &mut GameRng,
     system: &SystemId,
     active: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
 ) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
     // Solar Flare: during the named tactical action, other players cannot use SPACE CANNON
     // against the active player's ships. Every gun below belongs to another player and fires
@@ -1157,6 +1190,12 @@ pub fn space_cannon_offense(
                 .cloned(),
         );
     }
+
+    // PDS II and Xxcha's Indomitus mech both read "You may use this unit's SPACE CANNON against
+    // ships that are in adjacent systems." Two cards, one clause, and neither reached the active
+    // system before: `space_cannon_offense` read only the system being activated, so an upgraded
+    // PDS next door -- a technology every faction can research -- never fired at all.
+    guns.extend(reaching_guns(state, galaxy, system, active));
 
     let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
         std::collections::BTreeMap::new();
@@ -2964,6 +3003,51 @@ fn winner(
 #[cfg(test)]
 mod tests {
 
+    /// PDS II fires into the next system, and PDS I does not.
+    ///
+    /// "You may use this unit's SPACE CANNON against ships that are in adjacent systems" is printed
+    /// on PDS II and on Xxcha's Indomitus mech. `space_cannon_offense` read only the activated
+    /// system, so neither ever fired -- an upgraded PDS next door, from a technology every faction
+    /// can research, did nothing at all.
+    #[test]
+    fn an_upgraded_pds_fires_from_an_adjacent_system() {
+        let hub = crate::fixtures::plain_hub();
+        let active = SystemId::new(&hub.centre);
+        let next_door = SystemId::new(&hub.outer[0]);
+        let planet = ti4_model::id::PlanetId::new("a_planet_next_door");
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        put(&mut state, &active, "cruiser", &attacker(), 1);
+
+        let guns = |state: &GameState| {
+            reaching_guns(state, Some(&hub.galaxy), &active, &attacker()).len()
+        };
+
+        if let Some(here) = state.board.get_mut(&next_door) {
+            here.planet_units.entry(planet.clone()).or_default().push(
+                Unit::new(UnitTypeId::new("pds"), defender()),
+            );
+        }
+        assert_eq!(guns(&state), 0, "a PDS I stays at home");
+
+        if let Some(here) = state.board.get_mut(&next_door) {
+            here.planet_units.entry(planet.clone()).or_default().push(
+                Unit::new(UnitTypeId::new("pds2"), defender()),
+            );
+        }
+        assert_eq!(guns(&state), 1, "an upgraded one reaches next door");
+
+        if let Some(here) = state.board.get_mut(&next_door) {
+            here.planet_units.entry(planet.clone()).or_default().push(
+                Unit::new(UnitTypeId::new("xxcha_mech"), defender()),
+            );
+        }
+        assert_eq!(guns(&state), 2, "and so does Xxcha's Indomitus mech");
+    }
+
     /// Non-Euclidean Shielding cancels two hits per sustain, not two sustains.
     ///
     /// "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits instead of 1" -- so one dreadnought
@@ -3538,6 +3622,7 @@ mod tests {
             &mut rng,
             &system,
             &attacker(),
+            None,
         );
 
         assert_eq!(dice.count(), 1, "the gun on the planet fired");
@@ -3561,6 +3646,7 @@ mod tests {
             &mut rng,
             &system,
             &attacker(),
+            None,
         );
 
         assert!(fired.is_empty());

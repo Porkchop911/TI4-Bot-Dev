@@ -179,6 +179,12 @@ fn main() {
         .count();
     row("breakthroughs", implemented_breakthroughs, ours_breakthroughs);
 
+    // Mech abilities are printed on the unit, not in `abilities.json`, so the faction-ability
+    // count above never saw them. Four of six were unimplemented and invisible until 2026-08-31.
+    let mechs_missing =
+        ti4_engine::faction_abilities::unimplemented_mechs(content, sources, &FACTIONS).len();
+    row("mech abilities", FACTIONS.len() - mechs_missing, FACTIONS.len());
+
     let windows = ti4_engine::reactions::unsupported_windows();
     println!(
         "  {:<22} {:>5} reaction windows unsupported",

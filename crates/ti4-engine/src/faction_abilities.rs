@@ -710,6 +710,46 @@ pub fn catalogue(content: &ContentStore, sources: SourceSet) -> Vec<String> {
         .collect()
 }
 
+/// Mech unit abilities this engine implements, by unit id.
+///
+/// Separate from [`registered`] because a mech's ability is printed on the *unit*, not in
+/// `abilities.json` -- which is why no coverage helper counted them, and four of the six in-scope
+/// mechs sat unimplemented without ever appearing as a gap.
+#[must_use]
+pub fn registered_mech_abilities() -> Vec<&'static str> {
+    vec![
+        "hacan_mech",  // Pride of Kenara: the planet card trades, and the units move with it
+        "jolnar_mech", // Shield Paling: infantry here are not Fragile
+        "l1z1x_mech",  // Anihilator: bombards from the ground
+        "letnev_mech", // Dunlain Reaper: DEPLOY, replacing an infantry mid-combat
+        "sol_mech",    // ZS Thunderbolt M2: DEPLOY after Orbital Drop
+        "xxcha_mech",  // Indomitus: SPACE CANNON into adjacent systems
+    ]
+}
+
+/// Mechs of the given factions whose printed ability nothing here implements.
+#[must_use]
+pub fn unimplemented_mechs(
+    content: &ContentStore,
+    sources: SourceSet,
+    factions: &[&str],
+) -> Vec<String> {
+    let known = registered_mech_abilities();
+    factions
+        .iter()
+        .map(|faction| format!("{faction}_mech"))
+        .filter(|id| {
+            content
+                .get(ti4_model::content_types::ContentType::Units, id)
+                .is_some_and(|record| {
+                    record.in_sources(sources)
+                        && record.text("ability").is_some_and(|text| !text.is_empty())
+                })
+        })
+        .filter(|id| !known.contains(&id.as_str()))
+        .collect()
+}
+
 /// Ability ids this layer answers.
 #[must_use]
 pub fn registered() -> Vec<&'static str> {

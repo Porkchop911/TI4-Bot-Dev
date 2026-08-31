@@ -129,7 +129,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Custodians Token | ? | `invasion.rs` keeps Mecatol off the table until removed |
 | Deals | ? | |
 | Defender | ? | |
-| Deploy | ? | |
+| Deploy | VERIFIED | 20.1-20.5; the two in-scope DEPLOY mechs (Sol, Letnev) are implemented |
 | Destroyed | ? | |
 | Diplomacy | ? | `strategy_cards.rs` |
 | Elimination | **ABSENT** | no code; harmless at a 4-round horizon |
@@ -144,7 +144,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Game Board | ? | |
 | Game Round | ? | |
 | Gravity Rift | VERIFIED | 41.1-41.5 all present in `movement.rs`/`transit.rs`, incl. the path-dependent +1 |
-| Ground Combat | ? | `invasion.rs`; coexistence combat rules 9–12 absent |
+| Ground Combat | VERIFIED | 42.1-42.4; burst icons roll per die. Fragile now applies here (was space-only), and the Shield Paling mech lifts it |
 | Ground Forces | OK | cannot be committed to stations (rule 5) — phase 1 |
 | Hyperlanes | ? | |
 | Imperial | ? | |
@@ -157,7 +157,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Leadership | ? | |
 | Legendary Planets | **PARTIAL** | counted for objectives; no legendary ability is implemented |
 | Mecatol Rex | ? | |
-| Mechs | ? | |
+| Mechs | **PARTIAL** | all six in-scope mech abilities implemented 2026-08-31; they were counted by nothing before, see `unimplemented_mechs` |
 | Modifiers | ? | |
 | Move | ? | `movement.rs`, `transit.rs` |
 | Movement | ? | |
@@ -166,7 +166,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Neutral Units | **ABSENT** | 9 rules, none implemented |
 | Objective Cards | **PARTIAL** | 30 of 40 public registered; stations excluded and coexisters counted (rule 13) — phases 1-2 |
 | Opponent | ? | |
-| PDS | ? | |
+| PDS | **PARTIAL** | PDS II's adjacent-system clause was **absent**, added 2026-08-31 |
 | Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
 | Planetary Shield | **PARTIAL** | 63.1 and 63.3 present; 63.2 (the shield stops Harrow) was **absent**, added 2026-08-31 |
 | Politics | ? | |
@@ -180,8 +180,8 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | ? | |
 | Ships | ? | |
-| Space Cannon | VERIFIED | offence and defence both present; unit-ability rerolls apply, combat-roll effects do not |
-| Space Combat | ? | |
+| Space Cannon | **PARTIAL** | offence, defence and the adjacency clause (PDS II, Indomitus) -- adjacency was **absent** until 2026-08-31 |
+| Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
 | Space Dock | ? | |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | ? | |
@@ -209,14 +209,14 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormholes | ? | |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**63 unverified** (was 79).
+**58 unverified** (was 79).
 
 ## Phase 9 verification, 2026-08-31
 
 Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Seven defects in fourteen in-scope topics.** That is close to the base rate this audit warned
+**Ten defects in nineteen in-scope topics.** That is close to the base rate this audit warned
 about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
 "probably fine":
 
@@ -230,6 +230,9 @@ about, and it is the reason the remaining 63 rows should still be read as "not c
 | 95.5 | no pickup from a system holding your own command token | added |
 | 68.10 | no ship production in a system holding another player's ships | added |
 | Thalnos scope | both cards say "during each combat round"; they reached space cannon, barrage and bombardment | fixed |
+| Fragile | Jol-Nar's -1 applied in space only; `combat_modifier`'s `context` parameter had one caller and it passed "space" | fixed |
+| PDS II / Indomitus | "SPACE CANNON against ships in adjacent systems" — `space_cannon_offense` read only the activated system | added |
+| mech abilities | four of six in-scope mechs unimplemented, and counted by no coverage helper because the ability is printed on the unit | added |
 
 Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
 Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.
