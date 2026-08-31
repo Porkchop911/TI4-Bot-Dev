@@ -61,7 +61,14 @@ pub fn registered_aliases() -> Vec<&'static str> {
 /// and a passive relic has no action to resolve at all.
 #[must_use]
 pub fn action_aliases() -> Vec<&'static str> {
-    vec!["bookoflatvinia", "dynamiscore", "thesilverflame"]
+    vec![
+        "bookoflatvinia",
+        "codex",
+        "dynamiscore",
+        "enigmaticdevice",
+        "mawofworlds",
+        "thesilverflame",
+    ]
 }
 
 /// The Triad: readied and spent as if it were a planet card.
@@ -158,6 +165,71 @@ pub fn nanoforge_bonus(state: &GameState, planet: &ti4_model::id::PlanetId) -> i
     ) * 2
 }
 
+/// Ask which technology to gain, and gain it without checking prerequisites.
+///
+/// Maw of Worlds and Enigmatic Device both say *gain* or *research 1 technology* as the whole of
+/// their effect, with the price already paid, so neither routes through `can_research`: the cost
+/// they charge is the cost, and a prerequisite check would charge twice.
+///
+/// `colour` narrows the offer when a card demands one.
+fn grant_chosen_technology(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+    colour: Option<&str>,
+) -> bool {
+    let held: std::collections::BTreeSet<String> = state
+        .player(player)
+        .map(|seat| {
+            seat.technologies
+                .iter()
+                .map(|alias| alias.as_str().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let faction = state.player(player).map(|seat| seat.faction.to_string());
+
+    let options: Vec<crate::choice::ChoiceOption> = content
+        .from_sources(ti4_model::content_types::ContentType::Technologies, sources)
+        .filter(|record| {
+            // 90.11: a faction technology belongs to that faction alone.
+            record.text("faction").is_none_or(|owner| {
+                faction.as_deref().is_some_and(|mine| mine == owner)
+            })
+        })
+        .filter_map(|record| record.text("alias"))
+        .filter(|alias| !held.contains(*alias))
+        .filter(|alias| {
+            colour.is_none_or(|wanted| {
+                crate::technology::colour_type(content, &ti4_model::id::TechnologyId::new(*alias))
+                    .is_some_and(|had| had == wanted)
+            })
+        })
+        .map(|alias| {
+            crate::choice::ChoiceOption::labelled(
+                alias.to_owned(),
+                "technology",
+                format!("gain {alias}"),
+            )
+        })
+        .collect();
+    if options.is_empty() {
+        return false;
+    }
+    let choice =
+        crate::choice::Choice::new(player.clone(), "gain which technology", options);
+    let Ok(answer) = table.ask(&choice) else {
+        return false;
+    };
+    if let Some(seat) = state.player_mut(player) {
+        seat.technologies
+            .insert(ti4_model::id::TechnologyId::new(answer.id));
+    }
+    true
+}
+
 /// Whether a player holds a relic.
 #[must_use]
 pub fn holds(state: &GameState, player: &PlayerId, relic: &RelicId) -> bool {
@@ -237,6 +309,7 @@ pub fn use_relic(
     sources: SourceSet,
     dice: &mut crate::dice::Dice,
     rng: &mut crate::rng::GameRng,
+    table: &mut crate::choice::Table,
     player: &PlayerId,
     relic: &RelicId,
 ) -> Used {
@@ -246,6 +319,91 @@ pub fn use_relic(
         };
     }
     match relic.as_str() {
+        "enigmaticdevice" => {
+            // "You may spend 6 resources and purge this card to research 1 technology."
+            //
+            // The research is a choice and the cost is a gate, so the cost is checked before the
+            // question is asked: 22.3 does not offer an action that cannot fully resolve, and
+            // asking which technology before knowing it can be paid for would let a decider spend
+            // a decision on nothing.
+            if !crate::production::pay(
+                state,
+                content,
+                sources,
+                table,
+                player,
+                6,
+                crate::production::Spend::Resources,
+            )
+            .unwrap_or(false)
+            {
+                return Used::Unresolved {
+                    relic: relic.clone(),
+                };
+            }
+            grant_chosen_technology(state, content, sources, table, player, None);
+        }
+        "mawofworlds" => {
+            // "Purge this card and exhaust all of your planets to gain any 1 technology."
+            //
+            // Exhausting is the cost and is paid whatever is chosen, so it happens before the
+            // question. Prerequisites are waived: the card says *gain*, not research.
+            let planets: Vec<ti4_model::id::PlanetId> = state
+                .controlled_planets(player)
+                .into_iter()
+                .map(|(_, planet)| planet.clone())
+                .collect();
+            for planet in planets {
+                state.exhaust_planet(planet);
+            }
+            grant_chosen_technology(state, content, sources, table, player, None);
+        }
+        "codex" => {
+            // "Take up to 3 action cards of your choice from the action card discard pile."
+            //
+            // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
+            // than three questions asked against the pile as it stood.
+            for _ in 0..3 {
+                let options: Vec<crate::choice::ChoiceOption> = state
+                    .discarded_action_cards
+                    .clone()
+                    .into_iter()
+                    .map(|alias| {
+                        crate::choice::ChoiceOption::labelled(
+                            alias.to_string(),
+                            "action_card",
+                            format!("take {alias}"),
+                        )
+                    })
+                    .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
+                    .collect();
+                if options.len() == 1 {
+                    break; // nothing but the decline: the pile is empty
+                }
+                let choice = crate::choice::Choice::new(
+                    player.clone(),
+                    "The Codex: take which action card",
+                    options,
+                );
+                let Ok(answer) = table.ask(&choice) else {
+                    break;
+                };
+                if answer.is_decline() {
+                    break;
+                }
+                let taken = ti4_model::id::ActionCardId::new(answer.id);
+                if let Some(at) = state
+                    .discarded_action_cards
+                    .iter()
+                    .position(|held| *held == taken)
+                {
+                    state.discarded_action_cards.remove(at);
+                    if let Some(seat) = state.player_mut(player) {
+                        seat.action_cards.push(taken);
+                    }
+                }
+            }
+        }
         "dynamiscore" => {
             // "Gain trade goods equal to your commodity value, then purge this card." The
             // card's other half — commodity value increased by 2 — is a standing modifier, and
@@ -358,11 +516,18 @@ pub fn available_actions(
         .map(|seat| seat.relics.clone())
         .unwrap_or_default();
     let known = action_aliases();
+    // 22.3 again: Enigmatic Device costs six resources, and an action that cannot be paid for is
+    // not offered. Checked here rather than only inside `use_relic`, so a decider is never handed a
+    // choice that resolves to nothing.
+    let affordable = |alias: &str| -> bool {
+        alias != "enigmaticdevice"
+            || crate::production::available(state, content, sources, player, crate::production::Spend::Resources) >= 6
+    };
     options.extend(
         held.into_iter()
             // 22.3: an action that cannot fully resolve is never offered, and a relic with no
             // handler cannot resolve at all.
-            .filter(|relic| known.contains(&relic.as_str()))
+            .filter(|relic| known.contains(&relic.as_str()) && affordable(relic.as_str()))
             .filter(|relic| relic.as_str() != SHARD) // held for its point; it has no action
             .map(|relic| {
                 crate::choice::ChoiceOption::labelled(
@@ -383,6 +548,7 @@ pub fn perform(
     sources: SourceSet,
     dice: &mut crate::dice::Dice,
     rng: &mut crate::rng::GameRng,
+    table: &mut crate::choice::Table,
     player: &PlayerId,
     option: &crate::choice::ChoiceOption,
 ) -> bool {
@@ -402,7 +568,7 @@ pub fn perform(
     if let Some(alias) = option.id.strip_prefix(USE_PREFIX) {
         let relic = RelicId::new(alias);
         return matches!(
-            use_relic(state, content, sources, dice, rng, player, &relic),
+            use_relic(state, content, sources, dice, rng, table, player, &relic),
             Used::Purged { .. }
         );
     }
@@ -437,6 +603,10 @@ mod tests {
         for alias in action_aliases() {
             if let Some(seat) = state.player_mut(&player) {
                 seat.relics = vec![RelicId::new(alias)];
+                // Enigmatic Device costs six resources. `available_actions` declines to offer it
+                // unpaid-for (22.3), so a seat that cannot pay would never reach this arm in play;
+                // giving the fixture the means keeps every arm exercised rather than skipped.
+                seat.trade_goods = 6;
             }
             let used = use_relic(
                 &mut state,
@@ -444,6 +614,7 @@ mod tests {
                 ti4_model::content_types::DEFAULT,
                 &mut crate::dice::Dice::new(),
                 &mut crate::rng::GameRng::new(1),
+                &mut crate::choice::Table::new(),
                 &player,
                 &RelicId::new(alias),
             );
@@ -735,6 +906,7 @@ mod tests {
                 POK,
                 &mut dice,
                 &mut crate::rng::GameRng::new(0),
+                &mut crate::choice::Table::new(),
                 &player(),
                 &relic,
             );
@@ -793,6 +965,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &option,
         ));
@@ -819,6 +992,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &option,
         ));
@@ -835,6 +1009,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &RelicId::new("dynamiscore"),
         );
@@ -853,6 +1028,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &relic,
         );
@@ -882,6 +1058,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &relic,
         );
@@ -906,6 +1083,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &relic,
         );
@@ -949,6 +1127,7 @@ mod tests {
             POK,
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
+            &mut crate::choice::Table::new(),
             &player(),
             &relic,
         );

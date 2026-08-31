@@ -1110,6 +1110,7 @@ impl<'a> Game<'a> {
                         self.sources,
                         &mut dice,
                         &mut rng,
+                        &mut self.table,
                         &active,
                         &answer,
                     );

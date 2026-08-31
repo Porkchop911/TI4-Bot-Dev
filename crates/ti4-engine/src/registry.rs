@@ -146,8 +146,18 @@ pub fn ledger(content: &ContentStore, sources: SourceSet) -> Vec<Coverage> {
         Coverage {
             registry: "relics",
             total: count(content, ContentType::Relics, sources),
-            // Plus the Circlet, whose effect is standing rather than an action.
-            implemented: crate::relics::registered_aliases().len() + 1,
+            // Counted inside `sources`, and without the "+1 for the Circlet" this used to carry.
+            // The Circlet is in `registered_aliases` now, so the bonus double-counted it; and the
+            // list spans Thunder's Edge, so counting it whole reported more relics implemented than
+            // a POK-scoped corpus contains.
+            implemented: crate::relics::registered_aliases()
+                .into_iter()
+                .filter(|alias| {
+                    content
+                        .get(ContentType::Relics, alias)
+                        .is_some_and(|record| record.in_sources(sources))
+                })
+                .count(),
         },
     ]
 }
