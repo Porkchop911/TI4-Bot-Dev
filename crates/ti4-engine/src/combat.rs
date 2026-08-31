@@ -1294,6 +1294,15 @@ fn pay_sustain_commander(state: &mut GameState, content: &ContentStore, player: 
     }
 }
 
+/// Barony of Letnev, Non-Euclidean Shielding: each use of SUSTAIN DAMAGE cancels two hits.
+fn non_euclidean_shielding(state: &GameState, player: &PlayerId) -> bool {
+    state.player(player).is_some_and(|seat| {
+        seat.technologies
+            .iter()
+            .any(|held| held.as_str() == "nes")
+    })
+}
+
 fn offer_sustain(
     state: &mut GameState,
     content: &ContentStore,
@@ -1378,7 +1387,10 @@ fn offer_sustain(
             pay_sustain_commander(state, content, player);
             emit_sustain_used(state, ctx, galaxy, system, player, &kind, producer)?;
         }
-        hits = hits.saturating_sub(1);
+        // Non-Euclidean Shielding: "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits
+        // instead of 1." Per *use*, so a second hit costs the same one damaged ship -- which is
+        // why it is a subtraction here rather than a second pass through the offer.
+        hits = hits.saturating_sub(if non_euclidean_shielding(state, player) { 2 } else { 1 });
     }
     Ok(hits)
 }
@@ -2951,6 +2963,59 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
+
+    /// Non-Euclidean Shielding cancels two hits per sustain, not two sustains.
+    ///
+    /// "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits instead of 1" -- so one dreadnought
+    /// absorbs two hits and takes one point of damage. A reading that cancelled two hits by
+    /// damaging two ships would cost the holder twice what the technology is for.
+    #[test]
+    fn non_euclidean_shielding_cancels_two_hits_for_one_damaged_ship() {
+        let content = ContentStore::embedded();
+        let (mut state, system) = arena();
+        let player = defender();
+        put(&mut state, &system, "dreadnought", &player, 1);
+
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut inner = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+
+        let left = offer_sustain(
+            &mut state, content, POK, None, &mut ctx, &player, &system, &attacker(), 2,
+        )
+        .expect("the offer resolves");
+        assert_eq!(left, 1, "without the technology one sustain cancels one hit");
+
+        let (mut state, system) = arena();
+        put(&mut state, &system, "dreadnought", &player, 1);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.technologies
+                .insert(ti4_model::id::TechnologyId::new("nes"));
+        }
+        let left = offer_sustain(
+            &mut state, content, POK, None, &mut ctx, &player, &system, &attacker(), 2,
+        )
+        .expect("the offer resolves");
+        assert_eq!(left, 0, "with it, the same one ship cancels both");
+        assert_eq!(
+            state
+                .system_state(&system)
+                .units_of(&player)
+                .iter()
+                .filter(|unit| unit.sustained_damage)
+                .count(),
+            1,
+            "and only one ship is damaged"
+        );
+    }
 
     /// The Thalnos cards reach combat rounds and nothing else.
     ///

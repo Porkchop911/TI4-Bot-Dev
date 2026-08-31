@@ -70,6 +70,16 @@ pub fn loadable(
     };
     let system = state.system_state(origin);
 
+    // 95.5: "Fighters and ground forces cannot be picked up from a system that contains one of
+    // their faction's command tokens other than the active system."
+    //
+    // Ordinarily unreachable, because 58.4c stops a ship leaving such a system at all -- but the
+    // Dominus Orb suspends exactly that, and a ship freed to leave must still not take the
+    // garrison with it.
+    if state.active_system.as_ref() != Some(origin) && system.command_tokens.contains(player) {
+        return Vec::new();
+    }
+
     let mut found: Vec<Cargo> = system
         .units_of(player)
         .into_iter()
@@ -448,6 +458,35 @@ fn take_aboard(state: &mut GameState, origin: &SystemId, destination: &SystemId,
 
 #[cfg(test)]
 mod tests {
+
+    /// 95.5: nothing is picked up from a system holding your own command token.
+    ///
+    /// 58.4c usually makes this moot by stopping the ship leaving at all. The Dominus Orb suspends
+    /// that, and the two rules are separate: a ship freed to leave still may not take the garrison
+    /// with it. The active system is exempt, which is the other half of the rule.
+    #[test]
+    fn a_command_token_bars_pickup_unless_it_is_the_active_system() {
+        let (mut state, origin, _) = state_with_two_systems();
+        state.system_mut(&origin).units.push(unit("infantry"));
+        state.active_system = Some(SystemId::new("somewhere_else"));
+
+        assert!(
+            !loadable(&state, ContentStore::embedded(), POK, &player(), &origin).is_empty(),
+            "with no token there, the infantry is loadable"
+        );
+
+        state.system_mut(&origin).place_token(player());
+        assert!(
+            loadable(&state, ContentStore::embedded(), POK, &player(), &origin).is_empty(),
+            "your own command token bars the pickup"
+        );
+
+        state.active_system = Some(origin.clone());
+        assert!(
+            !loadable(&state, ContentStore::embedded(), POK, &player(), &origin).is_empty(),
+            "except in the active system, where the token is yours from activating it"
+        );
+    }
     use ti4_content::galaxy::Galaxy;
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;

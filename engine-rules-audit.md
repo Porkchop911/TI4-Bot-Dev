@@ -107,7 +107,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Agenda Card | **PARTIAL** | 34 of 63 registered |
 | Agenda Phase | ? | |
 | Anomalies | ? | asteroid/nebula/supernova/rift present; **entropic scars absent** |
-| Anti-Fighter Barrage | ? | `combat.rs` |
+| Anti-Fighter Barrage | VERIFIED | 78.3: simultaneous, first round only, fighters only, excess discarded |
 | Asteroid Field | VERIFIED | 11.1 bar and the Antimass Deflectors exemption |
 | Attach | ? | |
 | Attacker | ? | |
@@ -168,7 +168,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Opponent | ? | |
 | PDS | ? | |
 | Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
-| Planetary Shield | ? | `invasion.rs`, incl. L1Z1X commander override |
+| Planetary Shield | **PARTIAL** | 63.1 and 63.3 present; 63.2 (the shield stops Harrow) was **absent**, added 2026-08-31 |
 | Politics | ? | |
 | Producing Units | ? | |
 | Production | ? | `production.rs` |
@@ -180,7 +180,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | ? | |
 | Ships | ? | |
-| Space Cannon | ? | `combat.rs`; two reaction windows unsupported |
+| Space Cannon | VERIFIED | offence and defence both present; unit-ability rerolls apply, combat-roll effects do not |
 | Space Combat | ? | |
 | Space Dock | ? | |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
@@ -191,7 +191,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Strategy Phase | ? | |
 | Structures | OK | not placeable on stations (rule 5) — phase 1 |
 | Supernova | VERIFIED | 86.1 bar and the Magmus Reactor exemption |
-| Sustain Damage | ? | applied inside hit assignment; 3 reaction windows unsupported |
+| Sustain Damage | **PARTIAL** | 15.1-15.6 present; 15.7 Non-Euclidean Shielding was **absent**, added 2026-08-31 |
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
 | System Tiles | ? | |
 | Tactical Action | ? | `tactical.rs` |
@@ -200,7 +200,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Trade | ? | |
 | Trade Goods | ? | |
 | Transactions | **PARTIAL** | station-to-station (rule 10) absent |
-| Transport | ? | `transit.rs` |
+| Transport | **PARTIAL** | 95.5 (no pickup from your own command token) was **absent**, added 2026-08-31; 95.1 pickup *en route* is still origin-only |
 | Units | ? | |
 | Unit Upgrades | ? | |
 | Victory Points | ? | |

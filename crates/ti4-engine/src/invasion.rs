@@ -784,9 +784,18 @@ pub fn ground_combat(
 
         // L1Z1X's Harrow bombards again at the end of each round. The hits are assigned here
         // rather than by the faction layer, because who loses a unit is the invasion's decision.
-        let harrow = crate::faction_abilities::ground_combat_round_ended(
-            state, content, sources, dice, rng, invader, system,
-        );
+        //
+        // 63.2: "The Planetary Shield ability prevents an L1Z1X player from using their Harrow
+        // faction ability." Harrow *is* a bombardment, so it answers to the same gate the printed
+        // BOMBARDMENT does -- including the war sun exemption and Disable, which is the reason to
+        // ask `can_bombard` rather than to re-test the shield here.
+        let harrow = if bombardable(state, content, sources, system, planet, invader) {
+            crate::faction_abilities::ground_combat_round_ended(
+                state, content, sources, dice, rng, invader, system,
+            )
+        } else {
+            0
+        };
         if harrow > 0 {
             absorb_ground(
                 state, content, sources, table, &defender, system, planet, harrow,
@@ -2138,6 +2147,46 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// 63.2: a planetary shield stops Harrow, as it stops any other bombardment.
+    ///
+    /// Harrow is a bombardment that fires again at the end of each ground-combat round, and the
+    /// shield names it explicitly. It was firing through the shield because the faction layer asks
+    /// only "does this seat have Harrow" -- the gate lives in the invasion, where the planet is
+    /// known, so Harrow now goes through the same `bombardable` every other bombardment does.
+    #[test]
+    fn a_planetary_shield_stops_harrow() {
+        let (mut state, system, planet) = arena();
+        if let Some(seat) = state.player_mut(&invader()) {
+            seat.faction = ti4_model::id::FactionId::new("l1z1x");
+        }
+        in_space(&mut state, &system, "dreadnought", &invader(), 1);
+
+        assert!(
+            bombardable(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &system,
+                &planet,
+                &invader()
+            ),
+            "with no shield the bombardment is allowed"
+        );
+
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        assert!(
+            !bombardable(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &system,
+                &planet,
+                &invader()
+            ),
+            "and the shield stops it -- which is the gate Harrow now asks"
+        );
+    }
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
     use ti4_model::content_types::POK;
 
