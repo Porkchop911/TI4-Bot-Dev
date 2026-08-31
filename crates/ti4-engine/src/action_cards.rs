@@ -4148,6 +4148,61 @@ fn frontline_deployment(context: &mut crate::timing::TimingContext<'_>, player: 
     }
 }
 
+/// Manipulate Investments: five trade goods onto strategy cards, across at least three of them.
+///
+/// > Place a total of 5 trade goods from the supply on strategy cards of your choice. You must
+/// > place these tokens on at least 3 different cards.
+///
+/// `GameState::strategy_card_goods` already holds this: the strategy phase puts a good on every
+/// unpicked card and `game.rs` pays it out when one is taken. Nothing had to be added for the card
+/// — the slot was there with no caller.
+///
+/// The "at least 3 different" clause is enforced by narrowing the offer rather than by validating
+/// afterwards. Once the tokens left equal the distinct cards still owed, only unused cards are
+/// offered, so a legal placement is the only placement available and the card cannot be played into
+/// a state it forbids.
+fn manipulate_investments(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    const TOKENS: usize = 5;
+    const DISTINCT: usize = 3;
+
+    // Strategy cards key on `id`, not `alias` -- the one content category that does.
+    let cards: Vec<String> = context
+        .content
+        .from_sources(ContentType::StrategyCards, context.sources)
+        .filter_map(|record| record.text("id"))
+        .map(std::borrow::ToOwned::to_owned)
+        .collect();
+    if cards.len() < DISTINCT {
+        return; // 22.3: a card that cannot fully resolve is not played
+    }
+
+    let mut used: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for placed in 0..TOKENS {
+        let remaining = TOKENS - placed;
+        let owed = DISTINCT.saturating_sub(used.len());
+        let offer: Vec<(String, String)> = cards
+            .iter()
+            .filter(|alias| remaining > owed || !used.contains(*alias))
+            .map(|alias| (alias.clone(), format!("place a trade good on {alias}")))
+            .collect();
+        let Some(chosen) = pick(
+            context,
+            player,
+            "Manipulate Investments: place a trade good on which strategy card",
+            "strategy_card",
+            &offer,
+        ) else {
+            return;
+        };
+        *context
+            .state
+            .strategy_card_goods
+            .entry(ti4_model::id::StrategyCardId::new(chosen.clone()))
+            .or_insert(0) += 1;
+        used.insert(chosen);
+    }
+}
+
 /// Mining Initiative: trade goods equal to the resource value of one planet you hold.
 fn mining_initiative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let spots = controlled_spots(context.state, player);
@@ -4924,6 +4979,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "crashlanding" => Some(crashlanding),
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
+        "investments" => Some(manipulate_investments),
         "f_researched" => Some(focused_research),
         "ghost_ship" => Some(ghost_ship),
         "jamming" => Some(signal_jamming),
@@ -5079,6 +5135,7 @@ fn scramble(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) 
 
 /// The aliases whose effects are registered in `effect_for`.
 const REGISTERED_ALIASES: &[&str] = &[
+    "investments",
     "fs1",
     "fs2",
     "fs3",
@@ -6629,9 +6686,12 @@ mod tests {
     /// stale.
     fn an_unimplemented_action_card() -> ActionCardId {
         ContentStore::embedded()
+            // DEFAULT, not POK: every POK card is implemented now, and this helper exists to find
+            // one that is not. Narrowing it to POK made it expire the moment that became true --
+            // the third fixture this week to depend on the engine being incomplete.
             .from_sources(
                 ti4_model::content_types::ContentType::ActionCards,
-                ti4_model::content_types::POK,
+                ti4_model::content_types::DEFAULT,
             )
             .filter_map(|record| record.text("alias").map(ActionCardId::new))
             .find(|alias| effect_for(alias).is_none())
@@ -6852,6 +6912,27 @@ mod tests {
     }
 
     #[test]
+    /// Manipulate Investments places five goods across at least three strategy cards.
+    ///
+    /// The distinct-card clause is enforced by narrowing the offer, so the test asserts the
+    /// *outcome* — five placed, three or more cards touched — rather than that a validator ran.
+    #[test]
+    fn manipulate_investments_spreads_five_goods_over_three_cards() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.strategy_card_goods.clear();
+
+        resolve_card(&mut state, "investments", &player, &[]);
+
+        let placed: i32 = state.strategy_card_goods.values().sum();
+        assert_eq!(placed, 5, "five trade goods, no more and no fewer");
+        assert!(
+            state.strategy_card_goods.len() >= 3,
+            "at least three different cards, saw {:?}",
+            state.strategy_card_goods
+        );
+    }
+
     fn frontline_deployment_puts_three_on_one_planet() {
         let player = PlayerId::new("a");
         let mut state = crate::fixtures::game(&["a"]);

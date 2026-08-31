@@ -381,6 +381,17 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v15 — 2026-08-31. Manipulate Investments, the last POK action card, places five trade goods
+    // on strategy cards; `game.rs` pays those out when a card is taken, so seats have more to
+    // spend.
+    //
+    // The signature is an economic change, not a behavioural one: `score_spread` and
+    // `faction_differentiation` move, the six action-mix shares are unchanged to three decimals,
+    // and `vp_pace` barely moves. Bots are not doing different things -- they have more to do them
+    // with, and the seats that benefit diverge from the ones that do not.
+    //
+    // Baseline movement is diagnostic here by the owner's standing decision.
+    //
     // v14 — recorded 2026-08-31. A change in *play* and in the event stream: the five
     // salvage/repair/infiltrate/black-market/reverse-engineer action cards stopped being
     // unimplemented placeholders, and the driver gained the moments those cards watch — a
@@ -664,43 +675,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.377_160_493_827_160_55, 0.437_654_320_987_654_33),
+        (0.37469135802469133, 0.4333333333333334),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.423_407_302_046_826_3, 1.790_918_152_354_72),
+        (1.6122317874326906, 2.043301047678124),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.311_903_752_169_293_45, 0.745_521_608_765_166_9),
+        (0.4077944289667238, 0.9407771938110862),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.020_192_064_796_507_588, 0.021_337_318_463_416_344),
+        (0.020268154601020567, 0.02143529885402551),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_304_761_529_136_88, 0.034_369_281_084_510_96),
+        (0.03328686353132783, 0.03447099799688148),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.047_441_071_459_699_26, 0.051_545_660_579_076_59),
+        (0.04807624138531606, 0.05194353518384382),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_508_388_296_821_67, 0.006_317_691_505_641_835),
+        (0.00541840028083383, 0.006281005928248154),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.065_772_421_562_926_06, 0.067_785_337_648_531_62),
+        (0.06575361813312793, 0.06797636888466084),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_469_558_360_057_445, 0.033_437_678_196_709_77),
+        (0.03243497467861116, 0.033508020331079566),
     );
     bounds
 }
