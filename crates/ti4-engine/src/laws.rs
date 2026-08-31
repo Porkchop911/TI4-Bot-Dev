@@ -418,6 +418,7 @@ pub fn enforced_aliases() -> Vec<&'static str> {
         "articles_war",
         "minister_exploration",
         "minister_policy",
+        "crown_of_thalnos",
         "minister_commerce",
         "minister_sciences",
         "prophecy",

@@ -269,6 +269,171 @@ pub fn staged_hits(set: &RerollSet) -> usize {
     set.rolls.iter().map(RerollEntry::hits).sum()
 }
 
+/// Thalnos and the Crown of Thalnos: reroll dice, then lose the units that still missed.
+///
+/// > Thalnos: During each combat round, this card's owner may reroll any number of their dice,
+/// > applying +1 to the results; any units that reroll dice but do not produce at least 1 hit are
+/// > destroyed.
+///
+/// > The Crown of Thalnos: During each combat round, the owner of this card may reroll any number
+/// > of dice; they must destroy each of their units that did not produce a hit with its reroll.
+///
+/// The same shape with one difference -- the relic adds 1 to what the reroll shows, the law does
+/// not -- so they are one function rather than two that must be kept in step. Holding both rerolls
+/// once, with the bonus: the dice are rerolled, not rerolled twice.
+///
+/// The destruction is the half worth care. It applies to units that *rerolled* and then produced no
+/// hit, which is not the same as units that missed: a unit that never rerolled is safe however
+/// badly it rolled, and that distinction is why `RerollEntry` is indexed per unit.
+fn thalnos_reroll(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    side: &PlayerId,
+    has_dice: bool,
+) {
+    let relic = crate::relics::holds(state, side, &ti4_model::id::RelicId::new("thalnos"));
+    let law = crate::laws::holds_ministry(state, side, "crown_of_thalnos");
+    if !has_dice || (!relic && !law) {
+        return;
+    }
+    let picks = choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side);
+    if picks.is_empty() {
+        return;
+    }
+    let reason = if relic { "thalnos" } else { "crown of thalnos" };
+    {
+        let Some(set) = state.reroll_staging.get_mut(side) else {
+            return;
+        };
+        apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, reason);
+        // "applying +1 to the results" -- the relic only. Applied after the redraw, to the dice
+        // that were redrawn, so an untouched die keeps the face it rolled.
+        if relic {
+            for (unit, die) in &picks {
+                if let Some(entry) = set.rolls.get_mut(*unit)
+                    && let Some(face) = entry.faces.get_mut(*die)
+                {
+                    *face += 1;
+                }
+            }
+        }
+    }
+
+    // Now the price: every unit that rerolled and produced no hit at all.
+    let Some(set) = state.reroll_staging.get(side).cloned() else {
+        return;
+    };
+    let mut doomed: Vec<(String, Option<ti4_model::id::PlanetId>)> = Vec::new();
+    for (unit, _) in &picks {
+        let Some(entry) = set.rolls.get(*unit) else {
+            continue;
+        };
+        if entry.hits() == 0 {
+            doomed.push((entry.unit.clone(), entry.planet.clone()));
+        }
+    }
+    doomed.dedup();
+    for (unit, planet) in doomed {
+        destroy_one(state, &set.system, side, &unit, planet.as_ref());
+    }
+}
+
+/// The Heart of Ixth: exhaust to shift a rolled die by one.
+///
+/// > After any die is rolled, you may exhaust this card to add or subtract 1 from its result.
+///
+/// Offered over the staged set, which is every die this side has rolled and not yet applied. One
+/// die, once -- the card exhausts, and `relics::exhaust` is what stops it being a permanent +1 on
+/// every roll of the game.
+fn heart_of_ixth(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    side: &PlayerId,
+    has_dice: bool,
+) {
+    if !has_dice || !crate::relics::ready(state, side, "heartofixth") {
+        return;
+    }
+    let Some(set) = state.reroll_staging.get(side).cloned() else {
+        return;
+    };
+    let mut options = Vec::new();
+    for (unit, entry) in set.rolls.iter().enumerate() {
+        for (die, face) in entry.faces.iter().enumerate() {
+            for (sign, word) in [("+", "add 1 to"), ("-", "subtract 1 from")] {
+                options.push(ChoiceOption::labelled(
+                    format!("ixth|{sign}|{unit}:{die}"),
+                    "heart_of_ixth",
+                    format!("{word} die {} of {} (shows {face})", die + 1, entry.unit),
+                ));
+            }
+        }
+    }
+    if options.is_empty() {
+        return;
+    }
+    options.push(ChoiceOption::decline());
+    let choice = Choice::new(side.clone(), "Heart of Ixth: shift a die by 1", options);
+    let Ok(answer) = ctx.table.ask(&choice) else {
+        return;
+    };
+    if answer.is_decline() {
+        return;
+    }
+    let Some((sign, at)) = answer
+        .id
+        .strip_prefix("ixth|")
+        .and_then(|rest| rest.split_once('|'))
+    else {
+        return;
+    };
+    let Some((unit, die)) = at
+        .split_once(':')
+        .and_then(|(a, b)| Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?)))
+    else {
+        return;
+    };
+    if !crate::relics::exhaust(state, side, "heartofixth") {
+        return;
+    }
+    if let Some(set) = state.reroll_staging.get_mut(side)
+        && let Some(entry) = set.rolls.get_mut(unit)
+        && let Some(face) = entry.faces.get_mut(die)
+    {
+        // Saturating at 1 rather than wrapping: a d10 has no face below it, and 0 - 1 on a u32 is
+        // not a low roll, it is four billion.
+        *face = if sign == "+" {
+            face.saturating_add(1)
+        } else {
+            face.saturating_sub(1).max(1)
+        };
+    }
+}
+
+/// Remove one unit of a type from a system, or from a planet in it.
+fn destroy_one(
+    state: &mut GameState,
+    system: &SystemId,
+    owner: &PlayerId,
+    unit_type: &str,
+    planet: Option<&ti4_model::id::PlanetId>,
+) {
+    let Some(here) = state.board.get_mut(system) else {
+        return;
+    };
+    let stack = match planet {
+        Some(planet) => here.planet_units.get_mut(planet),
+        None => Some(&mut here.units),
+    };
+    if let Some(stack) = stack
+        && let Some(at) = stack
+            .iter()
+            .position(|unit| unit.owner == *owner && unit.type_id.as_str() == unit_type)
+    {
+        stack.remove(at);
+    }
+}
+
 /// Open the reroll window for the roll `side` just made: the roller's own commander reroll
 /// first (Agnlan Oln), then the event other players react to (Scramble Frequency).
 ///
@@ -303,6 +468,16 @@ pub fn open_reroll_windows(state: &mut GameState, ctx: &mut Resolving<'_>, side:
             apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, "jolnar commander");
         }
     }
+    // Thalnos and the Crown of Thalnos: reroll any number of your dice, then destroy the units
+    // whose rerolled dice missed. Two cards, one shape, and `Roll::rerolled` exists because of
+    // exactly this clause -- "did not produce a hit *with its reroll*" is unanswerable from the
+    // faces alone.
+    thalnos_reroll(state, ctx, side, has_dice);
+
+    // Heart of Ixth: exhaust to add or subtract 1 from a die that has been rolled. Offered on the
+    // staged set for the same reason the others are -- these faces have not been applied yet.
+    heart_of_ixth(state, ctx, side, has_dice);
+
     let hits = staged_hits(state.reroll_staging.get(side).expect("checked above"));
     let mut payload = std::collections::BTreeMap::new();
     payload.insert("kind".to_owned(), kind.into());
@@ -2519,6 +2694,135 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
+    /// Thalnos destroys the units that rerolled and still missed, and only those.
+    ///
+    /// The distinction is the whole card: a unit that never rerolled is safe however badly it
+    /// rolled. Two cruisers, one rerolled into a miss and one left alone, and only the first dies.
+    ///
+    /// Faces are set directly rather than rolled for. The clause under test is which units the
+    /// destruction reaches, not what the dice showed, and a test that had to roll a miss on demand
+    /// would be testing the seed.
+    #[test]
+    fn thalnos_destroys_only_the_units_that_rerolled_and_missed() {
+        let (mut state, system) = arena();
+        let player = attacker();
+        put(&mut state, &system, "cruiser", &player, 2);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics = vec![ti4_model::id::RelicId::new("thalnos")];
+        }
+        state.reroll_staging.insert(
+            player.clone(),
+            RerollSet {
+                kind: "space combat".to_owned(),
+                system: system.clone(),
+                // Unreachable on a d10 even with the relic's +1, so the reroll misses whatever it
+                // shows. The clause under test is *which units the destruction reaches*, and a
+                // threshold the dice could clear would leave the test passing on the branch where
+                // nothing is destroyed at all.
+                rolls: vec![
+                    RerollEntry {
+                        unit: "cruiser".to_owned(),
+                        planet: None,
+                        hits_on: Some(12),
+                        faces: vec![1],
+                    },
+                    RerollEntry {
+                        unit: "cruiser".to_owned(),
+                        planet: None,
+                        hits_on: Some(12),
+                        faces: vec![1],
+                    },
+                ],
+            },
+        );
+
+        // Reroll the first cruiser's die and decline the second: `FirstOption` would take both,
+        // so the answers are scripted to separate them.
+        let mut inner = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
+            "reroll|0:0".to_owned(),
+        ])));
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        thalnos_reroll(&mut state, &mut ctx, &player, true);
+
+        assert_eq!(
+            state.system_state(&system).units_of(&player).len(),
+            1,
+            "the cruiser that rerolled and missed is destroyed, the one that never rerolled is not"
+        );
+    }
+
+    /// The Heart of Ixth shifts one die, exhausts, and cannot be used again until it readies.
+    #[test]
+    fn the_heart_of_ixth_exhausts_after_one_die() {
+        let (mut state, system) = arena();
+        let player = attacker();
+        put(&mut state, &system, "cruiser", &player, 1);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics = vec![ti4_model::id::RelicId::new("heartofixth")];
+        }
+        let staged = |state: &mut GameState| {
+            state.reroll_staging.insert(
+                player.clone(),
+                RerollSet {
+                    kind: "space combat".to_owned(),
+                    system: system.clone(),
+                    rolls: vec![RerollEntry {
+                        unit: "cruiser".to_owned(),
+                        planet: None,
+                        hits_on: Some(7),
+                        faces: vec![6],
+                    }],
+                },
+            );
+        };
+        staged(&mut state);
+
+        let mut inner = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        heart_of_ixth(&mut state, &mut ctx, &player, true);
+
+        assert_eq!(
+            state.reroll_staging.get(&player).expect("staged").rolls[0].faces,
+            vec![7],
+            "the first option adds one, turning a miss into a hit"
+        );
+        assert!(
+            state
+                .player(&player)
+                .is_some_and(|seat| seat
+                    .exhausted_relics
+                    .contains(&ti4_model::id::RelicId::new("heartofixth"))),
+            "and the card is exhausted"
+        );
+
+        // Again, with the card exhausted: nothing moves.
+        staged(&mut state);
+        heart_of_ixth(&mut state, &mut ctx, &player, true);
+        assert_eq!(
+            state.reroll_staging.get(&player).expect("staged").rolls[0].faces,
+            vec![6],
+            "an exhausted Heart of Ixth does nothing until the status phase readies it"
+        );
+    }
+
     /// Shields Holding cancels hits across the round, not per assignment.
     ///
     /// "Cancel up to 2 hits" is two hits in that combat round. Granting two and spending them one

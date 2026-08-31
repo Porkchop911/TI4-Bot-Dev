@@ -359,6 +359,13 @@ pub struct Player {
     pub relic_fragments: BTreeMap<String, i32>,
     /// Relics held faceup in the play area. Cannot be traded (LRR 73.4).
     pub relics: Vec<RelicId>,
+    /// Relics currently exhausted, readied in the status phase like a planet or a technology.
+    ///
+    /// Three relics say "exhaust this card": the Heart of Ixth, The Prophet's Tears and the Scepter
+    /// of Emelpar. Without this they could be used once per roll, once per research and once per
+    /// spend for ever, which is not once at all.
+    #[serde(default)]
+    pub exhausted_relics: BTreeSet<RelicId>,
     /// Exploration cards placed faceup in the play area, which carry their own ACTION.
     ///
     /// Two Enigmatic Device cards say "place this card faceup in your play area" and then print an
@@ -635,6 +642,7 @@ impl Player {
             breakthrough: None,
             relic_fragments: BTreeMap::new(),
             relics: Vec::new(),
+            exhausted_relics: BTreeSet::new(),
             exploration_cards: Vec::new(),
             plots: Vec::new(),
             plot_objectives: BTreeSet::new(),

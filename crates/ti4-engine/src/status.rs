@@ -128,6 +128,9 @@ pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseR
     // 81.6: ready exhausted technology, planet and leader cards. 81.7 then repairs units.
     for player in &mut state.players {
         player.exhausted_technologies.clear();
+        // A relic exhausted for its ability readies here too, beside the technologies: the three
+        // that say "exhaust this card" are once per round, and nothing else clears them.
+        player.exhausted_relics.clear();
     }
     // Leaders ready here too. An exhausted agent that never readies reads, after a round or
     // two, as a player who has simply run out of agents.

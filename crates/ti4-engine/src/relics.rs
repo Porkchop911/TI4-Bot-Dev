@@ -46,7 +46,9 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "circletofthevoid", // ignores gravity rifts and other anomalies on movement
         "nanoforge",        // the attached planet is worth two more of each
         "obsidian",         // one additional secret objective
+        "heartofixth",      // exhaust to shift a rolled die by one
         "prophetstears",    // exhaust to ignore one research prerequisite
+        "thalnos",          // reroll with +1, and lose the units that still miss
         "quantumcore",      // synergy across all four technology types
         "shard",            // a victory point while held
     ]);
@@ -435,6 +437,30 @@ fn stellar_converter_targets(
         }
     }
     targets
+}
+
+/// Exhaust a held relic for an ability that says "exhaust this card".
+///
+/// Returns whether it was exhausted -- `false` if it is not held, or is exhausted already. The
+/// three cards that say it are once per round, and the status phase readies them.
+pub fn exhaust(state: &mut GameState, player: &PlayerId, relic: &str) -> bool {
+    let id = RelicId::new(relic);
+    if !holds(state, player, &id) {
+        return false;
+    }
+    state
+        .player_mut(player)
+        .is_some_and(|seat| seat.exhausted_relics.insert(id))
+}
+
+/// Whether a held relic is ready to be exhausted.
+#[must_use]
+pub fn ready(state: &GameState, player: &PlayerId, relic: &str) -> bool {
+    let id = RelicId::new(relic);
+    holds(state, player, &id)
+        && state
+            .player(player)
+            .is_some_and(|seat| !seat.exhausted_relics.contains(&id))
 }
 
 /// Whether a player holds a relic.

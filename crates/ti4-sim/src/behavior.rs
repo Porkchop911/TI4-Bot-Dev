@@ -381,6 +381,18 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v20 — 2026-08-31. The dice cluster: Thalnos, the Crown of Thalnos and the Heart of Ixth, all
+    // bound into the reroll window that already existed for the Jol-Nar commander. Relics also
+    // gained an exhausted state, which is what stops the Heart of Ixth being a permanent +1.
+    //
+    // Dilution, not a play change, and a very small one: every value already sat inside the v19
+    // intervals and the intervals themselves move by thousandths in both directions. None of these
+    // three cards is held by anybody in this suite unless the exploration deck hands it over, so
+    // what moved is the decider stream -- the reroll window now asks two more questions when the
+    // cards are present, and the seeds where they are present shift underneath.
+    //
+    // The protocol-integrity check is what required the move.
+    //
     // v19 — 2026-08-31. The last seven exploration cards, and the wormhole tokens that were being
     // placed and ignored.
     //
@@ -722,43 +734,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.395_943_562_610_229_4, 0.450_881_834_215_167_64),
+        (0.396_825_396_825_396_97, 0.451_851_851_851_851_84),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.523_266_173_373_753_8, 1.968_033_678_047_652_2),
+        (1.489_336_133_792_828_1, 1.939_485_105_241_103_5),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.457_617_285_782_468_5, 0.917_659_395_109_154_4),
+        (0.436_915_394_245_150_3, 0.860_393_966_609_354),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_541_374_428_105_107, 0.020_549_955_608_405_84),
+        (0.019_509_978_559_374_84, 0.020_515_335_650_167_98),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_982_250_873_498_674, 0.033_910_339_029_203_19),
+        (0.032_981_285_203_025, 0.033_906_996_651_929_37),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_837_750_445_034_58, 0.050_782_678_379_739_314),
+        (0.046_665_786_974_937_826, 0.050_613_316_312_114_125),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_894_335_749_348_045, 0.006_540_321_787_121_008),
+        (0.005_886_090_165_777_649, 0.006_528_528_620_064_251),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.065_081_063_403_087_86, 0.066_952_929_053_567_84),
+        (0.065_089_503_618_225_4, 0.066_971_068_608_223_2),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_083_548_380_976_81, 0.033_061_097_430_127_51),
+        (0.032_092_645_589_645_36, 0.033_079_242_507_083_76),
     );
     bounds
 }
