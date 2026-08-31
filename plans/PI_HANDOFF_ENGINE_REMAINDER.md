@@ -1,5 +1,8 @@
 # Handover to PI: finishing the engine
 
+> **Closed 2026-08-31.** Superseded by `plans/HANDOVER_2026-08-31_PHASE_9.md`, which carries what is
+> actually left.
+>
 > **Closed 2026-08-31.** PI was unavailable, so I finished the work myself. Everything listed below
 > as outstanding is done: relics 24/24, laws 40/40, exploration 80/80, leaders 19/19, breakthroughs
 > 6/6, action cards 142/142. `cargo run -p ti4-engine --example remaining` prints nothing.
