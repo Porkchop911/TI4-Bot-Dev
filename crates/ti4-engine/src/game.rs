@@ -2694,9 +2694,12 @@ impl<'a> Game<'a> {
         if is_law(self.content, alias) && outcome != AGAINST {
             self.state.enact_law(alias, outcome);
             // Classified Document Leaks: "The elected secret objective becomes a public
-            // objective." Applied at enactment, where the outcome names the secret -- it then sits
-            // in `revealed_objectives`, which is what every scorer already reads.
-            crate::laws::classified_leak(&mut self.state, outcome);
+            // objective." Only for its own enactment -- `outcome` here is whatever *this* agenda
+            // elected, so calling it for every law would publish a player name or a planet as an
+            // objective the moment Classified was anywhere in play.
+            if alias == "classified" {
+                crate::laws::classified_leak(&mut self.state, outcome);
+            }
             self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
         }
 

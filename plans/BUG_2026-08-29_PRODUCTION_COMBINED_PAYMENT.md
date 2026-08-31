@@ -1,6 +1,21 @@
 # Bug: incremental PRODUCTION payment discards value between unit batches
 
-**Status:** OPEN
+**Status:** FIXED 2026-08-31
+
+Fixed by retaining payment value within the production use, which is the second of the two
+implementations this report allows. `ProductionWindow` gained a `credit` field: overpayment on one
+selection is held and spent against the next, and a purchase the credit covers outright goes
+straight to placing rather than entering a paying stage that owes zero (a zero bill has no payment
+options, and that path aborted with the unit unplaced -- found by the acceptance test, not by
+reading).
+
+Acceptance criteria 1-9 hold. Criterion 10 is covered by
+`one_production_use_is_one_bill_across_batches`, which drives the window incrementally -- two
+batches of two infantry against a single two-resource planet and no trade goods, so a second
+payment source does not exist to hide behind.
+
+The credit never leaves the window, so it cannot reach another use of PRODUCTION (criterion 8):
+`new` starts it at zero and nothing else constructs one.
 
 **Severity:** HIGH
 

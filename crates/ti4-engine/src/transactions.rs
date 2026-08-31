@@ -756,6 +756,25 @@ pub fn offer_options(
         // Each note prices itself (oracle `propose`): a Research Agreement is not on the table
         // until its partner can pay what a technology costs.
         let price = note_option_price(&note);
+        // A note the partner cannot pay for is still offerable as a gift. Requiring the fixed sale
+        // price for the note to appear at all meant a poor partner made every note in the corpus
+        // unreachable, however much both sides wanted the deal -- and a gift is a legal
+        // transaction (94.3), so its absence was a gap in the offer set rather than a policy
+        // preference.
+        if price > 0 && their_goods < price {
+            let mut payload = BTreeMap::new();
+            payload.insert("note".to_owned(), Value::String(note.clone()));
+            payload.insert(
+                "alias".to_owned(),
+                Value::String(crate::promissory::alias_of(&note).to_owned()),
+            );
+            payload.insert("gift".to_owned(), Value::Bool(true));
+            shapes.push((
+                format!("pn{note}:0"),
+                format!("give {note}"),
+                payload,
+            ));
+        }
         if price > 0 && their_goods >= price {
             // The alias goes in the payload rather than the id: token matching splits an option
             // id on "|", never ":", so a `pn{alias}` suffix would silently leak the note's kind
@@ -1717,13 +1736,37 @@ mod tests {
         state.player_mut(&a()).unwrap().trade_goods = 3;
         let offers = offer_options(&state, ContentStore::embedded(), &b(), &a());
         assert!(
-            !offers.iter().any(|option| option.id.starts_with("pnra")),
-            "the Research Agreement costs 4, the partner holds 3"
+            !offers.iter().any(|option| option.id.ends_with(":4")),
+            "the Research Agreement costs 4 and the partner holds 3, so it is not for sale"
+        );
+        // It is still offerable as a gift, which is a legal transaction (94.3). Requiring the sale
+        // price for the note to appear at all made a poor partner unreachable at any terms.
+        assert!(
+            offers.iter().any(|option| option.id == "pnra:jolnar:0"),
+            "but a gift is still on the table: {:?}",
+            offers.iter().map(|o| &o.id).collect::<Vec<_>>()
         );
 
         state.player_mut(&a()).unwrap().trade_goods = 4;
         let offers = offer_options(&state, ContentStore::embedded(), &b(), &a());
         assert!(offers.iter().any(|option| option.id == "pnra:jolnar:4"));
+    }
+
+    /// A gift offer round-trips: the id parses back into a deal that hands the note over free.
+    ///
+    /// Acceptance criterion 7 of the promissory-note bug -- an option that is listed but does not
+    /// survive parsing is worse than one that is missing, because it looks available and fails at
+    /// execution.
+    #[test]
+    fn a_note_gift_parses_back_into_a_free_transfer() {
+        let (_hub, state) = trading_partners();
+        let deal = offer_from(&state, "pnra:jolnar:0", &b(), &a()).expect("a gift is a shape");
+        assert_eq!(deal.given.promissory.as_deref(), Some("ra:jolnar"));
+        assert_eq!(deal.received.trade_goods, 0, "nothing comes back");
+        assert!(
+            deal.received.promissory.is_none(),
+            "and it is a gift, not a swap"
+        );
     }
 
     #[test]

@@ -81,6 +81,28 @@ pub struct ScoredBot {
     remember: bool,
 }
 
+
+/// A stable feature name per promissory note.
+///
+/// The ten notes with a printed worth get their own bucket, so the learner can price a Research
+/// Agreement differently from a Ceasefire. Anything else lands in `note:other` -- visible, and
+/// distinguishable from the `unknown_trade` bucket that used to swallow all of them.
+fn note_feature(alias: &str) -> &'static str {
+    match alias {
+        "ra" => "note:ra",
+        "an" => "note:an",
+        "convoys" => "note:convoys",
+        "ta" => "note:ta",
+        "ce" => "note:ce",
+        "ms" => "note:ms",
+        "favor" => "note:favor",
+        "war_funding" => "note:war_funding",
+        "ps" => "note:ps",
+        "cf" => "note:cf",
+        _ => "note:other",
+    }
+}
+
 impl ScoredBot {
     /// A bot with its own deterministic stream.
     #[must_use]
@@ -659,8 +681,33 @@ impl ScoredBot {
         if let Some((gift, _)) = option.id.strip_prefix('c').and_then(parse_trade_pair) {
             return Components::of("gift", -f64::from(gift));
         }
-        // Promissory-note prices depend on the particular note; a generic policy must not claim
-        // that every note is worth its flat engine price.
+        // Promissory notes. The engine already prices both sides of the deal into the option's
+        // payload -- `net` to us, `their_net` to them -- so a policy does not have to guess what a
+        // note is worth, and the flat `unknown_trade` zero that used to land here made every note
+        // deal identical to declining and to each other. Support kept its own strong score above,
+        // which is why Support was the only note ever traded.
+        //
+        // `their_net` is included because a proposal only pays if it is accepted: an offer the
+        // partner would refuse is worth nothing however good it looks from this chair. It is
+        // clamped at zero so a generous deal is not scored as if the partner's gain were ours.
+        if let Some(note) = option.payload.get("alias").and_then(serde_json::Value::as_str) {
+            let net = option
+                .payload
+                .get("net")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            let theirs = option
+                .payload
+                .get("their_net")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
+            // Named per note, so the learner gets a stable feature per card rather than one
+            // bucket holding every promissory note in the game. The names are `&'static str`
+            // because a feature name is interned; an unknown alias falls into `note:other`
+            // rather than being dropped, which keeps a new note visible instead of silent.
+            return Components::of(note_feature(note), net)
+                .and("note_acceptable", theirs.min(0.0));
+        }
         Components::of("unknown_trade", 0.0)
     }
 
@@ -1049,6 +1096,60 @@ pub fn unscored_kinds() -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A non-Support promissory note is scored by its own identity, not the zero fallback.
+    ///
+    /// The behavioural half of `plans/BUG_2026-08-29_PROMISSORY_NOTE_TRANSACTION_OFFERS.md`. The
+    /// option being *present* was never the problem -- the engine has enumerated note sales for a
+    /// while. It scored zero, which made it indistinguishable from declining and from every other
+    /// note, so Support was the only note ever traded. This asserts selection, not enumeration.
+    #[test]
+    fn a_promissory_note_offer_outscores_an_equal_gift() {
+        let mut note = ChoiceOption::labelled(
+            "pnresearch_agreement:4".to_owned(),
+            "offer",
+            "sell a Research Agreement for 4 trade goods".to_owned(),
+        );
+        note.payload
+            .insert("alias".to_owned(), serde_json::Value::from("ra"));
+        note.payload
+            .insert("net".to_owned(), serde_json::Value::from(3.0));
+        note.payload
+            .insert("their_net".to_owned(), serde_json::Value::from(1.0));
+
+        let scored = ScoredBot::score_offer(&note);
+        assert!(
+            scored.total() > 0.0,
+            "a note deal that gains three trade goods of value is worth taking: {scored:?}"
+        );
+        assert!(
+            scored.parts().iter().any(|(name, _)| *name == "note:ra"),
+            "and it is named by the note, not by a shared bucket: {scored:?}"
+        );
+
+        // A different note gets a different bucket, which is the half that stops them collapsing.
+        let mut other = note.clone();
+        other
+            .payload
+            .insert("alias".to_owned(), serde_json::Value::from("cf"));
+        assert!(
+            ScoredBot::score_offer(&other)
+                .parts()
+                .iter()
+                .any(|(name, _)| *name == "note:cf"),
+            "each note has its own feature"
+        );
+
+        // An offer the partner would refuse is discounted: a proposal only pays if accepted.
+        let mut refused = note.clone();
+        refused
+            .payload
+            .insert("their_net".to_owned(), serde_json::Value::from(-5.0));
+        assert!(
+            ScoredBot::score_offer(&refused).total() < scored.total(),
+            "a deal the partner loses on is worth less than one they would take"
+        );
+    }
     use super::*;
     use ti4_content::ContentStore;
     use ti4_engine::choice::{Observed, ask_private};

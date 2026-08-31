@@ -104,6 +104,8 @@ pub const MAX_SPREAD_PCT: f64 = 10.0;
 const FIXTURE_HEAD: &str = "production";
 /// A production menu with fewer options than this is not the shape the workload was asked for.
 const MIN_FIXTURE_OPTIONS: usize = 3;
+/// How many consecutive seeds to try before giving up on finding a fixture position.
+const FIXTURE_SEED_ATTEMPTS: u64 = 16;
 
 // ---------------------------------------------------------------------------
 // Report schema (M00-012d, plus per-sample units of work)
@@ -544,6 +546,8 @@ fn position_at<'c>(
 
 /// The W2/W3 fixture: the first production-head choice with a real menu, reached by replay.
 struct Fixture {
+    /// The seed whose replay reached this position.
+    seed: u64,
     /// Steps executed before this choice is offered.
     step_index: usize,
     /// The option ids in engine order — the identity the semantic gate checks across iterations.
@@ -557,31 +561,53 @@ fn capture_fixture(
     sources: SourceSet,
     pool: &MapPool,
 ) -> Result<Fixture, String> {
-    let mut game = build_game(content, sources, pool, W2W3_FIXTURE_SEED)?;
-    let mut steps = 0usize;
-    loop {
-        if let Some(choice) = game.legal_options()
-            && decision_head(&choice) == FIXTURE_HEAD
-            && choice.options.len() >= MIN_FIXTURE_OPTIONS
-        {
-            return Ok(Fixture {
-                step_index: steps,
-                option_ids: choice
-                    .options
-                    .iter()
-                    .map(|option| option.id.clone())
-                    .collect(),
-            });
-        }
-        let result = game.step();
-        steps += 1;
-        if result.finished || result.error.is_some() || steps > REPLAY_STEP_BOUND {
-            return Err(format!(
-                "fixture replay failed at step {} (finished={}, error={:?}, bound={REPLAY_STEP_BOUND})",
-                steps, result.finished, result.error
-            ));
+    // Seeds are tried in a fixed order, so two captures still agree: the fixture is "the first
+    // qualifying position in the first seed that has one", not "a position in seed 919_601".
+    //
+    // It used to be the latter, and that made a profiling fixture hostage to every rules change --
+    // one game either contains a production decision with three options or it does not, and a
+    // change that makes builds cheaper or games shorter can remove it. The workload being measured
+    // does not care *which* position it profiles, only that it is a real one of the right shape.
+    let mut last = String::new();
+    for offset in 0..FIXTURE_SEED_ATTEMPTS {
+        let seed = W2W3_FIXTURE_SEED + offset;
+        let mut game = match build_game(content, sources, pool, seed) {
+            Ok(game) => game,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        let mut steps = 0usize;
+        loop {
+            if let Some(choice) = game.legal_options()
+                && decision_head(&choice) == FIXTURE_HEAD
+                && choice.options.len() >= MIN_FIXTURE_OPTIONS
+            {
+                return Ok(Fixture {
+                    seed,
+                    step_index: steps,
+                    option_ids: choice
+                        .options
+                        .iter()
+                        .map(|option| option.id.clone())
+                        .collect(),
+                });
+            }
+            let result = game.step();
+            steps += 1;
+            if result.finished || result.error.is_some() || steps > REPLAY_STEP_BOUND {
+                last = format!(
+                    "seed {seed}: no fixture by step {steps} (finished={}, error={:?})",
+                    result.finished, result.error
+                );
+                break;
+            }
         }
     }
+    Err(format!(
+        "no fixture position in {FIXTURE_SEED_ATTEMPTS} seeds from {W2W3_FIXTURE_SEED}; last: {last}"
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -621,14 +647,11 @@ fn w2_sample(
     pool: &MapPool,
     fixture: &Fixture,
 ) -> Option<(u128, usize)> {
-    let (game, choice) = position_at(
-        content,
-        sources,
-        pool,
-        W2W3_FIXTURE_SEED,
-        fixture.step_index,
-    )
-    .ok()?;
+    // `fixture.seed`, not the constant: the fixture is the first qualifying position in the first
+    // seed that has one, and replaying a different game would profile a different position while
+    // the option-id gate below quietly failed.
+    let (game, choice) =
+        position_at(content, sources, pool, fixture.seed, fixture.step_index).ok()?;
     if choice
         .options
         .iter()
@@ -668,14 +691,11 @@ fn w3_sample(
     fixture: &Fixture,
     champions: &Champions,
 ) -> Option<(u128, usize)> {
-    let (game, choice) = position_at(
-        content,
-        sources,
-        pool,
-        W2W3_FIXTURE_SEED,
-        fixture.step_index,
-    )
-    .ok()?;
+    // `fixture.seed`, not the constant: the fixture is the first qualifying position in the first
+    // seed that has one, and replaying a different game would profile a different position while
+    // the option-id gate below quietly failed.
+    let (game, choice) =
+        position_at(content, sources, pool, fixture.seed, fixture.step_index).ok()?;
     if choice
         .options
         .iter()
@@ -827,10 +847,10 @@ pub fn run_campaign(
     reports.extend(run_workload_with_repeat(
         "m09_019b_w2_feature",
         format!(
-            "fixture production choice at step {} of seed {W2W3_FIXTURE_SEED}; whole-choice explicit extraction",
-            fixture.step_index
+            "fixture production choice at step {} of seed {}; whole-choice explicit extraction",
+            fixture.step_index, fixture.seed
         ),
-        W2W3_FIXTURE_SEED,
+        fixture.seed,
         rust_commit.clone(),
         audit.clone(),
         |_i| w2_sample(content, sources, &pool, &fixture),
@@ -840,10 +860,10 @@ pub fn run_campaign(
     reports.extend(run_workload_with_repeat(
         "m09_019b_w3_model",
         format!(
-            "fixture production choice at step {} of seed {W2W3_FIXTURE_SEED}; head + per-option score + softmax",
-            fixture.step_index
+            "fixture production choice at step {} of seed {}; head + per-option score + softmax",
+            fixture.step_index, fixture.seed
         ),
-        W2W3_FIXTURE_SEED,
+        fixture.seed,
         rust_commit.clone(),
         audit,
         |_i| w3_sample(content, sources, &pool, &fixture, &champions),
@@ -1313,6 +1333,7 @@ mod tests {
         let pool = MapPool::load(&pool_path).expect("pool loads");
         let a = capture_fixture(content, sources, &pool).expect("fixture reachable");
         let b = capture_fixture(content, sources, &pool).expect("fixture reachable");
+        assert_eq!(a.seed, b.seed, "the same seed is chosen both times");
         assert_eq!(a.step_index, b.step_index);
         assert_eq!(a.option_ids, b.option_ids);
         assert!(a.option_ids.len() >= MIN_FIXTURE_OPTIONS);

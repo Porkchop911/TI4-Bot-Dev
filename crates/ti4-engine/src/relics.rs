@@ -1237,6 +1237,62 @@ mod tests {
         );
     }
 
+    /// A secret the Neuraloop makes public is scoreable by a player who does not hold it.
+    ///
+    /// "That objective is a public objective, even if it is a secret objective" -- so it must not
+    /// be routed to the secret award path, which refuses a card the scorer does not hold. Found by
+    /// the policy campaign rather than here, which is why it now has a test of its own: a card that
+    /// changes *which kind of thing it is* breaks routing that keys on the corpus.
+    #[test]
+    fn a_secret_made_public_is_scored_as_a_public_objective() {
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let (holder, other) = (PlayerId::new("a"), PlayerId::new("b"));
+
+        let secret = ti4_model::id::SecretObjectiveId::new("sb");
+        state.secret_deck = vec![secret.clone()];
+        state.objective_deck.clear();
+        if let Some(seat) = state.player_mut(&holder) {
+            seat.relics = vec![RelicId::new("neuraloop")];
+        }
+        let revealed = ti4_model::id::ObjectiveId::new("some_public");
+        state.revealed_objectives.push(revealed.clone());
+
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut rng = crate::rng::GameRng::new(1);
+        let replacement = neuraloop(&mut state, &mut table, &mut rng, &revealed)
+            .expect("the only relic is purged for the only card in the pool");
+
+        assert_eq!(
+            replacement.as_str(),
+            "sb",
+            "the secret is what replaced it"
+        );
+        assert!(
+            state.revealed_objectives.contains(&replacement),
+            "and it sits with the public objectives"
+        );
+        assert!(
+            !state.revealed_objectives.contains(&revealed),
+            "the discarded one is gone"
+        );
+        assert!(
+            !state
+                .player(&other)
+                .is_some_and(|seat| seat.secret_objectives.contains(&secret)),
+            "nobody holds it -- which is exactly what broke the secret award path"
+        );
+        // The scorer's own corpus still calls it a secret. That is the trap: routing must read
+        // where the card is, not which deck it was printed in.
+        assert!(
+            content
+                .get(ContentType::SecretObjectives, "sb")
+                .is_some_and(|record| record.in_sources(sources)),
+            "and the corpus still knows it as a secret"
+        );
+    }
+
     /// A passive relic is implemented but never offered as an action.
     #[test]
     fn a_passive_relic_is_not_offered_as_an_action() {

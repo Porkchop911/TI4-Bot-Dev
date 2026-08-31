@@ -1244,6 +1244,17 @@ pub struct ProductionWindow {
     /// Production limit that capacity ships have opened for small units this use (Sol's Bellum
     /// Gloriosum). Spent by fighters and ground forces, and never below zero.
     free_capacity: i64,
+    /// Resource value paid but not yet consumed, held across the unit selections of *this* use.
+    ///
+    /// 68.1: one use of PRODUCTION has one combined cost. This window collects selections one at a
+    /// time, which is a good interface and a bad bill -- exhausting a two-resource planet for a
+    /// one-resource batch used to throw the other resource away, and the next batch in the same
+    /// use then demanded a second planet. The credit is what makes incremental selection pay the
+    /// same as choosing the whole build up front.
+    ///
+    /// It never leaves the window, so it cannot reach another use of PRODUCTION: `new` starts it
+    /// at zero and nothing else constructs one.
+    credit: i64,
 }
 
 impl ProductionWindow {
@@ -1269,6 +1280,7 @@ impl ProductionWindow {
             report: ProductionReport::default(),
             settled: false,
             free_capacity: 0,
+            credit: 0,
         }
     }
 
@@ -1295,6 +1307,13 @@ impl ProductionWindow {
         self.stage = if self.remaining > 0 { Stage::Choosing } else { Stage::Done };
     }
 
+    /// Draw down the credit against a cost, returning what is still owed.
+    fn spend_credit(&mut self, cost: i64) -> i64 {
+        let used = self.credit.min(cost);
+        self.credit -= used;
+        cost - used
+    }
+
     /// Options for what to build now: affordable, placeable, one per unit type.
     fn build_options(
         &self,
@@ -1309,7 +1328,11 @@ impl ProductionWindow {
                 continue;
             };
             let (cost, pair) = price_of_under(Some(state), kind);
-            if cost > available(state, content, sources, &self.player, Spend::Resources) {
+            // Credit already paid counts towards affordability, or a build the player has in fact
+            // paid for would be withheld as unaffordable.
+            if cost
+                > available(state, content, sources, &self.player, Spend::Resources) + self.credit
+            {
                 continue;
             }
             if placements(state, content, sources, &self.player, &self.system, kind).is_empty() {
@@ -1527,10 +1550,21 @@ impl Window for ProductionWindow {
                         .unwrap_or(1);
                     let types = catalogue(content, sources);
                     let cost = types.get(id).map_or(0, |kind| price_of(kind).0);
-                    self.stage = Stage::Paying {
-                        id: id.to_owned(),
-                        owed: cost,
-                        made,
+                    // A purchase the credit covers outright goes straight to placing. Entering the
+                    // paying stage owing nothing would ask `payment_options` for a bill of zero,
+                    // which has no options, and the stage would abort with the unit unplaced.
+                    let owed = self.spend_credit(cost);
+                    self.stage = if owed > 0 {
+                        Stage::Paying {
+                            id: id.to_owned(),
+                            owed,
+                            made,
+                        }
+                    } else {
+                        Stage::Placing {
+                            id: id.to_owned(),
+                            made,
+                        }
                     };
                 }
             }
@@ -1555,6 +1589,9 @@ impl Window for ProductionWindow {
                 self.stage = if owed > 0 {
                     Stage::Paying { id, owed, made }
                 } else {
+                    // Overpayment is kept for the rest of this use rather than discarded: one use
+                    // of PRODUCTION is one bill, however many selections it was collected in.
+                    self.credit += -owed;
                     Stage::Placing { id, made }
                 };
             }
@@ -1637,6 +1674,7 @@ impl ProductionWindow {
                                 };
                                 continue; // the next step may itself be degenerate
                             }
+                            self.credit += worth - owed;
                             self.stage = Stage::Placing { id, made };
                         }
                         _ => return,
@@ -1717,6 +1755,97 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// Four infantry in one use of PRODUCTION cost two resources, from one two-resource planet.
+    ///
+    /// The acceptance case from `plans/BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT.md`. Selected as
+    /// two batches of two, which is the shape that used to throw the planet's second resource away
+    /// and then demand a second payment source for a bill that was already covered.
+    #[test]
+    fn one_production_use_is_one_bill_across_batches() {
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+
+        // A two-resource planet and nothing else: no trade goods, so a second payment source
+        // simply does not exist and the old behaviour cannot hide behind one.
+        let (system, planet) = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .find(|(_, record)| {
+                record.system_id().is_some()
+                    && !record.is_placed_during_play()
+                    && record.resources() == 2
+            })
+            .map(|(id, record)| {
+                (
+                    ti4_model::id::SystemId::new(record.system_id().unwrap_or_default()),
+                    PlanetId::new(*id),
+                )
+            })
+            .expect("the corpus has a two-resource planet");
+        state.board.entry(system.clone()).or_default();
+        if let Some(here) = state.board.get_mut(&system) {
+            here.set_control(planet.clone(), player.clone());
+            here.planet_units.entry(planet.clone()).or_default().push(
+                ti4_model::units::Unit::new(UnitTypeId::new("spacedock"), player.clone()),
+            );
+        }
+        if let Some(seat) = state.player_mut(&player) {
+            seat.trade_goods = 0;
+        }
+
+        let mut window = ProductionWindow::new(&state, content, sources, &player, &system);
+        let mut table = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(1);
+        let mut inner = Table::new();
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        let mut steps = 0;
+        let mut infantry = 0;
+        while let Some(choice) = window.pending_choice(&state, content, sources) {
+            // Buy infantry whenever they are offered, and stop once four are on order.
+            let wanted = choice
+                .options
+                .iter()
+                .find(|option| infantry < 4 && option.id.contains("infantry"))
+                .cloned();
+            let answer = match wanted {
+                Some(option) => {
+                    infantry += 2; // infantry are bought two to a purchase (68.2)
+                    option
+                }
+                None => table.ask(&choice).expect("an answer"),
+            };
+            window.resolve(&mut state, &mut ctx, answer).expect("resolves");
+            steps += 1;
+            assert!(steps < 200, "production must terminate");
+        }
+
+        let report = window.into_report();
+        let built = report
+            .produced
+            .iter()
+            .filter(|(kind, _)| kind.as_str().contains("infantry"))
+            .count();
+        assert_eq!(built, 4, "four infantry were produced");
+        assert!(
+            state.exhausted_planets.contains(&planet),
+            "the planet paid"
+        );
+        assert_eq!(
+            state.player(&player).unwrap().trade_goods,
+            0,
+            "and nothing else was needed: one two-resource planet covers all four"
+        );
+    }
 
     /// Xxekir Grom makes a planet pay its resources and influence together, as either kind.
     ///

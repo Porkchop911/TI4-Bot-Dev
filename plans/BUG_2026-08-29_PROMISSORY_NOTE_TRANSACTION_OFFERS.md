@@ -1,6 +1,22 @@
 # Bug: transaction proposer never offers non-Support promissory notes
 
-**Status:** OPEN
+**Status:** FIXED 2026-08-31
+
+Two changes, matching the report's own split between enumeration and selection.
+
+Enumeration: a note the partner cannot afford is now offered as a *gift* (`pn{note}:0`) rather than
+withheld entirely. A gift is a legal transaction (94.3), so requiring the fixed sale price for the
+note to appear at all was a gap in the offer set rather than a policy preference (criterion 5).
+
+Selection: `ScoredBot::score_offer` no longer drops promissory notes into the flat `unknown_trade`
+zero. The engine already prices both sides of every deal into the option payload (`net` to us,
+`their_net` to them), so the policy reads those instead of guessing -- and each note gets its own
+feature name (`note:ra`, `note:cf`, ..., `note:other`) so the learner can price a Research Agreement
+differently from a Ceasefire (criteria 2 and 10). `their_net` is clamped at zero and included,
+because a proposal only pays if it is accepted.
+
+The test that asserted a note is *absent* when the partner cannot pay has been retargeted at the
+price rather than the presence -- its premise was the behaviour this report calls wrong.
 
 **Severity:** HIGH
 

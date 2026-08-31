@@ -381,6 +381,21 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v22 — 2026-08-31. Two bug fixes, both changing what players can actually do.
+    //
+    // One use of PRODUCTION is now one bill: overpayment is retained across the unit selections of
+    // the same use rather than discarded after each batch. Builds that used to look unaffordable
+    // are affordable, so more units get bought.
+    //
+    // Promissory notes are also offerable as gifts when the partner cannot pay the sale price, and
+    // the policy scores a note by its own identity rather than the flat `unknown_trade` zero that
+    // made every non-Support note indistinguishable from declining.
+    //
+    // A change in play, and the production half is what shows: `share_SHIP_MOVED` rises
+    // [0.0466, 0.0506] -> [0.0487, 0.0522] because there are more units to move, and
+    // `faction_differentiation` rises [0.457, 0.882] -> [0.602, 1.049] because the factions whose
+    // economies benefit most pull away from the ones that were already comfortable.
+    //
     // v21 — 2026-08-31. The last four relics: the Titan Prototype, the Crown of Emphidia, the
     // Dominus Orb and the Neuraloop. Relics are 24 of 24.
     //
@@ -743,43 +758,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.397_442_680_776_014_25, 0.452_469_135_802_469_17),
+        (0.390_740_740_740_740_7, 0.453_086_419_753_086_33),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.496_623_720_185_971_1, 1.946_811_197_309_875_8),
+        (1.633_082_874_203_006_4, 2.032_752_586_447_976_3),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.456_908_559_887_824_25, 0.882_214_525_575_158_9),
+        (0.602_054_097_073_069_6, 1.049_058_955_139_330_8),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_640_078_363_206_01, 0.020_600_729_513_054_33),
+        (0.019_476_921_477_029_462, 0.020_768_089_463_744_675),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_981_285_203_025, 0.033_911_713_838_411_475),
+        (0.032_591_463_287_978_04, 0.033_696_929_356_423_53),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_628_744_557_707_644, 0.050_579_051_464_133_92),
+        (0.048_696_912_344_136_33, 0.052_175_519_437_316_37),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_897_172_303_245_677, 0.006_543_960_136_927_035),
+        (0.005_670_044_251_423_586, 0.006_497_215_736_414_407_5),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.065_088_212_080_852_96, 0.066_961_813_354_328_21),
+        (0.064_369_582_002_561_04, 0.066_436_893_888_635_7),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_087_308_455_131_07, 0.033_066_215_531_870_95),
+        (0.031_761_689_882_748_2, 0.032_776_042_373_493_71),
     );
     bounds
 }

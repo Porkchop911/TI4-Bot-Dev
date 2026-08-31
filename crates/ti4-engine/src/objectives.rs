@@ -1840,9 +1840,18 @@ impl ScoringWindow {
         // A secret leaves its owner's hand when scored (61.18), which a public award does not
         // do — so which module owns the card decides which path it takes.
         let secret = ti4_model::id::SecretObjectiveId::new(alias.as_str());
-        if content
-            .get(ContentType::SecretObjectives, secret.as_str())
-            .is_some()
+        // Which path a card takes is decided by *where it sits*, not by which corpus it appears
+        // in. Two effects turn a secret into a public objective -- the Neuraloop's replacement
+        // draw and Classified Document Leaks -- and both say so explicitly ("that objective is a
+        // public objective, even if it is a secret objective"). Such a card is in
+        // `revealed_objectives`, is scoreable by anybody, and is held by nobody, so routing it by
+        // corpus membership sent it to `secrets::award`, which refused it for not being in the
+        // scorer's hand.
+        let is_public_now = state.revealed_objectives.contains(&alias);
+        if !is_public_now
+            && content
+                .get(ContentType::SecretObjectives, secret.as_str())
+                .is_some()
         {
             if crate::secrets::award(state, content, &player, &secret).is_none() {
                 // A selected secret may become unawardable only through a stale/invalidated
