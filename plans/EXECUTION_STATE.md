@@ -22,6 +22,88 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Phase 9 — eighth batch: Abilities, Active Player, Active System, Adjacency, Agenda Phase, Anomalies, Attacker (2026-09-01)
+
+- Per `HANDOVER_2026-08-31_PHASE_9.md` (at `88cf39f`): verification pass 1, the next seven
+  alphabetically after the seven earlier batches (47 of 109 topics now checked; unverified
+  39 → 32). Exact rules text fetched from tirules2.com; every numbered sub-rule was read
+  against the code, not merely grep-matched. No engine behaviour changed — this batch
+  found **no defects**, only recorded gaps, so the baseline stays at **v26**.
+- **Abilities (LRR 52): VERIFIED.** The `timing.rs` resolver: one Ability per player per
+  window, round-robin re-offer until a pass, When→resolve→After synchronous inside one
+  event, `Frequency` scopes, initiative order from the active player in the action phase
+  and seating order from the speaker in strategy/agenda; the driver re-syncs
+  phase/seating/active/speaker before every emission. 52.18 "before" windows are modelled
+  as the `When` window of the event they precede (no `Relation::Before` variant —
+  documented in `reactions.rs`), and 52.10 is honoured literally: an unpayable cost voids
+  the effect, but the card was already played and is discarded (pinned by
+  `focused_research_charges_nothing_when_it_cannot_pay`).
+- **Active Player (LRR 4): VERIFIED.** `advance_turn` advances in initiative order (not
+  seating), skips passed players, and is `None` once all have; strategy, status and agenda
+  have no active player; the attacker is the active seat in space combat (`combat.rs`);
+  combat windows, space-cannon hit order and transaction offers all anchor on the active
+  player. The Mahact's Benediction note is out of scope.
+- **Active System (LRR 5): VERIFIED.** `activatable` excludes systems holding one of the
+  player's tokens (`AlreadyActivated`, 5.2) but admits systems holding rivals' tokens
+  (5.3); activation spends a Tactic token (`NoTacticToken` guard); the tactical action's
+  end and Minister of Peace's early end clear it; nebula entry is gated on the active
+  system (59.1, tested); component and strategic actions have no active system and fire
+  no activation trigger (notes 2/2.1); `SYSTEM_ACTIVATED` is emitted only for genuine
+  tactical activations.
+- **Adjacency (LRR 6): PARTIAL.** 6.0-6.3 verified: tile-edge contact, wormhole pairs
+  (including token wormholes and the law switches), a system is never adjacent to itself,
+  and unit/planet adjacency flows through the containing system (`reaching_guns`, LRR 60
+  transactions). **Gap, recorded open: 6.4 / LRR 44** — hyperlane line adjacency is not
+  modelled (`Galaxy::adjacent` never reads the `hyperlanes` set), the corpus carries no
+  line-pattern data, and `build_board` excludes hyperlane tiles, so the gap is dormant in
+  engine play. Fixing it is a content-authoring package, not a verification fix.
+- **Agenda Phase (LRR 8): PARTIAL.** 8.1-8.21 + notes 1-5, 7 verified: custodians gate,
+  two reveals per phase, clockwise voting from the player left of the speaker, full
+  planet influence (space stations, the Triad and the Oceans count), one outcome per
+  voter, trade goods never vote, abstention legal, extra votes ride on the outcome voted,
+  the speaker's tie-break is not a vote, a law stays and a directive is discarded,
+  predictions paid after resolution, only planets are readied. **Gaps, recorded open:**
+  note 6 (one transaction per pair per agenda) — `legal_options` is `None` in Status and
+  Agenda phases, so no agenda-phase transactions exist; the "Elect Scored Secret
+  Objective" and "Elect Strategy Card" agendas (one card each) have no votable outcome
+  and are discarded without a vote; Checks and Balances (Against) readies the first three
+  planets in fixed order instead of asking the player which three (adding the choice
+  restructures the choice-free agenda-phase driver — deferred on the same grounds as
+  81.5).
+- **Anomalies (LRR 9): VERIFIED.** The four types are independent flags
+  (`is_nebula`/`is_supernova`/`is_asteroid_field`/`is_gravity_rift`), so one tile can
+  be two anomalies — tile 117 is both an asteroid field and a gravity rift in the base
+  map; anomalies may contain planets; a wormhole is not an anomaly type (tiles 113 and
+  79 carry both); `anomalies_ignored` is a one-activation card switch and the
+  `nebulae_passable` law is handled by `laws::apply_to_galaxy`. The `is_scar` flag is
+  present (the old "entropic scars absent" row note is stale at flag level); the scar
+  *rules* live under Entropic Scars (**ABSENT**).
+- **Attacker (LRR 13): VERIFIED.** During combat the active player is the attacker
+  (a tactical action starts combat — `combat.rs`), the opponent is the defender, and the
+  attacker has the first opportunity in every combat timing window via `player_order`.
+  The Mahact's Benediction special case is out of scope.
+- One stale doc comment corrected: `elected_seat_or_planet` in `game.rs` claimed "this
+  engine has no effect registry" — false since the `agenda_effects` registry landed;
+  `close_vote` does resolve the agenda's effect there. Comment-only change.
+- Full gate: clippy clean under `RUSTFLAGS=-D warnings` on all five crates; 1,086 engine
+  and 52 sim tests green; behaviour baseline unchanged at v26.
+- **Policy gate red at HEAD — pre-existing, diagnosed, not introduced by this batch** (the
+  batch's Rust diff is a doc comment, so the compiled behaviour is identical to `88cf39f`):
+  `bot::tests::scored_games_stay_legal_and_deterministic_across_nested_windows` fails its
+  non-vacuity assert ("the campaign must actually re-offer a scorer mid-window",
+  `bot.rs:2563`). The campaign is fully seeded, so the failure is deterministic. Root cause:
+  the assert requires two *consecutive* same-seat "score an objective" records — produced
+  only when a scorer who just scored is re-offered immediately (`objectives.rs` keeps an
+  unlimited-window scorer in place; pinned by `the_scoring_window_offers_a_secret_too`).
+  The mechanism is intact and unit-tested, but since `f816d90` (which reported 189 policy
+  green) the later engine changes — the unblocked card effects in `873178e`, the payment
+  cluster `3ee673a`, the bot fixes in `fda6516` — shifted every campaign trajectory so no
+  seat in any of the 48 seeded games ever reaches a second scoreable objective in the same
+  status window. Fixing it is a policy-test-health decision (new seeds, a relaxed
+  non-vacuity criterion, or a bot change), not a Phase 9 rule fix — owner's call.
+- Next batch (next seven alphabetically): Action Phase, Combat, Component Action, Cost,
+  Deals, Defender, Exhausted.
+
 ### Engine completion — salvage/repair/infiltrate/black-market/reverse-engineer: Salvage / Reparations / Infiltrate / Black Market Dealings / Reverse Engineer, re-baselined to v14 (2026-08-31)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

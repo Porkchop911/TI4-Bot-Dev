@@ -2632,14 +2632,14 @@ impl<'a> Game<'a> {
         }
     }
 
-    /// Record a finished vote's outcome, then move to the next agenda.
-    ///
-    /// No agenda *effect* is applied: this engine has no effect registry. The oracle emits
-    /// `AGENDA_EFFECT_UNRESOLVED` in exactly this situation rather than silently doing
-    /// nothing, and so does this — proceeding without saying so is how a rule goes missing.
     /// The seat the outcome names if it is a player, else the controller of the planet it
     /// names (the "you or a planet you control are elected" reading). An outcome that is
     /// neither — a law, "for", "against" — matches nobody.
+    ///
+    /// `close_vote` calls this after the outcome, the predictions and the law have been
+    /// settled and the agenda's own effect has been resolved through `crate::agenda_effects`;
+    /// an effect the corpus does not resolve is announced as `AGENDA_EFFECT_UNRESOLVED`
+    /// rather than silently skipped.
     fn elected_seat_or_planet(&self, outcome: &str) -> Option<PlayerId> {
         let elected = PlayerId::new(outcome.to_owned());
         if self.state.player(&elected).is_some() {

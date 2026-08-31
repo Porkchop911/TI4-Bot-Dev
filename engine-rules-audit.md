@@ -98,19 +98,19 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 
 | Topic | Status | Note |
 |---|---|---|
-| Abilities | ? | `faction_abilities.rs`; 26% of printed abilities registered |
+| Abilities | VERIFIED | 52.1-52.18 + notes: the resolver's round-robin, one ability each before the next pass, When→resolve→After inside an event, initiative order from the active player in the action phase and from the speaker in strategy/agenda; "before" windows (52.18) are the When window of the event they precede, and 52.10 is honoured literally — an unpayable cost voids the effect, but the card was already played and is discarded (`focused_research_charges_nothing_when_it_cannot_pay`) |
 | Action Cards | **PARTIAL** | infrastructure exists; 0 of 142 cards have effects |
 | Action Phase | ? | `phase.rs`, `game.rs` |
-| Active Player | ? | |
-| Active System | ? | |
-| Adjacency | ? | `galaxy.rs` axial hex + wormholes |
+| Active Player | VERIFIED | 4.1-4.6: the turn advances in initiative order skipping passed players and is `None` once all have passed; strategy, status and agenda have no active player; the attacker is the active seat in space combat; combat windows and space-cannon hits start with the active player; transactions are offered only from the active seat. The Mahact's Benediction note is out of scope |
+| Active System | VERIFIED | 5.1-5.4 + notes: activation spends a tactic token and excludes systems holding one of the player's tokens (5.2; rivals' tokens are no obstacle, 5.3); the active system lasts for the action and is cleared when the tactical action ends (and on Minister of Peace's early end); nebulae are entered only as the active system; component and strategic actions have no active system and fire no activation trigger; `SYSTEM_ACTIVATED` is emitted only for genuine (free) tactical actions |
+| Adjacency | **PARTIAL** | 6.0-6.3 + notes verified: tile-edge contact, wormhole pairs (with the law-driven nexus/Creuss layout properties), a system is never adjacent to itself, unit and planet adjacency through their containing system; **6.4 (LRR 44) is not modelled** — hyperlane line adjacency: the corpus carries 108 hyperlane tiles but no line-pattern data, and the engine's map build never places one, see the open item |
 | Agenda Card | **PARTIAL** | 34 of 63 registered |
-| Agenda Phase | ? | |
-| Anomalies | ? | asteroid/nebula/supernova/rift present; **entropic scars absent** |
+| Agenda Phase | **PARTIAL** | 8.1-8.21 + notes 1-5, 7 verified: custodians gate, two agenda reveals, voting clockwise from the player left of the speaker, full planet influence (space stations, the Triad and the Oceans count), one outcome per voter, trade goods never vote, abstention is legal, extra votes ride on the outcome voted, the speaker's tie-break is not a vote, a law stays and a directive is discarded, predictions are paid after resolution, only planets are readied; **note 6 is absent** (no transactions are offered in the agenda phase), the "Elect Scored Secret Objective" and "Elect Strategy Card" agendas are discarded rather than voted, and Checks and Balances (Against) readies the first three planets instead of letting the player choose, see the open items |
+| Anomalies | VERIFIED | 9.1-9.5 + notes: the four types are independent flags, so one tile can be two anomalies (tile 117 is both, base map), anomalies may contain planets, and a wormhole does not make a system an anomaly; the entropic-scar flag is present (the scar rules live under Entropic Scars, **ABSENT**) |
 | Anti-Fighter Barrage | VERIFIED | 78.3: simultaneous, first round only, fighters only, excess discarded |
 | Asteroid Field | VERIFIED | 11.1 bar and the Antimass Deflectors exemption |
 | Attach | VERIFIED | 12.1-12.3; attachments follow the planet through a control change and are purged with it |
-| Attacker | ? | |
+| Attacker | VERIFIED | 13: during combat the active player is the attacker (a tactical action starts combat, `combat.rs`), the opponent is the defender, and the attacker has the first opportunity in every combat timing window. The Mahact's Benediction note is out of scope |
 | Blockaded | **PARTIAL** | coexisting structures always blockaded (rule 4) — phase 2; base rule unverified |
 | Bombardment | **PARTIAL** | hits grouped per unit, no spillover (7.2) — phase 2; 7/7.1 choice outstanding |
 | Breakthroughs | **PARTIAL** | 2 of 31 have effects; breakthrough roll (rule 3) absent |
@@ -209,15 +209,15 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**39 unverified** (was 79).
+**32 unverified** (was 79).
 
 ## Phase 9 verification, 2026-08-31
 
-Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
+Twenty-three topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Twelve defects in thirty-eight in-scope topics.** That is close to the base rate this audit warned
-about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
+**Twelve defects in forty-five in-scope topics.** That is close to the base rate this audit warned
+about, and it is the reason the remaining 56 rows should still be read as "not checked" rather than
 "probably fine":
 
 | Rule | Defect | Status |
@@ -236,9 +236,14 @@ about, and it is the reason the remaining 63 rows should still be read as "not c
 | 27.2a | the custodians token — and its victory point — could be taken with six influence and no ground forces to commit | fixed |
 | Warfare | "then, the active player can redistribute their command tokens" — the recall was implemented, the redistribution was not | added |
 | 81.5 | the status phase's own redistribution of tokens already held | **open**, see `status.rs` |
+| 6.4 / 44.1-44.2 | hyperlane line adjacency — a hyperlane tile connects by its printed line and the line itself is not a system; the corpus carries no line-pattern data and the engine's map build never places a hyperlane tile, so the gap is dormant in engine play | **open** |
+| 8 note 6 | a player may transact once with each other player during each agenda; the engine offers no transactions in the agenda phase at all | **open** |
+| 8.15-8.18 | "Elect Scored Secret Objective" and "Elect Strategy Card" have outcomes the engine cannot vote on; the agenda is discarded without a vote | **open** |
+| 8.4 / Checks and Balances | "each player readies only 3 of their planets" — which three is the player's choice; the engine readies the first three in a fixed order | **open** |
 
-Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
-Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.
+Clean on inspection against their rules text: Abilities, Active Player, Active System, Anomalies,
+Attacker, Anti-Fighter Barrage, Asteroid Field, Fleet Pool, Gravity Rift, Space Cannon, Supernova.
+Capture is Cabal-only and therefore out of scope.
 
 Two simplifications recorded rather than hidden: 95.1 allows pickup from each system a ship moves
 *through* and this engine offers only the origin (a narrower offer, not an illegal one); and 68.3b
