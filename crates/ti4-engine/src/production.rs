@@ -205,7 +205,15 @@ fn payment_faces(
     // `planet_value_now`, not the printed value: Core Mining, Senate Sanctuary and Terraforming
     // Initiative attach to a planet card and change what it can pay. Both faces are computed here,
     // so this one substitution reaches every spending path.
-    let ordinary = planet_value_now(state, content, sources, planet, kind);
+    // Xxekir Grom pays a planet's resources and influence together, as both. Folded into the
+    // ordinary face rather than added as an alternate: the combined value *is* what the planet is
+    // worth to this player, for either kind of bill.
+    let ordinary = if crate::leaders::combines_planet_values(state, player) {
+        planet_value_now(state, content, sources, planet, Spend::Resources)
+            + planet_value_now(state, content, sources, planet, Spend::Influence)
+    } else {
+        planet_value_now(state, content, sources, planet, kind)
+    };
     let mut faces = if ordinary > 0 {
         vec![(kind, ordinary)]
     } else {
@@ -1677,6 +1685,65 @@ pub fn resolve(
 
 #[cfg(test)]
 mod tests {
+
+    /// Xxekir Grom makes a planet pay its resources and influence together, as either kind.
+    ///
+    /// Asserted through `available`, not through `payment_faces`: the point of folding it into the
+    /// face is that every spending path sees it, and `available` is one of the paths that would
+    /// have missed a fix applied at the card.
+    #[test]
+    fn xxekir_grom_pays_resources_and_influence_together() {
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+
+        // A planet worth something in both, so the combination is visible.
+        let (system, planet) = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .find(|(_, record)| {
+                record.system_id().is_some()
+                    && !record.is_placed_during_play()
+                    && record.resources() > 0
+                    && record.influence() > 0
+            })
+            .map(|(id, record)| {
+                (
+                    ti4_model::id::SystemId::new(record.system_id().unwrap_or_default()),
+                    PlanetId::new(*id),
+                )
+            })
+            .expect("the corpus has a planet worth both");
+        let worth = ti4_content::galaxy::planet(content, planet.as_str(), sources)
+            .map(|record| (record.resources(), record.influence()))
+            .expect("the planet is in the corpus");
+
+        state.board.entry(system.clone()).or_default();
+        if let Some(here) = state.board.get_mut(&system) {
+            here.set_control(planet.clone(), player.clone());
+        }
+
+        let before = available(&state, content, sources, &player, Spend::Resources);
+        assert_eq!(before, worth.0, "ordinarily the planet pays its resources");
+
+        if let Some(seat) = state.player_mut(&player) {
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("xxchahero"),
+                ti4_model::state::LeaderStatus::Unlocked,
+            );
+        }
+        let after = available(&state, content, sources, &player, Spend::Resources);
+        assert_eq!(
+            after,
+            worth.0 + worth.1,
+            "with the hero it pays both, against a resource bill"
+        );
+        assert_eq!(
+            available(&state, content, sources, &player, Spend::Influence),
+            worth.0 + worth.1,
+            "and the same against an influence bill"
+        );
+    }
     use ti4_model::content_types::POK;
 
     use std::{cell::RefCell, rc::Rc};

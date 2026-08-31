@@ -266,6 +266,244 @@ fn offer_research(
     )
 }
 
+/// Jol-Nar's Specialist Compounds: exhaust a specialty planet instead of paying, and research a
+/// technology of that colour.
+///
+/// Returns whether it took over the research. Two questions rather than one: which specialty to
+/// spend, and then which technology of its colour -- because the colour is a consequence of the
+/// first answer, and offering the pair together would ask for a combination the player cannot see
+/// the shape of. Declining the first falls through to the ordinary paid research.
+fn specialist_compounds(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<bool, IllegalChoice> {
+    let specialties =
+        crate::breakthroughs::specialty_research_planets(state, content, sources, player);
+    if specialties.is_empty() {
+        return Ok(false);
+    }
+    // 22.3: only offer a specialty that can actually buy something. A colour whose technologies
+    // are all researched already would exhaust a planet for nothing.
+    let open = crate::technology::researchable(state, content, sources, player);
+    let usable: Vec<(PlanetId, &'static str)> = specialties
+        .into_iter()
+        .filter(|(_, colour)| {
+            open.iter().any(|id| {
+                crate::technology::colour_type(content, id).is_some_and(|had| had == *colour)
+            })
+        })
+        .collect();
+    if usable.is_empty() {
+        return Ok(false);
+    }
+
+    let choice = Choice::new(
+        player.clone(),
+        "Specialist Compounds: exhaust a specialty instead of paying",
+        usable
+            .iter()
+            .map(|(planet, colour)| {
+                ChoiceOption::labelled(
+                    format!("{planet}:{colour}"),
+                    "planet",
+                    format!("exhaust {planet} to research {} technology", colour.to_lowercase()),
+                )
+            })
+            .chain(std::iter::once(ChoiceOption::decline()))
+            .collect(),
+    );
+    let answer = ask(state, content, sources, galaxy, table, &choice)?;
+    if answer.is_decline() {
+        return Ok(false);
+    }
+    let Some((planet, colour)) = usable
+        .iter()
+        .find(|(planet, colour)| answer.id == format!("{planet}:{colour}"))
+    else {
+        return Ok(false);
+    };
+
+    // "must research a technology of that color" -- so the second offer carries no decline. The
+    // planet is exhausted first: the price is paid whichever technology is chosen.
+    let of_colour: Vec<TechnologyId> = open
+        .into_iter()
+        .filter(|id| {
+            crate::technology::colour_type(content, id).is_some_and(|had| had == *colour)
+        })
+        .collect();
+    state.exhaust_planet(planet.clone());
+    let choice = Choice::new(
+        player.clone(),
+        format!("research which {} technology", colour.to_lowercase()),
+        of_colour
+            .iter()
+            .map(|id| {
+                ChoiceOption::labelled(
+                    id.to_string(),
+                    RESEARCH_KIND,
+                    crate::technology::name(content, id),
+                )
+            })
+            .collect(),
+    );
+    let answer = ask(state, content, sources, galaxy, table, &choice)?;
+    crate::technology::research(state, content, sources, player, &TechnologyId::new(answer.id));
+    Ok(true)
+}
+
+/// Doctor Sucaban: infantry removed from the board pay for research, one resource each.
+///
+/// > When a player spends resources to research: You may exhaust this card to allow that player to
+/// > remove any number of their infantry from the game board. For each unit removed, reduce the
+/// > resources spent by 1.
+///
+/// Two seats are involved and they are usually not the same one. The Jol-Nar player owns the card
+/// and decides whether to exhaust it; the *researching* player decides how many of their own
+/// infantry to give up. Asking the owner first is what the card says and also what keeps the
+/// researcher from being offered a discount nobody has agreed to pay for.
+///
+/// Returns the reduced cost. Infantry are removed one at a time, each naming where it comes from:
+/// units are interchangeable but their *locations* are not, and a seat losing a garrison it needed
+/// is a real decision rather than an accounting detail.
+fn doctor_sucaban(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    cost: i64,
+) -> Result<i64, IllegalChoice> {
+    if cost <= 0 {
+        return Ok(cost);
+    }
+    let agent = ti4_model::id::LeaderId::new("jolnaragent");
+    let Some(owner) = state
+        .players
+        .iter()
+        .find(|seat| {
+            seat.leaders.get(&agent) == Some(&ti4_model::state::LeaderStatus::Readied)
+        })
+        .map(|seat| seat.id.clone())
+    else {
+        return Ok(cost);
+    };
+    if infantry_sites(state, player).is_empty() {
+        return Ok(cost); // nothing to trade, so nothing to ask about
+    }
+
+    let choice = Choice::new(
+        owner.clone(),
+        format!("Doctor Sucaban: exhaust to let {player} trade infantry for research"),
+        vec![
+            ChoiceOption::labelled("yes".to_owned(), "leader", "exhaust the agent".to_owned()),
+            ChoiceOption::decline(),
+        ],
+    );
+    let answer = ask(state, content, sources, galaxy, table, &choice)?;
+    if answer.is_decline() || !crate::leaders::exhaust(state, &owner, &agent) {
+        return Ok(cost);
+    }
+
+    let mut reduced = cost;
+    while reduced > 0 {
+        let sites = infantry_sites(state, player);
+        if sites.is_empty() {
+            break;
+        }
+        let choice = Choice::new(
+            player.clone(),
+            "remove an infantry to reduce the cost by 1",
+            sites
+                .iter()
+                .map(|(system, planet)| {
+                    let (id, label) = planet.as_ref().map_or_else(
+                        || {
+                            (
+                                format!("{system}:"),
+                                format!("an infantry in space at {system}"),
+                            )
+                        },
+                        |planet| {
+                            (
+                                format!("{system}:{planet}"),
+                                format!("an infantry on {planet}"),
+                            )
+                        },
+                    );
+                    ChoiceOption::labelled(id, "unit", label)
+                })
+                .chain(std::iter::once(ChoiceOption::decline()))
+                .collect(),
+        );
+        let answer = ask(state, content, sources, galaxy, table, &choice)?;
+        if answer.is_decline() {
+            break;
+        }
+        let Some((system, planet)) = sites.into_iter().find(|(system, planet)| {
+            let key = planet
+                .as_ref()
+                .map_or_else(|| format!("{system}:"), |planet| format!("{system}:{planet}"));
+            key == answer.id
+        }) else {
+            break;
+        };
+        // Remove the unit that is actually standing there rather than constructing one to match:
+        // a faction's infantry carries its own type id (Sol's Spec Ops, Letnev's ...), and building
+        // the wrong id would remove nothing while still granting the discount.
+        let removed = state.board.get_mut(&system).is_some_and(|here| {
+            let stack = match planet.as_ref() {
+                Some(planet) => here.planet_units.get_mut(planet),
+                None => Some(&mut here.units),
+            };
+            stack.is_some_and(|stack| {
+                stack
+                    .iter()
+                    .position(|unit| {
+                        unit.owner == *player && unit.type_id.as_str().contains("infantry")
+                    })
+                    .is_some_and(|at| {
+                        stack.remove(at);
+                        true
+                    })
+            })
+        });
+        if !removed {
+            break;
+        }
+        reduced -= 1;
+    }
+    Ok(reduced)
+}
+
+/// Where this player has infantry: `(system, Some(planet))` on the ground, `(system, None)` in
+/// space. One entry per location, not per unit -- a stack of three offers one place to take from.
+fn infantry_sites(state: &GameState, player: &PlayerId) -> Vec<(SystemId, Option<PlanetId>)> {
+    let mut sites = Vec::new();
+    for (system, here) in &state.board {
+        if here
+            .units
+            .iter()
+            .any(|unit| unit.owner == *player && unit.type_id.as_str().contains("infantry"))
+        {
+            sites.push((system.clone(), None));
+        }
+        for (planet, standing) in &here.planet_units {
+            if standing
+                .iter()
+                .any(|unit| unit.owner == *player && unit.type_id.as_str().contains("infantry"))
+            {
+                sites.push((system.clone(), Some(planet.clone())));
+            }
+        }
+    }
+    sites
+}
+
 fn paid_research(
     state: &mut GameState,
     content: &ContentStore,
@@ -275,6 +513,15 @@ fn paid_research(
     player: &PlayerId,
     cost: i64,
 ) -> Result<(), IllegalChoice> {
+    // Jol-Nar's Specialist Compounds pays with a planet instead of resources, so it is offered
+    // before the affordability gate -- a seat that cannot pay the price can still research this
+    // way, and testing affordability first would close the window the card exists to open.
+    if specialist_compounds(state, content, sources, galaxy, table, player)? {
+        return Ok(());
+    }
+    // Doctor Sucaban discounts the bill, so he is asked before the affordability gate: the whole
+    // point of the card is to make a research affordable that was not.
+    let cost = doctor_sucaban(state, content, sources, galaxy, table, player, cost)?;
     if !crate::payment::affordable(state, content, sources, player, cost, Spend::Resources) {
         return Ok(());
     }
@@ -1210,6 +1457,141 @@ mod tests {
                 .filter(|unit| unit.owner == player && unit.type_id.as_str() == "pds")
                 .count(),
             2
+        );
+    }
+
+    /// Specialist Compounds researches by exhausting a specialty, with nothing to spend.
+    ///
+    /// The seat is deliberately broke: no trade goods, no other planets. That is the whole point of
+    /// the card, and it is also what proves the research did not quietly go through the ordinary
+    /// paid path -- which would have found nothing to pay with and done nothing at all.
+    #[test]
+    fn specialist_compounds_researches_by_exhausting_a_specialty() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+
+        let (specialty, colour) = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .find_map(|(id, record)| {
+                record.tech_specialties().first().and_then(|specialty| {
+                    let upper = specialty.to_ascii_uppercase();
+                    crate::technology::COLOURS
+                        .iter()
+                        .find(|c| ***c == *upper.as_str())
+                        .map(|colour| (PlanetId::new(*id), *colour))
+                })
+            })
+            .expect("the corpus has a technology specialty");
+        let system = ti4_content::galaxy::planet(content, specialty.as_str(), sources)
+            .and_then(|record| record.system_id().map(SystemId::new))
+            .expect("it sits on a tile");
+
+        state.board.entry(system.clone()).or_default();
+        if let Some(here) = state.board.get_mut(&system) {
+            here.set_control(specialty.clone(), player.clone());
+        }
+        if let Some(seat) = state.player_mut(&player) {
+            seat.breakthrough = Some(ti4_model::id::BreakthroughId::new("jolnarbt"));
+            seat.trade_goods = 0;
+        }
+        let before = state.player(&player).unwrap().technologies.clone();
+
+        // Take the first option at every question: the specialty, then a technology of its colour.
+        let mut table = Table::with_default(Box::new(crate::choice::FirstOption));
+        secondary(
+            &mut state,
+            content,
+            sources,
+            None,
+            &mut table,
+            &player,
+            &card("Technology"),
+        )
+        .unwrap();
+
+        let seat = state.player(&player).unwrap();
+        let gained: Vec<&TechnologyId> = seat
+            .technologies
+            .iter()
+            .filter(|id| !before.contains(*id))
+            .collect();
+        assert_eq!(gained.len(), 1, "exactly one technology researched");
+        assert_eq!(
+            crate::technology::colour_type(content, gained[0]),
+            Some(colour),
+            "and it is the colour of the specialty that paid for it"
+        );
+        assert!(
+            state.exhausted_planets.contains(&specialty),
+            "the specialty is exhausted"
+        );
+        assert_eq!(seat.trade_goods, 0, "and nothing was spent");
+    }
+
+    /// Doctor Sucaban lets a broke seat research by spending infantry instead of resources.
+    ///
+    /// The agent belongs to a *different* player, which is the shape of the card and the reason the
+    /// owner is asked first. The researcher holds nothing spendable, so the four infantry are
+    /// demonstrably what paid for it.
+    #[test]
+    fn doctor_sucaban_trades_infantry_for_research() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let (researcher, owner) = (PlayerId::new("a"), PlayerId::new("b"));
+        let mut state = game(&["a", "b"]);
+
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "infantry", &researcher, 4);
+        if let Some(seat) = state.player_mut(&researcher) {
+            seat.trade_goods = 0;
+        }
+        if let Some(seat) = state.player_mut(&owner) {
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("jolnaragent"),
+                ti4_model::state::LeaderStatus::Readied,
+            );
+        }
+        let before = state.player(&researcher).unwrap().technologies.len();
+
+        // Yes to everything: exhaust the agent, then take an infantry at each offer.
+        let mut table = Table::with_default(Box::new(crate::choice::FirstOption));
+        secondary(
+            &mut state,
+            content,
+            sources,
+            None,
+            &mut table,
+            &researcher,
+            &card("Technology"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.player(&researcher).unwrap().technologies.len(),
+            before + 1,
+            "the research happened with nothing to spend"
+        );
+        assert_eq!(
+            state.system_state(&system).units_of(&researcher).len(),
+            0,
+            "and all four infantry paid for it"
+        );
+        assert_eq!(
+            state
+                .player(&owner)
+                .unwrap()
+                .leaders
+                .get(&ti4_model::id::LeaderId::new("jolnaragent")),
+            Some(&ti4_model::state::LeaderStatus::Exhausted),
+            "the agent is exhausted"
+        );
+        assert_eq!(
+            state.player(&researcher).unwrap().trade_goods,
+            0,
+            "and no resources were spent"
         );
     }
 

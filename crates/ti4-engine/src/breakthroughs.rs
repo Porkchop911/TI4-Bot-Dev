@@ -42,7 +42,7 @@ use ti4_model::units::Unit;
 /// The breakthrough aliases whose printed abilities this module implements.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["hacanbt", "letnevbt", "solbt", "xxchabt", "l1z1xbt"]
+    vec!["hacanbt", "jolnarbt", "letnevbt", "solbt", "xxchabt", "l1z1xbt"]
 }
 
 /// Breakthroughs belonging to the trained factions whose abilities are not implemented.
@@ -141,6 +141,47 @@ pub fn spends_free_capacity(
 ) -> bool {
     ti4_content::units::unit_type(content, produced.as_str(), sources)
         .is_some_and(|kind| kind.is_fighter() || kind.is_ground_force())
+}
+
+/// Jol-Nar, Specialist Compounds: specialty planets this player may exhaust to research.
+///
+/// > When you research technology using the "Technology" strategy card, you may exhaust a planet
+/// > that has a technology specialty instead of spending resources; if you do, you must research a
+/// > technology of that color.
+///
+/// Returns `(planet, colour)` for each readied specialty planet under this player's control, empty
+/// unless they hold the breakthrough. A planet with two specialties appears once per colour, which
+/// is what "a technology of that color" means when the player picks which specialty they are using.
+///
+/// The colours are the corpus spelling (`BIOTIC`, `WARFARE`, ...), matching
+/// [`crate::technology::colour_type`], so a caller can compare them without normalising.
+#[must_use]
+pub fn specialty_research_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<(ti4_model::id::PlanetId, &'static str)> {
+    if !holds(state, player, "jolnarbt") {
+        return Vec::new();
+    }
+    let catalogue = ti4_content::galaxy::all_planets(content, sources);
+    let mut found = Vec::new();
+    for (_, planet) in state.controlled_planets(player) {
+        if state.exhausted_planets.contains(planet) {
+            continue; // 34.2: an exhausted planet cannot be exhausted again
+        }
+        let Some(record) = catalogue.get(planet.as_str()) else {
+            continue;
+        };
+        for specialty in record.tech_specialties() {
+            let upper = specialty.to_ascii_uppercase();
+            if let Some(colour) = crate::technology::COLOURS.iter().find(|c| **c == upper) {
+                found.push((planet.clone(), *colour));
+            }
+        }
+    }
+    found
 }
 
 /// Whether this player holds this breakthrough.
@@ -355,16 +396,21 @@ mod tests {
         assert!(after.is_empty(), "and this seat owns none");
     }
 
+    /// Every breakthrough of the six trained factions is implemented.
+    ///
+    /// This test used to name the one that was not (`jolnarbt`) and assert the list equalled it,
+    /// which meant it expired the moment that one was written. Asserting the list is *empty* says
+    /// the same thing while it is true and keeps saying something once it is: a new breakthrough
+    /// entering the corpus unimplemented fails here.
     #[test]
-    fn the_outstanding_breakthroughs_are_reported() {
+    fn every_breakthrough_of_the_trained_factions_is_implemented() {
         let content = ti4_content::ContentStore::embedded();
         let missing = unimplemented(
             content,
             ALL_SOURCES,
             &["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"],
         );
-        let mut names: Vec<&str> = missing.iter().map(BreakthroughId::as_str).collect();
-        names.sort_unstable();
-        assert_eq!(names, vec!["jolnarbt"]);
+        let names: Vec<&str> = missing.iter().map(BreakthroughId::as_str).collect();
+        assert!(names.is_empty(), "unimplemented: {names:?}");
     }
 }

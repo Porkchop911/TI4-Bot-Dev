@@ -284,6 +284,10 @@ pub const ACTION_FAMILY: &str = "action-plan";
 ///
 /// These are properties, never identities: "planets this would gain" rather than "system 72". That
 /// is the same rule the planet-id exclusion enforces, applied to the facts that replace it.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per option kind; splitting them would separate each arm from the closures               (`count`, `destination`, `name`) that every arm shares"
+)]
 fn action_facts(
     seen: &Observed<'_>,
     option: &ChoiceOption,

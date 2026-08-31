@@ -368,6 +368,13 @@ fn secondary_can_do_something(
                 return false;
             }
             crate::faction_abilities::substitutes_primary(state, content, player, &name)
+                // Jol-Nar's Specialist Compounds pays with a planet rather than resources, so a
+                // seat holding it can research however little it can afford. Without this the
+                // window would be closed on the price the card exists to avoid.
+                || !crate::breakthroughs::specialty_research_planets(
+                    state, content, sources, player,
+                )
+                .is_empty()
                 || crate::payment::affordable(
                     state,
                     content,

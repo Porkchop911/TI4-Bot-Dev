@@ -381,6 +381,19 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v18 — 2026-08-31. Three cards that make spending cheaper: Xxekir Grom (a planet pays its
+    // resources and influence together), Jol-Nar's Specialist Compounds (exhaust a technology
+    // specialty instead of paying) and Doctor Sucaban (infantry pay for research, one each).
+    //
+    // This one is a change in *play*, not dilution, and the signature says so. The six action-mix
+    // shares move by thousandths in both directions -- no new event type, so nothing lengthens the
+    // stream -- while `vp_pace` rises [0.386, 0.441] -> [0.411, 0.457], `score_spread` rises
+    // [1.623, 2.089] -> [1.743, 2.109] and `faction_differentiation` rises [0.457, 0.980] ->
+    // [0.528, 1.043]. Research that used to be unaffordable now happens, so seats reach their
+    // objectives sooner and the seats holding these cards pull away from those that do not.
+    //
+    // Every current value still sat inside the v17 intervals; the intervals themselves moved.
+    //
     // v17 — 2026-08-31. Three relic ACTIONs gained a decider: Enigmatic Device, Maw of Worlds and
     // The Codex. Enigmatic Device also stopped being offered when its six resources cannot be paid
     // (22.3), which changes what bots are asked and therefore the stream.
@@ -691,43 +704,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.38641975308641974, 0.4413580246913581),
+        (0.411_111_111_111_111_2, 0.457_407_407_407_407_43),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.623001280358784, 2.0885510471569386),
+        (1.742_600_884_902_481_9, 2.108_889_237_233_979_6),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.4573474244670748, 0.9801108528889053),
+        (0.528_245_406_867_436, 1.043_439_232_585_571),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.01995309924516905, 0.020990480876529882),
+        (0.019_695_546_546_093_144, 0.021_091_628_185_790_49),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.03279830954078612, 0.03401145013476611),
+        (0.033_512_828_201_471_65, 0.034_294_829_927_279_27),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.04824303055929398, 0.051875600603318035),
+        (0.047_436_267_934_186_46, 0.050_667_341_236_386_984),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005530514787992821, 0.006358662603903472),
+        (0.005_594_277_853_066_971, 0.006_401_080_046_270_02),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.06469345434999253, 0.06710629171944789),
+        (0.066_048_834_738_352_9, 0.067_574_077_823_187_94),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.03186278861727605, 0.033103456810343664),
+        (0.032_533_705_296_959_68, 0.033_301_603_034_615_56),
     );
     bounds
 }

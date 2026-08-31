@@ -357,6 +357,14 @@ pub fn modifiers() -> std::collections::BTreeMap<&'static str, &'static str> {
         ("xxchacommander", "leaders::vote_bonus, read by vote::cast"),
         ("hacancommander", "leaders::vote_bonus, read by vote::cast"),
         (
+            "xxchahero",
+            "leaders::combines_planet_values, read by production::payment_faces",
+        ),
+        (
+            "jolnaragent",
+            "strategy_cards::doctor_sucaban, read by strategy_cards::paid_research",
+        ),
+        (
             "l1z1xcommander",
             "leaders::ignores_planetary_shield, read by invasion::can_bombard",
         ),
@@ -395,6 +403,24 @@ pub fn ignores_planetary_shield(state: &GameState, player: &PlayerId) -> bool {
     })
 }
 
+/// Xxekir Grom: whether this player's exhausted planets pay their combined value.
+///
+/// > When you exhaust planets: combine the values of their resources and influence. Treat the
+/// > combined value as if it were both resources and influence.
+///
+/// A passive while the hero is unlocked, not an ACTION -- the corpus text has no ACTION clause and
+/// no purge, so the hero is never spent and the ability simply holds. Read where a planet's payable
+/// value is computed rather than applied at the card, so it cannot be honoured on one spending path
+/// and forgotten on another.
+#[must_use]
+pub fn combines_planet_values(state: &GameState, player: &PlayerId) -> bool {
+    state.player(player).is_some_and(|seat| {
+        seat.leaders.iter().any(|(leader, status)| {
+            leader.as_str() == "xxchahero" && *status == LeaderStatus::Unlocked
+        })
+    })
+}
+
 /// Rear Admiral Farran: whether this player gains a trade good when one of their units sustains.
 #[must_use]
 pub fn pays_on_sustain(state: &GameState, content: &ContentStore, player: &PlayerId) -> bool {
@@ -412,6 +438,8 @@ pub fn registered_abilities() -> Vec<&'static str> {
     vec![
         "hacanagent",
         "hacanhero",
+        "jolnaragent",
+        "xxchahero",
         "jolnarhero",
         "l1z1xagent",
         "l1z1xhero",
@@ -987,8 +1015,15 @@ mod tests {
             "its effect lives in vote_bonus"
         );
         assert!(
-            missing.contains(&LeaderId::new("xxchahero")),
-            "and the one that genuinely does nothing is still reported"
+            !missing.contains(&LeaderId::new("xxchahero")),
+            "and the hero's effect lives in combines_planet_values"
+        );
+        // The half that keeps this test honest now that every leader of the six trained factions
+        // is implemented: a faction outside that scope still reports its leaders, so the list is
+        // not simply always empty. Any out-of-scope faction does; Naalu is one.
+        assert!(
+            !unimplemented(ContentStore::embedded(), &["naalu"]).is_empty(),
+            "a leader this module does not handle is still reported"
         );
     }
 

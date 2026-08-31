@@ -2197,7 +2197,7 @@ mod tests {
             table: &mut inner,
             timing: None,
         };
-        window.settle_open(&mut state, &mut ctx);
+        window.settle_open(&mut state, &mut ctx).unwrap();
 
         let mut paused = false;
         for _ in 0..10_000 {
@@ -2225,7 +2225,7 @@ mod tests {
                     scoring.resolve(&mut state, content(), POK, answer).unwrap();
                 }
             } else {
-                window.settle_open(&mut state, &mut ctx);
+                window.settle_open(&mut state, &mut ctx).unwrap();
             }
         }
 
