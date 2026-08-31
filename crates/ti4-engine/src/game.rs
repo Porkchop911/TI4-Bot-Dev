@@ -2013,6 +2013,14 @@ impl<'a> Game<'a> {
             &galaxy,
             &answer,
         );
+        // A resolved deal opens Lie in Wait's window. Emitted only on Resolved: the card counts
+        // transactions that happened, not offers that were made.
+        if matches!(outcome, crate::transactions::Traded::Resolved) {
+            let payload = BTreeMap::new();
+            if let Err(error) = self.emit_typed("TRANSACTION_RESOLVED", payload) {
+                return self.result(false, Some(error));
+            }
+        }
         self.emit(match outcome {
             crate::transactions::Traded::Resolved => "TRANSACTION",
             crate::transactions::Traded::Refused => "TRANSACTION_REFUSED",

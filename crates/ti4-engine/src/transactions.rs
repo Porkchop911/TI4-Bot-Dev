@@ -200,6 +200,28 @@ pub fn are_neighbours(state: &GameState, galaxy: &Galaxy, a: &PlayerId, b: &Play
     })
 }
 
+/// Neighbours of `player` who have resolved a transaction this round.
+///
+/// Lie in Wait fires "after 2 of your neighbors resolve a transaction". A neighbour who traded
+/// twice counts once: the card looks at *players'* hands, so the same seat twice is one hand.
+#[must_use]
+pub fn neighbours_who_transacted(
+    state: &GameState,
+    galaxy: &Galaxy,
+    player: &PlayerId,
+) -> Vec<PlayerId> {
+    let mine = neighbours(state, galaxy, player);
+    let mut seen: Vec<PlayerId> = Vec::new();
+    for (a, b) in &state.transactions_this_round {
+        for who in [a, b] {
+            if who != player && mine.contains(who) && !seen.contains(who) {
+                seen.push(who.clone());
+            }
+        }
+    }
+    seen
+}
+
 /// Everyone this player may transact with.
 #[must_use]
 pub fn neighbours(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> Vec<PlayerId> {
@@ -438,6 +460,11 @@ pub fn resolve(
     take(state, &offer.partner, &offer.received);
     give(state, content, &offer.partner, &offer.given);
     give(state, content, &offer.proposer, &offer.received);
+    // Recorded here rather than at the window that opened the deal: this is the one place a
+    // transaction is *resolved*, and Lie in Wait counts resolutions.
+    state
+        .transactions_this_round
+        .push((offer.proposer.clone(), offer.partner.clone()));
     Ok(())
 }
 

@@ -449,6 +449,14 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             "After another player commits units to land on a planet you control",
             guarded("UNITS_COMMITTED", After, commit_on_your_planet),
         ),
+        // Lie in Wait. `anyone`, deliberately: the window is about *neighbours* transacting, so
+        // neither party to the deal is the player who plays the card -- `actor_is` is plainly wrong
+        // and `actor_is_not` would let any non-party play it. Whether two neighbours have actually
+        // traded is the card's own question, answered from the round's record.
+        (
+            "After 2 of your neighbors resolve a transaction",
+            guarded("TRANSACTION_RESOLVED", After, anyone),
+        ),
     ]
     .into_iter()
     .collect()
@@ -492,6 +500,7 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "TURN_BEGAN",
     "STRATEGY_CARDS_WOULD_RETURN",
     "ACTION_CARD_DISCARDED",
+    "TRANSACTION_RESOLVED",
     "TRANSACTION_OPENED",
 ];
 

@@ -961,6 +961,13 @@ pub struct GameState {
     /// Increments when an agenda is revealed, so a card scoped to "this agenda" can say which.
     #[serde(default)]
     pub agenda_seq: u32,
+    /// Pairs who have resolved a transaction this round, in the order they resolved.
+    ///
+    /// Lie in Wait fires "after 2 of your neighbors resolve a transaction", which is a fact about
+    /// the round rather than about the deal in hand, so it cannot be answered from one transaction.
+    /// Cleared when a round begins, because the card counts *this* round's deals.
+    #[serde(default)]
+    pub transactions_this_round: Vec<(PlayerId, PlayerId)>,
     /// Increments whenever an action-phase turn actually passes to a player. It does *not*
     /// increment between Fleet Logistics' first and second actions, because those are
     /// explicitly the same turn.
@@ -1270,6 +1277,7 @@ impl GameState {
             production_seq: 0,
             activation_seq: 0,
             agenda_seq: 0,
+            transactions_this_round: Vec::new(),
             turn_seq: 0,
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),

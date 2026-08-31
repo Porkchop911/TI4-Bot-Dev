@@ -145,6 +145,8 @@ pub fn begin_next_round(state: &mut GameState, strategy_cards: Vec<ti4_model::id
     state.round += 1;
     state.active = None;
     state.unclaimed_strategy_cards = strategy_cards;
+    // Lie in Wait counts *this* round's transactions.
+    state.transactions_this_round.clear();
 }
 
 /// What [`advance_phase`] did, so a caller can drive the parts not modelled here.

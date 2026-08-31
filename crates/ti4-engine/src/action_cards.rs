@@ -4203,6 +4203,63 @@ fn manipulate_investments(context: &mut crate::timing::TimingContext<'_>, player
     }
 }
 
+/// Lie in Wait: take one action card from each of two neighbours who have traded.
+///
+/// > Look at each of those players' hands of action cards, then choose and take 1 action card from
+/// > each.
+///
+/// "Those players" are the neighbours whose transaction opened the window, which is a fact about
+/// the round rather than about one deal -- so it comes from
+/// `transactions::neighbours_who_transacted` rather than from the event payload. A neighbour who
+/// traded twice is one player with one hand, and counts once.
+///
+/// Looking at the hand needs no modelling: nothing in this engine hides a hand from a decider. What
+/// the card *does* is the taking, and a neighbour holding nothing is skipped rather than refused --
+/// the card takes from each who has one.
+fn lie_in_wait(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some(galaxy) = context.galaxy else {
+        return; // 22.3: without the map there are no neighbours, so nothing to resolve
+    };
+    let traders =
+        crate::transactions::neighbours_who_transacted(context.state, galaxy, player);
+    for victim in traders.into_iter().take(2) {
+        let hand: Vec<(String, String)> = context
+            .state
+            .player(&victim)
+            .map(|seat| seat.action_cards.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|alias| {
+                let label = format!("take {alias} from {victim}");
+                (alias.to_string(), label)
+            })
+            .collect();
+        if hand.is_empty() {
+            continue;
+        }
+        let Some(taken) = pick(
+            context,
+            player,
+            "Lie in Wait: take which action card",
+            "action_card",
+            &hand,
+        ) else {
+            continue;
+        };
+        let taken = ti4_model::id::ActionCardId::new(taken);
+        if let Some(seat) = context.state.player_mut(&victim) {
+            if let Some(at) = seat.action_cards.iter().position(|held| *held == taken) {
+                seat.action_cards.remove(at);
+            } else {
+                continue;
+            }
+        }
+        if let Some(seat) = context.state.player_mut(player) {
+            seat.action_cards.push(taken);
+        }
+    }
+}
+
 /// Mining Initiative: trade goods equal to the resource value of one planet you hold.
 fn mining_initiative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let spots = controlled_spots(context.state, player);
@@ -4980,6 +5037,7 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "cripple" => Some(cripple_defenses),
         "f_deployment" => Some(frontline_deployment),
         "investments" => Some(manipulate_investments),
+        "lieinwait" => Some(lie_in_wait),
         "f_researched" => Some(focused_research),
         "ghost_ship" => Some(ghost_ship),
         "jamming" => Some(signal_jamming),
@@ -5136,6 +5194,7 @@ fn scramble(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) 
 /// The aliases whose effects are registered in `effect_for`.
 const REGISTERED_ALIASES: &[&str] = &[
     "investments",
+    "lieinwait",
     "fs1",
     "fs2",
     "fs3",
@@ -6686,16 +6745,18 @@ mod tests {
     /// stale.
     fn an_unimplemented_action_card() -> ActionCardId {
         ContentStore::embedded()
-            // DEFAULT, not POK: every POK card is implemented now, and this helper exists to find
-            // one that is not. Narrowing it to POK made it expire the moment that became true --
-            // the third fixture this week to depend on the engine being incomplete.
             .from_sources(
                 ti4_model::content_types::ContentType::ActionCards,
                 ti4_model::content_types::DEFAULT,
             )
             .filter_map(|record| record.text("alias").map(ActionCardId::new))
             .find(|alias| effect_for(alias).is_none())
-            .expect("some action card is still unported")
+            // Every printed card is implemented now, so a *real* unported card no longer exists.
+            // The path this feeds still has to work -- a card with no effect must announce itself
+            // unresolved rather than pass as having done something -- and it is reachable by any
+            // alias the registry does not know. Falling back to a synthetic one keeps the test
+            // about the path instead of about the corpus being incomplete.
+            .unwrap_or_else(|| ActionCardId::new("not_a_printed_card"))
     }
 
     #[test]
@@ -6876,6 +6937,34 @@ mod tests {
         effect(&mut context, player);
     }
 
+    /// [`resolve_card`] with the map attached, for cards that read adjacency.
+    fn resolve_card_on(
+        state: &mut GameState,
+        galaxy: &ti4_content::galaxy::Galaxy,
+        alias: &str,
+        player: &PlayerId,
+        answers: &[&str],
+    ) {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new(
+            answers.iter().map(|a| (*a).to_owned()),
+        )));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: Some(galaxy),
+        };
+        effect(&mut context, player);
+    }
+
     fn on_planet(state: &GameState, planet: &ti4_model::id::PlanetId) -> usize {
         state
             .board
@@ -6930,6 +7019,62 @@ mod tests {
             state.strategy_card_goods.len() >= 3,
             "at least three different cards, saw {:?}",
             state.strategy_card_goods
+        );
+    }
+
+    /// Lie in Wait takes one card from each of two neighbours who traded, and counts a
+    /// twice-trading neighbour once.
+    #[test]
+    fn lie_in_wait_takes_one_card_from_each_trading_neighbour() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let (b, c) = (PlayerId::new("b"), PlayerId::new("c"));
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+
+        for (seat, cards) in [(&b, ["mb1", "mb2"]), (&c, ["fs1", "fs2"])] {
+            if let Some(held) = state.player_mut(seat) {
+                held.action_cards = cards
+                    .into_iter()
+                    .map(ti4_model::id::ActionCardId::new)
+                    .collect();
+            }
+        }
+        // Neighbourship comes from presence on the board (60.1), so all three share the hub's
+        // centre. Without units nobody is anybody's neighbour and the card would find nothing --
+        // which is what the first version of this test proved.
+        let centre = ti4_model::id::SystemId::new(hub.centre.clone());
+        for seat in [&player, &b, &c] {
+            crate::fixtures::put(&mut state, &centre, "carrier", seat, 1);
+        }
+
+        // b trades twice; the card still looks at one hand of b's.
+        state.transactions_this_round = vec![
+            (b.clone(), c.clone()),
+            (b.clone(), c.clone()),
+        ];
+
+        let taken_before = state
+            .player(&player)
+            .map_or(0, |seat| seat.action_cards.len());
+        resolve_card_on(&mut state, &hub.galaxy, "lieinwait", &player, &[]);
+
+        let held = state
+            .player(&player)
+            .map_or(0, |seat| seat.action_cards.len());
+        assert_eq!(
+            held,
+            taken_before + 2,
+            "one card from each of the two neighbours, not one per transaction"
+        );
+        assert_eq!(
+            state.player(&b).map_or(0, |seat| seat.action_cards.len()),
+            1,
+            "b lost exactly one"
+        );
+        assert_eq!(
+            state.player(&c).map_or(0, |seat| seat.action_cards.len()),
+            1,
+            "and so did c"
         );
     }
 
@@ -8053,8 +8198,8 @@ mod tests {
             );
         }
         assert!(
-            !missing.is_empty() && missing.len() < every.len(),
-            "some are done and some are not; both halves must be visible"
+            missing.is_empty(),
+            "every printed action card is implemented; still missing: {missing:?}"
         );
     }
     /// Build a `SystemId` from a `&str` or `String` the same way every test below does.
