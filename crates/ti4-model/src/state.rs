@@ -833,6 +833,10 @@ impl TransientFlags {
     /// Puppets on a String: the player whose turn is ending, and who has passed, takes one
     /// fresh action turn — new `turn_seq`, start-of-turn hooks — without un-passing.
     pub const PUPPET_ACTION: u8 = 1 << 4;
+    /// Black Market Dealings: the transaction in flight may include relics (as fragments),
+    /// action cards, and unscored secret objectives. Set while the negotiation whose opening
+    /// triggered it is still on the table, cleared when it closes or the turn ends.
+    pub const BLACK_MARKET: u8 = 1 << 5;
 
     #[must_use]
     pub const fn has(self, flag: u8) -> bool {
@@ -910,6 +914,13 @@ pub struct GameState {
     pub relic_deck: Vec<RelicId>,
     pub agenda_deck: Vec<String>,
     pub action_card_deck: Vec<ActionCardId>,
+    /// Action cards that have left play: every played card, and every card discarded by a
+    /// hand-limit, agenda, or punishment effect. Reverse Engineer takes cards from here; a
+    /// card handed to another player (a transaction, a steal) never enters the pile. It is
+    /// history the rest of the state cannot recover — who may take which card from the pile
+    /// is play-relevant — so it is compared.
+    #[serde(default)]
+    pub discarded_action_cards: Vec<ActionCardId>,
     pub secret_deck: Vec<SecretObjectiveId>,
     /// Laws in play: alias to the outcome that passed (LRR 8.20). Not compared.
     pub laws: BTreeMap<String, String>,
@@ -1010,6 +1021,28 @@ pub struct GameState {
     /// see. In-flight bookkeeping — not compared.
     #[serde(default)]
     pub last_ship_destroyed: Option<(SystemId, PlayerId, UnitTypeId)>,
+    /// The capture a `PLANET_CONTROL_GAINED` window is reacting to: the system, the planet,
+    /// the player who gained control, and the former controller when there was one. The frame
+    /// records it right before the emission, because a card played into the window — Infiltrate
+    /// replaces structures on that planet, Reparations asks who the planet was taken from —
+    /// cannot read the payload of the event that summoned it. In-flight bookkeeping — not
+    /// compared.
+    #[serde(default)]
+    pub last_control_gained: Option<(SystemId, PlanetId, PlayerId, Option<PlayerId>)>,
+    /// The space combat a `SPACE_COMBAT_WON` window is reacting to: the system and the
+    /// opponents the winner fought — the sides when the fight opened, minus the winner. By
+    /// the time the window runs the losers' ships are off the board, so the board itself
+    /// answers with the winner alone, and Salvage, which takes its opponents' commodities,
+    /// reads the handoff instead. In-flight bookkeeping — not compared.
+    #[serde(default)]
+    pub last_combat_sides: Option<(SystemId, Vec<PlayerId>)>,
+    /// The action card a `ACTION_CARD_DISCARDED` window is reacting to: the player who
+    /// discarded it and the card's alias. The frame records it in the discard announcement
+    /// itself, which is the one place that knows both, because the effect — Reverse Engineer
+    /// takes that card from the pile — cannot read the event that summoned it. In-flight
+    /// bookkeeping — not compared.
+    #[serde(default)]
+    pub last_action_discarded: Option<(PlayerId, ActionCardId)>,
     /// Hits staged by Reflective Shielding to be absorbed once the sustain window that played
     /// the card has closed: the system, the victim (the sustained hit's producer — "your
     /// opponent" in the card text) and the count. The sustain step drains it straight after
@@ -1157,6 +1190,7 @@ impl PartialEq for GameState {
             && self.relic_deck == other.relic_deck
             && self.agenda_deck == other.agenda_deck
             && self.action_card_deck == other.action_card_deck
+            && self.discarded_action_cards == other.discarded_action_cards
             && self.secret_deck == other.secret_deck
             && self.custodians_removed == other.custodians_removed
             && self.frontier_tokens == other.frontier_tokens
@@ -1219,6 +1253,7 @@ impl GameState {
             relic_deck: Vec::new(),
             agenda_deck: Vec::new(),
             action_card_deck: Vec::new(),
+            discarded_action_cards: Vec::new(),
             secret_deck: Vec::new(),
             laws: BTreeMap::new(),
             custodians_removed: false,
@@ -1245,6 +1280,9 @@ impl GameState {
             last_sustain: None,
             pending_destructions: Vec::new(),
             last_ship_destroyed: None,
+            last_control_gained: None,
+            last_combat_sides: None,
+            last_action_discarded: None,
             pending_reflective_hits: None,
             last_strategy_choice: None,
             agenda_veto_replacement: None,

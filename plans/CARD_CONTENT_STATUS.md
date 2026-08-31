@@ -354,6 +354,76 @@ the test fail, then reverted).
   (dev and release recomputations are bit-identical in this batch;
   `plans/evidence/M08-021.md`).
 
+- Salvage/repair/infiltrate/black-market/reverse-engineer (sub-batch C3 of the handoff's
+  "not grouped" set — the remainder): `salvage` (Salvage), `reparations` (Reparations),
+  `infiltrate` (Infiltrate), `blackmarketdealing` (Black Market Dealings) and
+  `reverse_engineer` (Reverse Engineer). **Model fields** (`ti4-model`): `TransientFlags::
+  BLACK_MARKET (1 << 5)`; `GameState.discarded_action_cards: Vec<ActionCardId>` (the discard
+  pile the Reverse Engineer effect lifts from; `#[serde(default)]`); and three in-flight
+  hand-offs (all `#[serde(default)]`, excluded from `GameState` comparison because a timing
+  window's effect cannot read the payload of the event that summoned it): `last_control_
+  gained` (system, planet, previous owner) recorded by the control-gain settlement before
+  the owner changes, `last_combat_sides` (system, the fight's other sides) recorded next to
+  the `SPACE_COMBAT_WON` emission, and `last_action_discarded` (discarder, card) recorded
+  by `reactions::announce` as every action-card play converges on its discard event.
+  **Driver moments**: `SPACE_COMBAT_WON` became a typed After event (winner named in the
+  payload, the other sides in the hand-off) and its emission now propagates timing errors
+  through the new `CombatError::Timing` variant instead of `let _ =` swallowing them;
+  `finish_control_gain` records the previous owner beside the `PLANET_CONTROL_GAINED`
+  payload; `TRANSACTION_OPENED` became a typed When event naming both chairs (either may
+  hold the card), and the window settles before the negotiation's first question; every
+  action-card play — including a cancelled one — now ends in an `ACTION_CARD_DISCARDED`
+  After event and a push onto `discarded_action_cards` (steals and trade transfers are not
+  discards and never touch the pile). **Salvage** — "After you win a space combat: Your
+  opponent gives you all of their commodities." — the After-window effect moves each
+  opponent's `commodities` (LRR 21: commodities, not the trade-good pool) to the winner's
+  `commodities`. **Reparations** — "After another player gains control of a planet you
+  control: Exhaust 1 planet that player controls and ready 1 planet you control." — the
+  effect verifies the planet's previous owner was the holder, then exhausts a planet the
+  new owner controls (auto-picked when exactly one, else chosen, no decline) and readies
+  one of the holder's own. **Infiltrate** — "When you gain control of a planet: Replace
+  each PDS and space dock that is on that planet with a matching unit from your
+  reinforcements." — the When-window effect removes each PDS/space dock the holder has on
+  the planet and re-adds a matching unit from reinforcements where the supply allows; with
+  a full box that is the same unit in the unit-less model, so the driver tests pin the
+  play, the spend, and an undisturbed capture (the invader's own PDS survives LRR 49, a
+  rival's dies with the planet's old garrison, and a rival's planetary shield blocks the
+  bombardment that takes the planet — hence the war sun in the test fixture). **Black
+  Market Dealings** — "When you are negotiating a transaction: You and the other player
+  may include relics, action cards, and unscored secret objectives as part of the
+  transaction. This card cannot be canceled." — the When-window effect sets the
+  `BLACK_MARKET` flag (cleared on trade completion and at the turn's end); while set,
+  `offer_options` widens both parties' tables with flat one-good shapes for unscored
+  secret objectives (`so{id}:1`) and relic fragments (`fr{trait}:1`), which `take`/
+  `give` move like any other shape. **Reverse Engineer** — "After another player discards
+  an action card that has a component action: Take that action card from the discard
+  pile." — the coarse After row is guarded to "another player discards" and the effect
+  verifies the discarder is not the holder and the card is a component action, then lifts
+  it out of `discarded_action_cards` into the holder's hand. Eleven driver tests (the
+  salvage pair and market pair drive real combats and transactions through
+  `InvasionDecider` / `MarketDecider` prompt deciders with pinned dice; the invasion pair
+  captures a planet holding the holder's own PDS while the reparations pair captures one
+  the holder controls; the RE pair plays Industrial Initiative as the question-free
+  component action because Spy's forced steal would rob the RE holder of the card it
+  needs): `salvage_sweeps_the_losers_commodities` (+ control `without_salvage_the_losers_
+  keep_their_commodities`), `reparations_exhausts_the_new_owners_planet_and_readies_yours`
+  (+ control `without_reparations_the_planets_stand_where_they_stood`),
+  `reparations_do_nothing_when_the_new_owner_controls_nothing`, `infiltrate_is_played_`
+  `when_the_planet_changes_hands`, `black_market_dealings_puts_secrets_and_cards_on_the_
+  table` (+ control `without_black_market_dealings_no_secret_or_card_shape_reaches_the_
+  table`), `a_black_market_deal_moves_an_unscored_secret_objective` and the reverse-
+  engineer pair `reverse_engineer_takes_a_played_component_card_out_of_the_pile` / `witho
+  ut_reverse_engineer_a_played_component_card_rests_in_the_pile`. This batch moved the
+  behavioural baseline **v13 → v14**: three of the ten point estimates fell outside their
+  v13 intervals (`share_PRODUCTION_RESOLVED`, `share_SYSTEM_ACTIVATED`,
+  `share_TACTICAL_ACTION_BEGAN` — the new `ACTION_CARD_DISCARDED` events and window
+  questions dilute the stream denominators), and `faction_differentiation` /
+  `score_spread` narrowed (Reverse Engineer reshuffles the action-card supply, black-
+  market trades circulate cards and secrets, Salvage moves commodities for free); the v14
+  transcription is verified bit-identical by the debug-mode gate test, and the release
+  re-run reports `0 metric(s) outside the recorded bounds`
+  (`plans/evidence/M08-021.md`).
+
 ## Partial implementations (exact gaps)
 
 - **Choice-dependent agenda riders** (const/diplo/war family): the payoff auto-fires only when
@@ -414,17 +484,10 @@ and the Movement group (`lost_star`, `solar_flare`), the Agenda group (`veto`/`v
 
 ### Writable in a follow-up batch (state is on `GameState`, event exists)
 
-`infiltrate` (planet-gain + unit placement), `blackmarketdealing`
-(transaction + sell a ship for 1 TG), `reparations` (planet taken + 1 TG),
-`reverse_engineer` (component-card discard + research) and `salvage` (space combat won +
-reinforcement move) remain — sub-batch C3. `stability` (status-phase card return + draft
-skip), `summit` (strategy-phase start + 2 command tokens), `disgrace` (strategy-card re-choice)
-and `puppetsonastring` (extra action turn for the passer) closed with the turn/status-flow
-batch above, and the four combat-bookkeeping families — `mjets1`–`4`, `reflective`,
-`courageous`, `crashlanding` — closed with the combat-aftermath batch. These are reaction and
-turn-flow cards: each needs a full-game scripted scenario in which the window or the turn
-moment actually fires, so each group is a separate session, not a continuation of the
-component-action batches.
+None — the C3 group above closed every card that was writable in principle. What remains
+are the two cards blocked on model gaps below: `investments` (no per-card trade-good
+attachment slot on `Player::action_cards`) and `lieinwait` (no transaction-history field).
+Each is a model change, not a follow-up effect batch.
 
 ## FINDING — `ti4-policy` test ledger was wrong; **resolved in `873178e`**
 
@@ -511,7 +574,8 @@ again, and the engine offer paths were re-checked to offer only the seat's own h
     (round-1 `STRATEGY_PHASE_BEGAN`, per-seat `STRATEGY_CARDS_WOULD_RETURN`, `TURN_BEGAN`),
     the `stability` / `duress_by` seat markers, the `PUPPET_ACTION` flag and the
     `last_strategy_choice` hand-off.
-  - **Not grouped by the handoff** (7, to close in sub-batch C3 — `salvage`, `reparations`,
-    `infiltrate`, `blackmarketdealing`, `reverse_engineer` — the remainder): `investments`
-    (unmodelled attachment) and `lieinwait` (no transaction-history field) stay blocked on the
-    two root causes above.
+  - **Not grouped by the handoff** (5 closed, 2 blocked): `salvage`, `reparations`,
+    `infiltrate`, `blackmarketdealing` and `reverse_engineer` closed with the
+    salvage/repair/infiltrate/black-market/reverse-engineer batch above (sub-batch C3);
+    `investments` (unmodelled attachment) and `lieinwait` (no transaction-history field)
+    stay blocked on the two root causes above.

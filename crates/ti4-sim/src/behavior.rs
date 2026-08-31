@@ -375,12 +375,55 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v13): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v14): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v14 — recorded 2026-08-31. A change in *play* and in the event stream: the five
+    // salvage/repair/infiltrate/black-market/reverse-engineer action cards stopped being
+    // unimplemented placeholders, and the driver gained the moments those cards watch — a
+    // transaction's opening is now a typed event (TRANSACTION_OPENED, When, carrying the
+    // two parties) and every action-card play converges on a discard event
+    // (ACTION_CARD_DISCARDED, After, naming the discarder and the card).
+    //
+    // - Salvage: after winning a space combat the opponents surrender their commodities.
+    // - Reparations: after another player captures one of your planets, that player
+    //   exhausts one of their planets and you ready one of yours.
+    // - Infiltrate: when you gain control of a planet, replace each PDS and space dock on
+    //   it with a matching unit from your reinforcements (a full-box no-op in the
+    //   unit-less model; the play and its spend are what the gate sees).
+    // - Black Market Dealings: while you are negotiating, both parties may trade relics,
+    //   action cards, and unscored secret objectives (flat 1.0 pricing); the card cannot
+    //   be canceled and its marker clears on completion.
+    // - Reverse Engineer: after another player discards a component action card, take it
+    //   from the discard pile.
+    //
+    // Three of the six action-label shares fell below their v13 intervals
+    // (share_PRODUCTION_RESOLVED, share_SYSTEM_ACTIVATED, share_TACTICAL_ACTION_BEGAN) — the
+    // signature of the new dilution sources: every component play now appends an
+    // ACTION_CARD_DISCARDED event and the reaction slots the new windows open add steps
+    // and window events to every stream the shares divide by. Simulating seats now also
+    // *play* the new cards from those windows (the default decider takes the first offered
+    // option, and a reaction play is offered before the decline): Reverse Engineer pulls
+    // played component cards out of the pile, which reshuffles the action-card supply,
+    // and Black Market Dealings lets both sides price secrets and cards into trades. The
+    // consequence is equalization — `faction_differentiation` [0.378, 0.841] ->
+    // [0.312, 0.746] and `score_spread` [1.531, 1.903] -> [1.423, 1.791] both fall and
+    // narrow: duress-vintage swings are softened by commodities changing hands for free
+    // (Salvage) and by cards and secrets circulating through black-market trades.
+    // `vp_pace` slips [0.391, 0.443] -> [0.377, 0.438] as the extra window questions
+    // lengthen action phases. `completion` stays the strict 1.0 invariant — the
+    // SPACE_COMBAT_WON emission now propagates timing errors instead of swallowing them,
+    // and every game in the suite still ends cleanly, so the strict gate holds under the
+    // new error surface. The protocol-integrity check is what forced the move, as in v8 ->
+    // v9 and v12 -> v13.
+    //
+    // Approved by the project owner (the engine-completion handoff's standing instruction to
+    // re-baseline when this card group lands); v13 values preserved side by side in
+    // plans/evidence/M08-021.md.
+    //
     // v13 — recorded 2026-08-31. A change in *play* and in the event stream: the five
     // turn/status-flow action cards (Summit, Political Stability, Public Disgrace, Puppets on a
     // String, Extreme Duress) stopped being unimplemented placeholders, and the driver gained
@@ -621,43 +664,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.390_740_740_740_740_67, 0.442_592_592_592_592_7),
+        (0.377_160_493_827_160_55, 0.437_654_320_987_654_33),
     );
-    // Degenerate on purpose: all thirty v1, v2 and v3 games ended cleanly, so the bound is the
-    // strict invariant "every game ends cleanly", not a statistical interval.
+    // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
+    // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.531_268_804_837_25, 1.903_317_181_405_952_9),
+        (1.423_407_302_046_826_3, 1.790_918_152_354_72),
     );
-    // V3: the spec's across-faction quantity — recorded from the same baseline run.
+    // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.378_430_808_131_698, 0.840_561_246_951_430_2),
+        (0.311_903_752_169_293_45, 0.745_521_608_765_166_9),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.020_292_562_335_981_83, 0.021_660_229_968_426_8),
+        (0.020_192_064_796_507_588, 0.021_337_318_463_416_344),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_406_215_749_231_43, 0.035_163_702_820_328_86),
+        (0.033_304_761_529_136_88, 0.034_369_281_084_510_96),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.048_359_204_759_518_35, 0.052_590_124_660_209_035),
+        (0.047_441_071_459_699_26, 0.051_545_660_579_076_59),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_873_250_499_588_725, 0.006_688_072_361_750_132),
+        (0.005_508_388_296_821_67, 0.006_317_691_505_641_835),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.067_938_275_928_763_48, 0.069_391_026_016_123_49),
+        (0.065_772_421_562_926_06, 0.067_785_337_648_531_62),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.033_506_015_931_503_05, 0.034_241_616_703_503_376),
+        (0.032_469_558_360_057_445, 0.033_437_678_196_709_77),
     );
     bounds
 }

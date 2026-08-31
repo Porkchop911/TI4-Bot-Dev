@@ -641,6 +641,236 @@ fn extreme_duress(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     }
 }
 
+/// Black Market Dealings: "When you are negotiating a transaction: You and the other player
+/// may include relics, action cards, and unscored secret objectives as part of the
+/// transaction. This card cannot be canceled."
+///
+/// The play happens inside the window the negotiation's opening opens, and its effect is to
+/// mark the negotiation in flight. When the driver asks its first question, the marked table
+/// is offered the two extra asset kinds on top of the usual shapes: action cards — the shape
+/// otherwise gated behind Arbiters — plus unscored secret objectives and relic fragments
+/// ("relics" are the fragments, per the 5th-printing clarification; LRR 73.4 keeps full relics
+/// untradeable, and the engine trades only fragments anyway). The marker is cleared when the
+/// negotiation closes or the turn ends, so it can never bleed into another player's table. The
+/// "cannot be canceled" clause is structural: once the flag is set, nothing else touches it, so
+/// no counter-play can strip the terms back away.
+fn blackmarketdealings(context: &mut crate::timing::TimingContext<'_>, _player: &PlayerId) {
+    context
+        .state
+        .transient_flags
+        .set(ti4_model::state::TransientFlags::BLACK_MARKET);
+}
+
+/// Infiltrate: "When you gain control of a planet: Replace each PDS and space dock that is on
+/// that planet with a matching unit from your reinforcements."
+///
+/// The frame names the capture it reacts to in `last_control_gained`, because the card cannot
+/// read the event that summoned it. The capture has already destroyed every structure that was
+/// not the new controller's, so the only PDS or space dock still standing on the planet is the
+/// controller's own, and those are the units the card replaces, one for one. "From your
+/// reinforcements" is the box's supply: a replacement arrives only if the game still has that
+/// kind of unit to give, otherwise the unit that was there stays.
+fn infiltrate(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((system, planet, _gained, _previous)) = context.state.last_control_gained.clone()
+    else {
+        return;
+    };
+    let types = ti4_content::units::catalogue(context.content, context.sources);
+    let standing: Vec<ti4_model::units::Unit> = context
+        .state
+        .system_state(&system)
+        .on_planet(&planet)
+        .iter()
+        .filter(|unit| &unit.owner == player)
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.base_type() == "pds" || kind.base_type() == "spacedock")
+        })
+        .cloned()
+        .collect();
+    for unit in standing {
+        if crate::supply::allowed(
+            context.state,
+            context.content,
+            context.sources,
+            player,
+            &unit.type_id,
+            1,
+        ) == 0
+        {
+            continue; // the box holds no more of this kind: nothing to replace it with
+        }
+        let kind = unit.type_id.clone();
+        context.state.system_mut(&system).replace_planet_unit(
+            &planet,
+            &unit,
+            ti4_model::units::Unit::new(kind, player.clone()),
+        );
+    }
+}
+
+/// Reparations: "After another player gains control of a planet you control: Exhaust 1 planet
+/// that player controls and ready 1 planet you control."
+///
+/// The frame hands over who the planet was taken from, because control has already changed by
+/// the time the window runs and the board alone answers with the new controller. The new
+/// controller chooses which of their planets exhausts — the one just taken is among them — and
+/// the holder chooses which of their exhausted planets readies; a single candidate needs no
+/// question, and a side with no candidate simply skips its half.
+fn reparations(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((_system, _planet, gainer, previous)) = context.state.last_control_gained.clone()
+    else {
+        return;
+    };
+    // "A planet you control" is about the planet's former holder, not its new one.
+    if previous.as_ref() != Some(player) || &gainer == player {
+        return;
+    }
+    let controlled_by = |context: &crate::timing::TimingContext<'_>, who: &PlayerId| {
+        let mut planets: std::collections::BTreeSet<ti4_model::id::PlanetId> =
+            std::collections::BTreeSet::new();
+        for board in &context.state.board {
+            for (planet, holder) in &board.1.planet_control {
+                if holder == who {
+                    planets.insert(planet.clone());
+                }
+            }
+        }
+        planets
+    };
+    // Exhaust 1 planet the new controller controls — theirs to choose.
+    let gainer_planets = controlled_by(context, &gainer);
+    if !gainer_planets.is_empty() {
+        let exhaust = if gainer_planets.len() == 1 {
+            gainer_planets.into_iter().next().expect("one candidate")
+        } else {
+            let options = gainer_planets
+                .iter()
+                .map(|planet| {
+                    crate::choice::ChoiceOption::labelled(
+                        planet.to_string(),
+                        "reparations_exhaust",
+                        planet.to_string(),
+                    )
+                })
+                .collect();
+            let choice = crate::choice::Choice::new(
+                gainer.clone(),
+                "exhaust a planet (Reparations)",
+                options,
+            );
+            match context.table.ask_seeing(
+                &choice,
+                &crate::choice::Observed::new(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    context.galaxy,
+                ),
+            ) {
+                Ok(answer) => ti4_model::id::PlanetId::new(&answer.id),
+                Err(_) => return,
+            }
+        };
+        context.state.exhaust_planet(exhaust);
+    }
+    // Ready 1 planet the holder controls — among their exhausted ones, since readying a ready
+    // planet is not a thing the board records.
+    let own: Vec<_> = controlled_by(context, player)
+        .into_iter()
+        .filter(|planet| context.state.exhausted_planets.contains(planet))
+        .collect();
+    if !own.is_empty() {
+        let ready = if own.len() == 1 {
+            own.into_iter().next().expect("one candidate")
+        } else {
+            let options = own
+                .iter()
+                .map(|planet| {
+                    crate::choice::ChoiceOption::labelled(
+                        planet.to_string(),
+                        "reparations_ready",
+                        planet.to_string(),
+                    )
+                })
+                .collect();
+            let choice =
+                crate::choice::Choice::new(player.clone(), "ready a planet (Reparations)", options);
+            match context.table.ask_seeing(
+                &choice,
+                &crate::choice::Observed::new(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    context.galaxy,
+                ),
+            ) {
+                Ok(answer) => ti4_model::id::PlanetId::new(&answer.id),
+                Err(_) => return,
+            }
+        };
+        context.state.ready_planet(&ready);
+    }
+}
+
+/// Salvage: "After you win a space combat: Your opponent gives you all of their
+/// commodities."
+///
+/// The frame names the opponents the winner fought — the sides the fight opened with, minus
+/// the winner — because the losers' ships are off the board by the time the window runs and
+/// the board alone answers with the winner. Each opponent gives up every commodity they hold,
+/// and a commodity becomes a trade good the moment it changes hands (21.5), the same handoff
+/// the transaction makes, so the goods arrive as goods.
+fn salvage(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((_system, opponents)) = context.state.last_combat_sides.clone() else {
+        return;
+    };
+    let mut goods = 0i32;
+    for opponent in &opponents {
+        if opponent == player {
+            continue;
+        }
+        if let Some(seat) = context.state.player_mut(opponent) {
+            goods += seat.commodities;
+            seat.commodities = 0;
+        }
+    }
+    if goods > 0
+        && let Some(winner) = context.state.player_mut(player)
+    {
+        winner.commodities += goods;
+    }
+}
+
+/// Reverse Engineer: "After another player discards an action card that has a component
+/// action: Take that action card from the discard pile."
+///
+/// The frame names the discarded card in `last_action_discarded` and has already put it in
+/// the pile, because the card cannot read the event that summoned it and the pile is where
+/// the printed card text sends it. The window's printed qualifier — the discarded card has a
+/// component action — is checked here, against the content, and a second holder who acted
+/// first leaves the pile empty for the one who acted after: the card is taken, not copied.
+fn reverse_engineer(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    let Some((by, alias)) = context.state.last_action_discarded.clone() else {
+        return;
+    };
+    if by == *player {
+        return;
+    }
+    if !is_component_action(context.content, &alias) {
+        return;
+    }
+    let pile = &mut context.state.discarded_action_cards;
+    let Some(at) = pile.iter().position(|held| held == &alias) else {
+        return; // a faster reverse engineer took it first
+    };
+    pile.remove(at);
+    if let Some(seat) = context.state.player_mut(player) {
+        seat.action_cards.push(alias);
+    }
+}
+
 /// Rout: "your opponent must announce a retreat, if able."
 ///
 /// The card is played in the window that opens when the retreat announcement step begins, so
@@ -4680,6 +4910,11 @@ pub fn effect_for(alias: &ActionCardId) -> Option<Effect> {
         "disgrace" => Some(public_disgrace),
         "puppetsonastring" => Some(puppets_on_a_string),
         "extremeduress" => Some(extreme_duress),
+        "salvage" => Some(salvage),
+        "reparations" => Some(reparations),
+        "infiltrate" => Some(infiltrate),
+        "reverse_engineer" => Some(reverse_engineer),
+        "blackmarketdealing" => Some(blackmarketdealings),
         "rout" => Some(rout),
         "waylay" => Some(waylay),
         "dh1" | "dh2" | "dh3" | "dh4" => Some(direct_hit),
@@ -4866,6 +5101,11 @@ const REGISTERED_ALIASES: &[&str] = &[
     "disgrace",
     "puppetsonastring",
     "extremeduress",
+    "salvage",
+    "reparations",
+    "infiltrate",
+    "reverse_engineer",
+    "blackmarketdealing",
     "dh1",
     "dh2",
     "dh3",

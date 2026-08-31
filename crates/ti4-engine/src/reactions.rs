@@ -77,6 +77,13 @@ fn actor_is_not(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
         .is_some_and(|who| who != player.as_str())
 }
 
+/// "When you are negotiating a transaction" — Black Market Dealings. The event names the
+/// proposer as `player` and the other chair as `partner`; either chair at the table is
+/// negotiating.
+fn party_to_transaction(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
+    event.text("player") == Some(player.as_str()) || event.text("partner") == Some(player.as_str())
+}
+
 /// "When you would return your strategy card(s) during the status phase" — Political
 /// Stability. The window fires per seat, named by that seat, and only a seat that
 /// actually holds strategy cards has anything to keep.
@@ -373,6 +380,14 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             guarded("SPACE_COMBAT_WON", After, actor_is),
         ),
         (
+            "After another player discards an action card that has a component action",
+            guarded("ACTION_CARD_DISCARDED", After, actor_is_not),
+        ),
+        (
+            "When you are negotiating a transaction",
+            guarded("TRANSACTION_OPENED", When, party_to_transaction),
+        ),
+        (
             "When 1 or more of your units use PRODUCTION",
             guarded("PRODUCTION_USED", After, actor_is),
         ),
@@ -476,6 +491,8 @@ pub const EMITTED_EVENTS: &[&str] = &[
     "TURN_PASSED",
     "TURN_BEGAN",
     "STRATEGY_CARDS_WOULD_RETURN",
+    "ACTION_CARD_DISCARDED",
+    "TRANSACTION_OPENED",
 ];
 
 /// Printed windows that cannot yet be reacted to, with the reason.
@@ -590,8 +607,10 @@ pub fn announce(
     let announced = context.event_sequence.next("ACTION_CARD_PLAYED", payload)?;
     let announced = resolver.emit_with_context(context, announced, |_, _| {})?;
     // The card is still spent when cancelled: 1.15 lets a WHEN ability cancel the event, not
-    // un-spend the card.
+    // un-spend the card — and a spent card is a discarded one, so the discard is announced on
+    // both exits. Reverse Engineer reads exactly this moment.
     if announced.cancelled {
+        announce_discard(context, resolver, player, alias)?;
         return Ok(false);
     }
 
@@ -607,6 +626,9 @@ pub fn announce(
             .next("ACTION_CARD_UNRESOLVED", payload)?;
         resolver.emit_with_context(context, unresolved, |_, _| {})?;
     }
+    // The card left the hand before the play was announced, so it is in the discard pile now —
+    // recorded before the event, so a card played into the window finds it there.
+    announce_discard(context, resolver, player, alias)?;
     // An effect may have staged a destruction (Direct Hit destroys the sustained ship from
     // inside the window, where it holds no resolver): announce each removal through the game's
     // resolver now, so the event's own WHEN and AFTER windows open around it. The ship is off
@@ -633,6 +655,36 @@ pub fn announce(
         resolver.emit_with_context(context, destroyed, |_, _| {})?;
     }
     Ok(true)
+}
+
+/// Record the just-played card in the discard pile and open the window that reads it.
+///
+/// Every path into [`announce`] has already removed the card from its owner's hand, so the
+/// pile push is the discard itself — a steal or a transaction never reaches here, and those
+/// cards never enter the pile. The push precedes the event so that a card played into the
+/// window (Reverse Engineer) finds its target in the pile, and the event names the discarded
+/// card's alias because the window's printed qualifier — "that has a component action" — is
+/// a fact about the card, which the effect checks against the content, and the pile lookup
+/// needs the very card that left play rather than whichever card shares its name.
+///
+/// # Errors
+/// [`TimingError`] when the announcement cannot be resolved.
+fn announce_discard(
+    context: &mut TimingContext<'_>,
+    resolver: &mut Resolver,
+    player: &PlayerId,
+    alias: &ActionCardId,
+) -> Result<(), TimingError> {
+    context.state.discarded_action_cards.push(alias.clone());
+    context.state.last_action_discarded = Some((player.clone(), alias.clone()));
+    let mut payload = BTreeMap::new();
+    payload.insert("player".to_owned(), player.to_string().into());
+    payload.insert("card".to_owned(), alias.to_string().into());
+    let discarded = context
+        .event_sequence
+        .next("ACTION_CARD_DISCARDED", payload)?;
+    resolver.emit_with_context(context, discarded, |_, _| {})?;
+    Ok(())
 }
 
 /// The choice kind the oracle offers reaction cards under (engine/reactions.py:320–324).
@@ -968,9 +1020,12 @@ mod tests {
     #[test]
     fn the_unmapped_windows_are_reported_rather_than_ignored() {
         let missing = unmapped_windows(ContentStore::embedded(), POK);
+        // The window table has grown to cover every printed window in the corpus, so there is
+        // nothing left that could be silently unplayable: the report is empty, and it would
+        // stop being empty the day a card ships with a window nobody mapped.
         assert!(
-            !missing.is_empty(),
-            "most reaction windows are still unmapped, and that must be visible"
+            missing.is_empty(),
+            "these printed windows have no table entry and their cards can never be played: {missing:?}"
         );
         for key in window_table().keys() {
             assert!(!missing.contains_key(*key));

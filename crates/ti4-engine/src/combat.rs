@@ -35,6 +35,8 @@ pub enum CombatError {
     Unresolved(SystemId),
     #[error(transparent)]
     IllegalChoice(#[from] IllegalChoice),
+    #[error(transparent)]
+    Timing(#[from] crate::timing::TimingError),
 }
 
 /// How a space combat ended.
@@ -1062,6 +1064,13 @@ impl CombatError {
     pub(crate) fn into_illegal_choice(self) -> IllegalChoice {
         match self {
             CombatError::IllegalChoice(error) => error,
+            CombatError::Timing(error) => match error {
+                crate::timing::TimingError::IllegalChoice(error) => error,
+                other => IllegalChoice::NoOptions {
+                    player: PlayerId::new(""),
+                    prompt: other.to_string(),
+                },
+            },
             CombatError::Unresolved(system) => IllegalChoice::NoOptions {
                 player: PlayerId::new(""),
                 prompt: format!("combat in {system} did not settle"),
@@ -2204,6 +2213,16 @@ pub struct BeforeCombat {
     /// Whose promissory notes each side held when the tactical action started. Standalone combat
     /// callers snapshot when their combat opens because they have no enclosing tactical window.
     notes: NoteHoldings,
+}
+
+impl BeforeCombat {
+    /// The players with ships when the fight opened, in seating order. A Salvage played into
+    /// the win window knows its opponents only from this list — by then the losers' ships are
+    /// off the board and the board itself answers with the winner alone.
+    #[must_use]
+    pub fn sides(&self) -> &[PlayerId] {
+        &self.sides
+    }
 }
 
 /// Promissory-note issuers held by each player at a defined timing boundary.

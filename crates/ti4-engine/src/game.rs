@@ -368,6 +368,21 @@ impl AftermathWindow {
                         // ended without a winner opens no window — which is what Skilled Retreat
                         // is for.
                         if let Some(winner) = outcome.winner.clone() {
+                            // The losers' ships are off the board by now, so the opponents
+                            // are named from the snapshot the fight opened with: every side
+                            // but the winner. A two-player fight — the common case — is
+                            // exactly "your opponent"; a wider fight is each of the others.
+                            // The handoff exists beside the payload because the window that
+                            // follows cannot read the payload itself.
+                            let opponents: Vec<_> = self
+                                .before_combat
+                                .sides()
+                                .iter()
+                                .filter(|side| **side != winner)
+                                .cloned()
+                                .collect();
+                            state.last_combat_sides =
+                                Some((self.system.clone(), opponents.clone()));
                             let mut payload = BTreeMap::new();
                             payload.insert(
                                 "player".to_owned(),
@@ -377,7 +392,16 @@ impl AftermathWindow {
                                 "system".to_owned(),
                                 serde_json::Value::String(self.system.to_string()),
                             );
-                            let _ = ctx.emit(state, "SPACE_COMBAT_WON", payload);
+                            payload.insert(
+                                "opponents".to_owned(),
+                                serde_json::Value::Array(
+                                    opponents
+                                        .iter()
+                                        .map(|side| serde_json::Value::String(side.to_string()))
+                                        .collect(),
+                                ),
+                            );
+                            ctx.emit(state, "SPACE_COMBAT_WON", payload)?;
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
                     }
@@ -1018,7 +1042,7 @@ impl<'a> Game<'a> {
                     let done = self.play_faction_action(&active, &answer);
                     // Extreme Duress bites once the action is taken: the played card is
                     // already out of the hand, so only what is left gets discarded.
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1037,7 +1061,7 @@ impl<'a> Game<'a> {
                         &active,
                         &answer,
                     )?;
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1056,7 +1080,7 @@ impl<'a> Game<'a> {
                         &active,
                         &answer,
                     )?;
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1068,7 +1092,7 @@ impl<'a> Game<'a> {
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
                     let _ = index;
                     let played = self.play_component_action(&active, &answer);
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.emit(if played.unwrap_or(false) {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1091,7 +1115,7 @@ impl<'a> Game<'a> {
                     );
                     self.dice = dice;
                     self.rng = rng;
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
@@ -1101,20 +1125,34 @@ impl<'a> Game<'a> {
                     return Ok(());
                 }
                 if let Some(partner) = crate::transactions::opens_with(&self.state, &answer) {
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.trade = Some(crate::transactions::TradeWindow::open(
                         &mut self.state,
                         &active,
                         &partner,
                     ));
-                    self.emit("TRANSACTION_OPENED");
+                    // Typed as well as logged, so the card that reads "when you are negotiating
+                    // a transaction" has a window to be played into. The payload names both
+                    // chairs, because either of them may hold the card; the window it opens
+                    // settles before the first question of the negotiation is asked.
+                    self.sync_timing_context();
+                    let mut payload = BTreeMap::new();
+                    payload.insert(
+                        "player".to_owned(),
+                        serde_json::Value::String(active.to_string()),
+                    );
+                    payload.insert(
+                        "partner".to_owned(),
+                        serde_json::Value::String(partner.to_string()),
+                    );
+                    self.emit_typed("TRANSACTION_OPENED", payload)?;
                     return Ok(());
                 }
                 if answer.kind != ACTION_KIND {
                     return Err(GameError::UnsupportedAction(answer.id));
                 }
                 if answer.id == TACTICAL_ACTION_ID {
-                    self.settle_extreme_duress(&active, false);
+                    self.settle_extreme_duress(&active, false)?;
                     self.tactical = Some(TacticalWindow {
                         player: active,
                         stage: TacticalStage::Activating,
@@ -1128,7 +1166,7 @@ impl<'a> Game<'a> {
                 // Strategic is the one action Extreme Duress does not punish: it lifts
                 // quietly, settled after the action is set up so a cancelled action (Coup
                 // d'Etat) leaves nothing behind but the duress the target no longer owes.
-                self.settle_extreme_duress(&active, true);
+                self.settle_extreme_duress(&active, true)?;
                 let card = window.card().to_string();
                 // "When another player would perform a strategic action" — typed, and fired
                 // before anything is resolved, so Coup d'Etat can end the turn in time to
@@ -1210,30 +1248,56 @@ impl<'a> Game<'a> {
     /// there is no state to change, the same reading as Insider Information.) A pass is
     /// not an action, so it neither triggers nor lifts the duress: it stays armed until
     /// the next action.
-    fn settle_extreme_duress(&mut self, player: &PlayerId, strategic: bool) {
+    /// Settle an Extreme Duress the player owes, once their action is taken.
+    ///
+    /// # Errors
+    /// [`GameError`] when the windows a discarded card opens get an illegal answer.
+    fn settle_extreme_duress(
+        &mut self,
+        player: &PlayerId,
+        strategic: bool,
+    ) -> Result<(), GameError> {
         let Some(by) = self
             .state
             .player(player)
             .and_then(|seat| seat.duress_by.clone())
         else {
-            return;
+            return Ok(());
         };
         if strategic {
             self.state.player_mut(player).expect("just read").duress_by = None;
-            return;
+            return Ok(());
         }
-        let goods = {
+        let (goods, discarded) = {
             let seat = self.state.player_mut(player).expect("just read");
             let goods = seat.trade_goods;
             seat.trade_goods = 0;
-            seat.action_cards.clear();
+            // The cards are named one by one below, so they are taken out, not cleared away.
+            let discarded = std::mem::take(&mut seat.action_cards);
             seat.duress_by = None;
-            goods
+            (goods, discarded)
         };
         if let Some(holder) = self.state.player_mut(&by) {
             holder.trade_goods += goods;
         }
         self.emit(&format!("EXTREME_DURESS:{player}"));
+        // The punishment discards every action card left in the hand, and every discarded
+        // component action is a moment another player's Reverse Engineer may take.
+        for card in discarded {
+            self.state.discarded_action_cards.push(card.clone());
+            self.sync_timing_context();
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(player.to_string()),
+            );
+            payload.insert(
+                "card".to_owned(),
+                serde_json::Value::String(card.to_string()),
+            );
+            self.emit_typed("ACTION_CARD_DISCARDED", payload)?;
+        }
+        Ok(())
     }
 
     /// The decision an open tactical action currently owes.
@@ -1963,6 +2027,11 @@ impl<'a> Game<'a> {
             .is_some_and(crate::transactions::TradeWindow::is_complete)
         {
             self.trade = None;
+            // The negotiation the Black Market marker was set for is over; the marker dies
+            // with it, or it would unlock the next player's table as well.
+            self.state
+                .transient_flags
+                .clear(TransientFlags::BLACK_MARKET);
         }
         self.result(true, None)
     }
@@ -2706,6 +2775,12 @@ impl<'a> Game<'a> {
             return Ok(());
         }
         let ended = self.state.active.clone();
+        // A Black Market marker outlives no turn: the negotiation it unlocked is closed by
+        // the time the turn ends, and the marker is cleared here too so a flag no window
+        // consumed can never leak into another player's table.
+        self.state
+            .transient_flags
+            .clear(TransientFlags::BLACK_MARKET);
         if self.state.phase == Phase::Action
             && let Some(active) = ended.clone()
         {
@@ -7790,6 +7865,802 @@ mod tests {
                 round: 1,
                 phase: Phase::Strategy,
             })
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // C3: Salvage, Reparations, Infiltrate, Reverse Engineer, Black Market Dealings.
+    // ------------------------------------------------------------------
+
+    /// The tactical fixture with b moved off the shared default faction, so a transaction
+    /// offered "with loam" resolves to b instead of the first generic seat in the room.
+    fn market_fixture(a_cards: &[&str]) -> (GameState, Galaxy) {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("loam");
+        // Both seats hold ships in the same hub system: LRR 60 neighbours, so a trade with
+        // b is even offered (a home system alone is not presence).
+        state.player_mut(&a).unwrap().home_system = Some(ids[0].clone());
+        state.player_mut(&b).unwrap().home_system = Some(ids[0].clone());
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &a, 1);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 1);
+        state.player_mut(&a).unwrap().action_cards = a_cards
+            .iter()
+            .map(|alias| ti4_model::id::ActionCardId::new(*alias))
+            .collect();
+        (state, galaxy)
+    }
+
+    /// A non-space-station planet in a system other than `avoid`.
+    fn a_distant_planet(avoid: &SystemId) -> (SystemId, PlanetId) {
+        let content = ContentStore::embedded();
+        let planets = ti4_content::galaxy::all_planets(content, POK);
+        for (id, planet) in &planets {
+            let id = *id;
+            let system = planet.system_id().unwrap_or("00");
+            if system != avoid.as_str() && !ti4_content::galaxy::is_space_station(content, id, POK)
+            {
+                return (SystemId::new(system), PlanetId::new(id));
+            }
+        }
+        panic!("the corpus has a distant planet")
+    }
+
+    /// Drives an invasion turn: plays the tactical action on the named system, moves
+    /// nothing, commits the first landable unit to `commit` and to no other planet, and
+    /// plays a scripted reaction at the first window question it is offered. Every other
+    /// question takes its first option, which is the deterministic answer the exploration
+    /// and sustain prompts need.
+    struct InvasionDecider {
+        system: ti4_model::id::SystemId,
+        commit: ti4_model::id::PlanetId,
+        reactions: std::collections::BTreeMap<ti4_model::id::PlayerId, String>,
+    }
+
+    impl crate::choice::Decider for InvasionDecider {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            let no_options = || crate::choice::IllegalChoice::NoOptions {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+            };
+            if choice.options.iter().any(|o| o.id == TACTICAL_ACTION_ID) {
+                return choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == TACTICAL_ACTION_ID)
+                    .cloned()
+                    .ok_or_else(no_options);
+            }
+            if choice.prompt == "activate a system"
+                && let Some(o) = choice.options.iter().find(|o| o.id == self.system.as_str())
+            {
+                return Ok(o.clone());
+            }
+            if let Some(o) = choice.options.iter().find(|o| o.id == "done_moving") {
+                return Ok(o.clone());
+            }
+            let wanted = format!("commit|0|{}", self.commit.as_str());
+            if let Some(o) = choice.options.iter().find(|o| o.id == wanted) {
+                return Ok(o.clone());
+            }
+            if let Some(o) = choice.options.iter().find(|o| o.id == "done_committing") {
+                return Ok(o.clone());
+            }
+            if let Some(reaction) = self.reactions.get(&choice.player)
+                && let Some(o) = choice
+                    .options
+                    .iter()
+                    .find(|o| o.id.as_str() == reaction.as_str())
+            {
+                return Ok(o.clone());
+            }
+            choice.options.first().cloned().ok_or_else(no_options)
+        }
+    }
+
+    /// One recorded ask: `(player, prompt, option ids)`.
+    type Ask = (String, String, Vec<String>);
+
+    /// Drives a two-seat transaction end to end. Records every ask as
+    /// `(player, prompt, option ids)`; in the arm it plays Black Market Dealings when the
+    /// window opens, a's action phase opens the trade, the proposer takes the first offer
+    /// shape unless `want_secret_deal` (then the secret shape, and b accepts the answer).
+    struct MarketDecider {
+        arm: bool,
+        want_secret_deal: bool,
+        seen: Arc<Mutex<Vec<Ask>>>,
+    }
+
+    impl Decider for MarketDecider {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            let offered = choice
+                .ids()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            self.seen.lock().unwrap().push((
+                choice.player.to_string(),
+                choice.prompt.clone(),
+                offered.clone(),
+            ));
+            let window = choice.prompt.starts_with("when ") || choice.prompt.starts_with("after ");
+            if window {
+                if self.arm
+                    && choice.player == PlayerId::new("a")
+                    && choice.prompt.ends_with("TRANSACTION_OPENED")
+                    && let Some(play) = choice
+                        .options
+                        .iter()
+                        .find(|option| option.id == "reaction:generic:TRANSACTION_OPENED:when")
+                        .cloned()
+                {
+                    return Ok(play);
+                }
+                if let Some(decline) = choice
+                    .options
+                    .iter()
+                    .find(|option| option.is_decline())
+                    .cloned()
+                {
+                    return Ok(decline);
+                }
+            }
+            if choice.prompt == "action phase"
+                && choice.player == PlayerId::new("a")
+                && let Some(open) = choice
+                    .options
+                    .iter()
+                    .find(|option| option.id.starts_with("component|trade|"))
+                    .cloned()
+            {
+                return Ok(open);
+            }
+            if choice.prompt.starts_with("transaction with ") {
+                if self.want_secret_deal {
+                    if let Some(secret) = choice
+                        .options
+                        .iter()
+                        .find(|option| option.id.starts_with("so"))
+                        .cloned()
+                    {
+                        return Ok(secret);
+                    }
+                    return Err(IllegalChoice::ScriptDiverged {
+                        player: choice.player.clone(),
+                        wanted: "so…".to_owned(),
+                        offered,
+                    });
+                }
+                if let Some(offer) = choice.options.first().cloned() {
+                    return Ok(offer);
+                }
+            }
+            if choice.prompt.contains("-- accept?") {
+                let wanted = if self.want_secret_deal {
+                    "accept"
+                } else {
+                    "refuse"
+                };
+                if let Some(answer) = choice
+                    .options
+                    .iter()
+                    .find(|option| option.id == wanted)
+                    .cloned()
+                {
+                    return Ok(answer);
+                }
+                return Err(IllegalChoice::ScriptDiverged {
+                    player: choice.player.clone(),
+                    wanted: wanted.to_owned(),
+                    offered,
+                });
+            }
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    /// Steps until the table has settled the transaction (or the guard trips), sharing the
+    /// decider's question log through `seen`.
+    fn settle_market(game: &mut Game, seen: &Arc<Mutex<Vec<Ask>>>) {
+        let mut guard = 0;
+        loop {
+            guard += 1;
+            assert!(guard < 60, "the trade never settled; log {:?}", game.events);
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            if game.trade.is_none()
+                && seen
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(_, prompt, _)| prompt.starts_with("transaction with "))
+            {
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn salvage_sweeps_the_losers_commodities_after_a_won_space_combat() {
+        // Salvage: "After you win a space combat: Your opponent gives you all of their
+        // commodities." a wins: three cruisers on pinned 10s destroy b's flagship (pinned
+        // 1s never hit). b enters the fight with three commodities and hands them over
+        // when a plays salvage from the After window.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let (mut state, galaxy, ids) = combat_fixture(&["salvage"], &[]);
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 3);
+        crate::fixtures::put(&mut state, &ids[0], "flagship", &b, 1);
+        state.player_mut(&a).unwrap().commodities = 0;
+        state.player_mut(&b).unwrap().commodities = 3;
+        let script = vec![
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+            "stay".to_owned(),
+            "decline".to_owned(),
+            "reaction:generic:SPACE_COMBAT_WON:after".to_owned(),
+        ];
+        let table = Table::with_default(Box::new(Scripted::new(script)));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([10, 10, 10, 1, 1, 10, 10, 10, 1, 1, 10, 10, 10, 1, 1]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        assert!(
+            events.iter().any(|e| e == "SPACE_COMBAT_WON"),
+            "a won the combat; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().commodities,
+            3,
+            "the commodities moved to the winner; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&b).unwrap().commodities,
+            0,
+            "the loser was left without commodities; log {events:?}"
+        );
+        assert!(
+            game.state.player(&a).unwrap().action_cards.is_empty(),
+            "salvage was spent on the play; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_salvage_a_won_space_combat_leaves_the_losers_commodities_alone() {
+        // The control: the same fight, nobody armed. b keeps every commodity — the sweep
+        // has no card to come from.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let (mut state, galaxy, ids) = combat_fixture(&[], &[]);
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 3);
+        crate::fixtures::put(&mut state, &ids[0], "flagship", &b, 1);
+        state.player_mut(&a).unwrap().commodities = 0;
+        state.player_mut(&b).unwrap().commodities = 3;
+        let script = vec![
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+            "stay".to_owned(),
+            "decline".to_owned(),
+        ];
+        let table = Table::with_default(Box::new(Scripted::new(script)));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([10, 10, 10, 1, 1, 10, 10, 10, 1, 1, 10, 10, 10, 1, 1]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        assert!(
+            events.iter().any(|e| e == "SPACE_COMBAT_WON"),
+            "a still won; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().commodities,
+            0,
+            "nothing swept, nothing gained; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&b).unwrap().commodities,
+            3,
+            "the loser keeps their commodities; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn reparations_exhausts_the_gainers_planet_and_readies_the_holders() {
+        // Reparations: "After another player gains control of a planet you control:
+        // Exhaust 1 planet that player controls and ready 1 planet you control." a invades
+        // b's planet: the dreadnought's bombardment (5, 4) destroys b's infantry
+        // and the planet falls, exhausting it on the capture. b holds the planet and the
+        // card, so b plays it in the After window: a's single controlled planet (the
+        // capture) is re-exhausted, and b's one exhausted planet elsewhere is readied.
+        let (mut state, galaxy, system, planet) = invasion_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+        crate::fixtures::put(&mut state, &system, "infantry", &a, 1);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 1);
+        let (other, b_planet) = a_distant_planet(&system);
+        state
+            .system_mut(&other)
+            .set_control(b_planet.clone(), b.clone());
+        state.exhaust_planet(b_planet.clone());
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("reparations")];
+        let mut reactions = std::collections::BTreeMap::new();
+        reactions.insert(
+            b.clone(),
+            "reaction:generic:PLANET_CONTROL_GAINED:after".to_owned(),
+        );
+        let table = Table::with_default(Box::new(InvasionDecider {
+            system: system.clone(),
+            commit: planet.clone(),
+            reactions,
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([6]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert!(
+            state.system_state(&system).planet_control.get(&planet) == Some(&a),
+            "a took the planet; log {events:?}"
+        );
+        assert!(
+            state.exhausted_planets.contains(&planet),
+            "the capture exhausted the planet (LRR 42.3); log {events:?}"
+        );
+        assert!(
+            !state.exhausted_planets.contains(&b_planet),
+            "b's exhausted planet was readied by the card; log {events:?}"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "reparations was spent on the play; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_reparations_a_capture_exhausts_nothing_of_the_losers() {
+        // The control: the same invasion, nobody armed. The capture still exhausts the
+        // planet it takes, but b's other planet stays exhausted — nothing was readied.
+        let (mut state, galaxy, system, planet) = invasion_fixture();
+        let a = PlayerId::new("a");
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+        crate::fixtures::put(&mut state, &system, "infantry", &a, 1);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), PlayerId::new("b"));
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &system,
+            &planet,
+            "infantry",
+            &PlayerId::new("b"),
+            1,
+        );
+        let (other, b_planet) = a_distant_planet(&system);
+        state
+            .system_mut(&other)
+            .set_control(b_planet.clone(), PlayerId::new("b"));
+        state.exhaust_planet(b_planet.clone());
+        let table = Table::with_default(Box::new(InvasionDecider {
+            system: system.clone(),
+            commit: planet.clone(),
+            reactions: std::collections::BTreeMap::new(),
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([6]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert!(
+            state.system_state(&system).planet_control.get(&planet) == Some(&a),
+            "a still took the planet; log {events:?}"
+        );
+        assert!(
+            state.exhausted_planets.contains(&b_planet),
+            "nothing readied b's planet; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn infiltrate_is_played_when_the_planet_changes_hands() {
+        // Infiltrate: "When you gain control of a planet: Replace each PDS and space
+        // dock that is on that planet with a matching unit from your reinforcements."
+        // a holds its own PDS on the planet it is about to capture (b holds one
+        // infantry); a's war sun disables the planet's shield so the bombardment
+        // reaches the infantry. a plays the card in the When window as the planet
+        // changes hands; with a full box the replacement is the same unit for the
+        // unit-less model, so the test pins the play, the spend, and that the capture
+        // proceeds undisturbed: the PDS a owned is still standing (LRR 49 destroys
+        // only rival structures), and a owns the planet.
+        let (mut state, galaxy, system, planet) = invasion_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "warsun", &a, 1);
+        crate::fixtures::put(&mut state, &system, "infantry", &a, 1);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), b.clone());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 1);
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &a, 1);
+        state.player_mut(&a).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("infiltrate")];
+        let mut reactions = std::collections::BTreeMap::new();
+        reactions.insert(
+            a.clone(),
+            "reaction:generic:PLANET_CONTROL_GAINED:when".to_owned(),
+        );
+        let table = Table::with_default(Box::new(InvasionDecider {
+            system: system.clone(),
+            commit: planet.clone(),
+            reactions,
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([4, 4, 4]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert!(
+            state.system_state(&system).planet_control.get(&planet) == Some(&a),
+            "a took the planet; log {events:?}"
+        );
+        let units: Vec<(String, String)> = state
+            .system_state(&system)
+            .planet_units
+            .get(&planet)
+            .map(|list| {
+                list.iter()
+                    .map(|unit| (unit.owner.to_string(), unit.type_id.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            units,
+            vec![
+                ("a".to_owned(), "pds".to_owned()),
+                ("a".to_owned(), "infantry".to_owned()),
+            ],
+            "a's own PDS stood through the capture and its committed infantry landed on it; log {events:?}"
+        );
+        assert!(
+            state.player(&a).unwrap().action_cards.is_empty(),
+            "infiltrate was spent on the play; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn reparations_do_nothing_when_the_holder_never_controlled_the_planet() {
+        // The no-op branch: b holds Reparations but the planet a captures was owned by
+        // nobody, so it was never a planet b controlled. The card still plays (the window
+        // is coarse) and the effect verifies and declines: nothing is exhausted or
+        // readied beyond the capture's own LRR 42.3 exhaustion.
+        let (mut state, galaxy, system, planet) = invasion_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+        crate::fixtures::put(&mut state, &system, "infantry", &a, 1);
+        // No set_control and no units: the planet was unowned and falls without a fight.
+        // Taking an unowned planet sends a drawing from the exploration deck — the
+        // decider's fallback answers whatever the draw asks in a deterministic first
+        // option — and the capture needs a committed ground unit.
+        let (other, b_planet) = a_distant_planet(&system);
+        state
+            .system_mut(&other)
+            .set_control(b_planet.clone(), b.clone());
+        state.exhaust_planet(b_planet.clone());
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("reparations")];
+        let mut reactions = std::collections::BTreeMap::new();
+        reactions.insert(
+            b.clone(),
+            "reaction:generic:PLANET_CONTROL_GAINED:after".to_owned(),
+        );
+        let table = Table::with_default(Box::new(InvasionDecider {
+            system: system.clone(),
+            commit: planet.clone(),
+            reactions,
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.dice = Dice::from_faces([1]);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert!(
+            state.system_state(&system).planet_control.get(&planet) == Some(&a),
+            "a still took the unowned planet; log {events:?}"
+        );
+        assert!(
+            state.exhausted_planets.contains(&b_planet),
+            "the no-op effect readied nothing; log {events:?}"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "the card was spent even though the effect declined; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn black_market_dealings_puts_secrets_and_cards_on_the_table() {
+        // Black Market Dealings: "When you are negotiating a transaction: You and the
+        // other player may include relics, action cards, and unscored secret objectives
+        // as part of the transaction." a opens a trade with b (loam) and plays the card
+        // from the When window, so the offer question carries a secret shape (a holds
+        // one unscored secret) and an action-card shape (a still holds Spy) on top of the
+        // plain shapes. b refuses; when the window closes the marker is gone.
+        let (mut state, galaxy) = market_fixture(&["blackmarketdealing", "spy"]);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().trade_goods = 2;
+        state.player_mut(&b).unwrap().trade_goods = 2;
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("ctr")];
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let table = Table::with_default(Box::new(MarketDecider {
+            arm: true,
+            want_secret_deal: false,
+            seen: seen.clone(),
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        settle_market(&mut game, &seen);
+
+        let log = seen.lock().unwrap();
+        let (_, _prompt, ids) = log
+            .iter()
+            .find(|(player, prompt, _)| player == "a" && prompt.starts_with("transaction with "))
+            .unwrap_or_else(|| panic!("a was asked to open the offer; log {:?}", game.events));
+        assert!(
+            ids.iter().any(|id| id.starts_with("so")),
+            "a's unscored secret reached the table; log {ids:?}"
+        );
+        assert!(
+            ids.iter().any(|id| id.starts_with("ac")),
+            "an action card reached the table; log {ids:?}"
+        );
+        assert!(
+            !game.state.transient_flags.has(TransientFlags::BLACK_MARKET),
+            "the marker clears when the negotiation ends; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn without_black_market_dealings_no_secret_or_card_shape_reaches_the_table() {
+        // The control: the same negotiation without the card — the offer question carries
+        // only the plain shapes (goods, notes), and no secret or action-card shape ever
+        // appears even though a holds both a secret and a card.
+        let (mut state, galaxy) = market_fixture(&["spy"]);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().trade_goods = 2;
+        state.player_mut(&b).unwrap().trade_goods = 2;
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("ctr")];
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let table = Table::with_default(Box::new(MarketDecider {
+            arm: false,
+            want_secret_deal: false,
+            seen: seen.clone(),
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        settle_market(&mut game, &seen);
+
+        let log = seen.lock().unwrap();
+        let (_, _prompt, ids) = log
+            .iter()
+            .find(|(player, prompt, _)| player == "a" && prompt.starts_with("transaction with "))
+            .unwrap_or_else(|| panic!("a was asked to open the offer; log {:?}", game.events));
+        assert!(
+            !ids.iter()
+                .any(|id| id.starts_with("so") || id.starts_with("ac") || id.starts_with("fr")),
+            "the plain table offers no secrets, cards, or fragments; log {ids:?}"
+        );
+        assert!(
+            !game.state.transient_flags.has(TransientFlags::BLACK_MARKET),
+            "no card was played, no marker exists; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn a_black_market_deal_moves_an_unscored_secret_objective() {
+        // The full deal: a plays Black Market Dealings, offers its unscored secret for
+        // one trade good, and b accepts — the secret lands in b's hand, one good crosses
+        // over, and the marker is cleared by the completion.
+        let (mut state, galaxy) = market_fixture(&["blackmarketdealing", "spy"]);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        state.player_mut(&a).unwrap().trade_goods = 2;
+        state.player_mut(&b).unwrap().trade_goods = 2;
+        state.player_mut(&a).unwrap().secret_objectives =
+            vec![ti4_model::id::SecretObjectiveId::new("ctr")];
+        state.player_mut(&b).unwrap().secret_objectives = vec![];
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let table = Table::with_default(Box::new(MarketDecider {
+            arm: true,
+            want_secret_deal: true,
+            seen: seen.clone(),
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        settle_market(&mut game, &seen);
+
+        let log = seen.lock().unwrap();
+        let ids = log
+            .iter()
+            .find(|(player, prompt, _)| player == "a" && prompt.starts_with("transaction with "))
+            .map_or_else(
+                || panic!("a was asked to open the offer; log {:?}", game.events),
+                |(_, _, ids)| ids.clone(),
+            );
+        assert!(
+            ids.iter().any(|id| id.starts_with("soctr")),
+            "the unscored secret was offered by id; log {ids:?}"
+        );
+        let state = &game.state;
+        assert!(
+            state.player(&a).unwrap().secret_objectives.is_empty(),
+            "a gave away the secret; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&b).unwrap().secret_objectives,
+            vec![ti4_model::id::SecretObjectiveId::new("ctr")],
+            "b holds the secret; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&a).unwrap().trade_goods,
+            3,
+            "the flat price paid into a's pool; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            state.player(&b).unwrap().trade_goods,
+            1,
+            "b paid one good for the secret; log {:?}",
+            game.events
+        );
+        assert!(
+            !state.transient_flags.has(TransientFlags::BLACK_MARKET),
+            "completion cleared the marker; log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn reverse_engineer_takes_a_played_component_card_out_of_the_pile() {
+        // Reverse Engineer: "After another player discards an action card that has a
+        // component action: Take that action card from the discard pile." b's turn action
+        // is Industrial Initiative — a component action — so its play ends in the discard
+        // event, and a, holding the card, plays it from the After window to take the card
+        // straight out of the pile into a's hand. a's own spend (Reverse Engineer) still
+        // lands in the pile: it was played too. (Spy would do the same, but its forced
+        // steal robs the RE holder of the very card it needs, so the question-free
+        // component action keeps the driver honest.)
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(b.clone());
+        state.deal_strategy_card(&a, StrategyCardId::new("leadership"));
+        state.deal_strategy_card(&b, StrategyCardId::new("imperial"));
+        state.player_mut(&a).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("reverse_engineer")];
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("industrial_initiative")];
+        let table = Table::with_default(Box::new(
+            TurnDecider::new(&[(
+                "a",
+                "ACTION_CARD_DISCARDED",
+                "reaction:generic:ACTION_CARD_DISCARDED:after",
+            )])
+            .playing_the_action_card(),
+        ));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &b) && guard < 50 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert!(
+            events.iter().any(|e| e == "ACTION_CARD_DISCARDED"),
+            "b's play ended in the discard event; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("industrial_initiative")],
+            "a took the played card out of the pile; log {events:?}"
+        );
+        assert!(
+            state.player(&b).unwrap().action_cards.is_empty(),
+            "b's hand is empty after the play; log {events:?}"
+        );
+        assert_eq!(
+            state.discarded_action_cards,
+            vec![ti4_model::id::ActionCardId::new("reverse_engineer")],
+            "only a's own spend rests in the pile; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn without_reverse_engineer_a_played_component_card_rests_in_the_pile() {
+        // The control: b plays Industrial Initiative, nobody takes it from the discard
+        // pile, and the pile keeps it for whoever gets there next. a's unplayed card
+        // stays in a's hand.
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state =
+            start_game(ContentStore::embedded(), &[a.clone(), b.clone()], POK, None).unwrap();
+        state.phase = Phase::Action;
+        state.active = Some(b.clone());
+        state.deal_strategy_card(&a, StrategyCardId::new("leadership"));
+        state.deal_strategy_card(&b, StrategyCardId::new("imperial"));
+        state.player_mut(&a).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("reverse_engineer")];
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("industrial_initiative")];
+        let table = Table::with_default(Box::new(TurnDecider::new(&[]).playing_the_action_card()));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &b) && guard < 50 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            guard += 1;
+        }
+        let events = &game.events;
+        let state = &game.state;
+        assert_eq!(
+            state.discarded_action_cards,
+            vec![ti4_model::id::ActionCardId::new("industrial_initiative")],
+            "the played card rests in the pile; log {events:?}"
+        );
+        assert_eq!(
+            state.player(&a).unwrap().action_cards,
+            vec![ti4_model::id::ActionCardId::new("reverse_engineer")],
+            "a's card was never played; log {events:?}"
         );
     }
 }

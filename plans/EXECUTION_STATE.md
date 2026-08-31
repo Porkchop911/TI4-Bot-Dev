@@ -22,6 +22,114 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
 
+### Engine completion — salvage/repair/infiltrate/black-market/reverse-engineer: Salvage / Reparations / Infiltrate / Black Market Dealings / Reverse Engineer, re-baselined to v14 (2026-08-31)
+
+- Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and
+  `D:/Projects/ti4-engine-work` on `wp/engine-completion` (synced back); both agreed on
+  `e97fc1c` before this batch (the turn/status-flow commit).
+- Implemented (second implementer, per `plans/HANDOFF_ENGINE_COMPLETION.md` +
+  `plans/PI_BRIEF_CARD_CONTENT.md`; user-confirmed full ownership, shared engine files in
+  scope): **sub-batch C3 of the handoff's "not grouped" action-card set — the remainder** —
+  `salvage` (Salvage), `reparations` (Reparations), `infiltrate` (Infiltrate),
+  `blackmarketdealing` (Black Market Dealings), `reverse_engineer` (Reverse Engineer).
+  - **Model fields** (`ti4-model`): `TransientFlags::BLACK_MARKET (1 << 5)`; `GameState
+    .discarded_action_cards: Vec<ActionCardId>` (the discard pile `reverse_engineer` lifts
+    from; `#[serde(default)]`); and three in-flight hand-offs (`#[serde(default)]`,
+    excluded from `GameState` comparison — a timing window's effect cannot read the payload
+    of the event that summoned it): `last_control_gained` (system, planet, previous owner),
+    `last_combat_sides` (system, the fight's other sides), `last_action_discarded`
+    (discarder, card).
+  - **Driver moments**: `SPACE_COMBAT_WON` became a typed After event (winner in the
+    payload, the other sides in the hand-off) and its emission now propagates timing errors
+    through the new `CombatError::Timing` variant instead of `let _ =` swallowing them
+    (the pre-existing `PRODUCTION_USED` swallow stays tracked as debt); `finish_control_
+    gain` records the previous owner beside the `PLANET_CONTROL_GAINED` payload; the
+    transaction's opening is a typed `TRANSACTION_OPENED` (When, naming both chairs), its
+    window settling before the negotiation's first question; every action-card play —
+    including a cancelled one — ends in an `ACTION_CARD_DISCARDED` After event pushed onto
+    `discarded_action_cards` (steals and trade transfers are not discards).
+  - **Salvage** ("After you win a space combat: Your opponent gives you all of their
+    commodities."): the After-window effect moves each opponent's `commodities` (LRR 21:
+    commodities, not the trade-good pool) to the winner's `commodities`.
+  - **Reparations** ("After another player gains control of a planet you control: Exhaust 1
+    planet that player controls and ready 1 planet you control."): the effect verifies the
+    planet's previous owner was the holder, exhausts a planet the new owner controls
+    (auto-picked when exactly one, else chosen, no decline) and readies one of the holder's
+    own.
+  - **Infiltrate** ("When you gain control of a planet: Replace each PDS and space dock that
+    is on that planet with a matching unit from your reinforcements."): the When-window
+    effect removes each PDS/space dock the holder has on the planet and re-adds a matching
+    unit where the supply allows — with a full box that is the same unit in the unit-less
+    model, so the driver tests pin the play, the spend, and an undisturbed capture.
+  - **Black Market Dealings** ("When you are negotiating a transaction: You and the other
+    player may include relics, action cards, and unscored secret objectives as part of the
+    transaction. This card cannot be canceled."): the When-window effect sets
+    `BLACK_MARKET` (cleared on trade completion and at the turn's end); while set,
+    `offer_options` widens both parties' tables with flat one-good shapes for unscored
+    secret objectives (`so{id}:1`) and relic fragments (`fr{trait}:1`), moved by
+    `take`/`give` like any other shape. The black-market shapes were factored out of
+    `offer_options` into `black_market_shapes` when the function grew past the
+    `too_many_lines` threshold.
+  - **Reverse Engineer** ("After another player discards an action card that has a component
+    action: Take that action card from the discard pile."): the coarse After row is
+    guarded to "another player discards" and the effect verifies the discarder is not the
+    holder and the card is a component action, then lifts it out of
+    `discarded_action_cards` into the holder's hand.
+- Coverage 135 → **140/142** action cards (98.6%, coverage_report); agendas still 63/63;
+  reaction windows still 0 unsupported. `investments` (per-card attachment) and `lieinwait`
+  (transaction history) remain the two blocked cards.
+- **Re-baseline v13 → v14.** Three of the ten point estimates fell outside their v13
+  intervals (`share_PRODUCTION_RESOLVED`, `share_SYSTEM_ACTIVATED`,
+  `share_TACTICAL_ACTION_BEGAN` — every component play now appends an `ACTION_CARD_
+  DISCARDED` event and the new windows add steps to the streams the shares divide by), and
+  the point estimates equalized: `faction_differentiation` [0.378, 0.841] -> [0.312, 0.746]
+  and `score_spread` [1.531, 1.903] -> [1.423, 1.791] both fall and narrow (Reverse
+  Engineer reshuffles the action-card supply, black-market trades circulate cards and
+  secrets, Salvage moves commodities for free); `vp_pace` slips [0.391, 0.443] -> [0.377,
+  0.438]; `completion` stays the strict 1.0 invariant under the new `CombatError::Timing`
+  error surface. The v14 transcription into `behavior.rs` was verified bit-identical by the
+  debug-mode gate test passing against it; the release re-run reports the same bounds and
+  `0 metric(s) outside the recorded bounds` (dev and release recomputations are
+  bit-identical in this batch). Old/new side by side in `plans/evidence/M08-021.md`.
+- Tests: 1049 `ti4-engine` lib tests pass (was 1038): eleven driver tests —
+  `salvage_sweeps_the_losers_commodities` (+ control `without_salvage_the_losers_keep_thei
+  r_commodities`, pinned-dice space combat through `InvasionDecider`),
+  `reparations_exhausts_the_new_owners_planet_and_readies_yours` (+ controls
+  `without_reparations_the_planets_stand_where_they_stood` and `reparations_do_nothing_`
+  `when_the_new_owner_controls_nothing`), `infiltrate_is_played_when_the_planet_changes_`
+  `hands` (a's own PDS on the planet stands through the capture — LRR 49 destroys only
+  rival structures — while a war sun disables the planet's shield so the bombardment
+  reaches the garrison; the shield check is owner-agnostic, so a dreadnought alone could
+  not take the planet), `black_market_dealings_puts_secrets_and_cards_on_the_table` (+
+  control `without_black_market_dealings_no_secret_or_card_shape_reaches_the_table`),
+  `a_black_market_deal_moves_an_unscored_secret_objective` (the secret lands in b's hand,
+  the flat good crosses over, the marker clears on completion) and the reverse-engineer
+  pair `reverse_engineer_takes_a_played_component_card_out_of_the_pile` /
+  `without_reverse_engineer_a_played_component_card_rests_in_the_pile` (b plays Industrial
+  Initiative — the question-free component action — because Spy's forced steal would rob
+  the RE holder of the very card it needs to play). The market fixtures seat both players
+  on a shared hub with one fighter each: LRR 60 presence counts systems with units or
+  controlled planets, never the home system, so a hub-only fixture has no LRR neighbours
+  and no trade partner. Root causes found and fixed while landing the tests: the
+  `SPACE_COMBAT_WON` emission swallowed the decider's `ScriptDiverged` (now propagated),
+  salvage paid out `trade_goods` instead of `commodities`, and combat announcements are
+  asked only in round 1 (the scripted arms were misaligned by the extra round-2 question).
+- Workspace (LIBTORCH): every crate green — ti4-content 127, ti4-engine 1049, ti4-legacy
+  25, ti4-mlp 64 + the three API/integration suites, ti4-model 74, ti4-policy 188,
+  ti4-sim 52 (the v14 gate passes). Clippy: zero new warnings against the pre-batch tree
+  (verified by stashing the batch and re-running `--all-targets`; the batch's
+  `map_or_else`, let-chain and type-alias fixes landed in the test deciders and in
+  `black_market_shapes`); the remaining warnings are pre-existing in untouched files. The
+  eight touched files are rustfmt-clean (`--edition 2024 --check`); the repository's
+  pre-existing fmt debt in untouched files was surfaced by a workspace-wide `cargo fmt`
+  that was reverted file-by-file. Scratch probes and scripts deleted.
+- Next safe action: the relics group from the handoff (10 relics, the last remaining
+  content group after the two blocked action cards). Read `plans/BUG_2026-08-29_
+  PRODUCTION_COMBINED_PAYMENT.md` before any `payment_faces` / `planet_value_now` /
+  `price_of_under` restructuring (it stays OPEN/HIGH and this batch avoided all of it —
+  no `production.rs` edits). `investments` and `lieinwait` remain blocked on unmodelled
+  attachment / no transaction history.
+
 ### Engine completion — turn/status flow: Summit / Political Stability / Public Disgrace / Puppets on a String / Extreme Duress, re-baselined to v13 (2026-08-31)
 
 - Active work branches: `D:/Projects/ti4-engine-rs` on `wp/r01-review-viewer-contract` and

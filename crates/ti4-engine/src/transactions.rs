@@ -9,8 +9,8 @@ use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::DEFAULT;
-use ti4_model::id::{ActionCardId, PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::id::{ActionCardId, PlayerId, SecretObjectiveId, SystemId};
+use ti4_model::state::{GameState, TransientFlags};
 
 /// What one side of a deal hands over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -27,6 +27,10 @@ pub struct Terms {
     /// An action card, by alias. 94.3 forbids exchanging them; Hacan's Arbiters is the
     /// exception, so naming one here is legal only for a table where somebody has that ability.
     pub action_card: Option<ActionCardId>,
+    /// An unscored secret objective, by alias. Black Market Dealings is the one card that lets
+    /// these change hands at the table; like an action card its value is entirely situational,
+    /// so it prices flat in both directions.
+    pub secret: Option<SecretObjectiveId>,
 }
 
 impl Terms {
@@ -37,6 +41,7 @@ impl Terms {
             && self.fragments.is_empty()
             && self.promissory.is_none()
             && self.action_card.is_none()
+            && self.secret.is_none()
     }
 
     /// How these terms read in a prompt — the oracle's `Terms.describe`, same parts, order and
@@ -59,6 +64,9 @@ impl Terms {
         if let Some(card) = &self.action_card {
             parts.push(format!("the action card {card}"));
         }
+        if let Some(secret) = &self.secret {
+            parts.push(format!("the secret objective {secret}"));
+        }
         if parts.is_empty() {
             "nothing".to_owned()
         } else {
@@ -75,12 +83,16 @@ impl Terms {
             .as_deref()
             .map_or(0.0, |note| note_worth(state, content, note));
         // An action card prices flat at one trade good in both directions (oracle Terms):
-        // there is no worth table for them because their value is entirely situational.
+        // there is no worth table for them because their value is entirely situational. A
+        // secret objective takes the same flat one: its printed value (a few victory points)
+        // is worth exactly as much as what it is, and the net the decider sees is the one
+        // that matters at the table.
         f64::from(self.trade_goods)
             + f64::from(self.commodities)
             + self.fragments.len() as f64
             + note
             + f64::from(self.action_card.is_some())
+            + f64::from(self.secret.is_some())
     }
 
     /// What giving these terms costs (oracle `cost_to_giver`): commodities barely, since a swap
@@ -93,12 +105,13 @@ impl Terms {
             .as_deref()
             .map_or(0.0, |note| note_cost(state, content, note));
         // Flat one trade good to part with as well — the oracle prices it identically in
-        // both directions.
+        // both directions, and the secret takes the same flat line.
         f64::from(self.trade_goods)
             + 0.2 * f64::from(self.commodities)
             + self.fragments.len() as f64
             + note
             + f64::from(self.action_card.is_some())
+            + f64::from(self.secret.is_some())
     }
 }
 
@@ -258,6 +271,13 @@ pub fn can_pay(
         }
         *entry -= 1;
     }
+    if let Some(secret) = &terms.secret {
+        // Only what is unscored can change hands: a secret already scored belongs to the
+        // objective board, not to the player's hand.
+        if !seat.secret_objectives.iter().any(|held| held == secret) {
+            return false;
+        }
+    }
     true
 }
 
@@ -295,11 +315,16 @@ pub fn why_illegal(
     if !can_pay(state, content, &offer.partner, &offer.received) {
         return Some(OfferError::CannotPay(offer.partner.clone()));
     }
-    // 94.3: action cards are not tradeable unless somebody at the table has Arbiters — and
-    // each side must hold whatever its own leg hands over (can_pay covers goods, notes and
-    // fragments; a card is checked here, in the oracle's order).
+    // 94.3: action cards are not tradeable unless somebody at the table has Arbiters, or
+    // Black Market Dealings is marking this negotiation as one in which they may change hands
+    // — and each side must hold whatever its own leg hands over (can_pay covers goods, notes
+    // and fragments; a card is checked here, in the oracle's order).
     if offer.given.action_card.is_some() || offer.received.action_card.is_some() {
-        let arbiters = trades_action_cards(state, content, &offer.proposer)
+        let black_market = state
+            .transient_flags
+            .has(ti4_model::state::TransientFlags::BLACK_MARKET);
+        let arbiters = black_market
+            || trades_action_cards(state, content, &offer.proposer)
             || trades_action_cards(state, content, &offer.partner);
         if !arbiters {
             return Some(OfferError::ActionCardsNotTradeable);
@@ -340,6 +365,17 @@ fn take(state: &mut GameState, player: &PlayerId, terms: &Terms) {
             true
         });
     }
+    if let Some(secret) = &terms.secret {
+        // The first matching objective, as with a duplicated action card in the same deal.
+        let mut left = true;
+        seat.secret_objectives.retain(|held| {
+            if left && held == secret {
+                left = false;
+                return false;
+            }
+            true
+        });
+    }
     seat.trade_goods -= terms.trade_goods;
     seat.commodities -= terms.commodities;
     for trait_name in &terms.fragments {
@@ -357,6 +393,13 @@ fn give(state: &mut GameState, content: &ContentStore, player: &PlayerId, terms:
     };
     if let Some(card) = terms.action_card.clone() {
         seat.action_cards.push(card);
+    }
+    if let Some(secret) = terms.secret.clone() {
+        // A secret received at the table joins the hand; if that pushes it over the limit,
+        // the overage is returned on the next draw that enforces it — the same convention
+        // every other card that awards secrets follows, because the table is not in reach
+        // from here to ask which one to return now.
+        seat.secret_objectives.push(secret);
     }
     // 21.5: a commodity becomes a trade good the moment it changes hands. This is the whole
     // economy of the game — commodities are worthless to their owner and valuable to everyone
@@ -443,9 +486,12 @@ fn action_card_shape(
     their_goods: i32,
     shapes: &mut Vec<(String, String, BTreeMap<String, Value>)>,
 ) {
+    // 94.3's one exception has two doors into it: Hacan's Arbiters, or Black Market Dealings
+    // marking the negotiation this table is negotiating.
     let arbiters_at_table = trades_action_cards(state, content, proposer)
         || trades_action_cards(state, content, partner);
-    if arbiters_at_table && their_goods >= 1 {
+    let black_market = state.transient_flags.has(TransientFlags::BLACK_MARKET);
+    if (black_market || arbiters_at_table) && their_goods >= 1 {
         // `min` is the sorted head: ActionCardId orders by alias exactly like Python's sorted().
         if let Some(card) = state
             .player(proposer)
@@ -609,6 +655,41 @@ fn holdings(state: &GameState, player: &PlayerId) -> (i32, i32) {
         .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities))
 }
 
+/// The extra shapes Black Market Dealings widens the table with: unscored secret
+/// objectives and relic fragments ("relics" are the fragments, per the 5th-printing
+/// clarification; full relics stay untradeable, LRR 73.4). Both take the same flat
+/// one-trade-good line the action card does: the engine has no worth table for them, and
+/// one flat line keeps the nets a decider compares commensurate.
+fn black_market_shapes(
+    state: &GameState,
+    proposer: &PlayerId,
+    their_goods: i32,
+    shapes: &mut Vec<(String, String, BTreeMap<String, Value>)>,
+) {
+    if state.transient_flags.has(TransientFlags::BLACK_MARKET)
+        && let Some(seat) = state.player(proposer)
+    {
+        for secret in &seat.secret_objectives {
+            if their_goods >= 1 {
+                let mut payload = BTreeMap::new();
+                payload.insert("secret".to_owned(), Value::String(secret.to_string()));
+                let id = format!("so{secret}:1");
+                let label = format!("sell the secret objective {secret} for 1 trade good");
+                shapes.push((id, label, payload));
+            }
+        }
+        for (trait_name, count) in &seat.relic_fragments {
+            if *count > 0 && their_goods >= 1 {
+                let mut payload = BTreeMap::new();
+                payload.insert("fragment".to_owned(), Value::String(trait_name.clone()));
+                let id = format!("fr{trait_name}:1");
+                let label = format!("sell a {trait_name} relic fragment for 1 trade good");
+                shapes.push((id, label, payload));
+            }
+        }
+    }
+}
+
 /// The deals this player can put on the table.
 ///
 /// Every shape is written once. A shape written twice is drawn twice as often by a sampling
@@ -666,6 +747,8 @@ pub fn offer_options(
 
     // After ss and notes, before the commodity shapes — the oracle's option order.
     action_card_shape(state, content, proposer, partner, their_goods, &mut shapes);
+
+    black_market_shapes(state, proposer, their_goods, &mut shapes);
 
     // 21.5: a commodity becomes a trade good the moment it changes hands, so a straight swap
     // pays both sides. This is the standard Twilight Imperium deal and the reason the subsystem
@@ -840,6 +923,30 @@ pub fn offer_from(
         return deal(
             Terms {
                 promissory: Some(note.to_owned()),
+                ..Terms::default()
+            },
+            goods(price.parse().ok()?),
+        );
+    }
+    if let Some(rest) = id.strip_prefix("so") {
+        // `so{secret}:{price}` — Black Market Dealings puts an unscored secret objective on
+        // the table. An alias never carries a colon, so the split is clean; an unpriced form
+        // parses to no deal rather than inventing a price.
+        let (secret, price) = rest.split_once(':')?;
+        return deal(
+            Terms {
+                secret: Some(SecretObjectiveId::new(secret)),
+                ..Terms::default()
+            },
+            goods(price.parse().ok()?),
+        );
+    }
+    if let Some(rest) = id.strip_prefix("fr") {
+        // `fr{trait}:{price}` — a Black Market relic fragment, one per entry in the terms.
+        let (trait_name, price) = rest.split_once(':')?;
+        return deal(
+            Terms {
+                fragments: vec![trait_name.to_owned()],
                 ..Terms::default()
             },
             goods(price.parse().ok()?),
@@ -1750,10 +1857,11 @@ mod tests {
             fragments: vec!["engine".to_owned()],
             promissory: Some("cf:b".to_owned()),
             action_card: Some(ActionCardId::new("emergency")),
+            secret: Some(SecretObjectiveId::new("sb")),
         };
         assert_eq!(
             full.describe(),
-            "1 trade goods, 3 commodities, 1 relic fragments, cf:b, the action card emergency"
+            "1 trade goods, 3 commodities, 1 relic fragments, cf:b, the action card emergency, the secret objective sb"
         );
     }
 

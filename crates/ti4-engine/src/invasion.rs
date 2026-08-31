@@ -1602,11 +1602,24 @@ impl InvasionWindow {
         }
 
         // Two printed windows read "when you gain control of a planet", so a capture is
-        // announced before the exploration that follows it.
+        // announced before the exploration that follows it. The former holder is named for
+        // the window that reads "a planet you control": control has already changed by the
+        // time the event is read, so only this frame knows who the planet was taken from.
         let mut payload = std::collections::BTreeMap::new();
         payload.insert("player".to_owned(), self.invader.to_string().into());
         payload.insert("planet".to_owned(), planet.to_string().into());
         payload.insert("system".to_owned(), self.system.to_string().into());
+        // The window that follows cannot read this event's payload, so the frame names the
+        // capture for it: Infiltrate acts on the planet, Reparations on its former holder.
+        state.last_control_gained = Some((
+            self.system.clone(),
+            planet.clone(),
+            self.invader.clone(),
+            previous.cloned(),
+        ));
+        if let Some(previous) = previous {
+            payload.insert("previous_owner".to_owned(), previous.to_string().into());
+        }
         let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
 
         // Technology AFTER windows resolve before exploration. Integrated Economy is the first.
