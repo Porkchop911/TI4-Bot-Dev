@@ -99,8 +99,8 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Topic | Status | Note |
 |---|---|---|
 | Abilities | VERIFIED | 52.1-52.18 + notes: the resolver's round-robin, one ability each before the next pass, When→resolve→After inside an event, initiative order from the active player in the action phase and from the speaker in strategy/agenda; "before" windows (52.18) are the When window of the event they precede, and 52.10 is honoured literally — an unpayable cost voids the effect, but the card was already played and is discarded (`focused_research_charges_nothing_when_it_cannot_pay`) |
-| Action Cards | **PARTIAL** | infrastructure exists; 0 of 142 cards have effects |
-| Action Phase | ? | `phase.rs`, `game.rs` |
+| Action Phase | VERIFIED | 3.1-3.5 + notes: the three action types plus a pass; passing is legal only when nothing else can be done (the gate is tested before the windows open), passed players are skipped and cannot pass again, and the turn is `None` once every player has passed; note 2 (an after-window after *every* action) was **absent**, added 2026-09-01 — component actions ended through `advance_turn` and never opened it |
+| Action Cards | **PARTIAL** | infrastructure exists; 142 of 142 cards have effects (engine remainder closed) |
 | Active Player | VERIFIED | 4.1-4.6: the turn advances in initiative order skipping passed players and is `None` once all have passed; strategy, status and agenda have no active player; the attacker is the active seat in space combat; combat windows and space-cannon hits start with the active player; transactions are offered only from the active seat. The Mahact's Benediction note is out of scope |
 | Active System | VERIFIED | 5.1-5.4 + notes: activation spends a tactic token and excludes systems holding one of the player's tokens (5.2; rivals' tokens are no obstacle, 5.3); the active system lasts for the action and is cleared when the tactical action ends (and on Minister of Peace's early end); nebulae are entered only as the active system; component and strategic actions have no active system and fire no activation trigger; `SYSTEM_ACTIVATED` is emitted only for genuine (free) tactical actions |
 | Adjacency | **PARTIAL** | 6.0-6.3 + notes verified: tile-edge contact, wormhole pairs (with the law-driven nexus/Creuss layout properties), a system is never adjacent to itself, unit and planet adjacency through their containing system; **6.4 (LRR 44) is not modelled** — hyperlane line adjacency: the corpus carries 108 hyperlane tiles but no line-pattern data, and the engine's map build never places one, see the open item |
@@ -117,24 +117,24 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Capacity | **PARTIAL** | 16.3 fixed 2026-08-31 (ground forces were never excess); 16.3c end-of-combat removal still missing, see `fleet.rs` |
 | Capture | OUT OF SCOPE | every capture effect in the corpus is Vuil'raith Cabal, which is not one of the six trained factions |
 | Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 9-13 done; only 7/7.1 bombardment target choice outstanding |
-| Combat | ? | `combat.rs`, 3110 lines |
+| Combat | VERIFIED | 18 (LRR 18) cross-read with Space Combat 78: the round order, the simultaneous hits and the 50-round stop are in `combat.rs`; roles are anchored to the active player — seating order was **absent** as an anchor, added 2026-09-01 (`CombatWindow::new`); Winnu's dynamic dice are out of scope |
 | Command Sheet | OK | `TokenPool`, `tactic_tokens` etc. in `state.rs` |
 | Command Tokens | **PARTIAL** | 20.1-20.3, 20.6, 20.7a, 20.9 present; 20.4/20.4a (limited by tokens in reinforcements) not modelled — pools can grow without bound |
 | Commodities | **PARTIAL** | exists; space-station +1 (rule 8) and convert (rule 12) absent |
-| Component Action | ? | |
+| Component Action | VERIFIED | 22.1-22.4: six component sources, each costing the whole turn **unless** the play is cancelled while announced (22.4) or cannot be resolved (22.3) — both halves were **absent**, added 2026-09-01: `ACTION_COMPLETED` now fires after every component action, and a play cancelled by Sabotage re-offers the same turn with the card spent |
 | Component Limitations | OK | `supply.rs`, LRR 31.4, with the fighter/infantry exemption correct |
 | Construction | OK | stations excluded (rule 5) — phase 1 |
 | Control | OK | station control is sole occupancy, reconciled per step — phase 1 |
-| Cost | ? | |
+| Cost | VERIFIED | 26 (LRR 26): costs are exact arithmetic (no floats anywhere in a legality check), an unpayable cost voids the effect after the play is announced (52.10, the card is spent either way), a combined bill is one transaction, and promissory notes are accepted as payment in the payment window that opens before any effect |
 | Custodians Token | **PARTIAL** | 27.1-27.5 present; 27.2a (no removal without ground forces to commit) was **absent**, added 2026-08-31 |
-| Deals | ? | |
-| Defender | ? | |
+| Deals | **PARTIAL** | 28.1's transactional half verified — adjacency and note-holding legality are enforced when offers are built; the offer itself, its binding and non-binding character and counters (28.2-28.4) are unrepresentable in a single-agent decision engine — a design boundary, recorded, not a defect |
+| Defender | VERIFIED | 29.1-29.3 (LRR 29): the defender is the opponent of the combat the active player opened — the anchoring was **absent** (roles came from seating order), added 2026-09-01 with the Attacker fix; the two-sided combat window remains the structural boundary for N>2 |
 | Deploy | VERIFIED | 20.1-20.5; the two in-scope DEPLOY mechs (Sol, Letnev) are implemented |
 | Destroyed | VERIFIED | 31.1-31.2; removal by fleet supply or capacity does not fire destroyed triggers |
 | Diplomacy | VERIFIED | both halves: opponents place a token in the chosen system, then ready two planets |
 | Elimination | **ABSENT** | no code; harmless at a 4-round horizon |
 | Entropic Scars | **ABSENT** | 9 rules, none implemented; anomaly tiles are in the corpus |
-| Exhausted | ? | |
+| Exhausted | VERIFIED | 34.1-34.5 + notes 1-2: exhaustion is a flag on technologies, planets, relics and leaders; the status phase readies all four kinds (81.6 confirmed against `status.rs`); planets exhaust in payment and never both at once (75.2); a not-Ready leader refuses and an exhausted technology cannot pay; planets ready at the end of the agenda phase; note 2's "your planets" is enforced by the `controlled_planets` filter, and the cards that reach into rivals' planets say so instead |
 | Expedition | ? | `thunders_edge.rs`, 6 slices |
 | Exploration | ? | 71 of 80 cards |
 | Fighter Tokens | OK | intentionally uncapped, `supply.rs` documents why |
@@ -208,17 +208,18 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
 | Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
-Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**32 unverified** (was 79).
+Totals after phase 9, ninth batch: **0 wrong**, **5 absent**, **31 partial**, **36 verified
+correct**, **11 ok**, **1 out of scope**, **25 unverified** (was 79 at the audit's start; the
+topic table is the source of truth).
 
 ## Phase 9 verification, 2026-08-31
 
 Twenty-three topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Twelve defects in forty-five in-scope topics.** That is close to the base rate this audit warned
-about, and it is the reason the remaining 56 rows should still be read as "not checked" rather than
-"probably fine":
+**Twenty-two defects in the topics checked so far: sixteen fixed, six open.** That is close to the
+base rate this audit warned about, and it is the reason the remaining unverified rows should still
+be read as "not checked" rather than "probably fine":
 
 | Rule | Defect | Status |
 |---|---|---|
@@ -240,10 +241,51 @@ about, and it is the reason the remaining 56 rows should still be read as "not c
 | 8 note 6 | a player may transact once with each other player during each agenda; the engine offers no transactions in the agenda phase at all | **open** |
 | 8.15-8.18 | "Elect Scored Secret Objective" and "Elect Strategy Card" have outcomes the engine cannot vote on; the agenda is discarded without a vote | **open** |
 | 8.4 / Checks and Balances | "each player readies only 3 of their planets" — which three is the player's choice; the engine readies the first three in a fixed order | **open** |
+| LRR 3 note 2 / 22.4 | the `ACTION_COMPLETED` after-window never opened after a component action — all six component branches advanced the turn directly, so Master Plan and every other "after you perform an action" trigger slept through faction, technology, expedition, action-card, device and relic actions | fixed |
+| LRR 22.4 | a component action cancelled while announced (Sabotage in its WHEN window) still consumed the turn: the card was spent and the player lost the action the rules say was not used | fixed |
+| LRR 13 / 29.1 | combat roles came from seating order, not from the active player — a combat opened by the seat seated behind an opponent in the system rolled first on the wrong side, took the nebula bonus on the wrong side, and announced retreats in the wrong order | fixed |
+| LRR 49 | the post-combat invasion gate tested whether the seating-first survivor was the activator instead of whether the activator was among the survivors — a seated-second activator who outlasted the combat never got its invasion step | fixed |
 
 Clean on inspection against their rules text: Abilities, Active Player, Active System, Anomalies,
 Attacker, Anti-Fighter Barrage, Asteroid Field, Fleet Pool, Gravity Rift, Space Cannon, Supernova.
 Capture is Cabal-only and therefore out of scope.
+
+**Ninth batch (2026-09-01): Action Phase, Combat, Component Action, Cost, Deals, Defender and
+Exhausted** — the four defects above, all in paths a four-round game takes every time it acts or
+fights, plus the batch's one design boundary:
+
+The two component-action defects share a root cause: the six component branches each advanced the
+turn by hand instead of ending it through the same `finish_action` every other action uses, so the
+after-window never fired and a cancelled play consumed the action it cancelled. One test pair pins
+both halves — an after-window card fires after a component action, and a play cancelled by
+Sabotage re-offers the same turn with the card spent and the same `turn_seq`.
+
+The combat-role defect had no test at all until `the_active_player_is_the_attacker_whoever_is_
+seated_where`, and the invasion gate needed a combat that ends with *both* fleets present — fifty
+rounds of an activator that never misses against a fleet that never hits — before the
+seating-order reading became observably wrong. `the_activator_may_invade_when_seated_second_and_
+still_holding` drives exactly that through the game driver and fails on the old gate in the
+seated-second arm only.
+
+Deals is the batch's one partial, and it is structural: the engine models the transactional half
+of LRR 28 — adjacency and note-holding legality when offers are built — while the offer itself,
+its binding and non-binding character, and counters (28.2-28.4) cannot be represented in a
+single-agent decision engine, where every player is scripted by the same decider. Recorded as a
+design boundary, not a defect.
+
+Exhausted came back clean against 34.1-34.5 and its two notes: the status phase readies
+technologies, planets, relics *and* leaders (81.6's four kinds, confirmed against `status.rs`),
+planets exhaust in payment and never both at once, not-Ready leaders refuse and exhausted
+technologies cannot pay, planets ready at the end of the agenda phase, and note 2 holds through
+the `controlled_planets` filter — the cards that reach into rivals' planets name it instead.
+
+The batch changes engine behaviour (the combat pair, and the new event emissions after component
+actions), so the behavior baseline moved v26 -> v27: `share_SPACE_COMBAT_RESOLVED`
+[0.0056, 0.0064] -> [0.0051, 0.0059], `faction_differentiation` [0.696, 1.185] ->
+[0.452, 1.047], `vp_pace` [0.392, 0.451] -> [0.406, 0.460]. Raw old/new values are in
+`plans/evidence/M08-021.md`. Two of the v26 metric bounds were already breached before the
+re-baseline, which is how the gate caught the batch's effect rather than the batch catching
+itself.
 
 Two simplifications recorded rather than hidden: 95.1 allows pickup from each system a ship moves
 *through* and this engine offers only the origin (a narrower offer, not an illegal one); and 68.3b

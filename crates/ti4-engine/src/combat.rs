@@ -383,7 +383,15 @@ fn reroll_window(
         let set = state.reroll_staging.get_mut(side).expect("checked above");
         apply_reroll_dice(ctx.dice, ctx.rng, set, &crown_picks, "crown of thalnos");
     }
-    destroy_reroll_casualties(state, ctx, &kind, &system, side, &thalnos_picks, &crown_picks);
+    destroy_reroll_casualties(
+        state,
+        ctx,
+        &kind,
+        &system,
+        side,
+        &thalnos_picks,
+        &crown_picks,
+    );
     if unit_ability {
         let hits = staged_hits(state.reroll_staging.get(side).expect("checked above"));
         let mut payload = std::collections::BTreeMap::new();
@@ -403,8 +411,7 @@ fn holds_crown_relic(state: &GameState, player: &PlayerId) -> bool {
 
 /// Whether `player` owns the Crown of Thalnos law — the elected player is its owner.
 fn owns_crown_law(state: &GameState, player: &PlayerId) -> bool {
-    crate::laws::elected(state, "crown_of_thalnos")
-        .is_some_and(|owner| owner == player.as_str())
+    crate::laws::elected(state, "crown_of_thalnos").is_some_and(|owner| owner == player.as_str())
 }
 
 /// The Crown of Thalnos' destruction clauses, judged from the faces every reroll left behind.
@@ -428,7 +435,10 @@ fn destroy_reroll_casualties(
         return;
     }
     let (content, sources) = (ctx.content, ctx.sources);
-    let set = state.reroll_staging.get_mut(player).expect("opened from it");
+    let set = state
+        .reroll_staging
+        .get_mut(player)
+        .expect("opened from it");
     let doomed: Vec<usize> = set
         .rolls
         .iter()
@@ -436,8 +446,8 @@ fn destroy_reroll_casualties(
         .filter_map(|(entry, roll)| {
             let thalnos_doomed =
                 thalnos_picks.iter().any(|(unit, _)| *unit == entry) && roll.hits() == 0;
-            let crown_doomed = entry_reroll_hits(roll, crown_picks, entry)
-                .is_some_and(|hits| hits == 0);
+            let crown_doomed =
+                entry_reroll_hits(roll, crown_picks, entry).is_some_and(|hits| hits == 0);
             (thalnos_doomed || crown_doomed).then_some(entry)
         })
         .collect();
@@ -462,11 +472,7 @@ fn destroy_reroll_casualties(
 
 /// If `picks` re-drew any die of entry `entry`, the hits those dice now show — the plain
 /// faces, since a re-drawn die carries no adjustment left to count.
-fn entry_reroll_hits(
-    entry: &RerollEntry,
-    picks: &[(usize, usize)],
-    which: usize,
-) -> Option<usize> {
+fn entry_reroll_hits(entry: &RerollEntry, picks: &[(usize, usize)], which: usize) -> Option<usize> {
     let dice: Vec<usize> = picks
         .iter()
         .filter(|(unit, _)| *unit == which)
@@ -475,15 +481,9 @@ fn entry_reroll_hits(
     if dice.is_empty() {
         return None;
     }
-    Some(
-        entry
-            .hits_on
-            .map_or(0, |on| {
-                dice.iter()
-                    .filter(|die| entry.faces[**die] >= on)
-                    .count()
-            }),
-    )
+    Some(entry.hits_on.map_or(0, |on| {
+        dice.iter().filter(|die| entry.faces[**die] >= on).count()
+    }))
 }
 
 /// Remove the units a reroll casualty stands for.
@@ -534,9 +534,7 @@ fn remove_casualty_units(
             .collect();
         for unit in matching {
             due -= 1;
-            state
-                .system_mut(system)
-                .remove(std::slice::from_ref(&unit));
+            state.system_mut(system).remove(std::slice::from_ref(&unit));
             if announce {
                 announce_ship_destroyed(state, ctx, system, player, &unit, content, sources);
             }
@@ -554,7 +552,10 @@ fn remove_casualty_units(
 /// as well as their own. Each use exhausts the card until the status phase readies it.
 // Four lines over the limit, and every one of them is the offer: a die, a sign, and the label that
 // tells the holder what the shift would do. Splitting it would put a boundary inside one question.
-#[expect(clippy::too_many_lines, reason = "one offer, built per die and per sign")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one offer, built per die and per sign"
+)]
 fn heart_ixth(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
     const RELIC: &str = "heartofixth";
     let Some(set) = state.reroll_staging.get(side) else {
@@ -657,7 +658,11 @@ fn heart_ixth(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
         let (Ok(entry), Ok(die)) = (entry.parse::<usize>(), die.parse::<usize>()) else {
             continue;
         };
-        let delta: i8 = match sign { "add" => 1, "sub" => -1, _ => continue };
+        let delta: i8 = match sign {
+            "add" => 1,
+            "sub" => -1,
+            _ => continue,
+        };
         let set = state.reroll_staging.get_mut(side).expect("checked above");
         if entry >= set.rolls.len() || die >= set.rolls[entry].faces.len() {
             continue;
@@ -769,7 +774,9 @@ pub fn roll_fleet_and_open(
             continue;
         }
         let threshold = u32::try_from(value).unwrap_or(u32::MAX);
-        let roll = ctx.dice.roll(ctx.rng, dice_count, "space combat", Some(threshold));
+        let roll = ctx
+            .dice
+            .roll(ctx.rng, dice_count, "space combat", Some(threshold));
         let roll = reroll_munitions_misses(state, ctx.dice, ctx.rng, player, &roll);
         hits += roll.hits();
         set.rolls.push(RerollEntry {
@@ -1335,11 +1342,9 @@ fn pay_sustain_commander(state: &mut GameState, content: &ContentStore, player: 
 
 /// Barony of Letnev, Non-Euclidean Shielding: each use of SUSTAIN DAMAGE cancels two hits.
 fn non_euclidean_shielding(state: &GameState, player: &PlayerId) -> bool {
-    state.player(player).is_some_and(|seat| {
-        seat.technologies
-            .iter()
-            .any(|held| held.as_str() == "nes")
-    })
+    state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.iter().any(|held| held.as_str() == "nes"))
 }
 
 fn offer_sustain(
@@ -1429,7 +1434,11 @@ fn offer_sustain(
         // Non-Euclidean Shielding: "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits
         // instead of 1." Per *use*, so a second hit costs the same one damaged ship -- which is
         // why it is a subtraction here rather than a second pass through the offer.
-        hits = hits.saturating_sub(if non_euclidean_shielding(state, player) { 2 } else { 1 });
+        hits = hits.saturating_sub(if non_euclidean_shielding(state, player) {
+            2
+        } else {
+            1
+        });
     }
     Ok(hits)
 }
@@ -1877,6 +1886,9 @@ pub struct CombatWindow {
 
 impl CombatWindow {
     /// Open a combat, or finish immediately if fewer than two players have ships (78.1).
+    ///
+    /// The roles are anchored to the active player (LRR 13 / 29.1), not to seating order:
+    /// whoever is active when the combat opens is the attacker.
     #[must_use]
     pub fn new(
         state: &GameState,
@@ -1884,7 +1896,19 @@ impl CombatWindow {
         sources: SourceSet,
         system: &SystemId,
     ) -> Self {
-        let sides = combatants(state, content, sources, system);
+        let mut sides = combatants(state, content, sources, system);
+        if sides.len() == 2
+            && state
+                .active
+                .as_ref()
+                .is_some_and(|active| &sides[1] == active)
+        {
+            // LRR 13: during combat the active player is the attacker. `combatants` lists
+            // the sides in seating order, so move the active seat to the front when it is
+            // the second of the two; a combat with no active player (a test state the
+            // rules never produce) keeps the seating order.
+            sides.swap(0, 1);
+        }
         let [attacker, defender] = sides.as_slice() else {
             return Self {
                 system: system.clone(),
@@ -3022,28 +3046,30 @@ mod tests {
         }
         put(&mut state, &active, "cruiser", &attacker(), 1);
 
-        let guns = |state: &GameState| {
-            reaching_guns(state, Some(&hub.galaxy), &active, &attacker()).len()
-        };
+        let guns =
+            |state: &GameState| reaching_guns(state, Some(&hub.galaxy), &active, &attacker()).len();
 
         if let Some(here) = state.board.get_mut(&next_door) {
-            here.planet_units.entry(planet.clone()).or_default().push(
-                Unit::new(UnitTypeId::new("pds"), defender()),
-            );
+            here.planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(Unit::new(UnitTypeId::new("pds"), defender()));
         }
         assert_eq!(guns(&state), 0, "a PDS I stays at home");
 
         if let Some(here) = state.board.get_mut(&next_door) {
-            here.planet_units.entry(planet.clone()).or_default().push(
-                Unit::new(UnitTypeId::new("pds2"), defender()),
-            );
+            here.planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(Unit::new(UnitTypeId::new("pds2"), defender()));
         }
         assert_eq!(guns(&state), 1, "an upgraded one reaches next door");
 
         if let Some(here) = state.board.get_mut(&next_door) {
-            here.planet_units.entry(planet.clone()).or_default().push(
-                Unit::new(UnitTypeId::new("xxcha_mech"), defender()),
-            );
+            here.planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(Unit::new(UnitTypeId::new("xxcha_mech"), defender()));
         }
         assert_eq!(guns(&state), 2, "and so does Xxcha's Indomitus mech");
     }
@@ -3073,10 +3099,21 @@ mod tests {
         };
 
         let left = offer_sustain(
-            &mut state, content, POK, None, &mut ctx, &player, &system, &attacker(), 2,
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut ctx,
+            &player,
+            &system,
+            &attacker(),
+            2,
         )
         .expect("the offer resolves");
-        assert_eq!(left, 1, "without the technology one sustain cancels one hit");
+        assert_eq!(
+            left, 1,
+            "without the technology one sustain cancels one hit"
+        );
 
         let (mut state, system) = arena();
         put(&mut state, &system, "dreadnought", &player, 1);
@@ -3085,7 +3122,15 @@ mod tests {
                 .insert(ti4_model::id::TechnologyId::new("nes"));
         }
         let left = offer_sustain(
-            &mut state, content, POK, None, &mut ctx, &player, &system, &attacker(), 2,
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut ctx,
+            &player,
+            &system,
+            &attacker(),
+            2,
         )
         .expect("the offer resolves");
         assert_eq!(left, 0, "with it, the same one ship cancels both");
@@ -3160,7 +3205,10 @@ mod tests {
         reroll_window(&mut state, &mut ctx, &player, false);
         let after = state.reroll_staging.get(&player).expect("staged");
         assert!(
-            after.rolls.first().is_none_or(|entry| entry.faces != vec![1]),
+            after
+                .rolls
+                .first()
+                .is_none_or(|entry| entry.faces != vec![1]),
             "but a fleet roll is, and the relic takes it"
         );
     }
@@ -3202,7 +3250,6 @@ mod tests {
             "an ordinary system helps nobody"
         );
     }
-
 
     /// Shields Holding cancels hits across the round, not per assignment.
     ///
@@ -4150,6 +4197,43 @@ mod tests {
         assert!(window.outcome().is_some(), "the fight concluded");
         let left = combatants(&state, ContentStore::embedded(), POK, &system);
         assert!(left.len() <= 1);
+    }
+
+    #[test]
+    fn the_active_player_is_the_attacker_whoever_is_seated_where() {
+        // LRR 13: "During combat, the active player is the attacker." LRR 29.1: the
+        // defender is the player who is not the active player. `combatants` lists the
+        // two sides in seating order, so the combat must anchor the roles to the active
+        // seat: with b (seated second) active, b is the attacker and a the defender --
+        // not the reverse that the raw seating order gives.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+
+        state.active = Some(attacker().clone());
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        assert_eq!(
+            window.attacker,
+            attacker(),
+            "the active seat is the attacker"
+        );
+        assert_eq!(window.defender, defender());
+
+        state.active = Some(defender().clone());
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        assert_eq!(
+            window.attacker,
+            defender(),
+            "active-second is still the attacker"
+        );
+        assert_eq!(window.defender, attacker());
+
+        // A combat opened without an active player (a test state the rules never
+        // produce) keeps the seating order the engine always had.
+        state.active = None;
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        assert_eq!(window.attacker, attacker());
+        assert_eq!(window.defender, defender());
     }
 
     /// Drive a combat window by hand — `settle` / `pending_choice` / `resolve` — consuming scoring

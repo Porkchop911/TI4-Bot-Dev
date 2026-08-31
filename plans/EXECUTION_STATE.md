@@ -20,9 +20,98 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical Python repository: `D:\Projects\ti4-engine` (read-only; not behavioral acceptance)
 - Historical branch: `codex/fully-learned-policy`
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
-- Branch: `wp/m06-003-structured-transactions` (thirteen packages, 2026-08-12)
+- Branch: `wp/r01-review-viewer-contract` (Phase 9 verification runs on the main checkout; the `D:/Projects/ti4-engine-work` worktree is stale at `f816d90` and was merged via `acb898b` — left untouched)
 
-### Phase 9 — eighth batch: Abilities, Active Player, Active System, Adjacency, Agenda Phase, Anomalies, Attacker (2026-09-01)
+### Phase 9 — ninth batch: Action Phase, Combat, Component Action, Cost, Deals, Defender, Exhausted (2026-09-01)
+
+- Per `HANDOVER_2026-08-31_PHASE_9.md` (at `88cf39f`): verification pass 1, the next seven
+  alphabetically (54 of 109 topics now checked; unverified 32 → 25). Exact rules text fetched
+  from tirules2.com; every numbered sub-rule read against the code, not merely grep-matched.
+  This batch found and fixed **four defects** — engine behaviour changed, so the behaviour
+  baseline moved **v26 → v27** (details below).
+- **Action Phase (LRR 3): VERIFIED.** 3.1-3.5 + notes 1/3/4: the three action types plus a
+  pass; passing is legal only when nothing else can be done (the gate is tested before the
+  windows open, `game.rs`); passed players are skipped in `phase::advance_turn` and cannot
+  pass again (the 3.4 gate); the turn is `None` once all players have passed (3.5 → the
+  status phase). **Defect, fixed:** note 2 — the after-window "after you perform an action"
+  never opened after a component action: all six component branches (faction, technology,
+  expedition, action card, Enigmatic Device, relic) called `advance_turn()` directly, so
+  Master Plan and every other after-action trigger slept through them. Component actions
+  now end through `self.finish_action()` — `ACTION_COMPLETED` emitted, then advance — like
+  every other action, and the Enigmatic Device branch emits `COMPONENT_ACTION_RESOLVED` for
+  uniformity. Pinned by `the_end_of_action_window_opens_after_a_component_action` (fails
+  when the branch reverts to `advance_turn`).
+- **Combat (LRR 18): VERIFIED.** The `combat.rs` round order, simultaneous hit exchange,
+  sustain assignment, the 50-round stop (`MAX_ROUNDS`) and the two-sided window, cross-read
+  against Space Combat (78.x). **Defect, fixed:** attacker/defender roles were assigned from
+  `combatants()` — seating order, never rotated — so a combat opened by the seat seated
+  behind an opponent in the system rolled first on the wrong side, took the nebula bonus on
+  the wrong side and announced retreats in the wrong order. `CombatWindow::new` now rotates
+  a two-sided combat so the active player (LRR 13/29.1) is always the attacker; a combat
+  with no active player (a test state only) keeps seating order. Pinned by
+  `the_active_player_is_the_attacker_whoever_is_seated_where` (fails without the rotation).
+  Winnu's dynamic dice remain out of scope.
+- **Component Action (LRR 22): VERIFIED.** 22.1-22.3 clean (six component sources; the 22.3
+  legality filter is the offer-side one). **Defect, fixed:** 22.4 — a component action
+  cancelled while announced (Sabotage in its WHEN window cancelling `ACTION_CARD_PLAYED`)
+  still consumed the turn: `action_cards::perform` discarded `reactions::announce`'s
+  `Result<bool>` and returned `Ok(true)` unconditionally. It now propagates the bool; the
+  driver's action-card branch — and the other five component branches — re-offer the same
+  turn when `!done` (no advance, no `ACTION_COMPLETED`, same `turn_seq`, card spent) and
+  call `finish_action` only when the play stood. Pinned by
+  `a_canceled_component_action_does_not_use_the_players_action`.
+- **Cost (LRR 26): VERIFIED.** Every legality check is exact integer arithmetic (no floats
+  in any payment or legality path); an unpayable cost voids the effect after the play was
+  announced (52.10 — the card is spent either way, pinned by
+  `focused_research_charges_nothing_when_it_cannot_pay`); the combined bill is one
+  transaction (68.1.3, v22); promissory notes are accepted as payment in the payment
+  window that opens before any effect.
+- **Deals (LRR 28): PARTIAL (design boundary).** The 28.1 transactional half verified:
+  adjacency and note-holding legality are enforced when offers are built. The offer itself,
+  its binding and non-binding character, and counters (28.2-28.4 + notes) are unrepresentable
+  in a single-agent decision engine — every seat is scripted by the same decider, so a
+  "proposal awaiting the other side's decision" has no home. Recorded as a design boundary,
+  not a defect to fix.
+- **Defender (LRR 29): VERIFIED.** 29.1-29.3: the defender is the opponent of the combat
+  the active player opened; the role fix above (LRR 13/29.1) is exactly what was missing,
+  and the defender-side semantics (announcement order, first retreat question, nebula
+  bonus) now anchor on the right side. The two-sided combat window remains the structural
+  boundary for N>2 combats (a test state with more than two sides ends the combat with the
+  seating-first side as winner; the engine never produces such a state in play).
+- **Exhausted (LRR 34): VERIFIED.** 34.1-34.5 + notes 1-2: exhaustion is a flag on
+  technologies, planets, relics and leaders; the status phase's 81.6 readies all four kinds
+  (confirmed against `status.rs`); planets exhaust in payment and never both at once
+  (75.2); a not-Ready leader refuses and an exhausted technology cannot pay; planets ready
+  at the end of the agenda phase (note 1); note 2's "your planets" is enforced by the
+  `controlled_planets` filter, and the cards that reach into rivals' planets name it
+  instead.
+- **Defect #4, fixed (LRR 49, surfaced by the Defender/Combat reading):** the post-combat
+  invasion gate tested `combatants(...).first() == activator` — "is the seating-first
+  survivor the activator" — instead of "is the activator among the survivors". A
+  seated-second activator that outlasted a combat in which the opponent also survived never
+  got its invasion step. Now a membership test. The pinning probe needed a combat ending
+  with *both* fleets present — fifty rounds of a two-flagship activator (never hit) against
+  eighty winnu flagships (never hits, sustains everything), both seats carrying 200 fleet
+  tokens so the fleets are legal — because a one-sided survivor set makes the old gate
+  accidentally correct. The old gate routes the seated-second arm to production; the new
+  one emits `INVASION_BEGAN`. Test: `the_activator_may_invade_when_seated_second_and_
+  still_holding`. (Debugging this was the batch's long pole: the first fixture was illegal —
+  40 supply ships against three fleet tokens — and `fleet::enforce_seeing` trimmed it
+  silently before combat, so old and new code produced identical logs.)
+- Engine suite now **1,090** (1,086 + 4 new tests: after-window after a component action,
+  cancelled component re-offer, attacker-role anchoring, seated-second invasion). Full
+  gate: clippy clean under `RUSTFLAGS=-D warnings` on all five core crates; engine 1,090
+  green; policy 189/189 (the carried red gate did not reproduce on this run); sim 52/52
+  against the new bounds.
+- **Re-baselined to v27** (Phase 9's first behaviour change): `share_SPACE_COMBAT_RESOLVED`
+  [0.0056, 0.0064] → [0.0051, 0.0059], `faction_differentiation` [0.696, 1.185] →
+  [0.452, 1.047], `vp_pace` [0.392, 0.451] → [0.406, 0.460]; raw values and the side-by-side
+  in `plans/evidence/M08-021.md`. Two v26 bounds were already breached on the fixed tree
+  before the re-baseline — the gate doing its job.
+- The policy red gate from the eighth-batch note did **not reproduce** on this run
+  (189/189 green); it remains carried at HEAD pending the owner's call.
+- Next batch (next seven alphabetically): Expedition, Exploration, Game Board, Game Round,
+  Hyperlanes, Influence, Initiative Order.
 
 - Per `HANDOVER_2026-08-31_PHASE_9.md` (at `88cf39f`): verification pass 1, the next seven
   alphabetically after the seven earlier batches (47 of 109 topics now checked; unverified

@@ -375,12 +375,38 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v14): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v27): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v27 — 2026-09-01. Phase 9, ninth batch (Action Phase, Combat, Component Action, Cost,
+    // Deals, Defender, Exhausted). Four engine defects fixed, two of them changing what a
+    // combat does:
+    //
+    // - The `ACTION_COMPLETED` after-window never opened after a component action (22.4 / LRR
+    //   3): Master Plan and its kin slept through every faction, technology, expedition,
+    //   action-card, device and relic action. Component actions now end through the same
+    //   `finish_action` as every other action.
+    // - A component action cancelled while announced (Sabotage in its WHEN window) still
+    //   consumed the turn. 22.4 says the action is not used: the same turn re-offers its
+    //   options, and the cancelled card stays spent.
+    // - Combat roles came from seating order, not from the active player (LRR 13 / 29.1):
+    //   a combat opened by the seat behind an opponent in the system rolled first on the
+    //   wrong side and took the nebula bonus on the wrong side. The active player is now
+    //   always the attacker of a two-sided combat.
+    // - The post-combat invasion gate (LRR 49) asked whether the seating-first survivor was
+    //   the activator instead of whether the activator was among the survivors.
+    //
+    // The combat pair is the play change: `share_SPACE_COMBAT_RESOLVED` falls
+    // [0.0056, 0.0064] -> [0.0051, 0.0059] and `faction_differentiation` falls
+    // [0.696, 1.185] -> [0.452, 1.047], because combats that used to be decided for the
+    // seating-first seat now roll from the seat that activated, and seats that fight from
+    // the wrong side no longer win them. `vp_pace` rises [0.392, 0.451] ->
+    // [0.406, 0.460] with the combats that now end sooner; the rest is stream drift from
+    // the two new event emissions after component actions.
+    //
     // v26 — 2026-08-31. Phase 9, fourth batch. Two defects and four cards that were invisible:
     //
     // - Jol-Nar's Fragile is "-1 to all combat rolls" and never applied on the ground.
@@ -810,43 +836,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.391_975_308_641_975_33, 0.451_234_567_901_234_56),
+        (0.406_172_839_506_172_83, 0.459_876_543_209_876_53),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.706_073_538_717_730_2, 2.125_698_409_429_725_5),
+        (1.703_247_154_665_363_4, 2.187_310_641_982_757_7),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.695_687_775_860_321_8, 1.184_727_921_049_209),
+        (0.452_155_332_208_351_3, 1.047_041_687_945_755_4),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_280_626_818_364_82, 0.020_493_785_164_206_51),
+        (0.019_666_779_009_955_66, 0.021_032_712_232_675_888),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_511_082_891_885_64, 0.033_343_614_524_840_2),
+        (0.032_581_380_432_973_3, 0.033_710_939_748_262_41),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.049_106_530_186_719_83, 0.052_571_693_837_519_2),
+        (0.047_955_782_271_185_46, 0.051_647_392_663_068_045),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_587_772_078_365_502, 0.006_407_983_314_989_563),
+        (0.005_125_268_410_669_828_5, 0.005_913_896_396_703_955),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.064_259_171_637_501_07, 0.065_860_893_433_209_87),
+        (0.064_341_621_454_499_86, 0.066_411_897_204_035_76),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.031_756_091_184_434_045, 0.032_520_027_737_179_616),
+        (0.031_753_836_490_184_51, 0.032_717_713_712_918_51),
     );
     bounds
 }

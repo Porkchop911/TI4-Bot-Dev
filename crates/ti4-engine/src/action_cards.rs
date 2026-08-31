@@ -204,7 +204,13 @@ pub fn available_actions(
         .collect()
 }
 
-/// Play an action card as a component action. Returns `false` for an option that is not one.
+/// Play an action card as a component action.
+///
+/// Returns `false` when the card was not performed: the option is not a playable component
+/// action, or its play was cancelled while announced (e.g. by Sabotage). In both cases the
+/// caller must not treat the player's action as used -- 22.3 forbids performing what cannot
+/// be resolved, and 22.4 says a cancelled component action does not consume the turn. A
+/// cancelled play is still spent: the card is discarded either way.
 ///
 /// # Errors
 /// [`crate::timing::TimingError`] when announcing the play cannot be resolved.
@@ -244,8 +250,9 @@ pub fn perform(
     // 22.3: the card leaves the hand whether or not its effect is modelled. It was genuinely
     // played, and pretending otherwise would let a bot hold it for ever.
     discard(context.state, player, index);
-    crate::reactions::announce(context, resolver, player, &alias)?;
-    Ok(true)
+    // `announce` reports whether the play stood. A cancelled play still discards the card,
+    // but returns `false` so the caller keeps the turn instead of advancing it (22.4).
+    crate::reactions::announce(context, resolver, player, &alias)
 }
 
 // -- effects (M06-016b) --------------------------------------------------------------------------
@@ -1174,14 +1181,11 @@ fn choose_crashlanding_planet(
     let options: Vec<crate::choice::ChoiceOption> = planets
         .iter()
         .map(|planet| {
-            let name = ti4_content::galaxy::planet(
-                context.content,
-                planet.as_str(),
-                context.sources,
-            )
-            .and_then(|record| record.name())
-            .unwrap_or(planet.as_str())
-            .to_owned();
+            let name =
+                ti4_content::galaxy::planet(context.content, planet.as_str(), context.sources)
+                    .and_then(|record| record.name())
+                    .unwrap_or(planet.as_str())
+                    .to_owned();
             crate::choice::ChoiceOption::labelled(
                 format!("planet|{planet}"),
                 "crashlanding_planet",
@@ -4234,8 +4238,7 @@ fn lie_in_wait(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     let Some(galaxy) = context.galaxy else {
         return; // 22.3: without the map there are no neighbours, so nothing to resolve
     };
-    let traders =
-        crate::transactions::neighbours_who_transacted(context.state, galaxy, player);
+    let traders = crate::transactions::neighbours_who_transacted(context.state, galaxy, player);
     for victim in traders.into_iter().take(2) {
         let hand: Vec<(String, String)> = context
             .state
@@ -7061,10 +7064,7 @@ mod tests {
         }
 
         // b trades twice; the card still looks at one hand of b's.
-        state.transactions_this_round = vec![
-            (b.clone(), c.clone()),
-            (b.clone(), c.clone()),
-        ];
+        state.transactions_this_round = vec![(b.clone(), c.clone()), (b.clone(), c.clone())];
 
         let taken_before = state
             .player(&player)

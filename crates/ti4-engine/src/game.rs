@@ -338,10 +338,12 @@ impl AftermathWindow {
                         continue;
                     }
                     // 49: an invasion only happens if the active player still holds the space.
+                    // Membership, not seating order: the activator may be seated behind a
+                    // survivor, and only the activator's holding matters.
                     let holds =
                         crate::combat::combatants(state, ctx.content, ctx.sources, &self.system)
-                            .first()
-                            .is_some_and(|last| last == &self.player);
+                            .iter()
+                            .any(|last| last == &self.player);
                     if let Some(outcome) = window.outcome()
                         && !self.feats_noted
                     {
@@ -416,7 +418,6 @@ impl AftermathWindow {
                             ctx.emit(state, "SPACE_COMBAT_WON", payload)?;
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
-
                     }
                     self.stage = if holds {
                         // Two cards read "at the start of an invasion", so the window opens
@@ -1074,7 +1075,10 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn()?;
+                    if !done {
+                        return Ok(());
+                    }
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if answer.id.starts_with("component|tech|") {
@@ -1093,7 +1097,10 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn()?;
+                    if !done {
+                        return Ok(());
+                    }
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if answer.id.starts_with("component|expedition|") {
@@ -1112,19 +1119,31 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn()?;
+                    if !done {
+                        return Ok(());
+                    }
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if let Some(index) = answer.id.strip_prefix("action_card|") {
                     let _ = index;
-                    let played = self.play_component_action(&active, &answer);
+                    // Propagated, not `unwrap_or(false)`: a refused announcement is an engine
+                    // error, never a silently failed action.
+                    let done = self.play_component_action(&active, &answer)?;
                     self.settle_extreme_duress(&active, false)?;
-                    self.emit(if played.unwrap_or(false) {
+                    self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn()?;
+                    if !done {
+                        // 22.4: the play was cancelled while announced (22.3 covers what
+                        // cannot be resolved): the action is not used, so the same turn
+                        // re-offers its options instead of advancing. The cancelled card is
+                        // already out of the hand, so it cannot be chosen again.
+                        return Ok(());
+                    }
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if answer.kind == crate::relics::ACTION_KIND
@@ -1140,8 +1159,11 @@ impl<'a> Game<'a> {
                     // An Enigmatic Device from the exploration deck, not a relic. It shares the
                     // relic action kind because it is the same kind of thing to a decider -- a
                     // component action from a card in the play area -- and `perform_action`
-                    // declines anything that is not one of its own.
-                    self.advance_turn()?;
+                    // declines anything that is not one of its own. A device action cannot be
+                    // cancelled, so it always resolves.
+                    self.settle_extreme_duress(&active, false)?;
+                    self.emit("COMPONENT_ACTION_RESOLVED");
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if answer.kind == crate::relics::ACTION_KIND {
@@ -1166,7 +1188,10 @@ impl<'a> Game<'a> {
                     } else {
                         "COMPONENT_ACTION_FAILED"
                     });
-                    self.advance_turn()?;
+                    if !done {
+                        return Ok(());
+                    }
+                    self.finish_action()?;
                     return Ok(());
                 }
                 if let Some(partner) = crate::transactions::opens_with(&self.state, &answer) {
@@ -1454,8 +1479,9 @@ impl<'a> Game<'a> {
 
     /// Play an action card as a component action, through the game's own timing context.
     ///
-    /// 22.1: it costs the whole turn, which is why the caller advances the turn whatever the
-    /// card managed to do.
+    /// The result says whether the action was performed. A performed component action costs
+    /// the turn; a cancelled one (22.4) does not, and the caller keeps the turn instead of
+    /// advancing it.
     fn play_component_action(
         &mut self,
         player: &PlayerId,
@@ -1582,11 +1608,7 @@ impl<'a> Game<'a> {
                     self.advance_turn()?;
                     return Ok(self.result(true, None));
                 }
-                crate::relics::offer_dominus_orb(
-                    &mut self.state,
-                    &mut self.table,
-                    &window.player,
-                );
+                crate::relics::offer_dominus_orb(&mut self.state, &mut self.table, &window.player);
                 window.stage = TacticalStage::Moving;
                 self.tactical = Some(window);
                 Ok(self.result(true, None))
@@ -1634,11 +1656,7 @@ impl<'a> Game<'a> {
                     // ship passing *through* the storm's system by ordinary hex adjacency has not
                     // used the wormhole at all.
                     if let Some(destination) = self.state.active_system.clone() {
-                        crate::exploration::flip_ion_storm(
-                            &mut self.state,
-                            &origin,
-                            &destination,
-                        );
+                        crate::exploration::flip_ion_storm(&mut self.state, &origin, &destination);
                     }
                     self.note_arrival(&window.player, &outcome);
                     self.emit(match outcome {
@@ -2516,9 +2534,7 @@ impl<'a> Game<'a> {
                         .get(ti4_model::content_types::ContentType::Agendas, &alias)
                         .and_then(|record| record.text("target"))
                         .is_some_and(|target| target.starts_with("Elect Player"));
-                    if elects_a_player
-                        && let Some(chosen) = self.committee_formation(&alias)
-                    {
+                    if elects_a_player && let Some(chosen) = self.committee_formation(&alias) {
                         self.emit(&format!("AGENDA_RESOLVED:{alias}:{chosen}"));
                         if is_law(self.content, &alias) {
                             self.state.enact_law(&alias, &chosen);
@@ -2668,15 +2684,14 @@ impl<'a> Game<'a> {
         // who is the elected player. The vote's own result (`outcome`) still settles
         // predictions and any law; the agenda's effect on the elected player and the
         // "elected by an agenda" feat follow the redirect.
-        let effective =
-            if let Some(override_player) = self.state.agenda_elected_override.take() {
-                self.emit(&format!(
-                    "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
-                ));
-                override_player.to_string()
-            } else {
-                outcome.to_owned()
-            };
+        let effective = if let Some(override_player) = self.state.agenda_elected_override.take() {
+            self.emit(&format!(
+                "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
+            ));
+            override_player.to_string()
+        } else {
+            outcome.to_owned()
+        };
 
         // Drive the Debate: "you or a planet you control are elected". The outcome
         // names a player, a planet, or an outcome like "for" -- so both readings
@@ -2745,7 +2760,6 @@ impl<'a> Game<'a> {
         elected
     }
 
-
     /// Committee Formation, offered before a vote that would elect a player.
     ///
     /// Returns the player the card's owner chose, having discarded it.
@@ -2798,7 +2812,6 @@ impl<'a> Game<'a> {
         .is_some()
     }
 
-
     /// Minister of War, offered after an action: a token back, and another action.
     ///
     /// Returns nothing -- the additional action is signalled through `ADDITIONAL_ACTION`, the same
@@ -2839,11 +2852,8 @@ impl<'a> Game<'a> {
                 )
             })
             .collect();
-        let choice = crate::choice::Choice::new(
-            owner.clone(),
-            "which command token comes back",
-            options,
-        );
+        let choice =
+            crate::choice::Choice::new(owner.clone(), "which command token comes back", options);
         let Ok(answer) = self.table.ask(&choice) else {
             return;
         };
@@ -2858,7 +2868,6 @@ impl<'a> Game<'a> {
             .transient_flags
             .set(TransientFlags::ADDITIONAL_ACTION);
     }
-
 
     /// Imperial Arbiter, offered at the end of the strategy phase.
     ///
@@ -7377,6 +7386,202 @@ mod tests {
             game.state.active.clone(),
             Some(PlayerId::new("b")),
             "the turn passed on after the single action; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn the_end_of_action_window_opens_after_a_component_action() {
+        // LRR 3.1 and note 2: the end-of-action window ("after you perform an action")
+        // fires after ANY action, including component actions, before the end-of-turn
+        // effects. Master Plan: "After you perform an action: Perform an additional
+        // action." The first action here is the component action Economic Initiative
+        // ("Ready each cultural planet you control" -- no choices), so the window must
+        // open around it exactly as it does around a tactical action: the seat then
+        // spends the grant on a tactical move, and only after that does the turn leave.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let seat = state.player_mut(&a).unwrap();
+        seat.tactic_tokens = 1;
+        seat.action_cards = vec![
+            ti4_model::id::ActionCardId::new("economic_initiative"),
+            ti4_model::id::ActionCardId::new("master_plan"),
+        ];
+        // b holds nothing that could react to the play's announcement or the turn's start.
+        state.player_mut(&b).unwrap().action_cards = vec![];
+        let table = Table::with_default(Box::new(Scripted::new([
+            "action_card|0".to_owned(),
+            "reaction:generic:ACTION_COMPLETED:after".to_owned(),
+            "tactical".to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 100 {
+            assert_eq!(game.step().error, None, "no action step should refuse");
+            guard += 1;
+        }
+        let events = &game.events;
+
+        let position = |name: &str| events.iter().position(|e| e == name);
+        let component = position("COMPONENT_ACTION_RESOLVED");
+        let completed = position("ACTION_COMPLETED");
+        let retained = position("TURN_RETAINED");
+        let tactical = position("TACTICAL_ACTION_BEGAN");
+        for (name, at) in [
+            ("COMPONENT_ACTION_RESOLVED", component),
+            ("ACTION_COMPLETED", completed),
+            ("TURN_RETAINED", retained),
+            ("TACTICAL_ACTION_BEGAN", tactical),
+        ] {
+            assert!(at.is_some(), "{name} fired; log {events:?}");
+        }
+        assert!(
+            component.unwrap() < completed.unwrap()
+                && completed.unwrap() < retained.unwrap()
+                && retained.unwrap() < tactical.unwrap(),
+            "component, end-of-action, retention, then the extra action; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().action_cards,
+            Vec::<ti4_model::id::ActionCardId>::new(),
+            "both cards were spent: the initiative as the action, the plan in the window it opened"
+        );
+        assert_eq!(
+            game.state.active.clone(),
+            Some(PlayerId::new("b")),
+            "the turn left only after the extra action the plan granted; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn a_canceled_component_action_does_not_use_the_players_action() {
+        // LRR 22.4: if a component action is canceled, that player's action is not used.
+        // a's action is the component card Economic Initiative; b's Sabotage cancels the
+        // play while it is announced. The played card is spent anyway (a spent play is
+        // not undone), but the turn must be re-offered to a instead of advancing: a still
+        // performs an action -- here a tactical move -- before the turn finally leaves.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let seat = state.player_mut(&a).unwrap();
+        seat.tactic_tokens = 1;
+        seat.action_cards = vec![ti4_model::id::ActionCardId::new("economic_initiative")];
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("sabo1")];
+        let table = Table::with_default(Box::new(Scripted::new([
+            "action_card|0".to_owned(),
+            "reaction:generic:ACTION_CARD_PLAYED:when".to_owned(),
+            "tactical".to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while game.state.active.as_ref().is_some_and(|p| p == &a) && guard < 100 {
+            assert_eq!(game.step().error, None, "no action step should refuse");
+            guard += 1;
+        }
+        let events = &game.events;
+
+        let failed = events.iter().position(|e| e == "COMPONENT_ACTION_FAILED");
+        let tactical = events.iter().position(|e| e == "TACTICAL_ACTION_BEGAN");
+        assert!(
+            failed.is_some(),
+            "the canceled play was recorded as not resolved; log {events:?}"
+        );
+        assert!(
+            tactical.is_some(),
+            "the same turn re-offered after the cancellation: a still had an action to take; log {events:?}"
+        );
+        assert!(
+            failed.unwrap() < tactical.unwrap(),
+            "the cancellation happened before a's real action; log {events:?}"
+        );
+        assert_eq!(
+            game.state.player(&a).unwrap().action_cards,
+            Vec::<ti4_model::id::ActionCardId>::new(),
+            "the canceled card was spent even though its play was canceled"
+        );
+        assert_eq!(
+            game.state.player(&b).unwrap().action_cards,
+            Vec::<ti4_model::id::ActionCardId>::new(),
+            "the Sabotage that answered the play was spent too"
+        );
+        assert_eq!(
+            game.state.active.clone(),
+            Some(PlayerId::new("b")),
+            "the turn left only after a's second action ended; log {events:?}"
+        );
+    }
+
+    #[test]
+    fn the_activator_may_invade_when_seated_second_and_still_holding() {
+        // LRR 49: the invasion step of a tactical action happens when the active player
+        // -- the one who activated the system -- still holds the space after any combat.
+        // The gate must test the activator's membership among the survivors, not "who is
+        // seated first of them": here b activates a system where both players still keep
+        // ships, and b is seated second, so a `first()` reading sends the turn straight
+        // to production instead of the invasion step.
+        let run = |active_seat: PlayerId| -> Vec<String> {
+            let (mut state, galaxy, ids) = tactical_fixture();
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            // The combat must run out all its rounds with both fleets still in the
+            // system -- the only way the `first()` reading of LRR 49 can be wrong: both
+            // players hold the space, and the activator is seated behind the other. So
+            // both hands are emptied (no card can sustain, cancel or reroll anything),
+            // both seats hold enough fleet tokens for the whole fleet, and the fleets
+            // are shaped against the dice: the opponent's winnu flagships roll no dice
+            // at all, so they never hurt the activator, yet each one sustains the
+            // activator's hits -- eighty of them outlast the activator's two flagships
+            // over all fifty combat rounds, and neither fleet is ever emptied.
+            let active = active_seat.clone();
+            let opponent = if active == a { b.clone() } else { a.clone() };
+            for seat in [&a, &b] {
+                state.player_mut(seat).unwrap().action_cards = Vec::new();
+                state.player_mut(seat).unwrap().fleet_tokens = 200;
+            }
+            for _ in 0..2 {
+                crate::fixtures::put(&mut state, &ids[0], "flagship", &active, 1);
+            }
+            for _ in 0..80 {
+                crate::fixtures::put(&mut state, &ids[0], "winnu_flagship", &opponent, 1);
+            }
+            state.player_mut(&active_seat).unwrap().tactic_tokens = 1;
+            state.active = Some(active_seat);
+            // The queue covers the two tactical answers; FirstOption answers the rest
+            // (the retreat announcements, the hit assignments, the production step).
+            let table = Table::with_default(Box::new(Scripted::new([
+                "tactical".to_owned(),
+                ids[0].to_string(),
+            ])));
+            let mut game =
+                Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+            for _ in 0..1000 {
+                let result = game.step();
+                assert_eq!(result.error, None, "no tactical step should refuse");
+                if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                    break;
+                }
+            }
+            game.events
+        };
+
+        // b activates, and b is seated second: the invasion step opens anyway.
+        let events = run(PlayerId::new("b"));
+        assert!(
+            events.iter().any(|e| e == "INVASION_BEGAN"),
+            "the activator still holds the system, seated second or not; log {events:?}"
+        );
+
+        // The control: the same game with the activator seated first -- the case the old
+        // `first()` reading happened to get right.
+        let events = run(PlayerId::new("a"));
+        assert!(
+            events.iter().any(|e| e == "INVASION_BEGAN"),
+            "seated-first still invades; log {events:?}"
         );
     }
 
