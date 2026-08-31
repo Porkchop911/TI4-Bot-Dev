@@ -145,7 +145,7 @@ pub fn effective_hits_on(
 /// The roll bonus this seat's fighters carry in the current combat round (Fighter Prototype):
 /// two per copy held, counted only while the round the cards were played in is the live one.
 fn fighter_bonus_now(state: &GameState, player: &PlayerId) -> i64 {
-    state.player(player).map_or(0, |seat| {
+    let prototypes = state.player(player).map_or(0, |seat| {
         2 * i64::try_from(
             seat.fighter_bonus_round
                 .iter()
@@ -153,7 +153,10 @@ fn fighter_bonus_now(state: &GameState, player: &PlayerId) -> i64 {
                 .count(),
         )
         .unwrap_or(i64::MAX)
-    })
+    });
+    // Prophecy of Ixth is the same shape and stacks with the card: "+1 to the result of their
+    // fighter's combat rolls", for as long as its owner still holds the law.
+    prototypes + crate::laws::fighter_combat_bonus(state, player)
 }
 
 /// Replace the missed dice in one space-combat batch when Munitions Reserves is current.
@@ -877,6 +880,10 @@ fn offer_sustain(
                 };
                 &unit.owner == player
                     && !unit.sustained_damage
+                    // Publicize Weapon Schematics: all war suns lose SUSTAIN DAMAGE. Asked of the
+                    // unit here rather than removed from the type, so repealing the law gives it
+                    // back.
+                    && !crate::laws::sustain_suppressed(state, kind.base_type())
                     // Metali Void Shielding grants the ability to a non-fighter ship that lacks it.
                     // Asked here rather than of the unit type, so a dreadnought is not given a
                     // second sustain it never had.

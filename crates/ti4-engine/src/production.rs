@@ -1508,6 +1508,18 @@ impl Window for ProductionWindow {
             self.settled = true;
             let (who, made) = (self.player.clone(), self.report.produced.clone());
             crate::breakthroughs::on_production_finished(state, content, sources, &who, &made);
+            // Prophecy of Ixth: using PRODUCTION discards the law unless two or more fighters were
+            // produced. Read over the whole use for the same reason Auto-Factories is.
+            let types = ti4_content::units::catalogue(content, sources);
+            let fighters = made
+                .iter()
+                .filter(|(kind, _)| {
+                    types
+                        .get(kind.as_str())
+                        .is_some_and(ti4_content::units::UnitType::is_fighter)
+                })
+                .count();
+            crate::laws::prophecy_after_production(state, &who, fighters);
         }
         Ok(())
     }

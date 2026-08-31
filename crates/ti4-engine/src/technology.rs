@@ -788,6 +788,11 @@ pub fn can_research(
     // and the Research Teams, for the same reason -- they are all "ignore a prerequisite" and the
     // requirement is checked once.
     waivable += crate::relics::prerequisite_waivers(state, player);
+    // Publicize Weapon Schematics waives war sun prerequisites for everyone once anybody owns one.
+    // A whole-requirement waiver, not a budget: the card says "ignore all prerequisites".
+    if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
+        return true;
+    }
     let joined = crate::synergy::joined(state, content, sources, player);
     crate::synergy::satisfies(&prerequisites(content, alias), &holdings, &joined, waivable)
 }

@@ -261,6 +261,92 @@ pub fn mech_abilities_suppressed(state: &GameState, base_type: &str, ability: &s
 
 /// Point the map at what the wormhole laws say — and at what the active player's cards say.
 ///
+/// Publicize Weapon Schematics: war sun prerequisites are waived for everyone.
+///
+/// > If any player owns a war sun technology, all players may ignore all prerequisites on war sun
+/// > technologies.
+///
+/// The condition is on the *table*, not on the researcher: one player owning it opens the
+/// technology for everybody, which is why this takes the state rather than a player.
+#[must_use]
+pub fn war_sun_prerequisites_waived(
+    state: &GameState,
+    content: &ContentStore,
+    alias: &ti4_model::id::TechnologyId,
+) -> bool {
+    if !active(state, "schematics") {
+        return false;
+    }
+    if !is_war_sun_technology(content, alias) {
+        return false;
+    }
+    state.players.iter().any(|seat| {
+        seat.technologies
+            .iter()
+            .any(|held| is_war_sun_technology(content, held))
+    })
+}
+
+/// Whether a technology is a war sun technology, by the unit it unlocks.
+fn is_war_sun_technology(content: &ContentStore, alias: &ti4_model::id::TechnologyId) -> bool {
+    content
+        .get(ContentType::Technologies, alias.as_str())
+        .and_then(|record| record.text("unitId"))
+        .is_some_and(|unit| unit.contains("warsun"))
+        || alias.as_str() == "ws"
+}
+
+/// Publicize Weapon Schematics, second half: all war suns lose SUSTAIN DAMAGE.
+///
+/// Asked of the unit where sustain is offered, in the same place Metali Void Shielding grants it.
+/// A law that removed the ability from the unit *type* would remove it from the corpus for the rest
+/// of the game, including after the law is repealed.
+#[must_use]
+pub fn sustain_suppressed(state: &GameState, base_type: &str) -> bool {
+    base_type == "warsun" && active(state, "schematics")
+}
+
+/// Minister of Sciences: its owner researches without spending resources.
+///
+/// > When the owner of this card resolves the primary or secondary ability of the "Technology"
+/// > strategy card, they do not need to spend resources to research technology.
+#[must_use]
+pub fn research_is_free(state: &GameState, player: &PlayerId) -> bool {
+    holds_ministry(state, player, "minister_sciences")
+}
+
+/// Prophecy of Ixth: its owner's fighters roll one higher.
+#[must_use]
+pub fn fighter_combat_bonus(state: &GameState, player: &PlayerId) -> i64 {
+    i64::from(holds_ministry(state, player, "prophecy"))
+}
+
+/// Prophecy of Ixth, second half: using PRODUCTION discards the card unless two or more fighters
+/// were produced.
+///
+/// Returns whether the card is discarded. Called where a use of PRODUCTION ends, beside
+/// Auto-Factories, because both read the whole use rather than one placement.
+pub fn prophecy_after_production(state: &mut GameState, player: &PlayerId, fighters: usize) -> bool {
+    if !holds_ministry(state, player, "prophecy") || fighters >= 2 {
+        return false;
+    }
+    state.laws.remove("prophecy");
+    true
+}
+
+/// Minister of Commerce: replenishing commodities pays a trade good per neighbour.
+#[must_use]
+pub fn commerce_bonus(
+    state: &GameState,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+) -> i32 {
+    if !holds_ministry(state, player, "minister_commerce") {
+        return 0;
+    }
+    i32::try_from(crate::transactions::neighbours(state, galaxy, player).len()).unwrap_or(0)
+}
+
 /// `Galaxy` already carries the law switches — `wormholes_off` for "alpha and beta wormholes have
 /// no effect during movement", and `wormholes_all_linked` for "all systems that contain either an
 /// alpha or beta wormhole are adjacent to each other", complete with the ALPHA/BETA restriction
@@ -308,6 +394,10 @@ pub fn enforced_aliases() -> Vec<&'static str> {
         "articles_war",
         "minister_exploration",
         "minister_policy",
+        "minister_commerce",
+        "minister_sciences",
+        "prophecy",
+        "schematics",
     ]
 }
 
@@ -327,6 +417,9 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+
+    /// The outcome string a For/Against law is enacted under.
+    const FOR_OUTCOME: &str = "for";
 
     /// Every law claimed as enforced must change something observable.
     ///
@@ -435,6 +528,84 @@ mod tests {
         state.active = Some(b);
         apply_to_galaxy(&state, &mut galaxy);
         assert!(!galaxy.wormhole_star_links);
+    }
+
+    /// Publicize Weapon Schematics waives war sun prerequisites — but only once somebody owns one.
+    ///
+    /// Driven through `can_research`, so a waiver that reached no research path would fail here.
+    #[test]
+    fn publicize_schematics_opens_war_suns_only_once_someone_has_one() {
+        let content = ti4_content::ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let wanted = ti4_model::id::TechnologyId::new("ws");
+
+        let mut state = enacted("schematics", FOR_OUTCOME);
+        assert!(
+            !crate::technology::can_research(&state, content, ALL_SOURCES, &player, &wanted),
+            "the law is conditional on a player already owning a war sun technology"
+        );
+
+        if let Some(seat) = state.player_mut(&PlayerId::new("b")) {
+            seat.technologies.insert(wanted.clone());
+        }
+        assert!(
+            crate::technology::can_research(&state, content, ALL_SOURCES, &player, &wanted),
+            "another player owning it opens the technology for everybody"
+        );
+    }
+
+    /// The same law strips SUSTAIN DAMAGE from war suns, and from nothing else.
+    #[test]
+    fn publicize_schematics_strips_sustain_from_war_suns_only() {
+        let state = enacted("schematics", FOR_OUTCOME);
+        assert!(sustain_suppressed(&state, "warsun"));
+        assert!(!sustain_suppressed(&state, "dreadnought"));
+        assert!(!sustain_suppressed(&crate::fixtures::game(&["a"]), "warsun"));
+    }
+
+    /// Prophecy of Ixth pays its owner's fighters and is discarded by a thin production.
+    #[test]
+    fn prophecy_of_ixth_pays_fighters_and_leaves_on_a_thin_production() {
+        let owner = PlayerId::new("a");
+        let mut state = enacted("prophecy", "a");
+        assert_eq!(fighter_combat_bonus(&state, &owner), 1);
+        assert_eq!(fighter_combat_bonus(&state, &PlayerId::new("b")), 0);
+
+        // Two fighters keeps it.
+        assert!(!prophecy_after_production(&mut state, &owner, 2));
+        assert!(active(&state, "prophecy"));
+
+        // One does not.
+        assert!(prophecy_after_production(&mut state, &owner, 1));
+        assert!(
+            !active(&state, "prophecy"),
+            "the card is discarded, so the bonus goes with it"
+        );
+        assert_eq!(fighter_combat_bonus(&state, &owner), 0);
+    }
+
+    /// Minister of Commerce pays a trade good per neighbour, and nothing to anyone else.
+    #[test]
+    fn minister_of_commerce_pays_per_neighbour() {
+        let hub = crate::fixtures::plain_hub();
+        let owner = PlayerId::new("a");
+        // Three seats, built here rather than through `enacted`: that helper seats two, and a
+        // player who is not seated is not a neighbour however many units they have.
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state
+            .laws
+            .insert("minister_commerce".to_owned(), "a".to_owned());
+        let centre = ti4_model::id::SystemId::new(hub.centre.clone());
+        for seat in [&owner, &PlayerId::new("b"), &PlayerId::new("c")] {
+            crate::fixtures::put(&mut state, &centre, "carrier", seat, 1);
+        }
+
+        assert_eq!(
+            commerce_bonus(&state, &hub.galaxy, &owner),
+            2,
+            "two neighbours sharing the centre"
+        );
+        assert_eq!(commerce_bonus(&state, &hub.galaxy, &PlayerId::new("b")), 0);
     }
 
     fn enacted(alias: &str, elected: &str) -> GameState {
