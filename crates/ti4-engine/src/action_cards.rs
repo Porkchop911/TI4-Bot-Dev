@@ -7000,7 +7000,6 @@ mod tests {
         }
     }
 
-    #[test]
     /// Manipulate Investments places five goods across at least three strategy cards.
     ///
     /// The distinct-card clause is enforced by narrowing the offer, so the test asserts the
@@ -7078,6 +7077,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn frontline_deployment_puts_three_on_one_planet() {
         let player = PlayerId::new("a");
         let mut state = crate::fixtures::game(&["a"]);

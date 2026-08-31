@@ -936,6 +936,7 @@ impl<'a> Game<'a> {
             &self.state,
             self.content,
             self.sources,
+            self.galaxy.as_ref(),
             active,
         ));
         choice.options.extend(crate::technology::component_actions(
@@ -1111,6 +1112,7 @@ impl<'a> Game<'a> {
                         &mut dice,
                         &mut rng,
                         &mut self.table,
+                        self.galaxy.as_ref(),
                         &active,
                         &answer,
                     );
@@ -2533,6 +2535,92 @@ impl<'a> Game<'a> {
             .find_map(|board| board.planet_control.get(&planet).cloned())
     }
 
+    /// Resolve an agenda that was not discarded, returning the elected player if there was one.
+    ///
+    /// The whole non-discarded path: the redirect, the prediction payouts, enacting a law, and the
+    /// agenda's own effect. Split out of `close_vote` because it is the only branch that does
+    /// anything -- the discard branch clears three fields -- and because the effect needs the
+    /// game's own dice, table and map, which is a block of borrowing that reads better alone.
+    fn resolve_agenda_outcome(
+        &mut self,
+        alias: &str,
+        outcome: &str,
+        ballot: &crate::vote::Ballot,
+    ) -> Option<ti4_model::id::PlayerId> {
+        // Confusing / Confounding Legal Text, played into the window above, redirect
+        // who is the elected player. The vote's own result (`outcome`) still settles
+        // predictions and any law; the agenda's effect on the elected player and the
+        // "elected by an agenda" feat follow the redirect.
+        let effective =
+            if let Some(override_player) = self.state.agenda_elected_override.take() {
+                self.emit(&format!(
+                    "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
+                ));
+                override_player.to_string()
+            } else {
+                outcome.to_owned()
+            };
+
+        // Drive the Debate: "you or a planet you control are elected". The outcome
+        // names a player, a planet, or an outcome like "for" -- so both readings
+        // have to be tried, and an outcome that is neither matches nobody. Read
+        // from the (possibly redirected) elected player.
+        let elected = self.elected_seat_or_planet(&effective);
+
+        // Imperial Rider pays out before the agenda's own effect, and clears the
+        // predictions. A prediction left behind would pay again on the next agenda,
+        // for a card that was spent on this one.
+        for player in crate::action_cards::resolve_predictions(&mut self.state, outcome) {
+            self.emit(&format!("AGENDA_PREDICTION_CORRECT:{player}"));
+        }
+
+        // 8.20 first: an elected or "For" law stays in play, and an effect that reads
+        // the laws must see this one already there. 8.21 discards everything else.
+        if is_law(self.content, alias) && outcome != AGAINST {
+            self.state.enact_law(alias, outcome);
+            self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
+        }
+
+        // With the game's own dice, table and map: several agendas roll, ask, or read
+        // the shape of the board, and one borrowed from nowhere would roll off a
+        // stream no seed covers. The speaker's tie-break (8.18) is asked through the
+        // same table.
+        let mut dice = std::mem::take(&mut self.dice);
+        let mut rng = self.rng.clone();
+        let galaxy = self.galaxy.clone();
+        let mut ctx = Resolving {
+            content: self.content,
+            sources: self.sources,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut self.table,
+            timing: None,
+        };
+        let effect = crate::agenda_effects::resolve_with(
+            &mut self.state,
+            &mut ctx,
+            galaxy.as_ref(),
+            alias,
+            &effective,
+            ballot,
+        );
+        self.dice = dice;
+        self.rng = rng;
+
+        match effect {
+            crate::agenda_effects::Effect::Resolved { .. } => {
+                self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
+            }
+            crate::agenda_effects::Effect::Unresolved { .. } => {
+                self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
+            }
+            crate::agenda_effects::Effect::Deferred { .. } => {
+                self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
+            }
+        }
+        elected
+    }
+
     fn close_vote(&mut self) -> StepResult {
         let Some((window, queue)) = self.voting.take() else {
             unreachable!("a vote was open");
@@ -2597,78 +2685,7 @@ impl<'a> Game<'a> {
                 self.emit(&format!("AGENDA_DISCARDED:{alias}"));
                 None
             } else {
-                // Confusing / Confounding Legal Text, played into the window above, redirect
-                // who is the elected player. The vote's own result (`outcome`) still settles
-                // predictions and any law; the agenda's effect on the elected player and the
-                // "elected by an agenda" feat follow the redirect.
-                let effective =
-                    if let Some(override_player) = self.state.agenda_elected_override.take() {
-                        self.emit(&format!(
-                            "AGENDA_OUTCOME_REDIRECTED:{outcome}:{override_player}"
-                        ));
-                        override_player.to_string()
-                    } else {
-                        outcome.clone()
-                    };
-
-                // Drive the Debate: "you or a planet you control are elected". The outcome
-                // names a player, a planet, or an outcome like "for" -- so both readings
-                // have to be tried, and an outcome that is neither matches nobody. Read
-                // from the (possibly redirected) elected player.
-                let elected = self.elected_seat_or_planet(&effective);
-
-                // Imperial Rider pays out before the agenda's own effect, and clears the
-                // predictions. A prediction left behind would pay again on the next agenda,
-                // for a card that was spent on this one.
-                for player in crate::action_cards::resolve_predictions(&mut self.state, &outcome) {
-                    self.emit(&format!("AGENDA_PREDICTION_CORRECT:{player}"));
-                }
-
-                // 8.20 first: an elected or "For" law stays in play, and an effect that reads
-                // the laws must see this one already there. 8.21 discards everything else.
-                if is_law(self.content, &alias) && outcome != AGAINST {
-                    self.state.enact_law(&alias, &outcome);
-                    self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
-                }
-
-                // With the game's own dice, table and map: several agendas roll, ask, or read
-                // the shape of the board, and one borrowed from nowhere would roll off a
-                // stream no seed covers. The speaker's tie-break (8.18) is asked through the
-                // same table.
-                let mut dice = std::mem::take(&mut self.dice);
-                let mut rng = self.rng.clone();
-                let galaxy = self.galaxy.clone();
-                let mut ctx = Resolving {
-                    content: self.content,
-                    sources: self.sources,
-                    dice: &mut dice,
-                    rng: &mut rng,
-                    table: &mut self.table,
-                    timing: None,
-                };
-                let effect = crate::agenda_effects::resolve_with(
-                    &mut self.state,
-                    &mut ctx,
-                    galaxy.as_ref(),
-                    &alias,
-                    &effective,
-                    window.ballot(),
-                );
-                self.dice = dice;
-                self.rng = rng;
-
-                match effect {
-                    crate::agenda_effects::Effect::Resolved { .. } => {
-                        self.emit(&format!("AGENDA_EFFECT_RESOLVED:{alias}"));
-                    }
-                    crate::agenda_effects::Effect::Unresolved { .. } => {
-                        self.emit(&format!("AGENDA_EFFECT_UNRESOLVED:{alias}"));
-                    }
-                    crate::agenda_effects::Effect::Deferred { .. } => {
-                        self.emit(&format!("AGENDA_EFFECT_DEFERRED:{alias}"));
-                    }
-                }
-                elected
+                self.resolve_agenda_outcome(&alias, &outcome, window.ballot())
             };
             // Agenda-timed secrets are offered only after the complete agenda outcome is live:
             // Dictate Policy therefore sees a law enacted by this agenda. A Deadly Plot

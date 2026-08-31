@@ -375,7 +375,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(20_260_829);
         let trials = 4_000;
         let hits = (0..trials).filter(|_| breakthrough_roll(&mut rng)).count();
-        let rate = hits as f64 / f64::from(trials);
+        let rate = f64::from(u32::try_from(hits).unwrap_or(u32::MAX)) / f64::from(trials);
         assert!(
             (0.15..0.25).contains(&rate),
             "two faces of ten should fire about a fifth of the time, saw {rate}"

@@ -31,6 +31,9 @@ fn count_of(content: &ContentStore, kind: ContentType, sources: SourceSet) -> us
         .count()
 }
 
+// One long straight-line report: every line is a `row` for one content type, and cutting it into
+// sections would put a function boundary where the report has no section.
+#[allow(clippy::too_many_lines)]
 fn main() {
     let content = ContentStore::embedded();
     let sources = DEFAULT;

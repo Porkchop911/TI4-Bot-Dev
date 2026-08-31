@@ -180,7 +180,11 @@ pub fn available(
     // same budget as its "+4 to the total PRODUCTION value", so it joins the faces here as
     // well. Only resources: the card touches production, not influence bills such as the
     // Custodians' removal fee.
-    let war_machine = (kind == Spend::Resources).then(|| war_machine_bonus(state, player)).unwrap_or(0);
+    let war_machine = if kind == Spend::Resources {
+        war_machine_bonus(state, player)
+    } else {
+        0
+    };
     from_planets + from_triad + goods + war_machine
 }
 

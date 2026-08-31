@@ -126,7 +126,7 @@ pub fn free_capacity_granted(
         return 0;
     }
     ti4_content::units::unit_type(content, produced.as_str(), sources)
-        .filter(|kind| kind.is_ship())
+        .filter(ti4_content::UnitType::is_ship)
         .map_or(0, |kind| kind.capacity())
 }
 

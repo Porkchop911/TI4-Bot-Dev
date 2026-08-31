@@ -156,6 +156,18 @@ pub struct SystemState {
     /// Excluded from equality, like the other two planet maps.
     #[serde(default)]
     pub coexisting: BTreeMap<PlanetId, BTreeSet<PlayerId>>,
+    /// Planets destroyed outright, whose planet cards have been purged (the Stellar Converter).
+    ///
+    /// The planet stays in the galaxy -- the tile is still on the table and still a system you can
+    /// move into -- but there is no longer a card to take, so it can never be controlled or landed
+    /// on again. Recorded on the system rather than globally because a planet belongs to a system,
+    /// and because the two operations that would resurrect it, `set_control` and `land`, are both
+    /// here: guarding the chokepoints is what makes the destruction stick without every reader of
+    /// the galaxy having to remember to ask.
+    ///
+    /// Excluded from equality, like the other three planet maps.
+    #[serde(default)]
+    pub purged_planets: BTreeSet<PlanetId>,
 }
 
 /// Mirrors the oracle's `compare=False` on `planet_control` and `planet_units`.
@@ -190,7 +202,13 @@ impl SystemState {
     }
 
     /// Move units out of the space area and onto a planet (LRR 49.2a).
+    ///
+    /// A destroyed planet is not landed on: there is nothing left to land on. The units stay in
+    /// the space area rather than being quietly destroyed with it.
     pub fn land(&mut self, planet: &PlanetId, units: &[Unit]) {
+        if self.purged_planets.contains(planet) {
+            return;
+        }
         self.remove(units);
         self.planet_units
             .entry(planet.clone())
@@ -213,7 +231,21 @@ impl SystemState {
     }
 
     pub fn set_control(&mut self, planet: PlanetId, player: PlayerId) {
+        if self.purged_planets.contains(&planet) {
+            return; // no card to take: the planet was destroyed
+        }
         self.planet_control.insert(planet, player);
+    }
+
+    /// Destroy a planet: its units, its control, its coexistence.
+    ///
+    /// The attachments and the planet card itself are purged by the caller, which is the only
+    /// party that can reach `GameState`.
+    pub fn purge_planet(&mut self, planet: &PlanetId) {
+        self.planet_units.remove(planet);
+        self.planet_control.remove(planet);
+        self.coexisting.remove(planet);
+        self.purged_planets.insert(planet.clone());
     }
 
     #[must_use]

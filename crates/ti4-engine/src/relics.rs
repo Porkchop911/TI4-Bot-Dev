@@ -8,7 +8,7 @@
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{PlayerId, RelicId};
+use ti4_model::id::{PlanetId, PlayerId, RelicId};
 use ti4_model::state::GameState;
 
 use crate::objectives::VICTORY_TARGET;
@@ -67,6 +67,7 @@ pub fn action_aliases() -> Vec<&'static str> {
         "dynamiscore",
         "enigmaticdevice",
         "mawofworlds",
+        "stellarconverter",
         "thesilverflame",
     ]
 }
@@ -230,6 +231,212 @@ fn grant_chosen_technology(
     true
 }
 
+/// The Silver Flame: a ten scores, anything else consumes your home system.
+///
+/// Purges the relic itself on both branches -- the roll happens either way -- so it returns the
+/// finished `Used` rather than a flag.
+fn the_silver_flame(
+    state: &mut GameState,
+    content: &ContentStore,
+    dice: &mut crate::dice::Dice,
+    rng: &mut crate::rng::GameRng,
+    player: &PlayerId,
+    relic: &RelicId,
+) -> Used {
+
+    // A ten scores; anything else consumes the home system and bars this player from
+    // public objectives for the rest of the game. The roll happens either way, so the
+    // card is purged before the branch rather than in one arm of it.
+    let roll = dice
+        .roll(rng, 1, "silver_flame", None)
+        .faces
+        .first()
+        .copied()
+        .unwrap_or(0);
+    purge(state, player, relic);
+    if roll == 10 {
+        if let Some(seat) = state.player_mut(player) {
+            seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+        }
+        return Used::Purged {
+            relic: relic.clone(),
+        };
+    }
+    let home = state.player(player).and_then(|seat| {
+        seat.home_system.clone().or_else(|| {
+            ti4_content::factions::get(content, seat.faction.as_str())
+                .and_then(|faction| faction.home_system())
+                .map(ti4_model::id::SystemId::new)
+        })
+    });
+    if let Some(seat) = state.player_mut(player) {
+        seat.public_objectives_forbidden = true;
+    }
+    if let Some(home) = home {
+        state.board.remove(&home);
+        state.purged_systems.insert(home);
+    }
+    Used::Purged {
+        relic: relic.clone(),
+    }
+}
+
+/// The Codex: take up to three action cards from the discard pile.
+///
+/// Asked one at a time so a shrinking pile is offered honestly, rather than three questions put to
+/// the pile as it stood when the card was played.
+fn codex(state: &mut GameState, table: &mut crate::choice::Table, player: &PlayerId) {
+
+    // "Take up to 3 action cards of your choice from the action card discard pile."
+    //
+    // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
+    // than three questions asked against the pile as it stood.
+    for _ in 0..3 {
+        let options: Vec<crate::choice::ChoiceOption> = state
+            .discarded_action_cards
+            .clone()
+            .into_iter()
+            .map(|alias| {
+                crate::choice::ChoiceOption::labelled(
+                    alias.to_string(),
+                    "action_card",
+                    format!("take {alias}"),
+                )
+            })
+            .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
+            .collect();
+        if options.len() == 1 {
+            break; // nothing but the decline: the pile is empty
+        }
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "The Codex: take which action card",
+            options,
+        );
+        let Ok(answer) = table.ask(&choice) else {
+            break;
+        };
+        if answer.is_decline() {
+            break;
+        }
+        let taken = ti4_model::id::ActionCardId::new(answer.id);
+        if let Some(at) = state
+            .discarded_action_cards
+            .iter()
+            .position(|held| *held == taken)
+        {
+            state.discarded_action_cards.remove(at);
+            if let Some(seat) = state.player_mut(player) {
+                seat.action_cards.push(taken);
+            }
+        }
+    }
+}
+
+/// The Stellar Converter's ACTION: choose a planet in range and destroy it.
+///
+/// Returns whether it resolved. Split out of `use_relic` because the target search, the offer and
+/// the destruction are three separate steps and the match arm was the only thing holding them
+/// together.
+fn stellar_converter(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    player: &PlayerId,
+) -> bool {
+    // "Choose 1 non-home, non-legendary planet other than Mecatol Rex in a system that is
+    // adjacent to 1 or more of your units that have BOMBARDMENT, destroy all units on that
+    // planet and purge its attachments and its planet card."
+    //
+    // 6.4 -- a system is not adjacent to itself -- so a planet sharing a system with the
+    // bombarding ship is *not* a target. That reads oddly and it is what the rule says;
+    // `Galaxy::adjacent` already excludes the system itself, so this gets it for free.
+    let Some(galaxy) = galaxy else {
+        return false; // 22.3: without a board there is no adjacency, so nothing can be chosen
+    };
+    let targets = stellar_converter_targets(state, content, sources, galaxy, player);
+    if targets.is_empty() {
+        return false;
+    }
+    let options: Vec<crate::choice::ChoiceOption> = targets
+        .iter()
+        .map(|(_, planet)| {
+            crate::choice::ChoiceOption::labelled(
+                planet.to_string(),
+                "planet",
+                format!("destroy {planet}"),
+            )
+        })
+        .collect();
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "Stellar Converter: destroy which planet",
+        options,
+    );
+    let Ok(answer) = table.ask(&choice) else {
+        return false;
+    };
+    let chosen = PlanetId::new(answer.id);
+    let Some((system, _)) = targets.iter().find(|(_, planet)| *planet == chosen) else {
+        return false;
+    };
+    if let Some(here) = state.board.get_mut(system) {
+        here.purge_planet(&chosen);
+    }
+    state.planet_attachments.remove(&chosen);
+    true
+}
+
+/// Planets the Stellar Converter may be aimed at.
+///
+/// The three exclusions are printed on the card; the adjacency is measured from every system
+/// holding one of this player's BOMBARDMENT units, which is a property of the unit type rather
+/// than of the unit, so it comes from the catalogue.
+fn stellar_converter_targets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+) -> Vec<(ti4_model::id::SystemId, PlanetId)> {
+    let types = ti4_content::units::catalogue(content, sources);
+    let mut reach: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for (system, here) in &state.board {
+        let bombards = here
+            .units_of(player)
+            .into_iter()
+            .any(|unit| types.get(unit.type_id.as_str()).is_some_and(ti4_content::UnitType::has_bombardment));
+        if bombards {
+            reach.extend(galaxy.adjacent(system.as_str()));
+        }
+    }
+    let mut targets = Vec::new();
+    for system in reach {
+        let id = ti4_model::id::SystemId::new(system);
+        if !state.board.contains_key(&id) {
+            continue; // purged by the Silver Flame, or never on this board
+        }
+        for planet in ti4_content::galaxy::planets_in(content, system, sources) {
+            let alias = planet.id();
+            if planet.homeworld_of().is_some() || planet.is_legendary() || alias == "mecatol_rex" {
+                continue;
+            }
+            let target = PlanetId::new(alias);
+            if state
+                .board
+                .get(&id)
+                .is_some_and(|here| here.purged_planets.contains(&target))
+            {
+                continue; // already destroyed
+            }
+            targets.push((id.clone(), target));
+        }
+    }
+    targets
+}
+
 /// Whether a player holds a relic.
 #[must_use]
 pub fn holds(state: &GameState, player: &PlayerId, relic: &RelicId) -> bool {
@@ -310,6 +517,7 @@ pub fn use_relic(
     dice: &mut crate::dice::Dice,
     rng: &mut crate::rng::GameRng,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     relic: &RelicId,
 ) -> Used {
@@ -358,50 +566,12 @@ pub fn use_relic(
             }
             grant_chosen_technology(state, content, sources, table, player, None);
         }
-        "codex" => {
-            // "Take up to 3 action cards of your choice from the action card discard pile."
-            //
-            // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
-            // than three questions asked against the pile as it stood.
-            for _ in 0..3 {
-                let options: Vec<crate::choice::ChoiceOption> = state
-                    .discarded_action_cards
-                    .clone()
-                    .into_iter()
-                    .map(|alias| {
-                        crate::choice::ChoiceOption::labelled(
-                            alias.to_string(),
-                            "action_card",
-                            format!("take {alias}"),
-                        )
-                    })
-                    .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
-                    .collect();
-                if options.len() == 1 {
-                    break; // nothing but the decline: the pile is empty
-                }
-                let choice = crate::choice::Choice::new(
-                    player.clone(),
-                    "The Codex: take which action card",
-                    options,
-                );
-                let Ok(answer) = table.ask(&choice) else {
-                    break;
+        "codex" => codex(state, table, player),
+        "stellarconverter" => {
+            if !stellar_converter(state, content, sources, table, galaxy, player) {
+                return Used::Unresolved {
+                    relic: relic.clone(),
                 };
-                if answer.is_decline() {
-                    break;
-                }
-                let taken = ti4_model::id::ActionCardId::new(answer.id);
-                if let Some(at) = state
-                    .discarded_action_cards
-                    .iter()
-                    .position(|held| *held == taken)
-                {
-                    state.discarded_action_cards.remove(at);
-                    if let Some(seat) = state.player_mut(player) {
-                        seat.action_cards.push(taken);
-                    }
-                }
             }
         }
         "dynamiscore" => {
@@ -427,41 +597,7 @@ pub fn use_relic(
             }
         }
         "thesilverflame" => {
-            // A ten scores; anything else consumes the home system and bars this player from
-            // public objectives for the rest of the game. The roll happens either way, so the
-            // card is purged before the branch rather than in one arm of it.
-            let roll = dice
-                .roll(rng, 1, "silver_flame", None)
-                .faces
-                .first()
-                .copied()
-                .unwrap_or(0);
-            purge(state, player, relic);
-            if roll == 10 {
-                if let Some(seat) = state.player_mut(player) {
-                    seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
-                }
-                return Used::Purged {
-                    relic: relic.clone(),
-                };
-            }
-            let home = state.player(player).and_then(|seat| {
-                seat.home_system.clone().or_else(|| {
-                    ti4_content::factions::get(content, seat.faction.as_str())
-                        .and_then(|faction| faction.home_system())
-                        .map(ti4_model::id::SystemId::new)
-                })
-            });
-            if let Some(seat) = state.player_mut(player) {
-                seat.public_objectives_forbidden = true;
-            }
-            if let Some(home) = home {
-                state.board.remove(&home);
-                state.purged_systems.insert(home);
-            }
-            return Used::Purged {
-                relic: relic.clone(),
-            };
+            return the_silver_flame(state, content, dice, rng, player, relic);
         }
         _ => {
             return Used::Unresolved {
@@ -494,6 +630,7 @@ pub fn available_actions(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
     let mut options: Vec<crate::choice::ChoiceOption> =
@@ -516,18 +653,34 @@ pub fn available_actions(
         .map(|seat| seat.relics.clone())
         .unwrap_or_default();
     let known = action_aliases();
-    // 22.3 again: Enigmatic Device costs six resources, and an action that cannot be paid for is
-    // not offered. Checked here rather than only inside `use_relic`, so a decider is never handed a
-    // choice that resolves to nothing.
-    let affordable = |alias: &str| -> bool {
-        alias != "enigmaticdevice"
-            || crate::production::available(state, content, sources, player, crate::production::Spend::Resources) >= 6
+    // 22.3 again: two of these actions have a precondition that the card itself states, and an
+    // action that cannot fully resolve is never offered. Checked here rather than only inside
+    // `use_relic`, so a decider is never handed a choice that resolves to nothing.
+    let resolvable = |alias: &str| -> bool {
+        match alias {
+            // Six resources, and no way to take the action without them.
+            "enigmaticdevice" => {
+                crate::production::available(
+                    state,
+                    content,
+                    sources,
+                    player,
+                    crate::production::Spend::Resources,
+                ) >= 6
+            }
+            // Something in range that the card is allowed to destroy. Without a board there is no
+            // adjacency and therefore no target.
+            "stellarconverter" => galaxy.is_some_and(|galaxy| {
+                !stellar_converter_targets(state, content, sources, galaxy, player).is_empty()
+            }),
+            _ => true,
+        }
     };
     options.extend(
         held.into_iter()
             // 22.3: an action that cannot fully resolve is never offered, and a relic with no
             // handler cannot resolve at all.
-            .filter(|relic| known.contains(&relic.as_str()) && affordable(relic.as_str()))
+            .filter(|relic| known.contains(&relic.as_str()) && resolvable(relic.as_str()))
             .filter(|relic| relic.as_str() != SHARD) // held for its point; it has no action
             .map(|relic| {
                 crate::choice::ChoiceOption::labelled(
@@ -549,6 +702,7 @@ pub fn perform(
     dice: &mut crate::dice::Dice,
     rng: &mut crate::rng::GameRng,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     option: &crate::choice::ChoiceOption,
 ) -> bool {
@@ -568,7 +722,7 @@ pub fn perform(
     if let Some(alias) = option.id.strip_prefix(USE_PREFIX) {
         let relic = RelicId::new(alias);
         return matches!(
-            use_relic(state, content, sources, dice, rng, table, player, &relic),
+            use_relic(state, content, sources, dice, rng, table, galaxy, player, &relic),
             Used::Purged { .. }
         );
     }
@@ -600,6 +754,20 @@ mod tests {
         let mut state = crate::fixtures::game(&["a"]);
         let player = PlayerId::new("a");
 
+        // The Stellar Converter needs a board: a BOMBARDMENT unit, and an adjacent system holding
+        // a planet it is allowed to aim at. A dreadnought in the centre of a hub reaches the whole
+        // ring, and 6.4 -- a system is not adjacent to itself -- is why the ship is not parked in
+        // the system it is shooting at.
+        let hub = crate::fixtures::hub_with_outer(an_ordinary_planet().0.as_str());
+        let centre = ti4_model::id::SystemId::new(&hub.centre);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        crate::fixtures::put(&mut state, &centre, "dreadnought", &player, 1);
+
         for alias in action_aliases() {
             if let Some(seat) = state.player_mut(&player) {
                 seat.relics = vec![RelicId::new(alias)];
@@ -615,6 +783,7 @@ mod tests {
                 &mut crate::dice::Dice::new(),
                 &mut crate::rng::GameRng::new(1),
                 &mut crate::choice::Table::new(),
+                Some(&hub.galaxy),
                 &player,
                 &RelicId::new(alias),
             );
@@ -623,6 +792,113 @@ mod tests {
                 "{alias} is offered as an action but does not resolve"
             );
         }
+    }
+
+    /// A planet the Stellar Converter is allowed to aim at, with its system.
+    ///
+    /// Not `fixtures::a_placed_planet`: the first placed planet in the corpus is a homeworld, and
+    /// the card excludes those.
+    fn an_ordinary_planet() -> (ti4_model::id::SystemId, PlanetId) {
+        ti4_content::galaxy::all_planets(
+            ti4_content::ContentStore::embedded(),
+            ti4_model::content_types::DEFAULT,
+        )
+        .iter()
+        .find(|(id, planet)| {
+            planet.homeworld_of().is_none()
+                && !planet.is_legendary()
+                && !planet.is_placed_during_play()
+                && !id.eq_ignore_ascii_case("mecatol_rex")
+                && planet.system_id().is_some()
+        })
+        .map(|(id, planet)| {
+            (
+                ti4_model::id::SystemId::new(planet.system_id().unwrap_or_default()),
+                PlanetId::new(*id),
+            )
+        })
+        .expect("the corpus has an ordinary planet")
+    }
+
+    /// The Stellar Converter destroys a planet, and the destruction sticks.
+    ///
+    /// Two halves, and the second is the one worth testing: purging the planet card means there is
+    /// nothing left to take, so an invader who lands there afterwards gains nothing. A version that
+    /// only cleared the current occupants would pass a units-are-gone check and still let the next
+    /// player take the planet on the following turn.
+    #[test]
+    fn the_stellar_converter_destroys_a_planet_for_good() {
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let (attacker, victim) = (PlayerId::new("a"), PlayerId::new("b"));
+
+        let (target_system, target) = an_ordinary_planet();
+        let hub = crate::fixtures::hub_with_outer(target_system.as_str());
+        let centre = ti4_model::id::SystemId::new(&hub.centre);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        crate::fixtures::put(&mut state, &centre, "dreadnought", &attacker, 1);
+        crate::fixtures::put_on_planet(&mut state, &target_system, &target, "infantry", &victim, 2);
+        if let Some(here) = state.board.get_mut(&target_system) {
+            here.set_control(target.clone(), victim.clone());
+        }
+        state
+            .planet_attachments
+            .insert(target.clone(), vec!["demilitarizedzone".to_owned()]);
+        if let Some(seat) = state.player_mut(&attacker) {
+            seat.relics = vec![RelicId::new("stellarconverter")];
+        }
+
+        let mut table = crate::choice::Table::new();
+        table.seat(
+            attacker.clone(),
+            Box::new(crate::choice::Scripted::new(vec![target.to_string()])),
+        );
+        let used = use_relic(
+            &mut state,
+            content,
+            sources,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(1),
+            &mut table,
+            Some(&hub.galaxy),
+            &attacker,
+            &RelicId::new("stellarconverter"),
+        );
+        assert!(matches!(used, Used::Purged { .. }), "the relic is purged");
+
+        let here = state.board.get(&target_system).expect("the system");
+        assert!(here.on_planet(&target).is_empty(), "the units are destroyed");
+        assert!(
+            !here.planet_control.contains_key(&target),
+            "and nobody controls it"
+        );
+        assert!(
+            !state.planet_attachments.contains_key(&target),
+            "and its attachments are purged"
+        );
+
+        // The half that matters: there is no card left to take.
+        let here = state.board.get_mut(&target_system).expect("the system");
+        here.set_control(target.clone(), attacker.clone());
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &target_system,
+            &target,
+            "infantry",
+            &attacker,
+            1,
+        );
+        let here = state.board.get(&target_system).expect("the system");
+        assert!(
+            !here.planet_control.contains_key(&target),
+            "a destroyed planet cannot be taken afterwards"
+        );
     }
 
     /// A passive relic is implemented but never offered as an action.
@@ -635,7 +911,7 @@ mod tests {
             seat.relics = vec![RelicId::new("obsidian")];
         }
 
-        let offered = available_actions(&state, content, ti4_model::content_types::DEFAULT, &player);
+        let offered = available_actions(&state, content, ti4_model::content_types::DEFAULT, None, &player);
         assert!(
             !offered.iter().any(|option| option.id.contains("obsidian")),
             "the Obsidian has no printed ACTION and must not be offered as one"
@@ -907,6 +1183,7 @@ mod tests {
                 &mut dice,
                 &mut crate::rng::GameRng::new(0),
                 &mut crate::choice::Table::new(),
+                None,
                 &player(),
                 &relic,
             );
@@ -939,7 +1216,7 @@ mod tests {
             .expect("some relic is still unimplemented");
         state.player_mut(&player()).unwrap().relics = vec![unknown.clone()];
 
-        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        let offered = available_actions(&state, ContentStore::embedded(), POK, None, &player());
 
         assert!(
             offered.is_empty(),
@@ -952,7 +1229,7 @@ mod tests {
         let mut state = game(&["a"]);
         let relic = give(&mut state, "dynamiscore");
 
-        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        let offered = available_actions(&state, ContentStore::embedded(), POK, None, &player());
         let option = offered
             .iter()
             .find(|option| option.id.contains(relic.as_str()))
@@ -966,6 +1243,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &option,
         ));
@@ -979,7 +1257,7 @@ mod tests {
         state.player_mut(&player()).unwrap().relic_fragments =
             [("CULTURAL".to_owned(), 3)].into_iter().collect();
 
-        let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
+        let offered = available_actions(&state, ContentStore::embedded(), POK, None, &player());
         let option = offered
             .iter()
             .find(|option| option.id.starts_with("purge|"))
@@ -993,6 +1271,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &option,
         ));
@@ -1010,6 +1289,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &RelicId::new("dynamiscore"),
         );
@@ -1029,6 +1309,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &relic,
         );
@@ -1059,6 +1340,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &relic,
         );
@@ -1084,6 +1366,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &relic,
         );
@@ -1128,6 +1411,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
+                None,
             &player(),
             &relic,
         );
