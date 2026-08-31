@@ -126,6 +126,17 @@ pub fn resolve_before_token_gain(
 /// Separate from [`resolve_before_token_gain`] so the 81.5 token gain sits between them, where
 /// LRR 81 puts it. Extends `report` rather than returning its own, so one status phase is
 /// described by one report however it was driven.
+/// 81.5's second sentence is **not** implemented: "Then, each player can redistribute each command
+/// token on their command sheet ... among their strategy, tactic, and fleet pools."
+///
+/// The gain itself (two tokens, placed by choice) is modelled. The rearrangement of everything
+/// already held is not. `strategy_cards::redistribute_tokens` is the machinery and it works -- it
+/// serves Warfare's primary -- but wiring it here asks every player up to a dozen questions every
+/// round, and a greedy decider answers by shuffling tokens for no reason. That is a large change to
+/// the decision stream and to every trained policy, so it wants its own measurement rather than a
+/// line added here.
+///
+/// Recorded in `engine-rules-audit.md` under Status Phase.
 pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseReport) {
     // 81.6: ready exhausted technology, planet and leader cards. 81.7 then repairs units.
     // Relic cards ready here too: the set only exists for relics that exhaust to use

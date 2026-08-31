@@ -109,7 +109,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Anomalies | ? | asteroid/nebula/supernova/rift present; **entropic scars absent** |
 | Anti-Fighter Barrage | VERIFIED | 78.3: simultaneous, first round only, fighters only, excess discarded |
 | Asteroid Field | VERIFIED | 11.1 bar and the Antimass Deflectors exemption |
-| Attach | ? | |
+| Attach | VERIFIED | 12.1-12.3; attachments follow the planet through a control change and are purged with it |
 | Attacker | ? | |
 | Blockaded | **PARTIAL** | coexisting structures always blockaded (rule 4) — phase 2; base rule unverified |
 | Bombardment | **PARTIAL** | hits grouped per unit, no spillover (7.2) — phase 2; 7/7.1 choice outstanding |
@@ -130,7 +130,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Deals | ? | |
 | Defender | ? | |
 | Deploy | VERIFIED | 20.1-20.5; the two in-scope DEPLOY mechs (Sol, Letnev) are implemented |
-| Destroyed | ? | |
+| Destroyed | VERIFIED | 31.1-31.2; removal by fleet supply or capacity does not fire destroyed triggers |
 | Diplomacy | VERIFIED | both halves: opponents place a token in the chosen system, then ready two planets |
 | Elimination | **ABSENT** | no code; harmless at a 4-round horizon |
 | Entropic Scars | **ABSENT** | 9 rules, none implemented; anomaly tiles are in the corpus |
@@ -159,8 +159,8 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Mecatol Rex | ? | |
 | Mechs | **PARTIAL** | all six in-scope mech abilities implemented 2026-08-31; they were counted by nothing before, see `unimplemented_mechs` |
 | Modifiers | ? | |
-| Move | ? | `movement.rs`, `transit.rs` |
-| Movement | ? | |
+| Move | VERIFIED | with Movement |
+| Movement | VERIFIED | 58.4b/c/e, path length, transport; the active-system exception is tested |
 | Nebula | VERIFIED | 59.1-59.4 in `movement.rs`; 59.5 defender +1 was **absent**, added 2026-08-31 |
 | Neighbors | **PARTIAL** | adjacency only; station-to-station transactions (rule 10) absent |
 | Neutral Units | **ABSENT** | 9 rules, none implemented |
@@ -185,7 +185,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Space Dock | ? | |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | ? | |
-| Status Phase | ? | `status.rs` |
+| Status Phase | **PARTIAL** | all eight steps present; 81.5's second sentence (redistribute tokens already held) is **not** implemented — see `status.rs` |
 | Strategic Action | ? | |
 | Strategy Card | VERIFIED | initiative order, exhaustion, and the secondary token gate (52.3 exempts Leadership) |
 | Strategy Phase | ? | |
@@ -203,20 +203,20 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Transport | **PARTIAL** | 95.5 (no pickup from your own command token) was **absent**, added 2026-08-31; 95.1 pickup *en route* is still origin-only |
 | Units | ? | |
 | Unit Upgrades | VERIFIED | with Technology (90.7-90.10) |
-| Victory Points | ? | |
+| Victory Points | VERIFIED | 98.1-98.10: cap at 10, initiative tiebreak, a law's point survives the law |
 | Warfare | **PARTIAL** | recall and pool gain present; "then redistribute your command tokens" was **absent**, added 2026-08-31 |
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
 | Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
 Totals after phases 1-2: **0 wrong**, **5 absent**, **15 partial**, **10 verified correct**,
-**45 unverified** (was 79).
+**39 unverified** (was 79).
 
 ## Phase 9 verification, 2026-08-31
 
 Sixteen topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Twelve defects in thirty-two in-scope topics.** That is close to the base rate this audit warned
+**Twelve defects in thirty-eight in-scope topics.** That is close to the base rate this audit warned
 about, and it is the reason the remaining 63 rows should still be read as "not checked" rather than
 "probably fine":
 
@@ -235,6 +235,7 @@ about, and it is the reason the remaining 63 rows should still be read as "not c
 | mech abilities | four of six in-scope mechs unimplemented, and counted by no coverage helper because the ability is printed on the unit | added |
 | 27.2a | the custodians token — and its victory point — could be taken with six influence and no ground forces to commit | fixed |
 | Warfare | "then, the active player can redistribute their command tokens" — the recall was implemented, the redistribution was not | added |
+| 81.5 | the status phase's own redistribution of tokens already held | **open**, see `status.rs` |
 
 Clean on inspection against their rules text: Gravity Rift, Asteroid Field, Supernova,
 Anti-Fighter Barrage, Space Cannon, Fleet Pool. Capture is Cabal-only and therefore out of scope.

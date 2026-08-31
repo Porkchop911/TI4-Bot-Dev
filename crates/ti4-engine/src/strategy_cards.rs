@@ -976,7 +976,7 @@ fn warfare_primary(
 /// Offered one move at a time until the player declines, which is what "redistribute" allows and
 /// what keeps each move a decision a policy can see. Bounded by the tokens actually held, so a
 /// decider that never declines still terminates.
-fn redistribute_tokens(
+pub(crate) fn redistribute_tokens(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
