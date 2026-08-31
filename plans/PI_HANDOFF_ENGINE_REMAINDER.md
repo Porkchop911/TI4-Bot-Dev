@@ -1,5 +1,12 @@
 # Handover to PI: finishing the engine
 
+> **Closed 2026-08-31.** PI was unavailable, so I finished the work myself. Everything listed below
+> as outstanding is done: relics 24/24, laws 40/40, exploration 80/80, leaders 19/19, breakthroughs
+> 6/6, action cards 142/142. `cargo run -p ti4-engine --example remaining` prints nothing.
+>
+> Kept for the reasoning, which still holds — the defect class, the verification standard and the
+> baseline discipline are all unchanged. What is left is in "Still open" at the bottom.
+
 Written 2026-08-31. Supersedes `plans/HANDOFF_ENGINE_COMPLETION.md`, whose numbers are stale.
 Companions: `plans/ENGINE_COMPLETION_PLAN.md`, `engine-rules-audit.md`.
 
@@ -207,3 +214,26 @@ during the split. I touched `action_cards.rs` once, in `4422407`, for two lines:
 `frontline_deployment_puts_three_on_one_planet` had lost its `#[test]` attribute to a stray
 duplicate introduced in `34b7b0d`, and had not been running since. Restored, and it passes — the
 card was fine, only the test was switched off. Nothing else in that file changed.
+
+
+## Still open (2026-08-31)
+
+Nothing in the content scope. What remains is elsewhere:
+
+- **Phase 9 of `ENGINE_COMPLETION_PLAN.md`: 79 rule topics never verified.** The audit checked 30 of
+  109. The remaining 79 are unverified rather than known-wrong, which is a different and smaller
+  claim than "complete".
+- **Two open bugs**: `BUG_2026-08-29_PRODUCTION_COMBINED_PAYMENT` and
+  `BUG_2026-08-29_PROMISSORY_NOTE_TRANSACTION_OFFERS`.
+- **Merge `wp/engine-completion` back into `wp/r01-review-viewer-contract`.** Still not done.
+- **Training is still paused** by the owner's decision.
+
+### Simplifications recorded rather than hidden
+
+- Anti-Intellectual Revolution destroys the *cheapest* non-fighter ship; the card says "must
+  destroy 1" and does not say which, so a decider should choose.
+- The Heart of Ixth reaches only the staged roll sites (space combat, space cannon). Bombardment,
+  anti-fighter barrage and the gravity rift apply their dice immediately, so "after any die is
+  rolled" is narrower here than on the card.
+- Exploration command tokens go to the strategy pool without asking (LRR 52.4 lets the player
+  choose). This one predates the current work.
