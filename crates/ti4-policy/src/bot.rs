@@ -1091,6 +1091,9 @@ pub fn unscored_kinds() -> Vec<&'static str> {
         "planet",
         "leader",
         "action_card",
+        // The Heart of Ixth bends one die by 1: which die, and the sign, is a taste this
+        // bot has no model of, so the sample stands in for the holder's judgment.
+        "heart_ixth",
     ]
 }
 

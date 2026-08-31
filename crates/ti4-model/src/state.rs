@@ -359,11 +359,10 @@ pub struct Player {
     pub relic_fragments: BTreeMap<String, i32>,
     /// Relics held faceup in the play area. Cannot be traded (LRR 73.4).
     pub relics: Vec<RelicId>,
-    /// Relics currently exhausted, readied in the status phase like a planet or a technology.
-    ///
-    /// Three relics say "exhaust this card": the Heart of Ixth, The Prophet's Tears and the Scepter
-    /// of Emelpar. Without this they could be used once per roll, once per research and once per
-    /// spend for ever, which is not once at all.
+    /// Relic cards currently exhausted, readying with the rest at the status phase. The
+    /// set exists for the relics that exhaust to use themselves: Heart of Ixth spends
+    /// one use on a die result and then waits for the readying step; without it the
+    /// same card would bend every die in the game.
     #[serde(default)]
     pub exhausted_relics: BTreeSet<RelicId>,
     /// Exploration cards placed faceup in the play area, which carry their own ACTION.
@@ -576,6 +575,7 @@ impl PartialEq for Player {
             && self.action_cards == other.action_cards
             && self.breakthrough == other.breakthrough
             && self.relics == other.relics
+            && self.exhausted_relics == other.exhausted_relics
             && self.plots == other.plots
             && self.plot_objectives == other.plot_objectives
             && self.public_objectives_forbidden == other.public_objectives_forbidden
@@ -843,6 +843,20 @@ pub struct RerollEntry {
     pub hits_on: Option<u32>,
     /// The current faces; a reroll replaces specific positions in place.
     pub faces: Vec<u32>,
+    /// The positions replaced by some reroll, whichever ability made it. Crown of
+    /// Thalnos destroys units whose *reroll* produced no hit, which the faces alone
+    /// cannot say: a die showing 4 is a hit or a miss depending on what it replaced.
+    #[serde(default)]
+    pub rerolled: BTreeSet<usize>,
+    /// Per-die result adjustments that survive rerolls: Thalnos adds 1 to each die it
+    /// rerolls, and the adjustment dies with the die when a later reroll replaces it.
+    #[serde(default)]
+    pub deltas: BTreeMap<usize, i8>,
+    /// The unit types pooled into this roll, and how many of each. Fleet and ground
+    /// rolls pool dice by combat value, so one entry can be several units' dice at once;
+    /// destruction rules that name "the units that rerolled" read this.
+    #[serde(default)]
+    pub unit_types: BTreeMap<String, u32>,
 }
 
 /// Every roll one player made at one moment, the set a timing window can still reroll.
@@ -859,10 +873,21 @@ pub struct RerollSet {
 
 impl RerollEntry {
     /// The hits this entry currently produces from its (possibly rerolled) faces.
+    ///
+    /// A Thalnos +1 on a die counts in the total: the card applies +1 to the *results*,
+    /// and results are what remove units.
     #[must_use]
     pub fn hits(&self) -> usize {
         self.hits_on.map_or(0, |on| {
-            self.faces.iter().filter(|face| **face >= on).count()
+            self.faces
+                .iter()
+                .enumerate()
+                .filter(|(index, face)| {
+                    let adjusted =
+                        i64::from(**face) + self.deltas.get(index).map_or(0, |offset| i64::from(*offset));
+                    adjusted >= i64::from(on)
+                })
+                .count()
         })
     }
 }

@@ -264,6 +264,11 @@ fn roll_bombard_plan(
                 planet: Some(planet.clone()),
                 hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
                 faces: roll.faces,
+                rerolled: std::collections::BTreeSet::new(),
+                deltas: std::collections::BTreeMap::new(),
+                // The bombarding unit sits in the system's space area; `planet` names the
+                // target it hits, not where the unit stands.
+                unit_types: std::iter::once((unit.type_id.to_string(), 1)).collect(),
             });
         }
         let victims: std::collections::BTreeSet<PlayerId> =
@@ -600,7 +605,13 @@ fn roll_ground(
     planet: &PlanetId,
 ) -> usize {
     let types = catalogue(content, sources);
-    let mut fighting: std::collections::BTreeMap<i64, i64> = std::collections::BTreeMap::new();
+    // Ground rolls group dice by combat value, so each staged entry is one value's pool.
+    // The pool's unit types ride along too: destruction rules that name "the units that
+    // rerolled" need to know what sat behind each value's dice.
+    let mut fighting: std::collections::BTreeMap<
+        i64,
+        (i64, std::collections::BTreeMap<String, u32>),
+    > = std::collections::BTreeMap::new();
     for unit in state.system_state(system).on_planet_of(planet, player) {
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
@@ -608,16 +619,17 @@ fn roll_ground(
         let Some(value) = kind.combat_hits_on() else {
             continue;
         };
-        *fighting.entry(value).or_insert(0) += kind.combat_dice();
+        let slot = fighting.entry(value).or_insert((0, std::collections::BTreeMap::new()));
+        slot.0 += kind.combat_dice();
+        *slot.1.entry(unit.type_id.to_string()).or_insert(0) += 1;
     }
-    // Ground rolls group dice by combat value, so each staged entry is one value's pool.
     let mut set = ti4_model::state::RerollSet {
         kind: "ground".into(),
         system: system.clone(),
         rolls: Vec::new(),
     };
     let mut hits = 0;
-    for (value, count) in fighting {
+    for (value, (count, unit_types)) in fighting {
         let dice_count = usize::try_from(count).unwrap_or(0);
         if dice_count == 0 {
             continue;
@@ -634,6 +646,9 @@ fn roll_ground(
             planet: Some(planet.clone()),
             hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
             faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types,
         });
     }
     if set.rolls.iter().any(|roll| !roll.faces.is_empty()) {

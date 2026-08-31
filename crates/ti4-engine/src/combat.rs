@@ -12,7 +12,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
-use ti4_model::id::{PlayerId, SystemId};
+use ti4_model::id::{PlayerId, RelicId, SystemId};
 use ti4_model::state::{Feat, FeatOccurrence, GameState, RerollEntry, RerollSet};
 use ti4_model::units::Unit;
 
@@ -238,6 +238,9 @@ pub fn choose_reroll_dice(
 }
 
 /// Re-draw the chosen dice of the staged set through the game's roller, in place.
+///
+/// A re-drawn die replaces whatever the previous faces — and any Thalnos +1 sitting on
+/// that position — said: the offset is removed with the die it adjusted.
 pub fn apply_reroll_dice(
     dice: &mut Dice,
     rng: &mut GameRng,
@@ -260,6 +263,8 @@ pub fn apply_reroll_dice(
         };
         let again = dice.reroll(rng, &original, [*die], Some(reason));
         entry.faces = again.faces;
+        entry.rerolled.insert(*die);
+        entry.deltas.remove(die);
     }
 }
 
@@ -269,173 +274,9 @@ pub fn staged_hits(set: &RerollSet) -> usize {
     set.rolls.iter().map(RerollEntry::hits).sum()
 }
 
-/// Thalnos and the Crown of Thalnos: reroll dice, then lose the units that still missed.
-///
-/// > Thalnos: During each combat round, this card's owner may reroll any number of their dice,
-/// > applying +1 to the results; any units that reroll dice but do not produce at least 1 hit are
-/// > destroyed.
-///
-/// > The Crown of Thalnos: During each combat round, the owner of this card may reroll any number
-/// > of dice; they must destroy each of their units that did not produce a hit with its reroll.
-///
-/// The same shape with one difference -- the relic adds 1 to what the reroll shows, the law does
-/// not -- so they are one function rather than two that must be kept in step. Holding both rerolls
-/// once, with the bonus: the dice are rerolled, not rerolled twice.
-///
-/// The destruction is the half worth care. It applies to units that *rerolled* and then produced no
-/// hit, which is not the same as units that missed: a unit that never rerolled is safe however
-/// badly it rolled, and that distinction is why `RerollEntry` is indexed per unit.
-fn thalnos_reroll(
-    state: &mut GameState,
-    ctx: &mut Resolving<'_>,
-    side: &PlayerId,
-    has_dice: bool,
-) {
-    let relic = crate::relics::holds(state, side, &ti4_model::id::RelicId::new("thalnos"));
-    let law = crate::laws::holds_ministry(state, side, "crown_of_thalnos");
-    if !has_dice || (!relic && !law) {
-        return;
-    }
-    let picks = choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side);
-    if picks.is_empty() {
-        return;
-    }
-    let reason = if relic { "thalnos" } else { "crown of thalnos" };
-    {
-        let Some(set) = state.reroll_staging.get_mut(side) else {
-            return;
-        };
-        apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, reason);
-        // "applying +1 to the results" -- the relic only. Applied after the redraw, to the dice
-        // that were redrawn, so an untouched die keeps the face it rolled.
-        if relic {
-            for (unit, die) in &picks {
-                if let Some(entry) = set.rolls.get_mut(*unit)
-                    && let Some(face) = entry.faces.get_mut(*die)
-                {
-                    *face += 1;
-                }
-            }
-        }
-    }
-
-    // Now the price: every unit that rerolled and produced no hit at all.
-    let Some(set) = state.reroll_staging.get(side).cloned() else {
-        return;
-    };
-    let mut doomed: Vec<(String, Option<ti4_model::id::PlanetId>)> = Vec::new();
-    for (unit, _) in &picks {
-        let Some(entry) = set.rolls.get(*unit) else {
-            continue;
-        };
-        if entry.hits() == 0 {
-            doomed.push((entry.unit.clone(), entry.planet.clone()));
-        }
-    }
-    doomed.dedup();
-    for (unit, planet) in doomed {
-        destroy_one(state, &set.system, side, &unit, planet.as_ref());
-    }
-}
-
-/// The Heart of Ixth: exhaust to shift a rolled die by one.
-///
-/// > After any die is rolled, you may exhaust this card to add or subtract 1 from its result.
-///
-/// Offered over the staged set, which is every die this side has rolled and not yet applied. One
-/// die, once -- the card exhausts, and `relics::exhaust` is what stops it being a permanent +1 on
-/// every roll of the game.
-fn heart_of_ixth(
-    state: &mut GameState,
-    ctx: &mut Resolving<'_>,
-    side: &PlayerId,
-    has_dice: bool,
-) {
-    if !has_dice || !crate::relics::ready(state, side, "heartofixth") {
-        return;
-    }
-    let Some(set) = state.reroll_staging.get(side).cloned() else {
-        return;
-    };
-    let mut options = Vec::new();
-    for (unit, entry) in set.rolls.iter().enumerate() {
-        for (die, face) in entry.faces.iter().enumerate() {
-            for (sign, word) in [("+", "add 1 to"), ("-", "subtract 1 from")] {
-                options.push(ChoiceOption::labelled(
-                    format!("ixth|{sign}|{unit}:{die}"),
-                    "heart_of_ixth",
-                    format!("{word} die {} of {} (shows {face})", die + 1, entry.unit),
-                ));
-            }
-        }
-    }
-    if options.is_empty() {
-        return;
-    }
-    options.push(ChoiceOption::decline());
-    let choice = Choice::new(side.clone(), "Heart of Ixth: shift a die by 1", options);
-    let Ok(answer) = ctx.table.ask(&choice) else {
-        return;
-    };
-    if answer.is_decline() {
-        return;
-    }
-    let Some((sign, at)) = answer
-        .id
-        .strip_prefix("ixth|")
-        .and_then(|rest| rest.split_once('|'))
-    else {
-        return;
-    };
-    let Some((unit, die)) = at
-        .split_once(':')
-        .and_then(|(a, b)| Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?)))
-    else {
-        return;
-    };
-    if !crate::relics::exhaust(state, side, "heartofixth") {
-        return;
-    }
-    if let Some(set) = state.reroll_staging.get_mut(side)
-        && let Some(entry) = set.rolls.get_mut(unit)
-        && let Some(face) = entry.faces.get_mut(die)
-    {
-        // Saturating at 1 rather than wrapping: a d10 has no face below it, and 0 - 1 on a u32 is
-        // not a low roll, it is four billion.
-        *face = if sign == "+" {
-            face.saturating_add(1)
-        } else {
-            face.saturating_sub(1).max(1)
-        };
-    }
-}
-
-/// Remove one unit of a type from a system, or from a planet in it.
-fn destroy_one(
-    state: &mut GameState,
-    system: &SystemId,
-    owner: &PlayerId,
-    unit_type: &str,
-    planet: Option<&ti4_model::id::PlanetId>,
-) {
-    let Some(here) = state.board.get_mut(system) else {
-        return;
-    };
-    let stack = match planet {
-        Some(planet) => here.planet_units.get_mut(planet),
-        None => Some(&mut here.units),
-    };
-    if let Some(stack) = stack
-        && let Some(at) = stack
-            .iter()
-            .position(|unit| unit.owner == *owner && unit.type_id.as_str() == unit_type)
-    {
-        stack.remove(at);
-    }
-}
-
 /// Open the reroll window for the roll `side` just made: the roller's own commander reroll
-/// first (Agnlan Oln), then the event other players react to (Scramble Frequency).
+/// first (Agnlan Oln), then the relics that watch the dice, then the event other players
+/// react to (Scramble Frequency).
 ///
 /// The event goes through the timing resolver so reaction windows actually fire. Called at
 /// the space cannon, anti-fighter barrage, and bombardment sites; the caller recomputes
@@ -446,14 +287,35 @@ fn destroy_one(
 /// ran in the meantime and removed it), which cannot happen on the call sites: the staged set
 /// is only removed by the caller after this returns.
 pub fn open_reroll_windows(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
+    reroll_window(state, ctx, side, true);
+}
+
+/// The fleet's own window. A fleet roll is not a unit-ability roll, so Aglnlan Oln and
+/// Scramble Frequency stand down and no `UNIT_ABILITY_ROLLED` event goes out; the relics
+/// that watch *any* die do not.
+pub fn open_fleet_reroll_windows(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
+    reroll_window(state, ctx, side, false);
+}
+
+/// The window both entry points share: the rerolls the dice's owner may make, the units
+/// those rerolls destroy, and (for unit-ability rolls only) the event other players react
+/// to, after which the Heart of Ixth may bend whatever faces survive.
+fn reroll_window(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    side: &PlayerId,
+    unit_ability: bool,
+) {
     let Some(set) = state.reroll_staging.get(side) else {
         return;
     };
     let (kind, system) = (set.kind.clone(), set.system.clone());
     let has_dice = set.rolls.iter().any(|entry| !entry.faces.is_empty());
     // Aglnlan Oln: "After you roll dice for a unit ability: You may reroll any of those
-    // dice." Ground rolls are not unit ability rolls, so the commander stands down there.
-    let commander_reroll = has_dice
+    // dice." Ground rolls are not unit ability rolls, so the commander stands down there,
+    // and fleet rolls are not either.
+    let commander_reroll = unit_ability
+        && has_dice
         && kind != "ground"
         && state.player(side).is_some_and(|seat| {
             seat.leaders.iter().any(|(leader, status)| {
@@ -468,23 +330,365 @@ pub fn open_reroll_windows(state: &mut GameState, ctx: &mut Resolving<'_>, side:
             apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, "jolnar commander");
         }
     }
-    // Thalnos and the Crown of Thalnos: reroll any number of your dice, then destroy the units
-    // whose rerolled dice missed. Two cards, one shape, and `Roll::rerolled` exists because of
-    // exactly this clause -- "did not produce a hit *with its reroll*" is unanswerable from the
-    // faces alone.
-    thalnos_reroll(state, ctx, side, has_dice);
+    // The Crown of Thalnos (relic): "this card's owner may reroll any number of their dice,
+    // applying +1 to the results".
+    let thalnos_picks = if has_dice && holds_crown_relic(state, side) {
+        choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
+    } else {
+        Vec::new()
+    };
+    if !thalnos_picks.is_empty() {
+        let set = state.reroll_staging.get_mut(side).expect("checked above");
+        apply_reroll_dice(ctx.dice, ctx.rng, set, &thalnos_picks, "thalnos");
+        for (unit, die) in &thalnos_picks {
+            if let Some(entry) = set.rolls.get_mut(*unit) {
+                entry.deltas.insert(*die, 1);
+            }
+        }
+    }
+    // The Crown of Thalnos (law): the elected player "may reroll any number of dice" —
+    // the destruction clause below does not forgive the misses the reroll leaves.
+    let crown_picks = if has_dice && owns_crown_law(state, side) {
+        choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
+    } else {
+        Vec::new()
+    };
+    if !crown_picks.is_empty() {
+        let set = state.reroll_staging.get_mut(side).expect("checked above");
+        apply_reroll_dice(ctx.dice, ctx.rng, set, &crown_picks, "crown of thalnos");
+    }
+    destroy_reroll_casualties(state, ctx, &kind, &system, side, &thalnos_picks, &crown_picks);
+    if unit_ability {
+        let hits = staged_hits(state.reroll_staging.get(side).expect("checked above"));
+        let mut payload = std::collections::BTreeMap::new();
+        payload.insert("kind".to_owned(), kind.into());
+        payload.insert("player".to_owned(), side.to_string().into());
+        payload.insert("system".to_owned(), system.to_string().into());
+        payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
+        let _ = ctx.emit(state, "UNIT_ABILITY_ROLLED", payload);
+    }
+    heart_ixth(state, ctx, side);
+}
 
-    // Heart of Ixth: exhaust to add or subtract 1 from a die that has been rolled. Offered on the
-    // staged set for the same reason the others are -- these faces have not been applied yet.
-    heart_of_ixth(state, ctx, side, has_dice);
+/// Whether `player` holds the Crown of Thalnos relic.
+fn holds_crown_relic(state: &GameState, player: &PlayerId) -> bool {
+    crate::relics::holds(state, player, &RelicId::new("thalnos"))
+}
 
-    let hits = staged_hits(state.reroll_staging.get(side).expect("checked above"));
-    let mut payload = std::collections::BTreeMap::new();
-    payload.insert("kind".to_owned(), kind.into());
-    payload.insert("player".to_owned(), side.to_string().into());
-    payload.insert("system".to_owned(), system.to_string().into());
-    payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
-    let _ = ctx.emit(state, "UNIT_ABILITY_ROLLED", payload);
+/// Whether `player` owns the Crown of Thalnos law — the elected player is its owner.
+fn owns_crown_law(state: &GameState, player: &PlayerId) -> bool {
+    crate::laws::elected(state, "crown_of_thalnos")
+        .is_some_and(|owner| owner == player.as_str())
+}
+
+/// The Crown of Thalnos' destruction clauses, judged from the faces every reroll left behind.
+///
+/// The relic is wide and the +1 is part of the result: "any units that reroll dice but do
+/// not produce at least 1 hit are destroyed" looks at the entry's whole total, adjusted.
+/// The law is narrow and unforgiving: "they must destroy each of their units that did not
+/// produce a hit **with its reroll**" looks only at the dice the law's own reroll re-drew.
+/// A die the later Crown re-drew replaced the die the relic blessed, so both clauses read
+/// the final faces and agree on what the entry now shows.
+fn destroy_reroll_casualties(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    kind: &str,
+    system: &SystemId,
+    player: &PlayerId,
+    thalnos_picks: &[(usize, usize)],
+    crown_picks: &[(usize, usize)],
+) {
+    if thalnos_picks.is_empty() && crown_picks.is_empty() {
+        return;
+    }
+    let (content, sources) = (ctx.content, ctx.sources);
+    let set = state.reroll_staging.get_mut(player).expect("opened from it");
+    let doomed: Vec<usize> = set
+        .rolls
+        .iter()
+        .enumerate()
+        .filter_map(|(entry, roll)| {
+            let thalnos_doomed =
+                thalnos_picks.iter().any(|(unit, _)| *unit == entry) && roll.hits() == 0;
+            let crown_doomed = entry_reroll_hits(roll, crown_picks, entry)
+                .is_some_and(|hits| hits == 0);
+            (thalnos_doomed || crown_doomed).then_some(entry)
+        })
+        .collect();
+    if doomed.is_empty() {
+        return;
+    }
+    // The casualties are lifted out of the staging before the board is touched: the set
+    // is a mutable borrow of the state the removals run through.
+    let doomed_units: Vec<RerollEntry> = {
+        let mut out = Vec::new();
+        for index in doomed.iter().rev() {
+            let entry = set.rolls[*index].clone();
+            set.rolls.remove(*index);
+            out.push(entry);
+        }
+        out
+    };
+    for entry in doomed_units {
+        remove_casualty_units(state, ctx, content, sources, kind, system, player, &entry);
+    }
+}
+
+/// If `picks` re-drew any die of entry `entry`, the hits those dice now show — the plain
+/// faces, since a re-drawn die carries no adjustment left to count.
+fn entry_reroll_hits(
+    entry: &RerollEntry,
+    picks: &[(usize, usize)],
+    which: usize,
+) -> Option<usize> {
+    let dice: Vec<usize> = picks
+        .iter()
+        .filter(|(unit, _)| *unit == which)
+        .map(|(_, die)| *die)
+        .collect();
+    if dice.is_empty() {
+        return None;
+    }
+    Some(
+        entry
+            .hits_on
+            .map_or(0, |on| {
+                dice.iter()
+                    .filter(|die| entry.faces[**die] >= on)
+                    .count()
+            }),
+    )
+}
+
+/// Remove the units a reroll casualty stands for.
+///
+/// A unit carries no identity past its type and owner, so "the unit that made this roll"
+/// is "a unit of these types": that many are removed in deterministic order — space first,
+/// then the system's planets in order, which is where a planet-mounted cannon sits. The
+/// entry's `unit_types` says how many of each type pooled into the roll; a pooled entry
+/// that produced no hits loses every unit in the pool, because every one of them rerolled
+/// a die and none of them produced a hit. Fleet dice are the one case where the loss is
+/// announced: the ships die mid-combat, and cards read "when your last ship is destroyed".
+fn remove_casualty_units(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    content: &ContentStore,
+    sources: SourceSet,
+    kind: &str,
+    system: &SystemId,
+    player: &PlayerId,
+    entry: &RerollEntry,
+) {
+    if entry.unit_types.is_empty() {
+        // A relic's own dice, not a unit's (Metali Void Armaments' extra barrage): there
+        // is no unit to lose.
+        return;
+    }
+    let announce = kind == "fleet";
+    for (type_id, count) in &entry.unit_types {
+        let mut due = usize::try_from(*count).unwrap_or(0);
+        if due == 0 {
+            continue;
+        }
+        let board = state.system_state(system);
+        let matching: Vec<Unit> = board
+            .units
+            .iter()
+            .filter(|unit| unit.owner == *player && unit.type_id.as_str() == type_id)
+            .cloned()
+            .chain(
+                board
+                    .planet_units
+                    .values()
+                    .flatten()
+                    .filter(|unit| unit.owner == *player && unit.type_id.as_str() == type_id)
+                    .cloned(),
+            )
+            .take(due)
+            .collect();
+        for unit in matching {
+            due -= 1;
+            state
+                .system_mut(system)
+                .remove(std::slice::from_ref(&unit));
+            if announce {
+                announce_ship_destroyed(state, ctx, system, player, &unit, content, sources);
+            }
+        }
+    }
+}
+
+/// Heart of Ixth: "After any die is rolled, you may exhaust this card to add or subtract
+/// 1 from its result."
+///
+/// A relic cannot hold a reaction slot, so the driver asks instead: after the roll and
+/// every reroll of it are done, each holder who still has the card ready — in seat order,
+/// so two holders may each bend a die of the same roll — gets one question. The die may
+/// be any die `side` just rolled, which is what lets a holder bend an opponent's result
+/// as well as their own. Each use exhausts the card until the status phase readies it.
+// Four lines over the limit, and every one of them is the offer: a die, a sign, and the label that
+// tells the holder what the shift would do. Splitting it would put a boundary inside one question.
+#[expect(clippy::too_many_lines, reason = "one offer, built per die and per sign")]
+fn heart_ixth(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
+    const RELIC: &str = "heartofixth";
+    let Some(set) = state.reroll_staging.get(side) else {
+        return;
+    };
+    let dice: Vec<(usize, usize)> = set
+        .rolls
+        .iter()
+        .enumerate()
+        .flat_map(|(entry, roll)| {
+            roll.faces
+                .iter()
+                .enumerate()
+                .map(move |(die, _face)| (entry, die))
+        })
+        .collect();
+    if dice.is_empty() {
+        return;
+    }
+    let relic = RelicId::new(RELIC);
+    // The question is identical for every holder, so it is built once, before any of
+    // the answers below takes a mutable borrow of the state.
+    let options: Vec<ChoiceOption> = if dice.len() == 1 {
+        let (_, die) = dice[0];
+        let unit = &set.rolls[0].unit;
+        vec![
+            ChoiceOption::labelled(
+                format!("hfix|0:{die}:add"),
+                "heart_ixth",
+                format!("add 1 to the die of {unit}"),
+            ),
+            ChoiceOption::labelled(
+                format!("hfix|0:{die}:sub"),
+                "heart_ixth",
+                format!("subtract 1 from the die of {unit}"),
+            ),
+        ]
+    } else {
+        dice.iter()
+            .flat_map(|(entry, die)| {
+                let unit = &set.rolls[*entry].unit;
+                vec![
+                    ChoiceOption::labelled(
+                        format!("hfix|{entry}:{die}:add"),
+                        "heart_ixth",
+                        format!("add 1 to die {} of {die} of {unit}", die + 1),
+                    ),
+                    ChoiceOption::labelled(
+                        format!("hfix|{entry}:{die}:sub"),
+                        "heart_ixth",
+                        format!("subtract 1 from die {} of {die} of {unit}", die + 1),
+                    ),
+                ]
+            })
+            .collect()
+    };
+    // The eligible holders, in seat order, gathered before any answer below takes a
+    // mutable borrow of the state.
+    let candidates: Vec<PlayerId> = state
+        .players
+        .iter()
+        .map(|seat| seat.id.clone())
+        .filter(|id| {
+            crate::relics::holds(state, id, &relic)
+                && !state
+                    .player(id)
+                    .is_some_and(|seat| seat.exhausted_relics.contains(&relic))
+        })
+        .collect();
+    for seat_id in candidates {
+        let mut options = options.clone();
+        options.push(ChoiceOption::decline());
+        let choice = Choice::new(
+            seat_id.clone(),
+            "Heart of Ixth: add or subtract 1 from a die that was just rolled",
+            options,
+        );
+        let picked = {
+            let observed = Observed::new(state, ctx.content, ctx.sources, None);
+            match ctx.table.ask_seeing(&choice, &observed) {
+                Ok(answer) if !answer.is_decline() => Some(answer.id),
+                _ => None,
+            }
+        };
+        let Some(id) = picked else {
+            continue;
+        };
+        // The id is the option's: "hfix|{entry}:{die}:{sign}". Anything else is a decider
+        // that answered with something not offered, and the card stays ready for the next
+        // roll rather than being spent on a die nobody chose.
+        let mut parts = id.split('|');
+        let (Some(head), Some(entry), Some(die), Some(sign)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        if head != "hfix" {
+            continue;
+        }
+        let (Ok(entry), Ok(die)) = (entry.parse::<usize>(), die.parse::<usize>()) else {
+            continue;
+        };
+        let delta: i8 = match sign { "add" => 1, "sub" => -1, _ => continue };
+        let set = state.reroll_staging.get_mut(side).expect("checked above");
+        if entry >= set.rolls.len() || die >= set.rolls[entry].faces.len() {
+            continue;
+        }
+        set.rolls[entry].deltas.insert(die, delta);
+        if let Some(seat) = state.player_mut(&seat_id) {
+            seat.exhausted_relics.insert(relic.clone());
+        }
+    }
+}
+
+/// One combat value's pooled fleet dice: how many, and which unit types sit behind them.
+struct FleetGroup {
+    dice: i64,
+    types: std::collections::BTreeMap<String, u32>,
+}
+
+/// The fleet's rolls, grouped by combat value in the ascending order 78.5b/78.5c fixes.
+///
+/// Three destroyers are one roll of three dice, not three rolls of one: the number of
+/// draws from the seeded stream is part of what a seed reproduces, so rolling them apart
+/// would silently renumber every later draw. `BTreeMap` gives the ascending order for free.
+fn fleet_groups(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> std::collections::BTreeMap<i64, FleetGroup> {
+    let types = catalogue(content, sources);
+    let extra_die = state.player(player).and_then(|seat| {
+        (seat.extra_die_round == Some(state.combat_round_seq))
+            .then_some(seat.extra_die_unit.as_ref())
+            .flatten()
+    });
+    let mut extra_die_added = false;
+    let mut groups: std::collections::BTreeMap<i64, FleetGroup> = std::collections::BTreeMap::new();
+    for unit in ships_of(state, content, sources, player, system) {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = effective_hits_on(state, content, sources, player, &unit) else {
+            continue;
+        };
+        let mut dice = kind.combat_dice();
+        if !extra_die_added && extra_die.is_some_and(|selected| selected == &unit.type_id) {
+            dice += 1;
+            extra_die_added = true;
+        }
+        let group = groups.entry(value).or_insert(FleetGroup {
+            dice: 0,
+            types: std::collections::BTreeMap::new(),
+        });
+        group.dice += dice;
+        *group.types.entry(unit.type_id.to_string()).or_insert(0) += 1;
+    }
+    groups
 }
 
 /// Roll one player's fleet and count the hits (78.5).
@@ -500,36 +704,9 @@ pub fn roll_fleet(
     player: &PlayerId,
     system: &SystemId,
 ) -> usize {
-    let types = catalogue(content, sources);
-    // Grouped by combat value, then rolled ascending (78.5b, 78.5c). Three destroyers are one
-    // roll of three dice, not three rolls of one: the number of draws from the seeded stream is
-    // part of what a seed reproduces, so rolling them apart would silently renumber every later
-    // draw. `BTreeMap` gives the ascending order for free.
-    let mut fighting: std::collections::BTreeMap<i64, i64> = std::collections::BTreeMap::new();
-    let extra_die = state.player(player).and_then(|seat| {
-        (seat.extra_die_round == Some(state.combat_round_seq))
-            .then_some(seat.extra_die_unit.as_ref())
-            .flatten()
-    });
-    let mut extra_die_added = false;
-    for unit in ships_of(state, content, sources, player, system) {
-        let Some(kind) = types.get(unit.type_id.as_str()) else {
-            continue;
-        };
-        let Some(value) = effective_hits_on(state, content, sources, player, &unit) else {
-            continue;
-        };
-        let mut dice_count = kind.combat_dice();
-        if !extra_die_added && extra_die.is_some_and(|selected| selected == &unit.type_id) {
-            dice_count += 1;
-            extra_die_added = true;
-        }
-        *fighting.entry(value).or_insert(0) += dice_count;
-    }
-
     let mut hits = 0;
-    for (value, count) in fighting {
-        let dice_count = usize::try_from(count).unwrap_or(0);
+    for (value, group) in fleet_groups(state, content, sources, player, system) {
+        let dice_count = usize::try_from(group.dice).unwrap_or(0);
         if dice_count == 0 {
             continue;
         }
@@ -537,6 +714,56 @@ pub fn roll_fleet(
         let roll = dice.roll(rng, dice_count, "space combat", Some(threshold));
         hits += reroll_munitions_misses(state, dice, rng, player, &roll).hits();
     }
+    hits
+}
+
+/// Roll one player's fleet, stage the dice, and open the window that may still touch
+/// them — the two Crowns of Thalnos and the Heart of Ixth — before any hit lands.
+///
+/// The staged faces are what the hits are read from: a die rerolled with a +1 is a new
+/// result, and a unit the rerolls destroy is gone before the opponent's dice leave the
+/// bag. A seed's draw sequence is untouched: a reroll is a fresh draw from the same
+/// roller, and a window nobody answers changes nothing.
+pub fn roll_fleet_and_open(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let (content, sources) = (ctx.content, ctx.sources);
+    let mut set = RerollSet {
+        kind: "fleet".into(),
+        system: system.clone(),
+        rolls: Vec::new(),
+    };
+    let mut hits = 0;
+    for (value, group) in fleet_groups(state, content, sources, player, system) {
+        let dice_count = usize::try_from(group.dice).unwrap_or(0);
+        if dice_count == 0 {
+            continue;
+        }
+        let threshold = u32::try_from(value).unwrap_or(u32::MAX);
+        let roll = ctx.dice.roll(ctx.rng, dice_count, "space combat", Some(threshold));
+        let roll = reroll_munitions_misses(state, ctx.dice, ctx.rng, player, &roll);
+        hits += roll.hits();
+        set.rolls.push(RerollEntry {
+            unit: group.types.keys().cloned().collect::<Vec<_>>().join("+"),
+            planet: None,
+            hits_on: Some(threshold),
+            faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types: group.types,
+        });
+    }
+    if set.rolls.iter().any(|roll| !roll.faces.is_empty()) {
+        state.reroll_staging.insert(player.clone(), set);
+        state.last_reroll_player = Some(player.clone());
+    }
+    open_fleet_reroll_windows(state, ctx, player);
+    let hits = state.reroll_staging.get(player).map_or(hits, staged_hits);
+    state.reroll_staging.remove(player);
+    state.last_reroll_player = None;
     hits
 }
 
@@ -604,6 +831,10 @@ pub fn roll_barrage_side(
             planet: None,
             hits_on: Some(value),
             faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            // The relic's own dice, not a unit's: nothing here can be a casualty.
+            unit_types: std::collections::BTreeMap::new(),
         });
     }
     for unit in ships_of(state, content, sources, player, system) {
@@ -636,6 +867,9 @@ pub fn roll_barrage_side(
             planet: None,
             hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
             faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types: std::iter::once((unit.type_id.to_string(), 1)).collect(),
         });
     }
     if set.rolls.iter().any(|roll| !roll.faces.is_empty()) {
@@ -933,6 +1167,9 @@ pub fn space_cannon_offense(
             planet: None,
             hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
             faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types: std::iter::once((unit.type_id.to_string(), 1)).collect(),
         };
         let slot = by_player
             .entry(unit.owner.clone())
@@ -1817,25 +2054,19 @@ impl CombatWindow {
         }
 
         // 78.5f: the attacker rolls everything first. 78.6: both sides' hits are computed
-        // before either is absorbed.
-        let attacker_hits = roll_fleet(
-            state,
-            content,
-            sources,
-            ctx.dice,
-            ctx.rng,
-            &self.attacker,
-            &self.system,
-        );
-        let defender_hits = roll_fleet(
-            state,
-            content,
-            sources,
-            ctx.dice,
-            ctx.rng,
-            &self.defender,
-            &self.system,
-        );
+        // before either is absorbed. Each side's window opens before the next side's dice
+        // are drawn, like the barrage's, so a reroll can empty a fleet mid-roll and end
+        // the fight where it stands.
+        let attacker_hits = roll_fleet_and_open(state, ctx, &self.attacker, &self.system);
+        if self.over(state, content, sources) {
+            self.stage = self.conclude(state, content, sources, round);
+            return Ok(());
+        }
+        let defender_hits = roll_fleet_and_open(state, ctx, &self.defender, &self.system);
+        if self.over(state, content, sources) {
+            self.stage = self.conclude(state, content, sources, round);
+            return Ok(());
+        }
 
         let queue: Vec<Pending> = [
             Pending {
@@ -2694,134 +2925,7 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
-    /// Thalnos destroys the units that rerolled and still missed, and only those.
-    ///
-    /// The distinction is the whole card: a unit that never rerolled is safe however badly it
-    /// rolled. Two cruisers, one rerolled into a miss and one left alone, and only the first dies.
-    ///
-    /// Faces are set directly rather than rolled for. The clause under test is which units the
-    /// destruction reaches, not what the dice showed, and a test that had to roll a miss on demand
-    /// would be testing the seed.
-    #[test]
-    fn thalnos_destroys_only_the_units_that_rerolled_and_missed() {
-        let (mut state, system) = arena();
-        let player = attacker();
-        put(&mut state, &system, "cruiser", &player, 2);
-        if let Some(seat) = state.player_mut(&player) {
-            seat.relics = vec![ti4_model::id::RelicId::new("thalnos")];
-        }
-        state.reroll_staging.insert(
-            player.clone(),
-            RerollSet {
-                kind: "space combat".to_owned(),
-                system: system.clone(),
-                // Unreachable on a d10 even with the relic's +1, so the reroll misses whatever it
-                // shows. The clause under test is *which units the destruction reaches*, and a
-                // threshold the dice could clear would leave the test passing on the branch where
-                // nothing is destroyed at all.
-                rolls: vec![
-                    RerollEntry {
-                        unit: "cruiser".to_owned(),
-                        planet: None,
-                        hits_on: Some(12),
-                        faces: vec![1],
-                    },
-                    RerollEntry {
-                        unit: "cruiser".to_owned(),
-                        planet: None,
-                        hits_on: Some(12),
-                        faces: vec![1],
-                    },
-                ],
-            },
-        );
 
-        // Reroll the first cruiser's die and decline the second: `FirstOption` would take both,
-        // so the answers are scripted to separate them.
-        let mut inner = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
-            "reroll|0:0".to_owned(),
-        ])));
-        let mut dice = Dice::new();
-        let mut rng = GameRng::new(1);
-        let mut ctx = crate::choice::Resolving {
-            content: ContentStore::embedded(),
-            sources: POK,
-            dice: &mut dice,
-            rng: &mut rng,
-            table: &mut inner,
-            timing: None,
-        };
-        thalnos_reroll(&mut state, &mut ctx, &player, true);
-
-        assert_eq!(
-            state.system_state(&system).units_of(&player).len(),
-            1,
-            "the cruiser that rerolled and missed is destroyed, the one that never rerolled is not"
-        );
-    }
-
-    /// The Heart of Ixth shifts one die, exhausts, and cannot be used again until it readies.
-    #[test]
-    fn the_heart_of_ixth_exhausts_after_one_die() {
-        let (mut state, system) = arena();
-        let player = attacker();
-        put(&mut state, &system, "cruiser", &player, 1);
-        if let Some(seat) = state.player_mut(&player) {
-            seat.relics = vec![ti4_model::id::RelicId::new("heartofixth")];
-        }
-        let staged = |state: &mut GameState| {
-            state.reroll_staging.insert(
-                player.clone(),
-                RerollSet {
-                    kind: "space combat".to_owned(),
-                    system: system.clone(),
-                    rolls: vec![RerollEntry {
-                        unit: "cruiser".to_owned(),
-                        planet: None,
-                        hits_on: Some(7),
-                        faces: vec![6],
-                    }],
-                },
-            );
-        };
-        staged(&mut state);
-
-        let mut inner = Table::with_default(Box::new(crate::choice::FirstOption));
-        let mut dice = Dice::new();
-        let mut rng = GameRng::new(1);
-        let mut ctx = crate::choice::Resolving {
-            content: ContentStore::embedded(),
-            sources: POK,
-            dice: &mut dice,
-            rng: &mut rng,
-            table: &mut inner,
-            timing: None,
-        };
-        heart_of_ixth(&mut state, &mut ctx, &player, true);
-
-        assert_eq!(
-            state.reroll_staging.get(&player).expect("staged").rolls[0].faces,
-            vec![7],
-            "the first option adds one, turning a miss into a hit"
-        );
-        assert!(
-            state
-                .player(&player)
-                .is_some_and(|seat| seat
-                    .exhausted_relics
-                    .contains(&ti4_model::id::RelicId::new("heartofixth"))),
-            "and the card is exhausted"
-        );
-
-        // Again, with the card exhausted: nothing moves.
-        staged(&mut state);
-        heart_of_ixth(&mut state, &mut ctx, &player, true);
-        assert_eq!(
-            state.reroll_staging.get(&player).expect("staged").rolls[0].faces,
-            vec![6],
-            "an exhausted Heart of Ixth does nothing until the status phase readies it"
-        );
-    }
 
     /// Shields Holding cancels hits across the round, not per assignment.
     ///

@@ -40,20 +40,21 @@ pub fn registered_aliases() -> Vec<&'static str> {
         "metalivoidshielding",
         "thetriad",
     ]);
-    // Passive relics: they change a standing rule and are never *used* as an action. Keeping them
-    // out of `action_aliases` is what stops them being offered as an action that does nothing --
-    // `available_actions` offers exactly what `use_relic` can resolve.
+    // Relics with no printed ACTION: they change a standing rule or fire from a trigger the
+    // driver runs itself (the combat windows read Thalnos and the Heart of Ixth directly),
+    // so keeping them out of `action_aliases` stops them being offered as actions that do
+    // nothing -- `available_actions` offers exactly what `use_relic` can resolve.
     all.extend([
         "circletofthevoid", // ignores gravity rifts and other anomalies on movement
         "dominusorb",       // purge to move out of your own command tokens
+        "heartofixth",      // exhaust to add or subtract 1 from any die just rolled
         "nanoforge",        // the attached planet is worth two more of each
         "neuraloop",        // purge a relic to replace a revealed public objective
         "obsidian",         // one additional secret objective
-        "heartofixth",      // exhaust to shift a rolled die by one
         "prophetstears",    // exhaust to ignore one research prerequisite
-        "thalnos",          // reroll with +1, and lose the units that still miss
         "quantumcore",      // synergy across all four technology types
         "shard",            // a victory point while held
+        "thalnos",          // reroll dice each combat round, +1, destroy the misses
     ]);
     all.sort_unstable();
     all

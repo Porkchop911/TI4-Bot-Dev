@@ -128,10 +128,14 @@ pub fn resolve_before_token_gain(
 /// described by one report however it was driven.
 pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseReport) {
     // 81.6: ready exhausted technology, planet and leader cards. 81.7 then repairs units.
+    // Relic cards ready here too: the set only exists for relics that exhaust to use
+    // themselves (Heart of Ixth), and a relic that spent its use on a die must wait for
+    // this step before it may bend another one.
     for player in &mut state.players {
         player.exhausted_technologies.clear();
-        // A relic exhausted for its ability readies here too, beside the technologies: the three
-        // that say "exhaust this card" are once per round, and nothing else clears them.
+        // Relic cards ready here too: the set only exists for relics that exhaust to use
+        // themselves (Heart of Ixth), and a relic that spent its use on a die must wait for
+        // this step before it may bend another one.
         player.exhausted_relics.clear();
     }
     // Leaders ready here too. An exhausted agent that never readies reads, after a round or

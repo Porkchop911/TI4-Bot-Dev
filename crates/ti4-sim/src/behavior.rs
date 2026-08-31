@@ -381,6 +381,19 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v23 — 2026-08-31. The dice cluster, reconciled. Two implementations of Thalnos, the Crown of
+    // Thalnos and the Heart of Ixth existed at once -- mine on `wp/engine-completion` and a more
+    // careful one uncommitted in the main checkout. The owner chose the latter, so mine was removed
+    // and theirs kept.
+    //
+    // Theirs is the better model on two points mine got wrong: a per-die `deltas` map, so Thalnos's
+    // +1 dies with the die a later reroll replaces rather than surviving on the new face; and
+    // pooled unit types per roll entry, so "destroy the units that rerolled" reaches the right
+    // units when several units' dice share one entry by combat value.
+    //
+    // Dilution rather than a play change: every value already sat inside v22 and the intervals move
+    // by thousandths. The reroll windows ask their questions in a different order than mine did.
+    //
     // v22 — 2026-08-31. Two bug fixes, both changing what players can actually do.
     //
     // One use of PRODUCTION is now one bill: overpayment is retained across the unit selections of
@@ -758,43 +771,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.390_740_740_740_740_7, 0.453_086_419_753_086_33),
+        (0.393_209_876_543_209_9, 0.453_086_419_753_086_44),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.633_082_874_203_006_4, 2.032_752_586_447_976_3),
+        (1.641_782_366_231_287_8, 2.044_471_407_743_399_6),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.602_054_097_073_069_6, 1.049_058_955_139_330_8),
+        (0.673_689_857_940_104_5, 1.113_663_734_517_851_3),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_476_921_477_029_462, 0.020_768_089_463_744_675),
+        (0.019_492_092_241_105_43, 0.020_824_729_998_975_312),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_591_463_287_978_04, 0.033_696_929_356_423_53),
+        (0.032_736_748_264_119_875, 0.033_729_014_970_360_606),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.048_696_912_344_136_33, 0.052_175_519_437_316_37),
+        (0.048_732_996_770_831_746, 0.052_061_772_067_588_594),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_670_044_251_423_586, 0.006_497_215_736_414_407_5),
+        (0.005_682_079_194_194_835, 0.006_520_002_692_203_545),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.064_369_582_002_561_04, 0.066_436_893_888_635_7),
+        (0.064_591_619_144_359_78, 0.066_543_600_518_826_52),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.031_761_689_882_748_2, 0.032_776_042_373_493_71),
+        (0.031_868_289_753_850_34, 0.032_811_444_180_481_04),
     );
     bounds
 }
