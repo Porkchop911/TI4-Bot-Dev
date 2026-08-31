@@ -381,6 +381,15 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v21 — 2026-08-31. The last four relics: the Titan Prototype, the Crown of Emphidia, the
+    // Dominus Orb and the Neuraloop. Relics are 24 of 24.
+    //
+    // Dilution again, and small: every value already sat inside v20 and the intervals move by
+    // thousandths in both directions. Three of the four open a new question -- the Crown after
+    // every tactical action, the Orb after every activation, the Neuraloop on every objective
+    // reveal -- so the decider stream lengthens wherever the relic is held, and the seeds shift
+    // under it. `completion` is untouched and `vp_pace` moves by 0.0006.
+    //
     // v20 — 2026-08-31. The dice cluster: Thalnos, the Crown of Thalnos and the Heart of Ixth, all
     // bound into the reroll window that already existed for the Jol-Nar commander. Relics also
     // gained an exhausted state, which is what stops the Heart of Ixth being a permanent +1.
@@ -734,43 +743,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.396_825_396_825_396_97, 0.451_851_851_851_851_84),
+        (0.397_442_680_776_014_25, 0.452_469_135_802_469_17),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.489_336_133_792_828_1, 1.939_485_105_241_103_5),
+        (1.496_623_720_185_971_1, 1.946_811_197_309_875_8),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.436_915_394_245_150_3, 0.860_393_966_609_354),
+        (0.456_908_559_887_824_25, 0.882_214_525_575_158_9),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_509_978_559_374_84, 0.020_515_335_650_167_98),
+        (0.019_640_078_363_206_01, 0.020_600_729_513_054_33),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_981_285_203_025, 0.033_906_996_651_929_37),
+        (0.032_981_285_203_025, 0.033_911_713_838_411_475),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_665_786_974_937_826, 0.050_613_316_312_114_125),
+        (0.046_628_744_557_707_644, 0.050_579_051_464_133_92),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_886_090_165_777_649, 0.006_528_528_620_064_251),
+        (0.005_897_172_303_245_677, 0.006_543_960_136_927_035),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.065_089_503_618_225_4, 0.066_971_068_608_223_2),
+        (0.065_088_212_080_852_96, 0.066_961_813_354_328_21),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_092_645_589_645_36, 0.033_079_242_507_083_76),
+        (0.032_087_308_455_131_07, 0.033_066_215_531_870_95),
     );
     bounds
 }

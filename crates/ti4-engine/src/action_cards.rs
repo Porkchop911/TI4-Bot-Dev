@@ -1807,6 +1807,12 @@ pub fn apply_movement_effects(
     if seat.anomalies_ignored_activation == this_activation {
         rules.anomalies_ignored = true;
     }
+    // The Dominus Orb, purged into this activation: ships may leave systems holding this player's
+    // own command tokens. Scoped by activation, like the card effects around it, so a purge in one
+    // tactical action cannot loosen the next.
+    if seat.dominus_orb.contains(&state.activation_seq) {
+        rules.command_tokens_ignored = true;
+    }
     if seat.silence_activation == this_activation {
         rules.ignore_enemy_ships_from = seat.silence_system.as_ref().map(ToString::to_string);
     }

@@ -1550,6 +1550,13 @@ impl<'a> Game<'a> {
                     serde_json::Value::String(system.to_string()),
                 );
                 self.emit_typed("SYSTEM_ACTIVATED", payload)?;
+                // "Before you move units during a tactical action, you may purge this card." The
+                // activation has happened and the move has not, which is the window the card names.
+                crate::relics::offer_dominus_orb(
+                    &mut self.state,
+                    &mut self.table,
+                    &window.player,
+                );
                 window.stage = TacticalStage::Moving;
                 self.tactical = Some(window);
                 Ok(self.result(true, None))
@@ -1998,6 +2005,18 @@ impl<'a> Game<'a> {
 
     /// Close the action and pass the turn.
     fn close_tactical(&mut self) -> StepResult {
+        // The Crown of Emphidia: "After you perform a tactical action, you may exhaust this card to
+        // explore 1 planet you control." Here rather than in `finish_tactical`, because a tactical
+        // action can end down either path and only this one is common to both.
+        if let Some(player) = self.state.active.clone() {
+            crate::relics::crown_of_emphidia_explore(
+                &mut self.state,
+                self.content,
+                self.sources,
+                &mut self.table,
+                &player,
+            );
+        }
         self.aftermath = None;
         self.state.active_system = None;
         self.state.pending = None;
@@ -2332,7 +2351,21 @@ impl<'a> Game<'a> {
                 self.emit("GAME_FINISHED");
                 self.result(false, None)
             }
-            Ok(report) => {
+            Ok(mut report) => {
+                // The Neuraloop reacts to the objective this reveal just turned up. Here rather
+                // than inside the status phase because it needs a decider and the deck's rng, and
+                // `resolve_before_token_gain` deliberately has neither.
+                if let Some(revealed) = report.revealed_objective.clone()
+                    && let Some(replacement) = crate::relics::neuraloop(
+                        &mut self.state,
+                        &mut self.table,
+                        &mut self.rng,
+                        &revealed,
+                    )
+                {
+                    self.emit(&format!("OBJECTIVE_REPLACED:{revealed}:{replacement}"));
+                    report.revealed_objective = Some(replacement);
+                }
                 self.emit("STATUS_BOOKKEEPING_RESOLVED");
                 self.tokens = Some((
                     TokenGain::for_status(&report.initiative_order),

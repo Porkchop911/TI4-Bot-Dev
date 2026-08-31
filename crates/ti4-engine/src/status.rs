@@ -14,6 +14,8 @@ pub struct StatusPhaseReport {
     pub action_cards_drawn: Vec<(PlayerId, usize)>,
     /// Command tokens returned from systems, in board then holder order.
     pub returned_command_tokens: Vec<(SystemId, PlayerId)>,
+    /// The player who purged the Crown of Emphidia for a victory point, if anyone did.
+    pub crown_of_emphidia: Option<PlayerId>,
     /// Planet cards readied at step 81.6.
     pub readied_planets: Vec<PlanetId>,
     /// Leaders readied at step 81.6, per player.
@@ -145,6 +147,19 @@ pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseR
             report.readied_leaders.push((player, readied));
         }
     }
+    // The Crown of Emphidia pays out at the end of the status phase, before the cards are readied
+    // -- the point is for controlling the Tomb now, and readying does not change who controls it.
+    let seats: Vec<PlayerId> = state
+        .players
+        .iter()
+        .map(|player| player.id.clone())
+        .collect();
+    for player in seats {
+        if crate::relics::crown_of_emphidia_point(state, &player) {
+            report.crown_of_emphidia = Some(player);
+        }
+    }
+
     report.readied_planets = state.exhausted_planets.iter().cloned().collect();
     state.ready_all_planets();
     for system in state.board.values_mut() {

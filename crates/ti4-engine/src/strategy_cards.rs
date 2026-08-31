@@ -714,7 +714,7 @@ fn politics_primary(
     Ok(())
 }
 
-fn structure_options(
+pub(crate) fn structure_options(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -749,7 +749,7 @@ fn structure_options(
         .collect()
 }
 
-fn place_structure(
+pub(crate) fn place_structure(
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,

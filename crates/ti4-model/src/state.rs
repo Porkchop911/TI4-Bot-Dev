@@ -511,6 +511,11 @@ pub struct Player {
     /// the marker to it.
     #[serde(default)]
     pub lost_star: Vec<u32>,
+    /// The Dominus Orb: activations during which this player's command tokens do not pin their
+    /// ships. Held per activation, like `lost_star`, because the card is purged into one tactical
+    /// action and must not loosen the next one.
+    #[serde(default)]
+    pub dominus_orb: Vec<u32>,
     /// Political Stability: this player returned no strategy cards in the status phase
     /// that set it, keeps the cards it was holding, and skips choosing cards in the
     /// strategy phase that follows. The marker survives through the agenda phase and the
@@ -604,6 +609,7 @@ impl PartialEq for Player {
             && self.disable_invasion == other.disable_invasion
             && self.solar_flare == other.solar_flare
             && self.lost_star == other.lost_star
+            && self.dominus_orb == other.dominus_orb
             && self.stability == other.stability
             && self.duress_by == other.duress_by
             && self.infantry_returning == other.infantry_returning
@@ -678,6 +684,7 @@ impl Player {
             disable_invasion: Vec::new(),
             solar_flare: Vec::new(),
             lost_star: Vec::new(),
+            dominus_orb: Vec::new(),
             stability: false,
             duress_by: None,
             infantry_returning: 0,

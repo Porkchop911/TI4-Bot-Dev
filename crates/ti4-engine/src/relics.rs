@@ -34,6 +34,7 @@ pub fn registered_aliases() -> Vec<&'static str> {
     // Passive ability grants.
     all.extend([
         "emelpar",
+        "emphidia",
         "lightrailordnance",
         "metalivoidarmaments",
         "metalivoidshielding",
@@ -44,7 +45,9 @@ pub fn registered_aliases() -> Vec<&'static str> {
     // `available_actions` offers exactly what `use_relic` can resolve.
     all.extend([
         "circletofthevoid", // ignores gravity rifts and other anomalies on movement
+        "dominusorb",       // purge to move out of your own command tokens
         "nanoforge",        // the attached planet is worth two more of each
+        "neuraloop",        // purge a relic to replace a revealed public objective
         "obsidian",         // one additional secret objective
         "heartofixth",      // exhaust to shift a rolled die by one
         "prophetstears",    // exhaust to ignore one research prerequisite
@@ -70,6 +73,7 @@ pub fn action_aliases() -> Vec<&'static str> {
         "enigmaticdevice",
         "mawofworlds",
         "stellarconverter",
+        "titanprototype",
         "thesilverflame",
     ]
 }
@@ -335,6 +339,86 @@ fn codex(state: &mut GameState, table: &mut crate::choice::Table, player: &Playe
     }
 }
 
+/// The Titan Prototype: another player may build, or takes a trade good instead.
+///
+/// Returns whether it resolved. The only relic that asks a decider other than its owner -- the
+/// owner picks who, and that player decides whether to build.
+fn titan_prototype(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+) -> bool {
+
+    // "Choose a player, that player may spend 3 resources to place a structure on a planet
+    // they control. If they do not, they gain 1 trade good."
+    //
+    // The only relic that asks somebody other than its owner. The owner picks who; that
+    // player decides whether to build. "If they do not" covers both declining and being
+    // unable to pay, so the trade good is the fallback on every path that does not place.
+    let chosen = {
+        let options: Vec<crate::choice::ChoiceOption> = state
+            .players
+            .iter()
+            .map(|seat| {
+                crate::choice::ChoiceOption::labelled(
+                    seat.id.to_string(),
+                    "player",
+                    format!("{} may build", seat.id),
+                )
+            })
+            .collect();
+        if options.is_empty() {
+            return false;
+        }
+        let choice = crate::choice::Choice::new(
+            player.clone(),
+            "Titan Prototype: which player may build",
+            options,
+        );
+        let Ok(answer) = table.ask(&choice) else {
+            return false;
+        };
+        PlayerId::new(answer.id)
+    };
+
+    // Charged only once there is somewhere to build and the means to pay for it. Paying
+    // first and finding nowhere to put it would spend three resources for the trade good
+    // that is supposed to be the consolation.
+    let can_build = !crate::strategy_cards::structure_options(
+        state, content, sources, &chosen, false,
+    )
+    .is_empty();
+    let built = can_build
+        && crate::production::available(
+            state,
+            content,
+            sources,
+            &chosen,
+            crate::production::Spend::Resources,
+        ) >= 3
+        && crate::production::pay(
+            state,
+            content,
+            sources,
+            table,
+            &chosen,
+            3,
+            crate::production::Spend::Resources,
+        )
+        .unwrap_or(false)
+        && crate::strategy_cards::place_structure(
+            state, content, sources, None, table, &chosen, false,
+        )
+        .unwrap_or(None)
+        .is_some();
+    if !built && let Some(seat) = state.player_mut(&chosen) {
+        seat.trade_goods += 1;
+    }
+    true
+}
+
 /// The Stellar Converter's ACTION: choose a planet in range and destroy it.
 ///
 /// Returns whether it resolved. Split out of `use_relic` because the target search, the offer and
@@ -461,6 +545,225 @@ pub fn ready(state: &GameState, player: &PlayerId, relic: &str) -> bool {
         && state
             .player(player)
             .is_some_and(|seat| !seat.exhausted_relics.contains(&id))
+}
+
+/// The Crown of Emphidia, first half: exhaust after a tactical action to explore a planet.
+///
+/// > After you perform a tactical action, you may exhaust this card to explore 1 planet you
+/// > control.
+///
+/// Any planet, not only one in the active system, and any trait -- so the offer is every planet the
+/// player controls. Exhausting is what limits it to once a round.
+pub fn crown_of_emphidia_explore(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+) -> bool {
+    if !ready(state, player, "emphidia") {
+        return false;
+    }
+    let held: Vec<PlanetId> = state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(_, planet)| planet.clone())
+        .collect();
+    let options: Vec<crate::choice::ChoiceOption> = held
+        .iter()
+        .filter(|planet| {
+            // 35.1: a planet with no trait cannot be explored, so offering it would be an action
+            // that resolves to nothing.
+            ti4_content::galaxy::planet(content, planet.as_str(), sources)
+                .is_some_and(|record| record.planet_type().is_some())
+        })
+        .map(|planet| {
+            crate::choice::ChoiceOption::labelled(
+                planet.to_string(),
+                "planet",
+                format!("explore {planet}"),
+            )
+        })
+        .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
+        .collect();
+    if options.len() == 1 {
+        return false;
+    }
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "The Crown of Emphidia: exhaust to explore a planet",
+        options,
+    );
+    let Ok(answer) = table.ask(&choice) else {
+        return false;
+    };
+    if answer.is_decline() || !exhaust(state, player, "emphidia") {
+        return false;
+    }
+    let planet = PlanetId::new(answer.id);
+    let deck = ti4_content::galaxy::planet(content, planet.as_str(), sources)
+        .and_then(|record| record.planet_type())
+        .unwrap_or_default()
+        .to_owned();
+    crate::exploration::explore(state, content, player, &deck, Some(&planet)).is_some()
+}
+
+/// The Crown of Emphidia, second half: a victory point for holding the Tomb.
+///
+/// > At the end of the status phase, if you control the "Tomb of Emphidia," you may purge this card
+/// > to gain 1 victory point.
+///
+/// The Tomb is an *attachment*, not a planet -- the `toe` exploration card attaches it to whatever
+/// planet was explored -- so "control the Tomb" means controlling a planet that carries it.
+pub fn crown_of_emphidia_point(state: &mut GameState, player: &PlayerId) -> bool {
+    if !holds(state, player, &RelicId::new("emphidia")) {
+        return false;
+    }
+    let has_tomb = state.controlled_planets(player).into_iter().any(|(_, planet)| {
+        state
+            .planet_attachments
+            .get(planet)
+            .is_some_and(|attached| attached.iter().any(|card| card == "tombofemphidia"))
+    });
+    if !has_tomb {
+        return false;
+    }
+    purge(state, player, &RelicId::new("emphidia"));
+    if let Some(seat) = state.player_mut(player) {
+        seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+    }
+    true
+}
+
+/// The Dominus Orb: purge to move out of systems holding your own command tokens.
+///
+/// > Before you move units during a tactical action, you may purge this card to move and transport
+/// > units that are in systems that contain 1 of your command tokens.
+///
+/// Offered after the activation and before the move, which is the window the card names. The
+/// permission is recorded against the activation sequence rather than as a flag, so a purge in one
+/// tactical action cannot loosen the next -- the same shape as the Lost Star Chart beside it.
+pub fn offer_dominus_orb(
+    state: &mut GameState,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+) -> bool {
+    if !holds(state, player, &RelicId::new("dominusorb")) {
+        return false;
+    }
+    // 22.3: nothing to free if no command token of theirs is pinning anything.
+    let pinned = state.board.iter().any(|(system, here)| {
+        Some(system) != state.active_system.as_ref()
+            && here.command_tokens.contains(player)
+            && here.has_units_of(player)
+    });
+    if !pinned {
+        return false;
+    }
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "The Dominus Orb: purge to move out of your own command tokens",
+        vec![
+            crate::choice::ChoiceOption::labelled(
+                "purge".to_owned(),
+                "relic",
+                "purge the Dominus Orb".to_owned(),
+            ),
+            crate::choice::ChoiceOption::decline(),
+        ],
+    );
+    let Ok(answer) = table.ask(&choice) else {
+        return false;
+    };
+    if answer.is_decline() {
+        return false;
+    }
+    let activation = state.activation_seq;
+    if let Some(seat) = state.player_mut(player) {
+        seat.dominus_orb.push(activation);
+    }
+    purge(state, player, &RelicId::new("dominusorb"));
+    true
+}
+
+/// The Neuraloop: discard a revealed public objective and replace it at random.
+///
+/// > When a public objective is revealed, you may purge one of your relics to discard that
+/// > objective and replace it with a random objective from any objective deck; that objective is a
+/// > public objective, even if it is a secret objective.
+///
+/// Three things worth noting. The cost is *one of your relics*, any of them -- including the
+/// Neuraloop itself, which is why the choice is offered rather than assumed. The replacement is
+/// random, not chosen. And a secret drawn this way becomes a public objective, which is the sting:
+/// it goes into `revealed_objectives` like any other, so every scorer already treats it as public.
+///
+/// Returns the replacement, or `None` if nobody used it.
+pub fn neuraloop(
+    state: &mut GameState,
+    table: &mut crate::choice::Table,
+    rng: &mut crate::rng::GameRng,
+    revealed: &ti4_model::id::ObjectiveId,
+) -> Option<ti4_model::id::ObjectiveId> {
+    let holder = state
+        .players
+        .iter()
+        .find(|seat| seat.relics.iter().any(|held| held.as_str() == "neuraloop"))
+        .map(|seat| seat.id.clone())?;
+    let spendable: Vec<RelicId> = state
+        .player(&holder)
+        .map(|seat| seat.relics.clone())
+        .unwrap_or_default();
+    if spendable.is_empty() {
+        return None;
+    }
+
+    let choice = crate::choice::Choice::new(
+        holder.clone(),
+        format!("The Neuraloop: purge a relic to replace {revealed}"),
+        spendable
+            .iter()
+            .map(|relic| {
+                crate::choice::ChoiceOption::labelled(
+                    relic.to_string(),
+                    "relic",
+                    format!("purge {relic}"),
+                )
+            })
+            .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
+            .collect(),
+    );
+    let answer = table.ask(&choice).ok()?;
+    if answer.is_decline() {
+        return None;
+    }
+
+    // Drawn before anything is purged: an empty pool means the card cannot resolve, and 22.3 says
+    // it should not have cost anything.
+    let pool: Vec<ti4_model::id::ObjectiveId> = state
+        .objective_deck
+        .iter()
+        .cloned()
+        .chain(state.secret_deck.iter().map(|secret| {
+            ti4_model::id::ObjectiveId::new(secret.as_str())
+        }))
+        .collect();
+    if pool.is_empty() {
+        return None;
+    }
+    // Its own rng domain, so drawing here does not shift the stream any other effect reads.
+    let roll = rng.die("neuraloop", u32::try_from(pool.len()).unwrap_or(u32::MAX));
+    let replacement = pool[(roll as usize).saturating_sub(1).min(pool.len() - 1)].clone();
+
+    purge(state, &holder, &RelicId::new(answer.id));
+    state
+        .revealed_objectives
+        .retain(|alias| alias != revealed);
+    state.objective_deck.retain(|alias| *alias != replacement);
+    state
+        .secret_deck
+        .retain(|secret| secret.as_str() != replacement.as_str());
+    state.revealed_objectives.push(replacement.clone());
+    Some(replacement)
 }
 
 /// Whether a player holds a relic.
@@ -595,6 +898,13 @@ pub fn use_relic(
         "codex" => codex(state, table, player),
         "stellarconverter" => {
             if !stellar_converter(state, content, sources, table, galaxy, player) {
+                return Used::Unresolved {
+                    relic: relic.clone(),
+                };
+            }
+        }
+        "titanprototype" => {
+            if !titan_prototype(state, content, sources, table, player) {
                 return Used::Unresolved {
                     relic: relic.clone(),
                 };
@@ -1236,10 +1546,10 @@ mod tests {
         // 22.3: an action that cannot fully resolve is not offered. A relic the engine cannot
         // resolve would otherwise be a turn spent on nothing.
         let mut state = game(&["a"]);
-        let unknown = unimplemented(ContentStore::embedded(), POK)
-            .into_iter()
-            .next()
-            .expect("some relic is still unimplemented");
+        // A name no arm of `use_relic` matches. Every relic in the corpus is implemented now, so
+        // this cannot come from `unimplemented` any more -- and the rule under test is about a
+        // *handler* being absent, which a synthetic alias demonstrates exactly as well.
+        let unknown = RelicId::new("a_relic_from_no_expansion");
         state.player_mut(&player()).unwrap().relics = vec![unknown.clone()];
 
         let offered = available_actions(&state, ContentStore::embedded(), POK, None, &player());
@@ -1461,12 +1771,18 @@ mod tests {
     }
 
     #[test]
+    /// Every relic in the corpus is resolved.
+    ///
+    /// Was `!missing.is_empty()`, "most relics are still unresolved" -- true when written, expired
+    /// on the last relic. The second half is what keeps it from passing vacuously: a query that
+    /// found no relics at all would also return an empty list.
     fn the_unresolved_relics_are_reported() {
         let missing = unimplemented(ContentStore::embedded(), POK);
-        assert!(!missing.is_empty(), "most relics are still unresolved");
-        for alias in registered_aliases() {
-            assert!(!missing.contains(&RelicId::new(alias)));
-        }
+        assert!(missing.is_empty(), "unresolved: {missing:?}");
+        assert!(
+            registered_aliases().len() >= 20,
+            "and the registry really does list them"
+        );
     }
 
     #[test]

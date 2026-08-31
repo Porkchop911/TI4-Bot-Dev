@@ -112,6 +112,9 @@ pub struct MovementRules<'a> {
     pub asteroid_fields_open: bool,
     /// Magmus Reactor permits supernovas without switching off other anomalies.
     pub supernovae_open: bool,
+    /// The Dominus Orb, for the activation it was purged into: ships may leave systems holding
+    /// this player's command tokens (58.4c suspended).
+    pub command_tokens_ignored: bool,
     /// Nav Suite: "ignore the effect of anomalies" for this tactical action. Every anomaly rule
     /// below is an effect of an anomaly, so this turns off all of them together — the supernova
     /// and asteroid bars, both nebula restrictions, the nebula move cap, and the gravity rift
@@ -174,6 +177,7 @@ impl<'a> MovementRules<'a> {
             nebulae_open: state.is_some_and(crate::laws::nebulae_passable),
             asteroid_fields_open: false,
             supernovae_open: false,
+            command_tokens_ignored: false,
             anomalies_ignored: false,
             ignore_enemy_ships_from: None,
             ignore_enemy_ships: false,
@@ -252,7 +256,7 @@ impl<'a> MovementRules<'a> {
     /// 58.4c: a command token pins ships, except in the active system (58.4e).
     #[must_use]
     pub fn may_depart(&self, origin: &str) -> bool {
-        if origin == self.active_system {
+        if origin == self.active_system || self.command_tokens_ignored {
             return true;
         }
         !self.board.own_command_tokens.contains(origin)
