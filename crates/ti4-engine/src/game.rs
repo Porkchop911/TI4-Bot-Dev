@@ -401,6 +401,17 @@ impl AftermathWindow {
                                         .collect(),
                                 ),
                             );
+                            // Shard of the Throne moves to whoever beat its owner.
+                            if opponents.iter().any(|side| {
+                                crate::laws::elected(state, "shard_of_the_throne")
+                                    .is_some_and(|owner| *owner == side.to_string())
+                            }) {
+                                crate::laws::steal_throne_card(
+                                    state,
+                                    "shard_of_the_throne",
+                                    &winner,
+                                );
+                            }
                             ctx.emit(state, "SPACE_COMBAT_WON", payload)?;
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
@@ -1002,6 +1013,12 @@ impl<'a> Game<'a> {
                 let player = self.take_timed_strategy_card(&choice.player, answer)?;
                 self.emit("STRATEGY_CARD_CHOSEN");
                 debug_assert_eq!(player, choice.player);
+                // Imperial Arbiter is offered once the last card is gone: "at the end of the
+                // strategy phase". Checked here rather than on the phase transition because the
+                // swap has to happen while the phase's own state is still the current one.
+                if strategy_options(&self.state, self.content).is_none() {
+                    self.imperial_arbiter();
+                }
                 Ok(())
             }
             Phase::Action => {
@@ -1552,6 +1569,17 @@ impl<'a> Game<'a> {
                 self.emit_typed("SYSTEM_ACTIVATED", payload)?;
                 // "Before you move units during a tactical action, you may purge this card." The
                 // activation has happened and the move has not, which is the window the card names.
+                // Minister of Peace: "After a player activates a system that contains 1 or more of
+                // a different player's units, the owner of this card may discard this card --
+                // immediately end the active player's turn."
+                if self.minister_of_peace(&system, &window.player) {
+                    self.tactical = None;
+                    self.state.active_system = None;
+                    self.state.pending = None;
+                    self.emit("TURN_ENDED_BY_MINISTER_OF_PEACE");
+                    self.advance_turn()?;
+                    return Ok(self.result(true, None));
+                }
                 crate::relics::offer_dominus_orb(
                     &mut self.state,
                     &mut self.table,
@@ -2477,6 +2505,25 @@ impl<'a> Game<'a> {
             queue.remove(0);
             match self.reveal_agenda(&alias) {
                 Ok(Some((alias, choices))) => {
+                    // Committee Formation: "Before players vote on an agenda that requires a
+                    // player to be elected, the owner of this card may discard this card to choose
+                    // a player to be elected. Players do not vote on that agenda." So it is offered
+                    // before the window opens, and taking it skips the vote entirely.
+                    let elects_a_player = self
+                        .content
+                        .get(ti4_model::content_types::ContentType::Agendas, &alias)
+                        .and_then(|record| record.text("target"))
+                        .is_some_and(|target| target.starts_with("Elect Player"));
+                    if elects_a_player
+                        && let Some(chosen) = self.committee_formation(&alias)
+                    {
+                        self.emit(&format!("AGENDA_RESOLVED:{alias}:{chosen}"));
+                        if is_law(self.content, &alias) {
+                            self.state.enact_law(&alias, &chosen);
+                            self.emit(&format!("LAW_ENACTED:{alias}:{chosen}"));
+                        }
+                        continue;
+                    }
                     let mut window = VoteWindow::new(&self.state, &alias, choices);
                     window.open(&self.state, self.content, self.sources);
                     self.voting = Some((Box::new(window), queue));
@@ -2646,6 +2693,10 @@ impl<'a> Game<'a> {
         // the laws must see this one already there. 8.21 discards everything else.
         if is_law(self.content, alias) && outcome != AGAINST {
             self.state.enact_law(alias, outcome);
+            // Classified Document Leaks: "The elected secret objective becomes a public
+            // objective." Applied at enactment, where the outcome names the secret -- it then sits
+            // in `revealed_objectives`, which is what every scorer already reads.
+            crate::laws::classified_leak(&mut self.state, outcome);
             self.emit(&format!("LAW_ENACTED:{alias}:{outcome}"));
         }
 
@@ -2687,6 +2738,218 @@ impl<'a> Game<'a> {
             }
         }
         elected
+    }
+
+
+    /// Committee Formation, offered before a vote that would elect a player.
+    ///
+    /// Returns the player the card's owner chose, having discarded it.
+    fn committee_formation(&mut self, alias: &str) -> Option<String> {
+        let owner = crate::laws::offer_discard(
+            &mut self.state,
+            &mut self.table,
+            "committee",
+            &format!("Committee Formation: discard to choose who {alias} elects"),
+        )?;
+        let options: Vec<crate::choice::ChoiceOption> = self
+            .state
+            .players
+            .iter()
+            .map(|seat| {
+                crate::choice::ChoiceOption::labelled(
+                    seat.id.to_string(),
+                    "player",
+                    format!("elect {}", seat.id),
+                )
+            })
+            .collect();
+        if options.is_empty() {
+            return None;
+        }
+        let choice =
+            crate::choice::Choice::new(owner, format!("{alias}: elect which player"), options);
+        self.table.ask(&choice).ok().map(|answer| answer.id)
+    }
+
+    /// Minister of Peace, offered after an activation that met an enemy.
+    fn minister_of_peace(&mut self, system: &SystemId, active: &PlayerId) -> bool {
+        let contested = self
+            .state
+            .system_state(system)
+            .units
+            .iter()
+            .any(|unit| unit.owner != *active);
+        if !contested {
+            return false;
+        }
+        // Its owner ending their own turn is legal and pointless; the card does not forbid it, and
+        // a decider that asks for it gets it.
+        crate::laws::offer_discard(
+            &mut self.state,
+            &mut self.table,
+            "minister_peace",
+            "Minister of Peace: discard to end the active player's turn",
+        )
+        .is_some()
+    }
+
+
+    /// Minister of War, offered after an action: a token back, and another action.
+    ///
+    /// Returns nothing -- the additional action is signalled through `ADDITIONAL_ACTION`, the same
+    /// flag the action cards use, so one mechanism grants extra turns rather than two.
+    fn minister_of_war(&mut self) {
+        let placed: Vec<SystemId> = self
+            .state
+            .laws
+            .get("minister_war")
+            .map(|owner| PlayerId::new(owner.clone()))
+            .map(|owner| {
+                self.state
+                    .board
+                    .iter()
+                    .filter(|(_, here)| here.command_tokens.contains(&owner))
+                    .map(|(system, _)| system.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if placed.is_empty() {
+            return; // 22.3: no token on the board means the card cannot do what it says
+        }
+        let Some(owner) = crate::laws::offer_discard(
+            &mut self.state,
+            &mut self.table,
+            "minister_war",
+            "Minister of War: discard to retrieve a command token and act again",
+        ) else {
+            return;
+        };
+        let options: Vec<crate::choice::ChoiceOption> = placed
+            .iter()
+            .map(|system| {
+                crate::choice::ChoiceOption::labelled(
+                    system.to_string(),
+                    "system",
+                    format!("retrieve your token from {system}"),
+                )
+            })
+            .collect();
+        let choice = crate::choice::Choice::new(
+            owner.clone(),
+            "which command token comes back",
+            options,
+        );
+        let Ok(answer) = self.table.ask(&choice) else {
+            return;
+        };
+        let system = SystemId::new(answer.id);
+        if let Some(here) = self.state.board.get_mut(&system) {
+            here.command_tokens.remove(&owner);
+        }
+        if let Some(seat) = self.state.player_mut(&owner) {
+            seat.gain_token(ti4_model::state::TokenPool::Tactic, 1);
+        }
+        self.state
+            .transient_flags
+            .set(TransientFlags::ADDITIONAL_ACTION);
+    }
+
+
+    /// Imperial Arbiter, offered at the end of the strategy phase.
+    ///
+    /// > The owner of this card may discard this card to swap 1 of their strategy cards with 1 of
+    /// > another player's.
+    ///
+    /// A swap, not a theft: both seats end up with a card, which is why this asks for one of each
+    /// rather than picking a target and taking it.
+    fn imperial_arbiter(&mut self) {
+        let Some(owner) = self
+            .state
+            .laws
+            .get("arbiter")
+            .map(|held| PlayerId::new(held.clone()))
+        else {
+            return;
+        };
+        let mine: Vec<StrategyCardId> = self
+            .state
+            .player(&owner)
+            .map(|seat| seat.strategy_cards.clone())
+            .unwrap_or_default();
+        let theirs: Vec<(PlayerId, StrategyCardId)> = self
+            .state
+            .players
+            .iter()
+            .filter(|seat| seat.id != owner)
+            .flat_map(|seat| {
+                seat.strategy_cards
+                    .iter()
+                    .map(move |card| (seat.id.clone(), card.clone()))
+            })
+            .collect();
+        if mine.is_empty() || theirs.is_empty() {
+            return; // 22.3: a swap needs a card on both sides
+        }
+        if crate::laws::offer_discard(
+            &mut self.state,
+            &mut self.table,
+            "arbiter",
+            "Imperial Arbiter: discard to swap a strategy card",
+        )
+        .is_none()
+        {
+            return;
+        }
+
+        let choice = crate::choice::Choice::new(
+            owner.clone(),
+            "give away which of your strategy cards",
+            mine.iter()
+                .map(|card| {
+                    crate::choice::ChoiceOption::labelled(
+                        card.to_string(),
+                        "strategy_card",
+                        format!("give {card}"),
+                    )
+                })
+                .collect(),
+        );
+        let Ok(given) = self.table.ask(&choice) else {
+            return;
+        };
+        let choice = crate::choice::Choice::new(
+            owner.clone(),
+            "and take which",
+            theirs
+                .iter()
+                .map(|(holder, card)| {
+                    crate::choice::ChoiceOption::labelled(
+                        format!("{holder}|{card}"),
+                        "strategy_card",
+                        format!("take {card} from {holder}"),
+                    )
+                })
+                .collect(),
+        );
+        let Ok(taken) = self.table.ask(&choice) else {
+            return;
+        };
+        let Some((holder, card)) = theirs
+            .iter()
+            .find(|(holder, card)| taken.id == format!("{holder}|{card}"))
+        else {
+            return;
+        };
+        let given = StrategyCardId::new(given.id);
+        if let Some(seat) = self.state.player_mut(&owner) {
+            seat.strategy_cards.retain(|held| *held != given);
+            seat.strategy_cards.push(card.clone());
+        }
+        if let Some(seat) = self.state.player_mut(holder) {
+            seat.strategy_cards.retain(|held| held != card);
+            seat.strategy_cards.push(given);
+        }
+        self.emit(&format!("STRATEGY_CARDS_SWAPPED:{owner}:{holder}"));
     }
 
     fn close_vote(&mut self) -> StepResult {
@@ -2807,6 +3070,10 @@ impl<'a> Game<'a> {
                 // Only `emit_typed`: `mirror_timing_log` copies what the resolver emitted into
                 // `events`, so calling `emit` as well would log the phase twice and fire any card
                 // reading it twice with it.
+                // Anti-Intellectual Revolution (Against): "At the start of the next strategy
+                // phase, each player chooses and exhausts 1 planet for each technology that they
+                // own." Charged here, where the phase actually begins for rounds after the first.
+                crate::laws::revolution_levy(&mut self.state);
                 if let Err(error) = self.emit_typed("STRATEGY_PHASE_BEGAN", BTreeMap::new()) {
                     return self.result(false, Some(error));
                 }
@@ -2867,6 +3134,24 @@ impl<'a> Game<'a> {
                 .clear(TransientFlags::ADDITIONAL_ACTION);
             self.emit("TURN_RETAINED");
             return Ok(());
+        }
+        // Minister of War: "The owner of this card may discard this card after performing an
+        // action to remove 1 of their command tokens from the game board and return it to their
+        // reinforcements -- then they may perform 1 additional action." Offered before the turn
+        // moves on, since the additional action is this player's.
+        if self.state.phase == Phase::Action {
+            self.minister_of_war();
+            if self
+                .state
+                .transient_flags
+                .has(TransientFlags::ADDITIONAL_ACTION)
+            {
+                self.state
+                    .transient_flags
+                    .clear(TransientFlags::ADDITIONAL_ACTION);
+                self.emit("TURN_RETAINED");
+                return Ok(());
+            }
         }
         let ended = self.state.active.clone();
         // A Black Market marker outlives no turn: the negotiation it unlocked is closed by

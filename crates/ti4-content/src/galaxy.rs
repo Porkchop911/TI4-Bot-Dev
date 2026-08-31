@@ -358,6 +358,13 @@ pub enum GalaxyError {
 const LINKED_KINDS: [&str; 2] = ["ALPHA", "BETA"];
 
 /// Systems placed on a hex grid, with adjacency derived rather than stored.
+/// The wormhole nexus, whose two faces are `82a` (locked) and `82b` (open).
+const NEXUS_TILE: &str = "82";
+
+// The five switches below are independent rules that happen to be booleans -- three laws, one
+// action card and one relic -- set by the game before each step. Grouping them into a struct would
+// name a thing that does not exist and would not make any call site clearer.
+#[expect(clippy::struct_excessive_bools, reason = "independent rule switches")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Galaxy {
     /// Hex to system id.
@@ -384,6 +391,10 @@ pub struct Galaxy {
     /// *move* or flip -- the ion storm turns from alpha to beta -- and a set that only ever grew
     /// would leave the old face connected for ever.
     pub token_wormholes: BTreeMap<String, BTreeSet<String>>,
+    /// Nexus Sovereignty: the wormhole nexus's alpha and beta wormholes have no effect during
+    /// movement. Its gamma wormhole is untouched, which is what makes this narrower than
+    /// `wormholes_off`.
+    pub nexus_wormholes_off: bool,
 }
 
 impl Galaxy {
@@ -434,6 +445,7 @@ impl Galaxy {
             hyperlanes,
             wormholes_off: false,
             token_wormholes: BTreeMap::new(),
+            nexus_wormholes_off: false,
             wormholes_all_linked: false,
             wormhole_star_links: false,
         })
@@ -496,6 +508,7 @@ impl Galaxy {
             hyperlanes,
             wormholes_off: false,
             token_wormholes: BTreeMap::new(),
+            nexus_wormholes_off: false,
             wormholes_all_linked: false,
             wormhole_star_links: false,
         })
@@ -601,11 +614,13 @@ impl Galaxy {
 
     /// The wormhole kinds at a system: printed on the tile, plus any placed there by a token.
     fn wormhole_kinds(&self, system_id: &str) -> BTreeSet<&str> {
+        let suppressed = self.nexus_wormholes_off && system_id.starts_with(NEXUS_TILE);
         self.wormholes
             .get(system_id)
             .into_iter()
             .chain(self.token_wormholes.get(system_id))
             .flat_map(|kinds| kinds.iter().map(String::as_str))
+            .filter(|kind| !(suppressed && (*kind == "ALPHA" || *kind == "BETA")))
             .collect()
     }
 }

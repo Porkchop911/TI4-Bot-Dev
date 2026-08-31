@@ -844,6 +844,10 @@ pub fn research(
         return false;
     }
     grant(state, player, alias);
+    // Anti-Intellectual Revolution: "After a player researches a technology, that player must
+    // destroy 1 of their non-fighter ships." Here rather than at the strategy card, because
+    // researching happens by several routes and the law says "researches", not "uses Technology".
+    crate::laws::revolution_tax(state, content, sources, player);
     true
 }
 

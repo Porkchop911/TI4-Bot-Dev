@@ -44,17 +44,29 @@ pub fn is_hidden(card: &str) -> bool {
 /// One player as their opponents see them.
 #[must_use]
 pub fn redact_player(player: &Player) -> Player {
+    redact_player_with(player, false)
+}
+
+/// One player as their opponents see them, with their secrets optionally left visible.
+///
+/// Search Warrant: "The owner of this card plays with their secret objectives revealed." Passed in
+/// rather than read here, because a law lives in `GameState` and this function is deliberately
+/// about one player -- see `view_for`, which knows both.
+#[must_use]
+pub fn redact_player_with(player: &Player, secrets_revealed: bool) -> Player {
     let mut redacted = player.clone();
     redacted.action_cards = player
         .action_cards
         .iter()
         .map(|_| ActionCardId::new(HIDDEN))
         .collect();
-    redacted.secret_objectives = player
-        .secret_objectives
-        .iter()
-        .map(|_| SecretObjectiveId::new(HIDDEN))
-        .collect();
+    if !secrets_revealed {
+        redacted.secret_objectives = player
+            .secret_objectives
+            .iter()
+            .map(|_| SecretObjectiveId::new(HIDDEN))
+            .collect();
+    }
     redacted
 }
 
@@ -67,7 +79,12 @@ pub fn view_for(state: &GameState, viewer: &PlayerId) -> GameState {
     let mut view = state.clone();
     for player in &mut view.players {
         if &player.id != viewer {
-            *player = redact_player(player);
+            // Search Warrant leaves its owner's secrets face up for everybody.
+            let revealed = state
+                .laws
+                .get("warrant")
+                .is_some_and(|owner| *owner == player.id.to_string());
+            *player = redact_player_with(player, revealed);
         }
     }
     view

@@ -75,6 +75,27 @@ pub fn resolve_agenda_phase(state: &mut GameState) -> Result<AgendaPhaseReport, 
     }
 
     // 8.4 is after both slots, not after each individual agenda.
+    // Checks and Balances (Against): "Each player readies only 3 of their planets at the end of
+    // this agenda phase." 8.4 readies everything otherwise.
+    if let Some(limit) = crate::laws::agenda_ready_limit(state) {
+        let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
+        let mut readied = Vec::new();
+        for player in seats {
+            let mut theirs: Vec<PlanetId> = state
+                .controlled_planets(&player)
+                .into_iter()
+                .map(|(_, planet)| planet.clone())
+                .filter(|planet| state.exhausted_planets.contains(planet))
+                .collect();
+            theirs.truncate(limit);
+            for planet in theirs {
+                state.exhausted_planets.remove(&planet);
+                readied.push(planet);
+            }
+        }
+        report.readied_planets = readied;
+        return Ok(report);
+    }
     report.readied_planets = state.exhausted_planets.iter().cloned().collect();
     state.ready_all_planets();
     Ok(report)

@@ -347,6 +347,214 @@ pub fn commerce_bonus(
     i32::try_from(crate::transactions::neighbours(state, galaxy, player).len()).unwrap_or(0)
 }
 
+/// Anti-Intellectual Revolution (For): researching costs a non-fighter ship.
+///
+/// > After a player researches a technology, that player must destroy 1 of their non-fighter ships.
+///
+/// Returns the ship destroyed, if any. "Must" -- so this is not a choice about *whether*, only
+/// about which, and a player with no non-fighter ship simply has nothing to give. The engine
+/// destroys the cheapest, which is the choice a player would be asked to make and the one they
+/// would almost always make; recorded as a simplification rather than passed off as the rule.
+pub fn revolution_tax(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Option<ti4_model::id::SystemId> {
+    if !active(state, "revolution") || elected(state, "revolution").map(String::as_str) != Some("for") {
+        return None;
+    }
+    let types = ti4_content::units::catalogue(content, sources);
+    let mut cheapest: Option<(i64, ti4_model::id::SystemId, usize)> = None;
+    for (system, here) in &state.board {
+        for (at, unit) in here.units.iter().enumerate() {
+            if unit.owner != *player {
+                continue;
+            }
+            let Some(kind) = types.get(unit.type_id.as_str()) else {
+                continue;
+            };
+            if !kind.is_ship() || kind.is_fighter() {
+                continue;
+            }
+            let cost = crate::production::price_of(kind).0;
+            if cheapest.as_ref().is_none_or(|(best, _, _)| cost < *best) {
+                cheapest = Some((cost, system.clone(), at));
+            }
+        }
+    }
+    let (_, system, at) = cheapest?;
+    if let Some(here) = state.board.get_mut(&system) {
+        here.units.remove(at);
+    }
+    Some(system)
+}
+
+/// Anti-Intellectual Revolution (Against): a planet exhausted per technology owned.
+///
+/// > At the start of the next strategy phase, each player chooses and exhausts 1 planet for each
+/// > technology that they own.
+///
+/// Applies once, at the start of the strategy phase after the agenda that enacted it.
+pub fn revolution_levy(state: &mut GameState) {
+    if !active(state, "revolution") || elected(state, "revolution").map(String::as_str) != Some("against") {
+        return;
+    }
+    let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
+    for player in seats {
+        let owed = state
+            .player(&player)
+            .map_or(0, |seat| seat.technologies.len());
+        let mut ready: Vec<ti4_model::id::PlanetId> = state
+            .controlled_planets(&player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .filter(|planet| !state.exhausted_planets.contains(planet))
+            .collect();
+        ready.truncate(owed);
+        for planet in ready {
+            state.exhaust_planet(planet);
+        }
+    }
+}
+
+/// Checks and Balances (Against): only three planets ready at the end of the agenda phase.
+///
+/// Returns how many each player may ready, `None` when the law is not in force -- the caller readies
+/// everything in that case, as 8.4 says.
+#[must_use]
+pub fn agenda_ready_limit(state: &GameState) -> Option<usize> {
+    (active(state, "checks") && elected(state, "checks").map(String::as_str) == Some("against")).then_some(3)
+}
+
+/// Search Warrant: the owner plays with their secret objectives revealed.
+#[must_use]
+pub fn secrets_revealed(state: &GameState, player: &PlayerId) -> bool {
+    holds_ministry(state, player, "warrant")
+}
+
+/// Classified Document Leaks: the elected secret objective is a public one.
+///
+/// > The elected secret objective becomes a public objective.
+///
+/// Moved into `revealed_objectives`, which is what every scorer reads, so it is scoreable by
+/// everybody from that moment -- including the player who scored it as a secret.
+pub fn classified_leak(state: &mut GameState, secret: &str) -> bool {
+    if !active(state, "classified") {
+        return false;
+    }
+    let objective = ti4_model::id::ObjectiveId::new(secret);
+    if state.revealed_objectives.contains(&objective) {
+        return false;
+    }
+    state.revealed_objectives.push(objective);
+    true
+}
+
+/// Minister of Industry: the owner's units may produce where they place a space dock.
+///
+/// > When the owner of this card places a space dock in a system, their units in that system may
+/// > use their PRODUCTION abilities.
+#[must_use]
+pub fn industry_produces_on_placement(state: &GameState, player: &PlayerId) -> bool {
+    holds_ministry(state, player, "minister_industry")
+}
+
+/// Shard of the Throne and The Crown of Emphidia: a victory point that changes hands.
+///
+/// > Shard of the Throne: A player gains this card and 1 victory point when they win a combat
+/// > against the owner of this card. Then, the previous owner of this card loses 1 victory point.
+///
+/// > The Crown of Emphidia: A player gains this card and 1 victory point after they gain control of
+/// > a planet in the home system of this card's owner. Then, the previous owner loses 1.
+///
+/// The losing half is the half that matters. A version that only granted would hand out a point per
+/// capture and never take one back, so the card would be worth more the more often it moved --
+/// which is the opposite of what it says.
+///
+/// Returns whether the card moved. Taking it from yourself is not a move: 8.20 has the card change
+/// *owner*, and a player cannot win a combat against themselves.
+pub fn steal_throne_card(state: &mut GameState, alias: &str, taker: &PlayerId) -> bool {
+    let Some(owner) = elected(state, alias).cloned() else {
+        return false;
+    };
+    let owner = PlayerId::new(owner);
+    if owner == *taker {
+        return false;
+    }
+    if let Some(seat) = state.player_mut(&owner) {
+        seat.victory_points = seat.victory_points.saturating_sub(1);
+    }
+    if let Some(seat) = state.player_mut(taker) {
+        seat.victory_points =
+            (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+    }
+    state.laws.insert(alias.to_owned(), taker.to_string());
+    true
+}
+
+/// The home system of the player who owns a law, if it is owned by a player at all.
+#[must_use]
+pub fn owner_home_system(
+    state: &GameState,
+    content: &ContentStore,
+    alias: &str,
+) -> Option<ti4_model::id::SystemId> {
+    let owner = PlayerId::new(elected(state, alias)?.clone());
+    let seat = state.player(&owner)?;
+    seat.home_system.clone().or_else(|| {
+        ti4_content::factions::get(content, seat.faction.as_str())
+            .and_then(|faction| faction.home_system())
+            .map(ti4_model::id::SystemId::new)
+    })
+}
+
+/// Discard a law card its owner holds, which takes it out of play permanently.
+pub fn discard_ministry(state: &mut GameState, alias: &str) -> bool {
+    state.laws.remove(alias).is_some()
+}
+
+/// Offer a "discard this card to ..." law to its owner. `true` if they took it.
+///
+/// The four ministry cards with a discard trigger all ask the same question and all pay the same
+/// price, so they ask it through one function -- a card whose owner declines must still be in play
+/// afterwards, and four copies of that would be four chances to get it wrong.
+pub fn offer_discard(
+    state: &mut GameState,
+    table: &mut crate::choice::Table,
+    alias: &str,
+    prompt: &str,
+) -> Option<PlayerId> {
+    let owner = PlayerId::new(elected(state, alias)?.clone());
+    state.player(&owner)?;
+    let choice = crate::choice::Choice::new(
+        owner.clone(),
+        prompt.to_owned(),
+        vec![
+            crate::choice::ChoiceOption::labelled(
+                "discard".to_owned(),
+                "law",
+                format!("discard {alias}"),
+            ),
+            crate::choice::ChoiceOption::decline(),
+        ],
+    );
+    let answer = table.ask(&choice).ok()?;
+    if answer.is_decline() {
+        return None;
+    }
+    discard_ministry(state, alias).then_some(owner)
+}
+
+/// Nexus Sovereignty (For): the wormhole nexus's alpha and beta wormholes do nothing.
+///
+/// Distinct from Enforced Travel Ban, which switches *every* wormhole off. This one is local to the
+/// nexus tile, so it is a filter on that system rather than a galaxy-wide switch.
+#[must_use]
+pub fn nexus_wormholes_suppressed(state: &GameState) -> bool {
+    active(state, "nexus") && elected(state, "nexus").map(String::as_str) == Some("for")
+}
+
 /// `Galaxy` already carries the law switches — `wormholes_off` for "alpha and beta wormholes have
 /// no effect during movement", and `wormholes_all_linked` for "all systems that contain either an
 /// alpha or beta wormhole are adjacent to each other", complete with the ALPHA/BETA restriction
@@ -375,6 +583,11 @@ pub fn apply_to_galaxy(state: &GameState, galaxy: &mut ti4_content::galaxy::Gala
     // Until this existed `state.wormhole_tokens` was written by three separate effects and read by
     // nothing, so every gamma token placed in this engine connected precisely nothing.
     galaxy.token_wormholes.clear();
+    // Nexus Sovereignty (For): "Alpha and beta wormholes in the wormhole nexus have no effect
+    // during movement." Only that tile, so it is a suppression on one system rather than the
+    // galaxy-wide switch Enforced Travel Ban uses. `82b` is the open face of the nexus, the only
+    // one that carries alpha and beta at all.
+    galaxy.nexus_wormholes_off = nexus_wormholes_suppressed(state);
     for (kind, system) in &state.wormhole_tokens {
         galaxy
             .token_wormholes
@@ -418,7 +631,19 @@ pub fn enforced_aliases() -> Vec<&'static str> {
         "articles_war",
         "minister_exploration",
         "minister_policy",
+        "checks",
+        "classified",
+        "crown_of_emphidia",
         "crown_of_thalnos",
+        "arbiter",
+        "committee",
+        "minister_industry",
+        "minister_peace",
+        "minister_war",
+        "nexus",
+        "revolution",
+        "shard_of_the_throne",
+        "warrant",
         "minister_commerce",
         "minister_sciences",
         "prophecy",
@@ -895,17 +1120,135 @@ mod tests {
         assert!(state.identical(&before));
     }
 
+    /// A throne card moves a point rather than minting one.
+    ///
+    /// The losing half is the whole point: a version that only granted would hand out a victory
+    /// point every time the card changed hands, so the card would be worth more the more often it
+    /// moved -- the opposite of what it says. The table's total is the assertion that catches it.
     #[test]
-    fn the_unenforced_laws_are_reported() {
-        // Enacting a law nothing reads is the failure this module exists to make visible.
-        let unenforced = unimplemented(ContentStore::embedded(), POK);
-        assert!(!unenforced.is_empty(), "most laws are still unenforced");
-        for alias in enforced_aliases() {
-            assert!(
-                !unenforced.contains(&alias.to_owned()),
-                "{alias} is enforced and should not be listed"
-            );
+    fn a_throne_card_moves_a_point_it_does_not_create_one() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let (owner, taker) = (PlayerId::new("a"), PlayerId::new("b"));
+        state.enact_law("shard_of_the_throne", owner.as_str());
+        if let Some(seat) = state.player_mut(&owner) {
+            seat.victory_points = 3;
         }
+        let before: i32 = state.players.iter().map(|seat| seat.victory_points).sum();
+
+        assert!(steal_throne_card(&mut state, "shard_of_the_throne", &taker));
+
+        assert_eq!(
+            state.player(&owner).unwrap().victory_points,
+            2,
+            "the previous owner loses one"
+        );
+        assert_eq!(
+            state.player(&taker).unwrap().victory_points,
+            1,
+            "and the taker gains one"
+        );
+        assert_eq!(
+            state.players.iter().map(|seat| seat.victory_points).sum::<i32>(),
+            before,
+            "so the table's total is unchanged"
+        );
+        assert_eq!(
+            elected(&state, "shard_of_the_throne").map(String::as_str),
+            Some("b"),
+            "and the card is theirs now"
+        );
+        assert!(
+            !steal_throne_card(&mut state, "shard_of_the_throne", &taker),
+            "taking it from yourself is not a move"
+        );
+    }
+
+    /// Anti-Intellectual Revolution taxes a research, and takes the cheapest non-fighter ship.
+    #[test]
+    fn the_revolution_costs_a_ship_per_technology() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "dreadnought", &player, 1);
+        crate::fixtures::put(&mut state, &system, "destroyer", &player, 1);
+        crate::fixtures::put(&mut state, &system, "fighter", &player, 1);
+
+        // Not in force: nothing happens.
+        assert!(revolution_tax(&mut state, content, sources, &player).is_none());
+        assert_eq!(state.system_state(&system).units_of(&player).len(), 3);
+
+        state.enact_law("revolution", "for");
+        assert!(revolution_tax(&mut state, content, sources, &player).is_some());
+
+        let left: Vec<String> = state
+            .system_state(&system)
+            .units_of(&player)
+            .into_iter()
+            .map(|unit| unit.type_id.to_string())
+            .collect();
+        assert_eq!(left.len(), 2, "one ship is destroyed");
+        assert!(
+            !left.iter().any(|unit| unit == "destroyer"),
+            "the cheapest non-fighter goes: {left:?}"
+        );
+        assert!(
+            left.iter().any(|unit| unit == "fighter"),
+            "and a fighter is never what pays: {left:?}"
+        );
+    }
+
+    /// Search Warrant leaves its owner's secrets face up, and nobody else's.
+    #[test]
+    fn a_search_warrant_reveals_only_its_owners_secrets() {
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        let secret = ti4_model::id::SecretObjectiveId::new("become_a_legend");
+        for seat in &mut state.players {
+            seat.secret_objectives = vec![secret.clone()];
+        }
+        state.enact_law("warrant", "b");
+
+        let seen = ti4_model::view::view_for(&state, &PlayerId::new("a"));
+        let secrets_of = |view: &ti4_model::state::GameState, who: &str| {
+            view.players
+                .iter()
+                .find(|seat| seat.id.as_str() == who)
+                .map(|seat| seat.secret_objectives.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            secrets_of(&seen, "b"),
+            vec![secret.clone()],
+            "the warrant holder plays face up"
+        );
+        assert!(
+            secrets_of(&seen, "c")
+                .iter()
+                .all(|held| ti4_model::view::is_hidden(held.as_str())),
+            "and everybody else is still hidden"
+        );
+    }
+
+    /// Every law in the corpus is enforced.
+    ///
+    /// Enacting a law nothing reads is the failure this module exists to make visible, and for a
+    /// long time this test asserted there were some -- `!unenforced.is_empty()`, "most laws are
+    /// still unenforced". That expired on the last one. The second assertion is what keeps it from
+    /// passing vacuously: an empty list because the query found no laws at all is not coverage.
+    #[test]
+    fn every_law_is_enforced() {
+        let unenforced = unimplemented(ContentStore::embedded(), POK);
+        assert!(unenforced.is_empty(), "unenforced: {unenforced:?}");
+
+        let laws = ContentStore::embedded()
+            .records(ContentType::Agendas)
+            .iter()
+            .filter(|record| record.in_sources(POK))
+            .filter(|record| record.text("type") == Some("Law"))
+            .count();
+        assert!(laws > 20, "the corpus really does have laws ({laws})");
     }
 
     #[test]

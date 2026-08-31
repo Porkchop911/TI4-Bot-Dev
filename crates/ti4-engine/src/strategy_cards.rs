@@ -792,7 +792,40 @@ pub(crate) fn place_structure(
         .entry(planet)
         .or_default()
         .push(Unit::new(UnitTypeId::new(kind), player.clone()));
+
+    // Minister of Industry: "When the owner of this card places a space dock in a system, their
+    // units in that system may use their PRODUCTION abilities." A space dock specifically, so a
+    // PDS placed under the same law produces nothing.
+    if kind.contains("space_dock")
+        && crate::laws::industry_produces_on_placement(state, player)
+    {
+        produce_all(state, content, sources, galaxy, table, player, &system)?;
+    }
     Ok(Some(system))
+}
+
+/// Use every PRODUCTION ability in a system, until the player stops buying.
+///
+/// Minister of Industry grants a production window rather than a single unit, so this keeps
+/// offering until `produce_one` finds nothing to sell or the player declines.
+fn produce_all(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Result<(), IllegalChoice> {
+    let limit = crate::production::capacity(state, content, sources, player, system);
+    for _ in 0..limit.max(0) {
+        if !crate::production::produce_one(
+            state, content, sources, galaxy, table, player, system,
+        )? {
+            break;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn commodity_limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {

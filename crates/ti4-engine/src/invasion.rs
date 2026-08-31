@@ -834,6 +834,12 @@ pub fn establish_control(
         // actually changes hands: the L1Z1X breakthrough and the Minister of Exploration.
         crate::breakthroughs::on_gain_control(state, content, sources, invader, system, planet);
         crate::laws::on_gain_control(state, invader);
+        // The Crown of Emphidia changes hands when a planet in its owner's home system is taken.
+        if crate::laws::owner_home_system(state, content, "crown_of_emphidia").as_ref()
+            == Some(system)
+        {
+            crate::laws::steal_throne_card(state, "crown_of_emphidia", invader);
+        }
         captured.push((planet.clone(), previous));
     }
     captured
