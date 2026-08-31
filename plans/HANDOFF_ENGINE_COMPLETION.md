@@ -1,5 +1,9 @@
 # Handoff: the rest of the engine completion plan
 
+> **Superseded 2026-08-31** by `plans/PI_HANDOFF_ENGINE_REMAINDER.md`. The counts below are
+> stale (action cards 82 of 142 here; 142 of 142 now). Kept for the reasoning, not the numbers.
+
+
 Written 2026-08-29 by the engine implementer, for whoever continues. Companion to
 `plans/ENGINE_COMPLETION_PLAN.md`, `engine-rules-audit.md`, and `plans/CARD_CONTENT_STATUS.md`.
 

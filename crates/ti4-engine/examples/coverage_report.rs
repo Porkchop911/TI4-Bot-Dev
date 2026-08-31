@@ -166,8 +166,18 @@ fn main() {
                 .is_some_and(|f| FACTIONS.contains(&f.to_ascii_lowercase().as_str()))
         })
         .count();
-    // Only two breakthroughs are read anywhere in the engine.
-    row("breakthroughs", 2, ours_breakthroughs);
+    // Counted from the registry and filtered by scope, not written as a literal: the previous
+    // version said 2 with a comment explaining that only two were read anywhere, which was true
+    // when it was written and had drifted to 5 without the report noticing.
+    let implemented_breakthroughs = ti4_engine::breakthroughs::registered_aliases()
+        .into_iter()
+        .filter(|alias| {
+            content
+                .get(ContentType::Breakthroughs, alias)
+                .is_some_and(|record| record.in_sources(sources))
+        })
+        .count();
+    row("breakthroughs", implemented_breakthroughs, ours_breakthroughs);
 
     let windows = ti4_engine::reactions::unsupported_windows();
     println!(
