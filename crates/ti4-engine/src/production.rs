@@ -1197,6 +1197,9 @@ pub struct ProductionWindow {
     /// Whether the end-of-use effects have fired, so they fire once per use rather than once per
     /// path that reaches `Done`.
     settled: bool,
+    /// Production limit that capacity ships have opened for small units this use (Sol's Bellum
+    /// Gloriosum). Spent by fighters and ground forces, and never below zero.
+    free_capacity: i64,
 }
 
 impl ProductionWindow {
@@ -1221,6 +1224,7 @@ impl ProductionWindow {
             },
             report: ProductionReport::default(),
             settled: false,
+            free_capacity: 0,
         }
     }
 
@@ -1350,9 +1354,28 @@ impl ProductionWindow {
                 .produced
                 .push((UnitTypeId::new(id), where_to.to_owned()));
         }
+        // Bellum Gloriosum: a capacity ship opens an allowance that fighters and ground forces
+        // spend instead of the production limit. Opened after the ship is placed and spent by
+        // later purchases, which is the order the card describes -- the ship comes first.
+        let kind = UnitTypeId::new(id);
+        let count = i64::try_from(made).unwrap_or(i64::MAX);
+        self.free_capacity += crate::breakthroughs::free_capacity_granted(
+            state,
+            content,
+            sources,
+            &self.player,
+            &kind,
+        ) * i64::from(made > 0);
+
         // 68.1a limits the number of units produced, not the number of purchases.  A
         // two-infantry purchase consumes two points of production capacity.
-        self.remaining -= i64::try_from(made).unwrap_or(i64::MAX);
+        let free = if crate::breakthroughs::spends_free_capacity(content, sources, &kind) {
+            count.min(self.free_capacity)
+        } else {
+            0
+        };
+        self.free_capacity -= free;
+        self.remaining -= count - free;
     }
 }
 

@@ -29,7 +29,7 @@
 //! | letnev | Gravleash Maneuvers | move values levelled; +X in space combat | movement done, combat bonus outstanding |
 //! | xxcha  | Archon's Gift | resources and influence are interchangeable | done |
 //! | l1z1x  | Fealty Uplink | gaining a planet places infantry equal to its influence | done |
-//! | sol    | Bellum Gloriosum | free ground/fighters with a capacity ship | outstanding |
+//! | sol    | Bellum Gloriosum | free ground/fighters with a capacity ship | done |
 //! | hacan  | Auto-Factories | a fleet token for producing 3+ non-fighter ships | done |
 //! | jolnar | Specialist Compounds | exhaust a specialty planet instead of paying to research | outstanding |
 
@@ -42,7 +42,7 @@ use ti4_model::units::Unit;
 /// The breakthrough aliases whose printed abilities this module implements.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["hacanbt", "letnevbt", "xxchabt", "l1z1xbt"]
+    vec!["hacanbt", "letnevbt", "solbt", "xxchabt", "l1z1xbt"]
 }
 
 /// Breakthroughs belonging to the trained factions whose abilities are not implemented.
@@ -99,6 +99,48 @@ pub fn on_production_finished(
         seat.gain_token(ti4_model::state::TokenPool::Fleet, 1);
     }
     true
+}
+
+/// Sol, Bellum Gloriosum: a capacity ship carries free ground forces and fighters.
+///
+/// > When you produce a ship that has capacity, you may also produce any combination of ground
+/// > forces or fighters up to that ship's capacity; they do not count against your PRODUCTION
+/// > limit.
+///
+/// Two separate things, and only the second is modelled here. *Being allowed* to produce them is
+/// already true -- nothing stops a player buying fighters -- so what the card actually changes is
+/// that they stop consuming the production limit. The allowance is therefore a budget the ship
+/// opens and the small units spend, rather than a new purchase path.
+///
+/// The allowance is per ship and per use: a carrier with capacity four opens four, and a second
+/// carrier opens four more.
+#[must_use]
+pub fn free_capacity_granted(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    produced: &UnitTypeId,
+) -> i64 {
+    if !holds(state, player, "solbt") {
+        return 0;
+    }
+    ti4_content::units::unit_type(content, produced.as_str(), sources)
+        .filter(|kind| kind.is_ship())
+        .map_or(0, |kind| kind.capacity())
+}
+
+/// Whether a produced unit may be paid for out of that allowance.
+///
+/// "Any combination of ground forces or fighters" -- so a fighter or an infantry, and nothing else.
+#[must_use]
+pub fn spends_free_capacity(
+    content: &ContentStore,
+    sources: SourceSet,
+    produced: &UnitTypeId,
+) -> bool {
+    ti4_content::units::unit_type(content, produced.as_str(), sources)
+        .is_some_and(|kind| kind.is_fighter() || kind.is_ground_force())
 }
 
 /// Whether this player holds this breakthrough.
@@ -234,6 +276,37 @@ mod tests {
         );
     }
 
+    /// Bellum Gloriosum opens an allowance per capacity ship, spent only by fighters and ground.
+    #[test]
+    fn bellum_gloriosum_opens_capacity_for_small_units_only() {
+        let content = ti4_content::ContentStore::embedded();
+        let (state, player) = seat_with("solbt");
+
+        let carrier = UnitTypeId::new("carrier");
+        let opened = free_capacity_granted(&state, content, ALL_SOURCES, &player, &carrier);
+        assert!(opened > 0, "a carrier carries something");
+
+        // A ship with no capacity opens nothing.
+        assert_eq!(
+            free_capacity_granted(
+                &state, content, ALL_SOURCES, &player, &UnitTypeId::new("destroyer")
+            ),
+            0
+        );
+
+        // And the allowance is spent by fighters and ground forces, not by ships.
+        assert!(spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("fighter")));
+        assert!(spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("infantry")));
+        assert!(!spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("cruiser")));
+
+        // Without the breakthrough the carrier opens nothing at all.
+        let (plain, other) = seat_with("l1z1xbt");
+        assert_eq!(
+            free_capacity_granted(&plain, content, ALL_SOURCES, &other, &carrier),
+            0
+        );
+    }
+
     #[test]
     fn without_the_breakthrough_nothing_is_placed() {
         let content = ti4_content::ContentStore::embedded();
@@ -292,6 +365,6 @@ mod tests {
         );
         let mut names: Vec<&str> = missing.iter().map(BreakthroughId::as_str).collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["jolnarbt", "solbt"]);
+        assert_eq!(names, vec!["jolnarbt"]);
     }
 }
