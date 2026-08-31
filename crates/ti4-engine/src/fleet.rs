@@ -100,8 +100,19 @@ pub fn over_capacity(
         .map(UnitType::capacity_cost)
         .sum();
 
-    let room = (transport - carried).max(0) + support;
-    usize::try_from((fighters - room).max(0)).unwrap_or(0)
+    // 16.3 counts fighters *and* ground forces against one combined total, and 16.3a lets the
+    // owner choose which of the excess to remove -- which only means anything if a ground force
+    // can be the excess.
+    //
+    // This used to subtract the ground forces from the transport first and then test the fighters
+    // against what was left, so six infantry on a four-capacity carrier reported *no* excess: the
+    // subtraction went negative, `max(0)` swallowed it, and there were no fighters to catch it.
+    // Ground forces stranded in a space area were therefore never removed.
+    //
+    // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why it
+    // cannot simply be added to the transport: it excuses fighters and nothing else.
+    let excused_fighters = fighters.min(support);
+    usize::try_from((carried + fighters - excused_fighters - transport).max(0)).unwrap_or(0)
 }
 
 /// 37.3 and 16.3: the owner chooses and removes units until within the limit.
@@ -281,6 +292,76 @@ fn remove_one(
 
 #[cfg(test)]
 mod tests {
+
+    /// 16.3c's second sentence is **not** enforced: excess is settled before combat, not after.
+    ///
+    /// `over_capacity` answers correctly -- the assertions below are about the predicate, and they
+    /// pass. What is missing is a *caller* after the shooting: `enforce_seeing` runs before combat
+    /// (16.3c's first sentence, "do not count against capacity during combat") and after
+    /// production, and nowhere else. So a carrier destroyed in combat leaves its fighters and
+    /// ground forces standing in the space area, and a stranded ground force can still invade.
+    ///
+    /// Wiring it at the end of combat was tried and reverted: Crash Landing and three other cards
+    /// place or move units *during* combat, from windows that settle after the combat window
+    /// closes, and enforcing before those windows resolve removes units the cards are about to
+    /// rescue. Getting it right means ordering enforcement after every combat-triggered window,
+    /// which is its own change with its own reviewed ordering -- not a line added here.
+    ///
+    /// Recorded in `engine-rules-audit.md` under Capacity.
+    #[test]
+    ///
+    fn a_dead_carrier_is_reported_as_leaving_excess_behind() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 1);
+        crate::fixtures::put(&mut state, &system, "fighter", &player, 4);
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            0,
+            "four fighters ride a carrier legally"
+        );
+
+        // The carrier dies, as it would to combat hits.
+        if let Some(here) = state.board.get_mut(&system) {
+            let at = here
+                .units
+                .iter()
+                .position(|unit| unit.type_id.as_str() == "carrier")
+                .expect("the carrier is there");
+            here.units.remove(at);
+        }
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            4,
+            "and with it gone all four are excess"
+        );
+    }
+
+    /// 16.3 counts fighters *and* ground forces against the combined capacity.
+    ///
+    /// One carrier (capacity 4) and six infantry in the space area is two units over. The rule
+    /// names both kinds together -- "more fighters and ground forces ... than the total capacity"
+    /// -- and 16.3a lets the owner choose which of the excess to remove, which only makes sense if
+    /// ground forces can be the excess.
+    #[test]
+    fn ground_forces_in_space_count_against_capacity() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 1);
+        crate::fixtures::put(&mut state, &system, "infantry", &player, 6);
+
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            2,
+            "a carrier carries four, so two of the six infantry cannot stay"
+        );
+    }
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;
 

@@ -139,7 +139,28 @@ pub fn effective_hits_on(
     } else {
         0
     };
-    Some(threshold - i64::from(morale_is_current) - faction - fighter_bonus)
+    // 59.5: "If a space combat occurs in a nebula, the defender applies +1 to each combat roll of
+    // their ships during that combat." The defender is whoever is not the active player -- an
+    // activation is what starts a space combat, so the attacker is always the active seat.
+    //
+    // Applied to the threshold rather than the die, like the faction shift above: +1 to the roll is
+    // the same as needing one less. Only ships, and this function is reached only from
+    // `fleet_groups`, which iterates `ships_of` -- so ground combat in a nebula is untouched, which
+    // is what the rule says.
+    let nebula_defender = state
+        .active_system
+        .as_ref()
+        .filter(|_| state.active.as_ref() != Some(player))
+        .and_then(|system| ti4_content::galaxy::system(content, system.as_str(), sources))
+        .is_some_and(|system| system.is_nebula());
+
+    Some(
+        threshold
+            - i64::from(morale_is_current)
+            - faction
+            - fighter_bonus
+            - i64::from(nebula_defender),
+    )
 }
 
 /// The roll bonus this seat's fighters carry in the current combat round (Fighter Prototype):
@@ -332,7 +353,12 @@ fn reroll_window(
     }
     // The Crown of Thalnos (relic): "this card's owner may reroll any number of their dice,
     // applying +1 to the results".
-    let thalnos_picks = if has_dice && holds_crown_relic(state, side) {
+    // Both Thalnos cards read "During each combat round", and only two of the five staged roll
+    // kinds are one: the fleet roll of a space combat round, and a ground combat round. Space
+    // cannon, anti-fighter barrage and bombardment are steps of a tactical action or of an
+    // invasion, not rounds -- so neither card reaches them, however tempting the dice look.
+    let combat_round = matches!(kind.as_str(), "fleet" | "ground");
+    let thalnos_picks = if combat_round && has_dice && holds_crown_relic(state, side) {
         choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
     } else {
         Vec::new()
@@ -348,7 +374,7 @@ fn reroll_window(
     }
     // The Crown of Thalnos (law): the elected player "may reroll any number of dice" —
     // the destruction clause below does not forgive the misses the reroll leaves.
-    let crown_picks = if has_dice && owns_crown_law(state, side) {
+    let crown_picks = if combat_round && has_dice && owns_crown_law(state, side) {
         choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
     } else {
         Vec::new()
@@ -2925,6 +2951,108 @@ fn winner(
 
 #[cfg(test)]
 mod tests {
+
+    /// The Thalnos cards reach combat rounds and nothing else.
+    ///
+    /// Both read "During each combat round". A space cannon roll is a step of a tactical action, a
+    /// barrage is a step of a space combat, and a bombardment is a step of an invasion -- none of
+    /// them is a round, so neither card may touch their dice. They stage through the same window as
+    /// the fleet roll, which is exactly why the scope has to be checked rather than assumed.
+    #[test]
+    fn thalnos_does_not_reach_a_space_cannon_roll() {
+        let (mut state, system) = arena();
+        let player = attacker();
+        put(&mut state, &system, "cruiser", &player, 1);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.relics = vec![ti4_model::id::RelicId::new("thalnos")];
+        }
+        let staged = |state: &mut GameState, kind: &str| {
+            state.reroll_staging.insert(
+                player.clone(),
+                RerollSet {
+                    kind: kind.to_owned(),
+                    system: system.clone(),
+                    rolls: vec![RerollEntry {
+                        unit: "pds".to_owned(),
+                        unit_types: std::collections::BTreeMap::new(),
+                        planet: None,
+                        hits_on: Some(5),
+                        faces: vec![1],
+                        rerolled: std::collections::BTreeSet::new(),
+                        deltas: std::collections::BTreeMap::new(),
+                    }],
+                },
+            );
+        };
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut inner = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+
+        staged(&mut state, "space_cannon");
+        reroll_window(&mut state, &mut ctx, &player, true);
+        assert_eq!(
+            state.reroll_staging.get(&player).expect("staged").rolls[0].faces,
+            vec![1],
+            "a space cannon roll is not a combat round"
+        );
+
+        // A fleet roll *is* a combat round, so the relic takes it. Either the die was rerolled or
+        // the unit that rerolled and still missed was destroyed with its entry -- both prove the
+        // card fired, and which one happens depends on the draw.
+        staged(&mut state, "fleet");
+        reroll_window(&mut state, &mut ctx, &player, false);
+        let after = state.reroll_staging.get(&player).expect("staged");
+        assert!(
+            after.rolls.first().is_none_or(|entry| entry.faces != vec![1]),
+            "but a fleet roll is, and the relic takes it"
+        );
+    }
+
+    /// 59.5: the defender rolls one better in a nebula, and the attacker does not.
+    ///
+    /// Applied to the threshold because that is where every other roll modifier lives -- +1 to the
+    /// die is the same as needing one less, and keeping them in one place is what stops two
+    /// modifiers disagreeing about which direction they push.
+    #[test]
+    fn a_nebula_helps_the_defender_only() {
+        let content = ContentStore::embedded();
+        let nebula = SystemId::new(crate::fixtures::a_system_where("nebula"));
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.board.entry(nebula.clone()).or_default();
+        state.active = Some(attacker());
+        state.active_system = Some(nebula.clone());
+
+        let cruiser = Unit::new(UnitTypeId::new("cruiser"), attacker());
+        let printed = hits_on(content, POK, &cruiser).expect("a cruiser has a combat value");
+
+        assert_eq!(
+            effective_hits_on(&state, content, POK, &attacker(), &cruiser),
+            Some(printed),
+            "the attacker gets nothing from the nebula"
+        );
+        assert_eq!(
+            effective_hits_on(&state, content, POK, &defender(), &cruiser),
+            Some(printed - 1),
+            "the defender needs one less"
+        );
+
+        // And nowhere else: the same fleet in an ordinary system is unmodified.
+        let plain = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.active_system = Some(plain);
+        assert_eq!(
+            effective_hits_on(&state, content, POK, &defender(), &cruiser),
+            Some(printed),
+            "an ordinary system helps nobody"
+        );
+    }
 
 
     /// Shields Holding cancels hits across the round, not per assignment.

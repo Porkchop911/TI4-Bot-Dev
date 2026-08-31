@@ -415,6 +415,7 @@ impl AftermathWindow {
                             ctx.emit(state, "SPACE_COMBAT_WON", payload)?;
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
+
                     }
                     self.stage = if holds {
                         // Two cards read "at the start of an invasion", so the window opens
@@ -5554,7 +5555,11 @@ mod tests {
         let run = |with_card: bool| -> (GameState, Vec<String>) {
             let (mut state, galaxy, ids) =
                 combat_fixture(if with_card { &["crashlanding"] } else { &[] }, &[]);
-            crate::fixtures::put(&mut state, &ids[0], "cruiser", &a, 1);
+            // A carrier, not a cruiser: the infantry has to be legally in the space area, and a
+            // cruiser has no capacity. Every die is pinned to 10, so the swap does not change who
+            // hits -- only whether the position could have arisen in play. (16.3 is now enforced
+            // for ground forces as well as fighters, which is what caught this.)
+            crate::fixtures::put(&mut state, &ids[0], "carrier", &a, 1);
             crate::fixtures::put(&mut state, &ids[0], "infantry", &a, 1);
             crate::fixtures::put(&mut state, &ids[0], "dreadnought", &b, 1);
             crate::fixtures::put_on_planet(

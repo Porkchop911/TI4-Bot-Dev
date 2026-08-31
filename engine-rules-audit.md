@@ -108,13 +108,13 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Agenda Phase | ? | |
 | Anomalies | ? | asteroid/nebula/supernova/rift present; **entropic scars absent** |
 | Anti-Fighter Barrage | ? | `combat.rs` |
-| Asteroid Field | ? | `movement.rs` |
+| Asteroid Field | VERIFIED | 11.1 bar and the Antimass Deflectors exemption |
 | Attach | ? | |
 | Attacker | ? | |
 | Blockaded | **PARTIAL** | coexisting structures always blockaded (rule 4) — phase 2; base rule unverified |
 | Bombardment | **PARTIAL** | hits grouped per unit, no spillover (7.2) — phase 2; 7/7.1 choice outstanding |
 | Breakthroughs | **PARTIAL** | 2 of 31 have effects; breakthrough roll (rule 3) absent |
-| Capacity | ? | `transit.rs`, `fleet.rs` |
+| Capacity | **PARTIAL** | 16.3 fixed 2026-08-31 (ground forces were never excess); 16.3c end-of-combat removal still missing, see `fleet.rs` |
 | Capture | ? | |
 | Coexistence | **PARTIAL** | rules 2, 3.1, 3.2, 4, 5, 6, 7.2, 9-13 done; only 7/7.1 bombardment target choice outstanding |
 | Combat | ? | `combat.rs`, 3110 lines |
@@ -143,7 +143,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Frontier Tokens | OK | station-only tiles take a token (rule 14) — phase 1 |
 | Game Board | ? | |
 | Game Round | ? | |
-| Gravity Rift | ? | `movement.rs` |
+| Gravity Rift | VERIFIED | 41.1-41.5 all present in `movement.rs`/`transit.rs`, incl. the path-dependent +1 |
 | Ground Combat | ? | `invasion.rs`; coexistence combat rules 9–12 absent |
 | Ground Forces | OK | cannot be committed to stations (rule 5) — phase 1 |
 | Hyperlanes | ? | |
@@ -161,7 +161,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Modifiers | ? | |
 | Move | ? | `movement.rs`, `transit.rs` |
 | Movement | ? | |
-| Nebula | ? | |
+| Nebula | VERIFIED | 59.1-59.4 in `movement.rs`; 59.5 defender +1 was **absent**, added 2026-08-31 |
 | Neighbors | **PARTIAL** | adjacency only; station-to-station transactions (rule 10) absent |
 | Neutral Units | **ABSENT** | 9 rules, none implemented |
 | Objective Cards | **PARTIAL** | 30 of 40 public registered; stations excluded and coexisters counted (rule 13) — phases 1-2 |
@@ -177,7 +177,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Readied | ? | |
 | Reinforcements | ? | |
 | Relics | **PARTIAL** | 5 of 24 |
-| Rerolls | ? | |
+| Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | ? | |
 | Ships | ? | |
 | Space Cannon | ? | `combat.rs`; two reaction windows unsupported |
@@ -190,7 +190,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Strategy Card | ? | |
 | Strategy Phase | ? | |
 | Structures | OK | not placeable on stations (rule 5) — phase 1 |
-| Supernova | ? | |
+| Supernova | VERIFIED | 86.1 bar and the Magmus Reactor exemption |
 | Sustain Damage | ? | applied inside hit assignment; 3 reaction windows unsupported |
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
 | System Tiles | ? | |

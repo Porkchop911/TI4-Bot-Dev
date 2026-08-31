@@ -381,6 +381,20 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v24 — 2026-08-31. Phase 9 verification, first batch. Three rules defects found by reading the
+    // rules text against the code:
+    //
+    // - 16.3 counts fighters *and* ground forces against one combined capacity. The engine
+    //   subtracted ground forces first and tested only fighters against the remainder, so six
+    //   infantry on a four-capacity carrier reported no excess at all.
+    // - 59.5, the nebula defender's +1 to each combat roll, had no code anywhere.
+    // - Both Thalnos cards read "during each combat round" and were firing on space cannon,
+    //   anti-fighter barrage and bombardment rolls, none of which is a round.
+    //
+    // A change in play: stranded ground forces are removed, nebula defences are stronger, and two
+    // relics reach fewer dice. `faction_differentiation` falls [0.674, 1.114] -> [0.570, 0.997],
+    // which is the capacity fix taking the same units off every seat that overloaded.
+    //
     // v23 — 2026-08-31. The dice cluster, reconciled. Two implementations of Thalnos, the Crown of
     // Thalnos and the Heart of Ixth existed at once -- mine on `wp/engine-completion` and a more
     // careful one uncommitted in the main checkout. The owner chose the latter, so mine was removed
@@ -771,43 +785,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.393_209_876_543_209_9, 0.453_086_419_753_086_44),
+        (0.394_444_444_444_444_54, 0.450_617_283_950_617_23),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.641_782_366_231_287_8, 2.044_471_407_743_399_6),
+        (1.675_763_218_528_303_1, 2.072_748_325_667_282_3),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.673_689_857_940_104_5, 1.113_663_734_517_851_3),
+        (0.570_466_562_355_263_7, 0.996_986_199_243_240_1),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_492_092_241_105_43, 0.020_824_729_998_975_312),
+        (0.019_562_535_067_487_06, 0.020_805_796_323_261_707),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_736_748_264_119_875, 0.033_729_014_970_360_606),
+        (0.032_497_493_652_491_265, 0.033_677_474_220_117_83),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.048_732_996_770_831_746, 0.052_061_772_067_588_594),
+        (0.048_671_960_068_243_834, 0.052_315_441_138_903_21),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_682_079_194_194_835, 0.006_520_002_692_203_545),
+        (0.005_628_434_533_801_073, 0.006_526_375_204_894_874),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.064_591_619_144_359_78, 0.066_543_600_518_826_52),
+        (0.064_171_602_645_634_44, 0.066_446_551_562_845_89),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.031_868_289_753_850_34, 0.032_811_444_180_481_04),
+        (0.031_691_223_989_475_71, 0.032_791_393_181_330_35),
     );
     bounds
 }
