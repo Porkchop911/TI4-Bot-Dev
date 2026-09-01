@@ -97,6 +97,7 @@ fn play_one(
     rounds: u32,
     seed: u64,
     rotation: usize,
+    temperature: f64,
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
@@ -150,6 +151,7 @@ fn play_one(
                 // Reading the *bundle* here, which the first version did, was worse still: an
                 // SHA-256 over ~17 MB and a reparse of 1.1 MB of slots.json per seat per game.
                 let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+                    .at_temperature(temperature)
                     .recording_ppo(critic_mode)
                     .from_setup(baseline);
                 if handles.insert(player.clone(), bot.ppo_records()).is_some() {
@@ -529,6 +531,18 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--seed-base expects an unsigned integer"))
     });
+    // Sampling temperature for self-play. One knob for both acting and the recorded behaviour
+    // probabilities -- `MlpBot` has a single `probabilities()` call -- so the PPO importance ratio
+    // is computed against the same distribution the action was drawn from. Setting one and not the
+    // other would silently corrupt every ratio in the batch.
+    let temperature: f64 = argument("--temperature").map_or(1.0, |value| {
+        value
+            .parse()
+            .ok()
+            .filter(|t: &f64| t.is_finite() && *t > 0.0)
+            .unwrap_or_else(|| refuse("--temperature must be a positive number"))
+    });
+
     let stage = match argument("--stage").as_deref() {
         None | Some("2") => ti4_training::reward::Stage::Two,
         Some("1") => ti4_training::reward::Stage::One,
@@ -729,6 +743,7 @@ fn main() {
                             rounds,
                             *seed,
                             *rotation,
+                            temperature,
                         )
                     })
                     .collect()

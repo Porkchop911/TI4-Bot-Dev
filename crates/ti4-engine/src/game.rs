@@ -638,6 +638,18 @@ pub struct Game<'a> {
     /// card reading "at the start of the strategy phase" held in the starting hand would
     /// sleep until the start of round two, a phase late.
     strategy_phase_announced: bool,
+    /// Component actions offered this turn that were taken and did not resolve.
+    ///
+    /// 22.4 says a component action *cancelled* while announced does not consume the turn, so the
+    /// driver re-offers it. A component action that merely **failed** is a different thing: nothing
+    /// about the position changed, so re-offering it produces the same failure, and a decider that
+    /// keeps choosing it never advances the game. One MLP self-play game asked "action phase"
+    /// 9,789 times in a row before the step limit caught it.
+    ///
+    /// Withholding just the option that failed keeps 22.4 -- the turn is still not consumed and
+    /// every other action is still available -- while making progress unavoidable, because the
+    /// offer shrinks by one each time.
+    failed_component_actions: std::collections::BTreeSet<String>,
     /// Turn sequence whose free start-of-turn technology choices have been resolved.
     prepared_turn_seq: Option<u32>,
     blocked: Option<GameError>,
@@ -701,6 +713,7 @@ impl<'a> Game<'a> {
             status_resolved: false,
             agenda_resolved: false,
             strategy_phase_announced: false,
+            failed_component_actions: std::collections::BTreeSet::new(),
             prepared_turn_seq: None,
             blocked: None,
         }
@@ -1017,6 +1030,15 @@ impl<'a> Game<'a> {
                 self.galaxy.as_ref(),
                 active,
             ));
+        // A component action taken this turn that did not resolve is not offered again: nothing
+        // about the position changed, so it would fail identically, and a decider that keeps
+        // choosing it never advances the game. 22.4 is preserved -- the turn was not consumed and
+        // every other action, including passing, is still here.
+        if !self.failed_component_actions.is_empty() {
+            choice
+                .options
+                .retain(|option| !self.failed_component_actions.contains(&option.id));
+        }
         Some(choice)
     }
 
@@ -1101,6 +1123,7 @@ impl<'a> Game<'a> {
                         "COMPONENT_ACTION_FAILED"
                     });
                     if !done {
+                        self.failed_component_actions.insert(answer.id.clone());
                         return Ok(());
                     }
                     self.finish_action()?;
@@ -1123,6 +1146,7 @@ impl<'a> Game<'a> {
                         "COMPONENT_ACTION_FAILED"
                     });
                     if !done {
+                        self.failed_component_actions.insert(answer.id.clone());
                         return Ok(());
                     }
                     self.finish_action()?;
@@ -1145,6 +1169,7 @@ impl<'a> Game<'a> {
                         "COMPONENT_ACTION_FAILED"
                     });
                     if !done {
+                        self.failed_component_actions.insert(answer.id.clone());
                         return Ok(());
                     }
                     self.finish_action()?;
@@ -1214,6 +1239,7 @@ impl<'a> Game<'a> {
                         "COMPONENT_ACTION_FAILED"
                     });
                     if !done {
+                        self.failed_component_actions.insert(answer.id.clone());
                         return Ok(());
                     }
                     self.finish_action()?;
@@ -3192,6 +3218,9 @@ impl<'a> Game<'a> {
     /// # Errors
     /// [`GameError`] when the `TURN_PASSED` window's deciders answer illegally.
     fn advance_turn(&mut self) -> Result<(), GameError> {
+        // A new turn re-offers everything: the withholding below is scoped to the turn whose
+        // action failed, not to the game.
+        self.failed_component_actions.clear();
         if self
             .state
             .transient_flags
@@ -3383,6 +3412,59 @@ impl<'a> Game<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    /// A component action that fails is not offered again on the same turn.
+    ///
+    /// 22.4 says a *cancelled* component action does not consume the turn, so the driver re-offers
+    /// it. A component action that merely **failed** is different: nothing about the position
+    /// changed, so it fails identically, and a decider that keeps choosing it never advances. One
+    /// MLP self-play game asked "action phase" 9,789 consecutive times before the step limit caught
+    /// it -- a livelock reachable by any decider that prefers the same option twice, which a
+    /// low-temperature policy does by construction.
+    ///
+    /// The turn is still not consumed, which is the half 22.4 asks for; only the failing option
+    /// goes away, so the offer shrinks and progress is unavoidable.
+    #[test]
+    fn a_failed_component_action_is_withheld_for_the_rest_of_the_turn() {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::new(state, ContentStore::embedded());
+        game.state.phase = Phase::Action;
+        game.state.active = Some(PlayerId::new("a"));
+
+        let offered = |game: &Game<'_>| -> Vec<String> {
+            game.action_options()
+                .map(|choice| choice.options.iter().map(|o| o.id.clone()).collect())
+                .unwrap_or_default()
+        };
+
+        let before = offered(&game);
+        assert!(!before.is_empty(), "the action phase offers something");
+        let victim = before[0].clone();
+
+        // Mark it failed, as every one of the four component-action paths now does when its
+        // handler returns `false`.
+        game.failed_component_actions.insert(victim.clone());
+
+        let after = offered(&game);
+        assert!(
+            !after.contains(&victim),
+            "the failed action is withheld: {after:?}"
+        );
+        assert_eq!(
+            after.len(),
+            before.len() - 1,
+            "and only that one -- every other action, including passing, survives"
+        );
+
+        // A new turn restores it: the withholding is scoped to the turn that failed.
+        game.advance_turn().expect("the turn advances");
+        game.state.active = Some(PlayerId::new("a"));
+        assert!(
+            offered(&game).contains(&victim),
+            "the next turn offers it again"
+        );
+    }
     use std::sync::{Arc, Mutex};
 
     use ti4_content::ContentStore;
