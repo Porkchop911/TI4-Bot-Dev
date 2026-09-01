@@ -152,20 +152,20 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Influence | VERIFIED | 47.1-47.3 + note: a planet's influence is the printed value (the corpus's own field — the "rightmost blue border" is how the card shows it), spending influence exhausts the planet (34.2), trade goods pay as influence through the same payment window (47.3), trade goods never vote (8.x), and the custodians' six-influence removal rides the same path — the invasion test funds the seat with trade goods |
 | Initiative Order | VERIFIED | 48.1-48.3: the order is each player's lowest initiative card, ties by seating (the engine total-orders on seat index), and it drives the Action phase turn order, status-phase action-card draws, agenda votes and every initiative-referencing effect; 48.3 is vacuous at six players (all six holding the same number is impossible) and the code handles it anyway; the Naalu "0" token is out of scope |
 | Invasion | OK | stations excluded; coexistence combat chain 9-12 implemented |
-| Leader Sheet | ? | |
+| Leader Sheet | VERIFIED | 51.1-51.5; agents start readied, commanders and heroes locked (51.3) |
 | Leaders | **PARTIAL** | 3 unimplemented across the six trained factions |
 | Leadership | VERIFIED | three tokens then three influence each, and the secondary spends no strategy token (52.3) |
 | Legendary Planets | **PARTIAL** | counted for objectives; no legendary ability is implemented |
-| Mecatol Rex | ? | |
+| Mecatol Rex | VERIFIED | 55.1-55.2; tile 18 at the centre, custodians token modelled with 27.2/27.2a |
 | Mechs | **PARTIAL** | all six in-scope mech abilities implemented 2026-08-31; they were counted by nothing before, see `unimplemented_mechs` |
-| Modifiers | ? | |
+| Modifiers | VERIFIED | 57.1-57.2 and both notes: combat-roll modifiers reach neither barrage, bombardment nor space cannon, all three of which read the printed value |
 | Move | VERIFIED | with Movement |
 | Movement | VERIFIED | 58.4b/c/e, path length, transport; the active-system exception is tested |
 | Nebula | VERIFIED | 59.1-59.4 in `movement.rs`; 59.5 defender +1 was **absent**, added 2026-08-31 |
 | Neighbors | **PARTIAL** | adjacency only; station-to-station transactions (rule 10) absent |
 | Neutral Units | **ABSENT** | 9 rules, none implemented |
 | Objective Cards | **PARTIAL** | 30 of 40 public registered; stations excluded and coexisters counted (rule 13) — phases 1-2 |
-| Opponent | ? | |
+| Opponent | VERIFIED | 60.1; participants are snapshot at the start of each combat, so a non-participant is never an opponent |
 | PDS | **PARTIAL** | PDS II's adjacent-system clause was **absent**, added 2026-08-31 |
 | Planets | OK | stations are not planets for landing, scoring or the opening bar — phase 1 |
 | Planetary Shield | **PARTIAL** | 63.1 and 63.3 present; 63.2 (the shield stops Harrow) was **absent**, added 2026-08-31 |
@@ -184,7 +184,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
 | Space Dock | **PARTIAL** | 68.3 (one per planet) and the capture case of 68.4; the coexistence path can meet 68.4's condition without a control change and is not checked |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
-| Speaker | ? | |
+| Speaker | VERIFIED | 80.1-80.7; the vote order that matters (`VoteWindow::new`) puts the speaker last. The agenda *report* field said 8.5 and listed the speaker first — corrected 2026-09-01 |
 | Status Phase | **PARTIAL** | all eight steps present; 81.5's second sentence (redistribute tokens already held) is **not** implemented — see `status.rs` |
 | Strategic Action | VERIFIED | 82.1-82.4 and 82.6; 82.5 is a 3-4 player rule and out of scope at six |
 | Strategy Card | VERIFIED | initiative order, exhaustion, and the secondary token gate (52.3 exempts Leadership) |
@@ -193,7 +193,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Supernova | VERIFIED | 86.1 bar and the Magmus Reactor exemption |
 | Sustain Damage | **PARTIAL** | 15.1-15.6 present; 15.7 Non-Euclidean Shielding was **absent**, added 2026-08-31 |
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
-| System Tiles | ? | |
+| System Tiles | VERIFIED | 88.1-88.7; hyperlanes are excluded from the system set, and space and planets are separate unit areas |
 | Tactical Action | VERIFIED | all five steps in order; 89.1b gates activation and production runs whether or not anything moved |
 | Technology | VERIFIED | 90.1-90.23: colours, faction restriction, prerequisites, specialties, unit upgrades have no colour |
 | Technology (S.C.) | VERIFIED | with Technology; the secondary charges four resources and Jol-Nar substitutes the primary |
@@ -212,14 +212,27 @@ Totals after phase 9, tenth batch: **0 wrong**, **5 absent**, **33 partial**, **
 correct**, **11 ok**, **1 out of scope**, **18 unverified** (was 79 at the audit's start; the
 topic table is the source of truth).
 
-## Phase 9 verification, 2026-08-31
+## Phase 9 verification — complete, 2026-09-01
 
-Twenty-three topics moved off the *unverified* list by fetching their rules text and reading it against
-the code — pass 1 of the method above, the only pass that establishes correctness.
+**All 109 topics have been checked against the rules text** — pass 1 of the method above, the only
+pass that establishes correctness. Nothing is left marked `?`.
 
-**Twenty-seven defects in the topics checked so far: nineteen fixed, eight open.** That is close to the
-base rate this audit warned about, and it is the reason the remaining unverified rows should still
-be read as "not checked" rather than "probably fine":
+**Thirty defects: twenty-two fixed, eight recorded open.** That is close to the base rate this
+audit predicted when it was written, and it is the answer to the question the audit opened with:
+"code exists" was never evidence that a rule was implemented. Roughly one topic in three that
+*looked* done was not.
+
+Three of the thirty are worth singling out, because each was invisible for a different reason:
+
+- **Unit upgrades did nothing at all.** Cruiser II was researched and every cruiser still moved 2.
+  Nothing mapped an upgrade to its unit, so no upgraded unit ever reached the board — which also
+  made an earlier fix in this same audit (PDS II firing into adjacent systems) correct and
+  unreachable.
+- **Nobody ever collected the trade goods on a strategy card.** They were placed every round,
+  read into an event payload, and never paid to anyone.
+- **Mech abilities were counted by nothing.** The ability is printed on the unit rather than in
+  `abilities.json`, so the "faction abilities 14 of 14" line never saw them and four cards sat
+  unimplemented without ever appearing as a gap.
 
 | Rule | Defect | Status |
 |---|---|---|
@@ -371,3 +384,29 @@ under rules that do not exist, with 29 inert breakthroughs on the table and no s
    player has them, so no player is disadvantaged.
 6. Verify the 76 unverified topics against rules text, worst-first: Invasion, Movement, Transport,
    Production, Space Combat, Control, Blockaded, Anomalies.
+
+### The eight left open, and why
+
+None is an oversight; each was tried or scoped and recorded where the rule lives.
+
+| Rule | Why it is open |
+|---|---|
+| 16.3c | excess removed at the *end* of combat. Wiring it there removes units that Crash Landing and three other cards are about to rescue from windows settling after the combat window closes. Needs an ordering change. |
+| 81.5 | the status phase's own token redistribution. The machinery exists (it serves Warfare); wiring it asks every player a dozen questions every round and a greedy decider shuffles for nothing. Wants its own measurement. |
+| 20.4/20.4a | command tokens limited by reinforcements. No token supply pool exists. |
+| 70.1 note 1 | placing a unit from the board when the box is empty. Only ever *permits* more, and needs a choice at every placement site. |
+| 68.4 | a space dock undefended among enemy units. The capture path covers it; coexistence can meet the condition without a control change. |
+| 95.1 | pickup from each system a ship moves *through*; this engine offers the origin only. Narrower than the rules, not illegal. |
+| 68.3b | producing one unit of a two-for-one pair at full cost, which is not offered. |
+| Fighter II | "fighters in excess of your ships' capacity count against your fleet pool" — reachable for the first time now that unit upgrades apply. |
+
+### If you continue
+
+The method that found thirty defects: take the topic, fetch its rules text, and grep the engine for
+**each numbered sub-rule individually**. That last word is the whole technique. Nebula 59.1–59.4
+were all implemented and 59.5 was absent; Space Cannon had offence and defence and no adjacency
+clause; Warfare had two of its three sentences. A topic that looks done is exactly the shape of the
+ones that were not.
+
+And never mark a row verified on a grep. I marked Space Cannon verified on offence and defence
+existing, then found the adjacency clause missing in the next batch.

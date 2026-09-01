@@ -18,7 +18,10 @@ pub enum AgendaResolution {
 pub struct RevealedAgenda {
     /// The agenda alias drawn from the top of the deck.
     pub alias: String,
-    /// Seats clockwise from the speaker, as required by LRR 8.5.
+    /// Voting order: 8.2ii starts to the speaker's *left* and goes clockwise, so the speaker is
+    /// last. This is a report field; the order that actually drives a vote is `VoteWindow::new`,
+    /// which has always been right. The two disagreed, and this one was labelled 8.5 while
+    /// listing the speaker first.
     pub voting_order: Vec<PlayerId>,
     /// The known structural resolution boundary.
     pub resolution: AgendaResolution,
@@ -60,7 +63,10 @@ pub fn resolve_agenda_phase(state: &mut GameState) -> Result<AgendaPhaseReport, 
         return Err(AgendaPhaseError::CustodiansNotRemoved);
     }
 
-    let voting_order = state.clockwise_from(&state.speaker);
+    let mut voting_order = state.clockwise_from(&state.speaker);
+    if !voting_order.is_empty() {
+        voting_order.rotate_left(1); // 8.2ii: start to the speaker's left, so the speaker is last
+    }
     let mut report = AgendaPhaseReport::default();
     for _ in 0..AGENDAS_PER_PHASE {
         let Some(alias) = state.agenda_deck.first().cloned() else {
@@ -129,7 +135,8 @@ mod tests {
 
         assert_eq!(report.agendas.len(), 2);
         assert!(report.agendas.iter().all(|agenda| {
-            agenda.voting_order == vec![PlayerId::new("b"), PlayerId::new("c"), PlayerId::new("a")]
+            // Speaker b votes last (8.2ii): the order starts to their left.
+            agenda.voting_order == vec![PlayerId::new("c"), PlayerId::new("a"), PlayerId::new("b")]
         }));
         assert!(
             report
