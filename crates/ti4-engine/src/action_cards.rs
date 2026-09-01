@@ -1642,9 +1642,7 @@ fn rider_payoff(state: &mut GameState, player: &PlayerId, card: Option<&str>) {
         Some("lead_rider") => {
             // "gain 3 command tokens" is a supply of reinforcements, not a placement: the
             // tokens land in the fleet pool from which command tokens are spent.
-            if let Some(seat) = state.player_mut(player) {
-                seat.gain_token(ti4_model::state::TokenPool::Fleet, 3);
-            }
+            state.gain_token(player, ti4_model::state::TokenPool::Fleet, 3);
         }
         Some("trade_rider") => {
             if let Some(seat) = state.player_mut(player) {
@@ -1829,9 +1827,7 @@ pub fn apply_movement_effects(
 ///
 /// A pure gain from the supply; the card's trigger is the window it is played into.
 fn rally(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    if let Some(seat) = context.state.player_mut(player) {
-        seat.gain_token(ti4_model::state::TokenPool::Fleet, 2);
-    }
+    context.state.gain_token(player, ti4_model::state::TokenPool::Fleet, 2);
 }
 
 /// Forward Supply Base: "After another player activates a system that contains your units, gain
@@ -1889,9 +1885,7 @@ fn counterstroke(context: &mut crate::timing::TimingContext<'_>, player: &Player
         .system_mut(&system)
         .command_tokens
         .remove(player);
-    if let Some(seat) = context.state.player_mut(player) {
-        seat.gain_token(ti4_model::state::TokenPool::Tactic, 1);
-    }
+    context.state.gain_token(player, ti4_model::state::TokenPool::Tactic, 1);
 }
 
 /// Distinguished Councilor: "After you cast votes on an outcome of an agenda: cast 5 additional
@@ -4397,7 +4391,7 @@ fn insubordination(context: &mut crate::timing::TimingContext<'_>, player: &Play
         return;
     };
     if let Some(seat) = context.state.player_mut(&PlayerId::new(chosen)) {
-        seat.gain_token(ti4_model::state::TokenPool::Tactic, -1);
+        seat.gain_token_uncapped(ti4_model::state::TokenPool::Tactic, -1);
     }
 }
 
@@ -7188,7 +7182,7 @@ mod tests {
         state
             .player_mut(&PlayerId::new("b"))
             .unwrap()
-            .gain_token(ti4_model::state::TokenPool::Tactic, 2);
+            .gain_token_uncapped(ti4_model::state::TokenPool::Tactic, 2);
         let theirs = state
             .player(&PlayerId::new("b"))
             .unwrap()

@@ -39,6 +39,12 @@ pub enum CargoSource {
 pub struct Cargo {
     pub unit: Unit,
     pub source: CargoSource,
+    /// The system this unit was picked up from.
+    ///
+    /// 95.1 lets a ship load from the system it started in, every system it moves *through*, and
+    /// the active system -- so cargo no longer all comes from one place, and whatever removes it
+    /// has to know which system to take it out of.
+    pub system: SystemId,
 }
 
 /// What happened to a ship that moved.
@@ -87,6 +93,7 @@ pub fn loadable(
         .map(|unit| Cargo {
             unit: unit.clone(),
             source: CargoSource::Space,
+            system: origin.clone(),
         })
         .collect();
     for planet in system.planet_units.keys() {
@@ -98,6 +105,7 @@ pub fn loadable(
                 .map(|unit| Cargo {
                     unit: unit.clone(),
                     source: CargoSource::Planet(planet.clone()),
+                    system: origin.clone(),
                 }),
         );
     }
@@ -170,9 +178,28 @@ impl CargoWindow {
         player: &PlayerId,
         origin: &SystemId,
         ship: &Unit,
+        path: &[String],
     ) -> Self {
         let capacity = capacity_of(content, sources, ship);
-        let candidates = loadable(state, content, sources, player, origin);
+        // 95.1: "During a tactical action, it can pick up and transport units from the active
+        // system, the system it started its movement in, and each system it moves through." The
+        // path carries the systems between the two, and 95.5 is applied per system inside
+        // `loadable`, so a system holding this player's command token contributes nothing.
+        let mut candidates = loadable(state, content, sources, player, origin);
+        let mut seen: std::collections::BTreeSet<String> =
+            std::iter::once(origin.to_string()).collect();
+        for step in path {
+            if !seen.insert(step.clone()) {
+                continue; // a route may revisit a system; its units are offered once
+            }
+            candidates.extend(loadable(
+                state,
+                content,
+                sources,
+                player,
+                &SystemId::new(step.clone()),
+            ));
+        }
         let types = catalogue(content, sources);
         let ground = candidates
             .iter()
@@ -426,7 +453,7 @@ pub fn apply_move(
         state.destroy_units(origin, std::slice::from_ref(ship));
         // 95.1b: whatever it was carrying goes down with it.
         for carried in &cargo {
-            let system = state.system_mut(origin);
+            let system = state.system_mut(&carried.system);
             match &carried.source {
                 CargoSource::Space => system.remove(std::slice::from_ref(&carried.unit)),
                 CargoSource::Planet(planet) => {
@@ -441,13 +468,17 @@ pub fn apply_move(
 /// Lift one passenger out of the origin — space or planet — and into the destination's space.
 fn take_aboard(state: &mut GameState, origin: &SystemId, destination: &SystemId, carried: &Cargo) {
     let unit = carried.unit.clone();
+    // The cargo's *own* system, not the ship's origin: 95.1 lets a ship pick up en route, so a
+    // passenger may have come from any system on the path.
+    let from = &carried.system;
+    let _ = origin;
     match &carried.source {
         CargoSource::Space => {
-            state.move_units(origin, destination, std::slice::from_ref(&unit));
+            state.move_units(from, destination, std::slice::from_ref(&unit));
         }
         CargoSource::Planet(planet) => {
             state
-                .system_mut(origin)
+                .system_mut(from)
                 .remove_from_planet(planet, std::slice::from_ref(&unit));
             // Ground forces arrive in the space area aboard their ship; landing is invasion,
             // a separate step, so they must not be dropped straight onto a planet here.
@@ -458,6 +489,66 @@ fn take_aboard(state: &mut GameState, origin: &SystemId, destination: &SystemId,
 
 #[cfg(test)]
 mod tests {
+
+    /// 95.1: a ship picks up from every system it moves *through*, not only where it started.
+    ///
+    /// This engine offered the origin alone, which is narrower than the rules and comes up often --
+    /// a carrier passing a garrison could not collect it. Cargo now carries the system it came
+    /// from, because `apply_move` has to take each passenger out of the right place.
+    #[test]
+    fn a_ship_picks_up_from_systems_it_passes_through() {
+        let (mut state, origin, midpoint) = state_with_two_systems();
+        state.board.entry(midpoint.clone()).or_default();
+        state.system_mut(&midpoint).units.push(unit("infantry"));
+
+        let ship = unit("carrier");
+        state.system_mut(&origin).units.push(ship.clone());
+
+        let hold = CargoWindow::for_ship(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player(),
+            &origin,
+            &ship,
+            &[midpoint.to_string()],
+        );
+        let offered: Vec<&SystemId> = hold.candidates.iter().map(|cargo| &cargo.system).collect();
+        assert!(
+            offered.iter().any(|system| **system == midpoint),
+            "the infantry on the route is loadable: {offered:?}"
+        );
+    }
+
+    /// A passenger taken aboard en route leaves the system it was standing in, not the origin.
+    #[test]
+    fn cargo_is_removed_from_the_system_it_was_picked_up_in() {
+        let (mut state, origin, midpoint) = state_with_two_systems();
+        let destination = SystemId::new(crate::fixtures::plain_systems(3)[2].clone());
+        state.board.entry(midpoint.clone()).or_default();
+        state.board.entry(destination.clone()).or_default();
+
+        let ship = unit("carrier");
+        let troops = unit("infantry");
+        state.system_mut(&origin).units.push(ship.clone());
+        state.system_mut(&midpoint).units.push(troops.clone());
+
+        let cargo = vec![Cargo {
+            unit: troops.clone(),
+            source: CargoSource::Space,
+            system: midpoint.clone(),
+        }];
+        apply_move(&mut state, &origin, &destination, &ship, cargo, true);
+
+        assert!(
+            state.system_state(&midpoint).units.is_empty(),
+            "the passenger left the system it was picked up in"
+        );
+        assert!(
+            state.system_state(&destination).units.contains(&troops),
+            "and arrived with the ship"
+        );
+    }
 
     /// 95.5: nothing is picked up from a system holding your own command token.
     ///
@@ -724,6 +815,7 @@ mod tests {
         let cargo = vec![Cargo {
             unit: troops,
             source: CargoSource::Space,
+            system: origin.clone(),
         }];
         let outcome = apply_move(&mut state, &origin, &destination, &ship, cargo, true);
 
@@ -755,6 +847,7 @@ mod tests {
         let cargo = vec![Cargo {
             unit: troops,
             source: CargoSource::Planet(planet.clone()),
+            system: origin.clone(),
         }];
         apply_move(&mut state, &origin, &destination, &ship, cargo, true);
 
@@ -782,6 +875,7 @@ mod tests {
         let cargo = vec![Cargo {
             unit: troops,
             source: CargoSource::Space,
+            system: origin.clone(),
         }];
         let outcome = apply_move(&mut state, &origin, &destination, &ship, cargo, false);
 
@@ -806,6 +900,7 @@ mod tests {
         let cargo = vec![Cargo {
             unit: troops.clone(),
             source: CargoSource::Space,
+            system: origin.clone(),
         }];
         let outcome = apply_move(&mut state, &origin, &destination, &ship, cargo, false);
 

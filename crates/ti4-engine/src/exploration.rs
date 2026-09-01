@@ -605,10 +605,8 @@ fn resolve_instant(
             let Some(planet) = planet else {
                 return true;
             };
-            if pay_with_mech_or_infantry(state, content, sources, player, planet)
-                && let Some(seat) = state.player_mut(player)
-            {
-                seat.gain_token(ti4_model::state::TokenPool::Strategic, 1);
+            if pay_with_mech_or_infantry(state, content, sources, player, planet) {
+                state.gain_token(player, ti4_model::state::TokenPool::Strategic, 1);
             }
             return true;
         }
@@ -622,8 +620,8 @@ fn resolve_instant(
         }
         _ => return false,
     };
+    state.gain_token(player, ti4_model::state::TokenPool::Strategic, tokens);
     if let Some(seat) = state.player_mut(player) {
-        seat.gain_token(ti4_model::state::TokenPool::Strategic, tokens);
         seat.trade_goods += goods;
     }
     true

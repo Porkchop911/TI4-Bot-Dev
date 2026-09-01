@@ -91,9 +91,7 @@ pub(crate) fn gain_tokens(
             "fleet_tokens" => TokenPool::Fleet,
             _ => TokenPool::Strategic,
         };
-        if let Some(seat) = state.player_mut(player) {
-            seat.gain_token(pool, 1);
-        }
+        state.gain_token(player, pool, 1);
     }
     Ok(())
 }
@@ -1048,7 +1046,7 @@ pub(crate) fn redistribute_tokens(
         if let Some(seat) = state.player_mut(player)
             && seat.spend_token(from)
         {
-            seat.gain_token(to, 1);
+            seat.gain_token_uncapped(to, 1); // moved, not gained
         }
     }
     Ok(Ability::Resolved)

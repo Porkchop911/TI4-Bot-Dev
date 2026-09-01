@@ -95,9 +95,7 @@ pub fn on_production_finished(
     if ships < 3 {
         return false;
     }
-    if let Some(seat) = state.player_mut(player) {
-        seat.gain_token(ti4_model::state::TokenPool::Fleet, 1);
-    }
+    state.gain_token(player, ti4_model::state::TokenPool::Fleet, 1);
     true
 }
 

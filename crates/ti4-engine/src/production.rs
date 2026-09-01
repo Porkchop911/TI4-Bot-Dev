@@ -1395,19 +1395,13 @@ impl ProductionWindow {
                 .with("unit", id.clone())
                 .with("system", self.system.to_string()),
             );
-            if pair > 1 && made > 1 {
-                options.push(
-                    ChoiceOption::labelled(
-                        format!("build|{id}|1"),
-                        PRODUCE_KIND,
-                        format!("produce 1x {id} for {cost}"),
-                    )
-                    .with("cost", cost)
-                    .with("count", 1)
-                    .with("unit", id.clone())
-                    .with("system", self.system.to_string()),
-                );
-            }
+            // 68.3b -- "a player can choose to produce only one unit; however, they must still
+            // pay the entire cost" -- is honoured where it matters and not offered where it does
+            // not. When the production limit leaves room for one, `made` is already 1 above and
+            // the full cost is charged, which is exactly the rule. Offering it *voluntarily*
+            // alongside the pair adds a strictly dominated option to every fighter and infantry
+            // purchase: same price, half the units. A decider gains nothing from being asked, and
+            // a learner has to spend capacity discovering it is never right.
         }
         options
     }

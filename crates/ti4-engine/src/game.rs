@@ -1782,6 +1782,7 @@ impl<'a> Game<'a> {
             &window.player,
             origin,
             &ship,
+            &path,
         );
         if hold.is_complete() {
             // No capacity, or nothing to carry: sail immediately.
@@ -2485,6 +2486,20 @@ impl<'a> Game<'a> {
         let Some((_, mut report)) = self.tokens.take() else {
             unreachable!("the token window was open");
         };
+        // 81.5, second sentence: "Then, each player can redistribute each command token on their
+        // command sheet ... among their strategy, tactic, and fleet pools." The gain above places
+        // two tokens by choice; this is the separate rearrangement of everything already held, and
+        // it happens every round for every player. Initiative order, like the rest of 81.
+        for player in report.initiative_order.clone() {
+            let _ = crate::strategy_cards::redistribute_tokens(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+                &player,
+            );
+        }
         // "When you would return strategy cards during the status phase" — fired per seat
         // that holds cards, so every holder's window opens (and every card plays) before
         // 81.8 returns the cards: a Political Stability played here sets its seat's
@@ -2877,9 +2892,7 @@ impl<'a> Game<'a> {
         if let Some(here) = self.state.board.get_mut(&system) {
             here.command_tokens.remove(&owner);
         }
-        if let Some(seat) = self.state.player_mut(&owner) {
-            seat.gain_token(ti4_model::state::TokenPool::Tactic, 1);
-        }
+        self.state.gain_token(&owner, ti4_model::state::TokenPool::Tactic, 1);
         self.state
             .transient_flags
             .set(TransientFlags::ADDITIONAL_ACTION);
@@ -3779,13 +3792,20 @@ mod tests {
             guard += 1;
         }
 
+        // 81.5 has two sentences and this test is about the first: the gain goes into the pool
+        // the player chose. The second sentence -- redistribution -- then moves tokens between
+        // pools, which is why the per-pool assertion became a total. Redistribution conserves the
+        // total by construction, so this still pins that the tokens were gained at all and that
+        // nothing minted or lost one on the way.
         let after = game.state.player(&PlayerId::new("a")).unwrap();
+        let total = |seat: &ti4_model::state::Player| {
+            seat.tactic_tokens + seat.fleet_tokens + seat.strategic_tokens
+        };
         assert_eq!(
-            after.tactic_tokens,
-            before.tactic_tokens + i32::try_from(STATUS_TOKENS).unwrap()
+            total(after),
+            total(&before) + i32::try_from(STATUS_TOKENS).unwrap(),
+            "two tokens gained, and redistribution moved rather than minted"
         );
-        assert_eq!(after.fleet_tokens, before.fleet_tokens);
-        assert_eq!(after.strategic_tokens, before.strategic_tokens);
     }
 
     /// A one-ring map plus a fleet, ready to take a tactical action.

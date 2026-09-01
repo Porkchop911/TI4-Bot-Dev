@@ -173,16 +173,16 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Producing Units | **PARTIAL** | 68.10 (no ships in a blockaded system) was **absent** from the production path, added 2026-08-31; 68.3b (produce one of a pair, pay full) not offered |
 | Production | **PARTIAL** | 68.1.3 combined bill fixed 2026-08-31; see Producing Units |
 | Promissory Notes | VERIFIED | 69.1-69.9; a seat can never hold its own faction's note, which is why 69.3 holds by construction. 69.10/69.11 need player elimination, which this engine has not |
-| Purge | VERIFIED | 72.1-72.3; the Silver Flame purges before it branches, which is 72.3 |
+| Purge | VERIFIED | 70.1-70.3; the Silver Flame purges before it branches, which is 70.3 |
 | Readied | VERIFIED | 71.1-71.7; planets, technologies, relics, leaders and strategy cards all ready in the status phase |
-| Reinforcements | **PARTIAL** | 70.1 supply limits present, and fighters/infantry correctly uncapped; note 1 (place from the board when the box is empty) is not offered — it only ever permits more |
+| Reinforcements | **PARTIAL** | 72.1 supply limits present, and fighters/infantry correctly uncapped; note 1 (place from the board when the box is empty) is not offered — it only ever permits more |
 | Relics | **PARTIAL** | 5 of 24 |
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | VERIFIED | 75.1-75.3 |
 | Ships | **PARTIAL** | 77.1-77.4; unit upgrades now apply (was: researched and never applied), so Fighter II's excess-fighters clause is the one part still unmodelled |
 | Space Cannon | **PARTIAL** | offence, defence and the adjacency clause (PDS II, Indomitus) -- adjacency was **absent** until 2026-08-31 |
 | Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
-| Space Dock | **PARTIAL** | 68.3 (one per planet) and the capture case of 68.4; the coexistence path can meet 68.4's condition without a control change and is not checked |
+| Space Dock | **PARTIAL** | 79.3 (one per planet) and the capture case of 79.4; the coexistence path can meet 79.4's condition without a control change and is not checked |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | VERIFIED | 80.1-80.7; the vote order that matters (`VoteWindow::new`) puts the speaker last. The agenda *report* field said 8.5 and listed the speaker first — corrected 2026-09-01 |
 | Status Phase | **PARTIAL** | all eight steps present; 81.5's second sentence (redistribute tokens already held) is **not** implemented — see `status.rs` |
@@ -385,20 +385,27 @@ under rules that do not exist, with 29 inert breakthroughs on the table and no s
 6. Verify the 76 unverified topics against rules text, worst-first: Invasion, Movement, Transport,
    Production, Space Combat, Control, Blockaded, Anomalies.
 
-### The eight left open, and why
+### Open rules
 
-None is an oversight; each was tried or scoped and recorded where the rule lives.
+Four were closed on 2026-09-01 at the owner's direction; four remain, each recorded where the rule
+lives rather than only here.
 
 | Rule | Why it is open |
 |---|---|
-| 16.3c | excess removed at the *end* of combat. Wiring it there removes units that Crash Landing and three other cards are about to rescue from windows settling after the combat window closes. Needs an ordering change. |
-| 81.5 | the status phase's own token redistribution. The machinery exists (it serves Warfare); wiring it asks every player a dozen questions every round and a greedy decider shuffles for nothing. Wants its own measurement. |
-| 20.4/20.4a | command tokens limited by reinforcements. No token supply pool exists. |
-| 70.1 note 1 | placing a unit from the board when the box is empty. Only ever *permits* more, and needs a choice at every placement site. |
-| 68.4 | a space dock undefended among enemy units. The capture path covers it; coexistence can meet the condition without a control change. |
-| 95.1 | pickup from each system a ship moves *through*; this engine offers the origin only. Narrower than the rules, not illegal. |
-| 68.3b | producing one unit of a two-for-one pair at full cost, which is not offered. |
+| 16.3c | excess removed at the *end* of combat. Wiring it there removes units that Crash Landing and three other cards are about to rescue from windows settling after the combat window closes. An ordering question, and confined to those cards. |
+| 72.1 note 1 | placing a unit from the board when the box is empty. Only ever *permits* more, and needs a choice at every placement site. |
+| Space Dock (79.4) | a space dock undefended among enemy units. The capture path covers it; coexistence can meet the condition without a control change. |
 | Fighter II | "fighters in excess of your ships' capacity count against your fleet pool" — reachable for the first time now that unit upgrades apply. |
+
+**Closed 2026-09-01** (baseline v30 → v31, a joint move — four landed together, so the movement is
+not cleanly attributable to any one):
+
+| Rule | What it does now |
+|---|---|
+| 20.4/20.4a | sixteen command tokens per faction, counting the command sheet and the board. `GameState::gain_token` caps every gain; spends, returns and pool-to-pool moves stay uncapped, because those tokens are already the player's. |
+| 81.5 | the status phase redistributes tokens between pools, in initiative order, every round. |
+| 95.1 | a ship picks up cargo from every system it moves *through*. `Cargo` carries the system it came from, because `apply_move` has to take each passenger out of the right place. |
+| 68.3b | the voluntary single unit of a two-for-one is no longer offered. It is still *forced* when the production limit leaves room for one, at full cost, which is the rule; offering it beside the pair added a strictly dominated option to every fighter and infantry purchase. |
 
 ### If you continue
 

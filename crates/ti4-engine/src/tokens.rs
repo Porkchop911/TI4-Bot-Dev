@@ -146,9 +146,13 @@ impl TokenGain {
 
         let player_id = choice.player;
         let player = state
-            .player_mut(&player_id)
+            .player(&player_id)
             .ok_or_else(|| TokenGainError::PlayerMissing(player_id.clone()))?;
-        player.gain_token(pool, 1);
+        let _ = player;
+        // 20.4a: "if a player would gain a command token but has none available in their
+        // reinforcements, that player cannot gain that command token." The offer still happens --
+        // it is the same decision either way -- and the gain is what comes up empty.
+        state.gain_token(&player_id, pool, 1);
 
         self.pending.pop();
         self.placed.push(TokenPlacement {

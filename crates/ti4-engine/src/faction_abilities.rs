@@ -389,9 +389,7 @@ pub fn perform_component(
     if tokens <= 0 {
         return false; // 22.3: it cannot resolve, so it is not performed
     }
-    if let Some(seat) = context.state.player_mut(player) {
-        seat.gain_token(ti4_model::state::TokenPool::Strategic, -1);
-    }
+    context.state.gain_token(player, ti4_model::state::TokenPool::Strategic, -1);
     crate::action_cards::place_units(context, player, &system, Some(&planet), "infantry", 2);
 
     let mech = ti4_content::units::faction_unit(context.content, "sol", "mech", context.sources)
@@ -1090,7 +1088,7 @@ mod tests {
         state
             .player_mut(&player)
             .unwrap()
-            .gain_token(ti4_model::state::TokenPool::Strategic, 1);
+            .gain_token_uncapped(ti4_model::state::TokenPool::Strategic, 1);
         let before = state
             .player(&player)
             .unwrap()
@@ -1155,7 +1153,7 @@ mod tests {
         state
             .player_mut(&player)
             .unwrap()
-            .gain_token(ti4_model::state::TokenPool::Strategic, -held);
+            .gain_token_uncapped(ti4_model::state::TokenPool::Strategic, -held);
 
         assert!(component_actions(&state, content, &player).is_empty());
     }
@@ -1180,7 +1178,7 @@ mod tests {
         state
             .player_mut(&player)
             .unwrap()
-            .gain_token(ti4_model::state::TokenPool::Strategic, 1);
+            .gain_token_uncapped(ti4_model::state::TokenPool::Strategic, 1);
         let offered = component_actions(&state, content, &player);
         let mut table =
             crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([

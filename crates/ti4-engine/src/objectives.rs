@@ -1437,7 +1437,7 @@ pub fn pay_for(
                 };
                 let held = seat.tokens(pool);
                 let take = held.min(owed);
-                seat.gain_token(pool, -take);
+                seat.gain_token_uncapped(pool, -take);
                 owed -= take;
             }
             owed == 0

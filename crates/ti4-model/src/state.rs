@@ -52,6 +52,10 @@ impl Default for Phase {
     }
 }
 
+/// Command tokens a faction has, total (LRR 20.4). Eight start on the command sheet and the rest
+/// are in reinforcements; a token is either on the sheet or on the board, never both.
+pub const TOKENS_PER_FACTION: i32 = 16;
+
 /// The lifecycle state of a leader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -742,8 +746,14 @@ impl Player {
         }
     }
 
-    /// Add to one pool. A gained token goes into a pool of the player's choice (LRR 52.4).
-    pub const fn gain_token(&mut self, pool: TokenPool, count: i32) {
+    /// Add to one pool *without* the reinforcement cap. Prefer [`GameState::gain_token`].
+    ///
+    /// A faction has sixteen command tokens and no more: LRR 20.4 limits a player to what is in
+    /// their reinforcements, and a token is either on the board or on the command sheet. Counting
+    /// the board needs the board, which a `Player` cannot see -- so the capped entry point is on
+    /// `GameState` and this one is for the paths that give a token *back* (negative counts) or that
+    /// have already done the arithmetic.
+    pub const fn gain_token_uncapped(&mut self, pool: TokenPool, count: i32) {
         match pool {
             TokenPool::Tactic => self.tactic_tokens += count,
             TokenPool::Fleet => self.fleet_tokens += count,
@@ -1600,6 +1610,47 @@ impl GameState {
     }
 
     /// A new turn restores everyone's one transaction per neighbour.
+    /// The command tokens a faction still has in reinforcements (LRR 20.4).
+    ///
+    /// Sixteen per player, counting every token on the command sheet and every one placed on the
+    /// board. Running out is a real constraint -- it is what stops a late-game player buying an
+    /// unbounded number of tactical actions with influence -- and without it the three pools grew
+    /// without limit.
+    #[must_use]
+    pub fn tokens_in_reinforcements(&self, player: &PlayerId) -> i32 {
+        let on_sheet = self.player(player).map_or(0, |seat| {
+            seat.tactic_tokens + seat.fleet_tokens + seat.strategic_tokens
+        });
+        let on_board = i32::try_from(
+            self.board
+                .values()
+                .filter(|here| here.command_tokens.contains(player))
+                .count(),
+        )
+        .unwrap_or(i32::MAX);
+        (TOKENS_PER_FACTION - on_sheet - on_board).max(0)
+    }
+
+    /// Gain command tokens into a pool, capped by what is left in reinforcements (LRR 20.4/20.4a).
+    ///
+    /// Returns how many were actually gained, which is not always what was asked for: "if a player
+    /// would gain a command token but has none available in their reinforcements, that player
+    /// cannot gain that command token."
+    pub fn gain_token(&mut self, player: &PlayerId, pool: TokenPool, count: i32) -> i32 {
+        if count <= 0 {
+            // Returning a token to reinforcements is never capped.
+            if let Some(seat) = self.player_mut(player) {
+                seat.gain_token_uncapped(pool, count);
+            }
+            return count;
+        }
+        let granted = count.min(self.tokens_in_reinforcements(player));
+        if granted > 0 && let Some(seat) = self.player_mut(player) {
+            seat.gain_token_uncapped(pool, granted);
+        }
+        granted
+    }
+
     pub fn clear_transactions(&mut self) {
         self.transactions_this_turn.clear();
     }
@@ -1843,6 +1894,53 @@ impl GameState {
 
 #[cfg(test)]
 mod tests {
+
+    /// 20.4/20.4a: a faction has sixteen command tokens and cannot gain a seventeenth.
+    ///
+    /// Eight start on the sheet. A token is either on the sheet or on the board, never both, so
+    /// placing one on the board does not free a slot -- it moves the count from one side of the
+    /// sum to the other. Without this the three pools grew without bound, and a late-game player
+    /// could buy an unlimited number of tactical actions with influence.
+    #[test]
+    fn a_faction_has_sixteen_command_tokens_and_no_more() {
+        let player = PlayerId::new("a");
+        let mut state = GameState::new(
+            std::slice::from_ref(&player),
+            &[],
+            BTreeMap::new(),
+            None,
+            0,
+        );
+
+        // 3 + 3 + 2 on the sheet at setup leaves eight in reinforcements.
+        assert_eq!(state.tokens_in_reinforcements(&player), 8);
+
+        assert_eq!(state.gain_token(&player, TokenPool::Tactic, 5), 5);
+        assert_eq!(state.tokens_in_reinforcements(&player), 3);
+
+        // Asking for more than remains gains only what remains (20.4a).
+        assert_eq!(state.gain_token(&player, TokenPool::Fleet, 10), 3);
+        assert_eq!(state.tokens_in_reinforcements(&player), 0);
+        assert_eq!(state.gain_token(&player, TokenPool::Strategic, 1), 0);
+
+        // A token placed on the board still counts against the sixteen.
+        let system = SystemId::new("18");
+        state.board.entry(system.clone()).or_default();
+        state.system_mut(&system).place_token(player.clone());
+        assert_eq!(
+            state.tokens_in_reinforcements(&player),
+            0,
+            "placing does not free a slot"
+        );
+        if let Some(seat) = state.player_mut(&player) {
+            seat.gain_token_uncapped(TokenPool::Tactic, -1);
+        }
+        assert_eq!(
+            state.tokens_in_reinforcements(&player),
+            0,
+            "and spending it into that system leaves the count where it was"
+        );
+    }
     use super::*;
 
     fn cards() -> BTreeMap<StrategyCardId, i32> {
@@ -1967,7 +2065,7 @@ mod tests {
     #[test]
     fn a_gained_token_goes_into_the_pool_of_choice() {
         let mut player = Player::new(pid("a"));
-        player.gain_token(TokenPool::Fleet, 2);
+        player.gain_token_uncapped(TokenPool::Fleet, 2);
         assert_eq!(player.fleet_tokens, 5);
         assert_eq!(player.tactic_tokens, 3, "other pools are untouched");
         assert_eq!(player.tokens(TokenPool::Fleet), 5);

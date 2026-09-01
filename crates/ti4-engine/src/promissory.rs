@@ -382,7 +382,7 @@ pub fn turn_started(
     if let Some(seat) = state.player_mut(player)
         && seat.tokens(ti4_model::state::TokenPool::Strategic) > 0
     {
-        seat.gain_token(ti4_model::state::TokenPool::Strategic, -1);
+        seat.gain_token_uncapped(ti4_model::state::TokenPool::Strategic, -1);
     }
     let spot = state
         .controlled_planets(&holder)

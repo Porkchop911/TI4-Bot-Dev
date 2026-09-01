@@ -601,9 +601,7 @@ pub fn resolve_with(
                 };
             }
             for player in everyone(state) {
-                if let Some(seat) = state.player_mut(&player) {
-                    seat.gain_token(ti4_model::state::TokenPool::Fleet, 1);
-                }
+                state.gain_token(&player, ti4_model::state::TokenPool::Fleet, 1);
             }
         }
         "sanctions" => {
@@ -944,7 +942,9 @@ pub fn resolve_with(
                 ] {
                     let short = target - seat.tokens(pool);
                     if short > 0 {
-                        seat.gain_token(pool, short);
+                        // Uncapped: this agenda restores a *starting* spread rather than granting
+                        // new plastic, and the tokens it puts back came off the same sheet.
+                        seat.gain_token_uncapped(pool, short);
                     }
                 }
             }
