@@ -813,9 +813,34 @@ impl Adam {
         })
     }
 
-    fn step(&mut self, actor: &Actor) -> Result<(), String> {
+    /// Apply one Adam step to the actor's parameters from their current gradients.
+    ///
+    /// Public because a PPO batch is not the only thing that produces a gradient worth applying.
+    /// The repair objective backs one loss over its whole preference set and steps the same
+    /// optimiser, and it must be the same one: a second Adam over the same tensors would carry its
+    /// own moments and the two would fight.
+    ///
+    /// The caller runs `backward()` first, and [`Adam::zero_grad`] between steps.
+    ///
+    /// # Errors
+    /// If the actor's parameters cannot be gathered for this critic mode.
+    pub fn step(&mut self, actor: &Actor) -> Result<(), String> {
         let mut parameters = parameters(actor, self.mode)?;
         self.inner.step(&mut parameters, 1.0)
+    }
+
+    /// Clear the gradients on every parameter this optimiser owns.
+    ///
+    /// Gradients accumulate, so a caller that backs a second loss without this would step on the
+    /// sum of both — which is right for micro-batching and wrong for consecutive epochs.
+    ///
+    /// # Errors
+    /// If the actor's parameters cannot be gathered for this critic mode.
+    pub fn zero_grad(&self, actor: &Actor) -> Result<(), String> {
+        for mut parameter in parameters(actor, self.mode)? {
+            parameter.zero_grad();
+        }
+        Ok(())
     }
 
     /// Exact moments and step-counter fingerprint.
