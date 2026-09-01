@@ -46,6 +46,11 @@ redefined. 2,160 seat-games in 3.7s alongside a running training job.
 **Every arm is measured at `T = 0.25`, on the same seeds, whatever it trained at.** One instrument,
 one scale.
 
+**The number is clearance, and only clearance.** Stage 1 is the opening bar; that is the whole of
+what it is for. `clearance_eval` prints a mean-VP column because the rollout hands it over for free,
+but it is not an outcome here and no conclusion in this document rests on it. Victory points are a
+stage-2 question.
+
 ### 2. Temperature is also a learning rate
 
 This is not obvious and it is the reason `--learning-rate` was added to `ppo_update`.
@@ -222,10 +227,10 @@ from a formal A-025 is that `--learning-rate` did not exist yet, and A-025 does 
 
 Measured by `clearance_eval` at 0.25, 400 seeds, Validation pool:
 
-| | clearance | mean VP |
-|---|---|---|
-| start (`run-028/checkpoint-60672`) | **92.49% ±0.43** | 0.071 |
-| after 900 updates (`checkpoint-25652`) | **83.91% ±0.60** | 0.133 |
+| | clearance |
+|---|---|
+| start (`run-028/checkpoint-60672`) | **92.49% ±0.43** |
+| after 900 updates (`checkpoint-25652`) | **83.91% ±0.60** |
 
 **−8.58 points**, roughly eight times the combined half-widths. Naive 0.25 training degrades the
 policy, and the size of it is not in doubt.
@@ -235,12 +240,6 @@ What the pilot **cannot** say, and the reason the sweep exists:
 - Whether 1.0 would degrade it too. A-100 is the control and has not been run. A converged policy
   given 900 more updates may decay at any temperature.
 - Whether the cause is exploration or the 4x effective learning rate. C-025 separates them.
-
-One observation worth carrying into the sweep: **mean VP rose while clearance fell**, 0.071 to
-0.133. The stage-1 reward carries a clear bonus of 22 alongside VP terms, so a policy that trades
-opening clearance for victory points is moving *up* its reward and *down* the bar the reward exists
-to serve. If that pattern appears across arms it is a statement about the reward, not the
-temperature, and it belongs in a different investigation.
 
 ### The sweep
 

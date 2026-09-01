@@ -131,6 +131,11 @@ function Measure-Arm {
     # one. It is the same policy in every arm, so the seven readings should agree; if they do not,
     # the instrument is not deterministic and nothing below it means anything.
     $points = @([pscustomobject]@{ Name = 'start'; Path = $bundle })
+    if (-not (Test-Path $CheckpointDir)) {
+        # A missing checkpoint directory means the arm's whole curve is one point. That is never a
+        # result, so it is an error rather than a quietly short report.
+        throw "no checkpoint directory at $CheckpointDir; $Arm has nothing to measure"
+    }
     if (Test-Path $CheckpointDir) {
         $all = @(Get-ChildItem -Path $CheckpointDir -Directory |
             Sort-Object { [int]($_.Name -replace '\D', '') })
@@ -194,7 +199,10 @@ foreach ($arm in $Arms) {
             Write-Host "  trained in $([int]((Get-Date) - $started).TotalMinutes) min -> $log"
         }
 
-        Measure-Arm -Arm $label -CheckpointDir (Join-Path $root ($out -replace '/', ''))
+        # Join-Path handles the forward slashes in $out on Windows; an earlier version tried to
+        # normalise them by hand, lost the backslash, and silently measured no checkpoints at all --
+        # Test-Path just returned false and the arm reported its starting point as its whole curve.
+        Measure-Arm -Arm $label -CheckpointDir (Join-Path $root $out)
         Write-Host ''
     }
 }
