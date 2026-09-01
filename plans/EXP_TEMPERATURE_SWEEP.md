@@ -46,6 +46,51 @@ redefined. 2,160 seat-games in 3.7s alongside a running training job.
 **Every arm is measured at `T = 0.25`, on the same seeds, whatever it trained at.** One instrument,
 one scale.
 
+### 1a. A fixed non-zero evaluation temperature is not a fixed scale
+
+Found while running, not while designing, and it invalidates the first reading of the sweep.
+
+Training at temperature `T` optimises `softmax(s / T)`. What the optimiser shapes is `s / T`, so the
+**logit magnitude** an arm ends up with depends on the temperature it trained at. Evaluating every
+arm at one non-zero temperature therefore does *not* put them on one footing: the eval temperature
+interacts with each arm's own logit scale.
+
+The measurement that has no scale is the greedy limit, because `argmax(s) = argmax(s / c)` for every
+positive `c`.
+
+How much this matters, measured on the arms themselves:
+
+| arm | eval at 0.25 | eval at the greedy limit | gap |
+|---|---|---|---|
+| A-100 (1.0) | 92.47% | 92.74% | +0.27 |
+| A-150 (1.5) | 90.24% | 89.94% | -0.30 |
+| A-050 (0.5) | 91.26% | 91.10% | -0.16 |
+| A-250 (2.5) | 93.66% | 93.58% | -0.08 |
+| **A-025 (0.25)** | **84.47%** | **91.26%** | **+6.79** |
+| **C-025 (0.25)** | **89.93%** | **93.45%** | **+3.52** |
+
+The arms trained near or above 1.0 barely move. The arms trained at 0.25 move by up to seven points,
+which is larger than every between-arm difference the experiment is trying to resolve. Read at 0.25,
+A-025 looks like an eight-point collapse; read at the greedy limit it is three quarters of a point
+off the champion.
+
+*Handled by:* **the primary number is the greedy limit.** `clearance_eval` refuses a temperature of
+exactly zero, because the sampling path divides by it, but the limit is reached numerically well
+before that: on the champion, 0.01 and 0.001 both give 92.01%, and `stable_softmax` subtracts the
+max so no small temperature overflows. `0.001` is the greedy limit for any real logit gap.
+
+The 0.25 reading is kept alongside it, because the *gap between the two* is itself a measurement:
+it is how much probability mass an arm puts off its own argmax. A large gap means a policy whose
+preferences are intact but whose sampled behaviour is noisy, which is a different thing from a
+policy that has learned the wrong preference, and the two should not be reported as one number.
+
+For completeness, the champion down the whole ladder -- flat below 0.5, so the project's 0.25
+evaluation convention sits on a plateau rather than at a special point:
+
+| eval T | 1.0 | 0.5 | 0.25 | 0.1 | 0.05 | 0.01 | 0.001 |
+|---|---|---|---|---|---|---|---|
+| clearance | 86.51% | 92.15% | 92.49% | 92.31% | 92.13% | 92.01% | 92.01% |
+
 **The number is clearance, and only clearance.** Stage 1 is the opening bar; that is the whole of
 what it is for. `clearance_eval` prints a mean-VP column because the rollout hands it over for free,
 but it is not an outcome here and no conclusion in this document rests on it. Victory points are a
@@ -243,4 +288,54 @@ What the pilot **cannot** say, and the reason the sweep exists:
 
 ### The sweep
 
-Not yet run.
+Seven arms, 500 updates each, all from `run-028/checkpoint-60672`, run at `d33f32e`. Logs in
+`out/sweep/`. The primary column is the greedy limit, for the scale-invariance reason in 1a.
+
+`lr/T` is the **effective** learning rate: dividing the logits by `T` divides the gradient reaching
+them by `T`, so this is the quantity the optimiser actually applies.
+
+| arm | T | lr | lr/T | greedy | at 0.25 |
+|---|---|---|---|---|---|
+| A-250 | 2.5 | 3e-4 | 1.2e-4 | **93.58% ±0.40** | 93.66% |
+| C-025 | 0.25 | 7.5e-5 | 3.0e-4 | **93.45% ±0.40** | 89.93% |
+| A-100 | 1.0 | 3e-4 | 3.0e-4 | 92.74% ±0.42 | 92.47% |
+| *start* | — | — | — | *92.01% ±0.44* | *92.49%* |
+| A-025 | 0.25 | 3e-4 | 1.2e-3 | 91.26% ±0.46 | 84.47% |
+| A-050 | 0.5 | 3e-4 | 6.0e-4 | 91.10% ±0.46 | 91.26% |
+| C-250 | 2.5 | 7.5e-4 | 3.0e-4 | 90.82% ±0.47 | 90.89% |
+| A-150 | 1.5 | 3e-4 | 2.0e-4 | 89.94% ±0.49 | 90.24% |
+
+**The compensated family is the controlled comparison.** C-025, A-100 and C-250 all sit at an
+effective learning rate of 3.0e-4 and differ only in temperature:
+
+| T | 0.25 | 1.0 | 2.5 |
+|---|---|---|---|
+| greedy | **93.45%** | 92.74% | 90.82% |
+
+At matched effective learning rate, **colder is better, monotonically**. This is the opposite of what
+the naive family suggests, where A-250 at 2.5 is the best arm — and the naive family is exactly the
+one that confounds temperature with learning rate. A-250's effective rate is 1.2e-4, a quarter of
+nominal, so "2.5 is best" and "a smaller learning rate is best" are the same observation there and
+this experiment cannot separate them.
+
+### What this does not support
+
+**A-150 is the arm that limits every claim above.** At 89.94% it is the worst in the sweep, sitting
+between A-100 (92.74%) and A-250 (93.58%) in temperature and below both by ~3 points. No account of
+temperature makes 1.5 worse than both its neighbours. The most likely explanation is run-to-run
+variation in training, which is precisely the quantity a single replicate per arm cannot measure.
+
+If training variance is of that order, it is larger than most differences in the table. The
+half-widths quoted are evaluation sampling only and do not cover it. So:
+
+- **Safe:** naive 0.25 (A-025) is not the eight-point collapse it appeared to be at a 0.25
+  evaluation, and its damage is mostly the 4x effective learning rate rather than the temperature —
+  C-025 recovers 2.2 points at identical temperature.
+- **Suggestive, not established:** colder-is-better at matched effective learning rate. The trend is
+  clean and monotone across three arms, and A-150 is a standing reason not to trust a three-point
+  spread from one run each.
+- **Not supported:** any ranking of the top arms. A-250, C-025 and A-100 span 0.84 points.
+
+The next step is replicates on A-250, C-025 and A-100, at ~15 min each, to put a number on training
+variance. Until that exists, the table above is a hypothesis with error bars that are known to be
+too narrow.

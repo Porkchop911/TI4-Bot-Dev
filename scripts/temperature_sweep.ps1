@@ -124,7 +124,7 @@ function Measure-Arm {
     param([string]$Arm, [string]$CheckpointDir)
 
     $report = Join-Path $sweep "$Arm.eval"
-    "arm $Arm -- measured at temperature 0.25 on the Validation pool, $EvalSeeds seeds" |
+    "arm $Arm -- greedy limit (0.001) and 0.25, Validation pool, $EvalSeeds seeds" |
         Set-Content -Path $report -Encoding utf8
 
     # The starting bundle, so every arm's curve begins from a measured point rather than an assumed
@@ -149,7 +149,24 @@ function Measure-Arm {
 
     foreach ($point in $points) {
         Write-Host "  measuring $Arm / $($point.Name)"
-        $output = & $eval --bundle $point.Path --temperature 0.25 --seeds $EvalSeeds --seed-base 900000000
+        # Two temperatures, and the greedy one is the result.
+        #
+        # Training at T optimises softmax(s / T), so an arm's logit *scale* depends on the
+        # temperature it trained at, and one fixed non-zero eval temperature does not put the arms
+        # on one footing. argmax is the only scale-invariant reading: argmax(s) = argmax(s / c).
+        # Measured at 0.25 the 0.25-trained arm looked eight points down; at the greedy limit it is
+        # three quarters of a point down. 0.001 is that limit numerically -- the champion reads
+        # 92.01% at both 0.01 and 0.001, and stable_softmax subtracts the max so nothing overflows.
+        #
+        # The 0.25 reading is kept because the gap between the two measures how much mass an arm
+        # puts off its own argmax, which is a different failure from learning the wrong preference.
+        $output = & $eval --bundle $point.Path --temperature 0.001 --seeds $EvalSeeds --seed-base 900000000
+        if ($LASTEXITCODE -ne 0) {
+            throw "clearance_eval failed at the greedy limit on $($point.Path)"
+        }
+        $output += ''
+        $output += '--- the same checkpoint sampled at 0.25 ---'
+        $output += & $eval --bundle $point.Path --temperature 0.25 --seeds $EvalSeeds --seed-base 900000000
         if ($LASTEXITCODE -ne 0) {
             throw "clearance_eval failed on $($point.Path)"
         }
