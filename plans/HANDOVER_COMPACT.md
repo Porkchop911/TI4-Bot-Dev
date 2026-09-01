@@ -1,79 +1,83 @@
-# Compact handover — 2026-08-12
+# Compact handover — Phase 9, tenth batch (2026-09-02)
 
 ## Objective
-Five quality packages landed this session. Next: M00-013 performance baseline.
+Phase 9 rules-verification, tenth batch: Expedition, Exploration, Game Board, Game Round,
+Hyperlanes, Influence, Initiative Order — read each topic's official LRR text against the
+engine, fix defects found, re-baseline, and hand over a clean tree.
 
-## Oracle
-- Repository: `D:\Projects\ti4-engine` (read-only)
-- Branch: `codex/fully-learned-policy`
-- Commit: `37061c511a4780d4c0719e0342533a498cd4b457` — verified clean
-- Integrity manifest: `plans/oracle_integrity_manifest.json` (238 files)
+## Normative source versions
+- Official rules text: tirules2.com (fetched per topic: `/R_exploration`, `/R_expedition`,
+  numeric slugs 39/40/44/47/48). No historical Python reference was consulted this batch.
+- Behaviour baseline: **v28** (re-baselined this batch from v27; no bound breached).
 
 ## Active milestone/package
-- **M06 partial** — content parity reached across all registries; remaining gaps blocked behind reaction system
-- **Next ready package: M00-013** (performance baseline) — unblocked
+- **Phase 9 verification, tenth batch — COMPLETE.** Committed at `6b7cbf4` on
+  `wp/r01-review-viewer-contract`.
 
 ## Status and completed acceptance criteria
+- **Exploration (LRR 35): VERIFIED** after two fixes. **Game Board (39), Game Round (40),
+  Influence (47), Initiative Order (48): VERIFIED.** **Expedition (TE): PARTIAL** (end-of-turn
+  timing modelled as a turn-consuming component action; sixth-slice TE placement ABSENT).
+  **Hyperlanes (44): PARTIAL** (standing 6.4/44 gap re-confirmed, no new issues).
+- **Three defects fixed**, all on the Dark Energy Tap / frontier path:
+  1. `note_arrival` explored a frontier token on *any* arrival (no permission check); it now
+     only announces `SHIP_MOVED`.
+  2. The DET trigger (tactical action ends on a frontier token with 1+ of your ships) had no
+     code at all; it now fires in `close_tactical`, the one place every tactical action ends —
+     so a fleet already parked on the token explores when its owner acts there.
+  3. DET's retreat relaxation (adjacent systems with no other players' units, even without own
+     presence) is the *union* with 78.7c for holders only — the technology waives only the
+     own-presence clause, and its "units" is stricter than 78.7c's "ships".
+- **Recorded open (separate packages, not fixed):** 35.8a exploration-deck reshuffle (no
+  exploration discard pile exists), 35.3 simultaneous-exploration order (fixed order, not
+  asked).
+- Four new engine tests pin the behaviour. Engine suite now **1,094**.
 
-### Sessions completed
-- M06 content porting: public objectives 40/40, exploration 71/80, secrets 27/40, agenda effects 34/63, relics 5/17
-- Content parity confirmed against oracle at pinned commit
-- Five quality packages this session:
-  1. `Dice::from_faces` + removed duplicated `seed_rolling` (427e558)
-  2. `unimplemented()` gaps for secrets + agenda_effects (5bd23d8)
-  3. Wiring guard for five subsystems (42d1bd6)
-  4. Runnable doc-examples on Table, Decider, ContentStore (af6bac6)
-  5. `plans/evidence/INDEX.md`: 86 written / 344 placeholder (3707cdc)
-
-### Metrics
-- Tests: **632 passing** (542 engine + 121 content + 68 model), **0 failed**
-- Doc-tests: **3 runnable** (Table, Decider, ContentStore embedded) + 2 ignored (Window, TradeWindow)
-- Clippy: clean under `-D warnings`
-- fmt: clean
-- Oracle integrity: verified clean (238 files)
+## Current branch and HEAD
+- Branch `wp/r01-review-viewer-contract`, HEAD `6b7cbf4` (tenth batch) on `ce66438` (ninth).
 
 ## Working-tree state
-- Branch: `wp/m06-003-structured-transactions`
-- HEAD: `3707cdc` (INDEX.md)
-- Clean (only untracked `.worktrees/` from co-agent)
+- Clean. The only untracked paths are `sample.html` and `sample.ti4review.json` — pre-existing
+  byproducts that are never staged.
 
 ## Tests last run and exact results
-```
-cargo test --workspace -> 542 engine + 121 content + 68 model passed; 0 failed
-cargo test --doc --workspace -> 3 runnable + 2 ignored passed; 0 failed
-cargo clippy --workspace --all-targets -> clean
-cargo fmt --all --check -> clean
-```
+- Clippy, `RUSTFLAGS=-D warnings`, all five core crates (`ti4-model`, `ti4-content`,
+  `ti4-engine`, `ti4-policy`, `ti4-sim`), `--all-targets`: clean.
+- `cargo test -p ti4-engine`: **1,094 passed, 0 failed**.
+- `cargo test -p ti4-policy`: **189/189 passed** (the nested-window campaign passes on the
+  re-verified `NESTED_WINDOW_SEEDS`).
+- `cargo test -p ti4-sim` (release, `LIBTORCH=D:/Projects/ti4-engine-rs/out/libtorch-2.9.1-cpu`):
+  **52/52** against the v28 bounds.
 
 ## Compatibility evidence
-- `plans/oracle_integrity_manifest.json` (238 files) — `cargo run -p ti4-integrity guard` verifies clean
-- `plans/evidence/INDEX.md` — separates written evidence from placeholders; classification rule re-applicable
-- Content registries at or ahead of oracle parity (measured by registered alias vs. corpus)
+- `engine-rules-audit.md`: topic rows, +5 defect rows (3 fixed, 2 open), counter now
+  "twenty-seven defects… nineteen fixed, eight open", totals 0 wrong / 5 absent / 33 partial /
+  41 verified / 11 ok / 1 OOS / 18 unverified.
+- `plans/evidence/M08-021.md`: v28 section with the v27→v28 raw side-by-side.
 
 ## Decisions made and rationale
-- **Dice::from_faces**: eliminates duplicated `seed_rolling` helpers; faces are known at construction
-- **unimplemented() gap reporting**: `secrets::unimplemented()` and `agenda_effects::unimplemented()` report non-empty sets of unimplemented cards, verified by tests
-- **Wiring guard**: `the_driver_still_wires_the_missing_subsystems` proves agenda, draft, objectives, transit, vote subsystems are called by the driver; verified by breaking each
-- **Doc-examples**: made runnable where self-contained (Table, Decider); Window/TradeWindow remain `ignore` (need real game state)
-- **INDEX.md**: classification rule — files with `## Package details`, `## Package specification`, or `status: COMPLETE` are stubs; all others are written evidence
+- **Re-baselined v27 → v28** through the versioned process: the DET/frontier fixes change POK
+  sim behaviour, and every `now` value stayed inside the v27 intervals, so this is a
+  re-derivation, not a repair of a breach. `faction_differentiation` shifted most, [0.452,
+  1.047] → [0.490, 1.071]; `vp_pace` [0.406, 0.460] → [0.397, 0.455].
+- **Policy campaign seeds re-verified**, not the criterion relaxed: the DET/frontier fixes
+  shifted every campaign trajectory off the six hand-picked `NESTED_WINDOW_SEEDS` (the ~3%
+  mid-window scorer re-offer event is rare). A scan of the reserved range 7787-7999 at
+  rotation 0 yielded seven seeds (7793, 7850, 7864, 7893, 7907, 7924, 7992); a follow-up
+  pass over rotations 1-2 found 7850 re-offers there as well. This is the "new seeds" remedy
+  the test's own comment documents — a fixture update, not a Phase 9 rule change.
 
 ## Open review findings or blockers
-- Independent review: owner-waived (2026-08-11)
-- **M03 timing chain blocked**: M03-007a/b, M03-010 through M03-015 held in `.worktrees/` by co-agent
-- **M06-016 blocked**: requires M03-008 through M03-012 (typed event/timing resolver)
-- **M05-010b blocked**: source registration/payment requires M06-016
+- None blocking. Carried open items remain the recorded exploration gaps (35.8a, 35.3) and the
+  standing Hyperlanes/6.4 content-authoring package.
 
-## Next exact action
-Execute **M00-013 performance baseline** per `plans/M00_ORACLE_AND_BASELINE.md`:
-1. Read `plans/M00_ORACLE_AND_BASELINE.md`
-2. Read `plans/evidence/M00-012.md` (benchmark protocol)
-3. Create branch `wp/m00-013-performance-baseline` from HEAD
-4. Run the performance baseline per the M00-012 protocol
-5. Write evidence to `plans/evidence/M00-013.md`
+## Next exact action/command
+- Begin Phase 9, **eleventh batch** (next seven alphabetically): Leader Sheet, Leaders,
+  Legendary Planets, Mecatol Rex, Mechs, Modifiers, Move. Fetch each topic's LRR text, read
+  every numbered sub-rule against the code, fix any defect (failing test first), then run the
+  full gate (clippy `-D warnings` on the five core crates; engine; policy; sim vs v28) and
+  re-baseline only if engine behaviour changed.
 
-## Files to read first after compact
-1. `plans/EXECUTION_STATE.md` (current durable state)
-2. `plans/M00_ORACLE_AND_BASELINE.md` (M00-013 spec)
-3. `plans/evidence/M00-012.md` (benchmark protocol)
-4. `plans/evidence/INDEX.md` (evidence classification)
-5. `git status --short --branch` (verify tree state)
+## Files to read first after compaction
+- This file, then `plans/EXECUTION_STATE.md` ("Current position", newest section first),
+  `engine-rules-audit.md` (topic table + defect ledger), `plans/SCOPED_PERMISSIONS.md`.
