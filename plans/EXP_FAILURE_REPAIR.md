@@ -184,3 +184,68 @@ policy-relative. Whether an intervention clears depends on the downstream policy
 improved by one round makes *more* failures single-decision repairable in the next. Whether that
 compounds far enough is exactly what the iteration will show, and it is the only honest way to find
 out. If it plateaus around 97, that is the answer and it gets recorded as the answer.
+
+
+### 2026-09-02 — full enumeration, and the unanchored objective collapses
+
+**Repairability on the full set is higher than the prefix suggested.** 682 failures, 24.6 min of
+enumeration, against the current champion:
+
+```
+repairable by exactly one decision   428 of 682   62.8%
+training samples                     2433
+discarded                            228   0.13%
+```
+
+2,433 samples against `rescue_imitation`'s 45, with causal attribution instead of first-divergence.
+The 250-failure prefix said 54.8%; the full set says 62.8%, so the prefix was pessimistic and the
+exploratory caveat was worth stating.
+
+Revised ceiling for one round: `93.58 + 0.628 × 6.42 = 97.61%`. Still short of 99%.
+
+**Then the training collapsed.** Preference loss alone, `lr 1e-4`, full batch:
+
+| epoch | loss | held out |
+|---|---|---|
+| baseline | — | **93.96%** |
+| 1 | 7.708 | 93.93% |
+| 2 | 7.379 | 93.93% |
+| 4 | 6.762 | 92.74% |
+| 6 | 6.213 | 88.68% |
+| 8 | 5.730 | 79.46% |
+| 10 | 5.313 | 62.12% |
+| 12 | 4.958 | 40.36% |
+| 14 | 4.648 | 22.03% |
+| 16 | 4.364 | **12.94%** |
+
+The loss descends smoothly and monotonically the whole way down. The objective is doing exactly what
+it was told; what it was told is insufficient.
+
+**Diagnosis.** 2,433 repair states sit inside a decision distribution of roughly 570,000 (10,800
+seat-games × ~52 decisions) — **0.4%**. They share one trunk with the other 99.6%, and nothing in
+the objective says the other 99.6% should stay as it is. Optimising a rank ordering on 0.4% of the
+distribution, unconstrained, destroys the policy that produced the 93.96%.
+
+**This is not a step-size problem.** Epoch 1 already reads 93.93% against a 93.96% baseline: the very
+first step is flat-to-negative. There is no smaller step that finds an improvement this curve is
+hiding — the direction itself does not help while unanchored.
+
+**And it is not the attribution problem either.** That is the useful part. `rescue_imitation` failed
+with 45 samples and first-divergence attribution, and the natural reading was that better
+attribution and more data would fix it. This run has 54× the data and causally correct targets, and
+it fails *worse*. So the missing ingredient was never label quality. It is that a targeted auxiliary
+objective on a sliver of the state distribution needs something holding the rest of the policy in
+place.
+
+**Next:** an anchor. The review recommended keeping `L_PPO` in the update and I skipped it to get a
+faster signal, which was the wrong trade — the fast signal is only interpretable now because the
+anchor was missing. The cheapest sound version is a trust region in function space rather than
+rollouts:
+
+```
+L = L_repair + β · E_s[ KL( π_ref(·|s) ‖ π(·|s) ) ]
+```
+
+over a broad sample of states drawn from ordinary play, with `π_ref` the frozen starting policy.
+That directly states the thing the collapse shows to be missing: do not change what you already do
+well. `β` is swept rather than guessed.
