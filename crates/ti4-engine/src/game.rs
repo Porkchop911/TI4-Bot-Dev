@@ -95,11 +95,21 @@ pub enum GameError {
 pub enum RunError {
     #[error(transparent)]
     Step(#[from] GameError),
-    #[error("game did not progress within {max_steps} steps (round {round}, phase {phase:?})")]
+    #[error(
+        "game did not progress within {max_steps} steps (round {round}, phase {phase:?});          the last {repeats} steps all asked {recent:?}"
+    )]
     StepLimit {
         max_steps: usize,
         round: u32,
         phase: Phase,
+        /// The prompt the run ended on, and how many consecutive steps asked it.
+        ///
+        /// A step limit says a game stopped advancing; it never said *what* it was stuck on, and
+        /// the answer was previously only reachable by replaying weights that no longer exist. A
+        /// decision loop repeats one prompt, so naming it and its run length turns a step-limit
+        /// report into a lead.
+        recent: String,
+        repeats: usize,
     },
 }
 
@@ -896,13 +906,28 @@ impl<'a> Game<'a> {
     pub fn run(&mut self, rounds: u32, max_steps: usize) -> Result<&GameState, RunError> {
         let target = self.state.round.saturating_add(rounds);
         let mut steps = 0;
+        // What the last step asked, and how many in a row asked the same thing. Kept so a step
+        // limit can name the loop it died in rather than only its round and phase.
+        let mut last_prompt = String::new();
+        let mut repeats = 0usize;
         while self.state.round < target && !self.state.finished {
             if steps >= max_steps {
                 return Err(RunError::StepLimit {
                     max_steps,
                     round: self.state.round,
                     phase: self.state.phase,
+                    recent: last_prompt,
+                    repeats,
                 });
+            }
+            let asked = self
+                .legal_options()
+                .map_or_else(String::new, |choice| choice.prompt.clone());
+            if asked == last_prompt {
+                repeats += 1;
+            } else {
+                last_prompt = asked;
+                repeats = 1;
             }
             let result = self.step();
             if let Some(error) = result.error {
@@ -8576,14 +8601,25 @@ mod tests {
         let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
         let mut game = Game::new(state, ContentStore::embedded());
 
-        assert_eq!(
-            game.run(1, 3),
-            Err(RunError::StepLimit {
-                max_steps: 3,
-                round: 1,
-                phase: Phase::Strategy,
-            })
+        let stopped = game.run(1, 3).expect_err("three steps is not a round");
+        let RunError::StepLimit {
+            max_steps,
+            round,
+            phase,
+            recent,
+            repeats,
+        } = stopped
+        else {
+            panic!("a step limit, not {stopped:?}");
+        };
+        assert_eq!((max_steps, round, phase), (3, 1, Phase::Strategy));
+        // The limit now names what it stopped on, so a stalled run is a lead rather than a
+        // round number: three strategy-phase steps in a row are three picks from the same prompt.
+        assert!(
+            recent.to_lowercase().contains("strategy"),
+            "the prompt is reported: {recent:?}"
         );
+        assert!(repeats >= 1, "and how many steps in a row asked it");
     }
 
     // ------------------------------------------------------------------
