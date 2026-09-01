@@ -45,6 +45,13 @@ const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x
 const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// §6.3: "Each update is 16 game seeds × six rotations."
 const SEEDS_PER_UPDATE: u64 = 16;
+
+/// Recorded decisions one seat may contribute from one game before the game is refused.
+///
+/// Two orders of magnitude above a healthy seat-game (~43 decisions), so it catches a game that has
+/// stopped progressing and never a long one. See the refusal in `play_one` for why a step limit
+/// alone was not enough.
+const MAX_DECISIONS_PER_SEAT: usize = 4_000;
 /// Rounds per self-play game, by stage.
 ///
 /// Stage 2 pays for victory points and needs the four-round horizon §6.1 defines. Stage 1 pays for
@@ -185,6 +192,26 @@ fn play_one(
             )
         })?;
         let mut recorded = handle.borrow_mut();
+        // A single seat cannot contribute more decisions than a sane game has.
+        //
+        // Each recorded decision stores the sparse feature vector of *every* legal option, which is
+        // what the importance ratio needs and what makes memory scale with steps x options. A game
+        // that stops progressing therefore does not merely run long: it allocates. One at
+        // temperature 0.25 reached 53 GB on a 96 GB machine, at which point every engine step was a
+        // page fault and the update that would have taken 1.5 seconds had not finished 38 minutes
+        // later. It never reached the step limit, so nothing named it and nothing refused it.
+        //
+        // Refusing here turns that into a fast, named failure with the seed and seat attached,
+        // *before* the machine starts swapping. The ceiling is far above any real game -- a whole
+        // healthy update is ~25,000 decisions across 96 games and six seats, so ~43 per seat-game.
+        if recorded.len() > MAX_DECISIONS_PER_SEAT {
+            return Err(format!(
+                "seed {seed} rotation {rotation} {}: {} recorded decisions exceeds the {} ceiling;                  the game was not progressing",
+                seat.player,
+                recorded.len(),
+                MAX_DECISIONS_PER_SEAT
+            ));
+        }
         // §6.1's shaped per-decision return. Each recorded decision carries the progress measured
         // **at** that decision against the seat's own setup baseline, so `returns` can telescope
         // them into a return-to-go per decision.
