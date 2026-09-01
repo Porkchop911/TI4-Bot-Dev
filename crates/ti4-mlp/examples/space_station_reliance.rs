@@ -57,8 +57,8 @@ struct Tally {
     reason = "one pass over the sampled games; the recomputation and its table belong together"
 )]
 fn main() {
-    let bundle_path =
-        argument("--bundle").unwrap_or_else(|| refuse("--bundle is required: this measures a policy"));
+    let bundle_path = argument("--bundle")
+        .unwrap_or_else(|| refuse("--bundle is required: this measures a policy"));
     let seeds: u64 = argument("--seeds").map_or(200, |value| {
         value
             .parse()
@@ -257,7 +257,10 @@ fn main() {
         share(totals.cleared_only_with, totals.cleared),
     );
     println!();
-    println!("  clearance as measured   {}", share(totals.cleared, totals.seats));
+    println!(
+        "  clearance as measured   {}",
+        share(totals.cleared, totals.seats)
+    );
     println!(
         "  cleared seats where the bar counted a station   {} (must be 0.0%)",
         share(totals.cleared_only_with, totals.cleared)

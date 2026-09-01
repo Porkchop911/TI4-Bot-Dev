@@ -147,6 +147,16 @@ pub struct Step {
     pub chosen: usize,
     /// `log pi_behaviour(chosen | s)`, under the weights that played the game.
     pub behaviour_log_prob: f64,
+    /// The sampling temperature the behaviour distribution was drawn at.
+    ///
+    /// Recorded per step rather than assumed, because the ratio `pi_new / pi_behaviour` is only a
+    /// ratio if both sides are the same function. The optimiser divides its logits by this before
+    /// the softmax; without it the numerator was `softmax(s)` while the denominator was
+    /// `softmax(s / T)`, which is two different distributions and not a ratio at all.
+    ///
+    /// A run at temperature 1.0 is unaffected -- `s / 1.0 == s` -- which is why this was invisible
+    /// until a run used any other value, and why that run destroyed a 91% policy.
+    pub temperature: f64,
     /// `V(s)` under those same weights.
     pub behaviour_value: Option<f64>,
     /// The accepted return from this decision.
@@ -268,6 +278,11 @@ impl Batch {
                 || !step.behaviour_log_prob.is_finite()
                 || step.behaviour_log_prob > 0.0
                 || !step.return_to_go.is_finite()
+                // A temperature of zero divides the logits to infinity and a negative one inverts
+                // the preference order. Neither is a distribution the bot could have sampled, so
+                // the batch is refused here rather than producing `NaN` four epochs later.
+                || !step.temperature.is_finite()
+                || step.temperature <= 0.0
                 || step.options.iter().any(|option| {
                     option.columns.is_empty()
                         || option.columns.len() != option.values.len()
@@ -434,7 +449,12 @@ fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
     let logits = actor
         .logits(&step.options, head, step.row)
         .map_err(|error| format!("policy scoring failed: {error}"))?;
-    let log_probs = logits.log_softmax(0, ti4_tensor::Kind::Float);
+    // Divided by the temperature the behaviour was *drawn* at. `pi_new / pi_behaviour` is a ratio
+    // only if both are the same function of the logits; scoring at 1.0 against a behaviour recorded
+    // at 0.25 compares two different distributions, and PPO's clip then bounds a quantity that
+    // means nothing. At 1.0 this divides by one and nothing changes, which is why the omission was
+    // invisible until a run used another value.
+    let log_probs = (logits / step.temperature).log_softmax(0, ti4_tensor::Kind::Float);
     let chosen = i64::try_from(step.chosen).map_err(|_| "chosen index does not fit i64")?;
     if chosen >= i64::try_from(step.options.len()).map_err(|_| "option count does not fit i64")? {
         return Err("chosen option is outside the legal set".to_owned());
@@ -594,6 +614,7 @@ fn score_minibatch(
     // downstream still fire.
     let mut slots: Vec<i64> = Vec::with_capacity(expansion);
     let mut chosen: Vec<i64> = Vec::with_capacity(count);
+    let mut temperatures: Vec<f64> = Vec::with_capacity(count);
     let mut offset = 0i64;
     for (position, index) in minibatch.iter().enumerate() {
         let step = &batch.steps[*index];
@@ -604,6 +625,7 @@ fn score_minibatch(
             slots.push(row_start + slot);
         }
         chosen.push(i64::try_from(step.chosen).map_err(|_| "chosen index overflow")?);
+        temperatures.push(step.temperature);
         offset += options;
     }
     debug_assert_eq!(
@@ -625,7 +647,14 @@ fn score_minibatch(
     let mask = Tensor::ones([cells], (ti4_tensor::Kind::Bool, device))
         .index_fill(0, &slot_index, 0)
         .view([rectangle, widest]);
-    let log_probs = padded.log_softmax(1, ti4_tensor::Kind::Float);
+    // Each row is one decision, and each decision carries the temperature its behaviour was drawn
+    // at, so the division is per row rather than global -- a batch may mix them. Padding is
+    // `-inf`, and `-inf / t` is still `-inf` for any positive `t`, so the mask below is unaffected.
+    let row_temperatures = Tensor::from_slice(&temperatures)
+        .to_kind(ti4_tensor::Kind::Float)
+        .to_device(device)
+        .view([rectangle, 1]);
+    let log_probs = (padded / row_temperatures).log_softmax(1, ti4_tensor::Kind::Float);
 
     // `H = -sum p log p` over each decision's own options. `p` is already zero in the padding
     // (`exp(-inf)`), but `log p` is `-inf` there, so the product is `NaN` until the log is zeroed.
@@ -1051,6 +1080,142 @@ mod tests {
         built
     }
 
+    /// The importance ratio is 1 under unchanged weights, at **any** sampling temperature.
+    ///
+    /// This is the invariant PPO rests on: `pi_new / pi_behaviour` compares the same function
+    /// before and after an update, so with no update it is exactly 1. It held at temperature 1.0
+    /// and nowhere else, because the optimiser scored `softmax(s)` while the bot had recorded
+    /// `softmax(s / T)`. Those are the same distribution only when `T == 1`.
+    ///
+    /// The consequence was not subtle. A run at 0.25 optimised a ratio between two different
+    /// distributions, PPO's clip bounded a quantity that meant nothing, and a policy clearing 91%
+    /// of openings fell to 2.6% over 650 updates while every health statistic looked normal — they
+    /// looked normal because they were computed from the same broken ratio.
+    ///
+    /// The fixture must be `distinguishable_step`. The first version of this test built its options
+    /// from `step`, whose options all score alike; a uniform softmax is temperature-invariant, so
+    /// the test passed against the bug it was written to catch. Probed: reverting the division in
+    /// `score` gives a log ratio of 4.41 at 0.25, and this test fails while the batched one below
+    /// still passes — the two cover separate paths.
+    #[test]
+    fn the_behaviour_ratio_is_one_under_unchanged_weights_at_any_temperature() {
+        let actor = trainable_actor();
+        for temperature in [1.0, 0.25, 2.5] {
+            let mut recorded = distinguishable_step(1, 4);
+            recorded.temperature = temperature;
+
+            // Record the behaviour exactly as `MlpBot` does: one `probabilities` call at the
+            // sampling temperature, which is both what it acts on and what it stores.
+            let head = crate::heads().first().copied().unwrap_or("other");
+            let behaviour = actor
+                .probabilities(&recorded.options, head, recorded.row, temperature)
+                .expect("probabilities");
+            recorded.behaviour_log_prob = behaviour[recorded.chosen].ln();
+
+            let spread = behaviour.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                - behaviour.iter().copied().fold(f64::INFINITY, f64::min);
+            assert!(
+                spread > 1e-3,
+                "temperature {temperature}: the fixture must be non-uniform, or this test cannot\n                 see a temperature mismatch at all (spread {spread})"
+            );
+
+            // Score it with the optimiser, weights untouched.
+            let scored = score(&actor, &recorded).expect("scored");
+            let log_ratio =
+                f64::try_from(scored.log_prob).expect("scalar") - recorded.behaviour_log_prob;
+            assert!(
+                log_ratio.abs() < 1e-6,
+                "temperature {temperature}: log ratio {log_ratio}, not zero: the optimiser and\n                 the bot are scoring different distributions"
+            );
+        }
+    }
+
+    /// The same invariant through the **batched** path, which is the one production runs.
+    ///
+    /// `score` is `#[cfg(test)]`; `score_minibatch` is what `update` calls, and it reaches the
+    /// temperature through a per-row `[decisions, 1]` tensor rather than a scalar divide. That is a
+    /// second place to get it wrong — a transposed or broadcast-mismatched row vector would divide
+    /// the wrong decisions by the wrong values and still produce finite numbers.
+    ///
+    /// `EpochStats::kl` is mean `|log r|`, so under unchanged weights the first epoch's reading is
+    /// the invariant made observable. The batch fits in one minibatch, and a minibatch is scored
+    /// before it is stepped, so the first epoch's reading is taken against the weights the
+    /// behaviour was recorded under. (A zero learning rate would say this more directly, but
+    /// `validate_settings` refuses one.)
+    ///
+    /// Probed: reverting the batched division gives kl 3.40 at 0.25 against a bound of 1e-4, and the
+    /// single-decision test above still passes.
+    #[test]
+    fn the_batched_path_honours_the_recorded_temperature_too() {
+        let actor_for_probabilities = trainable_actor();
+        let head = crate::heads().first().copied().unwrap_or("other");
+
+        for temperature in [1.0, 0.25, 2.5] {
+            let steps: Vec<Step> = [(1usize, 4usize), (0, 3), (2, 5), (1, 2)]
+                .into_iter()
+                .map(|(chosen, options)| {
+                    let mut recorded = distinguishable_step(chosen, options);
+                    recorded.temperature = temperature;
+                    recorded.behaviour_value = None;
+                    recorded.critic = None;
+                    let behaviour = actor_for_probabilities
+                        .probabilities(&recorded.options, head, recorded.row, temperature)
+                        .expect("probabilities");
+                    recorded.behaviour_log_prob = behaviour[recorded.chosen].ln();
+                    recorded
+                })
+                .collect();
+            let batch = Batch::freeze(steps, CriticMode::BatchMean).expect("valid batch");
+
+            let mut actor = trainable_actor();
+            let settings = Settings {
+                epochs: 1,
+                minibatch: 64,
+                ..Settings::default()
+            };
+            let mut optimizer =
+                Adam::new(&mut actor, CriticMode::BatchMean, settings).expect("optimizer");
+            let stats = update(
+                &mut actor,
+                &batch,
+                CriticMode::BatchMean,
+                settings,
+                7,
+                &mut optimizer,
+            )
+            .expect("update");
+
+            let kl = stats.first().expect("one epoch").kl;
+            assert!(
+                kl < 1e-4,
+                "temperature {temperature}: batched mean |log r| was {kl}, not zero: the optimiser\n                 is scoring a different distribution from the one the bot sampled"
+            );
+        }
+    }
+
+    /// A temperature the softmax cannot be taken at is refused when the batch is frozen.
+    ///
+    /// Zero divides every logit to an infinity and negative values invert the preference order.
+    /// Both produce a distribution no bot could have sampled, so they are caught at the boundary
+    /// rather than surfacing as `NaN` gradients partway through the fourth epoch.
+    #[test]
+    fn a_temperature_that_is_not_a_temperature_is_refused() {
+        for bad in [0.0, -0.25, f64::NAN, f64::INFINITY] {
+            let mut step = batch_mean_step(0, 2, 1.0);
+            step.temperature = bad;
+            assert!(
+                Batch::freeze(vec![step], CriticMode::BatchMean).is_err(),
+                "temperature {bad} was accepted"
+            );
+        }
+        let mut fine = batch_mean_step(0, 2, 1.0);
+        fine.temperature = 0.25;
+        assert!(
+            Batch::freeze(vec![fine], CriticMode::BatchMean).is_ok(),
+            "0.25 is a temperature the bot really samples at"
+        );
+    }
+
     fn step(chosen: usize, options: usize, ret: f64, value: f64) -> Step {
         Step {
             row: FactionRow::of("sol").expect("roster"),
@@ -1063,6 +1228,7 @@ mod tests {
                 .collect(),
             chosen,
             behaviour_log_prob: -(f64::from(u32::try_from(options).unwrap_or(1))).ln(),
+            temperature: 1.0,
             behaviour_value: Some(value),
             return_to_go: ret,
             critic: Some(CriticInput::from_sparse(SparseOption {
@@ -1216,6 +1382,7 @@ mod tests {
             // Deliberately not the current policy's log-prob, so the ratio is away from 1 and the
             // clip's branch is exercised rather than sitting on its boundary.
             behaviour_log_prob: -1.4,
+            temperature: 1.0,
             behaviour_value: Some(1.0),
             return_to_go: 4.0,
             critic: Some(CriticInput::from_sparse(SparseOption {
