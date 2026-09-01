@@ -104,9 +104,10 @@ enum Mode {
         index: usize,
         alternate: usize,
         expect_options: usize,
-        /// Set if the option list did not match what was recorded, which means the prefix did not
-        /// reproduce and the result must not be counted.
-        mismatch: Rc<RefCell<bool>>,
+        /// Set to the option count actually offered, when it is not the one recorded. The
+        /// substitution is then discarded: substituting by position into a decision that is not the
+        /// decision recorded would be intervening on a different question.
+        mismatch: Rc<RefCell<Option<usize>>>,
     },
 }
 
@@ -155,7 +156,7 @@ impl Intervene {
                 // the decision that was recorded, substituting by position would be substituting
                 // into a different question, so the run is marked and discarded.
                 if choice.options.len() != *expect_options {
-                    *mismatch.borrow_mut() = true;
+                    *mismatch.borrow_mut() = Some(choice.options.len());
                     return delegate(&mut self.inner);
                 }
                 choice.options.get(*alternate).cloned().ok_or_else(|| {
@@ -204,8 +205,26 @@ struct Repair {
     /// Alternates tried, and how many of them cleared.
     tried: usize,
     cleared: usize,
+    /// Substitutions discarded because the decision at that index was not the one recorded.
+    discarded: usize,
     /// Indices that had at least one clearing alternate, with the head at that index.
     repairing: Vec<(usize, String)>,
+    /// Every index, so the analysis can be done outside this tool.
+    per_index: Vec<IndexResult>,
+}
+
+/// What enumerating one index found.
+struct IndexResult {
+    index: usize,
+    head: String,
+    options: usize,
+    /// How many alternates at this index cleared. One is strong evidence about *this* action;
+    /// twenty is strong evidence the original was bad and weak evidence about which repair matters.
+    cleared: usize,
+    /// The Pareto-best deficit any non-clearing alternate here reached. `usize::MAX` when none
+    /// improved on anything.
+    best_planet_short: usize,
+    best_system_short: usize,
 }
 
 /// Everything one replay needs, so a rayon worker can be handed it whole.
@@ -217,9 +236,23 @@ struct Table<'a> {
     temperature: f64,
 }
 
+/// What one seat's opening came to.
+///
+/// The deficit is kept for interventions that did *not* clear, because "did not clear" is the least
+/// informative thing that can be said about them. An intervention that took the seat from two
+/// planets short to one short did something, and a second-order search wants to branch from those
+/// rather than from all 251. Pareto comparison on this triple is what makes that frontier cheap.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Outcome {
+    cleared: bool,
+    planet_short: usize,
+    system_short: usize,
+    units_ok: bool,
+}
+
 /// Play one game, with the named seat's decider built by `wrap`.
 ///
-/// Returns whether that seat cleared. The other five are always plain policy seats.
+/// Returns that seat's opening outcome. The other five are always plain policy seats.
 fn play<W>(
     table: &Table<'_>,
     actor: &Rc<ti4_mlp::Actor>,
@@ -227,7 +260,7 @@ fn play<W>(
     rotation: usize,
     faction: &str,
     wrap: W,
-) -> Result<bool, String>
+) -> Result<Outcome, String>
 where
     W: FnOnce(Box<dyn Decider>) -> Box<dyn Decider>,
 {
@@ -284,7 +317,12 @@ where
             .get(player)
             .is_some_and(|seated| seated.as_str() == faction)
         {
-            return Ok(opening.cleared());
+            return Ok(Outcome {
+                cleared: opening.cleared(),
+                planet_short: opening.planet_shortfall(),
+                system_short: opening.system_shortfall(),
+                units_ok: opening.units_ok(),
+            });
         }
     }
     Err(format!("{faction} was not seated in {seed}/{rotation}"))
@@ -314,8 +352,23 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--seed-base must be a number"))
     });
+    // Replay the recording pass N times per failure and report whether the lines agree, instead of
+    // enumerating. The whole method assumes a greedy prefix reproduces exactly; this measures
+    // whether it does, which is not the same as assuming it and is how the assumption was found to
+    // be false.
+    let verify: usize = argument("--verify").map_or(0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--verify must be a number"))
+    });
     // Failures are taken in the order they were found, which is seed order, so a cap is a prefix of
     // the same distribution rather than a selection from it.
+    // Where to write the per-failure rows. The confidence interval on a repairability rate has to
+    // be bootstrapped over *map seeds*, not failures: a single map contributes up to fourteen
+    // failures and they are not independent -- same topology, same opponents, same slice. Treating
+    // 250 failures as 250 observations understates the interval badly. That analysis belongs
+    // outside a Rust binary, so the rows go to a file.
+    let out_path = argument("--out");
     let max_failures: usize = argument("--max-failures").map_or(usize::MAX, |value| {
         value
             .parse()
@@ -460,6 +513,97 @@ fn main() {
     );
     println!();
 
+    // ---- determinism check ------------------------------------------------------------------
+    if verify > 0 {
+        let per_worker = targets.len().div_ceil(workers).max(1);
+        let checks: Vec<Result<Vec<(Target, bool, usize)>, String>> = targets
+            .chunks(per_worker)
+            .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|(local, chunk)| {
+                let local = Rc::new(local);
+                let table = Table {
+                    content,
+                    factions: &factions,
+                    pool: &pool,
+                    vocabulary: &vocabulary,
+                    temperature,
+                };
+                let mut rows = Vec::new();
+                for target in chunk {
+                    let mut lines: Vec<Vec<(String, usize, usize)>> = Vec::new();
+                    for _ in 0..verify {
+                        let log = Rc::new(RefCell::new(Vec::new()));
+                        let recording = Rc::clone(&log);
+                        play(
+                            &table,
+                            &local,
+                            target.seed,
+                            target.rotation,
+                            &target.faction,
+                            move |inner| {
+                                Box::new(Intervene {
+                                    inner,
+                                    seen: 0,
+                                    mode: Mode::Record(recording),
+                                })
+                            },
+                        )?;
+                        let line = log.borrow();
+                        lines.push(
+                            line.iter()
+                                .map(|d| (d.head.clone(), d.options, d.chosen))
+                                .collect(),
+                        );
+                    }
+                    // Where the first disagreement is, if there is one. A late divergence and an
+                    // immediate one mean different things about the cause.
+                    let first = &lines[0];
+                    let mut diverged_at = usize::MAX;
+                    for other in &lines[1..] {
+                        let limit = first.len().min(other.len());
+                        for index in 0..limit {
+                            if first[index] != other[index] {
+                                diverged_at = diverged_at.min(index);
+                                break;
+                            }
+                        }
+                        if first.len() != other.len() {
+                            diverged_at = diverged_at.min(limit);
+                        }
+                    }
+                    rows.push((target, diverged_at == usize::MAX, first.len()));
+                }
+                Ok(rows)
+            })
+            .collect();
+
+        let mut agree = 0usize;
+        let mut differ = 0usize;
+        let mut differing: Vec<(u64, usize, String, usize)> = Vec::new();
+        for chunk in checks {
+            for (target, same, decisions) in chunk.unwrap_or_else(|error| refuse(&error)) {
+                if same {
+                    agree += 1;
+                } else {
+                    differ += 1;
+                    differing.push((target.seed, target.rotation, target.faction, decisions));
+                }
+            }
+        }
+        #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+        let rate = differ as f64 / (agree + differ).max(1) as f64 * 100.0;
+        println!("  determinism: {verify} recording passes per failure");
+        println!();
+        println!("    {agree} reproduced identically");
+        println!("    {differ} did not   ({rate:.2}%)");
+        for (seed, rotation, faction, decisions) in differing.iter().take(12) {
+            println!("      {seed}/{rotation} {faction} ({decisions} decisions)");
+        }
+        return;
+    }
+
     // ---- enumerate ---------------------------------------------------------------------------
     let enumerated = std::time::Instant::now();
     let per_worker = targets.len().div_ceil(workers).max(1);
@@ -497,7 +641,7 @@ fn main() {
                         })
                     },
                 )?;
-                if cleared {
+                if cleared.cleared {
                     // The census said this seat failed. If the recording pass clears it, the replay
                     // is not reproducing the game and every repair below would be measured against
                     // the wrong line.
@@ -511,15 +655,19 @@ fn main() {
                 // Pass two: one alternate at one index, everything else identical.
                 let mut tried = 0usize;
                 let mut cleared_count = 0usize;
+                let mut discarded = 0usize;
                 let mut repairing: Vec<(usize, String)> = Vec::new();
+                let mut per_index: Vec<IndexResult> = Vec::new();
                 for (index, decision) in line.iter().enumerate() {
                     let mut repaired_here = false;
+                    let mut here_cleared = 0usize;
+                    let mut best: Option<Outcome> = None;
                     for alternate in 0..decision.options {
                         if alternate == decision.chosen {
                             continue;
                         }
                         tried += 1;
-                        let mismatch = Rc::new(RefCell::new(false));
+                        let mismatch = Rc::new(RefCell::new(None));
                         let flag = Rc::clone(&mismatch);
                         let options = decision.options;
                         let ok = play(
@@ -541,21 +689,45 @@ fn main() {
                                 })
                             },
                         )?;
-                        if *mismatch.borrow() {
-                            return Err(format!(
-                                "{}/{} {}: decision {index} offered a different option set on \
-                                 replay, so the prefix did not reproduce",
-                                target.seed, target.rotation, target.faction
-                            ));
+                        // A mismatch means this index was not the decision that was recorded, so
+                        // the substitution never happened and the game that ran is the unmodified
+                        // one. Counting it either way would be wrong: as a repair it is a false
+                        // positive, as a non-repair it is a substitution that was never tried. It
+                        // is discarded and the rate reported, because a discard rate that stopped
+                        // being negligible would invalidate the measurement.
+                        if mismatch.borrow().is_some() {
+                            discarded += 1;
+                            tried -= 1;
+                            continue;
                         }
-                        if ok {
+                        if ok.cleared {
                             cleared_count += 1;
                             repaired_here = true;
+                            here_cleared += 1;
+                        } else if best.is_none_or(|current: Outcome| {
+                            // Pareto: strictly better on one axis and no worse on any.
+                            let better = ok.planet_short <= current.planet_short
+                                && ok.system_short <= current.system_short
+                                && (ok.units_ok || !current.units_ok);
+                            let strict = ok.planet_short < current.planet_short
+                                || ok.system_short < current.system_short
+                                || (ok.units_ok && !current.units_ok);
+                            better && strict
+                        }) {
+                            best = Some(ok);
                         }
                     }
                     if repaired_here {
                         repairing.push((index, decision.head.clone()));
                     }
+                    per_index.push(IndexResult {
+                        index,
+                        head: decision.head.clone(),
+                        options: decision.options,
+                        cleared: here_cleared,
+                        best_planet_short: best.map_or(usize::MAX, |o| o.planet_short),
+                        best_system_short: best.map_or(usize::MAX, |o| o.system_short),
+                    });
                 }
 
                 out.push(Repair {
@@ -563,7 +735,9 @@ fn main() {
                     decisions: line.len(),
                     tried,
                     cleared: cleared_count,
+                    discarded,
                     repairing,
+                    per_index,
                 });
             }
             Ok(out)
@@ -583,6 +757,7 @@ fn main() {
     let repairable = repairs.iter().filter(|r| !r.repairing.is_empty()).count();
     let total_tried: usize = repairs.iter().map(|r| r.tried).sum();
     let total_cleared: usize = repairs.iter().map(|r| r.cleared).sum();
+    let total_discarded: usize = repairs.iter().map(|r| r.discarded).sum();
 
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
     let share = |part: usize, whole: usize| -> f64 {
@@ -604,6 +779,10 @@ fn main() {
     println!(
         "    {total_cleared} of {total_tried} single substitutions cleared   {:.2}%",
         share(total_cleared, total_tried)
+    );
+    println!(
+        "    {total_discarded} discarded (index was not the recorded decision)   {:.3}%",
+        share(total_discarded, total_tried + total_discarded)
     );
     println!();
 
@@ -719,4 +898,64 @@ fn main() {
         "    failures whose earliest repair is decision 0: {earliest_zero} ({:.1}% of repairable)",
         share(earliest_zero, repairable)
     );
+
+    if let Some(path) = out_path {
+        let mut json = String::from("{\"schema\":\"ti4-counterfactual-repair-v1\",\"bundle\":\"");
+        json.push_str(&bundle_path.replace('\\', "/"));
+        json.push_str(&format!(
+            "\",\"temperature\":{temperature},\"seat_games\":{seats},\"all_failures\":{all_failures},\"failures\":["
+        ));
+        for (n, repair) in repairs.iter().enumerate() {
+            if n > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                "{{\"seed\":{},\"rotation\":{},\"faction\":\"{}\",\"planet_short\":{},\
+                 \"system_short\":{},\"units_ok\":{},\"decisions\":{},\"tried\":{},\
+                 \"cleared\":{},\"discarded\":{},\"indices\":[",
+                repair.target.seed,
+                repair.target.rotation,
+                repair.target.faction,
+                repair.target.planet_short,
+                repair.target.system_short,
+                repair.target.units_ok,
+                repair.decisions,
+                repair.tried,
+                repair.cleared,
+                repair.discarded
+            ));
+            for (m, row) in repair.per_index.iter().enumerate() {
+                if m > 0 {
+                    json.push(',');
+                }
+                json.push_str(&format!(
+                    "{{\"i\":{},\"head\":\"{}\",\"options\":{},\"cleared\":{},\"bp\":{},\"bs\":{}}}",
+                    row.index,
+                    row.head,
+                    row.options,
+                    row.cleared,
+                    if row.best_planet_short == usize::MAX {
+                        -1
+                    } else {
+                        i64::try_from(row.best_planet_short).unwrap_or(-1)
+                    },
+                    if row.best_system_short == usize::MAX {
+                        -1
+                    } else {
+                        i64::try_from(row.best_system_short).unwrap_or(-1)
+                    }
+                ));
+            }
+            json.push_str("]}");
+        }
+        json.push_str("]}");
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|error| refuse(&format!("creating {}: {error}", parent.display())));
+        }
+        std::fs::write(&path, json)
+            .unwrap_or_else(|error| refuse(&format!("writing {path}: {error}")));
+        println!();
+        println!("  wrote {} failures to {path}", repairs.len());
+    }
 }
