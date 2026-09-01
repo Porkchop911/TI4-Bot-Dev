@@ -177,6 +177,21 @@ impl MlpBot {
     }
 
     /// Play at a different temperature.
+    ///
+    /// This project uses three, and they are not interchangeable — see
+    /// `plans/MLP_TEMPERATURE_REGIME.md`:
+    ///
+    /// - **0.25** measures a trained policy (near-greedy, so a number reflects the weights rather
+    ///   than the draw). The default in `space_station_reliance`, `failed_openings` and
+    ///   `empty_activations`.
+    /// - **1.0** trains. PPO's importance ratio is computed against the distribution actions were
+    ///   drawn from, and this bot has one `probabilities()` call, so acting and recording share
+    ///   whatever is set here — set it for a PPO run only if you mean the ratio to change with it.
+    /// - **2.5 and hotter** searches for lines the policy underrates (`opening_reachability`,
+    ///   `rescue_imitation`).
+    ///
+    /// Training exploration is tuned with `--movement-entropy`, not with this. Every PPO run
+    /// before 2026-09-01 used `--movement-entropy 0.05` and no temperature at all.
     #[must_use]
     pub const fn at_temperature(mut self, temperature: f64) -> Self {
         self.temperature = temperature;
