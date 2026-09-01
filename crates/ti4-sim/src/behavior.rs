@@ -861,43 +861,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.397_530_864_197_530_86, 0.462_962_962_962_962_97),
+        (0.411_728_395_061_728_4, 0.469_135_802_469_135_8),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.569_053_899_312_058_2, 2.024_139_686_726_594),
+        (1.563_920_452_358_069_9, 2.040_138_504_810_232_5),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.318_948_890_986_829_55, 0.815_229_271_697_292_9),
+        (0.263_874_268_600_842_5, 0.860_178_706_669_380_1),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_581_362_568_942_152, 0.020_612_053_127_006_11),
+        (0.019_477_192_414_540_587, 0.020_582_861_235_102_282),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_922_262_884_163_48, 0.035_176_975_384_471_8),
+        (0.033_886_109_627_003_47, 0.034_987_397_109_833_97),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.050_086_354_915_343_64, 0.054_166_553_415_244_95),
+        (0.049_237_725_752_111_04, 0.053_071_721_258_957_545),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_509_939_156_068_37, 0.005_304_610_765_258_473),
+        (0.004_546_364_206_424_492, 0.005_308_003_243_482_267),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.066_908_942_813_146_72, 0.069_466_189_433_489_85),
+        (0.066_864_405_827_903_07, 0.069_089_606_267_477_41),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_981_502_245_857_997, 0.034_286_473_947_426_316),
+        (0.032_970_535_795_733_516, 0.034_121_878_902_884_76),
     );
     bounds
 }

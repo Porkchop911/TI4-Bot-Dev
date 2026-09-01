@@ -179,7 +179,7 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Relics | **PARTIAL** | 5 of 24 |
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | VERIFIED | 75.1-75.3 |
-| Ships | **PARTIAL** | 77.1-77.4; unit upgrades now apply (was: researched and never applied), so Fighter II's excess-fighters clause is the one part still unmodelled |
+| Ships | VERIFIED | 82.1-82.4 and the Fighter II note; excess Fighter IIs count against the fleet pool (2026-09-01) |
 | Space Cannon | **PARTIAL** | offence, defence and the adjacency clause (PDS II, Indomitus) -- adjacency was **absent** until 2026-08-31 |
 | Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
 | Space Dock | **PARTIAL** | 79.3 (one per planet) and the capture case of 79.4; the coexistence path can meet 79.4's condition without a control change and is not checked |
@@ -387,15 +387,14 @@ under rules that do not exist, with 29 inert breakthroughs on the table and no s
 
 ### Open rules
 
-Four were closed on 2026-09-01 at the owner's direction; four remain, each recorded where the rule
-lives rather than only here.
+Five were closed on 2026-09-01; three remain, each recorded where the rule lives rather than only
+here.
 
 | Rule | Why it is open |
 |---|---|
 | 16.3c | excess removed at the *end* of combat. Wiring it there removes units that Crash Landing and three other cards are about to rescue from windows settling after the combat window closes. An ordering question, and confined to those cards. |
 | 72.1 note 1 | placing a unit from the board when the box is empty. Only ever *permits* more, and needs a choice at every placement site. |
 | Space Dock (79.4) | a space dock undefended among enemy units. The capture path covers it; coexistence can meet the condition without a control change. |
-| Fighter II | "fighters in excess of your ships' capacity count against your fleet pool" — reachable for the first time now that unit upgrades apply. |
 
 **Closed 2026-09-01** (baseline v30 → v31, a joint move — four landed together, so the movement is
 not cleanly attributable to any one):
@@ -405,6 +404,7 @@ not cleanly attributable to any one):
 | 20.4/20.4a | sixteen command tokens per faction, counting the command sheet and the board. `GameState::gain_token` caps every gain; spends, returns and pool-to-pool moves stay uncapped, because those tokens are already the player's. |
 | 81.5 | the status phase redistributes tokens between pools, in initiative order, every round. |
 | 95.1 | a ship picks up cargo from every system it moves *through*. `Cargo` carries the system it came from, because `apply_move` has to take each passenger out of the right place. |
+| Fighter II | both clauses. "May move without being transported" came free with unit upgrades (it is a move value); "fighters in excess of your ships' capacity count against your fleet pool" needed writing — such a fighter is charged to the pool rather than removed by capacity, and removed only if the pool cannot hold it either. |
 | 68.3b | the voluntary single unit of a two-for-one is no longer offered. It is still *forced* when the production limit leaves room for one, at full cost, which is the rule; offering it beside the pair added a strictly dominated option to every fighter and infantry purchase. |
 
 ### If you continue

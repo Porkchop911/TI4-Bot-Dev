@@ -55,7 +55,14 @@ pub fn over_supply(
                 .is_some_and(counts_against_supply)
         })
         .count();
-    present.saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
+    // Fighter II again, from the other side: fighters the capacity cannot hold are ships as far as
+    // the fleet pool is concerned, so they are counted here rather than removed there.
+    let carried_fighters = usize::try_from(
+        fighters_over_capacity(state, content, sources, player, system).max(0),
+    )
+    .unwrap_or(0);
+    (present + carried_fighters)
+        .saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
 }
 
 /// Capacity-consuming units that cannot legally remain in this space area (16.3).
@@ -104,6 +111,11 @@ pub fn over_capacity(
     // owner choose which of the excess to remove -- which only means anything if a ground force
     // can be the excess.
     //
+    // Fighter II: "fighters in excess of your ships' capacity count against your fleet pool." Those
+    // fighters are not capacity-excess at all; they become fleet-pool ships, and `over_supply`
+    // charges them there. Ground forces in the overflow are still excess, because the card speaks
+    // only of fighters.
+    //
     // This used to subtract the ground forces from the transport first and then test the fighters
     // against what was left, so six infantry on a four-capacity carrier reported *no* excess: the
     // subtraction went negative, `max(0)` swallowed it, and there were no fighters to catch it.
@@ -112,7 +124,72 @@ pub fn over_capacity(
     // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why it
     // cannot simply be added to the transport: it excuses fighters and nothing else.
     let excused_fighters = fighters.min(support);
-    usize::try_from((carried + fighters - excused_fighters - transport).max(0)).unwrap_or(0)
+    let overflow = (carried + fighters - excused_fighters - transport).max(0);
+    let to_fleet_pool = fighters_charged_to_fleet_pool(&held, fighters, excused_fighters, overflow);
+    usize::try_from((overflow - to_fleet_pool).max(0)).unwrap_or(0)
+}
+
+/// Fighters that the fleet pool absorbs instead of capacity (Fighter II).
+///
+/// > Fighters in excess of your ships' capacity count against your fleet pool.
+///
+/// Only fighters, and only upgraded ones. A unit upgrade replaces every fighter a player owns at
+/// once (90.8), so a seat's fighters are all base or all upgraded and there is no mixed case to
+/// apportion. The overflow is taken from the fighters first because the ground forces in it are
+/// still ordinary excess -- the card says nothing about them.
+fn fighters_charged_to_fleet_pool(
+    held: &[UnitType<'_>],
+    fighters: i64,
+    excused_fighters: i64,
+    overflow: i64,
+) -> i64 {
+    let upgraded = held
+        .iter()
+        .any(|kind| kind.is_fighter() && kind.required_technology().is_some());
+    if !upgraded {
+        return 0;
+    }
+    overflow.min((fighters - excused_fighters).max(0))
+}
+
+/// Fighters this player has in a system that the fleet pool must carry (Fighter II).
+#[must_use]
+pub fn fighters_over_capacity(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> i64 {
+    let types = catalogue(content, sources);
+    let board = state.system_state(system);
+    let held: Vec<UnitType<'_>> = board
+        .units_of(player)
+        .iter()
+        .filter_map(|unit| types.get(unit.type_id.as_str()).copied())
+        .collect();
+    let transport: i64 = held.iter().map(UnitType::capacity).sum();
+    let support: i64 = board
+        .planet_units
+        .values()
+        .flatten()
+        .filter(|unit| &unit.owner == player)
+        .filter_map(|unit| types.get(unit.type_id.as_str()))
+        .map(UnitType::fighter_support)
+        .sum();
+    let carried: i64 = held
+        .iter()
+        .filter(|kind| kind.consumes_capacity() && !kind.is_fighter())
+        .map(UnitType::capacity_cost)
+        .sum();
+    let fighters: i64 = held
+        .iter()
+        .filter(|kind| kind.is_fighter())
+        .map(UnitType::capacity_cost)
+        .sum();
+    let excused_fighters = fighters.min(support);
+    let overflow = (carried + fighters - excused_fighters - transport).max(0);
+    fighters_charged_to_fleet_pool(&held, fighters, excused_fighters, overflow)
 }
 
 /// 37.3 and 16.3: the owner chooses and removes units until within the limit.
@@ -292,6 +369,82 @@ fn remove_one(
 
 #[cfg(test)]
 mod tests {
+
+    /// Both halves of Fighter II, which only became reachable when unit upgrades started applying.
+    ///
+    /// "This unit may move without being transported" is a move value and comes from the corpus.
+    /// "Fighters in excess of your ships' capacity count against your fleet pool" is the half that
+    /// needed writing: such a fighter is not removed by capacity, it is charged to the pool, and it
+    /// is removed only if the pool cannot hold it either.
+    #[test]
+    fn fighter_two_moves_alone_and_spills_onto_the_fleet_pool() {
+        let content = ContentStore::embedded();
+        let types = catalogue(content, POK);
+        let plain = types.get("fighter").copied().expect("a fighter");
+        let upgraded = types.get("fighter2").copied().expect("Fighter II");
+
+        // Clause 1 -- "this unit may move without being transported" -- is a move value, and it is
+        // in the corpus. Movement offers any ship with a move value, so this half works.
+        assert_eq!(plain.move_value(), 0, "a base fighter cannot move itself");
+        assert!(upgraded.move_value() > 0, "Fighter II can");
+
+        // Clause 2 -- "fighters in excess of your ships' capacity count against your fleet pool".
+        // A fighter is never an ordinary fleet-pool ship; it is charged there only when capacity
+        // cannot hold it, which is what the two helpers below measure.
+        assert!(!counts_against_supply(&upgraded));
+
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "fighter2", &player, 2);
+
+        // Clause 2 now works from the capacity side: with no carrier, neither Fighter II is
+        // *removed* -- they are charged to the fleet pool instead.
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            0,
+            "an excess Fighter II is not capacity-excess"
+        );
+        assert_eq!(
+            fighters_over_capacity(&state, content, POK, &player, &system),
+            2,
+            "both are carried by the fleet pool"
+        );
+
+        // And from the supply side: three fleet tokens hold them, one does not.
+        if let Some(seat) = state.player_mut(&player) {
+            seat.fleet_tokens = 3;
+        }
+        assert_eq!(
+            over_supply(&state, content, POK, &player, &system),
+            0,
+            "a fleet pool of three carries two loose fighters"
+        );
+        if let Some(seat) = state.player_mut(&player) {
+            seat.fleet_tokens = 1;
+        }
+        assert_eq!(
+            over_supply(&state, content, POK, &player, &system),
+            1,
+            "a fleet pool of one does not, and the excess is removed as a ship would be"
+        );
+
+        // A *base* fighter is untouched by any of this: it is removed by capacity, as before.
+        let mut plain_state = crate::fixtures::game(&["a"]);
+        plain_state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut plain_state, &system, "fighter", &player, 2);
+        assert_eq!(
+            over_capacity(&plain_state, content, POK, &player, &system),
+            2,
+            "without the upgrade an unsupported fighter is still excess"
+        );
+        assert_eq!(
+            fighters_over_capacity(&plain_state, content, POK, &player, &system),
+            0,
+            "and the fleet pool carries nothing for it"
+        );
+    }
 
     /// 16.3c's second sentence is **not** enforced: excess is settled before combat, not after.
     ///
