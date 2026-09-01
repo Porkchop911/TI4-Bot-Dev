@@ -1764,6 +1764,36 @@ pub fn skilled_retreat_destinations(
         .collect()
 }
 
+/// Where Dark Energy Tap may send a fleet: adjacent systems that hold no other players'
+/// units — ships in space *or* ground forces on planets, because the technology prints
+/// "units", unlike 78.7c's "ships".
+///
+/// Deliberately the complement of [`eligible_retreats`], not a copy of it: the technology
+/// waives 78.7c's own-presence clause ("even if you do not have units or control planets in
+/// that system") and nothing else, so the two destination sets are united, not replaced. A
+/// neighbour with an enemy garrison but no enemy ships is 78.7c-legal yet DET-illegal.
+#[must_use]
+pub fn det_retreat_destinations(
+    state: &GameState,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+    system: &SystemId,
+) -> Vec<SystemId> {
+    galaxy
+        .adjacent(system.as_str())
+        .into_iter()
+        .map(SystemId::new)
+        .filter(|adjacent| {
+            let board = state.system_state(adjacent);
+            !board.units.iter().any(|unit| &unit.owner != player)
+                && !board
+                    .planet_units
+                    .values()
+                    .any(|units| units.iter().any(|unit| &unit.owner != player))
+        })
+        .collect()
+}
+
 /// 78.7b: move a player's fleet to `destination`, and lose what it cannot carry.
 ///
 /// Only ships with a move value leave under their own power. Anything consuming capacity comes
@@ -1965,7 +1995,20 @@ impl CombatWindow {
             return Vec::new();
         }
         self.galaxy.as_ref().map_or_else(Vec::new, |galaxy| {
-            eligible_retreats(state, content, sources, galaxy, player, &self.system)
+            let mut spots =
+                eligible_retreats(state, content, sources, galaxy, player, &self.system);
+            // Dark Energy Tap: "Your ships can retreat into adjacent systems that do not
+            // contain other players' units, even if you do not have units or control planets
+            // in that system." The holder alone gets the union with the technology's looser
+            // set; everyone else still retreats by 78.7c only.
+            if crate::technology::owns_det(state, player) {
+                for spot in det_retreat_destinations(state, galaxy, player, &self.system) {
+                    if !spots.contains(&spot) {
+                        spots.push(spot);
+                    }
+                }
+            }
+            spots
         })
     }
 
@@ -3366,6 +3409,146 @@ mod tests {
 
         assert_eq!(open.len(), 5);
         assert!(!open.contains(&occupied), "another player's ships bar it");
+    }
+
+    /// Drive a windowed combat on a map: `stepped_fight`'s loop, plus the galaxy, because
+    /// 78.7's retreat rules have no destinations to speak of without one.
+    fn stepped_fight_on_map(
+        state: &mut GameState,
+        system: &SystemId,
+        galaxy: ti4_content::galaxy::Galaxy,
+        table: &mut Table,
+        dice: &mut Dice,
+        rng: &mut GameRng,
+    ) -> CombatOutcome {
+        let content = ContentStore::embedded();
+        let before = crate::combat::before_combat(state, content, POK, system);
+        let mut window = CombatWindow::new(state, content, POK, system).with_galaxy(galaxy);
+        let mut inner = Table::new();
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice,
+            rng,
+            table: &mut inner,
+            timing: None,
+        };
+        window.settle(state, &mut ctx).unwrap();
+        while window.outcome().is_none() {
+            if let Some(choice) = window.pending_choice(state, content, POK) {
+                let answer = table.ask(&choice).unwrap();
+                window.resolve(state, &mut ctx, answer).unwrap();
+            } else {
+                let _ = window.take_scoring_occurrence();
+                window.settle_open(state, &mut ctx).unwrap();
+            }
+        }
+        crate::combat::complete_window(state, content, POK, system, &before, &window)
+            .expect("the fight resolved")
+    }
+
+    #[test]
+    fn a_det_owner_may_retreat_into_an_empty_adjacent_system() {
+        // DET: "Your ships can retreat into adjacent systems that do not contain other
+        // players' units, even if you do not have units or control planets in that system."
+        // The technology waives 78.7c's own-presence demand, so an empty neighbour is a
+        // legal destination for the holder, and the window must offer it. Preloaded all-
+        // miss dice against a zero-dice Winnu flagship make the 50-round stalemate
+        // choice-free, so nothing reaches the table before the retreat announcement.
+        let hub = crate::fixtures::plain_hub();
+        let centre = SystemId::new(hub.centre.clone());
+        let empty = SystemId::new(hub.outer[0].clone());
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&attacker())
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("det"));
+        put(&mut state, &centre, "flagship", &attacker(), 1);
+        put(&mut state, &centre, "winnu_flagship", &defender(), 1);
+
+        let mut table = Table::with_default(Box::new(Scripted::new([
+            "retreat".to_owned(),
+            hub.outer[0].clone(),
+        ])));
+        let mut dice = Dice::from_faces(vec![1u32; 120]);
+        let mut rng = GameRng::new(7);
+        stepped_fight_on_map(
+            &mut state,
+            &centre,
+            hub.galaxy.clone(),
+            &mut table,
+            &mut dice,
+            &mut rng,
+        );
+
+        assert!(
+            state
+                .system_state(&centre)
+                .units
+                .iter()
+                .any(|unit| unit.owner == defender()),
+            "the defender's fleet stayed"
+        );
+        assert!(
+            !state
+                .system_state(&centre)
+                .units
+                .iter()
+                .any(|unit| unit.owner == attacker()),
+            "the DET holder's fleet left the combat system"
+        );
+        assert!(
+            state
+                .system_state(&empty)
+                .units
+                .iter()
+                .any(|unit| unit.owner == attacker()),
+            "it went to the empty neighbour the technology opens up"
+        );
+    }
+
+    #[test]
+    fn without_det_a_fleet_with_nowhere_to_go_is_not_asked_to_retreat() {
+        // The relaxation belongs to the DET holder: without it, 78.7c still demands a
+        // destination that holds your units or a planet you control, so a fleet with
+        // nowhere to go is not asked at all (78.4c) and simply stays.
+        let hub = crate::fixtures::plain_hub();
+        let centre = SystemId::new(hub.centre.clone());
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        put(&mut state, &centre, "flagship", &attacker(), 1);
+        put(&mut state, &centre, "winnu_flagship", &defender(), 1);
+
+        let mut table = Table::new();
+        let mut dice = Dice::from_faces(vec![1u32; 120]);
+        let mut rng = GameRng::new(7);
+        stepped_fight_on_map(
+            &mut state,
+            &centre,
+            hub.galaxy.clone(),
+            &mut table,
+            &mut dice,
+            &mut rng,
+        );
+
+        assert!(
+            state
+                .system_state(&centre)
+                .units
+                .iter()
+                .any(|unit| unit.owner == attacker()),
+            "with no legal destination the fleet has to stay"
+        );
+        assert!(
+            state
+                .system_state(&centre)
+                .units
+                .iter()
+                .any(|unit| unit.owner == defender()),
+            "and so does the defender's"
+        );
     }
 
     use ti4_model::content_types::POK;

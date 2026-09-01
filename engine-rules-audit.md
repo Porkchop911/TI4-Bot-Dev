@@ -135,22 +135,22 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Elimination | **ABSENT** | no code; harmless at a 4-round horizon |
 | Entropic Scars | **ABSENT** | 9 rules, none implemented; anomaly tiles are in the corpus |
 | Exhausted | VERIFIED | 34.1-34.5 + notes 1-2: exhaustion is a flag on technologies, planets, relics and leaders; the status phase readies all four kinds (81.6 confirmed against `status.rs`); planets exhaust in payment and never both at once (75.2); a not-Ready leader refuses and an exhausted technology cannot pay; planets ready at the end of the agenda phase; note 2's "your planets" is enforced by the `controlled_planets` filter, and the cards that reach into rivals' planets say so instead |
-| Expedition | ? | `thunders_edge.rs`, 6 slices |
-| Exploration | ? | 71 of 80 cards |
+| Expedition | **PARTIAL** | all six slice costs exact and the claim guards hold (once per slice, once per turn — the action consumes the turn); the LRR "at the end of their turn" timing is modelled as a turn-consuming component action — no end-of-turn decision window exists in the driver, a design boundary recorded, not a defect; the sixth-slice Thunder's Edge placement is ABSENT as a board feature |
+| Exploration | VERIFIED | 35.1-35.8b + notes: the permission clause (35) — a token is explored only by a DET owner or another game effect — was **wrong** (the token explored on *any* arrival) and the DET trigger itself was **absent**; both fixed 2026-09-02: arrivals now only announce, and the trigger fires in `close_tactical`, covering a fleet that moved in and one already parked on the token; 35.8a reshuffle is **open** (no exploration discard pile exists, and the 14-card POK frontier deck is thin against the ~28 planetless systems on the engine map, so exhaustion is reachable), the simultaneous-exploration order (35.3) is fixed-order, and 35.2c is vacuous in scope (no POK planet carries two traits) |
 | Fighter Tokens | OK | intentionally uncapped, `supply.rs` documents why |
 | Fleet Pool | VERIFIED | 37.1-37.6; Letnev's Armada lifts the cap after Fleet Regulations caps it |
 | The Fracture | **ABSENT** | 15 rules, none implemented |
 | Frontier Tokens | OK | station-only tiles take a token (rule 14) — phase 1 |
-| Game Board | ? | |
-| Game Round | ? | |
+| Game Board | VERIFIED | 39.1-39.2 + notes: every placed tile is on the board, isolated ones included, and a system is on the rim iff one of its six hex neighbours is an empty board slot (`edge_systems`); the two in-scope consumers (Populate the Outer Rim, Control the Borderlands) read from it; the Creuss-home and wormhole-nexus clauses are N/A (ABSENT as board features), hyperlane edges are N/A (no hyperlane tiles placed), and the setup variants are out of scope — the engine builds its own deterministic spiral |
+| Game Round | VERIFIED | 40.1-40.3 + notes: Strategy → Action (first player in initiative order) → Status → Agenda (only after the custodians are removed, 8.1) → RoundEnded; turns happen only in the Action phase, `active` is `None` everywhere else; all six transient flags are turn-scoped and none persists across a player turn; the nine-round cap is subsumed — games end at 10 VP or on objective-deck exhaustion (81.2), which lands around round 9; the sim's 50-round horizon is a safety net |
 | Gravity Rift | VERIFIED | 41.1-41.5 all present in `movement.rs`/`transit.rs`, incl. the path-dependent +1 |
 | Ground Combat | VERIFIED | 42.1-42.4; burst icons roll per die. Fragile now applies here (was space-only), and the Shield Paling mech lifts it |
 | Ground Forces | OK | cannot be committed to stations (rule 5) — phase 1 |
-| Hyperlanes | ? | |
+| Hyperlanes | **PARTIAL** | re-confirmed in the tenth batch: the corpus carries the hyperlane tiles but the engine's map build never places one (the spiral is system tiles only), and line-based adjacency (44.1) is unmodelled — the standing 6.4/44 gap; the placement and alternate-setup clauses are N/A on the engine's own map |
 | Imperial | VERIFIED | primary scores a public then Mecatol/secret; 45.4 counts hand *and* scored and returns an unscored one |
 | Infantry Tokens | OK | as fighter tokens |
-| Influence | ? | |
-| Initiative Order | ? | |
+| Influence | VERIFIED | 47.1-47.3 + note: a planet's influence is the printed value (the corpus's own field — the "rightmost blue border" is how the card shows it), spending influence exhausts the planet (34.2), trade goods pay as influence through the same payment window (47.3), trade goods never vote (8.x), and the custodians' six-influence removal rides the same path — the invasion test funds the seat with trade goods |
+| Initiative Order | VERIFIED | 48.1-48.3: the order is each player's lowest initiative card, ties by seating (the engine total-orders on seat index), and it drives the Action phase turn order, status-phase action-card draws, agenda votes and every initiative-referencing effect; 48.3 is vacuous at six players (all six holding the same number is impossible) and the code handles it anyway; the Naalu "0" token is out of scope |
 | Invasion | OK | stations excluded; coexistence combat chain 9-12 implemented |
 | Leader Sheet | ? | |
 | Leaders | **PARTIAL** | 3 unimplemented across the six trained factions |
@@ -208,8 +208,8 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |
 | Wormholes | VERIFIED | 101.1-101.4 and the notes; a system is never adjacent to itself, and PDS II fires through wormholes because `Galaxy::adjacent` already unions them |
 
-Totals after phase 9, ninth batch: **0 wrong**, **5 absent**, **31 partial**, **36 verified
-correct**, **11 ok**, **1 out of scope**, **25 unverified** (was 79 at the audit's start; the
+Totals after phase 9, tenth batch: **0 wrong**, **5 absent**, **33 partial**, **41 verified
+correct**, **11 ok**, **1 out of scope**, **18 unverified** (was 79 at the audit's start; the
 topic table is the source of truth).
 
 ## Phase 9 verification, 2026-08-31
@@ -217,7 +217,7 @@ topic table is the source of truth).
 Twenty-three topics moved off the *unverified* list by fetching their rules text and reading it against
 the code — pass 1 of the method above, the only pass that establishes correctness.
 
-**Twenty-two defects in the topics checked so far: sixteen fixed, six open.** That is close to the
+**Twenty-seven defects in the topics checked so far: nineteen fixed, eight open.** That is close to the
 base rate this audit warned about, and it is the reason the remaining unverified rows should still
 be read as "not checked" rather than "probably fine":
 
@@ -245,6 +245,11 @@ be read as "not checked" rather than "probably fine":
 | LRR 22.4 | a component action cancelled while announced (Sabotage in its WHEN window) still consumed the turn: the card was spent and the player lost the action the rules say was not used | fixed |
 | LRR 13 / 29.1 | combat roles came from seating order, not from the active player — a combat opened by the seat seated behind an opponent in the system rolled first on the wrong side, took the nebula bonus on the wrong side, and announced retreats in the wrong order | fixed |
 | LRR 49 | the post-combat invasion gate tested whether the seating-first survivor was the activator instead of whether the activator was among the survivors — a seated-second activator who outlasted the combat never got its invasion step | fixed |
+| LRR 35 | a frontier token was explored on *any* arrival — the rule allows it only to a player who owns the Dark Energy Tap or is allowed by another game effect; `note_arrival` now only announces `SHIP_MOVED` | fixed |
+| LRR 35 / DET | the Dark Energy Tap trigger — "after you perform a tactical action in a system that contains a frontier token, if you have 1 or more ships in that system, explore that token" — had no code at all; it now fires in `close_tactical`, covering a fleet that moved in and one already parked on the token | fixed |
+| DET retreat | the holder's fleet may retreat into adjacent systems holding no other players' units even without own units or a controlled planet there — modelled as the union with 78.7c, because the technology waives only the own-presence clause (and its "units" is stricter than 78.7c's "ships") | fixed |
+| LRR 35.8a | exploration decks are never reshuffled from their discard — the engine has no exploration discard pile at all, and the fourteen-card POK frontier deck is thin against the ~28 planetless systems on the engine map, so exhaustion is reachable in engine play | **open** |
+| LRR 35.3 | a player exploring several planets simultaneously chooses the order; the engine resolves them in a fixed order without asking | **open** |
 
 Clean on inspection against their rules text: Abilities, Active Player, Active System, Anomalies,
 Attacker, Anti-Fighter Barrage, Asteroid Field, Fleet Pool, Gravity Rift, Space Cannon, Supernova.
@@ -286,6 +291,41 @@ actions), so the behavior baseline moved v26 -> v27: `share_SPACE_COMBAT_RESOLVE
 `plans/evidence/M08-021.md`. Two of the v26 metric bounds were already breached before the
 re-baseline, which is how the gate caught the batch's effect rather than the batch catching
 itself.
+
+**Tenth batch (2026-09-02): Expedition, Exploration, Game Board, Game Round, Hyperlanes,
+Influence and Initiative Order** — three defects, all on the Dark Energy Tap / frontier path, all
+fixed:
+
+LRR 35's permission clause — a token is explored only "if they own the Dark Energy Tap
+technology or if another game effect allows them to" — had no gate at all: `note_arrival` explored
+on *any* arrival, and the engine contained zero references to the Dark Energy Tap. The fix is two
+halves: arrivals now only announce, and the DET trigger fires in `close_tactical`, the single
+convergence point every tactical action ends through — which is what makes a fleet already parked
+on the token explore when its owner acts there, and keeps the move that lands a fleet from
+exploring on its own. The third defect is DET's retreat relaxation, modelled as the *union* with
+78.7c rather than a replacement: the technology waives only the own-presence clause, and its
+"units" is stricter than 78.7c's "ships", so an enemy garrison still bars a DET destination. One
+test pair pins the arrival/trigger halves, two pin the retreat half, and a control test pins the
+78.4c "not asked when there is nowhere to go" behaviour for non-holders.
+
+The other topics came back clean or re-confirmed as known gaps: Game Board (39), Game Round (40 —
+the nine-round cap subsumed by the 10-VP and deck-exhaustion endings), Influence (47) and
+Initiative Order (48) verified. Expedition is PARTIAL — the six slice costs are exact and the claim
+guards hold, but the LRR "at the end of their turn" timing is a turn-consuming component action
+(no end-of-turn decision window exists in the driver), and the sixth-slice Thunder's Edge placement
+is ABSENT. Hyperlanes stays on the open list as the 6.4/44 gap, and the batch adds two open
+items: the missing exploration-deck reshuffle (35.8a — now high-reachability, a fourteen-card POK
+deck against the ~28 planetless systems on the engine map) and the unasked simultaneous-exploration
+order (35.3).
+
+The fixes change POK game behaviour (frontier tokens no longer hand a draw to any arrival; DET
+holders gain the trigger and the retreat option), so the behavior baseline moved v27 -> v28
+without any bound being breached: every `now` value stayed inside the v27 intervals, and
+`faction_differentiation`'s interval shifted the most, [0.452, 1.047] -> [0.490, 1.071]. Raw
+old/new values are in `plans/evidence/M08-021.md`. One downstream effect: the policy campaign's
+non-vacuity clause (a mid-window scorer re-offer, ~3% of games) lost coverage — its hand-picked
+seeds no longer trigger the rare event under the shifted trajectories — so the seeds were
+re-verified under the fixed engine (see the campaign comment in `bot.rs`).
 
 Two simplifications recorded rather than hidden: 95.1 allows pickup from each system a ship moves
 *through* and this engine offers only the origin (a narrower offer, not an illegal one); and 68.3b

@@ -306,7 +306,11 @@ const PLAY_AREA_PREFIX: &str = "play_area:";
 /// "Use the wormhole" means the move crossed it, which is true when the storm's system is one of
 /// the two ends of a wormhole hop -- the move's origin or its destination. Returns whether it
 /// flipped.
-pub fn flip_ion_storm(state: &mut GameState, from: &ti4_model::id::SystemId, to: &ti4_model::id::SystemId) -> bool {
+pub fn flip_ion_storm(
+    state: &mut GameState,
+    from: &ti4_model::id::SystemId,
+    to: &ti4_model::id::SystemId,
+) -> bool {
     let Some((system, face)) = state.ion_storm.as_ref() else {
         return false;
     };
@@ -379,9 +383,7 @@ fn resolve_instant(
             let Some(system) = state.active_system.clone() else {
                 return false;
             };
-            state
-                .wormhole_tokens
-                .insert("GAMMA".to_owned(), system);
+            state.wormhole_tokens.insert("GAMMA".to_owned(), system);
             return true;
         }
         "ion" => {
@@ -675,7 +677,11 @@ pub fn place_frontier_tokens(
     count
 }
 
-/// A ship has ended its movement on a frontier token: explore it and take it away (35.5).
+/// Explore a frontier token: remove it and resolve one card from the frontier deck (35.5).
+///
+/// The caller decides that exploration is legal — LRR 35 allows it only for a player who owns
+/// the Dark Energy Tap technology or another game effect — so this function checks only the
+/// mechanical preconditions: the token is in the system, and the player has a ship in it.
 ///
 /// The token is removed whether or not the card does anything, so it is consumed before the card
 /// resolves — a card that fails to resolve must not leave the token for the same fleet to trip
@@ -920,8 +926,8 @@ mod tests {
     fn a_station_only_system_takes_a_frontier_token() {
         let content = ti4_content::ContentStore::embedded();
         let ids = ["117", "18", "19", "20", "21", "22", "23"];
-        let galaxy = ti4_content::galaxy::Galaxy::build(content, &ids, ALL_SOURCES, 1)
-            .expect("a valid map");
+        let galaxy =
+            ti4_content::galaxy::Galaxy::build(content, &ids, ALL_SOURCES, 1).expect("a valid map");
 
         let systems = frontier_systems(content, ALL_SOURCES, &galaxy);
         assert!(
@@ -929,7 +935,6 @@ mod tests {
             "117 holds only a space station, so rule 14 puts a frontier token there: {systems:?}"
         );
     }
-
 
     use super::*;
     use crate::fixtures::game;
@@ -1178,7 +1183,10 @@ mod tests {
             Some("ALPHA")
         );
 
-        assert!(flip_ion_storm(&mut state, &elsewhere, &here), "arrived at it");
+        assert!(
+            flip_ion_storm(&mut state, &elsewhere, &here),
+            "arrived at it"
+        );
         assert_eq!(
             state.ion_storm.as_ref().map(|(_, face)| face.as_str()),
             Some("BETA"),
@@ -1250,7 +1258,11 @@ mod tests {
             "six resources were spent"
         );
         assert!(
-            state.player(&player()).unwrap().exploration_cards.is_empty(),
+            state
+                .player(&player())
+                .unwrap()
+                .exploration_cards
+                .is_empty(),
             "and the card is purged, so it cannot be used twice"
         );
     }

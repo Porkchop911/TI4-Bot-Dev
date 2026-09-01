@@ -81,7 +81,6 @@ pub struct ScoredBot {
     remember: bool,
 }
 
-
 /// A stable feature name per promissory note.
 ///
 /// The ten notes with a printed worth get their own bucket, so the learner can price a Research
@@ -690,7 +689,11 @@ impl ScoredBot {
         // `their_net` is included because a proposal only pays if it is accepted: an offer the
         // partner would refuse is worth nothing however good it looks from this chair. It is
         // clamped at zero so a generous deal is not scored as if the partner's gain were ours.
-        if let Some(note) = option.payload.get("alias").and_then(serde_json::Value::as_str) {
+        if let Some(note) = option
+            .payload
+            .get("alias")
+            .and_then(serde_json::Value::as_str)
+        {
             let net = option
                 .payload
                 .get("net")
@@ -705,8 +708,7 @@ impl ScoredBot {
             // bucket holding every promissory note in the game. The names are `&'static str`
             // because a feature name is interned; an unknown alias falls into `note:other`
             // rather than being dropped, which keeps a new note visible instead of silent.
-            return Components::of(note_feature(note), net)
-                .and("note_acceptable", theirs.min(0.0));
+            return Components::of(note_feature(note), net).and("note_acceptable", theirs.min(0.0));
         }
         Components::of("unknown_trade", 0.0)
     }
@@ -2366,11 +2368,16 @@ mod tests {
     const CAMPAIGN_SEEDS: u64 = 10;
     const CAMPAIGN_ROTATIONS: usize = 3;
 
-    /// Seeds verified (M08-019, under the canonical choice-option ordering) to produce at
-    /// least one mid-window scorer re-offer in real play. The event is rare (~3% of games),
-    /// so the base ten-seed set alone no longer guarantees it — without these, the
-    /// non-vacuity clause below could fail on a tree where the mechanism works fine.
-    const NESTED_WINDOW_SEEDS: [u64; 6] = [7_796, 7_801, 7_818, 7_820, 7_849, 7_857];
+    /// Seeds verified to produce at least one mid-window scorer re-offer in real play.
+    /// The event is rare (~3% of games), so the base ten-seed set alone does not
+    /// guarantee it — without these, the non-vacuity clause below could fail on a tree
+    /// where the mechanism works fine. Originally picked under M08-019 (canonical
+    /// choice-option ordering); re-verified on 2026-09-02 under the Phase-9 tenth-batch
+    /// engine (the Dark Energy Tap fixes shift campaign trajectories, and the original
+    /// six seeds no longer trigger the event): a scan of the reserved range 7787-7999
+    /// kept the seven seeds below, each verified to re-offer a scorer mid-window in
+    /// rotation 0, and 7850 additionally in rotation 2.
+    const NESTED_WINDOW_SEEDS: [u64; 7] = [7_793, 7_850, 7_864, 7_893, 7_907, 7_924, 7_992];
 
     /// What the campaign extracts from one run: the replay record and each seat's own secret
     /// aliases (what it still holds or has scored).

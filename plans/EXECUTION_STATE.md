@@ -22,6 +22,134 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
 - Branch: `wp/r01-review-viewer-contract` (Phase 9 verification runs on the main checkout; the `D:/Projects/ti4-engine-work` worktree is stale at `f816d90` and was merged via `acb898b` — left untouched)
 
+### Phase 9 — tenth batch: Expedition, Exploration, Game Board, Game Round, Hyperlanes, Influence, Initiative Order (2026-09-02)
+
+- Per `HANDOVER_2026-08-31_PHASE_9.md` (at `88cf39f`): verification pass 1, the next seven
+  alphabetically (61 of 109 topics now checked; unverified 25 → 18). Exact rules text fetched
+  from tirules2.com (`/R_exploration`, `/R_expedition`, the numeric slugs for 39/40/44/47/48);
+  every numbered sub-rule read against the code, not merely grep-matched. This batch found and
+  fixed **three defects**, all on the Dark Energy Tap / frontier path — engine behaviour
+  changed, so the behaviour baseline moved **v27 → v28** (no bound breached; details below).
+- **Exploration (LRR 35): VERIFIED after fixing two of the three defects.** 35.1-35.8b + notes:
+  planet influence is the printed value (the corpus's own field), spending influence exhausts
+  the planet (34.2), trade goods pay as influence through the same payment window (47.3), and
+  the permission clause — a frontier token is explored "if they own the Dark Energy Tap
+  technology or if another game effect allows them to" — is now actually enforced.
+  **Defect #1, fixed (LRR 35):** `note_arrival` explored the frontier token on *any*
+  `MoveOutcome::Arrived` — no permission check at all, so a fleet drifting into a frontier
+  system tripped a draw. `note_arrival` now only emits `SHIP_MOVED`. **Defect #2, fixed
+  (LRR 35 / DET):** the engine contained *zero* references to the Dark Energy Tap — its printed
+  trigger ("after you perform a tactical action in a system that contains a frontier token, if
+  you have 1 or more ships in that system, explore that token") existed nowhere. It now fires
+  in `close_tactical`, the single convergence point every tactical action ends through (the
+  same point that hosts the Crown of Emphidia after-hook), before `active_system` is cleared —
+  which is what makes a fleet already parked on the token explore when its owner acts there,
+  and keeps the move that lands a fleet from exploring on its own. `owns_det` helper added in
+  `technology.rs`; `explore_frontier`'s doc now states the caller checks the permission. The
+  "other game effect" path is the Exploration Probe, which explores through its own window
+  independent of DET (`the_exploration_probe_explores_a_frontier_token_by_ship`). **Gaps,
+  recorded open:** 35.8a reshuffle — the engine has no exploration discard pile at all
+  (`draw` returns `None` on an empty deck and the token is consumed regardless), and the
+  fourteen-card POK frontier deck is thin against the ~28 planetless systems on the engine
+  map, so exhaustion is reachable in engine play (a state change → separate package); 35.3
+  simultaneous-exploration order — `capture` processes planets in a fixed order without
+  asking (same class as the Checks and Balances choice gap); 35.2c (a planet with two traits)
+  is vacuous in scope (no POK planet carries two traits; TE has six). Pinned by
+  `arriving_on_a_frontier_token_without_det_does_not_explore_it` (fails pre-fix: the arrival
+  consumed the token) and
+  `a_det_owner_explores_the_frontier_token_when_their_tactical_action_ends` (fails pre-fix:
+  nothing fired — the fleet is already parked on the token and simply finishes moving).
+- **Defect #3, fixed (DET retreat relaxation):** "Your ships can retreat into adjacent systems
+  that do not contain other players' units, even if you do not have units or control planets
+  in that system." Modelled as the *union* of 78.7c's `eligible_retreats` with a new
+  `det_retreat_destinations` (adjacent systems holding no other players' units of any kind —
+  space *and* planet units, because the technology prints "units", where 78.7c prints
+  "ships") for DET holders only: the technology waives only the own-presence clause, so a
+  neighbour with an enemy garrison but no enemy ships stays 78.7c-legal yet DET-illegal —
+  replacement semantics would have quietly made 78.7c weaker for the holder. Pinned by
+  `a_det_owner_may_retreat_into_an_empty_adjacent_system` (fails pre-fix: the holder was
+  never offered the empty neighbour) and
+  `without_det_a_fleet_with_nowhere_to_go_is_not_asked_to_retreat` (78.4c control: the
+  relaxation belongs to the holder alone).
+- **Expedition (LRR TE): PARTIAL (recorded, not fixed — design boundary).** All six slice
+  costs exact in `thunders_edge.rs` (`SLICES`, `can_pay` matches each printed cost), the
+  claim-once guard holds (`state.expedition_slices`), and one-per-turn falls out of the
+  component action consuming the turn. Two recorded gaps: the LRR timing — "at the end of
+  their turn, a player may perform an expedition" (does not consume the action) — is modelled
+  as a turn-consuming component action; the driver has no end-of-turn decision window, so
+  adding one is a feature package (same class as the Deals boundary); and the sixth-slice
+  token flip (Thunder's Edge side) is ABSENT as a board feature.
+- **Game Board (LRR 39): VERIFIED with notes.** 39.1: every placed tile is on the board,
+  isolated ones included (the engine builds its own deterministic spiral — the setup-variant
+  clauses are out of scope). 39.2: `edge_systems` (`objectives.rs`) — a system is on the rim
+  iff one of its six hex neighbours is an empty board slot — exactly "bordered by the edge
+  of the board". The in-scope consumers (Populate the Outer Rim via `on_the_rim_count`,
+  Control the Borderlands) read from it. Notes: the Creuss-home and wormhole-nexus-on-the-
+  rim clauses are N/A (both ABSENT as board features, already recorded), hyperlane edges are
+  not board edges (N/A — no hyperlane tiles placed).
+- **Game Round (LRR 40): VERIFIED with a note.** 40.1-40.3: the phase cycle
+  Strategy → Action (first player in initiative order) → Status → Agenda (only after the
+  custodians are removed, 8.1) → RoundEnded (`phase.rs`); `state.round` increments in
+  `begin_next_round`; turns happen only in the Action phase (`active = None` elsewhere);
+  all six transient flags are turn-scoped and every clear site was verified — nothing
+  persists across a player turn. Note: there is no explicit nine-round cap; games end at
+  10 VP (98) or on objective-deck exhaustion (81.2 — reveal is mandatory, impossible ⇒
+  `state.finished = true`), which empirically lands around round 9, so the printed cap is
+  subsumed; the sim's 50-round horizon is a safety net.
+- **Hyperlanes (LRR 44): PARTIAL (re-confirmed, no new issues).** The standing 6.4/44 gap:
+  the corpus carries the hyperlane tiles but the engine's map build never places one (the
+  spiral is system tiles only), and line-based adjacency (44.1) is unmodelled. Placement and
+  alternate-setup clauses are N/A on the engine's own map.
+- **Influence (LRR 47): VERIFIED.** 47.1: a planet's influence is the printed value (the
+  corpus stores resources and influence separately — the "rightmost blue border" is how the
+  printed card shows it). 47.2: spending influence exhausts the planet (Exhausted, 34.2).
+  47.3: trade goods pay as influence — the single `payment_options` path pushes the
+  `trade_good` option for both resource and influence spends and `apply_payment_option`
+  resolves it (worth, doubled by the market-connection technology). 47.3a: trade goods
+  never vote (Agenda Phase batch). The custodians' six-influence removal rides the same
+  payment path — the invasion test funds the seat with six trade goods, and 27.2a gates the
+  removal on a committed army.
+- **Initiative Order (LRR 48): VERIFIED.** `initiative_order()` sorts by (lowest initiative
+  card value, seat index in seating order) — exactly 48.1 (lowest card, ties by seating;
+  the seat index makes the total order explicit). 48.2 consumers verified: the Action phase
+  start, status-phase action-card draws (the still-intact order), agenda votes,
+  custodians/invasion, and initiative-referencing effects. 48.3 (all six the same number)
+  is vacuous at six players — all six holding the same initiative card is impossible — and
+  the code handles it anyway. The Naalu "0" token is out of scope (Naalu is not one of the
+  six in-scope factions).
+- Engine suite now **1,094** (1,090 + 4 new tests: the arrival/trigger pair and the
+  retreat pair). Full gate: clippy clean under `RUSTFLAGS=-D warnings` on all five core
+  crates; engine 1,094 green; sim 52/52 against the new bounds; policy 189/189 except the
+  carried campaign non-vacuity item, resolved below.
+- **Re-baselined to v28** (the DET/frontier fixes change POK sim behaviour: frontier tokens
+  no longer hand a draw to any arrival, and DET holders gain the trigger and the retreat
+  option). No bound was breached — every `now` value stayed inside the v27 intervals, so
+  this is the versioned re-derivation the discipline requires for a behaviour-changing
+  engine edit, not a repair of a failure. `faction_differentiation`'s interval shifted the
+  most, [0.452, 1.047] → [0.490, 1.071]; `vp_pace` [0.406, 0.460] → [0.397, 0.455]; the rest
+  moved by stream drift in the third/fourth decimal. Raw old/new values and the side-by-side
+  in `plans/evidence/M08-021.md`.
+- **The carried policy red gate reproduced on this run and was resolved through the test's
+  own designed remedy.** `bot::tests::scored_games_stay_legal_and_deterministic_across_
+  nested_windows` failed its non-vacuity clause ("the campaign must actually re-offer a
+  scorer mid-window"). The mechanism is intact and unit-pinned (the paused-secret test
+  green); what broke is coverage: the mid-window re-offer is a ~3%-of-games event, and the
+  batch-8 diagnosis — engine changes shifting every campaign trajectory so no seeded game
+  re-offers — completed on this tree: the DET/frontier fixes moved the trajectories once
+  more, off the six hand-picked `NESTED_WINDOW_SEEDS` (verified under M08-019's engine).
+  The test's own comment anticipates exactly this ("without these, the non-vacuity clause
+  below could fail on a tree where the mechanism works fine"), so the seeds were re-verified
+  under the fixed engine: a scan of the reserved campaign range 7787-7999 at rotation 0
+  surfaced the seven seeds below (7793, 7850, 7864, 7893, 7907, 7924, 7992), each
+  confirmed to re-offer a scorer mid-window in rotation 0; a follow-up pass over rotations
+  1 and 2 found 7850 re-offers there as well. `NESTED_WINDOW_SEEDS` now lists them, and
+  the campaign (all three rotations) passes on them. This is
+  the "new seeds" option the batch-8 note laid out for the owner's call, taken through the
+  mechanism the test itself documents — a test-fixture update, not a Phase 9 rule change
+  and not a relaxation of the non-vacuity criterion. Campaign green: 189/189.
+- Next batch (next seven alphabetically): Leader Sheet, Leaders, Legendary Planets,
+  Mecatol Rex, Mechs, Modifiers, Move.
+
 ### Phase 9 — ninth batch: Action Phase, Combat, Component Action, Cost, Deals, Defender, Exhausted (2026-09-01)
 
 - Per `HANDOVER_2026-08-31_PHASE_9.md` (at `88cf39f`): verification pass 1, the next seven

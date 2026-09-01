@@ -375,12 +375,37 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v27): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v28): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v28 — 2026-09-02. Phase 9, tenth batch (Expedition, Exploration, Game Board, Game Round,
+    // Hyperlanes, Influence, Initiative Order). Three Dark Energy Tap / frontier defects fixed:
+    //
+    // - LRR 35: a frontier token is explored only by a player who owns the Dark Energy Tap
+    //   technology or another game effect. `note_arrival` explored the token on *every*
+    //   arrival, so any fleet drifting into a frontier system tripped a draw. Arrivals now
+    //   only announce `SHIP_MOVED`.
+    // - The DET trigger itself was absent: the engine had no reference to the technology at
+    //   all. It now fires in `close_tactical` — "after you perform a tactical action in a
+    //   system that contains a frontier token, if you have 1 or more ships in that system,
+    //   explore that token" — covering both a fleet that moves in and one already parked on
+    //   the token.
+    // - DET's retreat relaxation: the holder's fleet may retreat into adjacent systems that
+    //   hold no other players' units, even without own units or a controlled planet there.
+    //   Modeled as the union with 78.7c, because the technology waives only the
+    //   own-presence clause.
+    //
+    // No bound was breached: every `now` value sits inside the v27 intervals, so this move is
+    // the versioned re-derivation the discipline requires whenever the engine changes what an
+    // action does, not a repair of a failure. The per-seed values shift slightly — frontier
+    // draws happen far less often (only DET or another effect explores now, and DET is rare in
+    // this suite) — and `faction_differentiation`'s interval shifts the most, [0.452, 1.047]
+    // -> [0.490, 1.071], with `vp_pace` [0.406, 0.460] -> [0.397, 0.455]; the rest are stream
+    // drift in the third or fourth decimal.
+    //
     // v27 — 2026-09-01. Phase 9, ninth batch (Action Phase, Combat, Component Action, Cost,
     // Deals, Defender, Exhausted). Four engine defects fixed, two of them changing what a
     // combat does:
@@ -836,43 +861,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.406_172_839_506_172_83, 0.459_876_543_209_876_53),
+        (0.396_913_580_246_913_4, 0.455_478_395_061_728_44),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.703_247_154_665_363_4, 2.187_310_641_982_757_7),
+        (1.695_959_798_178_532_6, 2.152_643_515_054_308_4),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.452_155_332_208_351_3, 1.047_041_687_945_755_4),
+        (0.490_433_167_065_630_6, 1.071_286_292_728_351),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_666_779_009_955_66, 0.021_032_712_232_675_888),
+        (0.019_586_389_708_817_344, 0.021_026_272_692_394_647),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.032_581_380_432_973_3, 0.033_710_939_748_262_41),
+        (0.032_491_711_084_144_51, 0.033_795_688_666_751_8),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.047_955_782_271_185_46, 0.051_647_392_663_068_045),
+        (0.047_758_614_679_478_06, 0.051_253_117_276_152_706),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.005_125_268_410_669_828_5, 0.005_913_896_396_703_955),
+        (0.005_202_868_852_537_595, 0.006_091_835_988_471_707),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.064_341_621_454_499_86, 0.066_411_897_204_035_76),
+        (0.064_155_368_114_561_34, 0.066_578_629_174_597_48),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.031_753_836_490_184_51, 0.032_717_713_712_918_51),
+        (0.031_662_626_058_234_27, 0.032_795_330_132_533_62),
     );
     bounds
 }

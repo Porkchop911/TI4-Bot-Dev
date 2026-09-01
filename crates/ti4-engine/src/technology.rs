@@ -54,6 +54,14 @@ pub fn gravity_drive_available(state: &GameState, player: &PlayerId) -> bool {
         && seat.gravity_drive_used_activation != Some(state.activation_seq)
 }
 
+/// Whether this player owns the Dark Energy Tap technology (alias `det`, POK).
+#[must_use]
+pub fn owns_det(state: &GameState, player: &PlayerId) -> bool {
+    state
+        .player(player)
+        .is_some_and(|seat| seat.technologies.contains(&TechnologyId::new("det")))
+}
+
 /// Spend Gravity Drive's once-per-tactical-action movement bonus.
 #[must_use]
 pub fn use_gravity_drive(state: &mut GameState, player: &PlayerId) -> bool {
@@ -880,10 +888,8 @@ mod tests {
             "without the breakthrough, biotic cannot pay a cybernetic prerequisite"
         );
 
-        state
-            .player_mut(&player)
-            .expect("seated")
-            .breakthrough = Some(ti4_model::id::BreakthroughId::new("jolnarbt"));
+        state.player_mut(&player).expect("seated").breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("jolnarbt"));
 
         assert!(
             can_research(&state, content, ALL_SOURCES, &player, &wanted),

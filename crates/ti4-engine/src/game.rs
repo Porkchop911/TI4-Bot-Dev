@@ -1678,8 +1678,12 @@ impl<'a> Game<'a> {
         }
     }
 
-    /// "After a player moves ships into" a system, and the 35.5 frontier exploration when the
-    /// move ends on a frontier token. Non-arrivals announce nothing here.
+    /// Announce "a player moved ships into" a system.
+    ///
+    /// Ending movement on a frontier token is *not* exploring it: LRR 35 allows exploration
+    /// only for a player who owns the Dark Energy Tap technology or another game effect, and
+    /// DET's own trigger fires when the tactical action ends (`close_tactical`), not on the
+    /// move that landed the ship. The arrival here only emits the event other cards react to.
     fn note_arrival(&mut self, player: &PlayerId, outcome: &MoveOutcome) {
         if !matches!(outcome, MoveOutcome::Arrived { .. }) {
             return;
@@ -1691,26 +1695,6 @@ impl<'a> Game<'a> {
             serde_json::Value::String(player.to_string()),
         );
         let _ = self.emit_typed("SHIP_MOVED", payload);
-
-        // 35.5: ending movement on a frontier token explores it.
-        let Some(system) = self.state.active_system.clone() else {
-            return;
-        };
-        let mut dice = crate::dice::Dice::new();
-        let mut rng = crate::rng::GameRng::new(0);
-        let mut ctx = crate::choice::Resolving {
-            content: self.content,
-            sources: self.sources,
-            dice: &mut dice,
-            rng: &mut rng,
-            table: &mut self.table,
-            timing: None,
-        };
-        if crate::exploration::explore_frontier(&mut self.state, &mut ctx, player, &system)
-            .is_some()
-        {
-            self.emit("FRONTIER_EXPLORED");
-        }
     }
 
     /// Select one ship and open its hold.
@@ -2064,6 +2048,38 @@ impl<'a> Game<'a> {
                 &mut self.table,
                 &player,
             );
+        }
+        // Dark Energy Tap: "After you perform a tactical action in a system that contains a
+        // frontier token, if you have 1 or more ships in that system, explore that token."
+        // The trigger is the action ending, not any move inside it: a fleet already parked on
+        // the token explores, and a move that lands on the token does not — `note_arrival`
+        // only announces the arrival, so the exploration must happen here.
+        if let (Some(player), Some(system)) =
+            (self.state.active.clone(), self.state.active_system.clone())
+            && self.state.frontier_tokens.contains(&system)
+            && crate::technology::owns_det(&self.state, &player)
+            && self
+                .state
+                .system_state(&system)
+                .units
+                .iter()
+                .any(|unit| unit.owner == player)
+        {
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut ctx = crate::choice::Resolving {
+                content: self.content,
+                sources: self.sources,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut self.table,
+                timing: None,
+            };
+            if crate::exploration::explore_frontier(&mut self.state, &mut ctx, &player, &system)
+                .is_some()
+            {
+                self.emit("FRONTIER_EXPLORED");
+            }
         }
         self.aftermath = None;
         self.state.active_system = None;
@@ -3910,6 +3926,95 @@ mod tests {
         assert!(
             game.state.active_system.is_none(),
             "the action closed the active system"
+        );
+    }
+
+    #[test]
+    fn arriving_on_a_frontier_token_without_det_does_not_explore_it() {
+        // LRR 35: a frontier token is explored only by a player who owns the Dark Energy Tap
+        // technology "or if another game effect allows them to". Arriving with a ship is
+        // neither, so the token must survive the move. Before the fix `note_arrival` explored
+        // it on every `MoveOutcome::Arrived`, tripping a draw for any fleet that drifted in.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        // A ship with capacity, plus a loadable passenger: the move then takes the cargo
+        // path, whose sailing is where arrivals are announced (the bare-move shortcut sails
+        // inside the offer step and skips the arrival note entirely).
+        crate::fixtures::put(&mut state, &ids[1], "carrier", &PlayerId::new("a"), 1);
+        crate::fixtures::put(&mut state, &ids[1], "infantry", &PlayerId::new("a"), 1);
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+            "done_loading".to_owned(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.state.frontier_tokens.insert(ids[0].clone());
+
+        for _ in 0..40 {
+            let result = game.step();
+            assert_eq!(result.error, None, "no tactical step should refuse");
+            if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                break;
+            }
+        }
+
+        assert!(
+            game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+            "the action ran to completion"
+        );
+        assert!(
+            !game.events.iter().any(|e| e == "FRONTIER_EXPLORED"),
+            "no Dark Energy Tap and no other effect: the token stays"
+        );
+        assert!(
+            game.state.frontier_tokens.contains(&ids[0]),
+            "the arrival did not consume the frontier token"
+        );
+    }
+
+    #[test]
+    fn a_det_owner_explores_the_frontier_token_when_their_tactical_action_ends() {
+        // DET's printed trigger: "After you perform a tactical action in a system that
+        // contains a frontier token, if you have 1 or more ships in that system, explore
+        // that token." The trigger is the tactical action ending, not any move, so a fleet
+        // already sitting on the token explores when its owner performs an action there and
+        // simply finishes moving.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("det"));
+        crate::fixtures::put(&mut state, &ids[0], "carrier", &PlayerId::new("a"), 1);
+        crate::fixtures::put(&mut state, &ids[0], "infantry", &PlayerId::new("a"), 1);
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        game.state.frontier_tokens.insert(ids[0].clone());
+
+        for _ in 0..40 {
+            let result = game.step();
+            assert_eq!(result.error, None, "no tactical step should refuse");
+            if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                break;
+            }
+        }
+
+        assert!(
+            game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"),
+            "the action ran to completion"
+        );
+        assert!(
+            game.events.iter().any(|e| e == "FRONTIER_EXPLORED"),
+            "the DET trigger fired when the tactical action ended"
+        );
+        assert!(
+            !game.state.frontier_tokens.contains(&ids[0]),
+            "exploring consumed the token"
         );
     }
 
