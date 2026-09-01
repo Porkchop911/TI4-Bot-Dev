@@ -24,14 +24,28 @@ param(
     # Seeds per evaluation point. 400 x 6 rotations x 6 seats = 14,400 seat-games, about +-0.5pp.
     [int]$EvalSeeds = 400,
 
-    # Measure every Nth checkpoint rather than all of them. A 900-update arm writes ~90 checkpoints
-    # and each measurement costs ~25s, so measuring all of them would cost more than the training
-    # did. Every 10th is a point per 100 updates, which is finer than any effect this experiment can
-    # resolve. The final checkpoint is always measured whatever the stride.
-    [int]$EvalStride = 10,
+    # Measure every Nth checkpoint. One checkpoint is written per 10 updates, so a stride of 5 is a
+    # point per 50 updates -- fine enough to see where an arm plateaus, which is the only shape this
+    # experiment reads off the curve. The final checkpoint is always measured whatever the stride.
+    [int]$EvalStride = 5,
 
-    # Updates per arm.
-    [int]$Updates = 900
+    # Updates per arm. The pilot reached its final level by update 200 and spent the next 700 inside
+    # its own confidence interval (83.19 at 200, 84.17 at 300, 84.30 at 500, 83.91 at 900, all
+    # +-0.6), so 500 is comfortably past the plateau with room for an arm that travels more slowly
+    # than the pilot did -- A-250 most of all, at 0.4x the gradient per update.
+    [int]$Updates = 500,
+
+    # Independent runs per arm, differing **only** in the rollout seed stream.
+    #
+    # One run per arm gives a between-arm difference with no idea what a within-arm difference looks
+    # like. The clearance_eval half-width measures sampling error in the *evaluation* and says
+    # nothing about run-to-run variation in the training, which is the larger of the two and the one
+    # that decides whether a two-point gap between arms means anything.
+    #
+    # Replicate r shifts the training seed base by r * 100000000, far enough that no two replicates
+    # share a seed. Everything else -- checkpoint, temperature, learning rate, update count, and the
+    # evaluation seeds -- is identical.
+    [int]$Replicates = 1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,7 +104,8 @@ foreach ($exe in @($train, $eval)) {
 $sweep = Join-Path $root 'out\sweep'
 if (-not (Test-Path $sweep)) { New-Item -ItemType Directory -Path $sweep | Out-Null }
 
-# Fixed for every arm. Nothing here may vary between arms.
+# Fixed for every arm and every replicate. Nothing here may vary between them.
+# --seed-base is deliberately absent: it is the one thing a replicate changes, added per run below.
 $bundle = 'out/checkpoints/run-028/checkpoint-60672'
 $shared = @(
     '--bundle', $bundle,
@@ -98,7 +113,6 @@ $shared = @(
     '--rounds', '1',
     '--movement-entropy', '0.05',
     '--entropy-final', '1',
-    '--seed-base', '650000000',
     '--updates', "$Updates",
     '--report-every', '10',
     '--device', 'cuda'
@@ -149,32 +163,40 @@ function Measure-Arm {
 Write-Host "temperature sweep at $commit"
 Write-Host "  arms       $($Arms -join ', ')"
 Write-Host "  start      $bundle"
-Write-Host "  updates    $Updates per arm"
+Write-Host "  updates    $Updates per arm x $Replicates replicate(s)"
 Write-Host "  measured   temperature 0.25, $EvalSeeds seeds, Validation pool, every $EvalStride checkpoints"
 Write-Host ''
 
 foreach ($arm in $Arms) {
     $spec = $definitions[$arm]
-    $out = "out/checkpoints/sweep-$arm"
-    $log = Join-Path $sweep "$arm.log"
 
-    if (-not $EvalOnly) {
-        Write-Host "=== $arm : temperature $($spec.Temperature), lr $($spec.LearningRate) -- $($spec.Note) ==="
-        $started = Get-Date
-        $argv = $shared + @(
-            '--temperature', "$($spec.Temperature)",
-            '--learning-rate', "$($spec.LearningRate)",
-            '--out', $out
-        )
-        & $train @argv *> $log
-        if ($LASTEXITCODE -ne 0) {
-            throw "$arm failed; see $log"
+    for ($rep = 1; $rep -le $Replicates; $rep++) {
+        # A single replicate keeps the bare arm name, so a one-replicate sweep reads the way the
+        # experiment document describes it rather than littering every path with "-r1".
+        $label = if ($Replicates -eq 1) { $arm } else { "$arm-r$rep" }
+        $out = "out/checkpoints/sweep-$label"
+        $log = Join-Path $sweep "$label.log"
+        $seedBase = 650000000 + ($rep - 1) * 100000000
+
+        if (-not $EvalOnly) {
+            Write-Host "=== $label : temperature $($spec.Temperature), lr $($spec.LearningRate), seeds $seedBase -- $($spec.Note) ==="
+            $started = Get-Date
+            $argv = $shared + @(
+                '--temperature', "$($spec.Temperature)",
+                '--learning-rate', "$($spec.LearningRate)",
+                '--seed-base', "$seedBase",
+                '--out', $out
+            )
+            & $train @argv *> $log
+            if ($LASTEXITCODE -ne 0) {
+                throw "$label failed; see $log"
+            }
+            Write-Host "  trained in $([int]((Get-Date) - $started).TotalMinutes) min -> $log"
         }
-        Write-Host "  trained in $([int]((Get-Date) - $started).TotalMinutes) min -> $log"
-    }
 
-    Measure-Arm -Arm $arm -CheckpointDir (Join-Path $root ($out -replace '/', '\'))
-    Write-Host ''
+        Measure-Arm -Arm $label -CheckpointDir (Join-Path $root ($out -replace '/', ''))
+        Write-Host ''
+    }
 }
 
 Write-Host 'done. Record the findings under ## Results in plans/EXP_TEMPERATURE_SWEEP.md.'

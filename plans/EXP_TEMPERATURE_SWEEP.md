@@ -94,7 +94,7 @@ which is what ruled the bonus out as the whole story there.
 |---|---|
 | start | `out/checkpoints/run-028/checkpoint-60672` — the champion, 91.3% held-out |
 | seed base | 650000000 (identical rollout seeds in every arm) |
-| updates | 900 |
+| updates | 500 (see below) |
 | stage / rounds | 1 / 1 |
 | movement entropy | 0.05 (the setting behind every good run: 018–023, 028) |
 | entropy final | 1 (no annealing, so entropy is not a second moving part) |
@@ -132,13 +132,41 @@ clearance_eval --bundle <checkpoint> --temperature 0.25 --seeds 400 --seed-base 
 these rates. The half-width is printed; treat a gap no larger than it as no gap. It assumes seat
 independence, which is not quite true because six seats share a map, so it is a lower bound.
 
-Checkpoints are measured every 10th (a point per 100 updates) plus the final one, because a
-900-update arm writes ~90 of them and measuring all would cost more than the training did. A point
-per 100 updates is finer than any effect this experiment can resolve.
+**Why 300 updates and not 900.** The pilot settles this. run-031 ran 900 and reached its final
+level by update 200:
 
-**Cost.** ~28 min of training per arm (900 updates at ~1.85s) plus ~4 min of measurement (10 points
-at ~25s). Seven arms is a little under 4 hours. Arms run sequentially: they contend for the same GPU
-and all CPU cores.
+| after | clearance at 0.25, held out |
+|---|---|
+| start | 92.49% ±0.43 |
+| 100 | 86.96% ±0.55 |
+| 200 | 83.19% ±0.61 |
+| 300 | 84.17% ±0.60 |
+| 500 | 84.30% ±0.59 |
+| 900 | 83.91% ±0.60 |
+
+Updates 200 to 900 are seven hundred updates whose every reading sits inside the others' intervals.
+**500** leaves comfortable margin past that plateau, with room for an arm that travels more slowly
+per update than the pilot did, and still costs well under half of 900.
+
+The arm this could shortchange is **A-250**, whose 0.4x gradient scaling makes it travel less per
+update, so a flat A-250 at 300 updates is ambiguous between "hot does nothing" and "hot moves
+slowly". C-250 is precisely the arm that resolves that, which is another reason not to drop the
+compensated family. If both hot arms are still visibly moving at 300, extend those two rather than
+lengthening every arm: `-Arms A-250,C-250 -Updates 1500`.
+
+Checkpoints are measured every 5th (a point per 50 updates) plus the final one.
+
+**Replicates.** `-Replicates n` runs each arm `n` times, differing **only** in the rollout seed
+base (shifted by `r * 100000000`). This matters more than it looks: `clearance_eval`'s half-width is
+sampling error in the *evaluation* and says nothing about run-to-run variation in the training,
+which is the larger of the two and the one that decides whether a two-point gap between arms means
+anything. One replicate gives a between-arm difference with no sense of what a within-arm difference
+looks like. Default is 1; the first pass runs at 1 and a second replicate is the right follow-up for
+any pair that lands close.
+
+**Cost.** ~15 min of training per arm (500 updates at ~1.85s) plus ~4 min of measurement (11 points
+at ~20s). Seven arms is about **2h15** per replicate. Arms run sequentially: they contend for the
+same GPU and all CPU cores.
 
 ## What would count as an answer
 
