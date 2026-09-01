@@ -31,17 +31,18 @@ const SEAT_COLORS: [Color32; 6] = [
     Color32::from_rgb(238, 126, 49),
 ];
 
-fn seat_index(player: &PlayerId) -> usize {
+const NEUTRAL_COLOR: Color32 = Color32::from_rgb(166, 174, 184);
+
+fn seat_index(player: &PlayerId) -> Option<usize> {
     player
         .to_string()
         .strip_prefix("seat")
         .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or_default()
-        % SEAT_COLORS.len()
+        .map(|index| index % SEAT_COLORS.len())
 }
 
 fn player_color(player: &PlayerId) -> Color32 {
-    SEAT_COLORS[seat_index(player)]
+    seat_index(player).map_or(NEUTRAL_COLOR, |index| SEAT_COLORS[index])
 }
 
 fn short_trait(value: &str) -> &'static str {
@@ -105,6 +106,28 @@ fn unit_base(content: &ContentStore, unit: &Unit) -> String {
         || unit.type_id.to_string(),
         |kind| kind.base_type().to_owned(),
     )
+}
+
+fn planets_for_tile(
+    session: &ReviewSession,
+    frame: &ReviewFrame,
+    tile: &crate::BoardTile,
+) -> Vec<crate::PlanetMeta> {
+    let mut planets = tile.planets.clone();
+    for (planet, system) in &frame.state.placed_planets {
+        if system.as_str() != tile.system || planets.iter().any(|known| known.id == planet.as_str())
+        {
+            continue;
+        }
+        if let Some(meta) = session
+            .planet_catalog
+            .iter()
+            .find(|candidate| candidate.id == planet.as_str())
+        {
+            planets.push(meta.clone());
+        }
+    }
+    planets
 }
 
 fn polygon(center: Pos2, radius: f32, sides: usize, offset: f32) -> Vec<Pos2> {
@@ -900,6 +923,75 @@ impl ReviewApp {
                         }
                     }
                     ui.separator();
+                    ui.heading("Table state");
+                    ui.horizontal_wrapped(|ui| {
+                        stat_badge(ui, "♛", "Speaker", &frame.state.speaker);
+                        stat_badge(
+                            ui,
+                            "◎",
+                            "Custodians",
+                            if frame.state.custodians_removed {
+                                "removed"
+                            } else {
+                                "present"
+                            },
+                        );
+                        stat_badge(
+                            ui,
+                            "▣",
+                            "Action discard",
+                            frame.state.discarded_action_cards.len(),
+                        );
+                    });
+                    item_section(
+                        ui,
+                        "◆",
+                        "Unclaimed strategy cards",
+                        frame
+                            .state
+                            .unclaimed_strategy_cards
+                            .iter()
+                            .map(|card| {
+                                let goods = frame
+                                    .state
+                                    .strategy_card_goods
+                                    .get(card)
+                                    .copied()
+                                    .unwrap_or_default();
+                                if goods > 0 {
+                                    format!("{card} · {goods} TG")
+                                } else {
+                                    card.to_string()
+                                }
+                            })
+                            .collect(),
+                        Color32::LIGHT_BLUE,
+                    );
+                    item_section(
+                        ui,
+                        "⚖",
+                        "Laws in play",
+                        frame
+                            .state
+                            .laws
+                            .iter()
+                            .map(|(law, outcome)| format!("{law} · {outcome}"))
+                            .collect(),
+                        Color32::LIGHT_BLUE,
+                    );
+                    item_section(
+                        ui,
+                        "↯",
+                        "Discarded action cards",
+                        frame
+                            .state
+                            .discarded_action_cards
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect(),
+                        Color32::LIGHT_BLUE,
+                    );
+                    ui.separator();
                     ui.heading("Player sheets");
                     for player in &frame.state.players {
                         let color = player_color(&player.id);
@@ -941,33 +1033,37 @@ impl ReviewApp {
                                 .collect();
                             item_section(ui, "◆", "Strategy cards", strategy, color);
 
-                            let controlled_planets: Vec<String> = session
-                                .board
-                                .iter()
-                                .flat_map(|tile| {
-                                    let state = frame.state.board.get(&SystemId::new(&tile.system));
-                                    tile.planets
-                                        .iter()
-                                        .filter(move |planet| {
-                                            state.and_then(|state| {
-                                                state.planet_control.get(planet.id.as_str())
-                                            }) == Some(&player.id)
-                                        })
-                                        .map(|planet| {
-                                            let exhausted = frame
-                                                .state
-                                                .exhausted_planets
-                                                .contains(planet.id.as_str());
-                                            format!(
-                                                "{} {}/{}{}",
-                                                planet.label,
-                                                planet.resources,
-                                                planet.influence,
-                                                if exhausted { " · exhausted" } else { "" }
-                                            )
-                                        })
-                                })
-                                .collect();
+                            let mut controlled_planets = Vec::new();
+                            for tile in &session.board {
+                                let state = frame.state.board.get(&SystemId::new(&tile.system));
+                                for planet in planets_for_tile(session, frame, tile) {
+                                    if state.and_then(|state| {
+                                        state.planet_control.get(planet.id.as_str())
+                                    }) != Some(&player.id)
+                                    {
+                                        continue;
+                                    }
+                                    let exhausted =
+                                        frame.state.exhausted_planets.contains(planet.id.as_str());
+                                    let attachments = frame
+                                        .state
+                                        .planet_attachments
+                                        .get(planet.id.as_str())
+                                        .map_or(0, Vec::len);
+                                    controlled_planets.push(format!(
+                                        "{} {}/{}{}{}",
+                                        planet.label,
+                                        planet.resources,
+                                        planet.influence,
+                                        if exhausted { " · exhausted" } else { "" },
+                                        if attachments > 0 {
+                                            format!(" · {attachments} attachment(s)")
+                                        } else {
+                                            String::new()
+                                        }
+                                    ));
+                                }
+                            }
                             item_section(ui, "●", "Planets", controlled_planets, color);
 
                             let mut unit_counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -1053,7 +1149,13 @@ impl ReviewApp {
                                 player
                                     .relics
                                     .iter()
-                                    .map(ToString::to_string)
+                                    .map(|relic| {
+                                        if player.exhausted_relics.contains(relic) {
+                                            format!("{relic} · exhausted")
+                                        } else {
+                                            relic.to_string()
+                                        }
+                                    })
                                     .chain(player.relic_fragments.iter().map(
                                         |(trait_name, count)| {
                                             format!("{trait_name} fragment ×{count}")
@@ -1062,6 +1164,39 @@ impl ReviewApp {
                                     .collect(),
                                 color,
                             );
+                            item_section(
+                                ui,
+                                "◈",
+                                "Exploration cards in play",
+                                player.exploration_cards.clone(),
+                                color,
+                            );
+                            let mut promissory: Vec<String> = frame
+                                .state
+                                .promissory_notes
+                                .iter()
+                                .filter(|(_, holder)| *holder == &player.id)
+                                .map(|(note, _)| {
+                                    if frame.state.promissory_faceup.contains(note) {
+                                        format!("{note} · faceup")
+                                    } else {
+                                        note.clone()
+                                    }
+                                })
+                                .collect();
+                            promissory.extend(
+                                frame
+                                    .state
+                                    .support_holders
+                                    .iter()
+                                    .filter(|(_, holder)| *holder == &player.id)
+                                    .map(|(owner, _)| {
+                                        format!("Support for the Throne:{owner} · faceup")
+                                    }),
+                            );
+                            promissory.sort();
+                            promissory.dedup();
+                            item_section(ui, "✉", "Promissory notes", promissory, color);
                             item_section(
                                 ui,
                                 "♟",
@@ -1154,6 +1289,38 @@ impl ReviewApp {
                                 decision.temperature,
                                 decision.chosen.as_deref().unwrap_or("ERROR")
                             ));
+                            if let Some(chosen) = decision.chosen.as_deref()
+                                && let Some(selected) = decision
+                                    .options
+                                    .iter()
+                                    .find(|option| option.id == chosen)
+                                && let Some(chosen_probability) = selected.probability
+                            {
+                                let mut ranked: Vec<&crate::OptionDetail> = decision
+                                    .options
+                                    .iter()
+                                    .filter(|option| option.probability.is_some())
+                                    .collect();
+                                ranked.sort_by(|left, right| {
+                                    right
+                                        .probability
+                                        .unwrap_or_default()
+                                        .total_cmp(&left.probability.unwrap_or_default())
+                                });
+                                let rank = ranked
+                                    .iter()
+                                    .position(|option| option.id == chosen)
+                                    .map_or(0, |index| index + 1);
+                                let best = ranked
+                                    .first()
+                                    .and_then(|option| option.probability)
+                                    .unwrap_or(chosen_probability);
+                                ui.small(format!(
+                                    "Chosen rank {rank}/{} · p {chosen_probability:.5} · best p {best:.5}{}",
+                                    ranked.len(),
+                                    if rank > 1 { " · sampled below the greedy choice" } else { "" }
+                                ));
+                            }
                             for option in &decision.options {
                                 let selected =
                                     decision.chosen.as_deref() == Some(option.id.as_str());
@@ -1236,7 +1403,7 @@ impl ReviewApp {
                 }
             });
             ui.small(
-                "Planet circle: resources/influence · traits C cultural, H hazardous, I industrial · tech B propulsion, G biotic, R warfare, Y cybernetic · ★ legendary. Unit labels show class×count; red slash = damaged, yellow ring = galvanized.",
+                "Thick outer edge = space control; thin inner edge = planet control (split when mixed). Planet: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.",
             );
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
@@ -1246,6 +1413,7 @@ impl ReviewApp {
                 .clamp(0.45, 1.2);
             let radius = 58.0 * scale;
             for tile in &session.board {
+                let tile_planets = planets_for_tile(session, frame, tile);
                 let x = center.x + 126.0 * scale * (tile.q as f32 + tile.r as f32 / 2.0);
                 let y = center.y + 108.0 * scale * tile.r as f32;
                 let point = Pos2::new(x, y);
@@ -1257,7 +1425,11 @@ impl ReviewApp {
                     })
                     .collect();
                 let selected = self.selected_tile.as_deref() == Some(tile.system.as_str());
-                let fill = if tile.hyperlane {
+                let system_id = SystemId::new(&tile.system);
+                let system_purged = frame.state.purged_systems.contains(&system_id);
+                let fill = if system_purged {
+                    Color32::from_rgb(24, 24, 28)
+                } else if tile.hyperlane {
                     Color32::from_rgb(55, 39, 91)
                 } else if selected {
                     Color32::from_rgb(48, 91, 116)
@@ -1287,6 +1459,42 @@ impl ReviewApp {
                         Stroke::new(5.0 * scale.max(0.75), player_color(owner)),
                     ));
                 }
+                let mut planet_owners: Vec<&PlayerId> = system_state
+                    .into_iter()
+                    .flat_map(|state| {
+                        tile_planets.iter().filter_map(|planet| {
+                            let planet_id = ti4_model::id::PlanetId::new(&planet.id);
+                            (!state.purged_planets.contains(&planet_id))
+                                .then(|| state.planet_control.get(&planet_id))
+                                .flatten()
+                        })
+                    })
+                    .collect();
+                planet_owners.sort();
+                planet_owners.dedup();
+                let ownership_ring: Vec<Pos2> = points
+                    .iter()
+                    .map(|corner| point + (*corner - point) * 0.92)
+                    .collect();
+                if let [owner] = planet_owners.as_slice() {
+                    painter.add(Shape::closed_line(
+                        ownership_ring.clone(),
+                        Stroke::new(2.2 * scale.max(0.8), player_color(owner)),
+                    ));
+                } else if planet_owners.len() > 1 {
+                    for index in 0..ownership_ring.len() {
+                        painter.line_segment(
+                            [
+                                ownership_ring[index],
+                                ownership_ring[(index + 1) % ownership_ring.len()],
+                            ],
+                            Stroke::new(
+                                2.5 * scale.max(0.8),
+                                player_color(planet_owners[index % planet_owners.len()]),
+                            ),
+                        );
+                    }
+                }
                 if selected {
                     let inner: Vec<Pos2> = points
                         .iter()
@@ -1297,7 +1505,11 @@ impl ReviewApp {
                 painter.text(
                     point + Vec2::new(0.0, -45.0 * scale),
                     Align2::CENTER_CENTER,
-                    &tile.label,
+                    if system_purged {
+                        format!("{} · PURGED", tile.label)
+                    } else {
+                        tile.label.clone()
+                    },
                     FontId::proportional(9.5 * scale.max(0.85)),
                     Color32::WHITE,
                 );
@@ -1350,8 +1562,41 @@ impl ReviewApp {
                     }
                 }
 
-                let planet_count = tile.planets.len();
-                for (planet_index, planet) in tile.planets.iter().enumerate() {
+                let mut token_labels = Vec::new();
+                if frame.state.frontier_tokens.contains(&system_id) {
+                    token_labels.push("Frontier".to_owned());
+                }
+                for (kind, system) in &frame.state.wormhole_tokens {
+                    if system == &system_id {
+                        token_labels.push(format!("{kind} WH"));
+                    }
+                }
+                if let Some((system, face)) = &frame.state.ion_storm
+                    && system == &system_id
+                {
+                    token_labels.push(format!("Ion {face}"));
+                }
+                if frame.state.ingress_tokens.contains(&system_id) {
+                    token_labels.push("Ingress".to_owned());
+                }
+                if frame.state.breach_tokens.contains(&system_id) {
+                    token_labels.push("Breach".to_owned());
+                }
+                if frame.state.thunders_edge_system.as_ref() == Some(&system_id) {
+                    token_labels.push("Thunder's Edge".to_owned());
+                }
+                if !token_labels.is_empty() {
+                    painter.text(
+                        point + Vec2::new(0.0, 45.0 * scale),
+                        Align2::CENTER_CENTER,
+                        token_labels.join(" · "),
+                        FontId::proportional(6.2 * scale.max(0.85)),
+                        Color32::from_rgb(129, 221, 237),
+                    );
+                }
+
+                let planet_count = tile_planets.len();
+                for (planet_index, planet) in tile_planets.iter().enumerate() {
                     let offset_x = match planet_count {
                         1 => 0.0,
                         2 => (planet_index as f32 * 2.0 - 1.0) * 22.0,
@@ -1367,8 +1612,14 @@ impl ReviewApp {
                             .planet_control
                             .get(&ti4_model::id::PlanetId::new(&planet.id))
                     });
-                    let planet_color =
-                        owner.map_or(Color32::from_rgb(91, 96, 105), player_color);
+                    let planet_id = ti4_model::id::PlanetId::new(&planet.id);
+                    let purged = system_state
+                        .is_some_and(|state| state.purged_planets.contains(&planet_id));
+                    let planet_color = if purged {
+                        Color32::from_rgb(38, 38, 42)
+                    } else {
+                        owner.map_or(Color32::from_rgb(91, 96, 105), player_color)
+                    };
                     let planet_radius = 14.5 * scale.max(0.72);
                     painter.circle_filled(
                         planet_center,
@@ -1420,7 +1671,15 @@ impl ReviewApp {
                         Align2::CENTER_TOP,
                         format!(
                             "{}{}",
-                            if planet.legendary { "★" } else { "" },
+                            if purged {
+                                "× "
+                            } else if planet.space_station {
+                                "S "
+                            } else if planet.legendary {
+                                "★"
+                            } else {
+                                ""
+                            },
                             planet.label
                         ),
                         FontId::proportional(6.4 * scale.max(0.9)),
@@ -1428,9 +1687,40 @@ impl ReviewApp {
                     );
 
                     if let Some(state) = system_state
+                        && let Some(coexisting) = state.coexisting.get(&planet_id)
+                    {
+                        for (index, coexistor) in coexisting.iter().enumerate() {
+                            let angle = std::f32::consts::TAU * index as f32
+                                / coexisting.len().max(1) as f32;
+                            let marker = planet_center
+                                + Vec2::angled(angle) * (planet_radius + 4.0 * scale);
+                            painter.circle_filled(marker, 2.8 * scale, player_color(coexistor));
+                            painter.circle_stroke(
+                                marker,
+                                2.8 * scale,
+                                Stroke::new(0.8, Color32::WHITE),
+                            );
+                        }
+                    }
+                    if let Some(attachments) = frame
+                        .state
+                        .planet_attachments
+                        .get(&planet_id)
+                        .filter(|attachments| !attachments.is_empty())
+                    {
+                        painter.text(
+                            planet_center + Vec2::new(planet_radius, -planet_radius),
+                            Align2::CENTER_CENTER,
+                            format!("+{}", attachments.len()),
+                            FontId::monospace(6.0 * scale.max(0.9)),
+                            Color32::YELLOW,
+                        );
+                    }
+
+                    if let Some(state) = system_state
                         && let Some(units) = state
                             .planet_units
-                            .get(&ti4_model::id::PlanetId::new(&planet.id))
+                            .get(&planet_id)
                     {
                         let mut ground_groups: BTreeMap<(PlayerId, String, bool, bool), usize> =
                             BTreeMap::new();
