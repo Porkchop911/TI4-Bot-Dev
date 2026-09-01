@@ -553,6 +553,18 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--movement-entropy expects a number"))
     });
+    // Exposed for the temperature sweep, which needs it as a control rather than as a tuning knob.
+    // Dividing the logits by `T` before the softmax also divides the gradient with respect to those
+    // logits by `T`: `d/ds log softmax(s / T)_a = (1/T) (e_a - p)`. So a temperature change is
+    // silently also an effective-learning-rate change, 4x at 0.25 and 0.4x at 2.5, and a sweep that
+    // does not hold that fixed cannot say which of the two it measured.
+    settings.learning_rate = argument("--learning-rate").map_or(settings.learning_rate, |value| {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|parsed| parsed.is_finite() && *parsed > 0.0)
+            .unwrap_or_else(|| refuse("--learning-rate expects a positive number"))
+    });
     let seed_base: u64 = argument("--seed-base").map_or(SEED_BASE, |value| {
         value
             .parse()
@@ -672,6 +684,11 @@ fn main() {
         settings.strategy_entropy,
         settings.movement_entropy
     );
+    // Recorded in the header because run-030's log did not name it, and the temperature is the
+    // whole difference between that run and the one before it. A log that cannot say what it was
+    // run at cannot be compared against another.
+    println!("  sampling    temperature {temperature} (acting and recorded behaviour)");
+    println!("  adam        learning rate {}", settings.learning_rate);
     println!(
         "  update      {SEEDS_PER_UPDATE} seeds x {} rotations\n",
         FACTIONS.len()
