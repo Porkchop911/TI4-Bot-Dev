@@ -1013,6 +1013,13 @@ mod tests {
     }
 
     fn write_bundle(scratch: &Scratch, mode: CriticMode) -> (PathBuf, String) {
+        // Pin the backend before writing, because the manifest records the thread counts and
+        // `read` checks them against the backend as it stands *then*. libtorch's thread counts are
+        // process-global and cargo runs a binary's tests in parallel threads of one process, so a
+        // bundle written before some other test called `configure_deterministic` was read after it
+        // and refused itself. The call is idempotent and serialised, so doing it here costs
+        // nothing and removes the race at its source rather than by ordering the tests.
+        ti4_tensor::configure_deterministic(20_260_826).expect("deterministic backend");
         let text = slots();
         let capacity = ti4_policy::vocabulary::Vocabulary::from_json(&text)
             .expect("loads")
