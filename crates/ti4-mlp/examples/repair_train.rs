@@ -48,7 +48,7 @@ use rayon::prelude::*;
 use ti4_content::ContentStore;
 use ti4_engine::Choice;
 use ti4_engine::choice::{ChoiceOption, Decider, IllegalChoice, SeatObservation};
-use ti4_mlp::repair::Sample;
+use ti4_mlp::repair::{Anchor, Sample};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
@@ -429,6 +429,31 @@ fn main() {
     let epochs: usize = number("--epochs", 6);
     let learning_rate: f64 = number("--learning-rate", 1e-5);
     let max_failures: usize = number("--max-failures", usize::MAX);
+    // Weight on the trust region. Without it the repair objective took held-out clearance from
+    // 93.96% to 12.94% in sixteen epochs while its own loss fell smoothly: repair states are 0.4%
+    // of the decision distribution and rewriting the rest is free unless something forbids it.
+    let anchor_weight: f64 = number("--anchor-weight", 1.0);
+    // A comma-separated list turns the run into a sweep: collect and enumerate **once**, then train
+    // each weight from the same starting weights against the same labels. Enumeration is 25 minutes
+    // and the weights do not change what it would find, so re-running it per weight would be pure
+    // waste and would also let sampling noise between collections masquerade as a weight effect.
+    let anchor_sweep: Vec<f64> = argument("--anchor-weights").map_or_else(
+        || vec![anchor_weight],
+        |text| {
+            text.split(',')
+                .map(|piece| {
+                    piece
+                        .trim()
+                        .parse()
+                        .unwrap_or_else(|_| refuse("--anchor-weights expects numbers"))
+                })
+                .collect()
+        },
+    );
+    // How many games' worth of ordinary decisions hold the policy in place. These are drawn from
+    // whole games, cleared and failed alike, so the anchor covers the behaviour that is already
+    // right rather than only the neighbourhood of the failures.
+    let anchor_games: u64 = number("--anchor-games", 40);
     let out = argument("--out").unwrap_or_else(|| "out/checkpoints/repair".to_owned());
 
     ti4_tensor::configure_deterministic(20_260_826)
@@ -493,6 +518,67 @@ fn main() {
     )
     .unwrap_or_else(|error| refuse(&error));
     println!("  baseline    {baseline:.2}% greedy, held out");
+    println!();
+
+    // Anchor states, captured **once** against the starting policy. They are the reference the
+    // trust region is measured to, so re-capturing them each round would let the target drift with
+    // the policy and the anchor would hold nothing.
+    let anchors = {
+        let table = Table {
+            content,
+            factions: &factions,
+            pool: &train_pool,
+            vocabulary: &vocabulary,
+        };
+        let jobs: Vec<(u64, usize)> = (seed_base..seed_base + anchor_games)
+            .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
+            .collect();
+        let workers = rayon::current_num_threads().max(1);
+        let per_worker = jobs.len().div_ceil(workers).max(1);
+        let harvest: Vec<Result<Vec<Anchor>, String>> = jobs
+            .chunks(per_worker)
+            .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|(local, chunk)| {
+                let local = Rc::new(local);
+                let mut rows = Vec::new();
+                for (seed, rotation) in chunk {
+                    for faction in FACTIONS {
+                        let (_cleared, line) =
+                            record_line(&table, &local, seed, rotation, faction)?;
+                        for step in line {
+                            let head = ti4_mlp::heads()
+                                .get(step.head)
+                                .ok_or_else(|| format!("head {} is out of range", step.head))?;
+                            // Temperature 1.0: the anchor is about the shape of the distribution,
+                            // and reading it at the greedy limit would record a near one-hot that
+                            // says nothing about the mass the policy puts elsewhere.
+                            let reference = local
+                                .probabilities(&step.options, head, step.row, 1.0)
+                                .map_err(|error| format!("anchor reference: {error}"))?;
+                            rows.push(Anchor {
+                                row: step.row,
+                                head: step.head,
+                                options: step.options,
+                                reference,
+                            });
+                        }
+                    }
+                }
+                Ok(rows)
+            })
+            .collect();
+        let mut rows = Vec::new();
+        for chunk in harvest {
+            rows.append(&mut chunk.unwrap_or_else(|error| refuse(&error)));
+        }
+        rows
+    };
+    println!(
+        "  anchor      {} states from {anchor_games} maps, weight {anchor_weight}",
+        anchors.len()
+    );
     println!();
 
     let mut best = baseline;
@@ -637,9 +723,33 @@ fn main() {
         }
 
         // ---- train --------------------------------------------------------------------------
+        // The round's starting weights on disk, so each anchor weight in the sweep can be trained
+        // from exactly the same policy. Round 1 could reuse `--bundle`, but later rounds start from
+        // whatever the previous round produced and there is no other copy of it.
+        let round_start = std::path::Path::new(&out)
+            .join(format!("round-{round}"))
+            .join("start")
+            .display()
+            .to_string();
+        if anchor_sweep.len() > 1 {
+            ti4_mlp::bundle::write(
+                std::path::Path::new(&round_start),
+                &actor,
+                &slots_text,
+                ti4_mlp::bundle::CriticMode::BatchMean,
+                &ti4_mlp::bundle::Provenance {
+                    source: "repair_train".to_owned(),
+                    git_commit: git_commit.clone(),
+                    update: u64::try_from(round).unwrap_or(0),
+                },
+            )
+            .unwrap_or_else(|error| refuse(&format!("writing {round_start}: {error}")));
+        }
+
         // `distill::Adam` over the actor's own parameter handles. `ppo::Adam` wraps the same
         // optimiser but its `step` is private and keyed to a PPO batch; here the gradient comes from
         // one backward over the whole preference set, which is small enough to need no minibatching.
+        #[expect(unused_mut, reason = "reassigned inside the sweep loop")]
         let settings = ti4_mlp::ppo::Settings {
             learning_rate,
             ..ti4_mlp::ppo::Settings::default()
@@ -650,63 +760,88 @@ fn main() {
 
         let mut round_best = f64::NEG_INFINITY;
         let mut round_best_epoch = 0usize;
-        for epoch in 1..=epochs {
-            optimizer
-                .zero_grad(&actor)
-                .unwrap_or_else(|error| refuse(&format!("clearing gradients: {error}")));
-            let loss = ti4_mlp::repair::loss(&actor, &samples)
-                .unwrap_or_else(|error| refuse(&format!("repair loss: {error}")))
-                .unwrap_or_else(|| refuse("the repair batch was empty"));
-            let value = f64::try_from(&loss).unwrap_or(f64::NAN);
-            loss.backward();
-            optimizer
-                .step(&actor)
-                .unwrap_or_else(|error| refuse(&format!("optimizer step: {error}")));
-
-            let held = measure(
-                content,
-                &factions,
-                &holdout_pool,
-                &vocabulary,
-                &actor,
-                eval_seeds,
-                900_000_000,
-            )
-            .unwrap_or_else(|error| refuse(&error));
-            let mark = if held > best {
-                "  <-- best overall"
-            } else {
-                ""
-            };
-            println!("            epoch {epoch}: loss {value:.5}, held out {held:.2}%{mark}");
-
-            // A bundle per epoch, because an auxiliary objective with no PPO term to hold the
-            // policy in place can and does walk past its own optimum. Keeping the best means being
-            // able to go back to it, and bundle round-trips are already verified.
-            let path = std::path::Path::new(&out)
-                .join(format!("round-{round}"))
-                .join(format!("epoch-{epoch}"));
-            if let Err(error) = ti4_mlp::bundle::write(
-                &path,
-                &actor,
-                &slots_text,
-                ti4_mlp::bundle::CriticMode::BatchMean,
-                &ti4_mlp::bundle::Provenance {
-                    source: "repair_train".to_owned(),
-                    git_commit: git_commit.clone(),
-                    update: u64::try_from(round * 1000 + epoch).unwrap_or(0),
-                },
-            ) {
-                refuse(&format!("writing {}: {error}", path.display()));
+        let mut round_best_weight = anchor_sweep[0];
+        for anchor_weight in anchor_sweep.iter().copied() {
+            // Back to the round's starting weights, so every weight in the sweep is trained from the
+            // same policy against the same labels and the comparison is about the weight alone.
+            if anchor_sweep.len() > 1 {
+                let restart = ti4_mlp::bundle::read(std::path::Path::new(&round_start))
+                    .unwrap_or_else(|error| refuse(&format!("restoring {round_start}: {error}")));
+                actor = restart.actor;
+                optimizer = ti4_mlp::ppo::Adam::new(
+                    &mut actor,
+                    ti4_mlp::bundle::CriticMode::BatchMean,
+                    settings,
+                )
+                .unwrap_or_else(|error| refuse(&format!("optimizer: {error}")));
+                println!("            --- anchor weight {anchor_weight} ---");
             }
+            for epoch in 1..=epochs {
+                optimizer
+                    .zero_grad(&actor)
+                    .unwrap_or_else(|error| refuse(&format!("clearing gradients: {error}")));
+                let repair = ti4_mlp::repair::loss(&actor, &samples)
+                    .unwrap_or_else(|error| refuse(&format!("repair loss: {error}")))
+                    .unwrap_or_else(|| refuse("the repair batch was empty"));
+                let value = f64::try_from(&repair).unwrap_or(f64::NAN);
+                let anchor = ti4_mlp::repair::anchor_loss(&actor, &anchors)
+                    .unwrap_or_else(|error| refuse(&format!("anchor loss: {error}")))
+                    .unwrap_or_else(|| refuse("the anchor set was empty"));
+                let drift = f64::try_from(&anchor).unwrap_or(f64::NAN);
+                let loss = repair + anchor * anchor_weight;
+                loss.backward();
+                optimizer
+                    .step(&actor)
+                    .unwrap_or_else(|error| refuse(&format!("optimizer step: {error}")));
 
-            if held > round_best {
-                round_best = held;
-                round_best_epoch = epoch;
-            }
-            if held > best {
-                best = held;
-                best_round = round;
+                let held = measure(
+                    content,
+                    &factions,
+                    &holdout_pool,
+                    &vocabulary,
+                    &actor,
+                    eval_seeds,
+                    900_000_000,
+                )
+                .unwrap_or_else(|error| refuse(&error));
+                let mark = if held > best {
+                    "  <-- best overall"
+                } else {
+                    ""
+                };
+                println!(
+                    "            epoch {epoch}: repair {value:.5}  KL {drift:.5}  held out {held:.2}%{mark}"
+                );
+
+                // A bundle per epoch, because an auxiliary objective with no PPO term to hold the
+                // policy in place can and does walk past its own optimum. Keeping the best means being
+                // able to go back to it, and bundle round-trips are already verified.
+                let path = std::path::Path::new(&out)
+                    .join(format!("round-{round}"))
+                    .join(format!("w{anchor_weight}-epoch-{epoch}"));
+                if let Err(error) = ti4_mlp::bundle::write(
+                    &path,
+                    &actor,
+                    &slots_text,
+                    ti4_mlp::bundle::CriticMode::BatchMean,
+                    &ti4_mlp::bundle::Provenance {
+                        source: "repair_train".to_owned(),
+                        git_commit: git_commit.clone(),
+                        update: u64::try_from(round * 1000 + epoch).unwrap_or(0),
+                    },
+                ) {
+                    refuse(&format!("writing {}: {error}", path.display()));
+                }
+
+                if held > round_best {
+                    round_best = held;
+                    round_best_epoch = epoch;
+                    round_best_weight = anchor_weight;
+                }
+                if held > best {
+                    best = held;
+                    best_round = round;
+                }
             }
         }
 
@@ -715,12 +850,12 @@ fn main() {
         // measured to be worse.
         let best_path = std::path::Path::new(&out)
             .join(format!("round-{round}"))
-            .join(format!("epoch-{round_best_epoch}"));
+            .join(format!("w{round_best_weight}-epoch-{round_best_epoch}"));
         let reloaded = ti4_mlp::bundle::read(&best_path)
             .unwrap_or_else(|error| refuse(&format!("reloading {}: {error}", best_path.display())));
         actor = reloaded.actor;
         println!(
-            "            round {round} best {round_best:.2}% (epoch {round_best_epoch}), reloaded"
+            "            round {round} best {round_best:.2}% (weight {round_best_weight}, epoch {round_best_epoch}), reloaded"
         );
         println!();
     }
