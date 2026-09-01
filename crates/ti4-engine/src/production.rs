@@ -1208,7 +1208,19 @@ pub fn buildable_for(
                 continue;
             }
         }
-        if let Some(own) = ti4_content::units::faction_unit(content, &faction, base, sources) {
+        // 90.7/90.8: a researched unit upgrade replaces the unit it covers, so what a player
+        // builds is their upgraded version when they own one. Without this, Cruiser II was
+        // researched and every cruiser still cost 2, moved 2 and carried nothing.
+        let held: Vec<String> = owned
+            .as_ref()
+            .map(|techs| techs.iter().map(|tech| tech.as_str().to_owned()).collect())
+            .unwrap_or_default();
+        if let Some(better) =
+            ti4_content::units::unlocked_upgrade(content, sources, base, &faction, &held)
+        {
+            out.push(better.id().to_owned());
+        } else if let Some(own) = ti4_content::units::faction_unit(content, &faction, base, sources)
+        {
             out.push(own.id().to_owned());
         } else if !matches!(base, "mech" | "flagship") {
             out.push(base.to_owned());

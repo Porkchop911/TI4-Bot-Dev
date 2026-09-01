@@ -361,6 +361,40 @@ pub fn fleet_move_value(units: &[UnitType<'_>]) -> i64 {
         .unwrap_or(0)
 }
 
+/// The upgraded unit a player has unlocked for a base type, if any.
+///
+/// Unit upgrades are the one progression this engine had researched but never applied: Cruiser II
+/// was owned and every cruiser still moved 2, because nothing mapped the technology to the unit.
+/// The corpus carries both halves of that mapping -- `requiredTechId` names the technology and
+/// `upgradesFromUnitId` names what it replaces -- so this reads them rather than hard-coding a
+/// table that would drift.
+///
+/// `owned` is the player's technology aliases. Faction variants are matched by their base type, so
+/// Sol's Advanced Carrier II is found for a Sol player who owns `cv2`.
+#[must_use]
+pub fn unlocked_upgrade<'a>(
+    store: &'a ContentStore,
+    sources: SourceSet,
+    base_type: &str,
+    faction: &str,
+    owned: &[String],
+) -> Option<UnitType<'a>> {
+    catalogue(store, sources)
+        .values()
+        .filter(|kind| kind.base_type() == base_type)
+        .filter(|kind| {
+            // A faction's own variant belongs to that faction; a generic upgrade belongs to
+            // everybody. `faction_unit` already resolves the faction half, so this only has to
+            // avoid handing one faction another's plastic.
+            kind.faction().is_none_or(|owner| owner == faction)
+        })
+        .find(|kind| {
+            kind.required_technology()
+                .is_some_and(|tech| owned.iter().any(|held| held == tech))
+        })
+        .copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

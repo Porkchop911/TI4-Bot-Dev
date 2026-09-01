@@ -173,20 +173,20 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Producing Units | **PARTIAL** | 68.10 (no ships in a blockaded system) was **absent** from the production path, added 2026-08-31; 68.3b (produce one of a pair, pay full) not offered |
 | Production | **PARTIAL** | 68.1.3 combined bill fixed 2026-08-31; see Producing Units |
 | Promissory Notes | VERIFIED | 69.1-69.9; a seat can never hold its own faction's note, which is why 69.3 holds by construction. 69.10/69.11 need player elimination, which this engine has not |
-| Purge | ? | |
-| Readied | ? | |
+| Purge | VERIFIED | 72.1-72.3; the Silver Flame purges before it branches, which is 72.3 |
+| Readied | VERIFIED | 71.1-71.7; planets, technologies, relics, leaders and strategy cards all ready in the status phase |
 | Reinforcements | **PARTIAL** | 70.1 supply limits present, and fighters/infantry correctly uncapped; note 1 (place from the board when the box is empty) is not offered — it only ever permits more |
 | Relics | **PARTIAL** | 5 of 24 |
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
-| Resources | ? | |
-| Ships | ? | |
+| Resources | VERIFIED | 75.1-75.3 |
+| Ships | **PARTIAL** | 77.1-77.4; unit upgrades now apply (was: researched and never applied), so Fighter II's excess-fighters clause is the one part still unmodelled |
 | Space Cannon | **PARTIAL** | offence, defence and the adjacency clause (PDS II, Indomitus) -- adjacency was **absent** until 2026-08-31 |
 | Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
 | Space Dock | **PARTIAL** | 68.3 (one per planet) and the capture case of 68.4; the coexistence path can meet 68.4's condition without a control change and is not checked |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | ? | |
 | Status Phase | **PARTIAL** | all eight steps present; 81.5's second sentence (redistribute tokens already held) is **not** implemented — see `status.rs` |
-| Strategic Action | ? | |
+| Strategic Action | VERIFIED | 82.1-82.4 and 82.6; 82.5 is a 3-4 player rule and out of scope at six |
 | Strategy Card | VERIFIED | initiative order, exhaustion, and the secondary token gate (52.3 exempts Leadership) |
 | Strategy Phase | **PARTIAL** | 91.1/91.2 present; 91.1a (the trade goods on a chosen card go to the chooser) was **absent** — the pile grew all game and nobody collected it. Fixed 2026-09-01 |
 | Structures | OK | not placeable on stations (rule 5) — phase 1 |
@@ -198,11 +198,11 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Technology | VERIFIED | 90.1-90.23: colours, faction restriction, prerequisites, specialties, unit upgrades have no colour |
 | Technology (S.C.) | VERIFIED | with Technology; the secondary charges four resources and Jol-Nar substitutes the primary |
 | Trade | VERIFIED | three trade goods, replenish, and chosen players replenish too |
-| Trade Goods | ? | |
+| Trade Goods | VERIFIED | 93.1-93.9; votes never touch trade goods (93.4b) and a received commodity lands as a trade good (93.7) |
 | Transactions | **PARTIAL** | station-to-station (rule 10) absent |
 | Transport | **PARTIAL** | 95.5 (no pickup from your own command token) was **absent**, added 2026-08-31; 95.1 pickup *en route* is still origin-only |
-| Units | ? | |
-| Unit Upgrades | VERIFIED | with Technology (90.7-90.10) |
+| Units | VERIFIED | 96.1-96.4; every plastic count matches the box, and fighters/infantry are correctly uncapped tokens |
+| Unit Upgrades | **PARTIAL** | 90.7/90.8 applied 2026-09-01 at research and at production; before that no upgraded unit ever reached the board |
 | Victory Points | VERIFIED | 98.1-98.10: cap at 10, initiative tiebreak, a law's point survives the law |
 | Warfare | **PARTIAL** | recall and pool gain present; "then redistribute your command tokens" was **absent**, added 2026-08-31 |
 | Wormhole Nexus | **PARTIAL** | counted by one secret; not modelled as a board feature |

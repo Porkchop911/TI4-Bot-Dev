@@ -840,6 +840,64 @@ pub fn grant(state: &mut GameState, player: &PlayerId, alias: &TechnologyId) {
     }
 }
 
+/// Replace this player's units on the board with the versions their upgrades unlock (90.8).
+///
+/// The physical card is placed *over* the unit on the faction sheet, so every one of that player's
+/// units of that type becomes the upgraded version at once -- not only the ones built afterwards.
+/// Doing it here, where the technology arrives, is what keeps the board and the sheet agreeing
+/// without every stat lookup having to ask who owns the unit.
+pub fn apply_unit_upgrades(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) {
+    let Some(seat) = state.player(player) else {
+        return;
+    };
+    let faction = seat.faction.to_string();
+    let held: Vec<String> = seat
+        .technologies
+        .iter()
+        .map(|tech| tech.as_str().to_owned())
+        .collect();
+
+    let catalogue = ti4_content::units::catalogue(content, sources);
+    let mut swaps: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    for kind in catalogue.values() {
+        let base = kind.base_type();
+        if let Some(better) =
+            ti4_content::units::unlocked_upgrade(content, sources, base, &faction, &held)
+            && better.id() != kind.id()
+        {
+            swaps.insert(kind.id().to_owned(), better.id().to_owned());
+        }
+    }
+    if swaps.is_empty() {
+        return;
+    }
+    // The upgraded id is its own key in `swaps` only if it upgrades further, which no unit does --
+    // so one pass is enough and cannot loop.
+    for board in state.board.values_mut() {
+        for unit in &mut board.units {
+            if unit.owner == *player
+                && let Some(better) = swaps.get(unit.type_id.as_str())
+            {
+                unit.type_id = ti4_model::id::UnitTypeId::new(better);
+            }
+        }
+        for standing in board.planet_units.values_mut() {
+            for unit in standing {
+                if unit.owner == *player
+                    && let Some(better) = swaps.get(unit.type_id.as_str())
+                {
+                    unit.type_id = ti4_model::id::UnitTypeId::new(better);
+                }
+            }
+        }
+    }
+}
+
 /// Research a technology, having satisfied its prerequisites. `false` if it could not be.
 pub fn research(
     state: &mut GameState,
@@ -852,6 +910,9 @@ pub fn research(
         return false;
     }
     grant(state, player, alias);
+    // 90.8: the upgrade covers the unit on the faction sheet, so units already on the board
+    // become the new version too -- not only the ones built after this.
+    apply_unit_upgrades(state, content, sources, player);
     // Anti-Intellectual Revolution: "After a player researches a technology, that player must
     // destroy 1 of their non-fighter ships." Here rather than at the strategy card, because
     // researching happens by several routes and the law says "researches", not "uses Technology".
@@ -861,6 +922,65 @@ pub fn research(
 
 #[cfg(test)]
 mod tests {
+
+    /// 90.7/90.8: a unit upgrade replaces the unit, on the board and in what you build.
+    ///
+    /// This was researched and never applied. `UNLOCKED_BY` gated the war sun and nothing mapped
+    /// any other upgrade to its unit, so Cruiser II was owned and every cruiser still moved 2,
+    /// Fighter II never gained its ability, and PDS II never fired into an adjacent system because
+    /// no `pds2` ever reached the board. The corpus had both halves of the mapping the whole time
+    /// (`requiredTechId` and `upgradesFromUnitId`).
+    #[test]
+    fn a_unit_upgrade_replaces_the_units_already_on_the_board() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "cruiser", &player, 2);
+
+        let printed_move = ti4_content::units::catalogue(content, sources)
+            .get("cruiser")
+            .map(ti4_content::units::UnitType::move_value)
+            .expect("a cruiser has a move value");
+
+        apply_unit_upgrades(&mut state, content, sources, &player);
+        assert!(
+            state
+                .system_state(&system)
+                .units_of(&player)
+                .iter()
+                .all(|unit| unit.type_id.as_str() == "cruiser"),
+            "without the technology nothing changes"
+        );
+
+        grant(&mut state, &player, &TechnologyId::new("cr2"));
+        apply_unit_upgrades(&mut state, content, sources, &player);
+        assert!(
+            state
+                .system_state(&system)
+                .units_of(&player)
+                .iter()
+                .all(|unit| unit.type_id.as_str() == "cruiser2"),
+            "the card covers the unit on the sheet, so both cruisers are upgraded"
+        );
+
+        let upgraded_move = ti4_content::units::catalogue(content, sources)
+            .get("cruiser2")
+            .map(ti4_content::units::UnitType::move_value)
+            .expect("Cruiser II has a move value");
+        assert!(
+            upgraded_move > printed_move,
+            "and it is a real upgrade: move {printed_move} -> {upgraded_move}"
+        );
+
+        assert!(
+            crate::production::buildable_for(&state, content, sources, &player)
+                .contains(&"cruiser2".to_owned()),
+            "and new ones are built upgraded too"
+        );
+    }
     /// Synergy rule 2, end to end through `can_research`.
     ///
     /// Transit Diodes needs two cybernetic. Jol-Nar's breakthrough joins biotic and cybernetic, so
