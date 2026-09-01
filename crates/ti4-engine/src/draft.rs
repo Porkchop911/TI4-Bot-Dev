@@ -72,6 +72,16 @@ pub fn take_strategy_card(
         .ok_or_else(|| DraftError::CardNoLongerAvailable(answer.id.clone()))?;
     let card = state.unclaimed_strategy_cards[card_index].clone();
 
+    // 91.1a: "If there are one or more trade good tokens on a strategy card when a player chooses
+    // it, that player gains those trade goods." `stock_unclaimed_cards` has been putting a good on
+    // every unchosen card at the end of every strategy phase, and Manipulate Investments puts five
+    // more -- and nothing has ever collected them. The pile grew for the whole game and the
+    // compensation for taking a low-initiative card was never paid.
+    let goods = state.strategy_card_goods.remove(&card).unwrap_or(0);
+    if goods > 0 && let Some(seat) = state.player_mut(&player) {
+        seat.trade_goods += goods;
+    }
+
     // `player` was checked above, so the only mutation APIs used here cannot fail.
     let dealt = state.deal_strategy_card(&player, card);
     debug_assert!(dealt, "the checked strategy picker must be dealable");
@@ -92,6 +102,39 @@ pub(crate) fn strategy_card_label(content: &ContentStore, card_id: &str) -> Stri
 
 #[cfg(test)]
 mod tests {
+
+    /// 91.1a: the trade goods sitting on a strategy card go to whoever takes it.
+    ///
+    /// `stock_unclaimed_cards` has put a good on every unchosen card at the end of every strategy
+    /// phase, and Manipulate Investments puts five more. Nothing collected them: the pile grew for
+    /// the whole game, `strategy_card_goods` was read into an event payload and an observation and
+    /// never into anybody's trade goods, so the compensation for taking a late card was never paid.
+    #[test]
+    fn taking_a_card_collects_the_trade_goods_on_it() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let player = state
+            .speaker
+            .clone();
+        let choice = strategy_options(&state, content).expect("a draft is open");
+        let card = ti4_model::id::StrategyCardId::new(choice.options[0].id.clone());
+        state.strategy_card_goods.insert(card.clone(), 3);
+        let before = state.player(&player).map_or(0, |seat| seat.trade_goods);
+
+        let took = take_strategy_card(&mut state, content, choice.options[0].clone())
+            .expect("the speaker takes a card");
+        assert_eq!(took, player);
+
+        assert_eq!(
+            state.player(&player).map_or(0, |seat| seat.trade_goods),
+            before + 3,
+            "the three goods on the card were collected"
+        );
+        assert!(
+            !state.strategy_card_goods.contains_key(&card),
+            "and the card is empty afterwards, so they cannot be collected twice"
+        );
+    }
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
     use ti4_model::id::PlayerId;

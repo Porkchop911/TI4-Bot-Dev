@@ -172,29 +172,29 @@ Status key: **OK** verified against rules text · **WRONG** verified defect · *
 | Politics | VERIFIED | speaker, two action cards, and the top two agendas reordered |
 | Producing Units | **PARTIAL** | 68.10 (no ships in a blockaded system) was **absent** from the production path, added 2026-08-31; 68.3b (produce one of a pair, pay full) not offered |
 | Production | **PARTIAL** | 68.1.3 combined bill fixed 2026-08-31; see Producing Units |
-| Promissory Notes | ? | |
+| Promissory Notes | VERIFIED | 69.1-69.9; a seat can never hold its own faction's note, which is why 69.3 holds by construction. 69.10/69.11 need player elimination, which this engine has not |
 | Purge | ? | |
 | Readied | ? | |
-| Reinforcements | ? | |
+| Reinforcements | **PARTIAL** | 70.1 supply limits present, and fighters/infantry correctly uncapped; note 1 (place from the board when the box is empty) is not offered — it only ever permits more |
 | Relics | **PARTIAL** | 5 of 24 |
 | Rerolls | VERIFIED | scoped 2026-08-31: the Thalnos cards were reaching space cannon, barrage and bombardment rolls, none of which is a combat round |
 | Resources | ? | |
 | Ships | ? | |
 | Space Cannon | **PARTIAL** | offence, defence and the adjacency clause (PDS II, Indomitus) -- adjacency was **absent** until 2026-08-31 |
 | Space Combat | VERIFIED | 78.1-78.9: barrage first round only, defender announces first, the round loops back to Announce Retreats |
-| Space Dock | ? | |
+| Space Dock | **PARTIAL** | 68.3 (one per planet) and the capture case of 68.4; the coexistence path can meet 68.4's condition without a control change and is not checked |
 | Space Stations | **PARTIAL** | rules 2, 2a, 2b, 5, 7, 14 done (phase 1); 8, 10, 12 economy outstanding |
 | Speaker | ? | |
 | Status Phase | **PARTIAL** | all eight steps present; 81.5's second sentence (redistribute tokens already held) is **not** implemented — see `status.rs` |
 | Strategic Action | ? | |
 | Strategy Card | VERIFIED | initiative order, exhaustion, and the secondary token gate (52.3 exempts Leadership) |
-| Strategy Phase | ? | |
+| Strategy Phase | **PARTIAL** | 91.1/91.2 present; 91.1a (the trade goods on a chosen card go to the chooser) was **absent** — the pile grew all game and nobody collected it. Fixed 2026-09-01 |
 | Structures | OK | not placeable on stations (rule 5) — phase 1 |
 | Supernova | VERIFIED | 86.1 bar and the Magmus Reactor exemption |
 | Sustain Damage | **PARTIAL** | 15.1-15.6 present; 15.7 Non-Euclidean Shielding was **absent**, added 2026-08-31 |
 | Synergy | **ABSENT** | 6 rules, none implemented; every breakthrough carries a synergy |
 | System Tiles | ? | |
-| Tactical Action | ? | `tactical.rs` |
+| Tactical Action | VERIFIED | all five steps in order; 89.1b gates activation and production runs whether or not anything moved |
 | Technology | VERIFIED | 90.1-90.23: colours, faction restriction, prerequisites, specialties, unit upgrades have no colour |
 | Technology (S.C.) | VERIFIED | with Technology; the secondary charges four resources and Jol-Nar substitutes the primary |
 | Trade | VERIFIED | three trade goods, replenish, and chosen players replenish too |
