@@ -346,9 +346,21 @@ pub struct Demo {
     pub head: usize,
     pub options: Vec<crate::SparseOption>,
     pub chosen: usize,
+    /// Relative weight of this decision in the batch.
+    ///
+    /// Averaging the loss over *decisions* is not the same as balancing over trajectories, and the
+    /// first version of this conflated them. Hacan runs 79.5 decisions a trajectory against L1Z1X's
+    /// 43.8 -- almost entirely free transactions -- so an equal number of trajectories delivered
+    /// 1.8x the gradient for Hacan while the trainer reported itself balanced.
+    ///
+    /// The weight is set by the caller, which knows the hierarchy it wants: `1 / decisions` makes a
+    /// trajectory count once however long it is, a further `1 / trajectories` per starting position
+    /// stops a position with forty discovered solutions outweighing one with a single solution, and
+    /// a further `1 / trajectories` per faction restores balance across factions.
+    pub weight: f64,
 }
 
-/// Mean negative log-likelihood of the demonstrated actions.
+/// Weighted mean negative log-likelihood of the demonstrated actions.
 ///
 /// Plain behaviour cloning: `-(1/N) Σ log π(a_i | s_i)`. A one-hot target is the right shape here
 /// and was the wrong shape for the repair objective, and the difference is the state distribution
@@ -370,7 +382,11 @@ pub fn clone_loss(
         return Ok(None);
     }
     let mut total: Option<ti4_tensor::Tensor> = None;
+    let mut mass = 0.0f64;
     for demo in demos {
+        if !demo.weight.is_finite() || demo.weight < 0.0 {
+            return Err(format!("a demonstration carries weight {}", demo.weight));
+        }
         let head = crate::heads()
             .get(demo.head)
             .ok_or_else(|| format!("head index {} is out of range", demo.head))?;
@@ -386,14 +402,17 @@ pub fn clone_loss(
             ));
         }
         let log_probs = logits.log_softmax(0, ti4_tensor::Kind::Float);
-        let term = -log_probs.narrow(0, chosen, 1).squeeze();
+        let term = -log_probs.narrow(0, chosen, 1).squeeze() * demo.weight;
+        mass += demo.weight;
         total = Some(match total {
             Some(sum) => sum + term,
             None => term,
         });
     }
-    #[expect(clippy::cast_precision_loss, reason = "batches are thousands at most")]
-    Ok(total.map(|sum| sum / demos.len() as f64))
+    if mass <= 0.0 {
+        return Err("the demonstration batch carries no weight".to_owned());
+    }
+    Ok(total.map(|sum| sum / mass))
 }
 
 #[cfg(test)]
@@ -543,6 +562,7 @@ mod tests {
             head: 0,
             options: options.clone(),
             chosen,
+            weight: 1.0,
         };
         let cost = |chosen| {
             f64::try_from(
@@ -565,6 +585,59 @@ mod tests {
     }
 
     #[test]
+    fn weight_decides_how_much_a_demonstration_counts() {
+        // The property the faction balance rests on. Two demonstrations of different cost, one
+        // weighted to nothing: the batch must read as the other alone. An unweighted mean over
+        // decisions cannot express that, which is how a trajectory 1.8x longer came to carry 1.8x
+        // the gradient while the trainer called itself balanced across factions.
+        let actor = crate::Actor::zeros(crate::Width::W256, 64);
+        let column = |c: i64| crate::SparseOption {
+            columns: vec![c],
+            values: vec![1.0],
+        };
+        let row = crate::FactionRow::of("sol").expect("roster");
+        let cost = |demos: Vec<super::Demo>| {
+            f64::try_from(
+                super::clone_loss(&actor, &demos)
+                    .expect("loss")
+                    .expect("some"),
+            )
+            .expect("scalar")
+        };
+        let over_two = super::Demo {
+            row,
+            head: 0,
+            options: vec![column(1), column(2)],
+            chosen: 0,
+            weight: 1.0,
+        };
+        let over_four = super::Demo {
+            row,
+            head: 0,
+            options: (1..=4).map(column).collect(),
+            chosen: 0,
+            weight: 1.0,
+        };
+
+        // Equal scores throughout, so the costs are exactly ln 2 and ln 4.
+        assert!((cost(vec![over_two.clone()]) - 2.0f64.ln()).abs() < 1e-6);
+        assert!((cost(vec![over_four.clone()]) - 4.0f64.ln()).abs() < 1e-6);
+
+        let both = cost(vec![over_two.clone(), over_four.clone()]);
+        assert!(
+            (both - (2.0f64.ln() + 4.0f64.ln()) / 2.0).abs() < 1e-6,
+            "equal weights must average the two, got {both}"
+        );
+        let mut muted = over_four;
+        muted.weight = 0.0;
+        let only_two = cost(vec![over_two, muted]);
+        assert!(
+            (only_two - 2.0f64.ln()).abs() < 1e-6,
+            "a zero-weighted demonstration must not count, got {only_two}"
+        );
+    }
+
+    #[test]
     fn a_target_outside_the_option_set_is_refused() {
         let actor = crate::Actor::zeros(crate::Width::W256, 64);
         let error = super::clone_loss(
@@ -577,6 +650,7 @@ mod tests {
                     values: vec![1.0],
                 }],
                 chosen: 4,
+                weight: 1.0,
             }],
         )
         .expect_err("refused");

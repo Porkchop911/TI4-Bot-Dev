@@ -141,6 +141,10 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--seed-base must be a number"))
     });
+    // Per-seat-game outcomes, for a paired analysis. A table of six percentages cannot support a
+    // confidence interval on a *difference* between two policies: the pairing is by seat-game and
+    // the correlation is by map, and both are gone by the time it is a percentage.
+    let per_seat = argument("--per-seat");
     let rounds: u32 = argument("--rounds").map_or(1, |value| {
         value
             .parse()
@@ -198,7 +202,7 @@ fn main() {
         .collect();
 
     let started = std::time::Instant::now();
-    let harvest: Vec<Result<Vec<(String, bool, f64)>, String>> = chunks
+    let harvest: Vec<Result<Vec<(u64, usize, String, bool, f64)>, String>> = chunks
         .into_par_iter()
         .map(|(local, chunk)| {
             let local = std::rc::Rc::new(local);
@@ -263,6 +267,8 @@ fn main() {
                 }
                 for seat in &rollout.seats {
                     seats.push((
+                        seed,
+                        rotation,
                         seat.faction.to_string(),
                         seat.episode.cleared,
                         // Victory points are a small non-negative count, so the widening is
@@ -283,8 +289,14 @@ fn main() {
         .collect();
 
     let mut tallies: BTreeMap<String, Tally> = BTreeMap::new();
+    let mut rows: Vec<(u64, usize, String, bool)> = Vec::new();
     for chunk in harvest {
-        for (faction, cleared, points) in chunk.unwrap_or_else(|error| refuse(&error)) {
+        for (seed, rotation, faction, cleared, points) in
+            chunk.unwrap_or_else(|error| refuse(&error))
+        {
+            if per_seat.is_some() {
+                rows.push((seed, rotation, faction.clone(), cleared));
+            }
             let entry = tallies.entry(faction).or_default();
             entry.seats += 1;
             entry.cleared += usize::from(cleared);
@@ -316,4 +328,24 @@ fn main() {
         table.mean_vp()
     );
     println!("\n  measured in {:.1?}", started.elapsed());
+
+    if let Some(path) = per_seat {
+        // Sorted, so two runs over the same seeds produce line-for-line comparable files and the
+        // pairing is positional rather than something a consumer has to reconstruct.
+        rows.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+        let mut body = String::from("seed rotation faction cleared\n");
+        for (seed, rotation, faction, cleared) in &rows {
+            body.push_str(&format!(
+                "{seed} {rotation} {faction} {}\n",
+                u8::from(*cleared)
+            ));
+        }
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|error| refuse(&format!("creating {}: {error}", parent.display())));
+        }
+        std::fs::write(&path, body)
+            .unwrap_or_else(|error| refuse(&format!("writing {path}: {error}")));
+        println!("  wrote {} seat-games to {path}", rows.len());
+    }
 }

@@ -21,6 +21,13 @@
 //! and Jol-Nar ~10k — and pooling it raw would train twice as hard on two factions for no reason
 //! other than filter rate.
 //!
+//! Drawing equal numbers of trajectories is **not** the same as balancing the gradient, and an
+//! earlier version of this confused the two. The loss is over decisions, and Hacan runs 79.5 of them
+//! a trajectory against L1Z1X's 43.8 — nearly all free transactions — so equal trajectory counts
+//! still delivered 1.8x the gradient to Hacan. Each demonstration now carries `1 / decisions` for
+//! its trajectory times `1 / trajectories` for its faction, so a trajectory counts once and a
+//! faction counts once, whatever their lengths.
+//!
 //! # How a demonstration is extracted
 //!
 //! The seat is an `MlpBot` recording PPO steps, wrapped in a decider that **overrides its answer**
@@ -30,6 +37,20 @@
 //! discarded — the target is the recorded action's index, found by id and refused if absent.
 //!
 //! Forced decisions are skipped on both sides, matching the corpus.
+//!
+//! # Replay uses the frozen generating policy, never the one being trained
+//!
+//! A trajectory is a line played against five particular opponents. Replaying with the *live* actor
+//! makes those opponents drift as training moves the weights, the game diverges, and the recorded
+//! ids stop being on offer — replay failures climbed 176 to 876 out of 1,200 over twelve epochs and
+//! the usable dataset collapsed from 54k demonstrations to 16k, silently and in the direction that
+//! flatters the result, since the surviving lines are the ones least sensitive to the change.
+//!
+//! So every seat replays under the frozen bundle the corpus was generated from. This costs nothing:
+//! the features come from `mlp_choice_features` and the vocabulary projection, neither of which
+//! reads a weight, so the options recorded under the frozen actor are exactly the options the
+//! trained model sees. Only the target — the recorded action — comes from the corpus, and only the
+//! live actor is stepped.
 //!
 //! # Usage
 //!
@@ -160,6 +181,7 @@ struct Table<'a> {
 /// Replay one stored trajectory and return its demonstrations.
 fn demonstrate(
     table: &Table<'_>,
+    // The **frozen** generating policy. Never the one being trained: see the module note.
     actor: &Rc<ti4_mlp::Actor>,
     trajectory: &Trajectory,
 ) -> Result<Vec<Demo>, String> {
@@ -266,6 +288,15 @@ fn demonstrate(
             forced.len()
         ));
     }
+    // One over the decision count, so a trajectory counts once however long it is. Averaging over
+    // decisions instead made Hacan carry 1.8x the gradient of L1Z1X per trajectory -- 79.5
+    // decisions against 43.8, almost all of it free transactions -- while the trainer called itself
+    // balanced across factions. The caller multiplies in the per-faction share.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a trajectory is tens of decisions"
+    )]
+    let per_decision = 1.0 / steps.len().max(1) as f64;
     Ok(steps
         .into_iter()
         .zip(forced.iter())
@@ -274,6 +305,7 @@ fn demonstrate(
             head: step.head,
             options: step.options,
             chosen: *chosen,
+            weight: per_decision,
         })
         .collect())
 }
@@ -379,6 +411,8 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
     let mut actor = loaded.actor;
+    // The generating policy, kept as it was. Replay uses this and only this; `actor` is trained.
+    let frozen = actor.inference_copy();
     let slots_text = std::fs::read_to_string(std::path::Path::new(&bundle_path).join("slots.json"))
         .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
     let git_commit = std::env::var("GIT_COMMIT")
@@ -473,7 +507,7 @@ fn main() {
             let per_worker = chunk.len().div_ceil(workers).max(1);
             let harvest: Vec<(Vec<Demo>, usize)> = chunk
                 .chunks(per_worker)
-                .map(|piece| (actor.inference_copy(), piece.to_vec()))
+                .map(|piece| (frozen.inference_copy(), piece.to_vec()))
                 .collect::<Vec<_>>()
                 .into_par_iter()
                 .map(|(local, piece)| {
@@ -500,6 +534,21 @@ fn main() {
             for (mut rows, bad) in harvest {
                 demos.append(&mut rows);
                 failed += bad;
+            }
+            // The per-faction share. Every trajectory already carries `1 / its decisions`, so a
+            // faction's mass in this batch is exactly the number of its trajectories; dividing by
+            // that makes each faction contribute equally however many of its trajectories landed
+            // here and however long they ran.
+            let mut mass: BTreeMap<usize, f64> = BTreeMap::new();
+            for demo in &demos {
+                *mass.entry(demo.row.index()).or_default() += demo.weight;
+            }
+            for demo in &mut demos {
+                if let Some(total) = mass.get(&demo.row.index())
+                    && *total > 0.0
+                {
+                    demo.weight /= *total;
+                }
             }
             if demos.is_empty() {
                 continue;
