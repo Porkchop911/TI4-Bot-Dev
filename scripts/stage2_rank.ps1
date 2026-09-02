@@ -24,7 +24,10 @@ $env:LIBTORCH_BYPASS_VERSION_CHECK = '1'
 $env:PATH = "$($env:LIBTORCH)\lib;$($env:PATH)"
 
 $out = Join-Path $root "out\rank-$Tag"
-if (-not (Test-Path -LiteralPath $out)) { New-Item -ItemType Directory -Path $out | Out-Null }
+# Cleared, not reused. A killed evaluator leaves a file holding only its header, and a stale
+# one from an earlier attempt is indistinguishable from a fresh result by name alone.
+if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+New-Item -ItemType Directory -Path $out | Out-Null
 $crossplayExe = Join-Path $root 'target\release\examples\crossplay_eval.exe'
 $clearanceExe = Join-Path $root 'target\release\examples\clearance_eval.exe'
 
@@ -40,7 +43,7 @@ foreach ($d in $dirs) {
     $file = Join-Path $out "$c.crossplay.txt"
     & $crossplayExe --bundle "$Checkpoints/$c" --opponent $Benchmark --seeds $CrossplaySeeds --rounds $Rounds *> $file
     $line = Select-String -Path $file -Pattern '^  ALL\s' | Select-Object -First 1
-    if (-not $line) { Write-Host "$c  FAILED"; continue }
+    if (-not $line) { Write-Host ("{0,-18} NO RESULT (evaluator did not finish)" -f $c); continue }
     $f = ($line.Line -split '\s+') | Where-Object { $_ }
     $row = [pscustomobject]@{
         Checkpoint = $c; VP = [double]$f[2]; Margin = [double]$f[3]
