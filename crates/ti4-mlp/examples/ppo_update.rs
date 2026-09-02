@@ -153,7 +153,7 @@ fn play_one(
     seed: u64,
     rotation: usize,
     temperature: f64,
-    waste_penalty: f64,
+    waste_penalties: &[f64],
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
@@ -355,6 +355,14 @@ fn play_one(
             // It trained "avoid activations that tend to end up wasted under the current stochastic
             // continuation", which is a policy-relative label of exactly the kind that has already
             // failed once in this project.
+            // The seat's own penalty, by faction. Charged where the seat sits, not where the
+            // sweep's scalar happens to be.
+            let waste_penalty = FACTIONS
+                .iter()
+                .position(|name| *name == seat.faction.as_str())
+                .and_then(|index| waste_penalties.get(index))
+                .copied()
+                .unwrap_or(0.0);
             if waste_penalty > 0.0 {
                 let gamma = reward.discount;
                 for end in ends {
@@ -701,6 +709,38 @@ fn main() {
             .filter(|parsed| parsed.is_finite() && *parsed >= 0.0)
             .unwrap_or_else(|| refuse("--waste-penalty expects a non-negative number"))
     });
+    // A penalty per faction, in the fixed FACTIONS order, overriding the scalar.
+    //
+    // One number for all six was hiding a large gain inside an average. At penalty 8 Xxcha went
+    // 90.47% to 99.22% while Letnev fell 96.39% to 91.67%, and the table moved 0.65 -- so a single
+    // value is being asked to serve two opposite needs. Xxcha starts with four infantry and a
+    // single carrier (its two cruisers carry nothing, which is why the bar's composition clause was
+    // written to bind on it), so a wasted activation costs it a far larger share of its capacity
+    // than it costs a faction with spare hulls.
+    let waste_penalties: Vec<f64> = argument("--waste-penalties").map_or_else(
+        || vec![waste_penalty; FACTIONS.len()],
+        |text| {
+            let parsed: Vec<f64> = text
+                .split(',')
+                .map(|piece| {
+                    piece
+                        .trim()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite() && *value >= 0.0)
+                        .unwrap_or_else(|| refuse("--waste-penalties expects non-negative numbers"))
+                })
+                .collect();
+            if parsed.len() != FACTIONS.len() {
+                refuse(&format!(
+                    "--waste-penalties needs {} values in the order {}",
+                    FACTIONS.len(),
+                    FACTIONS.join(",")
+                ));
+            }
+            parsed
+        },
+    );
     let seed_base: u64 = argument("--seed-base").map_or(SEED_BASE, |value| {
         value
             .parse()
@@ -825,7 +865,15 @@ fn main() {
     // run at cannot be compared against another.
     println!("  sampling    temperature {temperature} (acting and recorded behaviour)");
     println!("  adam        learning rate {}", settings.learning_rate);
-    println!("  waste       penalty {waste_penalty} per wasted activation");
+    println!(
+        "  waste       penalty per faction {}",
+        FACTIONS
+            .iter()
+            .zip(&waste_penalties)
+            .map(|(faction, penalty)| format!("{faction} {penalty}"))
+            .collect::<Vec<_>>()
+            .join("  ")
+    );
     println!(
         "  update      {SEEDS_PER_UPDATE} seeds x {} rotations\n",
         FACTIONS.len()
@@ -925,7 +973,7 @@ fn main() {
                             *seed,
                             *rotation,
                             temperature,
-                            waste_penalty,
+                            &waste_penalties,
                         )
                     })
                     .collect()
