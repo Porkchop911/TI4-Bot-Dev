@@ -12,22 +12,34 @@ One PPO arm, three replicates, differing **only** in the rollout seed base. Ever
 starting policy, temperature, learning rate, penalty, update count. Greedy, 3,600 seat-games per
 faction, 21,600 on the table.
 
-| | replicate 1 | replicate 2 | spread |
-|---|---|---|---|
-| hacan | 90.53% | 90.94% | 0.41 |
-| jolnar | 93.83% | 95.31% | 1.48 |
-| l1z1x | 95.00% | 95.17% | 0.17 |
-| **letnev** | 87.53% | 91.00% | **3.47** |
-| sol | 94.11% | 94.14% | 0.03 |
-| **xxcha** | 96.28% | 93.14% | **3.14** |
-| **table** | **92.88%** | **93.28%** | **0.40** |
+| | r1 | r2 | r3 | spread |
+|---|---|---|---|---|
+| hacan | 90.53% | 90.94% | 90.64% | 0.41 |
+| l1z1x | 95.00% | 95.17% | 95.89% | 0.89 |
+| sol | 94.11% | 94.14% | 90.81% | 3.33 |
+| letnev | 87.53% | 91.00% | 91.33% | 3.80 |
+| jolnar | 93.83% | 95.31% | 90.86% | 4.45 |
+| **xxcha** | 96.28% | 93.14% | 90.89% | **5.39** |
+| **table** | **92.88%** | **93.28%** | **91.74%** | **1.54** |
 
-**A per-faction difference smaller than ~3.5 points between two single runs is nothing.** The
-measurement interval is only ±0.6–1.1, so this is not sampling error in the evaluation — it is the
-training run itself landing somewhere different.
+**A per-faction difference under ~5 points between single runs is nothing.** The evaluation interval
+is ±0.6–1.1, so this is not sampling error in the measurement — it is the training run landing
+somewhere different.
 
-**The table average is an order of magnitude steadier**, at 0.40 against a ±0.33 interval, because
-six factions' noise partly cancels. Compare tables; treat a faction column as one sample.
+**The table floor is 1.54 points.** Two replicates suggested 0.40 and that was wrong; the third
+tripled it. Two replicates do not size a spread — the range of a small sample systematically
+understates it, and here it understated by a factor of four.
+
+**Distinguish two variances, because they differ by an order of magnitude and get conflated.**
+
+- *Evaluation* variance: how precisely two **given** checkpoints can be compared. With paired,
+  map-clustered bootstrap this is ±0.14 on the table. Small.
+- *Training* variance: how much re-running the same **recipe** moves the result. 1.54 on the table,
+  up to 5.39 on a faction. Large.
+
+A paired evaluation of two fixed policies is precise. A claim that recipe A beats recipe B needs the
+second number, and almost every recipe comparison made in this session was a single run per arm and
+therefore inside the floor.
 
 Stage 2 has longer games, more rounds and self-play opposition, so assume this floor is *higher*
 there until measured. Measuring it is the first experiment, not a later refinement.
@@ -149,6 +161,21 @@ which only means anything if the opening is there to begin with.
 `plans/CHAMPIONS.md` records which checkpoints are worth keeping, where the durable copies live, and
 which measurement convention each number was taken under — three were used this session and two of
 them differ by about half a point.
+
+## What this retires
+
+Applying the floor to the session's own results:
+
+- The waste sweep's clearance differences — p0 93.65, p3 92.72, p8 93.23, start 93.88 — **all sit
+  inside 1.54 of each other. None is distinguishable.** The conclusion "the penalty costs clearance"
+  is not supported by these runs; only "no arm was clearly better" is.
+- Every per-faction claim from single runs, including the Xxcha result reported as the session's most
+  important finding. Its 8.75-point swing is 1.6× a 5.39-point floor, from one run per arm.
+- What survives is the waste *rate* itself: 0.277 → 0.011 per tactical action, monotone across four
+  penalties. A 25-fold change with a consistent ordering across four arms is far harder to produce by
+  noise than any single-arm difference, and the control's own rate did not move (0.294 → 0.298).
+- The +0.45 cloning gain survives as a comparison of two specific checkpoints, which is what its
+  paired bootstrap measured. Whether *re-running the recipe* reproduces it is untested.
 
 ## The honest state at handover
 

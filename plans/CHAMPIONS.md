@@ -22,34 +22,19 @@ evaluations on a different, easier seed range. Where a figure looks 0.5 too high
 | directory | table | what it is best at |
 |---|---|---|
 | `out/champions/table-best-93.88_mixed-epoch14` | **93.88%** | the best table average; the policy everything else was trained from |
-| `out/champions/xxcha-best-99.22_waste-p8` | 93.23% | **Xxcha 99.22%** — by far the best any policy has managed on the binding faction |
-| `out/champions/jolnar-best-95.86_waste-p0` | 93.65% | **Jol-Nar 95.86%** |
+| `out/champions/xxcha-best-99.22_waste-p8` | 93.23% | kept for its **waste rate**: 1.46% of seat-games, against 56.93% for the champion. Its directory name claims an Xxcha result that the variance study does not support |
+| `out/champions/jolnar-best-95.86_waste-p0` | 93.65% | the zero-penalty control. Its name likewise claims a per-faction result that is inside the noise floor |
 
-### Per faction — read the warning first
+### Per faction: removed
 
-**These are one run each, and the between-run variance on a faction is larger than any effect below.**
-A fourth arm at 200 updates and lr 1e-4 with a per-faction penalty put Xxcha at **80.67%**, against
-the 99.22% in this table and the 90.47% it started from — an 18-point spread on a measurement whose
-interval is ±1.0. So the per-faction column of a single run says almost nothing about a policy, and
-the 95.91% "best of each" figure below is the maximum of six noisy draws, which is exactly the shape
-of number that does not reproduce.
+There was a per-faction table here. It is gone, because a three-replicate variance study of one
+fixed arm measured a per-faction spread of up to **5.39 points** between runs that differ only in
+their rollout seed base. Every cell of that table was one sample, so it recorded noise in a shape
+that looked like a property of each policy — and it was read that way, including by me.
 
-The table averages are far steadier, because a faction's noise partly cancels across six of them.
-Treat the table column as a measurement and the faction columns as a single sample.
-
-| faction | mixed-epoch14 | waste-p0 | waste-p8 | best |
-|---|---|---|---|---|
-| hacan | **93.47%** | 90.81% | 91.11% | mixed |
-| jolnar | 92.47% | **95.86%** | 90.08% | p0 |
-| l1z1x | **96.00%** | 94.44% | 95.03% | mixed |
-| letnev | **96.39%** | 91.36% | 91.67% | mixed |
-| sol | **94.50%** | 94.42% | 92.25% | mixed |
-| xxcha | 90.47% | 95.00% | **99.22%** | p8 |
-| **table** | **93.88%** | 93.65% | 93.23% | mixed |
-
-Taking each faction's best gives a 95.91% mean. That is not a policy but six of them, and given the
-variance noted above it is very likely the maximum of six draws rather than a reachable target. It is
-recorded because it prompted the per-faction penalty, not because it is evidence for one.
+The per-faction figures live in git history if they are ever needed with that caveat attached. The
+table averages below are the numbers worth comparing, and even those carry a 1.54-point training
+floor: see `plans/STAGE2_TRANSFERABLE_LESSONS.md`.
 
 ## Provenance
 
