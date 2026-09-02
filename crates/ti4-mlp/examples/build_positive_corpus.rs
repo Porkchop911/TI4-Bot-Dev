@@ -194,6 +194,22 @@ fn main() {
     let mut seats_total = 0usize;
     let mut failed_bar = 0usize;
     let mut rejected_waste = 0usize;
+    // Waste split by outcome, because the two mean different things. An activation wasted *after*
+    // the bar is met costs nothing: the reward has stopped caring and the seat has nothing left to
+    // do. One wasted *before* is a turn that could have taken the third planet. A single rate over
+    // all seats mixes them, so a policy that clears less often has fewer spare activations to waste
+    // and can score better on the combined figure by playing worse.
+    let mut waste_when_cleared = 0usize;
+    let mut waste_when_failed = 0usize;
+    // The four quantities that have to be reported together, because two of them were compared
+    // across runs as though they were the same number and they are not: the expected COUNT of
+    // wasted activations per seat-game, and the INCIDENCE of seat-games with at least one. A policy
+    // that wastes rarely but repeatedly can beat one that wastes often but once on the first and
+    // lose on the second, so an ordering established on one says nothing about the other.
+    let mut tactical_total = 0usize;
+    let mut waste_count_total = 0usize;
+    let mut any_waste_seats = 0usize;
+    let mut cleared_total = 0usize;
     let explain: usize = number("--explain", 0);
     let mut explained = 0usize;
 
@@ -310,11 +326,29 @@ fn main() {
         for chunk in harvest {
             for (seed, rotation, played) in chunk.unwrap_or_else(|error| refuse(&error)) {
                 seats_total += 1;
+                let waste_count = wasted_activations(&played.notes);
+                let wasted = waste_count > 0;
+                let tactical = played
+                    .notes
+                    .iter()
+                    .filter(|note| note.head == "turn" && note.chosen == "tactical")
+                    .count();
+                tactical_total += tactical;
+                waste_count_total += waste_count;
+                any_waste_seats += usize::from(wasted);
+                cleared_total += usize::from(played.cleared);
+                if wasted {
+                    if played.cleared {
+                        waste_when_cleared += 1;
+                    } else {
+                        waste_when_failed += 1;
+                    }
+                }
                 if !played.cleared {
                     failed_bar += 1;
                     continue;
                 }
-                if wasted_activations(&played.notes) > 0 {
+                if wasted {
                     rejected_waste += 1;
                     if explain > 0 && explained < explain {
                         explained += 1;
@@ -410,6 +444,33 @@ fn main() {
     println!(
         "  {rejected_waste} rejected for a wasted activation ({waste_share:.2}% of all seats)"
     );
+    let cleared_seats = seats_total - failed_bar;
+    #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+    let of = |part: usize, whole: usize| -> f64 {
+        if whole == 0 {
+            0.0
+        } else {
+            part as f64 / whole as f64 * 100.0
+        }
+    };
+    println!(
+        "  waste when cleared {waste_when_cleared}/{cleared_seats} ({:.2}%), when failed {waste_when_failed}/{failed_bar} ({:.2}%)",
+        of(waste_when_cleared, cleared_seats),
+        of(waste_when_failed, failed_bar)
+    );
+    #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+    {
+        let seats = seats_total.max(1) as f64;
+        println!();
+        println!(
+            "  TABLE  clear {:.2}%  tactical/seat {:.3}  waste/seat {:.3}  any-waste {:.2}%  waste/tactical {:.3}",
+            of(cleared_total, seats_total),
+            tactical_total as f64 / seats,
+            waste_count_total as f64 / seats,
+            of(any_waste_seats, seats_total),
+            waste_count_total as f64 / tactical_total.max(1) as f64
+        );
+    }
     println!(
         "  {written} trajectories written to {}",
         directory.display()

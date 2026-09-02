@@ -222,6 +222,55 @@ pub fn wasted_activation_indices(notes: &[Note]) -> Vec<usize> {
     out
 }
 
+/// The last decision index of each tactical action that did nothing.
+///
+/// Where [`wasted_activation_indices`] gives the activation that opened a wasted segment, this gives
+/// where that segment *ends* — which is where the cost belongs if the penalty is to be reward
+/// shaping rather than a targeted nudge on one head.
+///
+/// The distinction is not cosmetic. Whether an activation becomes wasted is decided by the
+/// movement, production and landing declines that follow it, and charging only the activation gives
+/// those declines no signal at all. A reward at the close is carried by every decision in the
+/// segment through the return-to-go, which is what "avoid wasting a tactical action" actually means.
+#[must_use]
+pub fn wasted_segment_ends(notes: &[Note]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut open = false;
+    let mut activated = false;
+    let mut acted = false;
+    let mut last = 0usize;
+
+    for (index, note) in notes.iter().enumerate() {
+        if note.head == "turn" {
+            if open && activated && !acted {
+                out.push(last);
+            }
+            open = note.chosen == TACTICAL_ACTION_ID;
+            activated = false;
+            acted = false;
+            last = index;
+            continue;
+        }
+        if !open {
+            continue;
+        }
+        last = index;
+        match note.head.as_str() {
+            "activation" => activated = true,
+            "movement" | "production" | "landing" => {
+                if !note.declined {
+                    acted = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    if open && activated && !acted {
+        out.push(last);
+    }
+    out
+}
+
 /// One stored trajectory.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trajectory {
@@ -762,6 +811,35 @@ mod tests {
         ];
         assert!(super::wasted_activation_indices(&clean).is_empty());
         assert_eq!(wasted_activations(&clean), 0);
+    }
+
+    #[test]
+    fn the_segment_end_is_where_the_cost_belongs() {
+        // The activation opens the segment; the declines that follow are what make it wasted. A
+        // reward placed at the end is carried by all of them through the return-to-go, which a
+        // charge on the activation alone is not.
+        let notes = vec![
+            tactical(),                            // 0
+            note("activation", "system-1", false), // 1
+            note("movement", "carrier-a", false),  // 2  productive segment
+            tactical(),                            // 3
+            note("activation", "system-2", false), // 4
+            note("movement", "decline", true),     // 5
+            note("production", "decline", true),   // 6  wasted, ends here
+        ];
+        assert_eq!(super::wasted_segment_ends(&notes), vec![6]);
+        assert_eq!(super::wasted_activation_indices(&notes), vec![4]);
+
+        // A segment closed by the next turn ends at its last decision, not at the turn.
+        let two = vec![
+            tactical(),                            // 0
+            note("activation", "system-1", false), // 1
+            note("movement", "decline", true),     // 2  wasted, ends here
+            tactical(),                            // 3
+            note("activation", "system-2", false), // 4
+            note("landing", "infantry-a", false),  // 5  productive
+        ];
+        assert_eq!(super::wasted_segment_ends(&two), vec![2]);
     }
 
     #[test]

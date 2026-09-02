@@ -302,7 +302,7 @@ fn play_one(
             record.step.return_to_go = *value;
         }
 
-        // Charge each wasted activation to the activation decision that made it.
+        // Charge each wasted tactical action as a reward at the point the segment closes.
         //
         // Nothing in the stage-1 reward objects to a tactical action that activates a system and
         // then neither moves, builds, nor lands: clearance is all it prices, and a seat that has
@@ -317,16 +317,7 @@ fn play_one(
         // whole purpose is to say what PPO does to waste when nothing objects to it.
         if let Some(notes) = watched.get(&seat.player) {
             let notes = notes.borrow();
-            if notes.len() == recorded.len() {
-                for index in ti4_mlp::positive_corpus::wasted_activation_indices(&notes) {
-                    wasted += 1;
-                    if waste_penalty > 0.0
-                        && let Some(record) = recorded.get_mut(index)
-                    {
-                        record.step.return_to_go -= waste_penalty;
-                    }
-                }
-            } else {
+            if notes.len() != recorded.len() {
                 // The two logs must describe the same decisions. If they do not, the indices mean
                 // nothing and charging by them would penalise arbitrary decisions.
                 return Err(format!(
@@ -335,6 +326,32 @@ fn play_one(
                     notes.len(),
                     recorded.len()
                 ));
+            }
+            let ends = ti4_mlp::positive_corpus::wasted_segment_ends(&notes);
+            wasted += ends.len();
+
+            // A reward of `-penalty` at the decision where the segment closes, which is what
+            // "avoid wasting a tactical action" means. `returns` is a discounted suffix sum, so
+            // injecting a reward at `end` is exactly equivalent to subtracting
+            // `gamma^(end - t) * penalty` from every return at `t <= end` -- done here rather than
+            // by rebuilding the reward vector, because the reward crate's shaping is not this
+            // tool's to reach into.
+            //
+            // The first version subtracted the penalty from the activation decision alone. That is
+            // not reward shaping: whether an activation *becomes* wasted is decided by the movement,
+            // production and landing declines that follow it, and those received no signal at all.
+            // It trained "avoid activations that tend to end up wasted under the current stochastic
+            // continuation", which is a policy-relative label of exactly the kind that has already
+            // failed once in this project.
+            if waste_penalty > 0.0 {
+                let gamma = reward.discount;
+                for end in ends {
+                    for (index, record) in recorded.iter_mut().enumerate().take(end + 1) {
+                        let steps_away = u32::try_from(end - index).unwrap_or(u32::MAX);
+                        record.step.return_to_go -= waste_penalty
+                            * gamma.powi(i32::try_from(steps_away).unwrap_or(i32::MAX));
+                    }
+                }
             }
         }
         steps.extend(recorded.drain(..).map(|record| record.step));
