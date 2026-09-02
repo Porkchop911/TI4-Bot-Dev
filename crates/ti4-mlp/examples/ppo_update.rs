@@ -241,6 +241,11 @@ fn play_one(
     let mut steps: Vec<Step> = Vec::new();
     let mut outcomes: Vec<SeatOutcome> = Vec::new();
     let mut wasted = 0usize;
+    // Tactical actions taken, reported per update beside the waste count. A policy can drive waste
+    // to nothing by refusing to activate at all -- measured, a control arm did exactly that, cutting
+    // tactical actions 37% and losing 1.68 points of clearance -- and the waste figure alone cannot
+    // tell that apart from getting better. Seen together they can.
+    let mut tactical = 0usize;
     for seat in &rollout.seats {
         outcomes.push(SeatOutcome {
             faction: seat.faction.to_string(),
@@ -327,6 +332,13 @@ fn play_one(
                     recorded.len()
                 ));
             }
+            tactical += notes
+                .iter()
+                .filter(|note| {
+                    note.head == "turn"
+                        && note.chosen == ti4_mlp::positive_corpus::TACTICAL_ACTION_ID
+                })
+                .count();
             let ends = ti4_mlp::positive_corpus::wasted_segment_ends(&notes);
             wasted += ends.len();
 
@@ -356,11 +368,11 @@ fn play_one(
         }
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
-    Ok((steps, outcomes, wasted))
+    Ok((steps, outcomes, wasted, tactical))
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
-type Played = (Vec<Step>, Vec<SeatOutcome>, usize);
+type Played = (Vec<Step>, Vec<SeatOutcome>, usize, usize);
 
 /// What one seat's game produced, beyond the decisions it contributed to the batch.
 ///
@@ -921,10 +933,12 @@ fn main() {
             .collect();
 
         let mut wasted_activations = 0usize;
+        let mut tactical_actions = 0usize;
         for chunk in harvest {
-            for (game, outcomes, wasted) in chunk.unwrap_or_else(|error| refuse(&error)) {
+            for (game, outcomes, wasted, tactical) in chunk.unwrap_or_else(|error| refuse(&error)) {
                 games += 1;
                 wasted_activations += wasted;
+                tactical_actions += tactical;
                 seated_decisions += game.len();
                 steps.extend(game);
                 for outcome in &outcomes {
@@ -1017,9 +1031,12 @@ fn main() {
         // zero still measures it, which is what makes the comparison possible.
         {
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
-            let per_seat = wasted_activations as f64 / (games * FACTIONS.len()).max(1) as f64;
+            let seats = (games * FACTIONS.len()).max(1) as f64;
+            let per_seat = wasted_activations as f64 / seats;
+            let tactical_per_seat = tactical_actions as f64 / seats;
+            let per_tactical = wasted_activations as f64 / tactical_actions.max(1) as f64;
             println!(
-                "              wasted activations {wasted_activations} ({per_seat:.3} per seat-game)"
+                "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
         }
 

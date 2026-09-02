@@ -11,7 +11,10 @@
 
 [CmdletBinding()]
 param(
-    [double[]]$Penalties = @(0, 5, 20),
+    # Lower than the first sweep. The penalty is now a reward at the segment close rather than a
+    # subtraction on one decision, which made it far stronger: four updates at 5 moved waste per
+    # tactical action from 0.294 to 0.202, which the old form needed five hundred to approach.
+    [double[]]$Penalties = @(0, 1, 3, 8),
     [int]$Updates = 500,
     [string]$From = "out/checkpoints/mixed/epoch-14"
 )
