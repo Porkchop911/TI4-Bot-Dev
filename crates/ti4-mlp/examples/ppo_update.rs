@@ -312,15 +312,18 @@ fn play_one(
         // The charge lands on the activation itself rather than on the episode. Spreading it over
         // fifty decisions would put 98% of the gradient on decisions that were not the mistake,
         // which is the credit-assignment failure this project has already paid for once.
-        if waste_penalty > 0.0
-            && let Some(notes) = watched.get(&seat.player)
-        {
+        // Counted always, charged only when a penalty is set. Gating the *count* on the penalty
+        // made the zero-penalty control report 0.000 wasted activations, which is the one arm whose
+        // whole purpose is to say what PPO does to waste when nothing objects to it.
+        if let Some(notes) = watched.get(&seat.player) {
             let notes = notes.borrow();
             if notes.len() == recorded.len() {
                 for index in ti4_mlp::positive_corpus::wasted_activation_indices(&notes) {
-                    if let Some(record) = recorded.get_mut(index) {
+                    wasted += 1;
+                    if waste_penalty > 0.0
+                        && let Some(record) = recorded.get_mut(index)
+                    {
                         record.step.return_to_go -= waste_penalty;
-                        wasted += 1;
                     }
                 }
             } else {
@@ -991,6 +994,16 @@ fn main() {
             .min_by(|left, right| left.1.total_cmp(right.1));
         if let Some((head, entropy)) = worst {
             println!("              lowest-entropy head {head} at {entropy:.4}");
+        }
+        // Wasted activations per seat-game. This is the quantity the penalty exists to move, so it
+        // is reported every update whether or not a penalty is charged -- a run with the penalty at
+        // zero still measures it, which is what makes the comparison possible.
+        {
+            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+            let per_seat = wasted_activations as f64 / (games * FACTIONS.len()).max(1) as f64;
+            println!(
+                "              wasted activations {wasted_activations} ({per_seat:.3} per seat-game)"
+            );
         }
 
         // Non-vacuity: an update that moved nothing is not an update, however plausible its
