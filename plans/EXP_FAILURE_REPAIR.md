@@ -354,3 +354,19 @@ repair regardless, on the arithmetic alone.
 clearance drop. Small probability shifts flip argmaxes cheaply, so a distributional trust region
 barely constrains a metric read off the argmax. Any future trust region protecting a greedy metric
 should constrain argmax stability directly.
+
+### Final confirmation, at full precision
+
+The sweep's best figure came from a 200-seed evaluation (7,200 seat-games, +-0.55). Re-measured at
+400 seeds (14,400 seat-games, +-0.40):
+
+| | greedy clearance, held out |
+|---|---|
+| champion `sweep-A-250/checkpoint-14476` | **93.58% +-0.40** |
+| best repair checkpoint `w100-epoch-2` | **93.56% +-0.40** |
+
+So the "+0.01 points" reported from the coarser measurement was itself noise; at higher precision
+the difference is -0.02. The correct statement is that the two policies are indistinguishable, and
+the experiment produced no checkpoint better than the one it started from.
+
+**The champion is unchanged: `out/checkpoints/sweep-A-250/checkpoint-14476`, 93.58%.**
