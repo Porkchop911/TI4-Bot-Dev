@@ -35,6 +35,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use ti4_content::ContentStore;
+use ti4_engine::Choice;
 use ti4_engine::choice::Decider;
 use ti4_mlp::bundle::CriticMode;
 use ti4_mlp::ppo::{Batch, Settings, Step};
@@ -86,6 +87,53 @@ fn refuse(reason: &str) -> ! {
 
 /// One self-play game, recorded as PPO steps with §6.1's shaped per-decision returns.
 ///
+/// Records what a seat did, and never changes it.
+///
+/// Exists so a wasted activation can be charged to the decision that made it. The engine's event
+/// log carries names without an owner and cannot say whose activation it was; the seat's own
+/// decision stream can.
+struct Watching {
+    inner: Box<dyn Decider>,
+    log: std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
+}
+
+impl Watching {
+    fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
+        // Forced decisions are absent from `MlpBot::record` too, so the indices of this log and the
+        // recorded PPO steps line up. Counting them here and not there would shift every charge
+        // after the first forced decision onto the wrong decision.
+        if choice.options.len() < 2 {
+            return;
+        }
+        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        self.log.borrow_mut().push(ti4_mlp::positive_corpus::Note {
+            head: head.to_owned(),
+            chosen: chosen.id.clone(),
+            declined: chosen.is_decline(),
+        });
+    }
+}
+
+impl Decider for Watching {
+    fn choose(
+        &mut self,
+        choice: &Choice,
+    ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        let chosen = self.inner.choose(choice)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &ti4_engine::choice::SeatObservation<'_>,
+    ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        let chosen = self.inner.choose_seeing(choice, seen)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
+}
+
 /// Everything a game needs is passed in rather than captured, because this runs on a rayon worker:
 /// `tch::Tensor` is `Send` but **not** `Sync`, so the actor cannot be shared by reference across
 /// threads and each worker owns its own inference copy.
@@ -105,6 +153,7 @@ fn play_one(
     seed: u64,
     rotation: usize,
     temperature: f64,
+    waste_penalty: f64,
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
@@ -125,6 +174,10 @@ fn play_one(
     // The handles are `Rc`, which is exactly why they are created, filled and drained inside this
     // function: nothing thread-local ever crosses back to the caller.
     let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
+    let mut watched: BTreeMap<
+        PlayerId,
+        std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
+    > = BTreeMap::new();
     let rollout = ti4_training::rollout::play_with_decider_factory(
         content,
         players,
@@ -165,7 +218,15 @@ fn play_one(
                     return Err(format!("{player} was seated twice"));
                 }
                 let (decider, _status) = bot.seat();
-                deciders.insert(player.clone(), decider);
+                let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+                watched.insert(player.clone(), std::rc::Rc::clone(&log));
+                deciders.insert(
+                    player.clone(),
+                    Box::new(Watching {
+                        inner: decider,
+                        log,
+                    }),
+                );
             }
             Ok(deciders)
         },
@@ -179,6 +240,7 @@ fn play_one(
     // (F-M10-034-D4).
     let mut steps: Vec<Step> = Vec::new();
     let mut outcomes: Vec<SeatOutcome> = Vec::new();
+    let mut wasted = 0usize;
     for seat in &rollout.seats {
         outcomes.push(SeatOutcome {
             faction: seat.faction.to_string(),
@@ -239,13 +301,46 @@ fn play_one(
         for (record, value) in recorded.iter_mut().zip(&per_decision) {
             record.step.return_to_go = *value;
         }
+
+        // Charge each wasted activation to the activation decision that made it.
+        //
+        // Nothing in the stage-1 reward objects to a tactical action that activates a system and
+        // then neither moves, builds, nor lands: clearance is all it prices, and a seat that has
+        // already met the bar is free to spend its last turn on nothing. Measured, the champion
+        // does exactly that in 60.6% of its games -- roughly a fifth of a seat's ~4.6 actions.
+        //
+        // The charge lands on the activation itself rather than on the episode. Spreading it over
+        // fifty decisions would put 98% of the gradient on decisions that were not the mistake,
+        // which is the credit-assignment failure this project has already paid for once.
+        if waste_penalty > 0.0
+            && let Some(notes) = watched.get(&seat.player)
+        {
+            let notes = notes.borrow();
+            if notes.len() == recorded.len() {
+                for index in ti4_mlp::positive_corpus::wasted_activation_indices(&notes) {
+                    if let Some(record) = recorded.get_mut(index) {
+                        record.step.return_to_go -= waste_penalty;
+                        wasted += 1;
+                    }
+                }
+            } else {
+                // The two logs must describe the same decisions. If they do not, the indices mean
+                // nothing and charging by them would penalise arbitrary decisions.
+                return Err(format!(
+                    "seed {seed} rotation {rotation} {}: {} notes for {} recorded decisions",
+                    seat.player,
+                    notes.len(),
+                    recorded.len()
+                ));
+            }
+        }
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
-    Ok((steps, outcomes))
+    Ok((steps, outcomes, wasted))
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
-type Played = (Vec<Step>, Vec<SeatOutcome>);
+type Played = (Vec<Step>, Vec<SeatOutcome>, usize);
 
 /// What one seat's game produced, beyond the decisions it contributed to the batch.
 ///
@@ -565,6 +660,15 @@ fn main() {
             .filter(|parsed| parsed.is_finite() && *parsed > 0.0)
             .unwrap_or_else(|| refuse("--learning-rate expects a positive number"))
     });
+    // Subtracted from the return-to-go of every activation that did nothing. Zero restores the
+    // reward exactly as it was, so a run can be compared against the history.
+    let waste_penalty: f64 = argument("--waste-penalty").map_or(0.0, |value| {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|parsed| parsed.is_finite() && *parsed >= 0.0)
+            .unwrap_or_else(|| refuse("--waste-penalty expects a non-negative number"))
+    });
     let seed_base: u64 = argument("--seed-base").map_or(SEED_BASE, |value| {
         value
             .parse()
@@ -689,6 +793,7 @@ fn main() {
     // run at cannot be compared against another.
     println!("  sampling    temperature {temperature} (acting and recorded behaviour)");
     println!("  adam        learning rate {}", settings.learning_rate);
+    println!("  waste       penalty {waste_penalty} per wasted activation");
     println!(
         "  update      {SEEDS_PER_UPDATE} seeds x {} rotations\n",
         FACTIONS.len()
@@ -788,15 +893,18 @@ fn main() {
                             *seed,
                             *rotation,
                             temperature,
+                            waste_penalty,
                         )
                     })
                     .collect()
             })
             .collect();
 
+        let mut wasted_activations = 0usize;
         for chunk in harvest {
-            for (game, outcomes) in chunk.unwrap_or_else(|error| refuse(&error)) {
+            for (game, outcomes, wasted) in chunk.unwrap_or_else(|error| refuse(&error)) {
                 games += 1;
+                wasted_activations += wasted;
                 seated_decisions += game.len();
                 steps.extend(game);
                 for outcome in &outcomes {

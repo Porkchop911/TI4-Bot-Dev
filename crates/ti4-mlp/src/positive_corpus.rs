@@ -169,6 +169,59 @@ pub fn wasted_activations(notes: &[Note]) -> usize {
     wasted
 }
 
+/// The decision index of the activation in each tactical action that did nothing.
+///
+/// The same segmentation [`wasted_activations`] counts, but returning *where* rather than how many,
+/// so a trainer can charge the cost to the decision that incurred it. A flat penalty on the episode
+/// would spread it over fifty decisions, forty-nine of which were not the mistake — which is the
+/// credit-assignment failure this project has already paid for once.
+///
+/// Indices count non-forced decisions only, matching what `MlpBot::record` keeps: a decision with a
+/// single legal option carries no preference and is absent from both.
+#[must_use]
+pub fn wasted_activation_indices(notes: &[Note]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut open = false;
+    let mut activation: Option<usize> = None;
+    let mut acted = false;
+
+    for (index, note) in notes.iter().enumerate() {
+        if note.head == "turn" {
+            if open
+                && !acted
+                && let Some(at) = activation
+            {
+                out.push(at);
+            }
+            open = note.chosen == TACTICAL_ACTION_ID;
+            activation = None;
+            acted = false;
+            continue;
+        }
+        if !open {
+            continue;
+        }
+        match note.head.as_str() {
+            // The first activation of the segment is the one charged. A tactical action activates
+            // once; a second would be a different action.
+            "activation" => activation = activation.or(Some(index)),
+            "movement" | "production" | "landing" => {
+                if !note.declined {
+                    acted = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    if open
+        && !acted
+        && let Some(at) = activation
+    {
+        out.push(at);
+    }
+    out
+}
+
 /// One stored trajectory.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trajectory {
@@ -682,6 +735,33 @@ mod tests {
             note("turn", "faction|orbital_drop", false),
         ];
         assert_eq!(actions_taken(&mixed), 3);
+    }
+
+    #[test]
+    fn the_wasted_activation_is_located_not_merely_counted() {
+        // Charging the episode would spread the cost over every decision in it. The index is what
+        // lets a trainer charge the activation that was actually worthless.
+        let notes = vec![
+            tactical(),                            // 0
+            note("activation", "system-1", false), // 1  productive
+            note("movement", "carrier-a", false),  // 2
+            tactical(),                            // 3
+            note("activation", "system-2", false), // 4  wasted
+            note("movement", "decline", true),     // 5
+            tactical(),                            // 6
+            note("activation", "system-3", false), // 7  wasted, closed by the end
+        ];
+        assert_eq!(super::wasted_activation_indices(&notes), vec![4, 7]);
+        assert_eq!(wasted_activations(&notes), 2);
+
+        // And the two agree on the cases where nothing is wasted.
+        let clean = vec![
+            tactical(),
+            note("activation", "system-1", false),
+            note("landing", "infantry-a", false),
+        ];
+        assert!(super::wasted_activation_indices(&clean).is_empty());
+        assert_eq!(wasted_activations(&clean), 0);
     }
 
     #[test]
