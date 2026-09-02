@@ -25,7 +25,17 @@ evaluations on a different, easier seed range. Where a figure looks 0.5 too high
 | `out/champions/xxcha-best-99.22_waste-p8` | 93.23% | **Xxcha 99.22%** — by far the best any policy has managed on the binding faction |
 | `out/champions/jolnar-best-95.86_waste-p0` | 93.65% | **Jol-Nar 95.86%** |
 
-### Per faction
+### Per faction — read the warning first
+
+**These are one run each, and the between-run variance on a faction is larger than any effect below.**
+A fourth arm at 200 updates and lr 1e-4 with a per-faction penalty put Xxcha at **80.67%**, against
+the 99.22% in this table and the 90.47% it started from — an 18-point spread on a measurement whose
+interval is ±1.0. So the per-faction column of a single run says almost nothing about a policy, and
+the 95.91% "best of each" figure below is the maximum of six noisy draws, which is exactly the shape
+of number that does not reproduce.
+
+The table averages are far steadier, because a faction's noise partly cancels across six of them.
+Treat the table column as a measurement and the faction columns as a single sample.
 
 | faction | mixed-epoch14 | waste-p0 | waste-p8 | best |
 |---|---|---|---|---|
@@ -37,9 +47,9 @@ evaluations on a different, easier seed range. Where a figure looks 0.5 too high
 | xxcha | 90.47% | 95.00% | **99.22%** | p8 |
 | **table** | **93.88%** | 93.65% | 93.23% | mixed |
 
-Taking each faction's best gives a **95.91%** mean, which is above the 95% target. That is not a
-policy — it is six policies — but it is the evidence that a per-faction waste penalty is worth
-building, and the reason these three are kept rather than only the best table average.
+Taking each faction's best gives a 95.91% mean. That is not a policy but six of them, and given the
+variance noted above it is very likely the maximum of six draws rather than a reachable target. It is
+recorded because it prompted the per-faction penalty, not because it is evidence for one.
 
 ## Provenance
 
