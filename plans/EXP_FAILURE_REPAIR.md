@@ -249,3 +249,108 @@ L = L_repair + β · E_s[ KL( π_ref(·|s) ‖ π(·|s) ) ]
 over a broad sample of states drawn from ordinary play, with `π_ref` the frozen starting policy.
 That directly states the thing the collapse shows to be missing: do not change what you already do
 well. `β` is swept rather than guessed.
+
+
+### 2026-09-02 - the anchored sweep, and why the approach fails
+
+`L = L_repair + b * KL(pi_ref || pi)`, anchor of 19,222 states from 10 maps captured once against
+the starting policy. One collection, three weights trained from identical weights against identical
+labels. Baseline **93.96%**.
+
+| epoch | unanchored | b=1 | b=10 | b=100 |
+|---|---|---|---|---|
+| 1 | 93.93% | 93.93% | 93.93% | 93.93% |
+| 2 | 93.93% | 93.90% | 93.86% | **93.97%** |
+| 4 | 92.74% | 92.75% | 92.90% | 93.90% |
+| 8 | 79.46% | 80.81% | 90.69% | 93.90% |
+| 12 | 40.36% | 57.38% | 90.90% | 93.76% |
+| 16 | 12.94% | 52.08% | 89.42% | 93.62% |
+| 20 | - | 55.69% | 86.50% | 93.57% |
+| KL at end | - | 0.313 | 0.052 | 0.0045 |
+
+Best across the whole sweep: **93.97%, or +0.01 points** on a +-0.55 interval. Nothing.
+
+The asymptote was predictable and behaved as predicted: as the weight grows the policy freezes and
+clearance returns to baseline. Every finite weight trades clearance away and none buys anything.
+There is no sweet spot hiding between grid points either - **epoch 1 reads 93.93% in all four
+configurations**, so the very first step is flat-to-negative regardless of the trust region.
+
+### The diagnostic that settles it
+
+b=100 is the interesting arm, because there the repair loss fell substantially (7.71 to 5.55) while
+clearance stayed flat. The policy *was* learning the demonstrated repairs and getting nothing for
+it. Two explanations fit that - the repairs are learned but do not generalise to new failures, or
+they do not even hold on the failures they came from - and one measurement separates them.
+
+Re-censusing the trained policy on **the same Train seeds its labels were collected from**:
+
+| | failures | rate |
+|---|---|---|
+| champion | 682 | 6.31% |
+| after repair training | **717** | **6.64%** |
+
+It does not fix the failures it was trained on. The difference is about one standard error, so the
+honest statement is *no better, possibly slightly worse* - but there is no improvement where
+improvement should have been easiest, on the exact positions the labels describe.
+
+### Why: the labels are invalidated by the act of learning them
+
+A counterfactual proves `P(clear | do(a_i = c), pi) = 1` **for the specific pi that played the rest
+of the round**. Training raises the score of `c`, which changes pi, which changes the continuation
+after `a_i` - and the clearance that justified the label no longer follows from it. The label
+describes a policy that no longer exists by the time it has been learned.
+
+This is not an implementation detail and not a tuning failure. It is a property of the method: the
+signal is self-invalidating. Iterating rounds does not escape it, because each round's labels are
+undone by that round's own update.
+
+It also settles the `rescue_imitation` post-mortem retroactively. That attempt was diagnosed as a
+credit-assignment failure - first divergence at temperature 2.5 collapsing onto decision zero - and
+the recorded fix was to impose the divergence rather than find it. That fix was correct and it
+worked: strategy fell from 66% of targets to 13%, and repairs came out spread across turn,
+activation, cargo, movement and production. **The attribution was fixed and the method still
+failed**, with 54x the data. Attribution was never the binding constraint.
+
+## Outcome
+
+**The target was not reached. 99% is not achievable by this approach, and the approach does not
+improve clearance at all.**
+
+Final held-out greedy clearance: **93.96%**, unchanged from the starting champion. The best
+checkpoint the entire experiment produced is the one it started with.
+
+Three independent reasons, in increasing order of how fundamental they are:
+
+1. **Arithmetic.** One round of single-decision repair caps at `93.58 + 0.628 x 6.42 = 97.61%`, and
+   the reachability search gives an independent constructive bound of 97.75%. Both are below 99%
+   before any training question is asked.
+2. **Optimisation.** The repair objective touches 0.4% of the decision distribution through a shared
+   trunk. Unconstrained it destroys the other 99.6%; constrained enough to be safe it changes
+   nothing. There is no weight between those where it helps.
+3. **The signal is self-invalidating.** Learning a counterfactual label changes the policy the label
+   was conditional on. This is why the trained policy does not fix even its own training failures,
+   and it is why more data, better attribution and a longer schedule cannot rescue it.
+
+Reason 3 is the one that generalises. Any method that labels a decision by *the outcome of a fixed
+downstream policy* and then trains that policy on the label has the same defect. A method that
+avoids it would have to either re-derive the label continuously as the policy moves - which is what
+on-policy RL already does, and is what PPO is - or produce labels that do not depend on the
+downstream policy at all, e.g. from a search that proves a line clears under *any* reasonable
+continuation.
+
+### What was not tested, stated plainly
+
+`L_PPO + lambda * L_repair` with fresh on-policy rollouts in the same update, which was the
+reviewer's actual recommendation. The KL anchor was used as a cheaper stand-in for it and the
+substitution is not free: PPO would re-derive the value of each state continuously, which is
+precisely the defect in reason 3. So this experiment does **not** establish that a PPO-integrated
+repair term is worthless. What it establishes is that the repair signal cannot carry a policy on its
+own, that its labels do not survive being learned, and that 99% is out of reach of single-decision
+repair regardless, on the arithmetic alone.
+
+### A side finding worth keeping
+
+**Mean KL is a weak proxy for greedy-policy change.** At b=1, a KL of 0.086 accompanied an 8-point
+clearance drop. Small probability shifts flip argmaxes cheaply, so a distributional trust region
+barely constrains a metric read off the argmax. Any future trust region protecting a greedy metric
+should constrain argmax stability directly.
