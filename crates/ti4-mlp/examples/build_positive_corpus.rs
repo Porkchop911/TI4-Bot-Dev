@@ -42,7 +42,7 @@ use rayon::prelude::*;
 use ti4_content::ContentStore;
 use ti4_engine::Choice;
 use ti4_engine::choice::{ChoiceOption, Decider, IllegalChoice, SeatObservation};
-use ti4_mlp::positive_corpus::{Note, Trajectory, wasted_activations, write_line};
+use ti4_mlp::positive_corpus::{Note, Trajectory, actions_taken, wasted_activations, write_line};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
@@ -267,7 +267,10 @@ fn main() {
                                     logs.insert(player.clone(), Rc::clone(&log));
                                     deciders.insert(
                                         player.clone(),
-                                        Box::new(Watching { inner: decider, log }),
+                                        Box::new(Watching {
+                                            inner: decider,
+                                            log,
+                                        }),
                                     );
                                 }
                                 Ok(deciders)
@@ -331,7 +334,12 @@ fn main() {
                     planets: played.planets,
                     systems: played.systems,
                     units_ok: played.units_ok,
-                    actions: played.notes.iter().map(|note| note.chosen.clone()).collect(),
+                    actions: actions_taken(&played.notes),
+                    decisions: played
+                        .notes
+                        .iter()
+                        .map(|note| note.chosen.clone())
+                        .collect(),
                 };
                 kept.entry(played.faction).or_default().push(trajectory);
             }
@@ -343,7 +351,9 @@ fn main() {
     std::fs::create_dir_all(directory)
         .unwrap_or_else(|error| refuse(&format!("creating {}: {error}", directory.display())));
 
-    println!("  faction      kept   mean actions   cleared with slack");
+    // Admission is binary -- cleared, and no wasted activation -- so this table reports size, not
+    // quality. There is no ranking among admitted trajectories.
+    println!("  faction      kept   mean actions   mean decisions");
     let mut written = 0usize;
     for (faction, trajectories) in &kept {
         let mut body = String::new();
@@ -359,21 +369,16 @@ fn main() {
         written += trajectories.len();
 
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
-        let mean_actions = trajectories
+        let mean_actions = trajectories.iter().map(|t| t.actions).sum::<usize>() as f64
+            / trajectories.len().max(1) as f64;
+        #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+        let mean_decisions = trajectories
             .iter()
-            .map(|t| t.actions.len())
+            .map(|t| t.decisions.len())
             .sum::<usize>() as f64
             / trajectories.len().max(1) as f64;
-        // "Slack" is clearing with more than the bar demands, which is what distinguishes a robust
-        // opening from one that met every condition at the last possible moment.
-        let slack = trajectories
-            .iter()
-            .filter(|t| t.planets > 3 || t.systems > 3)
-            .count();
-        #[expect(clippy::cast_precision_loss, reason = "counts are small")]
-        let slack_share = slack as f64 / trajectories.len().max(1) as f64 * 100.0;
         println!(
-            "  {faction:<10} {:>6}   {mean_actions:>12.1}   {slack_share:>17.1}%",
+            "  {faction:<10} {:>6}   {mean_actions:>12.1}   {mean_decisions:>14.1}",
             trajectories.len()
         );
     }
@@ -398,6 +403,11 @@ fn main() {
     println!();
     println!("  {seats_total} seat-games in {:.1?}", started.elapsed());
     println!("  {failed_bar} failed the bar");
-    println!("  {rejected_waste} rejected for a wasted activation ({waste_share:.2}% of all seats)");
-    println!("  {written} trajectories written to {}", directory.display());
+    println!(
+        "  {rejected_waste} rejected for a wasted activation ({waste_share:.2}% of all seats)"
+    );
+    println!(
+        "  {written} trajectories written to {}",
+        directory.display()
+    );
 }

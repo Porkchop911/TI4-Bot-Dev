@@ -5,6 +5,18 @@
 //! A trajectory is stored as its **specification** — seed, rotation, faction, and the option id
 //! chosen at every non-forced decision — never as a dump of feature vectors.
 //!
+//! # Decisions are not actions
+//!
+//! An *action* in TI4 is a defined thing: on a turn a player takes exactly one, and it is a
+//! tactical, strategic or component action. A *decision* is a question the engine asks. One
+//! tactical action produces many decisions — which system to activate, which ships to move, what to
+//! load, where to commit ground forces. This module counts and stores **decisions**, and reports the
+//! **action** count separately, because conflating them makes a length figure unreadable to anyone
+//! who knows the game.
+//!
+//! A **transaction is not an action either**. 94.1a makes it free and the turn continues, so it is
+//! offered among the turn options without being one. [`actions_taken`] excludes them.
+//!
 //! The engine is deterministic given a seed, so replaying those ids reproduces the exact game and
 //! the exact decisions, and the features can be recomputed on demand under whatever model is being
 //! trained. A feature dump would be roughly 300 million numbers for 300 seeds, would be pinned to
@@ -25,12 +37,17 @@
 //! The segmentation is per seat and comes from the seat's own decision stream rather than the event
 //! log, which carries names without attribution and cannot say whose activation it was.
 //!
-//! # What this corpus deliberately does not decide
+//! # Admission is binary
 //!
-//! Which trajectories are *worth more*. Difficulty weighting, per-faction balancing and rescued
-//! successes from positions the policy currently fails are all consumer concerns; the outcome slack
-//! each trajectory records is there so a consumer can compute them. A corpus that pre-weighted its
-//! own contents would have to be regenerated every time the weighting changed.
+//! A trajectory that cleared the bar without a wasted activation is a good example. There is no
+//! further quality ranking: overshooting the bar does not make a demonstration better, and an
+//! earlier version of this module reported a "cleared with slack" share as though it did.
+//!
+//! The final planets, systems and composition are still stored, because they are free facts about
+//! an admitted trajectory and a consumer may want them. They are not admission criteria and nothing
+//! here weights by them. Difficulty weighting, per-faction balancing and rescued successes are
+//! likewise consumer concerns — a corpus that pre-weighted its own contents would have to be
+//! regenerated whenever the weighting changed.
 
 use std::collections::BTreeMap;
 
@@ -72,6 +89,31 @@ pub const TACTICAL_ACTION_ID: &str = "tactical";
 ///
 /// Decisions before the first tactical action belong to no segment and are ignored, which is what
 /// makes a strategy pick or a setup choice unable to open one by accident.
+/// The prefix of a turn option that opens a transaction rather than taking an action.
+///
+/// Mirrors `ti4_engine::transactions::OPEN_PREFIX`.
+pub const TRANSACTION_PREFIX: &str = "component|trade|";
+
+/// How many TI4 actions a seat took.
+///
+/// An action is tactical, strategic or component, and a turn is one of them. A **transaction is not
+/// an action**: LRR 94.1a makes it free, the engine models it as free — "closing it does not end the
+/// turn" — and the seat is asked again afterwards. So a transaction appears among the turn options
+/// without consuming the turn, and counting every turn decision overcounts by exactly the number of
+/// transactions.
+///
+/// That error is not small. Hacan's Guild Ships makes it neighbours with every player, so it may
+/// transact with all five each turn; counting those made it read as 21.7 actions per round against
+/// 5.4 for L1Z1X, and look like a policy stuck in a loop. Its real figure is about 4.3, the same as
+/// everyone else, and the seventeen transactions are legal and free.
+#[must_use]
+pub fn actions_taken(notes: &[Note]) -> usize {
+    notes
+        .iter()
+        .filter(|note| note.head == "turn" && !note.chosen.starts_with(TRANSACTION_PREFIX))
+        .count()
+}
+
 #[must_use]
 pub fn wasted_activations(notes: &[Note]) -> usize {
     let mut wasted = 0usize;
@@ -124,24 +166,30 @@ pub struct Trajectory {
     pub faction: String,
     /// Planets gained, systems held and whether fleet composition was met, at the end of the round.
     ///
-    /// Kept so a consumer can prefer trajectories that cleared with slack over ones that met every
-    /// condition at the last possible moment. The corpus records the facts and weights nothing.
+    /// Free facts about a trajectory that has already been admitted. Not admission criteria: every
+    /// trajectory here cleared the bar, and clearing it by more does not make the demonstration
+    /// better.
     pub planets: usize,
     pub systems: usize,
     pub units_ok: bool,
-    /// The option id chosen at every non-forced decision, in order.
-    pub actions: Vec<String>,
+    /// How many TI4 **actions** the seat took — tactical, strategic and component together.
+    ///
+    /// The game's own unit of a turn, counted from the seat's turn decisions. Stored because it is
+    /// the figure a reader of this corpus will expect the word "action" to mean.
+    pub actions: usize,
+    /// The option id chosen at every non-forced **decision**, in order. Many per action.
+    pub decisions: Vec<String>,
 }
 
 /// Everything that makes a corpus line unusable.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CorpusError {
-    #[error("corpus line {line} has {fields} fields, expected at least 7")]
+    #[error("corpus line {line} has {fields} fields, expected at least 8")]
     ShortLine { line: usize, fields: usize },
     #[error("corpus line {line}: {field} is not a number")]
     NotANumber { line: usize, field: &'static str },
-    #[error("corpus line {line} declares {declared} actions and carries {carried}")]
-    ActionCount {
+    #[error("corpus line {line} declares {declared} decisions and carries {carried}")]
+    DecisionCount {
         line: usize,
         declared: usize,
         carried: usize,
@@ -160,24 +208,25 @@ pub enum CorpusError {
 /// # Errors
 /// [`CorpusError::UnstorableId`] if any id contains whitespace.
 pub fn write_line(trajectory: &Trajectory) -> Result<String, CorpusError> {
-    for action in &trajectory.actions {
-        if action.chars().any(char::is_whitespace) {
-            return Err(CorpusError::UnstorableId(action.clone()));
+    for decision in &trajectory.decisions {
+        if decision.chars().any(char::is_whitespace) {
+            return Err(CorpusError::UnstorableId(decision.clone()));
         }
     }
     if trajectory.faction.chars().any(char::is_whitespace) {
         return Err(CorpusError::UnstorableId(trajectory.faction.clone()));
     }
     Ok(format!(
-        "{} {} {} {} {} {} {} {}",
+        "{} {} {} {} {} {} {} {} {}",
         trajectory.seed,
         trajectory.rotation,
         trajectory.faction,
         trajectory.planets,
         trajectory.systems,
         u8::from(trajectory.units_ok),
-        trajectory.actions.len(),
-        trajectory.actions.join(" ")
+        trajectory.actions,
+        trajectory.decisions.len(),
+        trajectory.decisions.join(" ")
     ))
 }
 
@@ -189,7 +238,7 @@ pub fn write_line(trajectory: &Trajectory) -> Result<String, CorpusError> {
 /// quietly shorter corpus.
 pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
     let fields: Vec<&str> = text.split_whitespace().collect();
-    if fields.len() < 7 {
+    if fields.len() < 8 {
         return Err(CorpusError::ShortLine {
             line,
             fields: fields.len(),
@@ -201,22 +250,39 @@ pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
             .map_err(|_| CorpusError::NotANumber { line, field: name })
     };
     let seed = number(0, "seed")?;
-    let rotation = usize::try_from(number(1, "rotation")?)
-        .map_err(|_| CorpusError::NotANumber { line, field: "rotation" })?;
+    let rotation =
+        usize::try_from(number(1, "rotation")?).map_err(|_| CorpusError::NotANumber {
+            line,
+            field: "rotation",
+        })?;
     let faction = fields[2].to_owned();
-    let planets = usize::try_from(number(3, "planets")?)
-        .map_err(|_| CorpusError::NotANumber { line, field: "planets" })?;
-    let systems = usize::try_from(number(4, "systems")?)
-        .map_err(|_| CorpusError::NotANumber { line, field: "systems" })?;
+    let planets = usize::try_from(number(3, "planets")?).map_err(|_| CorpusError::NotANumber {
+        line,
+        field: "planets",
+    })?;
+    let systems = usize::try_from(number(4, "systems")?).map_err(|_| CorpusError::NotANumber {
+        line,
+        field: "systems",
+    })?;
     let units_ok = number(5, "units_ok")? != 0;
-    let declared = usize::try_from(number(6, "actions")?)
-        .map_err(|_| CorpusError::NotANumber { line, field: "actions" })?;
-    let actions: Vec<String> = fields[7..].iter().map(|piece| (*piece).to_owned()).collect();
-    if actions.len() != declared {
-        return Err(CorpusError::ActionCount {
+    let actions = usize::try_from(number(6, "actions")?).map_err(|_| CorpusError::NotANumber {
+        line,
+        field: "actions",
+    })?;
+    let declared =
+        usize::try_from(number(7, "decisions")?).map_err(|_| CorpusError::NotANumber {
+            line,
+            field: "decisions",
+        })?;
+    let decisions: Vec<String> = fields[8..]
+        .iter()
+        .map(|piece| (*piece).to_owned())
+        .collect();
+    if decisions.len() != declared {
+        return Err(CorpusError::DecisionCount {
             line,
             declared,
-            carried: actions.len(),
+            carried: decisions.len(),
         });
     }
     Ok(Trajectory {
@@ -227,6 +293,7 @@ pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
         systems,
         units_ok,
         actions,
+        decisions,
     })
 }
 
@@ -252,7 +319,10 @@ pub fn read_all(text: &str) -> Result<BTreeMap<String, Vec<Trajectory>>, CorpusE
 
 #[cfg(test)]
 mod tests {
-    use super::{CorpusError, Note, TACTICAL_ACTION_ID, Trajectory, read_all, read_line, wasted_activations, write_line};
+    use super::{
+        CorpusError, Note, TACTICAL_ACTION_ID, Trajectory, actions_taken, read_all, read_line,
+        wasted_activations, write_line,
+    };
 
     fn note(head: &str, chosen: &str, declined: bool) -> Note {
         Note {
@@ -369,6 +439,33 @@ mod tests {
     }
 
     #[test]
+    fn an_action_is_a_turn_not_a_decision() {
+        // The distinction the corpus exists to keep straight. Four decisions here, one action.
+        let notes = vec![
+            tactical(),
+            note("activation", "system-1", false),
+            note("movement", "carrier-a", false),
+            note("landing", "infantry-a", false),
+        ];
+        assert_eq!(actions_taken(&notes), 1);
+        assert_eq!(notes.len(), 4);
+
+        // A strategic turn and a faction component turn are actions. A transaction is not: 94.1a
+        // makes it free and the turn continues, so it appears among the turn options without being
+        // an action. Counting it made Hacan read as 21.7 actions a round instead of about 4.
+        let mixed = vec![
+            note("turn", "warfare", false),
+            note("production", "infantry", false),
+            tactical(),
+            note("activation", "system-1", false),
+            note("turn", "component|trade|letnev", false),
+            note("trade", "pnms:sol:0", false),
+            note("turn", "faction|orbital_drop", false),
+        ];
+        assert_eq!(actions_taken(&mixed), 3);
+    }
+
+    #[test]
     fn a_trajectory_survives_the_round_trip() {
         let trajectory = Trajectory {
             seed: 800_000_123,
@@ -377,7 +474,8 @@ mod tests {
             planets: 4,
             systems: 3,
             units_ok: true,
-            actions: vec!["tactical".to_owned(), "system-42".to_owned()],
+            actions: 3,
+            decisions: vec!["tactical".to_owned(), "system-42".to_owned()],
         };
         let line = write_line(&trajectory).expect("writes");
         assert_eq!(read_line(1, &line).expect("reads"), trajectory);
@@ -390,10 +488,11 @@ mod tests {
     fn a_truncated_line_is_an_error_rather_than_a_shorter_trajectory() {
         // The declared count is what makes truncation visible. Without it a half-written line would
         // parse as a complete, shorter demonstration and teach the policy to stop early.
-        let error = read_line(7, "800000123 3 jolnar 4 3 1 5 tactical system-42").expect_err("short");
+        let error =
+            read_line(7, "800000123 3 jolnar 4 3 1 3 5 tactical system-42").expect_err("short");
         assert_eq!(
             error,
-            CorpusError::ActionCount {
+            CorpusError::DecisionCount {
                 line: 7,
                 declared: 5,
                 carried: 2
@@ -414,7 +513,8 @@ mod tests {
             planets: 3,
             systems: 3,
             units_ok: true,
-            actions: vec!["two words".to_owned()],
+            actions: 1,
+            decisions: vec!["two words".to_owned()],
         };
         assert_eq!(
             write_line(&trajectory).expect_err("refused"),
