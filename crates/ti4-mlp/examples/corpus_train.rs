@@ -329,27 +329,69 @@ fn demonstrate(
         .collect())
 }
 
-/// Greedy clearance on the validation pool.
+/// Records a seat's decisions without changing them, so waste can be measured beside clearance.
+struct Watching {
+    inner: Box<dyn Decider>,
+    log: Rc<RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
+}
+
+impl Watching {
+    fn record(&self, choice: &Choice, chosen: &ChoiceOption) {
+        if choice.options.len() < 2 {
+            return;
+        }
+        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        self.log.borrow_mut().push(ti4_mlp::positive_corpus::Note {
+            head: head.to_owned(),
+            chosen: chosen.id.clone(),
+            declined: chosen.is_decline(),
+        });
+    }
+}
+
+impl Decider for Watching {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        let chosen = self.inner.choose(choice)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        let chosen = self.inner.choose_seeing(choice, seen)?;
+        self.record(choice, &chosen);
+        Ok(chosen)
+    }
+}
+
+/// Greedy clearance and wasted-activation incidence on the validation pool.
+///
+/// Both, because the target is both: a policy is only wanted if it clears **and** wastes nothing,
+/// and selecting on clearance alone would happily hand back one that pays for it in wasted turns.
 fn measure(
     table: &Table<'_>,
     actor: &ti4_mlp::Actor,
     seeds: u64,
     seed_base: u64,
-) -> Result<f64, String> {
+) -> Result<(f64, f64), String> {
     let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
         .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
         .collect();
     let workers = rayon::current_num_threads().max(1);
     let per_worker = jobs.len().div_ceil(workers).max(1);
-    let harvest: Vec<Result<(usize, usize), String>> = jobs
+    let harvest: Vec<Result<(usize, usize, usize), String>> = jobs
         .chunks(per_worker)
         .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
         .collect::<Vec<_>>()
         .into_par_iter()
         .map(|(local, chunk)| {
             let local = Rc::new(local);
-            let (mut seats, mut cleared) = (0usize, 0usize);
+            let (mut seats, mut cleared, mut wasteful) = (0usize, 0usize, 0usize);
             for (seed, rotation) in chunk {
+                let mut logs: BTreeMap<PlayerId, Rc<RefCell<Vec<ti4_mlp::positive_corpus::Note>>>> =
+                    BTreeMap::new();
                 let (_e, _s, _a, openings, _f) = ti4_training::rollout::audit_game_with_deciders(
                     table.content,
                     table.factions,
@@ -385,30 +427,47 @@ fn measure(
                             .at_temperature(0.001)
                             .from_setup(baseline)
                             .seat();
-                            deciders.insert(player.clone(), decider);
+                            let log = Rc::new(RefCell::new(Vec::new()));
+                            logs.insert(player.clone(), Rc::clone(&log));
+                            deciders.insert(
+                                player.clone(),
+                                Box::new(Watching {
+                                    inner: decider,
+                                    log,
+                                }),
+                            );
                         }
                         Ok(deciders)
                     },
                 )?;
-                for (_, opening) in &openings {
+                for (player, opening) in &openings {
                     seats += 1;
                     cleared += usize::from(opening.cleared());
+                    if let Some(notes) = logs.get(player)
+                        && ti4_mlp::positive_corpus::wasted_activations(&notes.borrow()) > 0
+                    {
+                        wasteful += 1;
+                    }
                 }
             }
-            Ok((seats, cleared))
+            Ok((seats, cleared, wasteful))
         })
         .collect();
-    let (mut seats, mut cleared) = (0usize, 0usize);
+    let (mut seats, mut cleared, mut wasteful) = (0usize, 0usize, 0usize);
     for chunk in harvest {
-        let (n, c) = chunk?;
+        let (n, c, w) = chunk?;
         seats += n;
         cleared += c;
+        wasteful += w;
     }
     if seats == 0 {
         return Err("no seat-games measured".to_owned());
     }
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
-    Ok(cleared as f64 / seats as f64 * 100.0)
+    Ok((
+        cleared as f64 / seats as f64 * 100.0,
+        wasteful as f64 / seats as f64 * 100.0,
+    ))
 }
 
 #[expect(clippy::too_many_lines, reason = "one training loop")]
@@ -528,9 +587,14 @@ fn main() {
         pool: &holdout_pool,
         vocabulary: &vocabulary,
     };
-    let baseline = measure(&holdout_table, &actor, eval_seeds, 900_000_000)
+    // The waste ceiling a checkpoint must respect to be selected at all. Clearance alone would
+    // happily pick a policy that pays for it in wasted turns.
+    let waste_ceiling: f64 = number("--waste-ceiling", 100.0);
+    let (baseline, baseline_waste) = measure(&holdout_table, &actor, eval_seeds, 900_000_000)
         .unwrap_or_else(|error| refuse(&error));
-    println!("  baseline   {baseline:.2}% greedy, held out");
+    println!(
+        "  baseline   {baseline:.2}% greedy, {baseline_waste:.2}% of seats wasteful (ceiling {waste_ceiling}%)"
+    );
     println!();
 
     let settings = ti4_mlp::ppo::Settings {
@@ -658,11 +722,20 @@ fn main() {
 
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let mean_loss = loss_sum / steps.max(1) as f64;
-        let held = measure(&holdout_table, &actor, eval_seeds, 900_000_000)
+        let (held, waste) = measure(&holdout_table, &actor, eval_seeds, 900_000_000)
             .unwrap_or_else(|error| refuse(&error));
-        let mark = if held > best { "  <-- best" } else { "" };
+        // Only a checkpoint under the ceiling can be the best. A run that clears more by wasting
+        // more has not met the requirement, and calling it best would hide that.
+        let admissible = waste <= waste_ceiling;
+        let mark = if admissible && held > best {
+            "  <-- best"
+        } else if !admissible {
+            "  (over the waste ceiling)"
+        } else {
+            ""
+        };
         println!(
-            "  epoch {epoch:>3}: {seen} demos, loss {mean_loss:.4}, held out {held:.2}%{mark}  ({:.0?})",
+            "  epoch {epoch:>3}: {seen} demos, loss {mean_loss:.4}, held out {held:.2}%, waste {waste:.2}%{mark}  ({:.0?})",
             started.elapsed()
         );
         if failed > 0 {
@@ -683,7 +756,7 @@ fn main() {
         )
         .unwrap_or_else(|error| refuse(&format!("writing {}: {error}", path.display())));
 
-        if held > best {
+        if admissible && held > best {
             best = held;
             best_epoch = epoch;
         }

@@ -175,6 +175,15 @@ fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| {
         refuse("--bundle is required: the report describes a specific checkpoint")
     });
+    // Greedy by default. The report describes what the policy *does*, and what it does when
+    // evaluated is take its argmax; reading it at 1.0 describes a distribution nobody plays.
+    let temperature: f64 = argument("--temperature").map_or(0.001, |value| {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|parsed| parsed.is_finite() && *parsed > 0.0)
+            .unwrap_or_else(|| refuse("--temperature expects a positive number"))
+    });
     let seeds: u64 = argument("--seeds").map_or(200, |value| {
         value
             .parse()
@@ -271,6 +280,7 @@ fn main() {
                                 row,
                                 stream,
                             )
+                            .at_temperature(temperature)
                             .from_setup(baseline)
                             .seat();
                             deciders.insert(
