@@ -799,6 +799,12 @@ fn main() {
     // affect. `clearance_weight` is the one that reaches every decision, because it is credited at
     // the final slot and every return is a suffix sum. Raising the first alone sharpens round one
     // and leaves the rest of the game indifferent to whether the opening held.
+    // What a point is worth against what standing next to one is worth. `validate` enforces
+    // objective_weight < vp_weight and secret_weight < vp_weight, so raising the price of a point
+    // is the safe direction and lowering it can be refused.
+    reward.vp_weight = weight("--vp-weight", reward.vp_weight);
+    reward.objective_weight = weight("--objective-weight", reward.objective_weight);
+    reward.secret_weight = weight("--secret-weight", reward.secret_weight);
     reward.r1_bonus = weight("--r1-bonus", reward.r1_bonus);
     reward.r1_shaping = weight("--r1-shaping", reward.r1_shaping);
     reward.clearance_weight = weight("--clearance-weight", reward.clearance_weight);
