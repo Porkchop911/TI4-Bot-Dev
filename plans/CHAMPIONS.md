@@ -36,6 +36,27 @@ The per-faction figures live in git history if they are ever needed with that ca
 table averages below are the numbers worth comparing, and even those carry a 1.54-point training
 floor: see `plans/STAGE2_TRANSFERABLE_LESSONS.md`.
 
+## Stage 2
+
+Different measurement, kept separate on purpose. Stage-2 policies are judged by **margin** in
+`crossplay_eval` against five frozen copies of `best-94.97_r2-epoch22`, greedy, four rounds,
+Validation pool. The margin null is **-0.150**, not zero: the candidate is one draw and the best
+opponent is the maximum of five, so an identical policy scores below zero by construction.
+
+Clearance below is still the stage-1 convention, so it is comparable to the table above.
+
+| directory | clearance | margin | win | what it is |
+|---|---|---|---|---|
+| `out/champions/stage2-pilot-clear93.69_m0.893` | 93.69% | +0.893 | 62.4% | the best **opening** among stage-2 checkpoints that scored |
+| `out/champions/stage2-pilot-clear93.34_m0.963` | 93.34% | **+0.963** | 65.1% | the best **margin** |
+
+Both come from the 300-update pilot and both beat its final checkpoint (92.44%, +0.858) on *both*
+axes: the scoring gain arrives within ~50 updates and further training erodes clearance and margin
+together. Neither has recovered the champion's 94.97% opening, which is the open problem.
+
+For scale, the stage-1 champion itself scores 0.040 VP and -0.178 margin at greedy. The pilot
+scores 1.299. See `plans/STAGE2_RUN1.md`.
+
 ## Provenance
 
 | | |
