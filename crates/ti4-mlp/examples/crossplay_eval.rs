@@ -85,7 +85,13 @@ impl Watching {
         if choice.options.len() < 2 {
             return;
         }
-        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        // The RAW head, not `Actor::resolve_head`. The actor has fourteen heads and `scoring` is
+        // not among them, so resolving maps every scoring decision onto the `other` catch-all and
+        // the census reads zero offers -- which is what it did read, and the zero meant "no such
+        // head" rather than "never offered". The names the waste detector needs (activation,
+        // movement, production, landing) are all first-class, so they resolve to themselves and
+        // this is strictly more information.
+        let head = ti4_policy::learned::decision_head(choice);
         self.log.borrow_mut().push(ti4_mlp::positive_corpus::Note {
             head: head.to_owned(),
             chosen: chosen.id.clone(),
@@ -119,6 +125,11 @@ struct Seated {
     best_opponent: i64,
     cleared: bool,
     wasteful: bool,
+    /// Times this seat was offered the chance to score an objective, and times it declined.
+    /// A policy that never scores and a policy that is never offered the chance are different
+    /// failures with different fixes, and only these two counts tell them apart.
+    scoring_offered: usize,
+    scoring_declined: usize,
 }
 
 #[derive(Default)]
@@ -129,6 +140,8 @@ struct Tally {
     wins: usize,
     cleared: usize,
     wasteful: usize,
+    scoring_offered: usize,
+    scoring_declined: usize,
 }
 
 impl Tally {
@@ -139,13 +152,22 @@ impl Tally {
         }
         let n = self.games as f64;
         println!(
-            "  {name:<10} {:>6}   {:>6.3}   {:>+7.3}   {:>6.1}%   {:>6.2}%   {:>6.2}%",
+            "  {name:<10} {:>6}   {:>6.3}   {:>+7.3}   {:>6.1}%   {:>6.2}%   {:>6.2}%   {:>6.2}   {:>7}",
             self.games,
             self.vp as f64 / n,
             self.margin as f64 / n,
             self.wins as f64 / n * 100.0,
             self.cleared as f64 / n * 100.0,
-            self.wasteful as f64 / n * 100.0
+            self.wasteful as f64 / n * 100.0,
+            self.scoring_offered as f64 / n,
+            if self.scoring_offered == 0 {
+                "  (none)".to_owned()
+            } else {
+                format!(
+                    "{:>6.2}%",
+                    self.scoring_declined as f64 / self.scoring_offered as f64 * 100.0
+                )
+            }
         );
     }
 }
@@ -162,6 +184,7 @@ fn play(
     rotation: usize,
     candidate_seat: usize,
     rounds: u32,
+    temperature: f64,
 ) -> Result<Seated, String> {
     let log = Rc::new(RefCell::new(Vec::new()));
     let captured = Rc::clone(&log);
@@ -219,9 +242,11 @@ fn play(
                     .wrapping_mul(1_000_003)
                     .wrapping_add(u64::try_from(index).unwrap_or(0));
                 let actor = if is_candidate { candidate } else { opponent };
+                // The benchmark is always greedy; only the candidate moves, or the comparison
+                // would change two things at once.
                 let (decider, _status) =
                     ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
-                        .at_temperature(0.001)
+                        .at_temperature(if is_candidate { temperature } else { 0.001 })
                         .from_setup(baseline)
                         .seat();
                 if is_candidate {
@@ -261,12 +286,21 @@ fn play(
         return Err("the candidate was never seated".to_owned());
     }
 
+    let notes = log.borrow();
+    let scoring_offered = notes.iter().filter(|note| note.head == "scoring").count();
+    let scoring_declined = notes
+        .iter()
+        .filter(|note| note.head == "scoring" && note.declined)
+        .count();
+
     Ok(Seated {
         faction,
         vp,
         best_opponent,
         cleared,
-        wasteful: ti4_mlp::positive_corpus::wasted_activations(&log.borrow()) > 0,
+        wasteful: ti4_mlp::positive_corpus::wasted_activations(&notes) > 0,
+        scoring_offered,
+        scoring_declined,
     })
 }
 
@@ -278,6 +312,11 @@ fn main() {
     let seeds: u64 = number("--seeds", 60);
     let seed_base: u64 = number("--seed-base", 900_000_000);
     let rounds: u32 = number("--rounds", 4);
+    // Greedy by default, because argmax is the only scale-invariant reading of a policy. But the
+    // candidate's temperature is exposed on purpose: the stage-1 champion scores 0.040 VP at argmax
+    // and about 1.8 when the same weights are sampled at 2.5, so "what does this policy score"
+    // has no single answer and the flag is how that gap is measured rather than assumed away.
+    let temperature: f64 = number("--temperature", 0.001);
 
     ti4_tensor::configure_deterministic(20_260_826)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
@@ -312,6 +351,7 @@ fn main() {
         seeds as usize * FACTIONS.len() * FACTIONS.len()
     );
     println!("  rounds     {rounds}");
+    println!("  candidate temperature {temperature} (the benchmark is always greedy)");
     println!();
 
     let started = std::time::Instant::now();
@@ -352,6 +392,7 @@ fn main() {
                     rotation,
                     seat,
                     rounds,
+                    temperature,
                 )?);
             }
             Ok(rows)
@@ -370,11 +411,15 @@ fn main() {
                 tally.wins += usize::from(margin > 0);
                 tally.cleared += usize::from(row.cleared);
                 tally.wasteful += usize::from(row.wasteful);
+                tally.scoring_offered += row.scoring_offered;
+                tally.scoring_declined += row.scoring_declined;
             }
         }
     }
 
-    println!("  faction     games       VP    margin      win   cleared    waste");
+    println!(
+        "  faction     games       VP    margin      win   cleared    waste   offers   declined"
+    );
     for (faction, tally) in &by_faction {
         tally.report(faction);
     }
