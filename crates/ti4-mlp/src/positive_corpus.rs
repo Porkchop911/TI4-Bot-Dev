@@ -27,6 +27,17 @@
 //! offer and fail closed if anything has drifted. A position would silently select a different
 //! action instead.
 //!
+//! # The temperature is part of the specification
+//!
+//! A trajectory is a line played *against five particular opponents*. Those opponents are the same
+//! policy sampling at the generating temperature, and their stream is offset by it, so replaying at
+//! any other temperature gives different opponents, a different game, and recorded ids that are no
+//! longer on offer. The first version of this format omitted the temperature and 59 of 60 replays
+//! failed for exactly that reason.
+//!
+//! It is stored in thousandths as an integer, because the value also seeds the stream offset and a
+//! decimal that did not round-trip exactly would reproduce different opponents while looking right.
+//!
 //! # The quality filter
 //!
 //! Clearing the bar is necessary and not sufficient. A trajectory is rejected when it contains a
@@ -172,6 +183,11 @@ pub struct Trajectory {
     pub planets: usize,
     pub systems: usize,
     pub units_ok: bool,
+    /// The sampling temperature this line was played at, in thousandths.
+    ///
+    /// Needed to reproduce the other five seats: they sample at this temperature and their stream is
+    /// offset by it. Without it a replay faces different opponents and the line does not exist.
+    pub temperature_milli: u64,
     /// How many TI4 **actions** the seat took — tactical, strategic and component together.
     ///
     /// The game's own unit of a turn, counted from the seat's turn decisions. Stored because it is
@@ -184,7 +200,7 @@ pub struct Trajectory {
 /// Everything that makes a corpus line unusable.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CorpusError {
-    #[error("corpus line {line} has {fields} fields, expected at least 8")]
+    #[error("corpus line {line} has {fields} fields, expected at least 9")]
     ShortLine { line: usize, fields: usize },
     #[error("corpus line {line}: {field} is not a number")]
     NotANumber { line: usize, field: &'static str },
@@ -217,10 +233,11 @@ pub fn write_line(trajectory: &Trajectory) -> Result<String, CorpusError> {
         return Err(CorpusError::UnstorableId(trajectory.faction.clone()));
     }
     Ok(format!(
-        "{} {} {} {} {} {} {} {} {}",
+        "{} {} {} {} {} {} {} {} {} {}",
         trajectory.seed,
         trajectory.rotation,
         trajectory.faction,
+        trajectory.temperature_milli,
         trajectory.planets,
         trajectory.systems,
         u8::from(trajectory.units_ok),
@@ -238,7 +255,7 @@ pub fn write_line(trajectory: &Trajectory) -> Result<String, CorpusError> {
 /// quietly shorter corpus.
 pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
     let fields: Vec<&str> = text.split_whitespace().collect();
-    if fields.len() < 8 {
+    if fields.len() < 9 {
         return Err(CorpusError::ShortLine {
             line,
             fields: fields.len(),
@@ -256,25 +273,26 @@ pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
             field: "rotation",
         })?;
     let faction = fields[2].to_owned();
-    let planets = usize::try_from(number(3, "planets")?).map_err(|_| CorpusError::NotANumber {
+    let temperature_milli = number(3, "temperature")?;
+    let planets = usize::try_from(number(4, "planets")?).map_err(|_| CorpusError::NotANumber {
         line,
         field: "planets",
     })?;
-    let systems = usize::try_from(number(4, "systems")?).map_err(|_| CorpusError::NotANumber {
+    let systems = usize::try_from(number(5, "systems")?).map_err(|_| CorpusError::NotANumber {
         line,
         field: "systems",
     })?;
-    let units_ok = number(5, "units_ok")? != 0;
-    let actions = usize::try_from(number(6, "actions")?).map_err(|_| CorpusError::NotANumber {
+    let units_ok = number(6, "units_ok")? != 0;
+    let actions = usize::try_from(number(7, "actions")?).map_err(|_| CorpusError::NotANumber {
         line,
         field: "actions",
     })?;
     let declared =
-        usize::try_from(number(7, "decisions")?).map_err(|_| CorpusError::NotANumber {
+        usize::try_from(number(8, "decisions")?).map_err(|_| CorpusError::NotANumber {
             line,
             field: "decisions",
         })?;
-    let decisions: Vec<String> = fields[8..]
+    let decisions: Vec<String> = fields[9..]
         .iter()
         .map(|piece| (*piece).to_owned())
         .collect();
@@ -289,6 +307,7 @@ pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
         seed,
         rotation,
         faction,
+        temperature_milli,
         planets,
         systems,
         units_ok,
@@ -315,6 +334,66 @@ pub fn read_all(text: &str) -> Result<BTreeMap<String, Vec<Trajectory>>, CorpusE
             .push(trajectory);
     }
     Ok(by_faction)
+}
+
+/// One demonstrated decision, as behaviour cloning sees it.
+///
+/// Built by replaying a stored trajectory: the options are the features of the position the
+/// demonstration actually reached, and `chosen` is what the successful line did there.
+#[derive(Clone, Debug)]
+pub struct Demo {
+    pub row: crate::FactionRow,
+    pub head: usize,
+    pub options: Vec<crate::SparseOption>,
+    pub chosen: usize,
+}
+
+/// Mean negative log-likelihood of the demonstrated actions.
+///
+/// Plain behaviour cloning: `-(1/N) Σ log π(a_i | s_i)`. A one-hot target is the right shape here
+/// and was the wrong shape for the repair objective, and the difference is the state distribution
+/// rather than the loss. Repair labelled 0.4% of the decisions, all of them positions where the
+/// policy was known to be wrong, so nothing constrained the other 99.6% and the trunk was free to
+/// rewrite it. These demonstrations cover whole trajectories of ordinary successful play, so the
+/// states where the policy is already right supply their own targets — which say "keep doing this"
+/// and hold the rest of the distribution in place as a learning signal rather than a brake.
+///
+/// Returns `None` for an empty batch rather than a zero tensor.
+///
+/// # Errors
+/// If the actor cannot score an option set, or a target is outside it.
+pub fn clone_loss(
+    actor: &crate::Actor,
+    demos: &[Demo],
+) -> Result<Option<ti4_tensor::Tensor>, String> {
+    if demos.is_empty() {
+        return Ok(None);
+    }
+    let mut total: Option<ti4_tensor::Tensor> = None;
+    for demo in demos {
+        let head = crate::heads()
+            .get(demo.head)
+            .ok_or_else(|| format!("head index {} is out of range", demo.head))?;
+        let logits = actor
+            .logits(&demo.options, head, demo.row)
+            .map_err(|error| format!("cloning scoring failed: {error}"))?;
+        let chosen = i64::try_from(demo.chosen).map_err(|_| "chosen index does not fit i64")?;
+        if demo.chosen >= demo.options.len() {
+            return Err(format!(
+                "demonstrated option {} is outside the {} offered",
+                demo.chosen,
+                demo.options.len()
+            ));
+        }
+        let log_probs = logits.log_softmax(0, ti4_tensor::Kind::Float);
+        let term = -log_probs.narrow(0, chosen, 1).squeeze();
+        total = Some(match total {
+            Some(sum) => sum + term,
+            None => term,
+        });
+    }
+    #[expect(clippy::cast_precision_loss, reason = "batches are thousands at most")]
+    Ok(total.map(|sum| sum / demos.len() as f64))
 }
 
 #[cfg(test)]
@@ -439,6 +518,72 @@ mod tests {
     }
 
     #[test]
+    fn cloning_costs_less_when_the_demonstrated_action_scores_higher() {
+        // The contract in one check: the loss is the negative log-likelihood of the demonstrated
+        // action, so a uniform distribution over n options must cost exactly ln n, and demonstrating
+        // a different option under the same weights must cost the same when the scores are equal.
+        let actor = crate::Actor::zeros(crate::Width::W256, 64);
+        let options = vec![
+            crate::SparseOption {
+                columns: vec![1],
+                values: vec![1.0],
+            },
+            crate::SparseOption {
+                columns: vec![2],
+                values: vec![1.0],
+            },
+            crate::SparseOption {
+                columns: vec![3],
+                values: vec![1.0],
+            },
+        ];
+        let row = crate::FactionRow::of("sol").expect("roster");
+        let demo = |chosen| super::Demo {
+            row,
+            head: 0,
+            options: options.clone(),
+            chosen,
+        };
+        let cost = |chosen| {
+            f64::try_from(
+                super::clone_loss(&actor, &[demo(chosen)])
+                    .expect("loss")
+                    .expect("some"),
+            )
+            .expect("scalar")
+        };
+        let a = cost(0);
+        assert!(
+            (a - 3.0f64.ln()).abs() < 1e-6,
+            "equal scores over three options must cost ln 3, got {a}"
+        );
+        assert!(
+            (a - cost(2)).abs() < 1e-9,
+            "equal scores must not prefer a position"
+        );
+        assert!(super::clone_loss(&actor, &[]).expect("loss").is_none());
+    }
+
+    #[test]
+    fn a_target_outside_the_option_set_is_refused() {
+        let actor = crate::Actor::zeros(crate::Width::W256, 64);
+        let error = super::clone_loss(
+            &actor,
+            &[super::Demo {
+                row: crate::FactionRow::of("sol").expect("roster"),
+                head: 0,
+                options: vec![crate::SparseOption {
+                    columns: vec![1],
+                    values: vec![1.0],
+                }],
+                chosen: 4,
+            }],
+        )
+        .expect_err("refused");
+        assert!(error.contains("outside"), "{error}");
+    }
+
+    #[test]
     fn an_action_is_a_turn_not_a_decision() {
         // The distinction the corpus exists to keep straight. Four decisions here, one action.
         let notes = vec![
@@ -471,6 +616,7 @@ mod tests {
             seed: 800_000_123,
             rotation: 3,
             faction: "jolnar".to_owned(),
+            temperature_milli: 500,
             planets: 4,
             systems: 3,
             units_ok: true,
@@ -489,7 +635,7 @@ mod tests {
         // The declared count is what makes truncation visible. Without it a half-written line would
         // parse as a complete, shorter demonstration and teach the policy to stop early.
         let error =
-            read_line(7, "800000123 3 jolnar 4 3 1 3 5 tactical system-42").expect_err("short");
+            read_line(7, "800000123 3 jolnar 500 4 3 1 3 5 tactical system-42").expect_err("short");
         assert_eq!(
             error,
             CorpusError::DecisionCount {
@@ -510,6 +656,7 @@ mod tests {
             seed: 1,
             rotation: 0,
             faction: "sol".to_owned(),
+            temperature_milli: 250,
             planets: 3,
             systems: 3,
             units_ok: true,

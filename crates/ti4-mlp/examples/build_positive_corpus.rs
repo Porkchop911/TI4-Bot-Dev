@@ -198,6 +198,14 @@ fn main() {
     let mut explained = 0usize;
 
     for temperature in temperatures.iter().copied() {
+        // Thousandths, and the stream offset is taken from the same integer. A replay reproduces
+        // the other five seats from this value, so it has to be exact rather than nearly right.
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a positive temperature under a thousand"
+        )]
+        let milli = (temperature * 1_000.0) as u64;
         let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
@@ -245,15 +253,10 @@ fn main() {
                                     // The stream is offset by the temperature so a second pass at a
                                     // different temperature explores a different set of lines rather
                                     // than re-drawing the same ones.
-                                    #[expect(
-                                        clippy::cast_possible_truncation,
-                                        clippy::cast_sign_loss,
-                                        reason = "a stream offset, not a measurement"
-                                    )]
                                     let stream = seed
                                         .wrapping_mul(1_000_003)
                                         .wrapping_add(u64::try_from(index).unwrap_or(0))
-                                        .wrapping_add((temperature * 1_000.0) as u64);
+                                        .wrapping_add(milli);
                                     let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
                                         &local,
                                         vocabulary.clone(),
@@ -331,6 +334,7 @@ fn main() {
                     seed,
                     rotation,
                     faction: played.faction.clone(),
+                    temperature_milli: milli,
                     planets: played.planets,
                     systems: played.systems,
                     units_ok: played.units_ok,
