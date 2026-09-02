@@ -506,6 +506,31 @@ impl Actor {
         }
     }
 
+    /// Overwrite one faction's conditioning with another's.
+    ///
+    /// Three tensors carry faction identity — the identity `embedding` added to the first-layer
+    /// preactivation, and the `delta`/`b_delta` readout adjustments that make the effective head
+    /// weight `w_shared[h] + delta[f, h]`. Everything else in the trunk is shared, so copying these
+    /// three rows makes the model treat `to` exactly as it treats `from`, while the features it is
+    /// shown remain `to`'s own.
+    ///
+    /// This is a diagnostic, not a training step. It answers "is this faction's conditioning the
+    /// problem, or is its position?" — if a weak faction improves when given a strong one's rows,
+    /// the conditioning was holding it back; if it does not, the difficulty is in the game it faces.
+    pub fn copy_faction_identity(&mut self, from: FactionRow, to: FactionRow) {
+        let source = i64::try_from(from.index()).expect("roster fits");
+        let target = i64::try_from(to.index()).expect("roster fits");
+        if source == target {
+            return;
+        }
+        tch::no_grad(|| {
+            for tensor in [&mut self.embedding, &mut self.delta, &mut self.b_delta] {
+                let row = tensor.get(source).detach().copy();
+                tensor.get(target).copy_(&row);
+            }
+        });
+    }
+
     pub(crate) fn main_parameters(&self, include_value: bool) -> Vec<Tensor> {
         let mut parameters = vec![
             self.input.shallow_clone(),
