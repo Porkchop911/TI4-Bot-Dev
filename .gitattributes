@@ -17,3 +17,13 @@ crates/ti4-content/content/CHECKSUMS.sha256 -text
 # and failed on the first fresh checkout of the same commit.
 fixtures/legacy_entropy/**/*.ndjson -text
 fixtures/legacy_entropy/**/*.json -text
+
+# The reviewer demo assets are checksummed in assets/demo/CHECKSUMS.sha256, and the MLP bundle
+# additionally verifies slots.json against the slots_sha256 recorded in its own manifest — the
+# check the MLP plan calls the single most likely silent corruption, same weights and different
+# feature meaning. End-of-line conversion would break both on a Windows checkout, exactly as it
+# broke the legacy trace corpus above.
+assets/demo/**/*.json -text
+assets/demo/**/*.sha256 -text
+assets/demo/**/*.safetensors -text -diff
+assets/demo/**/*.gz -text -diff
