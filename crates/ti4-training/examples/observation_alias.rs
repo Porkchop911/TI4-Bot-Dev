@@ -269,8 +269,13 @@ fn main() {
         let per_option: usize = stats.iter().map(|s| s.0).sum::<usize>() / n;
         let shared: usize = stats.iter().map(|s| s.1).sum::<usize>() / n;
         let with_prompt = stats.iter().filter(|s| s.2 > 0).count();
-        println!("  INSTRUMENT: mean features on option 0 = {per_option}, mean option-invariant = {shared}");
-        println!("  INSTRUMENT: decisions whose state key contains any prompt feature = {with_prompt} of {}", stats.len());
+        println!(
+            "  INSTRUMENT: mean features on option 0 = {per_option}, mean option-invariant = {shared}"
+        );
+        println!(
+            "  INSTRUMENT: decisions whose state key contains any prompt feature = {with_prompt} of {}",
+            stats.len()
+        );
         println!();
     }
     println!("  decisions recorded          {decisions}");
@@ -280,9 +285,7 @@ fn main() {
         "  CANDIDATE ALIASES (same state context AND same option set)  {}",
         candidates.len()
     );
-    println!(
-        "  same context, different options (expected, not a defect)    {differing}"
-    );
+    println!("  same context, different options (expected, not a defect)    {differing}");
     let proven: Vec<&(&Observation, &Seen)> = candidates
         .iter()
         .filter(|(_, row)| row.truths.len() > 1)
@@ -307,7 +310,10 @@ fn main() {
                 println!("      prompt: {prompt}");
             }
             for truth in row.truths.iter().take(3) {
-                println!("      seat:   {}", truth.chars().take(96).collect::<String>());
+                println!(
+                    "      seat:   {}",
+                    truth.chars().take(96).collect::<String>()
+                );
             }
         }
         println!();
@@ -328,7 +334,10 @@ fn main() {
                 println!("      prompt: {prompt}");
             }
             for set in row.option_sets.iter().take(2) {
-                println!("      options: {}", set.chars().take(90).collect::<String>());
+                println!(
+                    "      options: {}",
+                    set.chars().take(90).collect::<String>()
+                );
             }
         }
     }
