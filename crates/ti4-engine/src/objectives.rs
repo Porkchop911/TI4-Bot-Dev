@@ -1589,6 +1589,7 @@ pub fn award(
         // 98.4a: a player cannot hold more than the target.
         seat.victory_points = (seat.victory_points + points).min(VICTORY_TARGET);
     }
+    state.note_vp(player, points, "objective");
     // 51.7: leaders unlock the moment their condition is met, not at end of phase. A hero
     // unlocked by a third objective must not wait for a status phase the game may never reach.
     // No galaxy here: only Naalu's commander asks about the map, and awarding an objective is

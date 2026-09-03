@@ -123,6 +123,7 @@ fn adjust_victory_points(state: &mut GameState, player: &PlayerId, delta: i32) {
     if let Some(seat) = state.player_mut(player) {
         seat.victory_points = (seat.victory_points + delta).clamp(0, VICTORY_TARGET);
     }
+    state.note_vp(player, delta, "agenda");
 }
 
 fn everyone(state: &GameState) -> Vec<PlayerId> {

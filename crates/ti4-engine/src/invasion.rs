@@ -2141,6 +2141,7 @@ impl Window for InvasionWindow {
                             seat.victory_points =
                                 (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
                         }
+                        state.note_vp(&self.invader, 1, "custodians");
                         self.report.custodians_removed = true;
                     }
                 }

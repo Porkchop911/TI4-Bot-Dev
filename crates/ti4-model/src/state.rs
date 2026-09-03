@@ -1092,6 +1092,14 @@ pub struct GameState {
     /// Combat occurrences a player has already used to score a secret objective.
     #[serde(default)]
     pub scored_feat_occurrences: BTreeSet<(PlayerId, FeatOccurrence)>,
+    /// Every victory point granted or taken, with the reason. Not compared, and not part of the
+    /// game: it exists because victory points are written in a dozen places -- objectives, agenda
+    /// effects, laws, promissory notes, relics, secrets, strategy cards, the custodians token --
+    /// and inferring the split from the end state gets it wrong. Two attempts to attribute the
+    /// per-faction spread from `scored_objectives` and the event log reached the wrong conclusion
+    /// about riders and about Mecatol before this existed.
+    #[serde(default)]
+    pub vp_ledger: Vec<(PlayerId, i32, String)>,
     /// Skilled Retreat: the combat round at which a card declared the space combat a draw.
     /// Without it the player who stayed reads as the winner, since the retreating fleet
     /// simply is not there any more — true of an ordinary retreat, and exactly what this
@@ -1396,6 +1404,7 @@ impl GameState {
             turn_seq: 0,
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),
+            vp_ledger: Vec::new(),
             combat_draw_round: None,
             reroll_staging: BTreeMap::new(),
             last_reroll_player: None,
@@ -1722,6 +1731,13 @@ impl GameState {
             .get(player)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Record why a victory point moved. Call beside the mutation, never instead of it: this is a
+    /// ledger for diagnostics and changes no game state.
+    pub fn note_vp(&mut self, player: &PlayerId, delta: i32, reason: &str) {
+        self.vp_ledger
+            .push((player.clone(), delta, reason.to_owned()));
     }
 
     pub fn record_score(&mut self, player: &PlayerId, objective: ObjectiveId) {

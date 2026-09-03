@@ -1099,6 +1099,7 @@ fn imperial_primary(
         if let Some(seat) = state.player_mut(player) {
             seat.victory_points = (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
         }
+        state.note_vp(player, 1, "imperial_primary");
     } else {
         crate::secrets::draw(state, content, table, player)?;
     }

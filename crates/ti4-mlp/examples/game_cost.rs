@@ -139,6 +139,16 @@ struct Played {
     /// another player handing it over in a transaction, not from anything on the board, and the
     /// per-faction victory-point spread is almost entirely outside scored objectives.
     supports: usize,
+    /// Victory points granted to this seat, by reason, straight from the engine's ledger. Two
+    /// attempts to infer this split from the end state got it wrong -- once about riders, once
+    /// about Mecatol, whose control was read at the END of the game when the question was whether
+    /// custodians was ever lifted at all.
+    ledger: Vec<(i32, String)>,
+    /// Custodians points awarded in this game to ANYONE. The token is lifted once, so this is
+    /// zero or one and never more; the per-faction rates are conditioned on which faction the
+    /// candidate held, and those game sets are disjoint, so they do not sum to one and are not
+    /// supposed to. This is the invariant that actually constrains it.
+    custodians_in_game: i64,
     /// Whether this seat ends holding Mecatol Rex. Taking it pays the custodians point AND opens
     /// the agenda phase for every later round, so it is the one board fact that unlocks a second
     /// stream of points.
@@ -332,8 +342,12 @@ fn main() {
                             - i64::from(from_objectives)
                             - i64::try_from(supports_here).unwrap_or(0)
                     );
+                    // Unfiltered when asked. Filtering by seat name assumes the award names the
+                    // seat, and an award logged under a card, an outcome or nothing at all is
+                    // exactly the one that has gone unattributed.
+                    let all = std::env::args().any(|arg| arg == "--all-events");
                     for line in &events {
-                        if line.contains(&me_name) {
+                        if all || line.contains(&me_name) {
                             println!("    EVENT {line}");
                         }
                     }
@@ -362,6 +376,18 @@ fn main() {
                             .get(&ti4_model::id::PlanetId::new("mecatol_rex"))
                     })
                     .is_some_and(|controller| *controller == me);
+                let ledger: Vec<(i32, String)> = final_state
+                    .vp_ledger
+                    .iter()
+                    .filter(|(who, _, _)| *who == me)
+                    .map(|(_, delta, reason)| (*delta, reason.clone()))
+                    .collect();
+                let custodians_in_game: i64 = final_state
+                    .vp_ledger
+                    .iter()
+                    .filter(|(_, _, reason)| reason == "custodians")
+                    .map(|(_, delta, _)| i64::from(*delta))
+                    .sum();
                 let seat_row = (
                     faction,
                     i64::from(seat.victory_points),
@@ -389,6 +415,8 @@ fn main() {
                     candidate_seat,
                     wall,
                     supports,
+                    ledger,
+                    custodians_in_game,
                     holds_mecatol,
                     in_decider: *spent.borrow(),
                     decisions: *calls.borrow(),
@@ -483,6 +511,44 @@ fn main() {
             *mecatol as f64 / n * 100.0
         );
         println!("{line}");
+    }
+    println!();
+    let awarded = played.iter().filter(|g| g.custodians_in_game > 0).count();
+    let twice = played.iter().filter(|g| g.custodians_in_game > 1).count();
+    #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+    let share = awarded as f64 / played.len() as f64 * 100.0;
+    println!("=== custodians, the once-per-game invariant ===");
+    println!(
+        "  awarded in {awarded} of {} games ({share:.1}%), and to more than one player in {twice}",
+        played.len()
+    );
+    println!(
+        "  Per-faction custodians rates are conditioned on the candidate's faction, and those"
+    );
+    println!(
+        "  game sets are DISJOINT -- the candidate plays each seat in a separate replay -- so"
+    );
+    println!("  they do not sum to one. Their mean is the rate the candidate lifts the token.");
+
+    println!();
+    println!("=== every victory point granted, by reason, from the engine's ledger ===");
+    println!("  faction        reason                      per game");
+    let mut by_reason: BTreeMap<(String, String), i64> = BTreeMap::new();
+    let mut games_of: BTreeMap<String, usize> = BTreeMap::new();
+    for game in &played {
+        let faction = &game.seat.0;
+        *games_of.entry(faction.clone()).or_insert(0) += 1;
+        for (delta, reason) in &game.ledger {
+            *by_reason
+                .entry((faction.clone(), reason.clone()))
+                .or_insert(0) += i64::from(*delta);
+        }
+    }
+    for ((faction, reason), total) in &by_reason {
+        let games = games_of.get(faction).copied().unwrap_or(1);
+        #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+        let per = *total as f64 / games as f64;
+        println!("  {faction:<14} {reason:<24} {per:>10.3}");
     }
     println!();
     println!("  'supports' counts Support for the Throne notes this seat HOLDS. Each is a point");

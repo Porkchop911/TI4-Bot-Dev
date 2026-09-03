@@ -1757,6 +1757,7 @@ fn rider_payoff(state: &mut GameState, player: &PlayerId, card: Option<&str>) {
                 seat.victory_points =
                     (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
             }
+            state.note_vp(player, 1, "imperial_rider");
         }
     }
 }
