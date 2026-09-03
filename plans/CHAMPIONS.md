@@ -54,6 +54,11 @@ Clearance below is still the stage-1 convention, so it is comparable to the tabl
 | `out/champions/stage2-pilot-clear93.69_m0.893` | 93.69% | +0.893 | 62.4% | superseded; the first stage-2 policy that scored |
 | `out/champions/stage2-pilot-clear93.34_m0.963` | 93.34% | +0.963 | 65.1% | superseded |
 
+Re-measured on fresh seeds (900000100 upward, 864 seat-games, never selected on) the order
+**inverted**: r5 +2.611, r3 +2.587, r4 +2.517, whole spread 0.094. `stage2-r5-m2.526_clear93.75` is
+the default pick -- best on fresh seeds by margin, win, waste and clearance, though inside noise of
+the rest.
+
 **Do not read the first four as a ranking.** r4 and r4b are the same recipe from the same start
 differing only in rollout seed, and they are 0.223 apart. Every difference among r3, r4 and r5 is
 smaller than that. They are four samples of one policy quality, not four policies of different

@@ -36,6 +36,32 @@ Three legs of training after r3 produced nothing distinguishable from re-rolling
 
 Without r4b this would have been written up as steady progress across four legs.
 
+## The confirmation, which settled it independently
+
+Re-measured on seeds 900000100 upward -- the same Validation pool, adjacent to the selection range,
+**never selected on** -- at 864 seat-games each.
+
+| policy | selection seeds | fresh seeds | win | waste | declines |
+|---|---|---|---|---|---|
+| r3 `checkpoint-22900` | +2.494 (3rd) | **+2.587** (2nd) | 88.9% | 2.43% | 1.28% |
+| r4 `checkpoint-1064` | +2.587 (1st) | **+2.517** (3rd) | 86.3% | 3.59% | 8.38% |
+| r5 `checkpoint-1040` | +2.526 (2nd) | **+2.611** (1st) | 90.7% | 1.85% | 2.87% |
+| r4b `checkpoint-7520` | +2.364 | TIMED OUT | — | — | — |
+
+**The order inverted.** On the seeds that chose them the ranking was r4 > r5 > r3; on fresh seeds it
+is r5 > r3 > r4, and the whole spread is 0.094. Two independent lines of evidence -- the replicate
+leg and the fresh-seed re-measurement -- agree that these are one policy quality sampled four times.
+
+`r5/checkpoint-1040` is the sensible default: best on fresh seeds by margin (+2.611), win (90.7%),
+waste (1.85%) and clearance (93.75%). Not because it is better -- it is inside noise of the others --
+but because nothing argues for picking a different one.
+
+Note r4's decline rate: **8.38%**, against 1.28% and 2.87% for the other two. It passes up scoring
+chances far more often, and it was the leg that looked best on its own selection seeds.
+
+r4b timing out on this range is the map-fragility problem again: different seeds draw different maps
+and these policies produce unplayable games on some of them.
+
 ## Two biases worth carrying forward
 
 **Selection over checkpoints.** Each leg's winner is the maximum of ~15 noisy checkpoints, so its
