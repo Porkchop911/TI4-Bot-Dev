@@ -47,8 +47,18 @@ Clearance below is still the stage-1 convention, so it is comparable to the tabl
 
 | directory | clearance | margin | win | what it is |
 |---|---|---|---|---|
-| `out/champions/stage2-pilot-clear93.69_m0.893` | 93.69% | +0.893 | 62.4% | the best **opening** among stage-2 checkpoints that scored |
-| `out/champions/stage2-pilot-clear93.34_m0.963` | 93.34% | **+0.963** | 65.1% | the best **margin** |
+| `out/champions/stage2-r4-m2.587_clear93.22` | 93.22% | **+2.587** | 88.5% | best margin measured, but see the warning below |
+| `out/champions/stage2-r5-m2.526_clear93.75` | 93.75% | +2.526 | 90.0% | best clearance among the strong ones |
+| `out/champions/stage2-r3-m2.494_clear93.32` | 93.32% | +2.494 | 87.4% | the leg that produced the whole gain |
+| `out/champions/stage2-r4b-m2.364_clear93.40` | 93.40% | +2.364 | 90.4% | **the replicate**: r4's recipe, different seeds only |
+| `out/champions/stage2-pilot-clear93.69_m0.893` | 93.69% | +0.893 | 62.4% | superseded; the first stage-2 policy that scored |
+| `out/champions/stage2-pilot-clear93.34_m0.963` | 93.34% | +0.963 | 65.1% | superseded |
+
+**Do not read the first four as a ranking.** r4 and r4b are the same recipe from the same start
+differing only in rollout seed, and they are 0.223 apart. Every difference among r3, r4 and r5 is
+smaller than that. They are four samples of one policy quality, not four policies of different
+quality — and each one is additionally the maximum of about fifteen checkpoints, so its number is
+upward biased by the selection. See `plans/STAGE2_CAMPAIGN.md`.
 
 Both come from the 300-update pilot and both beat its final checkpoint (92.44%, +0.858) on *both*
 axes: the scoring gain arrives within ~50 updates and further training erodes clearance and margin
