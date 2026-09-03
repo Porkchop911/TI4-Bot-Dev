@@ -47,9 +47,6 @@ const FLEET_CODES: [(&str, &str); 14] = [
     ("mech", "mech"),
 ];
 
-/// Codes whose real unit depends on the faction deploying them.
-const FACTION_SPECIFIC: [&str; 2] = ["mech", "flagship"];
-
 /// Where one starting unit goes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Placement {
@@ -63,8 +60,8 @@ pub enum Placement {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Deployment {
     pub count: u32,
-    /// The *generic* unit type. `mech` and `flagship` still need resolving against the
-    /// faction — see [`resolve_unit`].
+    /// The generic unit type. It still needs resolving against the faction — see
+    /// [`resolve_unit`] — because faction sheets can replace any hull, infantry, or structure.
     pub unit_id: UnitTypeId,
     pub placement: Placement,
 }
@@ -322,8 +319,10 @@ fn parse_entry(
 
 /// The faction's own version of a generic starting unit, where one exists.
 ///
-/// Mechs and flagships are faction-specific; everything else deploys as the generic unit.
-/// Falls back to the generic id so a faction with no special version still gets a unit.
+/// Starting-fleet strings use generic codes even when a faction sheet replaces that unit. Resolve
+/// every type, not only mechs and flagships: L1Z1X's `dn` is a Super Dreadnought with capacity 2,
+/// and Saar/Cabal `sd` entries are their faction production units. Falls back to the generic id so
+/// a faction with no replacement still gets the ordinary unit.
 #[must_use]
 pub fn resolve_unit(
     store: &ContentStore,
@@ -331,9 +330,6 @@ pub fn resolve_unit(
     unit_id: &UnitTypeId,
     sources: SourceSet,
 ) -> UnitTypeId {
-    if !FACTION_SPECIFIC.contains(&unit_id.as_str()) {
-        return unit_id.clone();
-    }
     faction_unit(store, faction, unit_id.as_str(), sources)
         .map_or_else(|| unit_id.clone(), |u| UnitTypeId::new(u.id()))
 }
@@ -550,9 +546,33 @@ mod tests {
     }
 
     #[test]
-    fn an_ordinary_unit_is_not_faction_resolved() {
+    fn an_ordinary_unit_without_a_faction_replacement_stays_generic() {
         let carrier = UnitTypeId::new("carrier");
-        assert_eq!(resolve_unit(store(), "sol", &carrier, POK), carrier);
+        assert_eq!(resolve_unit(store(), "hacan", &carrier, POK), carrier);
+    }
+
+    #[test]
+    fn l1z1x_starting_dreadnought_resolves_to_capacity_two() {
+        let dreadnought = resolve_unit(store(), "l1z1x", &UnitTypeId::new("dreadnought"), POK);
+        assert_eq!(dreadnought.as_str(), "l1z1x_dreadnought");
+        assert_eq!(
+            crate::units::unit_type(store(), dreadnought.as_str(), POK)
+                .expect("the resolved hull exists")
+                .capacity(),
+            2
+        );
+    }
+
+    #[test]
+    fn faction_production_units_are_resolved_in_starting_fleets() {
+        let dock = resolve_unit(store(), "saar", &UnitTypeId::new("spacedock"), POK);
+        assert_eq!(dock.as_str(), "saar_spacedock");
+        assert_eq!(
+            crate::units::unit_type(store(), dock.as_str(), POK)
+                .expect("the resolved dock exists")
+                .production(0),
+            5
+        );
     }
 
     #[test]

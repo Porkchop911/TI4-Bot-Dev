@@ -429,6 +429,34 @@ pub fn pay_seeing(
     pay_with_observation(state, content, sources, table, player, cost, kind, galaxy)
 }
 
+/// Spend as one instalment of a larger bill, retaining any overpayment for its next instalment.
+///
+/// Leadership is a single "spend any amount of influence" transaction that awards one command
+/// token per three influence. A four-influence planet therefore pays the first three and leaves
+/// one toward the next token; treating each token as a separate bill incorrectly charges seven
+/// printed influence for two tokens instead of six.
+///
+/// The credit belongs to the caller and must not escape the enclosing transaction.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "payment needs the rules position, observation, and transaction-local credit"
+)]
+pub(crate) fn pay_seeing_with_credit(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    cost: i64,
+    kind: Spend,
+    credit: &mut i64,
+) -> Result<bool, IllegalChoice> {
+    pay_with_observation_credit(
+        state, content, sources, table, player, cost, kind, credit, galaxy,
+    )
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "payment needs the rules position plus an optional learned-policy observation"
@@ -443,18 +471,50 @@ fn pay_with_observation(
     kind: Spend,
     galaxy: Option<&Galaxy>,
 ) -> Result<bool, IllegalChoice> {
-    if cost <= 0 {
+    let mut credit = 0;
+    pay_with_observation_credit(
+        state,
+        content,
+        sources,
+        table,
+        player,
+        cost,
+        kind,
+        &mut credit,
+        galaxy,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "payment needs the rules position, observation, and transaction-local credit"
+)]
+fn pay_with_observation_credit(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut Table,
+    player: &PlayerId,
+    cost: i64,
+    kind: Spend,
+    credit: &mut i64,
+    galaxy: Option<&Galaxy>,
+) -> Result<bool, IllegalChoice> {
+    let used_credit = (*credit).min(cost.max(0));
+    let owed = cost - used_credit;
+    if owed <= 0 {
+        *credit -= used_credit;
         return Ok(true);
     }
-    if available(state, content, sources, player, kind) < cost {
+    if available(state, content, sources, player, kind) < owed {
         return Ok(false);
     }
 
     let mut paid = 0;
-    while paid < cost {
+    while paid < owed {
         // Oracle parity (engine/production.py pay()): spendable planets first — every face that,
         // taken now, would not strand the rest of the bill — then trade goods, never guarded.
-        let options = payment_options(state, content, sources, player, kind, paid, cost);
+        let options = payment_options(state, content, sources, player, kind, paid, owed);
         if options.is_empty() {
             return Ok(false);
         }
@@ -467,7 +527,7 @@ fn pay_with_observation(
             // (`pay {cost - paid} more {kind}` in engine/production.py).
             let choice = Choice::new(
                 player.clone(),
-                format!("pay {} more {}", cost - paid, spend_name(kind)),
+                format!("pay {} more {}", owed - paid, spend_name(kind)),
                 options,
             );
             table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
@@ -478,6 +538,7 @@ fn pay_with_observation(
             None => return Ok(false), // an id no offered option carries (unreachable after validate)
         }
     }
+    *credit = *credit - used_credit + paid - owed;
     Ok(true)
 }
 

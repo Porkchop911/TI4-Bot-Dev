@@ -391,6 +391,44 @@ mod tests {
     }
 
     #[test]
+    fn l1z1x_deploys_its_capacity_two_super_dreadnought() {
+        let state = seated(&[("a", "l1z1x")]);
+        let player = PlayerId::new("a");
+        let home = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("L1Z1X has a home system");
+        let dreadnought = state
+            .system_state(&home)
+            .units
+            .into_iter()
+            .find(|unit| unit.type_id.as_str().contains("dreadnought"))
+            .expect("L1Z1X starts with a dreadnought");
+        assert_eq!(dreadnought.type_id.as_str(), "l1z1x_dreadnought");
+        assert_eq!(
+            ti4_content::units::unit_type(content(), dreadnought.type_id.as_str(), POK)
+                .expect("the deployed hull exists")
+                .capacity(),
+            2
+        );
+    }
+
+    #[test]
+    fn saar_deploys_its_printed_production_unit() {
+        let state = seated(&[("a", "saar")]);
+        let player = PlayerId::new("a");
+        let home = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("Saar has a home system");
+        assert_eq!(
+            crate::production::capacity(&state, content(), POK, &player, &home),
+            5,
+            "the starting Floating Factory supplies its printed PRODUCTION 5"
+        );
+    }
+
+    #[test]
     fn a_seated_player_holds_their_factions_starting_technology() {
         let state = seated(&[("a", "sol")]);
         let player = state.player(&PlayerId::new("a")).unwrap();

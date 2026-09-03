@@ -20,7 +20,24 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Historical Python repository: `D:\Projects\ti4-engine` (read-only; not behavioral acceptance)
 - Historical branch: `codex/fully-learned-policy`
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
-- Branch: `wp/r01-review-viewer-contract` (Phase 9 verification runs on the main checkout; the `D:/Projects/ti4-engine-work` worktree is stale at `f816d90` and was merged via `acb898b` — left untouched)
+- Branch: `wp/phase9-production-capacity-payments` (forked from `wp/r01-review-viewer-contract`
+  at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
+  and scripts remain untouched)
+
+### Playtest follow-up: faction capacity, production, and Leadership payment (2026-09-03)
+
+- Implemented and committed on `wp/phase9-production-capacity-payments`; see branch `HEAD`.
+- Starting-fleet deployment now resolves every generic fleet code through the faction sheet. This
+  fixes L1Z1X's opening dreadnought (now the printed capacity-2 Super Dreadnought) and faction
+  production units such as Saar's PRODUCTION 5 Floating Factory.
+- Warfare's secondary is pinned to one production limit per use. Leadership now retains
+  overpayment within its single influence transaction, so 4+2 influence buys two tokens and the
+  second prompt asks for two more rather than three.
+- Checks: ti4-content 129/129; ti4-engine 1,107/1,107; ti4-sim 52/52; strict Clippy clean on all
+  three affected crates. Simulator baseline v32 -> v33; only `share_SHIP_MOVED` left the old bound,
+  as expected from faction-specific opening units.
+- Independent Tier-C payment review remains pending. Evidence:
+  `plans/evidence/PHASE9-CAPACITY-PAYMENTS.md` and the v33 entry in `plans/evidence/M08-021.md`.
 
 ### Phase 9 — tenth batch: Expedition, Exploration, Game Board, Game Round, Hyperlanes, Influence, Initiative Order (2026-09-02)
 

@@ -126,19 +126,21 @@ fn buy_tokens_with_influence(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
-    while leadership_influence_eligible(state, content, sources, player) {
+    let mut credit = 0;
+    while leadership_influence_eligible_with_credit(state, content, sources, player, credit) {
         let answer = ask(
             state,
             content,
             sources,
             galaxy,
             table,
-            &influence_purchase_choice(player),
+            &influence_purchase_choice(player, credit),
         )?;
         if answer.id != "yes" {
             return Ok(());
         }
-        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
+        {
             return Ok(());
         }
     }
@@ -157,44 +159,64 @@ fn buy_tokens_first_yes_assumed(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
-    if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+    let mut credit = 0;
+    if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)? {
         return Ok(());
     }
-    while leadership_influence_eligible(state, content, sources, player) {
+    while leadership_influence_eligible_with_credit(state, content, sources, player, credit) {
         let answer = ask(
             state,
             content,
             sources,
             galaxy,
             table,
-            &influence_purchase_choice(player),
+            &influence_purchase_choice(player, credit),
         )?;
         if answer.id != "yes" {
             return Ok(());
         }
-        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player)? {
+        if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
+        {
             return Ok(());
         }
     }
     Ok(())
 }
 
-fn influence_purchase_choice(player: &PlayerId) -> Choice {
+fn leadership_influence_eligible_with_credit(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    credit: i64,
+) -> bool {
+    crate::production::available(state, content, sources, player, Spend::Influence) + credit
+        >= INFLUENCE_PER_TOKEN
+}
+
+fn influence_purchase_choice(player: &PlayerId, credit: i64) -> Choice {
+    let owed = (INFLUENCE_PER_TOKEN - credit).max(0);
+    let prompt = if credit > 0 {
+        format!("spend {owed} more influence for a command token")
+    } else {
+        format!("spend {owed} influence for a command token")
+    };
+    let yes = if credit > 0 {
+        format!("spend {owed} more influence")
+    } else {
+        format!("spend {owed} influence")
+    };
     // Oracle wording and ids (`_buy_tokens_with_influence`): both options kind `strategy`.
     Choice::new(
         player.clone(),
-        format!("spend {INFLUENCE_PER_TOKEN} influence for a command token"),
+        prompt,
         vec![
             ChoiceOption::labelled(
                 "no",
                 crate::strategy::STRATEGY_KIND,
                 "spend nothing further",
             ),
-            ChoiceOption::labelled(
-                "yes",
-                crate::strategy::STRATEGY_KIND,
-                format!("spend {INFLUENCE_PER_TOKEN} influence"),
-            ),
+            ChoiceOption::labelled("yes", crate::strategy::STRATEGY_KIND, yes),
         ],
     )
 }
@@ -210,8 +232,9 @@ fn pay_influence_and_gain_one(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
+    credit: &mut i64,
 ) -> Result<bool, IllegalChoice> {
-    if !crate::production::pay_seeing(
+    if !crate::production::pay_seeing_with_credit(
         state,
         content,
         sources,
@@ -220,6 +243,7 @@ fn pay_influence_and_gain_one(
         player,
         INFLUENCE_PER_TOKEN,
         Spend::Influence,
+        credit,
     )? {
         return Ok(false);
     }
@@ -1938,6 +1962,8 @@ mod tests {
             .system_mut(&system)
             .set_control(planet.clone(), player.clone());
         put_on_planet(&mut state, &system, &planet, "spacedock", &player, 1);
+        let production_limit =
+            crate::production::capacity(&state, ContentStore::embedded(), POK, &player, &system);
         let before = state.system_state(&system).units.len()
             + state.system_state(&system).on_planet(&planet).len();
 
@@ -1955,6 +1981,10 @@ mod tests {
         let after = state.system_state(&system).units.len()
             + state.system_state(&system).on_planet(&planet).len();
         assert!(after > before);
+        assert!(
+            i64::try_from(after - before).unwrap_or(i64::MAX) <= production_limit,
+            "Warfare's secondary is one use of PRODUCTION and cannot reset its limit between purchases"
+        );
     }
 
     #[test]
@@ -2227,6 +2257,52 @@ mod tests {
         assert_eq!(asks[3].0, "spend 3 influence for a command token");
         let seat = state.player(&actor).unwrap();
         assert_eq!(seat.trade_goods, before.player(&actor).unwrap().trade_goods);
+    }
+
+    #[test]
+    fn leadership_carries_planet_overpayment_across_command_tokens() {
+        // 52.3 is one "spend any amount of influence" transaction. Arcturus (4) pays for the
+        // first token and leaves one influence toward the second; Arinam (2) then reaches six.
+        // Treating the tokens as isolated bills discarded that one and either stopped early or
+        // demanded a third influence, charging seven printed influence for two tokens.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        let actor = PlayerId::new("a");
+        for (system, planet) in [("53", "arcturus"), ("37", "arinam")] {
+            state
+                .system_mut(&SystemId::new(system))
+                .set_control(PlanetId::new(planet), actor.clone());
+        }
+        let before = state.player(&actor).unwrap().strategic_tokens;
+        let (recorder, seen) = SpeakerRecording::new(&[
+            "yes",
+            "exhaust|arcturus",
+            "strategic_tokens",
+            "yes",
+            "strategic_tokens",
+        ]);
+        let mut table = Table::with_default(Box::new(recorder));
+
+        buy_tokens_with_influence(&mut state, content, POK, None, &mut table, &actor).unwrap();
+
+        let prompts: Vec<String> = seen
+            .borrow()
+            .iter()
+            .map(|(prompt, _)| prompt.clone())
+            .collect();
+        assert!(
+            prompts
+                .iter()
+                .any(|prompt| prompt == "spend 2 more influence for a command token"),
+            "the retained fourth influence reduces the next instalment: {prompts:?}"
+        );
+        assert!(state.exhausted_planets.contains(&PlanetId::new("arcturus")));
+        assert!(state.exhausted_planets.contains(&PlanetId::new("arinam")));
+        assert_eq!(
+            state.player(&actor).unwrap().strategic_tokens,
+            before + 2,
+            "exactly six influence buys two command tokens"
+        );
     }
 }
 

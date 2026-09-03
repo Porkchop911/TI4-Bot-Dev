@@ -375,12 +375,25 @@ pub fn recompute_bound(batch: &Batch, name: &str) -> Option<(f64, f64)> {
 pub const BOOTSTRAP_DRAWS: u32 = 2000;
 pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// The current baseline bounds (v28): metric name → (lo, hi). Recorded at full double
+/// The current baseline bounds (v33): metric name → (lo, hi). Recorded at full double
 /// precision under protocol v1 — raw values and the version old/new comparisons in
 /// `plans/evidence/M08-021.md`. Changing these requires the re-baseline discipline stated at
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v33 — 2026-09-03. Starting fleets now resolve every generic fleet code through the
+    // faction sheet, rather than only mechs and flagships. L1Z1X therefore starts with its
+    // capacity-2 Super Dreadnought, and faction carriers, infantry, fighters and production
+    // units use their printed records from the opening position. Leadership also retains a
+    // planet's overpayment across command-token instalments; that change is not exercised by
+    // this fixed authored-bot batch.
+    //
+    // One metric leaves v32: `share_SHIP_MOVED` falls [0.049238, 0.053072] ->
+    // [0.045356, 0.049027]. This is a change in play, not event dilution: faction-specific
+    // opening units change movement, capacity, combat, and production choices from turn one.
+    // All thirty games still finish cleanly and every other point estimate remains inside its
+    // previous interval. The complete old/new table is recorded in plans/evidence/M08-021.md.
+    //
     // v28 — 2026-09-02. Phase 9, tenth batch (Expedition, Exploration, Game Board, Game Round,
     // Hyperlanes, Influence, Initiative Order). Three Dark Energy Tap / frontier defects fixed:
     //
@@ -861,43 +874,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.411_728_395_061_728_4, 0.469_135_802_469_135_8),
+        (0.409_876_543_209_876_5, 0.459_259_259_259_259_2),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.563_920_452_358_069_9, 2.040_138_504_810_232_5),
+        (1.788_309_619_169_000_7, 2.162_747_842_990_479_6),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.263_874_268_600_842_5, 0.860_178_706_669_380_1),
+        (0.620_533_422_464_142_1, 1.111_333_311_115_554_6),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_477_192_414_540_587, 0.020_582_861_235_102_282),
+        (0.019_440_396_850_950_645, 0.020_849_441_782_567_427),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_886_109_627_003_47, 0.034_987_397_109_833_97),
+        (0.033_526_653_608_992_64, 0.034_958_525_757_324_28),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.049_237_725_752_111_04, 0.053_071_721_258_957_545),
+        (0.045_355_679_121_139_955, 0.049_026_743_108_860_5),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_546_364_206_424_492, 0.005_308_003_243_482_267),
+        (0.004_624_809_559_758_814_5, 0.005_396_550_545_011_29),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.066_864_405_827_903_07, 0.069_089_606_267_477_41),
+        (0.066_240_594_586_514_16, 0.068_995_183_520_890_18),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_970_535_795_733_516, 0.034_121_878_902_884_76),
+        (0.032_716_134_917_816_976, 0.034_038_657_714_529_21),
     );
     bounds
 }
