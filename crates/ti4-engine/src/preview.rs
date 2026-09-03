@@ -381,3 +381,258 @@ mod tests {
         );
     }
 }
+
+/// Exact deterministic previews, built from the same rules helpers the engine pays with (OBS-007b).
+///
+/// Analytic, not simulated. A preview that cloned the state and applied the change would agree with
+/// application by construction and prove nothing; these compute the answer independently, so the
+/// agreement tests below are a real check on both.
+pub mod deterministic {
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::SourceSet;
+    use ti4_model::id::PlayerId;
+    use ti4_model::state::GameState;
+
+    use super::{Delta, Preview, Quantity};
+    use crate::production::Spend;
+
+    const fn pool_of(kind: Spend) -> Quantity {
+        match kind {
+            Spend::Resources => Quantity::Resources,
+            Spend::Influence => Quantity::Influence,
+        }
+    }
+
+    /// What paying `cost` would do to this seat's spendable pools.
+    ///
+    /// The pool falls by what the chosen plan is *worth*, not by the cost. Those differ whenever a
+    /// face overpays: exhausting a four-influence planet against a three-influence bill removes
+    /// four from what remains spendable, and reporting a fall of three would describe a position
+    /// the seat is not in. That gap is the same one that billed seven influence for two command
+    /// tokens.
+    ///
+    /// Unaffordable is `Unavailable`, never a zero-change `Certain`: the engine would refuse it.
+    #[must_use]
+    pub fn spend(
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        player: &PlayerId,
+        cost: i64,
+        kind: Spend,
+    ) -> Preview {
+        let pool = crate::production::available(state, content, sources, player, kind);
+        let goods = state
+            .player(player)
+            .map_or(0, |seat| i64::from(seat.trade_goods));
+        if cost <= 0 {
+            return Preview::certain(vec![
+                Delta::new(pool_of(kind), pool, pool),
+                Delta::new(Quantity::TradeGoods, goods, goods),
+            ]);
+        }
+        let plans = crate::payment::plans(state, content, sources, player, cost, kind);
+        let Some(plan) = plans.first() else {
+            return Preview::unavailable("no plan pays this cost");
+        };
+        let worth = plan.worth(content, sources, kind);
+        Preview::certain(vec![
+            Delta::new(pool_of(kind), pool, pool - worth),
+            Delta::new(
+                Quantity::TradeGoods,
+                goods,
+                goods - i64::from(plan.trade_goods),
+            ),
+        ])
+    }
+}
+
+#[cfg(test)]
+mod obs007b_deterministic {
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::POK;
+    use ti4_model::id::PlayerId;
+
+    use super::*;
+    use crate::production::Spend;
+
+    fn player() -> PlayerId {
+        PlayerId::new("a")
+    }
+
+    fn after(preview: &Preview, quantity: Quantity) -> i64 {
+        preview
+            .certain_deltas()
+            .iter()
+            .find(|delta| delta.quantity == quantity)
+            .map(|delta| delta.after)
+            .expect("the preview names this quantity")
+    }
+
+    /// The preview and the payment agree, and neither is derived from the other.
+    ///
+    /// `spend` computes the pool afterwards from the plan's worth. This applies the same plan for
+    /// real and re-measures. Agreement is therefore a claim about two independent computations,
+    /// which is the only version of this test worth writing: a preview that cloned the state and
+    /// applied the change would agree by construction and check nothing.
+    #[test]
+    fn a_preview_agrees_with_actually_paying() {
+        let content = ContentStore::embedded();
+        for (cost, kind) in [
+            (1_i64, Spend::Resources),
+            (3, Spend::Resources),
+            (1, Spend::Influence),
+            (3, Spend::Influence),
+        ] {
+            let mut state = crate::fixtures::game(&["a", "b"]);
+            state.player_mut(&player()).unwrap().trade_goods = 4;
+
+            let preview = deterministic::spend(&state, content, POK, &player(), cost, kind);
+            if !preview.is_informative() {
+                continue; // unaffordable in this fixture; covered separately
+            }
+            let pool_kind = match kind {
+                Spend::Resources => Quantity::Resources,
+                Spend::Influence => Quantity::Influence,
+            };
+            let predicted_pool = after(&preview, pool_kind);
+            let predicted_goods = after(&preview, Quantity::TradeGoods);
+
+            let plan = crate::payment::plans(&state, content, POK, &player(), cost, kind)
+                .into_iter()
+                .next()
+                .expect("informative preview implies a plan");
+            assert!(crate::payment::apply(&mut state, &player(), &plan));
+
+            assert_eq!(
+                crate::production::available(&state, content, POK, &player(), kind),
+                predicted_pool,
+                "the pool after paying {cost} of {kind:?} is what the preview said"
+            );
+            assert_eq!(
+                i64::from(state.player(&player()).unwrap().trade_goods),
+                predicted_goods,
+                "and so are the trade goods"
+            );
+        }
+    }
+
+    /// An unaffordable cost is refused, not described as free.
+    #[test]
+    fn what_cannot_be_paid_is_unavailable_rather_than_a_zero_delta() {
+        let content = ContentStore::embedded();
+        let state = crate::fixtures::game(&["a", "b"]);
+        let preview =
+            deterministic::spend(&state, content, POK, &player(), 9_999, Spend::Resources);
+        assert!(!preview.is_informative());
+        assert!(
+            matches!(preview.outcome, Outcome::Unavailable { .. }),
+            "the engine would refuse it, so it is Unavailable and not Unknown"
+        );
+        assert_eq!(preview.expected(Quantity::Resources), None);
+    }
+
+    /// A payment that cannot go through changes nothing.
+    ///
+    /// `payment::apply` validates the whole plan before it mutates anything, so a plan naming an
+    /// already-exhausted planet leaves the position exactly as it was. Asserted rather than
+    /// assumed: a half-applied payment would take the trade goods and leave the bill unpaid.
+    #[test]
+    fn a_refused_payment_is_atomic() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player()).unwrap().trade_goods = 4;
+        let plans = crate::payment::plans(&state, content, POK, &player(), 3, Spend::Resources);
+        let Some(plan) = plans.into_iter().find(|plan| !plan.planets.is_empty()) else {
+            return; // no planet-paying plan in this fixture
+        };
+
+        for planet in &plan.planets {
+            state.exhaust_planet(planet.clone());
+        }
+        let goods_before = state.player(&player()).unwrap().trade_goods;
+        let exhausted_before = state.exhausted_planets.clone();
+
+        assert!(
+            !crate::payment::apply(&mut state, &player(), &plan),
+            "a plan naming an exhausted planet cannot be paid"
+        );
+        assert_eq!(
+            state.player(&player()).unwrap().trade_goods,
+            goods_before,
+            "and takes nothing on the way out"
+        );
+        assert_eq!(state.exhausted_planets, exhausted_before);
+    }
+
+    /// Paying nothing is a computed no-change, not an absence of information.
+    #[test]
+    fn a_zero_cost_is_certain_and_not_unknown() {
+        let content = ContentStore::embedded();
+        let state = crate::fixtures::game(&["a", "b"]);
+        let preview = deterministic::spend(&state, content, POK, &player(), 0, Spend::Resources);
+        assert!(preview.is_informative());
+        assert_eq!(preview.expected(Quantity::Resources), Some((0, 1)));
+    }
+}
+
+#[cfg(test)]
+mod obs007b_alternate_faces {
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::POK;
+    use ti4_model::id::PlayerId;
+
+    use super::*;
+    use crate::production::Spend;
+
+    fn player() -> PlayerId {
+        PlayerId::new("a")
+    }
+
+    /// The agreement must hold where a planet has a second face, not only where it has one.
+    ///
+    /// `production::available` counts a planet at its largest face, and Archon's Gift adds the
+    /// other kind's printed value as an alternate. `Plan::worth` reads the printed value from
+    /// content alone and has no way to see a breakthrough the seat holds. If those diverge, a
+    /// preview built from `worth` would report a pool that the position does not have — so this is
+    /// the case the ordinary fixture cannot reach, asserted directly.
+    #[test]
+    fn a_second_face_does_not_break_the_agreement() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&player()).unwrap().trade_goods = 0;
+        state.player_mut(&player()).unwrap().breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("xxchabt"));
+
+        for (cost, kind) in [(1_i64, Spend::Resources), (2, Spend::Influence)] {
+            let mut trial = state.clone();
+            let preview = deterministic::spend(&trial, content, POK, &player(), cost, kind);
+            if !preview.is_informative() {
+                continue;
+            }
+            let pool_kind = match kind {
+                Spend::Resources => Quantity::Resources,
+                Spend::Influence => Quantity::Influence,
+            };
+            let predicted = preview
+                .certain_deltas()
+                .iter()
+                .find(|delta| delta.quantity == pool_kind)
+                .map(|delta| delta.after)
+                .expect("the preview names the pool");
+
+            let plan = crate::payment::plans(&trial, content, POK, &player(), cost, kind)
+                .into_iter()
+                .next()
+                .expect("informative preview implies a plan");
+            assert!(crate::payment::apply(&mut trial, &player(), &plan));
+
+            assert_eq!(
+                crate::production::available(&trial, content, POK, &player(), kind),
+                predicted,
+                "with an alternate face in play, paying {cost} of {kind:?} must still land where \
+                 the preview said"
+            );
+        }
+    }
+}
