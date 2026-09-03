@@ -227,6 +227,41 @@ fn pay_influence_and_gain_one(
     Ok(true)
 }
 
+/// One research option, carrying what it costs.
+///
+/// The price goes in the PAYLOAD, not the label. A numeric payload entry becomes a real feature --
+/// `payload-number:cost` with its value, and `payload-number-kind:cost:research` -- so a learned
+/// policy can weigh the technology against its price. A label is read by people and by nothing
+/// else.
+///
+/// This matters because the same gain has three different prices: the Technology primary's first
+/// research is free, its second costs six resources, and the secondary costs a command token plus
+/// four. Offering all three as a bare list of technology names asks the policy to decide whether a
+/// technology is worth paying for while hiding what it would pay.
+///
+/// `resources` is the cost AFTER any discount already applied (Doctor Sucaban reduces it before the
+/// offer is built), so it is what this seat would actually spend. `tokens` counts command tokens
+/// charged at this decision, which is zero everywhere the follower window has already taken one.
+fn research_option(
+    content: &ContentStore,
+    id: &TechnologyId,
+    resources: i64,
+    tokens: i64,
+) -> ChoiceOption {
+    let mut option = ChoiceOption::labelled(
+        id.to_string(),
+        RESEARCH_KIND,
+        crate::technology::name(content, id),
+    );
+    option
+        .payload
+        .insert("cost".to_owned(), serde_json::Value::from(resources));
+    option
+        .payload
+        .insert("cost_tokens".to_owned(), serde_json::Value::from(tokens));
+    option
+}
+
 fn offer_research(
     state: &mut GameState,
     content: &ContentStore,
@@ -246,13 +281,7 @@ fn offer_research(
         player.clone(),
         "research a technology",
         open.iter()
-            .map(|id| {
-                ChoiceOption::labelled(
-                    id.to_string(),
-                    RESEARCH_KIND,
-                    crate::technology::name(content, id),
-                )
-            })
+            .map(|id| research_option(content, id, 0, 0))
             .collect(),
     );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
@@ -540,13 +569,7 @@ fn paid_research(
         player.clone(),
         "research a technology",
         open.iter()
-            .map(|id| {
-                ChoiceOption::labelled(
-                    id.to_string(),
-                    RESEARCH_KIND,
-                    crate::technology::name(content, id),
-                )
-            })
+            .map(|id| research_option(content, id, cost, 0))
             .chain(std::iter::once(ChoiceOption::decline()))
             .collect(),
     );
@@ -2204,5 +2227,62 @@ mod tests {
         assert_eq!(asks[3].0, "spend 3 influence for a command token");
         let seat = state.player(&actor).unwrap();
         assert_eq!(seat.trade_goods, before.player(&actor).unwrap().trade_goods);
+    }
+}
+
+#[cfg(test)]
+mod research_carries_its_price {
+    use super::*;
+
+    /// Each research option carries what it costs, as a NUMBER in the payload.
+    ///
+    /// The three ways to research have three different prices -- the Technology primary's first is
+    /// free, its second is six resources, the secondary is a command token plus four -- and a bare
+    /// list of technology names asks a policy to judge whether one is worth buying while hiding the
+    /// price. A numeric payload entry becomes `payload-number:cost`, which the feature projection
+    /// turns into a real input; a label would be read by nobody.
+    #[test]
+    fn every_research_option_states_its_cost() {
+        let content = ContentStore::embedded();
+        let id = TechnologyId::new("cv2");
+
+        let free = research_option(content, &id, 0, 0);
+        let second = research_option(content, &id, TECHNOLOGY_PRIMARY_SECOND_COST, 0);
+        let secondary = research_option(content, &id, TECHNOLOGY_SECONDARY_COST, 1);
+
+        for (option, resources, tokens) in [
+            (&free, 0, 0),
+            (&second, TECHNOLOGY_PRIMARY_SECOND_COST, 0),
+            (&secondary, TECHNOLOGY_SECONDARY_COST, 1),
+        ] {
+            assert_eq!(
+                option
+                    .payload
+                    .get("cost")
+                    .and_then(serde_json::Value::as_i64),
+                Some(resources),
+                "the resource price is on the option"
+            );
+            assert_eq!(
+                option
+                    .payload
+                    .get("cost_tokens")
+                    .and_then(serde_json::Value::as_i64),
+                Some(tokens),
+                "the token price is on the option"
+            );
+            assert_eq!(option.kind, RESEARCH_KIND);
+            assert_eq!(
+                option.id,
+                id.to_string(),
+                "the id still names the technology"
+            );
+        }
+
+        assert_ne!(
+            free.payload.get("cost"),
+            second.payload.get("cost"),
+            "the free research and the six-resource one must not look alike"
+        );
     }
 }
