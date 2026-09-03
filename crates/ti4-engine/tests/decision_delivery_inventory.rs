@@ -242,6 +242,10 @@ enum Delivery {
     ObservedHere,
     ViewlessHere,
     ObservedVia(&'static str),
+    /// Retained while `timing::pick` is still viewless. No producer reaches it indirectly today,
+    /// but the registry must be able to say so if one is found, and removing the variant would
+    /// force the next reviewer to reintroduce it before they could record what they had found.
+    #[expect(dead_code, reason = "the vocabulary outlives the current inventory")]
     ViewlessVia(&'static str),
 }
 
@@ -420,19 +424,19 @@ const PRODUCERS: &[Producer] = &[
         module: "game.rs",
         function: "committee_formation",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "game.rs",
         function: "imperial_arbiter",
         count: 2,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "game.rs",
         function: "minister_of_war",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "invasion.rs",
@@ -444,7 +448,7 @@ const PRODUCERS: &[Producer] = &[
         module: "invasion.rs",
         function: "bombardment_target_question",
         count: 1,
-        delivery: Delivery::ViewlessVia("invasion.rs::apply_bombard_plan"),
+        delivery: Delivery::ObservedVia("invasion.rs::apply_bombard_plan"),
     },
     Producer {
         module: "invasion.rs",
@@ -462,7 +466,7 @@ const PRODUCERS: &[Producer] = &[
         module: "invasion.rs",
         function: "dunlain_reaper",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "invasion.rs",
@@ -474,7 +478,7 @@ const PRODUCERS: &[Producer] = &[
         module: "laws.rs",
         function: "offer_discard",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "objectives.rs",
@@ -540,7 +544,7 @@ const PRODUCERS: &[Producer] = &[
         module: "relics.rs",
         function: "neuraloop",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
@@ -772,6 +776,9 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_vote", 1),
+    ("game.rs", "committee_formation", 1),
+    ("game.rs", "imperial_arbiter", 2),
+    ("game.rs", "minister_of_war", 1),
     ("invasion.rs", "absorb_ground", 1),
     ("invasion.rs", "commit_ground_forces", 1),
     ("invasion.rs", "drive", 1),
@@ -787,6 +794,10 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("relics.rs", "offer_dominus_orb", 1),
     ("relics.rs", "stellar_converter", 1),
     ("relics.rs", "titan_prototype", 1),
+    ("invasion.rs", "apply_bombard_plan", 1),
+    ("invasion.rs", "dunlain_reaper", 1),
+    ("laws.rs", "offer_discard", 1),
+    ("relics.rs", "neuraloop", 1),
     ("secrets.rs", "enforce_hand_limit", 1),
     ("strategy_cards.rs", "ask", 1),
     ("technology.rs", "end_turn", 2),
@@ -796,16 +807,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("timing.rs", "pick_with_context", 1),
 ];
 
-const VIEWLESS_ASKS: &[(&str, &str, usize)] = &[
-    ("game.rs", "committee_formation", 1),
-    ("game.rs", "imperial_arbiter", 2),
-    ("game.rs", "minister_of_war", 1),
-    ("invasion.rs", "apply_bombard_plan", 1),
-    ("invasion.rs", "dunlain_reaper", 1),
-    ("laws.rs", "offer_discard", 1),
-    ("relics.rs", "neuraloop", 1),
-    ("timing.rs", "pick", 1),
-];
+const VIEWLESS_ASKS: &[(&str, &str, usize)] = &[("timing.rs", "pick", 1)];
 
 fn expected_sites() -> BTreeMap<Site, usize> {
     let mut expected = BTreeMap::new();
@@ -909,15 +911,15 @@ fn the_remaining_viewless_asks_stay_explicit_migration_work() {
     // registry must then be edited to restore it, and that edit trips this. But a reader could
     // easily mistake it for a check on the engine, so the scanned total is asserted too.
     let count: usize = VIEWLESS_ASKS.iter().map(|(_, _, count)| count).sum();
-    assert_eq!(count, 9, "the reviewed registry still names nine");
+    assert_eq!(count, 1, "the reviewed registry still names one");
     let scanned: usize = scan()
         .iter()
         .filter(|(site, _)| site.operation == Operation::AskViewless)
         .map(|(_, count)| count)
         .sum();
     assert_eq!(
-        scanned, 9,
-        "production still contains nine viewless asks; the registry and the source agree"
+        scanned, 1,
+        "production still contains one viewless ask; the registry and the source agree"
     );
     assert!(PRODUCERS.iter().all(|producer| !matches!(
         producer.delivery,

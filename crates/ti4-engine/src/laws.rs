@@ -532,7 +532,10 @@ pub fn discard_ministry(state: &mut GameState, alias: &str) -> bool {
 /// afterwards, and four copies of that would be four chances to get it wrong.
 pub fn offer_discard(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     alias: &str,
     prompt: &str,
 ) -> Option<PlayerId> {
@@ -550,7 +553,12 @@ pub fn offer_discard(
             crate::choice::ChoiceOption::decline(),
         ],
     );
-    let answer = table.ask(&choice).ok()?;
+    let answer = table
+        .ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(state, content, sources, galaxy),
+        )
+        .ok()?;
     if answer.is_decline() {
         return None;
     }

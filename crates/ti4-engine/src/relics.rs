@@ -722,7 +722,10 @@ pub fn offer_dominus_orb(
 /// Returns the replacement, or `None` if nobody used it.
 pub fn neuraloop(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     rng: &mut crate::rng::GameRng,
     revealed: &ti4_model::id::ObjectiveId,
 ) -> Option<ti4_model::id::ObjectiveId> {
@@ -754,7 +757,9 @@ pub fn neuraloop(
             .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
             .collect(),
     );
-    let answer = table.ask(&choice).ok()?;
+    let answer = table
+        .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+        .ok()?;
     if answer.is_decline() {
         return None;
     }
@@ -1289,8 +1294,16 @@ mod tests {
 
         let mut table = crate::choice::Table::with_default(Box::new(crate::choice::FirstOption));
         let mut rng = crate::rng::GameRng::new(1);
-        let replacement = neuraloop(&mut state, &mut table, &mut rng, &revealed)
-            .expect("the only relic is purged for the only card in the pool");
+        let replacement = neuraloop(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            None,
+            &mut rng,
+            &revealed,
+        )
+        .expect("the only relic is purged for the only card in the pool");
 
         assert_eq!(replacement.as_str(), "sb", "the secret is what replaced it");
         assert!(

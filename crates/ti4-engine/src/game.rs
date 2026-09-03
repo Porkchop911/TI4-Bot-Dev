@@ -10,9 +10,7 @@ use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase, TransientFlags};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
-use crate::choice::{
-    Choice, ChoiceOption, IllegalChoice, Observed, Resolving, SeededRandom, Table, Window,
-};
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, SeededRandom, Table, Window};
 use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::event::{EventSequence, EventSequenceError};
@@ -895,7 +893,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -1450,7 +1448,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2036,7 +2034,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2179,7 +2177,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2250,7 +2248,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2348,7 +2346,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2414,7 +2412,7 @@ impl<'a> Game<'a> {
         };
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2483,7 +2481,10 @@ impl<'a> Game<'a> {
                 if let Some(revealed) = report.revealed_objective.clone()
                     && let Some(replacement) = crate::relics::neuraloop(
                         &mut self.state,
+                        self.content,
+                        self.sources,
                         &mut self.table,
+                        self.galaxy.as_ref(),
                         &mut self.rng,
                         &revealed,
                     )
@@ -2510,7 +2511,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2703,7 +2704,7 @@ impl<'a> Game<'a> {
         // Field borrows, not `self`: the table answers while the position stays readable.
         let answer = match self.table.ask_seeing(
             &choice,
-            &Observed::new(
+            &crate::choice::Observed::new(
                 &self.state,
                 self.content,
                 self.sources,
@@ -2857,7 +2858,10 @@ impl<'a> Game<'a> {
     fn committee_formation(&mut self, alias: &str) -> Option<String> {
         let owner = crate::laws::offer_discard(
             &mut self.state,
+            self.content,
+            self.sources,
             &mut self.table,
+            self.galaxy.as_ref(),
             "committee",
             &format!("Committee Formation: discard to choose who {alias} elects"),
         )?;
@@ -2878,7 +2882,18 @@ impl<'a> Game<'a> {
         }
         let choice =
             crate::choice::Choice::new(owner, format!("{alias}: elect which player"), options);
-        self.table.ask(&choice).ok().map(|answer| answer.id)
+        self.table
+            .ask_seeing(
+                &choice,
+                &crate::choice::Observed::new(
+                    &self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                ),
+            )
+            .ok()
+            .map(|answer| answer.id)
     }
 
     /// Minister of Peace, offered after an activation that met an enemy.
@@ -2896,7 +2911,10 @@ impl<'a> Game<'a> {
         // a decider that asks for it gets it.
         crate::laws::offer_discard(
             &mut self.state,
+            self.content,
+            self.sources,
             &mut self.table,
+            self.galaxy.as_ref(),
             "minister_peace",
             "Minister of Peace: discard to end the active player's turn",
         )
@@ -2927,7 +2945,10 @@ impl<'a> Game<'a> {
         }
         let Some(owner) = crate::laws::offer_discard(
             &mut self.state,
+            self.content,
+            self.sources,
             &mut self.table,
+            self.galaxy.as_ref(),
             "minister_war",
             "Minister of War: discard to retrieve a command token and act again",
         ) else {
@@ -2945,7 +2966,15 @@ impl<'a> Game<'a> {
             .collect();
         let choice =
             crate::choice::Choice::new(owner.clone(), "which command token comes back", options);
-        let Ok(answer) = self.table.ask(&choice) else {
+        let Ok(answer) = self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) else {
             return;
         };
         let system = SystemId::new(answer.id);
@@ -2966,6 +2995,10 @@ impl<'a> Game<'a> {
     ///
     /// A swap, not a theft: both seats end up with a card, which is why this asks for one of each
     /// rather than picking a target and taking it.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "two seat-bound asks, each spelling out the position it shows"
+    )]
     fn imperial_arbiter(&mut self) {
         let Some(owner) = self
             .state
@@ -2996,7 +3029,10 @@ impl<'a> Game<'a> {
         }
         if crate::laws::offer_discard(
             &mut self.state,
+            self.content,
+            self.sources,
             &mut self.table,
+            self.galaxy.as_ref(),
             "arbiter",
             "Imperial Arbiter: discard to swap a strategy card",
         )
@@ -3018,7 +3054,15 @@ impl<'a> Game<'a> {
                 })
                 .collect(),
         );
-        let Ok(given) = self.table.ask(&choice) else {
+        let Ok(given) = self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) else {
             return;
         };
         let choice = crate::choice::Choice::new(
@@ -3035,7 +3079,15 @@ impl<'a> Game<'a> {
                 })
                 .collect(),
         );
-        let Ok(taken) = self.table.ask(&choice) else {
+        let Ok(taken) = self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) else {
             return;
         };
         let Some((holder, card)) = theirs

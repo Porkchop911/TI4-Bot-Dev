@@ -19,9 +19,12 @@ progress is visible and cannot be mistaken for completion.
 | slice | module | sites | state |
 |---|---|---:|---|
 | 1 | `relics.rs` | 6 | **done** |
-| 2 | `game.rs` | 4 | pending |
-| 3 | `invasion.rs` | 2 | pending |
-| 4 | `laws.rs`, `timing.rs`, `relics::neuraloop` | 3 | pending |
+| 2 | `game.rs` | 4 | **done** |
+| 3 | `invasion.rs` | 2 | **done** |
+| 4 | `laws.rs` 1, `relics::neuraloop` 2 | 3 | **done** |
+| 5 | `timing.rs::pick` | 1 | **open, and larger than it looks** |
+
+Fourteen of fifteen are migrated. `VIEWLESS_ASKS` holds one entry.
 
 ## Slice 1 — relics
 
@@ -41,6 +44,25 @@ because the accessor borrows all of `self` and the calls also take `&mut self.st
 `relics::neuraloop` is deliberately not migrated in this slice: it takes neither a player nor
 content, and its choice names a seat indirectly, so it belongs with the remaining stragglers rather
 than being forced into a relics-shaped change.
+
+## The last one, and why it is not a slice
+
+`timing::pick` is reached from `Resolver::run_window`, and `Resolver` holds a `Table` and no game
+state at all -- no `state`, no `content`, no `sources`. Its sibling `pick_with_context` already
+delivers seat-bound because its caller `run_window_with_context` is handed a `TimingContext`.
+
+So migrating it is not a matter of threading three arguments. It means giving every contextless
+emit a `TimingContext`, and **55 call sites use the contextless `Resolver::emit` against 13 using
+`emit_with_context`**. That is its own package, and it is not a "genuine setup/offline exception"
+either: 55 live sites is not an offline path. It stays classified as migration work.
+
+## A wrapper was tried and reverted
+
+An `ask_seat` helper on `Game` collapsed the repeated four-field `Observed` construction. It was
+reverted, because the audit scanner keys on calls to the delivery API: routing asks through a
+wrapper removed nine pre-existing sites from the scan and broke the registry's `ObservedVia`
+mapping. A convenience that makes the delivery audit blind is not a convenience. The one function
+that then exceeded the line limit carries an `expect` with that reason instead.
 
 ## Invariants and non-goals
 

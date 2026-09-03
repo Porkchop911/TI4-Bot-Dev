@@ -154,7 +154,10 @@ pub fn bombardment(
 ) -> Result<usize, IllegalChoice> {
     let occurrence = state.begin_feat_occurrence();
     let plan = roll_bombard_plan(state, content, sources, dice, rng, system, invader);
-    apply_bombard_plan(state, table, system, invader, &plan, occurrence).map(|(killed, _)| killed)
+    apply_bombard_plan(
+        state, content, sources, table, system, invader, &plan, occurrence,
+    )
+    .map(|(killed, _)| killed)
 }
 
 /// What was rolled on one planet: each bombarding unit's hit total (roll order) and the
@@ -283,7 +286,7 @@ fn dunlain_reaper(
             crate::choice::ChoiceOption::decline(),
         ],
     );
-    let Ok(answer) = ctx.table.ask(&choice) else {
+    let Ok(answer) = ctx.ask_seeing(state, &choice) else {
         return;
     };
     if answer.is_decline() {
@@ -535,6 +538,8 @@ fn bombardment_target_question(
 /// answer state machine instead, because there the choice crosses a step boundary.
 fn apply_bombard_plan(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     table: &mut Table,
     system: &SystemId,
     invader: &PlayerId,
@@ -562,7 +567,14 @@ fn apply_bombard_plan(
                     // 7.2: nobody left with units takes the remaining hits.
                     break;
                 };
-                PlayerId::new(table.ask(&question)?.id)
+                PlayerId::new(
+                    table
+                        .ask_seeing(
+                            &question,
+                            &crate::choice::Observed::new(state, content, sources, None),
+                        )?
+                        .id,
+                )
             };
             taken += take_bombard_hits(state, system, &entry.planet, &target, *produced);
         }
