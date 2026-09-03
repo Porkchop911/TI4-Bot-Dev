@@ -258,7 +258,11 @@ impl ReviewSession {
         if self.frames.is_empty() || self.frames.len() > MAX_FRAMES {
             return Err(ReviewError::Invalid("invalid frame count".to_owned()));
         }
-        if self.manifest.factions != FACTIONS.map(str::to_owned) {
+        let mut session_factions = self.manifest.factions.clone();
+        session_factions.sort();
+        let mut standard_factions = FACTIONS.map(str::to_owned).to_vec();
+        standard_factions.sort();
+        if session_factions != standard_factions {
             return Err(ReviewError::Invalid(
                 "session does not carry the standard six-faction lineup".to_owned(),
             ));
@@ -595,13 +599,14 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
+        let faction_order = seeded_faction_order(config.seed);
         let factions: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
             .map(|(index, player)| {
                 (
                     player.clone(),
-                    FactionId::new(FACTIONS[(index + config.rotation) % FACTIONS.len()]),
+                    FactionId::new(faction_order[(index + config.rotation) % FACTIONS.len()]),
                 )
             })
             .collect();
@@ -692,7 +697,10 @@ impl LiveReview {
             profile_table: config.table,
             temperature: config.temperature,
             policy: policy_summary,
-            factions: FACTIONS.map(str::to_owned).to_vec(),
+            factions: players
+                .iter()
+                .map(|player| factions[player].to_string())
+                .collect(),
         };
         let initial = ReviewFrame {
             index: 0,
@@ -901,6 +909,24 @@ impl LiveReview {
         }
         report
     }
+}
+
+fn seeded_faction_order(seed: u64) -> [&'static str; FACTIONS.len()] {
+    // Keep seating independent from the map and policy RNG streams while making it reproducible
+    // from the review's public seed. Rotation remains a cyclic physical-seat counterbalance over
+    // this seed-specific permutation.
+    let mut order = FACTIONS;
+    let mut state = seed ^ 0x4641_4354_494f_4e53;
+    for upper in (1..order.len()).rev() {
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut random = state;
+        random = (random ^ (random >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        random = (random ^ (random >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        random ^= random >> 31;
+        let other = usize::try_from(random % (upper as u64 + 1)).expect("index fits usize");
+        order.swap(upper, other);
+    }
+    order
 }
 
 fn action_period_ended(actor: &PlayerId, state: &GameState, finished: bool) -> bool {

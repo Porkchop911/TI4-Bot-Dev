@@ -4681,3 +4681,83 @@ mod tests {
         assert_eq!(dice.count(), 1);
     }
 }
+
+#[cfg(test)]
+mod every_committed_force_lands {
+    use super::*;
+    use crate::setup::start_game;
+    use ti4_model::content_types::POK;
+    use ti4_model::id::UnitTypeId;
+
+    fn invader() -> PlayerId {
+        PlayerId::new("a")
+    }
+    fn holder() -> PlayerId {
+        PlayerId::new("b")
+    }
+    fn in_space(state: &mut GameState, system: &SystemId, kind: &str, owner: &PlayerId, n: usize) {
+        for _ in 0..n {
+            state
+                .system_mut(system)
+                .units
+                .push(Unit::new(UnitTypeId::new(kind), owner.clone()));
+        }
+    }
+
+    /// Four ground forces committed to two planets must produce four ground forces on those
+    /// planets. Observed in review of seed 501: Sol committed two units to each of Kraag and Siig,
+    /// and the board ended with two on Kraag and ONE on Siig. A committed unit vanished, and
+    /// control of both planets was taken anyway.
+    ///
+    /// The commit path itself looks clean -- `landable` reads only the space area and
+    /// `SystemState::remove` touches only the space area -- so this pins the outcome rather than
+    /// the mechanism.
+    #[test]
+    fn four_forces_committed_to_two_planets_all_arrive() {
+        let mut state =
+            start_game(ContentStore::embedded(), &[invader(), holder()], POK, None).unwrap();
+        let system = SystemId::new("09");
+        in_space(&mut state, &system, "infantry", &invader(), 4);
+
+        let script = vec![
+            "commit|0|maaluuk".to_owned(),
+            "commit|0|druaa".to_owned(),
+            "commit|0|maaluuk".to_owned(),
+            "commit|0|druaa".to_owned(),
+            "done_committing".to_owned(),
+        ];
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(script)));
+
+        commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        let board = state.system_state(&system);
+        let on = |planet: &str| {
+            board
+                .planet_units
+                .get(&PlanetId::new(planet))
+                .map_or(0, Vec::len)
+        };
+        let left_in_space = board
+            .units
+            .iter()
+            .filter(|unit| unit.owner == invader())
+            .count();
+
+        assert_eq!(
+            (on("maaluuk"), on("druaa"), left_in_space),
+            (2, 2, 0),
+            "four committed, four must land: maaluuk {}, druaa {}, still in space {}",
+            on("maaluuk"),
+            on("druaa"),
+            left_in_space
+        );
+    }
+}

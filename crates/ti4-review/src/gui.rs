@@ -496,6 +496,7 @@ impl ReviewApp {
         };
         match LiveReview::start(&config) {
             Ok(live) => {
+                let lineup = live.session.manifest.factions.join(" → ");
                 self.autosave = Some(PathBuf::from("out/reviews").join(format!(
                     "autosave-{seed}-rotation{}-{}.ti4review.json",
                     self.rotation,
@@ -508,7 +509,9 @@ impl ReviewApp {
                 self.replay = None;
                 self.viewed = 0;
                 self.run_target = None;
-                "Starting table loaded; no engine step has run.".clone_into(&mut self.status);
+                self.status = format!(
+                    "Starting table loaded; no engine step has run. Seats 0–5: {lineup}"
+                );
                 self.autosave_now();
                 if let Some(path) = &self.autosave {
                     self.last_review = Some(path.clone());
@@ -711,14 +714,18 @@ impl ReviewApp {
             ui.horizontal_wrapped(|ui| {
                 ui.label("Seed");
                 ui.add(egui::TextEdit::singleline(&mut self.seed).desired_width(110.0));
-                ui.label("Rotation");
+                ui.label("Faction rotation");
                 egui::ComboBox::from_id_salt("rotation")
                     .selected_text(self.rotation.to_string())
                     .show_ui(ui, |ui| {
                         for rotation in 0..6 {
                             ui.selectable_value(&mut self.rotation, rotation, rotation.to_string());
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text(
+                        "The seed shuffles faction order; rotation then cyclically shifts that order across physical seats.",
+                    );
                 let profile_response = egui::ComboBox::from_id_salt("profile_table")
                     .selected_text(self.table.label())
                     .show_ui(ui, |ui| {
@@ -904,6 +911,10 @@ impl ReviewApp {
                                 session.manifest.profile_table.label()
                             },
                             session.manifest.temperature
+                        ));
+                        ui.small(format!(
+                            "Seats 0–5: {}",
+                            session.manifest.factions.join(" → ")
                         ));
                         if let Some(name) = &policy.name {
                             ui.label(name);
