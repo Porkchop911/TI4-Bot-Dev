@@ -7080,3 +7080,19 @@ invalid until immutably republished.
 Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
 
 ---
+
+## Stage 2 complete-decision planning (2026-09-03)
+
+- Added `plans/STAGE2_COMPLETE_DECISION_CONTRACT.md` as the proposed continuation after
+  `STAGE2-OBS-001`.
+- Current conclusion: the expanded actor snapshot is necessary but insufficient. The next gate is
+  a complete inventory of decision producers and their rule dependencies, followed by typed
+  decision/continuation context and option semantics across all consequential heads.
+- The plan deliberately retains the current per-option MLP, the engine-owned legal set, and the
+  `SeatObservation` hidden-information boundary. Recurrence, a centralized critic, and graph/entity
+  architectures are deferred until residual aliasing is measured after the explicit contract.
+- First proposed packages: `OBS-002a` decision-producer/delivery audit, then `OBS-002b`
+  rule-dependency and aliasing matrix. No Rust implementation or artifact migration is authorized
+  by this planning entry.
+
+---
