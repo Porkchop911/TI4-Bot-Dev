@@ -468,6 +468,36 @@ impl<'a> Observed<'a> {
         self.state.phase
     }
 
+    /// The player whose action or turn is currently resolving, when the phase has one.
+    #[must_use]
+    pub const fn active_player(&self) -> Option<&'a PlayerId> {
+        self.state.active.as_ref()
+    }
+
+    /// The speaker, which is public and breaks several ordering ties.
+    #[must_use]
+    pub const fn speaker(&self) -> &'a PlayerId {
+        &self.state.speaker
+    }
+
+    /// Players in the public strategy-card initiative order.
+    #[must_use]
+    pub fn initiative_order(&self) -> Vec<PlayerId> {
+        self.state.initiative_order()
+    }
+
+    /// The named step of the tactical action currently awaiting resolution.
+    #[must_use]
+    pub fn pending_step(&self) -> Option<&'a str> {
+        self.state.pending.as_deref()
+    }
+
+    /// Whether Mecatol's custodians token has been removed.
+    #[must_use]
+    pub const fn custodians_removed(&self) -> bool {
+        self.state.custodians_removed
+    }
+
     /// Every system holding anything. Absent systems are empty.
     #[must_use]
     pub const fn board(&self) -> &'a BTreeMap<SystemId, SystemState> {
@@ -552,6 +582,12 @@ impl<'a> Observed<'a> {
         self.state.controlled_planets(player)
     }
 
+    /// Whether a public planet card is ready and can contribute its printed values.
+    #[must_use]
+    pub fn planet_is_ready(&self, planet: &PlanetId) -> bool {
+        !self.state.exhausted_planets.contains(planet)
+    }
+
     /// Public resources or influence a player can currently spend.
     ///
     /// This deliberately returns an aggregate rather than the exhausted-card set. Ready planet
@@ -560,6 +596,38 @@ impl<'a> Observed<'a> {
     #[must_use]
     pub fn available_spend(&self, player: &PlayerId, kind: crate::production::Spend) -> i64 {
         crate::production::available(self.state, self.content, self.sources, player, kind)
+    }
+
+    /// The public fleet-supply limit after laws and standing faction abilities.
+    #[must_use]
+    pub fn fleet_supply_limit(&self, player: &PlayerId) -> i32 {
+        crate::fleet::limit(self.state, self.content, player)
+    }
+
+    /// How many current systems contain at least one of this player's production units.
+    ///
+    /// The producer predicate is intentional: temporary bonuses such as War Machine increase a
+    /// real producer's capacity but do not turn every empty system into a production opportunity.
+    /// The catalogue is built once for the whole board scan rather than once per system.
+    #[must_use]
+    pub fn production_system_count(&self, player: &PlayerId) -> usize {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        self.state
+            .board
+            .values()
+            .filter(|system| {
+                system
+                    .units
+                    .iter()
+                    .chain(system.planet_units.values().flatten())
+                    .any(|unit| {
+                        &unit.owner == player
+                            && types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(ti4_content::units::UnitType::has_production)
+                    })
+            })
+            .count()
     }
 
     /// Systems holding any of a player's units.
@@ -585,7 +653,10 @@ impl<'a> Observed<'a> {
             tactic_tokens: seat.tactic_tokens,
             fleet_tokens: seat.fleet_tokens,
             strategic_tokens: seat.strategic_tokens,
+            strategy_cards: &seat.strategy_cards,
+            exhausted_strategy_cards: &seat.exhausted_strategy_cards,
             technologies: &seat.technologies,
+            exhausted_technologies: &seat.exhausted_technologies,
             action_cards_held: seat.action_cards.len(),
             secret_objectives_held: seat.secret_objectives.len(),
             passed: seat.passed,
@@ -1009,8 +1080,14 @@ pub struct PublicSeat<'a> {
     pub fleet_tokens: i32,
     /// Tokens in the strategy pool.
     pub strategic_tokens: i32,
+    /// Strategy cards held this round. Their identities and initiative are public.
+    pub strategy_cards: &'a [ti4_model::id::StrategyCardId],
+    /// Held strategy cards whose primary has already been used.
+    pub exhausted_strategy_cards: &'a BTreeSet<ti4_model::id::StrategyCardId>,
     /// Technologies owned, which are faceup.
     pub technologies: &'a BTreeSet<ti4_model::id::TechnologyId>,
+    /// Owned technologies currently exhausted, also faceup.
+    pub exhausted_technologies: &'a BTreeSet<ti4_model::id::TechnologyId>,
     /// How many cards, never which. At a table you can see a hand's size.
     pub action_cards_held: usize,
     /// The same for unscored secrets (61.17).
@@ -1776,6 +1853,37 @@ mod tests {
         assert_eq!(rival.action_cards_held, 2);
         assert_eq!(rival.secret_objectives_held, 1);
         assert_eq!(rival.victory_points, 4, "and public facts survive");
+    }
+
+    #[test]
+    fn public_timing_and_readiness_are_available_without_a_state_handle() {
+        let mut state = watched();
+        let imperial = ti4_model::id::StrategyCardId::new("imperial");
+        state.phase = ti4_model::state::Phase::Action;
+        state.active = Some(pid("b"));
+        state.speaker = pid("a");
+        state.pending = Some("move".to_owned());
+        state.custodians_removed = true;
+        state.card_initiative.insert(imperial.clone(), 8);
+        {
+            let rival = state.player_mut(&pid("b")).unwrap();
+            rival.strategy_cards.push(imperial.clone());
+            rival.exhausted_strategy_cards.insert(imperial.clone());
+        }
+        let (_, planet) = crate::fixtures::a_placed_planet();
+        state.exhausted_planets.insert(planet.clone());
+
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        assert_eq!(seen.phase(), ti4_model::state::Phase::Action);
+        assert_eq!(seen.active_player(), Some(&pid("b")));
+        assert_eq!(seen.speaker(), &pid("a"));
+        assert_eq!(seen.pending_step(), Some("move"));
+        assert!(seen.custodians_removed());
+        assert!(!seen.planet_is_ready(&planet));
+        assert_eq!(seen.initiative_order().first(), Some(&pid("b")));
+        let rival = seen.seat(&pid("b")).unwrap();
+        assert_eq!(rival.strategy_cards, std::slice::from_ref(&imperial));
+        assert!(rival.exhausted_strategy_cards.contains(&imperial));
     }
 
     #[test]

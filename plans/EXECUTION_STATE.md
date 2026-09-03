@@ -24,6 +24,24 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### Stage 2 actor observation surface (2026-09-03)
+
+- Active implementation branch: `wp/stage2-actor-observation-surface`, based on `b77e18b`.
+- Explicit rollback point: local annotated tag
+  `safepoint/pre-actor-gamestate-surface-2026-09-03`, dereferencing to `b77e18b`.
+- Pi reconciliation: its opening/action-feasibility work (`50468b0`, `36dacf3`, `16ebc7b`,
+  `b0ad876`) and clean `wp/engine-completion` line are already ancestral; no pending Pi diff exists.
+- Added a fuller MLP-only public state contract without changing the legacy schema-4 extractor:
+  timing/order, ready economy, VP/public hands, strategy/technology readiness, opponent aggregates,
+  board/active-system pressure, fleet/production headroom, Mecatol/custodians, and public promissory
+  relations. Opponent private-identity invariance and non-transferable-ID exclusion are tested.
+- Checks currently green: projection 22, engine 1,108 + 5 docs, policy 194, MLP 90 + integration/doc
+  gates, strict affected-crate Clippy, targeted rustfmt, and diff-check.
+- Existing bundles preserve their vocabulary/index contract and route newly unseen facts through the
+  existing `seat-state` OOV; publish a newly discovered vocabulary before training this surface.
+- Package evidence: `plans/evidence/STAGE2-OBS-001.md`. Independent Tier-C review PASS after its
+  three findings were corrected and regression-tested.
+
 ### Playtest follow-up: faction capacity, production, and Leadership payment (2026-09-03)
 
 - Implemented and committed on `wp/phase9-production-capacity-payments`; see branch `HEAD`.

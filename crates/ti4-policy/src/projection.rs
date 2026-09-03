@@ -524,7 +524,388 @@ pub fn seat_state_facts(
         .into_iter()
         .map(|(name, value)| (format!("{SEAT_STATE_FAMILY}:{name}"), value))
         .collect();
+    facts.extend(public_game_state_facts(seen, player));
     facts.extend(opening_facts(seen, player, baseline));
+    facts
+}
+
+/// The MLP-only public information contract shared by every option in a decision.
+///
+/// The legacy schema-4 extractor deliberately remains frozen; this projection is where the
+/// nonlinear actor receives the state needed to distinguish positions whose legal option labels
+/// happen to be identical. Names encode transferable roles and card identities, never a physical
+/// player, system or planet identity.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the feature inventory is kept together so its public-information boundary is auditable"
+)]
+fn public_game_state_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let mut facts = Vec::new();
+    let mut push = |name: String, value: f64| {
+        if value != 0.0 {
+            facts.push((format!("{SEAT_STATE_FAMILY}:{name}"), value));
+        }
+    };
+    #[expect(clippy::cast_precision_loss, reason = "public table counts are small")]
+    let count = |value: usize| value as f64;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "public economy totals are small"
+    )]
+    let amount = |value: i64| value as f64;
+
+    let phase = match seen.phase() {
+        ti4_model::state::Phase::Strategy => "strategy",
+        ti4_model::state::Phase::Action => "action",
+        ti4_model::state::Phase::Status => "status",
+        ti4_model::state::Phase::Agenda => "agenda",
+    };
+    push(format!("phase:{phase}"), 1.0);
+    if let Some(step) = seen.pending_step() {
+        push(format!("pending-step:{step}"), 1.0);
+    }
+    push(
+        "active-player-present".to_owned(),
+        f64::from(u8::from(seen.active_player().is_some())),
+    );
+    push(
+        "actor-is-active".to_owned(),
+        f64::from(u8::from(seen.active_player() == Some(player))),
+    );
+    push(
+        "actor-is-speaker".to_owned(),
+        f64::from(u8::from(seen.speaker() == player)),
+    );
+    push(
+        "active-system-present".to_owned(),
+        f64::from(u8::from(seen.active_system().is_some())),
+    );
+    push(
+        "custodians-removed".to_owned(),
+        f64::from(u8::from(seen.custodians_removed())),
+    );
+
+    let players = seen.players();
+    let initiative = seen.initiative_order();
+    if let Some(position) = initiative.iter().position(|candidate| candidate == player) {
+        push("initiative-rank".to_owned(), count(position + 1));
+    }
+    push("players".to_owned(), count(players.len()));
+
+    let own = seen.seat(player);
+    if let Some(seat) = own.as_ref() {
+        push("victory-points".to_owned(), f64::from(seat.victory_points));
+        push(
+            "action-cards-held".to_owned(),
+            count(seat.action_cards_held),
+        );
+        push(
+            "secret-objectives-held".to_owned(),
+            count(seat.secret_objectives_held),
+        );
+        push("passed".to_owned(), f64::from(u8::from(seat.passed)));
+        push(
+            "exhausted-technologies".to_owned(),
+            count(seat.exhausted_technologies.len()),
+        );
+        for technology in seat.technologies {
+            let readiness = if seat.exhausted_technologies.contains(technology) {
+                "used"
+            } else {
+                "ready"
+            };
+            push(
+                format!("own-technology:{}:{readiness}", technology.as_str()),
+                1.0,
+            );
+        }
+        for card in seat.strategy_cards {
+            let readiness = if seat.exhausted_strategy_cards.contains(card) {
+                "used"
+            } else {
+                "ready"
+            };
+            push(
+                format!("own-strategy-card:{}:{readiness}", card.as_str()),
+                1.0,
+            );
+        }
+    }
+
+    let controlled = seen.controlled_planets(player);
+    let ready_planets = controlled
+        .iter()
+        .filter(|(_, planet)| seen.planet_is_ready(planet))
+        .count();
+    push("ready-planets".to_owned(), count(ready_planets));
+    push(
+        "exhausted-planets".to_owned(),
+        count(controlled.len().saturating_sub(ready_planets)),
+    );
+    push(
+        "spendable-resources".to_owned(),
+        amount(seen.available_spend(player, ti4_engine::production::Spend::Resources)),
+    );
+    push(
+        "spendable-influence".to_owned(),
+        amount(seen.available_spend(player, ti4_engine::production::Spend::Influence)),
+    );
+    push(
+        "systems-with-units".to_owned(),
+        count(seen.systems_with_units_of(player).len()),
+    );
+    push(
+        "systems-with-token".to_owned(),
+        count(seen.systems_with_token(player).len()),
+    );
+    push("units-held".to_owned(), count(seen.units_held(player)));
+    push(
+        "scored-objectives".to_owned(),
+        count(seen.scored_by(player).len()),
+    );
+    push(
+        "scoreable-public".to_owned(),
+        count(seen.scoreable_public(player)),
+    );
+    push(
+        "scoreable-secret".to_owned(),
+        count(seen.scoreable_secret(player)),
+    );
+
+    push(
+        "production-opportunities".to_owned(),
+        count(seen.production_system_count(player)),
+    );
+
+    let mut fullest_fleet = 0usize;
+    let mut occupied_systems = 0usize;
+    let mut contested_systems = 0usize;
+    let mut own_units_on_board = 0usize;
+    let mut enemy_units_on_board = 0usize;
+    let mut active_own_units = 0usize;
+    let mut active_enemy_units = 0usize;
+    for (system_id, system) in seen.board() {
+        let mut owners = BTreeSet::new();
+        let mut fleet = 0usize;
+        for unit in system
+            .units
+            .iter()
+            .chain(system.planet_units.values().flatten())
+        {
+            owners.insert(&unit.owner);
+            if &unit.owner == player {
+                own_units_on_board += 1;
+                if ti4_content::units::unit_type(
+                    seen.content(),
+                    unit.type_id.as_str(),
+                    seen.sources(),
+                )
+                .as_ref()
+                .is_some_and(ti4_engine::fleet::counts_against_supply)
+                {
+                    fleet += 1;
+                }
+            } else {
+                enemy_units_on_board += 1;
+            }
+            if seen.active_system() == Some(system_id) {
+                if &unit.owner == player {
+                    active_own_units += 1;
+                } else {
+                    active_enemy_units += 1;
+                }
+            }
+        }
+        if !owners.is_empty() {
+            occupied_systems += 1;
+        }
+        if owners.len() > 1 {
+            contested_systems += 1;
+        }
+        fullest_fleet = fullest_fleet.max(fleet);
+    }
+    let fleet_limit = seen.fleet_supply_limit(player).max(0);
+    let fullest_fleet = i32::try_from(fullest_fleet).unwrap_or(i32::MAX);
+    push("fleet-supply-limit".to_owned(), f64::from(fleet_limit));
+    push(
+        "fleet-supply-headroom".to_owned(),
+        f64::from((fleet_limit - fullest_fleet).max(0)),
+    );
+    push("occupied-systems".to_owned(), count(occupied_systems));
+    push("contested-systems".to_owned(), count(contested_systems));
+    push("own-units-on-board".to_owned(), count(own_units_on_board));
+    push(
+        "enemy-units-on-board".to_owned(),
+        count(enemy_units_on_board),
+    );
+    push(
+        "active-system-own-units".to_owned(),
+        count(active_own_units),
+    );
+    push(
+        "active-system-enemy-units".to_owned(),
+        count(active_enemy_units),
+    );
+
+    let mut passed_players = 0usize;
+    let mut opponent_vp = 0i32;
+    let mut leader_vp = own.as_ref().map_or(0, |seat| seat.victory_points);
+    let mut opponent_trade_goods = 0i32;
+    let mut opponent_commodities = 0i32;
+    let mut opponent_tactic_tokens = 0i32;
+    let mut opponent_fleet_tokens = 0i32;
+    let mut opponent_strategic_tokens = 0i32;
+    let mut opponent_spendable_resources = 0i64;
+    let mut opponent_spendable_influence = 0i64;
+    let mut opponent_action_cards = 0usize;
+    let mut opponent_planets = 0usize;
+    let mut opponent_controlled_systems = 0usize;
+    let mut opponent_systems_with_units = 0usize;
+    let mut opponent_units = 0usize;
+    for other in &players {
+        let Some(seat) = seen.seat(other) else {
+            continue;
+        };
+        passed_players += usize::from(seat.passed);
+        for card in seat.strategy_cards {
+            let readiness = if seat.exhausted_strategy_cards.contains(card) {
+                "used"
+            } else {
+                "ready"
+            };
+            push(
+                format!("table-strategy-card:{}:{readiness}", card.as_str()),
+                1.0,
+            );
+        }
+        if *other == player {
+            continue;
+        }
+        leader_vp = leader_vp.max(seat.victory_points);
+        opponent_vp += seat.victory_points;
+        opponent_trade_goods += seat.trade_goods;
+        opponent_commodities += seat.commodities;
+        opponent_tactic_tokens += seat.tactic_tokens;
+        opponent_fleet_tokens += seat.fleet_tokens;
+        opponent_strategic_tokens += seat.strategic_tokens;
+        opponent_spendable_resources +=
+            seen.available_spend(other, ti4_engine::production::Spend::Resources);
+        opponent_spendable_influence +=
+            seen.available_spend(other, ti4_engine::production::Spend::Influence);
+        opponent_action_cards += seat.action_cards_held;
+        let held = seen.controlled_planets(other);
+        opponent_planets += held.len();
+        opponent_controlled_systems += held
+            .iter()
+            .map(|(system, _)| *system)
+            .collect::<BTreeSet<_>>()
+            .len();
+        opponent_systems_with_units += seen.systems_with_units_of(other).len();
+        opponent_units += seen.units_held(other);
+        for technology in seat.technologies {
+            push(format!("opponent-technology:{}", technology.as_str()), 1.0);
+        }
+    }
+    push("passed-players".to_owned(), count(passed_players));
+    push(
+        "active-players".to_owned(),
+        count(players.len().saturating_sub(passed_players)),
+    );
+    push(
+        "opponent-victory-points-total".to_owned(),
+        f64::from(opponent_vp),
+    );
+    push("leader-victory-points".to_owned(), f64::from(leader_vp));
+    push(
+        "victory-points-behind-leader".to_owned(),
+        f64::from(leader_vp - own.as_ref().map_or(0, |seat| seat.victory_points)),
+    );
+    push(
+        "opponent-trade-goods-total".to_owned(),
+        f64::from(opponent_trade_goods),
+    );
+    push(
+        "opponent-commodities-total".to_owned(),
+        f64::from(opponent_commodities),
+    );
+    push(
+        "opponent-tactic-tokens-total".to_owned(),
+        f64::from(opponent_tactic_tokens),
+    );
+    push(
+        "opponent-strategic-tokens-total".to_owned(),
+        f64::from(opponent_strategic_tokens),
+    );
+    push(
+        "opponent-fleet-tokens-total".to_owned(),
+        f64::from(opponent_fleet_tokens),
+    );
+    push(
+        "opponent-action-cards-total".to_owned(),
+        count(opponent_action_cards),
+    );
+    push(
+        "opponent-spendable-resources-total".to_owned(),
+        amount(opponent_spendable_resources),
+    );
+    push(
+        "opponent-spendable-influence-total".to_owned(),
+        amount(opponent_spendable_influence),
+    );
+    push("opponent-planets-total".to_owned(), count(opponent_planets));
+    push(
+        "opponent-controlled-systems-total".to_owned(),
+        count(opponent_controlled_systems),
+    );
+    push(
+        "opponent-systems-with-units-total".to_owned(),
+        count(opponent_systems_with_units),
+    );
+    push("opponent-units-total".to_owned(), count(opponent_units));
+
+    let faceup_notes = seen.promissory_notes();
+    push(
+        "faceup-promissory-notes".to_owned(),
+        count(faceup_notes.len()),
+    );
+    for (note, holder) in faceup_notes {
+        let alias = note
+            .split_once(':')
+            .map_or(note.as_str(), |(alias, _)| alias);
+        push(format!("faceup-promissory:{alias}"), 1.0);
+        if &holder == player {
+            push(format!("own-faceup-promissory:{alias}"), 1.0);
+        }
+    }
+    let supports = seen.support_holders();
+    push(
+        "supports-held".to_owned(),
+        count(supports.values().filter(|holder| *holder == player).count()),
+    );
+    push(
+        "own-support-held-by-opponent".to_owned(),
+        f64::from(u8::from(supports.contains_key(player))),
+    );
+
+    let mecatol = ti4_model::id::PlanetId::new("mecatol_rex");
+    let mecatol_controller = players.iter().find(|candidate| {
+        seen.controlled_planets(candidate)
+            .iter()
+            .any(|(_, planet)| **planet == mecatol)
+    });
+    push(
+        "actor-controls-mecatol".to_owned(),
+        f64::from(u8::from(
+            mecatol_controller.is_some_and(|owner| *owner == player),
+        )),
+    );
+    push(
+        "opponent-controls-mecatol".to_owned(),
+        f64::from(u8::from(
+            mecatol_controller.is_some_and(|owner| *owner != player),
+        )),
+    );
+
     facts
 }
 
@@ -1023,14 +1404,9 @@ mod tests {
             // What the movement step would actually offer, from the same position.
             let mut activated = state.clone();
             activated.active_system = Some(system.clone());
-            let actually = !ti4_engine::tactical::movable(
-                &activated,
-                content,
-                POK,
-                &hub.galaxy,
-                &player,
-            )
-            .is_empty();
+            let actually =
+                !ti4_engine::tactical::movable(&activated, content, POK, &hub.galaxy, &player)
+                    .is_empty();
 
             assert!(
                 (predicted > 0.5) == actually,
@@ -1171,10 +1547,10 @@ mod tests {
         );
 
         let expected = seat_state_facts(&seen, &player, crate::progress::Baseline::default());
-        assert_eq!(
-            expected.len(),
-            18,
-            "eight general seat facts and ten opening-progress ones"
+        assert!(
+            expected.len() >= 25,
+            "the complete surface should substantially exceed the old eighteen facts: {}",
+            expected.len()
         );
         // Named rather than counted alone. A count catches a fact that vanished; it does not catch
         // a fact that was renamed, and a renamed feature is a new column with no trained weight
@@ -1364,6 +1740,246 @@ mod tests {
                 assert!(
                     !name.contains("mlp"),
                     "{name}: an opponent secret alias reached the MLP input",
+                );
+            }
+        }
+    }
+
+    fn fact_value(facts: &[(String, f64)], suffix: &str) -> Option<f64> {
+        let wanted = format!("{SEAT_STATE_FAMILY}:{suffix}");
+        facts
+            .iter()
+            .find(|(name, _)| name == &wanted)
+            .map(|(_, value)| *value)
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one integrated fixture proves the cross-domain state contract"
+    )]
+    fn the_public_surface_carries_timing_economy_strategy_and_board_state() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+        let opponent = PlayerId::new("b");
+        let system = ti4_model::id::SystemId::new("18");
+        let mecatol = ti4_model::id::PlanetId::new("mecatol_rex");
+        state.phase = ti4_model::state::Phase::Action;
+        state.active = Some(player.clone());
+        state.speaker = opponent.clone();
+        state.pending = Some("move".to_owned());
+        state.active_system = Some(system.clone());
+        state.custodians_removed = true;
+        state
+            .card_initiative
+            .insert(ti4_model::id::StrategyCardId::new("imperial"), 8);
+        state
+            .system_mut(&system)
+            .set_control(mecatol.clone(), player.clone());
+        ti4_engine::fixtures::put(&mut state, &system, "carrier", &player, 1);
+        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &opponent, 1);
+        state.exhausted_planets.insert(mecatol);
+        {
+            let seat = state.player_mut(&player).unwrap();
+            seat.victory_points = 4;
+            seat.action_cards = vec![ti4_model::id::ActionCardId::new("summit")];
+            let imperial = ti4_model::id::StrategyCardId::new("imperial");
+            seat.strategy_cards = vec![imperial.clone()];
+            seat.exhausted_strategy_cards.insert(imperial);
+        }
+        {
+            let seat = state.player_mut(&opponent).unwrap();
+            seat.passed = true;
+            seat.trade_goods = 3;
+        }
+        let (opponent_system, opponent_planet) = ti4_engine::fixtures::a_placed_planet();
+        state
+            .system_mut(&opponent_system)
+            .set_control(opponent_planet, opponent.clone());
+        ti4_engine::fixtures::put(&mut state, &opponent_system, "infantry", &opponent, 1);
+        // The actor's held secret is met on the board, in a system that is not the active one:
+        // four of their PDS sit on a private fixture planet, so the scoreable count must move.
+        let secret_system = ti4_model::id::SystemId::new("99");
+        let secret_planet = ti4_model::id::PlanetId::new("eap_fixture");
+        state
+            .system_mut(&secret_system)
+            .set_control(secret_planet.clone(), player.clone());
+        for _ in 0..4 {
+            state
+                .system_mut(&secret_system)
+                .planet_units
+                .entry(secret_planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    player.clone(),
+                ));
+        }
+        state
+            .player_mut(&player)
+            .unwrap()
+            .secret_objectives
+            .push(ti4_model::id::SecretObjectiveId::new("eap"));
+
+        let seen = Observed::new(&state, content, POK, None);
+        let facts = public_game_state_facts(&seen, &player);
+        for (name, expected) in [
+            ("phase:action", 1.0),
+            ("pending-step:move", 1.0),
+            ("actor-is-active", 1.0),
+            ("custodians-removed", 1.0),
+            ("victory-points", 4.0),
+            ("action-cards-held", 1.0),
+            ("exhausted-planets", 1.0),
+            ("own-strategy-card:imperial:used", 1.0),
+            ("table-strategy-card:imperial:used", 1.0),
+            ("passed-players", 1.0),
+            ("active-players", 1.0),
+            ("opponent-trade-goods-total", 3.0),
+            ("opponent-controlled-systems-total", 1.0),
+            ("contested-systems", 1.0),
+            ("active-system-own-units", 1.0),
+            ("active-system-enemy-units", 1.0),
+            ("actor-controls-mecatol", 1.0),
+            ("scoreable-secret", 1.0),
+        ] {
+            assert_eq!(fact_value(&facts, name), Some(expected), "missing {name}");
+        }
+        #[expect(clippy::cast_precision_loss, reason = "fixture economy is small")]
+        let expected_resources =
+            seen.available_spend(&opponent, ti4_engine::production::Spend::Resources) as f64;
+        #[expect(clippy::cast_precision_loss, reason = "fixture economy is small")]
+        let expected_influence =
+            seen.available_spend(&opponent, ti4_engine::production::Spend::Influence) as f64;
+        #[expect(clippy::cast_precision_loss, reason = "fixture board is small")]
+        let expected_systems_with_units = seen.systems_with_units_of(&opponent).len() as f64;
+        assert_eq!(
+            fact_value(&facts, "opponent-spendable-resources-total"),
+            Some(expected_resources)
+        );
+        assert_eq!(
+            fact_value(&facts, "opponent-spendable-influence-total"),
+            Some(expected_influence)
+        );
+        assert_eq!(
+            fact_value(&facts, "opponent-systems-with-units-total"),
+            Some(expected_systems_with_units)
+        );
+    }
+
+    #[test]
+    fn opponent_private_identities_cannot_change_the_public_surface() {
+        let content = ti4_content::ContentStore::embedded();
+        let actor = PlayerId::new("a");
+        let opponent = PlayerId::new("b");
+        let mut left = ti4_engine::fixtures::game(&["a", "b"]);
+        {
+            let seat = left.player_mut(&opponent).unwrap();
+            seat.action_cards = vec![ti4_model::id::ActionCardId::new("summit")];
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("mlp")];
+        }
+        let mut right = left.clone();
+        {
+            let seat = right.player_mut(&opponent).unwrap();
+            seat.action_cards = vec![ti4_model::id::ActionCardId::new("spy")];
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("sar")];
+        }
+        let left_seen = Observed::new(&left, content, POK, None);
+        let right_seen = Observed::new(&right, content, POK, None);
+        assert_eq!(
+            public_game_state_facts(&left_seen, &actor),
+            public_game_state_facts(&right_seen, &actor),
+            "same public counts with different private identities changed the actor surface"
+        );
+
+        right
+            .player_mut(&opponent)
+            .unwrap()
+            .action_cards
+            .push(ti4_model::id::ActionCardId::new("bribery"));
+        let right_seen = Observed::new(&right, content, POK, None);
+        let changed = public_game_state_facts(&right_seen, &actor);
+        assert_eq!(
+            fact_value(&changed, "opponent-action-cards-total"),
+            Some(2.0),
+            "the legally visible hand-size change was not represented"
+        );
+    }
+
+    #[test]
+    fn production_opportunities_include_mobile_faction_docks() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+        state.player_mut(&player).unwrap().faction = FactionId::new("saar");
+        let system = ti4_model::id::SystemId::new("empty-space");
+        state
+            .board
+            .insert(system.clone(), ti4_model::state::SystemState::default());
+        ti4_engine::fixtures::put(&mut state, &system, "saar_spacedock", &player, 1);
+        state.board.insert(
+            ti4_model::id::SystemId::new("empty"),
+            ti4_model::state::SystemState::default(),
+        );
+        state.activation_seq = 2;
+        state.player_mut(&player).unwrap().war_machine_use = vec![2];
+        assert!(
+            state.system_state(&system).planet_control.is_empty(),
+            "the fixture must prove production is not restricted to controlled planets"
+        );
+
+        let seen = Observed::new(&state, content, POK, None);
+        assert_eq!(
+            seen.production_system_count(&player),
+            1,
+            "War Machine must not turn the empty board entry into a producer"
+        );
+        let facts = public_game_state_facts(&seen, &player);
+        assert_eq!(fact_value(&facts, "production-opportunities"), Some(1.0));
+    }
+
+    #[test]
+    fn empty_board_entries_do_not_change_the_public_surface() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = position();
+        let before = {
+            let seen = Observed::new(&state, content, POK, None);
+            public_game_state_facts(&seen, &player)
+        };
+        let empty = ti4_model::id::SystemId::new("history-only-empty-entry");
+        let _ = state.system_mut(&empty);
+        let after = {
+            let seen = Observed::new(&state, content, POK, None);
+            public_game_state_facts(&seen, &player)
+        };
+        assert_eq!(
+            before, after,
+            "creating a semantically empty storage entry leaked representation history"
+        );
+    }
+
+    #[test]
+    fn transferable_surface_names_do_not_encode_board_or_player_ids() {
+        let content = ti4_content::ContentStore::embedded();
+        let actor = PlayerId::new("actor-private-seat-id");
+        let opponent = PlayerId::new("opponent-private-seat-id");
+        let mut state = ti4_engine::fixtures::game(&[actor.as_str(), opponent.as_str()]);
+        let system = ti4_model::id::SystemId::new("987654");
+        let planet = ti4_model::id::PlanetId::new("private_fixture_planet");
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), actor.clone());
+        state.exhausted_planets.insert(planet);
+        let seen = Observed::new(&state, content, POK, None);
+        for (name, _) in public_game_state_facts(&seen, &actor) {
+            for forbidden in [
+                actor.as_str(),
+                opponent.as_str(),
+                system.as_str(),
+                "private_fixture_planet",
+            ] {
+                assert!(
+                    !name.contains(forbidden),
+                    "{name} memorises non-transferable identity {forbidden}"
                 );
             }
         }
