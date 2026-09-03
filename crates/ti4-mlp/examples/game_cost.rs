@@ -135,6 +135,14 @@ struct Played {
     /// five of them are the frozen benchmark and drag every mean toward its play, not the
     /// candidate's -- which is exactly what the first version of this tool did.
     seat: (String, i64, i32, usize),
+    /// Support for the Throne notes this seat HOLDS. Each is a victory point that came from
+    /// another player handing it over in a transaction, not from anything on the board, and the
+    /// per-faction victory-point spread is almost entirely outside scored objectives.
+    supports: usize,
+    /// Whether this seat ends holding Mecatol Rex. Taking it pays the custodians point AND opens
+    /// the agenda phase for every later round, so it is the one board fact that unlocks a second
+    /// stream of points.
+    holds_mecatol: bool,
 }
 
 fn main() {
@@ -147,6 +155,7 @@ fn main() {
     // Trace every seat, not just the candidate: a loop inside one engine step may follow any
     // seat's decision, and the answer is the LAST line printed before the hang.
     let trace = std::env::args().any(|arg| arg == "--trace");
+    let points_events = std::env::args().any(|arg| arg == "--points-events");
     let only_rotation: Option<usize> = argument("--only-rotation").and_then(|v| v.parse().ok());
     let only_seat: Option<usize> = argument("--only-seat").and_then(|v| v.parse().ok());
 
@@ -275,7 +284,7 @@ fn main() {
                 );
                 let wall = started.elapsed();
 
-                let Ok((_events, _setup, assignments, _openings, final_state)) = audited else {
+                let Ok((events, _setup, assignments, _openings, final_state)) = audited else {
                     println!("  {seed}/{rotation}/seat{candidate_seat}  FAILED after {wall:.1?}");
                     continue;
                 };
@@ -303,6 +312,56 @@ fn main() {
                         .filter_map(|alias| ti4_engine::objectives::points_for(content, alias))
                         .sum()
                 });
+                // Every event this seat appears in, for games where the residual is large. The earlier
+                // keyword filter assumed the award would say "point" somewhere and found almost nothing,
+                // which said more about the guess than about the log.
+                let supports_here = final_state
+                    .support_holders
+                    .values()
+                    .filter(|holder| **holder == me)
+                    .count();
+                if points_events && i64::from(seat.victory_points) - i64::from(from_objectives) >= 2
+                {
+                    let me_name = format!("seat{candidate_seat}");
+                    println!(
+                        "  --- {seed}/{rotation}/{me_name} VP {} = objectives {} + supports {} + residual {} ---",
+                        seat.victory_points,
+                        from_objectives,
+                        supports_here,
+                        i64::from(seat.victory_points)
+                            - i64::from(from_objectives)
+                            - i64::try_from(supports_here).unwrap_or(0)
+                    );
+                    for line in &events {
+                        if line.contains(&me_name) {
+                            println!("    EVENT {line}");
+                        }
+                    }
+                }
+                let supports = final_state
+                    .support_holders
+                    .values()
+                    .filter(|holder| **holder == me)
+                    .count();
+                // Which relics this seat ended holding. Two of them (Shard of the Throne, Crown
+                // of Emphidia) carry a victory point, and the event log does not record the award
+                // in terms that can be grepped, so the holding is the evidence.
+                if points_events {
+                    if let Some(held) = final_state.players.iter().find(|s| s.id == me) {
+                        if !held.relics.is_empty() {
+                            println!("    RELICS {:?}", held.relics);
+                        }
+                    }
+                }
+                let holds_mecatol = final_state
+                    .board
+                    .get(&ti4_model::id::SystemId::new("18"))
+                    .and_then(|system| {
+                        system
+                            .planet_control
+                            .get(&ti4_model::id::PlanetId::new("mecatol_rex"))
+                    })
+                    .is_some_and(|controller| *controller == me);
                 let seat_row = (
                     faction,
                     i64::from(seat.victory_points),
@@ -329,6 +388,8 @@ fn main() {
                     rotation,
                     candidate_seat,
                     wall,
+                    supports,
+                    holds_mecatol,
                     in_decider: *spent.borrow(),
                     decisions: *calls.borrow(),
                     units,
@@ -395,31 +456,38 @@ fn main() {
 
     println!();
     println!("=== victory points by faction, CANDIDATE SEAT ONLY, and where they came from ===");
-    println!("  faction      games       VP   from objectives   other   objectives scored");
-    let mut by_faction: BTreeMap<String, (usize, i64, i64, usize)> = BTreeMap::new();
+    println!("  faction      games       VP   objectives   supports   unexplained   holds Mecatol");
+    let mut by_faction: BTreeMap<String, (usize, i64, i64, usize, usize, usize)> = BTreeMap::new();
     for game in &played {
         let (faction, vp, from_objectives, count) = &game.seat;
-        let slot = by_faction.entry(faction.clone()).or_insert((0, 0, 0, 0));
+        let slot = by_faction
+            .entry(faction.clone())
+            .or_insert((0, 0, 0, 0, 0, 0));
         slot.0 += 1;
         slot.1 += vp;
         slot.2 += i64::from(*from_objectives);
         slot.3 += count;
+        slot.4 += game.supports;
+        slot.5 += usize::from(game.holds_mecatol);
     }
-    for (faction, (games, vp, from_objectives, count)) in &by_faction {
+    for (faction, (games, vp, from_objectives, _count, supports, mecatol)) in &by_faction {
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let n = *games as f64;
         #[expect(clippy::cast_precision_loss, reason = "counts are small")]
         let line = format!(
-            "  {faction:<12} {games:>5}   {:>6.3}   {:>15.3}   {:>5.3}   {:>16.3}",
+            "  {faction:<12} {games:>5}   {:>6.3}   {:>10.3}   {:>8.3}   {:>11.3}   {:>11.1}%",
             *vp as f64 / n,
             *from_objectives as f64 / n,
-            (*vp - *from_objectives) as f64 / n,
-            *count as f64 / n
+            *supports as f64 / n,
+            (*vp - *from_objectives - i64::try_from(*supports).unwrap_or(0)) as f64 / n,
+            *mecatol as f64 / n * 100.0
         );
         println!("{line}");
     }
     println!();
-    println!("  'other' is every point that is not a scored objective: Mecatol's custodians,");
-    println!("  relics, agendas and laws. A faction that leads on VP but not on objectives is");
-    println!("  winning its points somewhere the scoring head never sees.");
+    println!("  'supports' counts Support for the Throne notes this seat HOLDS. Each is a point");
+    println!("  another player handed over in a transaction rather than anything won on the");
+    println!(
+        "  board. 'unexplained' is what is left: Mecatol's custodians, relics, agendas, laws."
+    );
 }
