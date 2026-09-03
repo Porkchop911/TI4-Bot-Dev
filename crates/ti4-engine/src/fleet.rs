@@ -3,6 +3,8 @@
 //! Ported from the oracle's `engine/fleet.py`. Both limits are enforced by the *owner*
 //! removing units, so both ask through a [`Table`].
 
+use std::collections::BTreeMap;
+
 use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
@@ -45,8 +47,27 @@ pub fn over_supply(
     system: &SystemId,
 ) -> usize {
     let types = catalogue(content, sources);
-    let present = state
-        .system_state(system)
+    over_supply_with(&types, state, content, sources, player, system)
+}
+
+/// [`over_supply`] with the unit catalogue already built.
+///
+/// `catalogue` walks the content store and allocates a fresh `BTreeMap` on every call, and the
+/// enforcement path used to call it four or five times for a single seat-and-system pair. With six
+/// seats and every system checked at each turn end that was roughly a thousand map builds a turn,
+/// all to answer a question that is usually "nothing to do".
+fn over_supply_with(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    let Some(board) = state.board.get(system) else {
+        return 0;
+    };
+    let present = board
         .units_of(player)
         .into_iter()
         .filter(|unit| {
@@ -58,8 +79,8 @@ pub fn over_supply(
     // Fighter II again, from the other side: fighters the capacity cannot hold are ships as far as
     // the fleet pool is concerned, so they are counted here rather than removed there.
     let carried_fighters =
-        usize::try_from(fighters_over_capacity(state, content, sources, player, system).max(0))
-            .unwrap_or(0);
+        usize::try_from(fighters_over_capacity_with(types, board, player).max(0)).unwrap_or(0);
+    let _ = (content, sources);
     (present + carried_fighters)
         .saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
 }
@@ -77,7 +98,22 @@ pub fn over_capacity(
     system: &SystemId,
 ) -> usize {
     let types = catalogue(content, sources);
-    let board = state.system_state(system);
+    let Some(board) = state.board.get(system) else {
+        return 0;
+    };
+    over_capacity_with(&types, board, player)
+}
+
+/// [`over_capacity`] with the catalogue already built and the board already borrowed.
+///
+/// Same reason as [`over_supply_with`]: this runs for every occupied seat-and-system pair at every
+/// turn end, and rebuilding the catalogue and cloning the system there dominated the cost of
+/// enforcing the rule at all.
+fn over_capacity_with(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    board: &ti4_model::state::SystemState,
+    player: &PlayerId,
+) -> usize {
     let space = board.units_of(player);
 
     // Resolved once rather than looked up per sum.
@@ -161,7 +197,21 @@ pub fn fighters_over_capacity(
     system: &SystemId,
 ) -> i64 {
     let types = catalogue(content, sources);
-    let board = state.system_state(system);
+    let Some(board) = state.board.get(system) else {
+        return 0;
+    };
+    fighters_over_capacity_with(&types, board, player)
+}
+
+/// [`fighters_over_capacity`] with the catalogue already built and the board already borrowed.
+///
+/// Borrowed, not cloned: `GameState::system_state` returns a CLONE of the whole system, units and
+/// planet units included, and this used to be called several times per check.
+fn fighters_over_capacity_with(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    board: &ti4_model::state::SystemState,
+    player: &PlayerId,
+) -> i64 {
     let held: Vec<UnitType<'_>> = board
         .units_of(player)
         .iter()
@@ -264,7 +314,7 @@ pub fn enforce_seeing(
     let mut removed = 0;
 
     // Supply first: removing a carrier can strand fighters, so capacity is judged after.
-    while over_supply(state, content, sources, player, system) > 0 {
+    while over_supply_with(&types, state, content, sources, player, system) > 0 {
         let candidates: Vec<Unit> = state
             .system_state(system)
             .units_of(player)
@@ -293,7 +343,11 @@ pub fn enforce_seeing(
         removed += 1;
     }
 
-    while over_capacity(state, content, sources, player, system) > 0 {
+    while state
+        .board
+        .get(system)
+        .is_some_and(|board| over_capacity_with(&types, board, player) > 0)
+    {
         let candidates: Vec<Unit> = state
             .system_state(system)
             .units_of(player)
