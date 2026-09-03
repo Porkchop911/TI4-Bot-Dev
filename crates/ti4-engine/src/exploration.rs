@@ -256,6 +256,7 @@ pub fn perform_action(
     content: &ContentStore,
     sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     option: &crate::choice::ChoiceOption,
 ) -> bool {
@@ -289,7 +290,7 @@ pub fn perform_action(
     {
         seat.exploration_cards.remove(at); // purged
     }
-    crate::relics::grant_chosen_technology(state, content, sources, table, player, None)
+    crate::relics::grant_chosen_technology(state, content, sources, table, galaxy, player, None)
 }
 
 /// The Enigmatic Device's price, on the relic and on both exploration cards.
@@ -1236,6 +1237,7 @@ mod tests {
             ContentStore::embedded(),
             POK,
             &mut table,
+            None,
             &player(),
             &offered[0],
         ));

@@ -1202,6 +1202,7 @@ impl<'a> Game<'a> {
                         self.content,
                         self.sources,
                         &mut self.table,
+                        self.galaxy.as_ref(),
                         &active,
                         &answer,
                     )
@@ -1659,7 +1660,14 @@ impl<'a> Game<'a> {
                     self.advance_turn()?;
                     return Ok(self.result(true, None));
                 }
-                crate::relics::offer_dominus_orb(&mut self.state, &mut self.table, &window.player);
+                crate::relics::offer_dominus_orb(
+                    &mut self.state,
+                    self.content,
+                    self.sources,
+                    &mut self.table,
+                    self.galaxy.as_ref(),
+                    &window.player,
+                );
                 window.stage = TacticalStage::Moving;
                 self.tactical = Some(window);
                 Ok(self.result(true, None))
@@ -2098,6 +2106,7 @@ impl<'a> Game<'a> {
                 self.content,
                 self.sources,
                 &mut self.table,
+                self.galaxy.as_ref(),
                 &player,
             );
         }

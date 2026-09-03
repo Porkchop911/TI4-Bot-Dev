@@ -522,19 +522,19 @@ const PRODUCERS: &[Producer] = &[
         module: "relics.rs",
         function: "codex",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
         function: "crown_of_emphidia_explore",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
         function: "grant_chosen_technology",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
@@ -546,19 +546,19 @@ const PRODUCERS: &[Producer] = &[
         module: "relics.rs",
         function: "offer_dominus_orb",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
         function: "stellar_converter",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "relics.rs",
         function: "titan_prototype",
         count: 1,
-        delivery: Delivery::ViewlessHere,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "secrets.rs",
@@ -781,6 +781,12 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("production.rs", "resolve", 1),
     ("production.rs", "sling_relay", 2),
     ("reactions.rs", "slot", 1),
+    ("relics.rs", "codex", 1),
+    ("relics.rs", "crown_of_emphidia_explore", 1),
+    ("relics.rs", "grant_chosen_technology", 1),
+    ("relics.rs", "offer_dominus_orb", 1),
+    ("relics.rs", "stellar_converter", 1),
+    ("relics.rs", "titan_prototype", 1),
     ("secrets.rs", "enforce_hand_limit", 1),
     ("strategy_cards.rs", "ask", 1),
     ("technology.rs", "end_turn", 2),
@@ -797,13 +803,7 @@ const VIEWLESS_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "apply_bombard_plan", 1),
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
-    ("relics.rs", "codex", 1),
-    ("relics.rs", "crown_of_emphidia_explore", 1),
-    ("relics.rs", "grant_chosen_technology", 1),
     ("relics.rs", "neuraloop", 1),
-    ("relics.rs", "offer_dominus_orb", 1),
-    ("relics.rs", "stellar_converter", 1),
-    ("relics.rs", "titan_prototype", 1),
     ("timing.rs", "pick", 1),
 ];
 
@@ -900,7 +900,7 @@ fn every_indirect_producer_reaches_its_classified_delivery_api() {
 }
 
 #[test]
-fn all_fifteen_viewless_asks_remain_explicit_migration_work() {
+fn the_remaining_viewless_asks_stay_explicit_migration_work() {
     // Both halves matter, and only the second one measures the engine.
     //
     // Summing the registry is a ratchet: on its own it cannot fail, because it asserts a constant
@@ -909,15 +909,15 @@ fn all_fifteen_viewless_asks_remain_explicit_migration_work() {
     // registry must then be edited to restore it, and that edit trips this. But a reader could
     // easily mistake it for a check on the engine, so the scanned total is asserted too.
     let count: usize = VIEWLESS_ASKS.iter().map(|(_, _, count)| count).sum();
-    assert_eq!(count, 15, "the reviewed registry still names fifteen");
+    assert_eq!(count, 9, "the reviewed registry still names nine");
     let scanned: usize = scan()
         .iter()
         .filter(|(site, _)| site.operation == Operation::AskViewless)
         .map(|(_, count)| count)
         .sum();
     assert_eq!(
-        scanned, 15,
-        "production still contains fifteen viewless asks; the registry and the source agree"
+        scanned, 9,
+        "production still contains nine viewless asks; the registry and the source agree"
     );
     assert!(PRODUCERS.iter().all(|producer| !matches!(
         producer.delivery,

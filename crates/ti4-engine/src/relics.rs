@@ -11,6 +11,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlanetId, PlayerId, RelicId};
 use ti4_model::state::GameState;
 
+use crate::choice::Observed;
 use crate::objectives::VICTORY_TARGET;
 
 /// The Circlet of the Void: its owner's units do not roll for gravity rifts.
@@ -185,6 +186,7 @@ pub(crate) fn grant_chosen_technology(
     content: &ContentStore,
     sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     colour: Option<&str>,
 ) -> bool {
@@ -227,7 +229,8 @@ pub(crate) fn grant_chosen_technology(
         return false;
     }
     let choice = crate::choice::Choice::new(player.clone(), "gain which technology", options);
-    let Ok(answer) = table.ask(&choice) else {
+    let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+    else {
         return false;
     };
     if let Some(seat) = state.player_mut(player) {
@@ -290,7 +293,14 @@ fn the_silver_flame(
 ///
 /// Asked one at a time so a shrinking pile is offered honestly, rather than three questions put to
 /// the pile as it stood when the card was played.
-fn codex(state: &mut GameState, table: &mut crate::choice::Table, player: &PlayerId) {
+fn codex(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    player: &PlayerId,
+) {
     // "Take up to 3 action cards of your choice from the action card discard pile."
     //
     // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
@@ -317,7 +327,8 @@ fn codex(state: &mut GameState, table: &mut crate::choice::Table, player: &Playe
             "The Codex: take which action card",
             options,
         );
-        let Ok(answer) = table.ask(&choice) else {
+        let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+        else {
             break;
         };
         if answer.is_decline() {
@@ -346,6 +357,7 @@ fn titan_prototype(
     content: &ContentStore,
     sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
 ) -> bool {
     // "Choose a player, that player may spend 3 resources to place a structure on a planet
@@ -374,7 +386,8 @@ fn titan_prototype(
             "Titan Prototype: which player may build",
             options,
         );
-        let Ok(answer) = table.ask(&choice) else {
+        let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+        else {
             return false;
         };
         PlayerId::new(answer.id)
@@ -457,7 +470,10 @@ fn stellar_converter(
         "Stellar Converter: destroy which planet",
         options,
     );
-    let Ok(answer) = table.ask(&choice) else {
+    let Ok(answer) = table.ask_seeing(
+        &choice,
+        &Observed::new(state, content, sources, Some(galaxy)),
+    ) else {
         return false;
     };
     let chosen = PlanetId::new(answer.id);
@@ -556,6 +572,7 @@ pub fn crown_of_emphidia_explore(
     content: &ContentStore,
     sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
 ) -> bool {
     if !ready(state, player, "emphidia") {
@@ -591,7 +608,8 @@ pub fn crown_of_emphidia_explore(
         "The Crown of Emphidia: exhaust to explore a planet",
         options,
     );
-    let Ok(answer) = table.ask(&choice) else {
+    let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+    else {
         return false;
     };
     if answer.is_decline() || !exhaust(state, player, "emphidia") {
@@ -645,7 +663,10 @@ pub fn crown_of_emphidia_point(state: &mut GameState, player: &PlayerId) -> bool
 /// tactical action cannot loosen the next -- the same shape as the Lost Star Chart beside it.
 pub fn offer_dominus_orb(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     table: &mut crate::choice::Table,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
 ) -> bool {
     if !holds(state, player, &RelicId::new("dominusorb")) {
@@ -672,7 +693,8 @@ pub fn offer_dominus_orb(
             crate::choice::ChoiceOption::decline(),
         ],
     );
-    let Ok(answer) = table.ask(&choice) else {
+    let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
+    else {
         return false;
     };
     if answer.is_decline() {
@@ -879,7 +901,7 @@ pub fn use_relic(
                     relic: relic.clone(),
                 };
             }
-            grant_chosen_technology(state, content, sources, table, player, None);
+            grant_chosen_technology(state, content, sources, table, galaxy, player, None);
         }
         "mawofworlds" => {
             // "Purge this card and exhaust all of your planets to gain any 1 technology."
@@ -894,9 +916,9 @@ pub fn use_relic(
             for planet in planets {
                 state.exhaust_planet(planet);
             }
-            grant_chosen_technology(state, content, sources, table, player, None);
+            grant_chosen_technology(state, content, sources, table, galaxy, player, None);
         }
-        "codex" => codex(state, table, player),
+        "codex" => codex(state, content, sources, table, galaxy, player),
         "stellarconverter" => {
             if !stellar_converter(state, content, sources, table, galaxy, player) {
                 return Used::Unresolved {
@@ -905,7 +927,7 @@ pub fn use_relic(
             }
         }
         "titanprototype" => {
-            if !titan_prototype(state, content, sources, table, player) {
+            if !titan_prototype(state, content, sources, table, galaxy, player) {
                 return Used::Unresolved {
                     relic: relic.clone(),
                 };
