@@ -28,7 +28,9 @@ param(
     [string]$WastePenalties = '15,12,5,5,8,8',   # sol, letnev, xxcha, hacan, jolnar, l1z1x
     [double]$ClearanceFloor = 85.0,
     [int]$MaxSteps = 8000,
-    [int]$TimeoutSeconds = 240
+    [int]$TimeoutSeconds = 240,
+    [switch]$SkipR4,
+    [string]$ReplicateFrom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,12 +68,16 @@ function Invoke-Leg {
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $rank `
         -Checkpoints $checkpoints -Tag $Tag -ClearanceFloor $ClearanceFloor -MaxSteps $MaxSteps -TimeoutSeconds $TimeoutSeconds 2>&1 |
-        Tee-Object -FilePath (Join-Path $root "out\rank_$Tag.log")
+        Tee-Object -FilePath (Join-Path $root "out\rank_$Tag.log") | Out-Host
 
     $winnerFile = Join-Path $root "out\rank-$Tag\winner.txt"
     if (-not (Test-Path -LiteralPath $winnerFile)) { Write-Host "leg $Tag produced no winner"; return $null }
     $winner = (Get-Content $winnerFile -Raw).Trim()
     Write-Host "leg $Tag winner: $winner  ($(Get-Date -Format 'HH:mm'))"
+    # `return` hands back everything left in the success stream, not just this value. The
+    # ranking pipeline above therefore has to go to the host explicitly or its whole
+    # transcript is concatenated onto the winner path -- which is what happened: leg r5 was
+    # handed a bundle beginning "ranking 15 checkpoints by cross-play margin" and refused.
     return $winner
 }
 
@@ -96,14 +102,23 @@ if ($RankFirst) {
 if (-not $From) { Write-Host 'no starting bundle'; exit 1 }
 Write-Host "  starting from   $From"
 
-$leg1 = Invoke-Leg -Tag 'r4' -Start $From -SeedBase 950000000 -Penalties $WastePenalties
-if (-not $leg1) { Write-Host 'campaign stopped: leg r4 produced nothing'; exit 1 }
+# -SkipR4 resumes a campaign whose first leg already finished, so a failure later in the night does
+# not cost the legs that succeeded. $From is then r4's winner rather than r3's.
+if ($SkipR4) {
+    Write-Host "skipping leg r4; resuming from $From"
+    $leg1 = $From
+} else {
+    $leg1 = Invoke-Leg -Tag 'r4' -Start $From -SeedBase 950000000 -Penalties $WastePenalties
+    if (-not $leg1) { Write-Host 'campaign stopped: leg r4 produced nothing'; exit 1 }
+}
 
 $leg2 = Invoke-Leg -Tag 'r5' -Start $leg1 -SeedBase 1050000000 -Penalties $WastePenalties
 if (-not $leg2) { Write-Host 'campaign stopped after r4'; $leg2 = $leg1 }
 
 # The replicate. Same recipe and same start as leg 1, different rollout seeds only.
-$replicate = Invoke-Leg -Tag 'r4b' -Start $From -SeedBase 1150000000 -Penalties $WastePenalties
+# The replicate must start where leg r4 started, which is not $From once the campaign resumed.
+$replicateStart = if ($ReplicateFrom) { $ReplicateFrom } else { $From }
+$replicate = Invoke-Leg -Tag 'r4b' -Start $replicateStart -SeedBase 1150000000 -Penalties $WastePenalties
 
 Write-Host ''
 Write-Host '################ campaign summary ################'
