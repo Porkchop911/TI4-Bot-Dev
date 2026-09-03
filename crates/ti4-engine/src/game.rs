@@ -3270,6 +3270,28 @@ impl<'a> Game<'a> {
                 &active,
             );
         }
+        // 37.3 across the whole table, at the end of every turn.
+        //
+        // Enforcement used to fire only where ships move or are produced, and the fleet pool can
+        // shrink far from either -- Fleet Regulations caps it, Clandestine Operations returns
+        // tokens from it, a token-cost objective spends it -- so ships the rules had already
+        // removed stayed on the board. Measured before this call, essentially every finished game
+        // ended with someone over supply, once by seven ships in a single system (nine non-fighter
+        // ships against a limit of two). See plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md.
+        //
+        // The whole table, not just the seat whose turn ended: the shrinking effects above are
+        // routinely someone else's doing. `enforce_seeing` falls through when a seat is inside its
+        // limits, so the common case asks nothing and costs a scan.
+        if ended.is_some() {
+            crate::fleet::enforce_everywhere(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+            )
+            .map_err(GameError::IllegalChoice)?;
+        }
         if advance_turn(&mut self.state).is_none()
             && !self
                 .state
@@ -3945,8 +3967,23 @@ mod tests {
         let (mut state, galaxy, ids) = tactical_fixture();
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
+        // A carrier alongside each scenery fighter. A fighter needs capacity to sit in (16.3),
+        // and these were placed alone -- an illegal position that survived only because nothing
+        // re-checked capacity. Once it is checked at the end of every turn they are removed,
+        // which inserts an unscripted removal prompt into tests that never meant to test
+        // capacity at all.
         for id in ids.iter().skip(1) {
+            crate::fixtures::put(&mut state, id, "carrier", &a, 1);
             crate::fixtures::put(&mut state, id, "fighter", &a, 1);
+        }
+        // Fleet supply is enforced across the table at the end of every turn (37.3), and these
+        // fixtures deliberately stack several non-fighter ships in one system to set up a combat.
+        // Without a pool to match, the enforcement removes the very ships the test is about --
+        // which is what happened: four combat tests lost a dreadnought or a cruiser before the
+        // card under test could act on it. The fleet pool is not what any of them is testing, so
+        // it is set wide enough to leave their positions legal.
+        for seat in [&a, &b] {
+            state.player_mut(seat).unwrap().fleet_tokens = 6;
         }
         state.player_mut(&a).unwrap().action_cards = a_cards
             .iter()
@@ -5114,10 +5151,12 @@ mod tests {
             .filter(|unit| unit.owner == b)
             .map(|unit| unit.type_id.as_str())
             .collect();
-        assert_eq!(
-            survivors,
-            vec!["fighter"],
-            "the waylay hit took the cruiser; log: {events:?}"
+        // 16.3, now enforced across the table at the end of every turn: a fighter needs a
+        // ship with capacity to sit in, and B has none left. It used to survive because
+        // nothing re-checked capacity after the combat that killed its carrier.
+        assert!(
+            survivors.is_empty(),
+            "the waylay hit took the cruiser, and B's fighter has nothing left to sit in; log: {events:?}"
         );
     }
 
@@ -5346,11 +5385,12 @@ mod tests {
                 .collect()
         };
         assert_eq!(ships(&state, &a), Vec::<(String, bool)>::new());
-        assert_eq!(
-            ships(&state, &b),
-            vec![("fighter".to_owned(), false)],
-            "Direct Hit destroyed the sustained dreadnought and B keeps the fighter;
-             log: {events:?}"
+        // 16.3, now enforced across the table at the end of every turn: a fighter needs a
+        // ship with capacity to sit in, and B has none left. It used to survive because
+        // nothing re-checked capacity after the combat that killed its carrier.
+        assert!(
+            ships(&state, &b).is_empty(),
+            "Direct Hit destroyed the sustained dreadnought, and B's fighter cannot remain without it; log: {events:?}"
         );
         assert_eq!(
             events
@@ -5921,10 +5961,12 @@ mod tests {
 
         // Control: the infantry never leaves the space area.
         let (state, events) = run(false);
-        assert_eq!(
-            space(&state, &a),
-            vec!["infantry".to_owned()],
-            "no card, no landing; log: {events:?}"
+        // 16.3: with the last ship gone there is no capacity, so the ground force is lost --
+        // which is exactly the loss Crashlanding exists to avoid. The control arm used to keep
+        // it, because capacity was never re-checked after the ship died.
+        assert!(
+            space(&state, &a).is_empty(),
+            "no card, no landing, and the stranded infantry is lost; log: {events:?}"
         );
         assert_eq!(on_jord(&state), vec!["b:infantry".to_owned()]);
         assert_eq!(jord_coexisting(&state), Vec::<String>::new());

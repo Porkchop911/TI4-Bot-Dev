@@ -367,6 +367,66 @@ fn main() {
                         }
                     }
                 }
+                // LRR 37.1: a player may keep at most `fleet pool` non-fighter ships in one
+                // system. `fleet::over_supply` returns the excess, so a non-zero total in a
+                // FINISHED game means the limit was not enforced somewhere it should have been.
+                // Counted over every player and system, not just the candidate, because an
+                // unenforced rule is an engine fact rather than a policy preference.
+                let mut supply_excess = 0usize;
+                let mut systems_over = 0usize;
+                for seat_id in final_state.players.iter().map(|seat| seat.id.clone()) {
+                    for system_id in final_state.board.keys() {
+                        let over = ti4_engine::fleet::over_supply(
+                            &final_state,
+                            content,
+                            DEFAULT,
+                            &seat_id,
+                            system_id,
+                        );
+                        if over > 0 {
+                            supply_excess += over;
+                            systems_over += 1;
+                        }
+                    }
+                }
+                if supply_excess > 0 && points_events {
+                    println!(
+                        "    FLEET SUPPLY VIOLATED {seed}/{rotation}/seat{candidate_seat}: {supply_excess} over, {systems_over} system(s)"
+                    );
+                    let types = ti4_content::units::catalogue(content, DEFAULT);
+                    for seat in &final_state.players {
+                        for (system_id, board) in &final_state.board {
+                            let over = ti4_engine::fleet::over_supply(
+                                &final_state,
+                                content,
+                                DEFAULT,
+                                &seat.id,
+                                system_id,
+                            );
+                            if over == 0 {
+                                continue;
+                            }
+                            let counted: Vec<String> = board
+                                .units_of(&seat.id)
+                                .into_iter()
+                                .filter(|unit| {
+                                    types
+                                        .get(unit.type_id.as_str())
+                                        .is_some_and(ti4_engine::fleet::counts_against_supply)
+                                })
+                                .map(|unit| unit.type_id.to_string())
+                                .collect();
+                            println!(
+                                "      {} in {system_id}: fleet_tokens {} limit {} ships {} over {over} [{}]",
+                                seat.id,
+                                seat.fleet_tokens,
+                                ti4_engine::fleet::limit(&final_state, content, &seat.id),
+                                counted.len(),
+                                counted.join(",")
+                            );
+                        }
+                    }
+                }
                 let holds_mecatol = final_state
                     .board
                     .get(&ti4_model::id::SystemId::new("18"))
