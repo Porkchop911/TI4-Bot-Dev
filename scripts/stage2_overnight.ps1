@@ -19,9 +19,16 @@ param(
     [string]$RankFirst,
     [string]$RankFirstTag = 'r3',
     [string]$From,
-    [int]$Updates = 600,
+    # Short legs, sampled densely. Stage-2 runs peak within tens of updates and then degrade, and
+    # the degradation is not only in margin: later checkpoints accumulate board state until a single
+    # game cannot be played in bounded time and cannot be evaluated at all. Three of run 3's first
+    # four checkpoints timed out where the earliest took three seconds. Training longer produces
+    # unevaluable policies, so the budget goes into resolution over the window that works.
+    [int]$Updates = 150,
     [string]$WastePenalties = '15,12,5,5,8,8',   # sol, letnev, xxcha, hacan, jolnar, l1z1x
-    [double]$ClearanceFloor = 85.0
+    [double]$ClearanceFloor = 85.0,
+    [int]$MaxSteps = 8000,
+    [int]$TimeoutSeconds = 240
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,12 +60,12 @@ function Invoke-Leg {
         --temperature 2.5 --movement-entropy 0.05 --entropy-final 1 `
         --learning-rate 3e-4 --waste-penalties $Penalties `
         --vp-weight 4.0 --objective-weight 1.4 --secret-weight 1.0 --r1-bonus 2.0 `
-        --updates $Updates --report-every 50 --seed-base $SeedBase `
+        --updates $Updates --report-every 10 --seed-base $SeedBase `
         --device cuda --out $checkpoints *> (Join-Path $root "out/stage2_$Tag.log")
     if ($LASTEXITCODE -ne 0) { Write-Host "leg $Tag FAILED to train"; return $null }
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $rank `
-        -Checkpoints $checkpoints -Tag $Tag -ClearanceFloor $ClearanceFloor 2>&1 |
+        -Checkpoints $checkpoints -Tag $Tag -ClearanceFloor $ClearanceFloor -MaxSteps $MaxSteps -TimeoutSeconds $TimeoutSeconds 2>&1 |
         Tee-Object -FilePath (Join-Path $root "out\rank_$Tag.log")
 
     $winnerFile = Join-Path $root "out\rank-$Tag\winner.txt"
@@ -76,7 +83,7 @@ if ($RankFirst) {
     Write-Host ''
     Write-Host "################ ranking $RankFirst first ################"
     & powershell -NoProfile -ExecutionPolicy Bypass -File $rank `
-        -Checkpoints $RankFirst -Tag $RankFirstTag -ClearanceFloor $ClearanceFloor 2>&1 |
+        -Checkpoints $RankFirst -Tag $RankFirstTag -ClearanceFloor $ClearanceFloor -MaxSteps $MaxSteps -TimeoutSeconds $TimeoutSeconds 2>&1 |
         Tee-Object -FilePath (Join-Path $root "out/rank_$RankFirstTag.log")
     $winnerFile = Join-Path $root "out/rank-$RankFirstTag/winner.txt"
     if (Test-Path -LiteralPath $winnerFile) {

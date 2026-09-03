@@ -11,6 +11,16 @@ param(
     [string]$Benchmark = 'out/champions/best-94.97_r2-epoch22',
     [int]$CrossplaySeeds = 20,
     [int]$Rounds = 4,
+    # A bound, not the engine's 400,000-step runaway limit. A stage-2 policy that learned to score
+    # can also produce games that do not advance, and one checkpoint took seventeen minutes for an
+    # evaluation that normally takes three seconds. Truncated games are reported by the evaluator.
+    [int]$MaxSteps = 8000,
+    # A wall-clock bound per checkpoint. --max-steps bounds how many decisions a game may take; it
+    # cannot bound how expensive each one is, and a policy that builds large fleets makes combat and
+    # production steps slow enough that one checkpoint took seventeen minutes where the champion
+    # took three seconds. Lowering --max-steps did not help, which is how we know the cost is per
+    # step rather than per game. This bounds the campaign deterministically whatever the cause.
+    [int]$TimeoutSeconds = 240,
     [int]$ClearanceSeeds = 300,
     [double]$ClearanceFloor = 85.0,
     [int]$Finalists = 4
@@ -41,7 +51,18 @@ $rows = @()
 foreach ($d in $dirs) {
     $c = $d.Name
     $file = Join-Path $out "$c.crossplay.txt"
-    & $crossplayExe --bundle "$Checkpoints/$c" --opponent $Benchmark --seeds $CrossplaySeeds --rounds $Rounds *> $file
+    $argv = @(
+        '--bundle', "$Checkpoints/$c", '--opponent', $Benchmark,
+        '--seeds', $CrossplaySeeds, '--rounds', $Rounds, '--max-steps', $MaxSteps
+    )
+    $proc = Start-Process -FilePath $crossplayExe -ArgumentList $argv -NoNewWindow -PassThru `
+        -RedirectStandardOutput $file -RedirectStandardError "$file.err"
+    if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+        $proc.Kill()
+        $proc.WaitForExit()
+        Write-Host ("{0,-18} TIMED OUT after {1}s -- too slow to evaluate" -f $c, $TimeoutSeconds)
+        continue
+    }
     $line = Select-String -Path $file -Pattern '^  ALL\s' | Select-Object -First 1
     if (-not $line) { Write-Host ("{0,-18} NO RESULT (evaluator did not finish)" -f $c); continue }
     $f = ($line.Line -split '\s+') | Where-Object { $_ }
@@ -60,8 +81,17 @@ Write-Host "=== clearance for the top $Finalists by margin (floor $ClearanceFloo
 $top = $rows | Sort-Object Margin -Descending | Select-Object -First $Finalists
 foreach ($row in $top) {
     $file = Join-Path $out "$($row.Checkpoint).clearance.txt"
-    & $clearanceExe --bundle "$Checkpoints/$($row.Checkpoint)" --temperature 0.001 --seeds $ClearanceSeeds *> $file
+    $cargv = @('--bundle', "$Checkpoints/$($row.Checkpoint)", '--temperature', '0.001',
+        '--seeds', $ClearanceSeeds)
+    $cproc = Start-Process -FilePath $clearanceExe -ArgumentList $cargv -NoNewWindow -PassThru `
+        -RedirectStandardOutput $file -RedirectStandardError "$file.err"
+    if (-not $cproc.WaitForExit($TimeoutSeconds * 1000 * 3)) {
+        $cproc.Kill(); $cproc.WaitForExit()
+        Write-Host ("{0,-18} clearance TIMED OUT" -f $row.Checkpoint)
+        continue
+    }
     $line = Select-String -Path $file -Pattern '^  table\s' | Select-Object -First 1
+    if (-not $line) { Write-Host ("{0,-18} clearance NO RESULT" -f $row.Checkpoint); continue }
     $clearance = [double]((($line.Line -split '\s+') | Where-Object { $_ })[2] -replace '%', '')
     $verdict = if ($clearance -ge $ClearanceFloor) { 'pass' } else { 'REJECT' }
     Write-Host ("{0,-18} clearance {1,7:N2}%  margin {2,8:+0.000;-0.000}  {3}" -f `

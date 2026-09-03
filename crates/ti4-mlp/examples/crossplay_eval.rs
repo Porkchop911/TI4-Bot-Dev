@@ -130,6 +130,10 @@ struct Seated {
     /// failures with different fixes, and only these two counts tell them apart.
     scoring_offered: usize,
     scoring_declined: usize,
+    /// The step budget ran out before the horizon did. The seat's numbers are still real -- the
+    /// rollout measures victory points and the opening whatever stopped it -- but they describe a
+    /// game that was cut short, so they are counted and reported rather than mixed in silently.
+    truncated: bool,
 }
 
 #[derive(Default)]
@@ -142,6 +146,7 @@ struct Tally {
     wasteful: usize,
     scoring_offered: usize,
     scoring_declined: usize,
+    truncated: usize,
 }
 
 impl Tally {
@@ -185,6 +190,7 @@ fn play(
     candidate_seat: usize,
     rounds: u32,
     temperature: f64,
+    max_steps: usize,
 ) -> Result<Seated, String> {
     let log = Rc::new(RefCell::new(Vec::new()));
     let captured = Rc::clone(&log);
@@ -218,7 +224,7 @@ fn play(
         seed,
         ti4_training::rollout::Horizon {
             rounds,
-            steps: 400_000,
+            steps: max_steps,
         },
         ti4_engine::opening::DEFAULT_REQUIREMENT,
         &ti4_training::rollout::OpeningMap::PythonPool {
@@ -264,8 +270,17 @@ fn play(
             Ok(deciders)
         },
     );
+    // A step limit is not a failure to measure, it is a game that stopped advancing -- and the
+    // engine names the prompt it repeated, which is the only cheap lead on what a policy is stuck
+    // doing. Everything else is a real error and still refuses.
+    let mut truncated = false;
     if let Some(error) = &rollout.error {
-        return Err(format!("game {seed}/{rotation}: {error}"));
+        if error.contains("did not progress within") {
+            truncated = true;
+            eprintln!("  truncated {seed}/{rotation}/seat{candidate_seat}: {error}");
+        } else {
+            return Err(format!("game {seed}/{rotation}: {error}"));
+        }
     }
 
     let mut vp = 0i64;
@@ -301,6 +316,7 @@ fn play(
         wasteful: ti4_mlp::positive_corpus::wasted_activations(&notes) > 0,
         scoring_offered,
         scoring_declined,
+        truncated,
     })
 }
 
@@ -317,6 +333,10 @@ fn main() {
     // and about 1.8 when the same weights are sampled at 2.5, so "what does this policy score"
     // has no single answer and the flag is how that gap is measured rather than assumed away.
     let temperature: f64 = number("--temperature", 0.001);
+    // A bound, not the old 400,000 runaway limit. A stage-2 policy that has learned to score can
+    // also learn to loop, and one checkpoint spent forty-four minutes on a single evaluation that
+    // normally takes thirty seconds. Games over the bound are reported, not silently dropped.
+    let max_steps: usize = number("--max-steps", 40_000);
 
     ti4_tensor::configure_deterministic(20_260_826)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
@@ -352,6 +372,7 @@ fn main() {
     );
     println!("  rounds     {rounds}");
     println!("  candidate temperature {temperature} (the benchmark is always greedy)");
+    println!("  max steps  {max_steps} per game");
     println!();
 
     let started = std::time::Instant::now();
@@ -393,6 +414,7 @@ fn main() {
                     seat,
                     rounds,
                     temperature,
+                    max_steps,
                 )?);
             }
             Ok(rows)
@@ -413,6 +435,7 @@ fn main() {
                 tally.wasteful += usize::from(row.wasteful);
                 tally.scoring_offered += row.scoring_offered;
                 tally.scoring_declined += row.scoring_declined;
+                tally.truncated += usize::from(row.truncated);
             }
         }
     }
@@ -425,6 +448,22 @@ fn main() {
     }
     all.report("ALL");
     println!();
+    if all.truncated > 0 {
+        #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+        let share = all.truncated as f64 / all.games as f64 * 100.0;
+        println!(
+            "  WARNING: {} of {} games ({share:.2}%) hit the {max_steps}-step bound and were cut",
+            all.truncated, all.games
+        );
+        println!(
+            "  short. Their victory points are whatever had been scored when the game stopped, so"
+        );
+        println!(
+            "  this policy's numbers understate it by an unknown amount. The stderr lines name the"
+        );
+        println!("  prompt each stuck game kept repeating.");
+        println!();
+    }
     println!("  measured in {:.1?}", started.elapsed());
     println!();
     println!("  margin is VP minus the best opponent's. Its null value is NEGATIVE, not zero: the");
