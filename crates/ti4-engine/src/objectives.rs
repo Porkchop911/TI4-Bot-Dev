@@ -1892,8 +1892,8 @@ pub enum ScoringError {
 
 #[cfg(test)]
 mod tests {
-    use ti4_model::content_types::POK;
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;
+    use ti4_model::content_types::POK;
 
     /// Space stations rule 7: they do not count as planets for scoring objectives.
     ///

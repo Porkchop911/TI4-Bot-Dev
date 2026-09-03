@@ -122,10 +122,8 @@ pub fn ingress_egress_adjacent(
     to: &SystemId,
 ) -> bool {
     let egresses = egress_systems(content, sources);
-    let ingress_then_egress =
-        state.ingress_tokens.contains(from) && egresses.contains(to);
-    let egress_then_ingress =
-        egresses.contains(from) && state.ingress_tokens.contains(to);
+    let ingress_then_egress = state.ingress_tokens.contains(from) && egresses.contains(to);
+    let egress_then_ingress = egresses.contains(from) && state.ingress_tokens.contains(to);
     ingress_then_egress || egress_then_ingress
 }
 
@@ -143,10 +141,7 @@ pub const fn interior_adjacency_known() -> bool {
 ///
 /// # Errors
 /// [`FractureError::InteriorLayoutUnknown`] always, until the layout is supplied.
-pub const fn interior_adjacent(
-    _left: &SystemId,
-    _right: &SystemId,
-) -> Result<bool, FractureError> {
+pub const fn interior_adjacent(_left: &SystemId, _right: &SystemId) -> Result<bool, FractureError> {
     Err(FractureError::InteriorLayoutUnknown)
 }
 
@@ -227,8 +222,7 @@ pub fn enter_play(
     if state.fracture_in_play {
         return Err(FractureError::AlreadyInPlay);
     }
-    crate::neutral_units::can_place(content, sources)
-        .map_err(|_| FractureError::NoNeutralUnits)?;
+    crate::neutral_units::can_place(content, sources).map_err(|_| FractureError::NoNeutralUnits)?;
 
     let neutral = crate::neutral_units::owner();
     for system in systems(content, sources) {
@@ -347,10 +341,18 @@ mod tests {
 
         for egress in &egresses {
             assert!(ingress_egress_adjacent(
-                &state, content(), ALL_SOURCES, &one, egress
+                &state,
+                content(),
+                ALL_SOURCES,
+                &one,
+                egress
             ));
             assert!(ingress_egress_adjacent(
-                &state, content(), ALL_SOURCES, egress, &one
+                &state,
+                content(),
+                ALL_SOURCES,
+                egress,
+                &one
             ));
         }
         assert!(
@@ -358,13 +360,7 @@ mod tests {
             "an ingress is not adjacent to an ingress"
         );
         assert!(
-            !ingress_egress_adjacent(
-                &state,
-                content(),
-                ALL_SOURCES,
-                &egresses[0],
-                &egresses[1]
-            ),
+            !ingress_egress_adjacent(&state, content(), ALL_SOURCES, &egresses[0], &egresses[1]),
             "nor an egress to an egress"
         );
     }
@@ -461,7 +457,11 @@ mod tests {
         let system = SystemId::new("fracture1");
         let planet = PlanetId::new("cocytus");
         assert!(draws_a_relic(
-            &state, content(), ALL_SOURCES, &system, &planet
+            &state,
+            content(),
+            ALL_SOURCES,
+            &system,
+            &planet
         ));
 
         state

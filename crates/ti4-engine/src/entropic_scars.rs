@@ -138,9 +138,9 @@ pub fn grants_available(
     if scars == 0 {
         return 0;
     }
-    let tokens = state
-        .player(player)
-        .map_or(0, |seat| usize::try_from(seat.tokens(TokenPool::Strategic)).unwrap_or(0));
+    let tokens = state.player(player).map_or(0, |seat| {
+        usize::try_from(seat.tokens(TokenPool::Strategic)).unwrap_or(0)
+    });
     let wanted = unowned_faction_technologies(state, content, sources, player).len();
     scars.min(tokens).min(wanted)
 }
@@ -242,10 +242,10 @@ mod tests {
         let content = ti4_content::ContentStore::embedded();
         let (mut state, player) = seated();
         let scar = SystemId::new(SCAR);
-        state
-            .system_mut(&scar)
-            .planet_units
-            .insert(ti4_model::id::PlanetId::new("x"), vec![ship(&player, "infantry")]);
+        state.system_mut(&scar).planet_units.insert(
+            ti4_model::id::PlanetId::new("x"),
+            vec![ship(&player, "infantry")],
+        );
         assert!(scars_with_ships(&state, content, ALL_SOURCES, &player).is_empty());
 
         state.system_mut(&scar).units.push(ship(&player, "carrier"));
@@ -287,7 +287,10 @@ mod tests {
             .into_iter()
             .next()
             .expect("sol has faction technologies");
-        let before = state.player(&player).expect("seated").tokens(TokenPool::Strategic);
+        let before = state
+            .player(&player)
+            .expect("seated")
+            .tokens(TokenPool::Strategic);
 
         grant(&mut state, content, ALL_SOURCES, &player, &wanted).expect("granted");
 

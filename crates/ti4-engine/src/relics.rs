@@ -203,9 +203,9 @@ pub(crate) fn grant_chosen_technology(
         .from_sources(ti4_model::content_types::ContentType::Technologies, sources)
         .filter(|record| {
             // 90.11: a faction technology belongs to that faction alone.
-            record.text("faction").is_none_or(|owner| {
-                faction.as_deref().is_some_and(|mine| mine == owner)
-            })
+            record
+                .text("faction")
+                .is_none_or(|owner| faction.as_deref().is_some_and(|mine| mine == owner))
         })
         .filter_map(|record| record.text("alias"))
         .filter(|alias| !held.contains(*alias))
@@ -226,8 +226,7 @@ pub(crate) fn grant_chosen_technology(
     if options.is_empty() {
         return false;
     }
-    let choice =
-        crate::choice::Choice::new(player.clone(), "gain which technology", options);
+    let choice = crate::choice::Choice::new(player.clone(), "gain which technology", options);
     let Ok(answer) = table.ask(&choice) else {
         return false;
     };
@@ -250,7 +249,6 @@ fn the_silver_flame(
     player: &PlayerId,
     relic: &RelicId,
 ) -> Used {
-
     // A ten scores; anything else consumes the home system and bars this player from
     // public objectives for the rest of the game. The roll happens either way, so the
     // card is purged before the branch rather than in one arm of it.
@@ -293,7 +291,6 @@ fn the_silver_flame(
 /// Asked one at a time so a shrinking pile is offered honestly, rather than three questions put to
 /// the pile as it stood when the card was played.
 fn codex(state: &mut GameState, table: &mut crate::choice::Table, player: &PlayerId) {
-
     // "Take up to 3 action cards of your choice from the action card discard pile."
     //
     // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
@@ -351,7 +348,6 @@ fn titan_prototype(
     table: &mut crate::choice::Table,
     player: &PlayerId,
 ) -> bool {
-
     // "Choose a player, that player may spend 3 resources to place a structure on a planet
     // they control. If they do not, they gain 1 trade good."
     //
@@ -387,10 +383,9 @@ fn titan_prototype(
     // Charged only once there is somewhere to build and the means to pay for it. Paying
     // first and finding nowhere to put it would spend three resources for the trade good
     // that is supposed to be the consolation.
-    let can_build = !crate::strategy_cards::structure_options(
-        state, content, sources, &chosen, false,
-    )
-    .is_empty();
+    let can_build =
+        !crate::strategy_cards::structure_options(state, content, sources, &chosen, false)
+            .is_empty();
     let built = can_build
         && crate::production::available(
             state,
@@ -491,10 +486,11 @@ fn stellar_converter_targets(
     let types = ti4_content::units::catalogue(content, sources);
     let mut reach: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for (system, here) in &state.board {
-        let bombards = here
-            .units_of(player)
-            .into_iter()
-            .any(|unit| types.get(unit.type_id.as_str()).is_some_and(ti4_content::UnitType::has_bombardment));
+        let bombards = here.units_of(player).into_iter().any(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::UnitType::has_bombardment)
+        });
         if bombards {
             reach.extend(galaxy.adjacent(system.as_str()));
         }
@@ -620,12 +616,15 @@ pub fn crown_of_emphidia_point(state: &mut GameState, player: &PlayerId) -> bool
     if !holds(state, player, &RelicId::new("emphidia")) {
         return false;
     }
-    let has_tomb = state.controlled_planets(player).into_iter().any(|(_, planet)| {
-        state
-            .planet_attachments
-            .get(planet)
-            .is_some_and(|attached| attached.iter().any(|card| card == "tombofemphidia"))
-    });
+    let has_tomb = state
+        .controlled_planets(player)
+        .into_iter()
+        .any(|(_, planet)| {
+            state
+                .planet_attachments
+                .get(planet)
+                .is_some_and(|attached| attached.iter().any(|card| card == "tombofemphidia"))
+        });
     if !has_tomb {
         return false;
     }
@@ -744,9 +743,12 @@ pub fn neuraloop(
         .objective_deck
         .iter()
         .cloned()
-        .chain(state.secret_deck.iter().map(|secret| {
-            ti4_model::id::ObjectiveId::new(secret.as_str())
-        }))
+        .chain(
+            state
+                .secret_deck
+                .iter()
+                .map(|secret| ti4_model::id::ObjectiveId::new(secret.as_str())),
+        )
         .collect();
     if pool.is_empty() {
         return None;
@@ -756,9 +758,7 @@ pub fn neuraloop(
     let replacement = pool[(roll as usize).saturating_sub(1).min(pool.len() - 1)].clone();
 
     purge(state, &holder, &RelicId::new(answer.id));
-    state
-        .revealed_objectives
-        .retain(|alias| alias != revealed);
+    state.revealed_objectives.retain(|alias| alias != revealed);
     state.objective_deck.retain(|alias| *alias != replacement);
     state
         .secret_deck
@@ -1059,7 +1059,9 @@ pub fn perform(
     if let Some(alias) = option.id.strip_prefix(USE_PREFIX) {
         let relic = RelicId::new(alias);
         return matches!(
-            use_relic(state, content, sources, dice, rng, table, galaxy, player, &relic),
+            use_relic(
+                state, content, sources, dice, rng, table, galaxy, player, &relic
+            ),
             Used::Purged { .. }
         );
     }
@@ -1210,7 +1212,10 @@ mod tests {
         assert!(matches!(used, Used::Purged { .. }), "the relic is purged");
 
         let here = state.board.get(&target_system).expect("the system");
-        assert!(here.on_planet(&target).is_empty(), "the units are destroyed");
+        assert!(
+            here.on_planet(&target).is_empty(),
+            "the units are destroyed"
+        );
         assert!(
             !here.planet_control.contains_key(&target),
             "and nobody controls it"
@@ -1265,11 +1270,7 @@ mod tests {
         let replacement = neuraloop(&mut state, &mut table, &mut rng, &revealed)
             .expect("the only relic is purged for the only card in the pool");
 
-        assert_eq!(
-            replacement.as_str(),
-            "sb",
-            "the secret is what replaced it"
-        );
+        assert_eq!(replacement.as_str(), "sb", "the secret is what replaced it");
         assert!(
             state.revealed_objectives.contains(&replacement),
             "and it sits with the public objectives"
@@ -1304,7 +1305,13 @@ mod tests {
             seat.relics = vec![RelicId::new("obsidian")];
         }
 
-        let offered = available_actions(&state, content, ti4_model::content_types::DEFAULT, None, &player);
+        let offered = available_actions(
+            &state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            None,
+            &player,
+        );
         assert!(
             !offered.iter().any(|option| option.id.contains("obsidian")),
             "the Obsidian has no printed ACTION and must not be offered as one"
@@ -1343,17 +1350,15 @@ mod tests {
                 .into_iter()
                 .collect();
         }
-        let with_tears = crate::technology::can_research(
-            &state, content, ALL_SOURCES, &player, &wanted,
-        );
+        let with_tears =
+            crate::technology::can_research(&state, content, ALL_SOURCES, &player, &wanted);
 
         // The same seat without the relic is one prerequisite short.
         if let Some(seat) = state.player_mut(&player) {
             seat.relics.clear();
         }
-        let without = crate::technology::can_research(
-            &state, content, ALL_SOURCES, &player, &wanted,
-        );
+        let without =
+            crate::technology::can_research(&state, content, ALL_SOURCES, &player, &wanted);
 
         assert!(
             with_tears && !without,
@@ -1391,7 +1396,11 @@ mod tests {
 
         assert_eq!(
             crate::production::planet_value_now(
-                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                &state,
+                content,
+                ALL_SOURCES,
+                &planet,
+                crate::production::Spend::Resources
             ),
             printed,
             "unattached, the planet is worth its printed value"
@@ -1405,7 +1414,11 @@ mod tests {
 
         assert_eq!(
             crate::production::planet_value_now(
-                &state, content, ALL_SOURCES, &planet, crate::production::Spend::Resources
+                &state,
+                content,
+                ALL_SOURCES,
+                &planet,
+                crate::production::Spend::Resources
             ),
             printed + 2
         );
@@ -1636,7 +1649,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &option,
         ));
@@ -1664,7 +1677,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &option,
         ));
@@ -1682,7 +1695,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &RelicId::new("dynamiscore"),
         );
@@ -1702,7 +1715,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &relic,
         );
@@ -1733,7 +1746,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &relic,
         );
@@ -1759,7 +1772,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &relic,
         );
@@ -1804,7 +1817,7 @@ mod tests {
             &mut crate::dice::Dice::new(),
             &mut crate::rng::GameRng::new(0),
             &mut crate::choice::Table::new(),
-                None,
+            None,
             &player(),
             &relic,
         );

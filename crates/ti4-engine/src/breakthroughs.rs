@@ -42,15 +42,24 @@ use ti4_model::units::Unit;
 /// The breakthrough aliases whose printed abilities this module implements.
 #[must_use]
 pub fn registered_aliases() -> Vec<&'static str> {
-    vec!["hacanbt", "jolnarbt", "letnevbt", "solbt", "xxchabt", "l1z1xbt"]
+    vec![
+        "hacanbt", "jolnarbt", "letnevbt", "solbt", "xxchabt", "l1z1xbt",
+    ]
 }
 
 /// Breakthroughs belonging to the trained factions whose abilities are not implemented.
 #[must_use]
-pub fn unimplemented(content: &ContentStore, sources: SourceSet, factions: &[&str]) -> Vec<BreakthroughId> {
+pub fn unimplemented(
+    content: &ContentStore,
+    sources: SourceSet,
+    factions: &[&str],
+) -> Vec<BreakthroughId> {
     let known = registered_aliases();
     content
-        .from_sources(ti4_model::content_types::ContentType::Breakthroughs, sources)
+        .from_sources(
+            ti4_model::content_types::ContentType::Breakthroughs,
+            sources,
+        )
         .filter(|record| {
             record
                 .text("faction")
@@ -87,9 +96,9 @@ pub fn on_production_finished(
     let ships = produced
         .iter()
         .filter(|(kind, _)| {
-            types.get(kind.as_str()).is_some_and(|unit| {
-                unit.is_ship() && !unit.is_fighter()
-            })
+            types
+                .get(kind.as_str())
+                .is_some_and(|unit| unit.is_ship() && !unit.is_fighter())
         })
         .count();
     if ships < 3 {
@@ -226,7 +235,11 @@ pub fn on_gain_control(
     if influence == 0 {
         return 0;
     }
-    let standing = state.system_mut(system).planet_units.entry(planet.clone()).or_default();
+    let standing = state
+        .system_mut(system)
+        .planet_units
+        .entry(planet.clone())
+        .or_default();
     for _ in 0..influence {
         standing.push(Unit::new(UnitTypeId::new("infantry"), player.clone()));
     }
@@ -260,12 +273,13 @@ mod tests {
             .influence();
         assert!(influence > 0, "the fixture planet must carry influence");
 
-        let placed = on_gain_control(
-            &mut state, content, ALL_SOURCES, &player, &system, &planet,
-        );
+        let placed = on_gain_control(&mut state, content, ALL_SOURCES, &player, &system, &planet);
         assert_eq!(placed, usize::try_from(influence).unwrap());
         assert_eq!(
-            state.system_state(&system).on_planet_of(&planet, &player).len(),
+            state
+                .system_state(&system)
+                .on_planet_of(&planet, &player)
+                .len(),
             usize::try_from(influence).unwrap()
         );
     }
@@ -284,32 +298,50 @@ mod tests {
                 .collect()
         };
 
-        let before = state.player(&player).expect("seated").tokens(TokenPool::Fleet);
+        let before = state
+            .player(&player)
+            .expect("seated")
+            .tokens(TokenPool::Fleet);
         assert!(
             !on_production_finished(
-                &mut state, content, ALL_SOURCES, &player,
+                &mut state,
+                content,
+                ALL_SOURCES,
+                &player,
                 &made(&["cruiser", "cruiser"])
             ),
             "two is not three"
         );
         assert!(
             !on_production_finished(
-                &mut state, content, ALL_SOURCES, &player,
+                &mut state,
+                content,
+                ALL_SOURCES,
+                &player,
                 &made(&["cruiser", "cruiser", "fighter", "fighter"])
             ),
             "fighters are not non-fighter ships"
         );
         assert_eq!(
-            state.player(&player).expect("seated").tokens(TokenPool::Fleet),
+            state
+                .player(&player)
+                .expect("seated")
+                .tokens(TokenPool::Fleet),
             before
         );
 
         assert!(on_production_finished(
-            &mut state, content, ALL_SOURCES, &player,
+            &mut state,
+            content,
+            ALL_SOURCES,
+            &player,
             &made(&["cruiser", "destroyer", "carrier"])
         ));
         assert_eq!(
-            state.player(&player).expect("seated").tokens(TokenPool::Fleet),
+            state
+                .player(&player)
+                .expect("seated")
+                .tokens(TokenPool::Fleet),
             before + 1,
             "one token for the use, however many ships above three"
         );
@@ -328,15 +360,31 @@ mod tests {
         // A ship with no capacity opens nothing.
         assert_eq!(
             free_capacity_granted(
-                &state, content, ALL_SOURCES, &player, &UnitTypeId::new("destroyer")
+                &state,
+                content,
+                ALL_SOURCES,
+                &player,
+                &UnitTypeId::new("destroyer")
             ),
             0
         );
 
         // And the allowance is spent by fighters and ground forces, not by ships.
-        assert!(spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("fighter")));
-        assert!(spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("infantry")));
-        assert!(!spends_free_capacity(content, ALL_SOURCES, &UnitTypeId::new("cruiser")));
+        assert!(spends_free_capacity(
+            content,
+            ALL_SOURCES,
+            &UnitTypeId::new("fighter")
+        ));
+        assert!(spends_free_capacity(
+            content,
+            ALL_SOURCES,
+            &UnitTypeId::new("infantry")
+        ));
+        assert!(!spends_free_capacity(
+            content,
+            ALL_SOURCES,
+            &UnitTypeId::new("cruiser")
+        ));
 
         // Without the breakthrough the carrier opens nothing at all.
         let (plain, other) = seat_with("l1z1xbt");

@@ -249,7 +249,15 @@ fn dunlain_reaper(
         return; // nothing to replace
     };
     // 31.4 and 20.4: no mech in reinforcements, no deploy.
-    if crate::supply::allowed(state, ctx.content, ctx.sources, player, &ti4_model::id::UnitTypeId::new(MECH), 1) == 0 {
+    if crate::supply::allowed(
+        state,
+        ctx.content,
+        ctx.sources,
+        player,
+        &ti4_model::id::UnitTypeId::new(MECH),
+        1,
+    ) == 0
+    {
         return;
     }
     if crate::production::available(
@@ -787,13 +795,21 @@ fn roll_ground(
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
         };
-        let Some(value) =
-            ground_combat_value(state, content, sources, player, system, planet, unit.type_id.as_str())
-        else {
+        let Some(value) = ground_combat_value(
+            state,
+            content,
+            sources,
+            player,
+            system,
+            planet,
+            unit.type_id.as_str(),
+        ) else {
             continue;
         };
         let _ = kind;
-        let slot = fighting.entry(value).or_insert((0, std::collections::BTreeMap::new()));
+        let slot = fighting
+            .entry(value)
+            .or_insert((0, std::collections::BTreeMap::new()));
         slot.0 += kind.combat_dice();
         *slot.1.entry(unit.type_id.to_string()).or_insert(0) += 1;
     }
@@ -2471,7 +2487,15 @@ mod tests {
             .and_then(ti4_content::units::UnitType::combat_hits_on)
             .expect("the mech has a combat value");
         assert_eq!(
-            ground_combat_value(&state, content, POK, &player, &system, &planet, "jolnar_mech"),
+            ground_combat_value(
+                &state,
+                content,
+                POK,
+                &player,
+                &system,
+                &planet,
+                "jolnar_mech"
+            ),
             Some(mech_printed + 1),
             "but only for infantry: the mech itself is still Fragile"
         );
@@ -4380,6 +4404,12 @@ mod tests {
     }
 
     #[test]
+    // The offer used to come twice: after moving the infantry from one planet to the other, the
+    // reverse move was offered again, and this test asserted that sequence with a decider that
+    // declined it. A decider that does NOT decline -- any greedy policy, since argmax is
+    // deterministic -- oscillates instead, and the repeats sit inside one `Game::step` where the
+    // run-level step limit cannot see them. A planet that has received forces is no longer offered
+    // as a source, so there is one move and the effect ends.
     fn ghost_squad_relocates_the_holders_forces_before_the_fight() {
         // Ghost Squad: "Move any number of your ground forces from any planet you control
         // in the active system to any other planet you control in the active system." The
@@ -4457,13 +4487,8 @@ mod tests {
         ];
         assert_eq!(
             asks,
-            vec![
-                commit_offer,
-                reaction_offer,
-                move_offer(&planet, &other),
-                move_offer(&other, &planet),
-            ],
-            "commit, the reaction offer, the move, then the reverse move the holder declines; got {asks:?}"
+            vec![commit_offer, reaction_offer, move_offer(&planet, &other)],
+            "commit, the reaction offer, then the one move; got {asks:?}"
         );
     }
     #[test]

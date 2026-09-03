@@ -2943,7 +2943,8 @@ impl<'a> Game<'a> {
         if let Some(here) = self.state.board.get_mut(&system) {
             here.command_tokens.remove(&owner);
         }
-        self.state.gain_token(&owner, ti4_model::state::TokenPool::Tactic, 1);
+        self.state
+            .gain_token(&owner, ti4_model::state::TokenPool::Tactic, 1);
         self.state
             .transient_flags
             .set(TransientFlags::ADDITIONAL_ACTION);

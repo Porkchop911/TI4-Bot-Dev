@@ -47,9 +47,7 @@ pub fn place(
     if state.placed_planets.contains_key(planet) {
         return false;
     }
-    state
-        .placed_planets
-        .insert(planet.clone(), system.clone());
+    state.placed_planets.insert(planet.clone(), system.clone());
     state.board.entry(system.clone()).or_default();
     if let Some(here) = state.board.get_mut(system) {
         here.set_control(planet.clone(), player.clone());

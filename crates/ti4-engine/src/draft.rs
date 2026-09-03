@@ -78,7 +78,9 @@ pub fn take_strategy_card(
     // more -- and nothing has ever collected them. The pile grew for the whole game and the
     // compensation for taking a low-initiative card was never paid.
     let goods = state.strategy_card_goods.remove(&card).unwrap_or(0);
-    if goods > 0 && let Some(seat) = state.player_mut(&player) {
+    if goods > 0
+        && let Some(seat) = state.player_mut(&player)
+    {
         seat.trade_goods += goods;
     }
 
@@ -113,9 +115,7 @@ mod tests {
     fn taking_a_card_collects_the_trade_goods_on_it() {
         let content = ContentStore::embedded();
         let mut state = crate::fixtures::game(&["a", "b"]);
-        let player = state
-            .speaker
-            .clone();
+        let player = state.speaker.clone();
         let choice = strategy_options(&state, content).expect("a draft is open");
         let card = ti4_model::id::StrategyCardId::new(choice.options[0].id.clone());
         state.strategy_card_goods.insert(card.clone(), 3);

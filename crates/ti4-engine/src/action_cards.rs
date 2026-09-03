@@ -1827,7 +1827,9 @@ pub fn apply_movement_effects(
 ///
 /// A pure gain from the supply; the card's trigger is the window it is played into.
 fn rally(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    context.state.gain_token(player, ti4_model::state::TokenPool::Fleet, 2);
+    context
+        .state
+        .gain_token(player, ti4_model::state::TokenPool::Fleet, 2);
 }
 
 /// Forward Supply Base: "After another player activates a system that contains your units, gain
@@ -1885,7 +1887,9 @@ fn counterstroke(context: &mut crate::timing::TimingContext<'_>, player: &Player
         .system_mut(&system)
         .command_tokens
         .remove(player);
-    context.state.gain_token(player, ti4_model::state::TokenPool::Tactic, 1);
+    context
+        .state
+        .gain_token(player, ti4_model::state::TokenPool::Tactic, 1);
 }
 
 /// Distinguished Councilor: "After you cast votes on an outcome of an agenda: cast 5 additional
@@ -2114,6 +2118,14 @@ fn ghost_squad_moves(
     board: &ti4_model::state::SystemState,
     player: &PlayerId,
     types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType>,
+    // Planets that have already received forces during this resolution. The card moves each ground
+    // force once ("move any number of your ground forces ... to any other planet"), so a planet
+    // that has taken delivery cannot then ship out: without this the option set regenerates
+    // symmetrically -- move the infantry A to B, and the only remaining move is B to A -- and a
+    // deterministic policy oscillates for ever. That is not hypothetical. A greedy stage-2 policy
+    // repeated one Ghost Squad choice 324,507 times in a single game and never returned, and
+    // because the repeats happen inside one `Game::step` the run-level step limit never fires.
+    received: &std::collections::BTreeSet<ti4_model::id::PlanetId>,
 ) -> Vec<crate::choice::ChoiceOption> {
     let own: Vec<ti4_model::id::PlanetId> = board
         .planet_control
@@ -2123,6 +2135,9 @@ fn ghost_squad_moves(
         .collect();
     let mut options: Vec<crate::choice::ChoiceOption> = Vec::new();
     for from in &own {
+        if received.contains(from) {
+            continue;
+        }
         let on_from: Vec<&Unit> = board
             .on_planet(from)
             .iter()
@@ -2172,8 +2187,15 @@ fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
         return;
     };
     let types = ti4_content::units::catalogue(context.content, context.sources);
+    let mut received: std::collections::BTreeSet<ti4_model::id::PlanetId> =
+        std::collections::BTreeSet::new();
     loop {
-        let options = ghost_squad_moves(&context.state.system_state(&system), player, &types);
+        let options = ghost_squad_moves(
+            &context.state.system_state(&system),
+            player,
+            &types,
+            &received,
+        );
         if options.is_empty() {
             return;
         }
@@ -2225,6 +2247,7 @@ fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
             .entry(to.clone())
             .or_default()
             .extend(moved.iter().cloned());
+        received.insert(to);
     }
 }
 
@@ -8981,6 +9004,68 @@ mod tests {
             state.player(&me).unwrap().commodities,
             limit,
             "the Trade secondary replenishes commodities"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ghost_squad_termination {
+    use super::*;
+
+    /// A planet that has received forces cannot then send them on.
+    ///
+    /// Without this the offer regenerates symmetrically and a deterministic decider oscillates:
+    /// move the infantry from A to B, and the only move left is B back to A. The repeats happen
+    /// inside one `Game::step`, so the run-level step limit never fires and the game never returns.
+    #[test]
+    fn a_planet_that_received_forces_is_not_offered_as_a_source() {
+        let content = ContentStore::embedded();
+        let types = ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
+        let player = PlayerId::new("a");
+
+        let mut board = ti4_model::state::SystemState::default();
+        for planet in ["alpha", "beta"] {
+            board
+                .planet_control
+                .insert(ti4_model::id::PlanetId::new(planet), player.clone());
+        }
+        board.planet_units.insert(
+            ti4_model::id::PlanetId::new("alpha"),
+            vec![Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                player.clone(),
+            )],
+        );
+
+        let none = std::collections::BTreeSet::new();
+        let first = ghost_squad_moves(&board, &player, &types, &none);
+        assert!(
+            first
+                .iter()
+                .any(|option| option.id == "move|alpha|beta|infantry"),
+            "the only ground force should be movable from alpha to beta, got {:?}",
+            first.iter().map(|o| &o.id).collect::<Vec<_>>()
+        );
+
+        // Now play that move by hand and mark beta as having received.
+        board
+            .planet_units
+            .insert(ti4_model::id::PlanetId::new("alpha"), Vec::new());
+        board.planet_units.insert(
+            ti4_model::id::PlanetId::new("beta"),
+            vec![Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                player.clone(),
+            )],
+        );
+        let mut received = std::collections::BTreeSet::new();
+        received.insert(ti4_model::id::PlanetId::new("beta"));
+
+        let second = ghost_squad_moves(&board, &player, &types, &received);
+        assert!(
+            second.is_empty(),
+            "beta received those forces, so it must not ship them back; got {:?}",
+            second.iter().map(|o| &o.id).collect::<Vec<_>>()
         );
     }
 }

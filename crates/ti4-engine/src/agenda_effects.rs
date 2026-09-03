@@ -876,18 +876,9 @@ pub fn resolve_with(
         //   agenda phase, which the driver owns.
         // - Covert Operations and Crisis are standing rules of the agenda and turn phases; the
         //   driver applies them, the vote only puts the law in play.
-        "committee"
-        | "arbiter"
-        | "minister_commerce"
-        | "minister_industry"
-        | "minister_peace"
-        | "minister_sciences"
-        | "minister_war"
-        | "prophecy"
-        | "crown_of_thalnos"
-        | "checks"
-        | "covert"
-        | "crisis" => {}
+        "committee" | "arbiter" | "minister_commerce" | "minister_industry" | "minister_peace"
+        | "minister_sciences" | "minister_war" | "prophecy" | "crown_of_thalnos" | "checks"
+        | "covert" | "crisis" => {}
         "articles_war" => {
             if outcome == AGAINST {
                 for player in ballot.voted_for(FOR) {
@@ -1005,7 +996,8 @@ pub fn resolve_with(
                     }
                 }
             } else {
-                let types = ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
+                let types =
+                    ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
                 for record in state.board.values_mut() {
                     for units in record.planet_units.values_mut() {
                         for unit in units.iter_mut() {
@@ -1219,7 +1211,10 @@ mod tests {
         let mut state = crate::fixtures::game(&["a", "b"]);
         run(&mut state, "nexus", AGAINST, &no_votes());
         assert_eq!(
-            state.wormhole_tokens.get("GAMMA").map(ti4_model::id::SystemId::as_str),
+            state
+                .wormhole_tokens
+                .get("GAMMA")
+                .map(ti4_model::id::SystemId::as_str),
             Some(crate::seating::MECATOL)
         );
 
@@ -1320,13 +1315,23 @@ mod tests {
         let mut state = crate::fixtures::game(&["a", "b"]);
         let before: i32 = TokenPool::ALL
             .into_iter()
-            .map(|pool| state.player(&PlayerId::new("a")).expect("seated").tokens(pool))
+            .map(|pool| {
+                state
+                    .player(&PlayerId::new("a"))
+                    .expect("seated")
+                    .tokens(pool)
+            })
             .sum();
 
         run(&mut state, "cladenstine", FOR, &no_votes());
         let after: i32 = TokenPool::ALL
             .into_iter()
-            .map(|pool| state.player(&PlayerId::new("a")).expect("seated").tokens(pool))
+            .map(|pool| {
+                state
+                    .player(&PlayerId::new("a"))
+                    .expect("seated")
+                    .tokens(pool)
+            })
             .sum();
         assert_eq!(after, before - 2, "two tokens leave the command sheet");
 
@@ -2387,10 +2392,7 @@ mod tests {
     fn the_unimplemented_agendas_are_reported() {
         // Full coverage: every agenda the corpus knows is registered, so the gap list is empty.
         let missing = unimplemented(ContentStore::embedded(), POK);
-        assert!(
-            missing.is_empty(),
-            "agendas with no effect: {missing:?}"
-        );
+        assert!(missing.is_empty(), "agendas with no effect: {missing:?}");
     }
 
     /// A law whose whole effect is a standing rule still reports Resolved, not Unresolved:

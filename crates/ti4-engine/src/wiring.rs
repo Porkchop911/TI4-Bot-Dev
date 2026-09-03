@@ -615,10 +615,7 @@ fn the_windows_the_table_maps_are_windows_the_engine_opens() {
     // "when 1 or more of your units use PRODUCTION" window never opens for them. That the
     // window opens at all when a step has a budget to spend is proven by
     // `game::tests::a_war_machine_played_in_the_production_window_grows_that_steps_budget`.
-    for event in [
-        "SYSTEM_ACTIVATED",
-        "STRATEGY_CARD_CHOSEN",
-    ] {
+    for event in ["SYSTEM_ACTIVATED", "STRATEGY_CARD_CHOSEN"] {
         assert!(
             seen.contains(event),
             "{event} is counted as reachable but no game emitted it; saw {seen:?}"

@@ -389,7 +389,9 @@ pub fn perform_component(
     if tokens <= 0 {
         return false; // 22.3: it cannot resolve, so it is not performed
     }
-    context.state.gain_token(player, ti4_model::state::TokenPool::Strategic, -1);
+    context
+        .state
+        .gain_token(player, ti4_model::state::TokenPool::Strategic, -1);
     crate::action_cards::place_units(context, player, &system, Some(&planet), "infantry", 2);
 
     let mech = ti4_content::units::faction_unit(context.content, "sol", "mech", context.sources)

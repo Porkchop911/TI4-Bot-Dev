@@ -326,7 +326,11 @@ pub fn fighter_combat_bonus(state: &GameState, player: &PlayerId) -> i64 {
 ///
 /// Returns whether the card is discarded. Called where a use of PRODUCTION ends, beside
 /// Auto-Factories, because both read the whole use rather than one placement.
-pub fn prophecy_after_production(state: &mut GameState, player: &PlayerId, fighters: usize) -> bool {
+pub fn prophecy_after_production(
+    state: &mut GameState,
+    player: &PlayerId,
+    fighters: usize,
+) -> bool {
     if !holds_ministry(state, player, "prophecy") || fighters >= 2 {
         return false;
     }
@@ -361,7 +365,9 @@ pub fn revolution_tax(
     sources: SourceSet,
     player: &PlayerId,
 ) -> Option<ti4_model::id::SystemId> {
-    if !active(state, "revolution") || elected(state, "revolution").map(String::as_str) != Some("for") {
+    if !active(state, "revolution")
+        || elected(state, "revolution").map(String::as_str) != Some("for")
+    {
         return None;
     }
     let types = ti4_content::units::catalogue(content, sources);
@@ -397,7 +403,9 @@ pub fn revolution_tax(
 ///
 /// Applies once, at the start of the strategy phase after the agenda that enacted it.
 pub fn revolution_levy(state: &mut GameState) {
-    if !active(state, "revolution") || elected(state, "revolution").map(String::as_str) != Some("against") {
+    if !active(state, "revolution")
+        || elected(state, "revolution").map(String::as_str) != Some("against")
+    {
         return;
     }
     let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
@@ -424,7 +432,8 @@ pub fn revolution_levy(state: &mut GameState) {
 /// everything in that case, as 8.4 says.
 #[must_use]
 pub fn agenda_ready_limit(state: &GameState) -> Option<usize> {
-    (active(state, "checks") && elected(state, "checks").map(String::as_str) == Some("against")).then_some(3)
+    (active(state, "checks") && elected(state, "checks").map(String::as_str) == Some("against"))
+        .then_some(3)
 }
 
 /// Search Warrant: the owner plays with their secret objectives revealed.
@@ -486,8 +495,7 @@ pub fn steal_throne_card(state: &mut GameState, alias: &str, taker: &PlayerId) -
         seat.victory_points = seat.victory_points.saturating_sub(1);
     }
     if let Some(seat) = state.player_mut(taker) {
-        seat.victory_points =
-            (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+        seat.victory_points = (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
     }
     state.laws.insert(alias.to_owned(), taker.to_string());
     true
@@ -810,7 +818,10 @@ mod tests {
         let state = enacted("schematics", FOR_OUTCOME);
         assert!(sustain_suppressed(&state, "warsun"));
         assert!(!sustain_suppressed(&state, "dreadnought"));
-        assert!(!sustain_suppressed(&crate::fixtures::game(&["a"]), "warsun"));
+        assert!(!sustain_suppressed(
+            &crate::fixtures::game(&["a"]),
+            "warsun"
+        ));
     }
 
     /// Prophecy of Ixth pays its owner's fighters and is discarded by a thin production.
@@ -1148,7 +1159,11 @@ mod tests {
             "and the taker gains one"
         );
         assert_eq!(
-            state.players.iter().map(|seat| seat.victory_points).sum::<i32>(),
+            state
+                .players
+                .iter()
+                .map(|seat| seat.victory_points)
+                .sum::<i32>(),
             before,
             "so the table's total is unchanged"
         );

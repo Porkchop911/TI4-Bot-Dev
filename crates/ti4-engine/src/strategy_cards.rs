@@ -308,7 +308,10 @@ fn specialist_compounds(
                 ChoiceOption::labelled(
                     format!("{planet}:{colour}"),
                     "planet",
-                    format!("exhaust {planet} to research {} technology", colour.to_lowercase()),
+                    format!(
+                        "exhaust {planet} to research {} technology",
+                        colour.to_lowercase()
+                    ),
                 )
             })
             .chain(std::iter::once(ChoiceOption::decline()))
@@ -329,9 +332,7 @@ fn specialist_compounds(
     // planet is exhausted first: the price is paid whichever technology is chosen.
     let of_colour: Vec<TechnologyId> = open
         .into_iter()
-        .filter(|id| {
-            crate::technology::colour_type(content, id).is_some_and(|had| had == *colour)
-        })
+        .filter(|id| crate::technology::colour_type(content, id).is_some_and(|had| had == *colour))
         .collect();
     state.exhaust_planet(planet.clone());
     let choice = Choice::new(
@@ -349,7 +350,13 @@ fn specialist_compounds(
             .collect(),
     );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
-    crate::technology::research(state, content, sources, player, &TechnologyId::new(answer.id));
+    crate::technology::research(
+        state,
+        content,
+        sources,
+        player,
+        &TechnologyId::new(answer.id),
+    );
     Ok(true)
 }
 
@@ -383,9 +390,7 @@ fn doctor_sucaban(
     let Some(owner) = state
         .players
         .iter()
-        .find(|seat| {
-            seat.leaders.get(&agent) == Some(&ti4_model::state::LeaderStatus::Readied)
-        })
+        .find(|seat| seat.leaders.get(&agent) == Some(&ti4_model::state::LeaderStatus::Readied))
         .map(|seat| seat.id.clone())
     else {
         return Ok(cost);
@@ -443,9 +448,10 @@ fn doctor_sucaban(
             break;
         }
         let Some((system, planet)) = sites.into_iter().find(|(system, planet)| {
-            let key = planet
-                .as_ref()
-                .map_or_else(|| format!("{system}:"), |planet| format!("{system}:{planet}"));
+            let key = planet.as_ref().map_or_else(
+                || format!("{system}:"),
+                |planet| format!("{system}:{planet}"),
+            );
             key == answer.id
         }) else {
             break;
@@ -794,9 +800,7 @@ pub(crate) fn place_structure(
     // Minister of Industry: "When the owner of this card places a space dock in a system, their
     // units in that system may use their PRODUCTION abilities." A space dock specifically, so a
     // PDS placed under the same law produces nothing.
-    if kind.contains("space_dock")
-        && crate::laws::industry_produces_on_placement(state, player)
-    {
+    if kind.contains("space_dock") && crate::laws::industry_produces_on_placement(state, player) {
         produce_all(state, content, sources, galaxy, table, player, &system)?;
     }
     Ok(Some(system))
@@ -817,9 +821,8 @@ fn produce_all(
 ) -> Result<(), IllegalChoice> {
     let limit = crate::production::capacity(state, content, sources, player, system);
     for _ in 0..limit.max(0) {
-        if !crate::production::produce_one(
-            state, content, sources, galaxy, table, player, system,
-        )? {
+        if !crate::production::produce_one(state, content, sources, galaxy, table, player, system)?
+        {
             break;
         }
     }

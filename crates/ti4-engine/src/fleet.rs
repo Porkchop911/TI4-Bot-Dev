@@ -57,10 +57,9 @@ pub fn over_supply(
         .count();
     // Fighter II again, from the other side: fighters the capacity cannot hold are ships as far as
     // the fleet pool is concerned, so they are counted here rather than removed there.
-    let carried_fighters = usize::try_from(
-        fighters_over_capacity(state, content, sources, player, system).max(0),
-    )
-    .unwrap_or(0);
+    let carried_fighters =
+        usize::try_from(fighters_over_capacity(state, content, sources, player, system).max(0))
+            .unwrap_or(0);
     (present + carried_fighters)
         .saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
 }

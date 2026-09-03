@@ -277,16 +277,25 @@ mod tests {
         let stat = |id: &str| *types.get(id).expect("transcribed");
 
         let flagship = stat("neutral_flagship");
-        assert_eq!((flagship.combat_hits_on(), flagship.combat_dice()), (Some(7), 2));
+        assert_eq!(
+            (flagship.combat_hits_on(), flagship.combat_dice()),
+            (Some(7), 2)
+        );
         assert_eq!(flagship.capacity(), 3);
         assert!(flagship.sustain_damage());
 
         let warsun = stat("neutral_warsun");
-        assert_eq!((warsun.combat_hits_on(), warsun.combat_dice()), (Some(3), 3));
+        assert_eq!(
+            (warsun.combat_hits_on(), warsun.combat_dice()),
+            (Some(3), 3)
+        );
         assert_eq!(warsun.bombard_hits_on(), Some(3));
 
         let destroyer = stat("neutral_destroyer");
-        assert_eq!((destroyer.combat_hits_on(), destroyer.combat_dice()), (Some(8), 1));
+        assert_eq!(
+            (destroyer.combat_hits_on(), destroyer.combat_dice()),
+            (Some(8), 1)
+        );
 
         let infantry = stat("neutral_infantry");
         assert_eq!(infantry.combat_hits_on(), Some(8));

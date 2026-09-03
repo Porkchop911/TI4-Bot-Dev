@@ -769,11 +769,7 @@ pub fn offer_options(
                 Value::String(crate::promissory::alias_of(&note).to_owned()),
             );
             payload.insert("gift".to_owned(), Value::Bool(true));
-            shapes.push((
-                format!("pn{note}:0"),
-                format!("give {note}"),
-                payload,
-            ));
+            shapes.push((format!("pn{note}:0"), format!("give {note}"), payload));
         }
         if price > 0 && their_goods >= price {
             // The alias goes in the payload rather than the id: token matching splits an option

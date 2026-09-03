@@ -593,8 +593,8 @@ mod tests {
         let card = technology_card(&state);
         if let Some(seat) = state.player_mut(&player) {
             seat.strategic_tokens = 3;
-            seat.trade_goods = i32::try_from(crate::strategy_cards::TECHNOLOGY_SECONDARY_COST)
-                .unwrap_or(i32::MAX);
+            seat.trade_goods =
+                i32::try_from(crate::strategy_cards::TECHNOLOGY_SECONDARY_COST).unwrap_or(i32::MAX);
         }
         assert!(
             secondary_eligible(&state, ContentStore::embedded(), POK, &player, &card),

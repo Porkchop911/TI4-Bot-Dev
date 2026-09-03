@@ -51,11 +51,18 @@ fn main() {
     row("agendas", agendas.saturating_sub(missing_agendas), agendas);
 
     let laws_missing = ti4_engine::laws::unimplemented(content, sources).len();
-    println!("  {:<22} {:>5} unenforced once in play", "  of which laws", laws_missing);
+    println!(
+        "  {:<22} {:>5} unenforced once in play",
+        "  of which laws", laws_missing
+    );
 
     let explores = count_of(content, ContentType::Explores, sources);
     let missing_explores = ti4_engine::exploration::unimplemented(content, sources).len();
-    row("exploration cards", explores.saturating_sub(missing_explores), explores);
+    row(
+        "exploration cards",
+        explores.saturating_sub(missing_explores),
+        explores,
+    );
 
     let relics = count_of(content, ContentType::Relics, sources);
     let missing_relics = ti4_engine::relics::unimplemented(content, sources).len();
@@ -63,7 +70,11 @@ fn main() {
 
     let secrets = count_of(content, ContentType::SecretObjectives, sources);
     let missing_secrets = ti4_engine::secrets::unimplemented(content, sources).len();
-    row("secret objectives", secrets.saturating_sub(missing_secrets), secrets);
+    row(
+        "secret objectives",
+        secrets.saturating_sub(missing_secrets),
+        secrets,
+    );
 
     // Two families, and counting only one of them was wrong. `registered_aliases` holds the
     // counting and position objectives; the ten "spend N" cards are implemented through
@@ -91,7 +102,11 @@ fn main() {
 
     let abilities_missing = ti4_engine::faction_abilities::unimplemented(content, sources).len();
     let abilities = count_of(content, ContentType::Abilities, sources);
-    row("faction abilities", abilities.saturating_sub(abilities_missing), abilities);
+    row(
+        "faction abilities",
+        abilities.saturating_sub(abilities_missing),
+        abilities,
+    );
 
     let leaders_missing = ti4_engine::leaders::unimplemented(content, &FACTIONS).len();
     println!(
@@ -177,13 +192,21 @@ fn main() {
                 .is_some_and(|record| record.in_sources(sources))
         })
         .count();
-    row("breakthroughs", implemented_breakthroughs, ours_breakthroughs);
+    row(
+        "breakthroughs",
+        implemented_breakthroughs,
+        ours_breakthroughs,
+    );
 
     // Mech abilities are printed on the unit, not in `abilities.json`, so the faction-ability
     // count above never saw them. Four of six were unimplemented and invisible until 2026-08-31.
     let mechs_missing =
         ti4_engine::faction_abilities::unimplemented_mechs(content, sources, &FACTIONS).len();
-    row("mech abilities", FACTIONS.len() - mechs_missing, FACTIONS.len());
+    row(
+        "mech abilities",
+        FACTIONS.len() - mechs_missing,
+        FACTIONS.len(),
+    );
 
     let windows = ti4_engine::reactions::unsupported_windows();
     println!(

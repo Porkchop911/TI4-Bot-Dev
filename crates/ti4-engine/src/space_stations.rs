@@ -33,11 +33,7 @@ use ti4_model::state::GameState;
 
 /// The stations printed in one system, if any.
 #[must_use]
-pub fn stations_in(
-    content: &ContentStore,
-    sources: SourceSet,
-    system: &SystemId,
-) -> Vec<PlanetId> {
+pub fn stations_in(content: &ContentStore, sources: SourceSet, system: &SystemId) -> Vec<PlanetId> {
     ti4_content::galaxy::system(content, system.as_str(), sources).map_or_else(Vec::new, |tile| {
         tile.planets()
             .into_iter()
@@ -175,7 +171,10 @@ mod tests {
         state.system_mut(&system).units.push(ship(&b));
         reconcile(&mut state, content, ALL_SOURCES, &system);
 
-        state.system_mut(&system).units.retain(|unit| unit.owner == b);
+        state
+            .system_mut(&system)
+            .units
+            .retain(|unit| unit.owner == b);
         assert!(reconcile(&mut state, content, ALL_SOURCES, &system));
         assert_eq!(holder(&state, &system), Some(b), "rule 2a, resolved");
     }

@@ -143,14 +143,13 @@ pub fn trade_good_worth(state: &GameState, player: &PlayerId) -> i64 {
 #[must_use]
 pub fn war_machine_bonus(state: &GameState, player: &PlayerId) -> i64 {
     state.player(player).map_or(0, |seat| {
-        5
-            * i64::try_from(
-                seat.war_machine_use
-                    .iter()
-                    .filter(|seq| **seq == state.activation_seq)
-                    .count(),
-            )
-            .unwrap_or(i64::MAX)
+        5 * i64::try_from(
+            seat.war_machine_use
+                .iter()
+                .filter(|seq| **seq == state.activation_seq)
+                .count(),
+        )
+        .unwrap_or(i64::MAX)
     })
 }
 
@@ -225,8 +224,7 @@ fn payment_faces(
     // Freelancers: "You may spend influence as if it were resources to produce this unit." The
     // same shape as Archon's Gift below -- a second face on the planet card -- so it is the same
     // code, and a caller cannot honour one and forget the other.
-    let freelancers =
-        kind == Spend::Resources && state.influence_pays_for_units.contains(player);
+    let freelancers = kind == Spend::Resources && state.influence_pays_for_units.contains(player);
     let archons_gift = seat
         .breakthrough
         .as_ref()
@@ -1333,7 +1331,11 @@ impl ProductionWindow {
             return;
         }
         self.remaining = capacity(state, content, sources, &self.player, &self.system);
-        self.stage = if self.remaining > 0 { Stage::Choosing } else { Stage::Done };
+        self.stage = if self.remaining > 0 {
+            Stage::Choosing
+        } else {
+            Stage::Done
+        };
     }
 
     /// Draw down the credit against a cost, returning what is still owed.
@@ -1794,9 +1796,13 @@ mod tests {
         state.board.entry(system.clone()).or_default();
         if let Some(here) = state.board.get_mut(&system) {
             here.set_control(planet.clone(), mine.clone());
-            here.planet_units.entry(planet.clone()).or_default().push(
-                ti4_model::units::Unit::new(UnitTypeId::new("spacedock"), mine.clone()),
-            );
+            here.planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    UnitTypeId::new("spacedock"),
+                    mine.clone(),
+                ));
         }
         let types = catalogue(content, sources);
         let cruiser = types.get("cruiser").copied().expect("a cruiser");
@@ -1849,9 +1855,13 @@ mod tests {
         state.board.entry(system.clone()).or_default();
         if let Some(here) = state.board.get_mut(&system) {
             here.set_control(planet.clone(), player.clone());
-            here.planet_units.entry(planet.clone()).or_default().push(
-                ti4_model::units::Unit::new(UnitTypeId::new("spacedock"), player.clone()),
-            );
+            here.planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    UnitTypeId::new("spacedock"),
+                    player.clone(),
+                ));
         }
         if let Some(seat) = state.player_mut(&player) {
             seat.trade_goods = 0;
@@ -1886,7 +1896,9 @@ mod tests {
                 }
                 None => table.ask(&choice).expect("an answer"),
             };
-            window.resolve(&mut state, &mut ctx, answer).expect("resolves");
+            window
+                .resolve(&mut state, &mut ctx, answer)
+                .expect("resolves");
             steps += 1;
             assert!(steps < 200, "production must terminate");
         }
@@ -1898,10 +1910,7 @@ mod tests {
             .filter(|(kind, _)| kind.as_str().contains("infantry"))
             .count();
         assert_eq!(built, 4, "four infantry were produced");
-        assert!(
-            state.exhausted_planets.contains(&planet),
-            "the planet paid"
-        );
+        assert!(state.exhausted_planets.contains(&planet), "the planet paid");
         assert_eq!(
             state.player(&player).unwrap().trade_goods,
             0,
