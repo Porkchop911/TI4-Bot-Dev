@@ -432,6 +432,7 @@ pub fn explicit_option_features(
         seen,
         &tokens(&choice.prompt),
         &context,
+        choice,
         option,
         player,
         state_cross(choice),
@@ -750,7 +751,15 @@ pub fn explicit_choice_features(
         .options
         .iter()
         .map(|option| {
-            explicit_option_features_with(seen, &prompt_tokens, &context, option, player, cross)
+            explicit_option_features_with(
+                seen,
+                &prompt_tokens,
+                &context,
+                choice,
+                option,
+                player,
+                cross,
+            )
         })
         .collect()
 }
@@ -856,6 +865,7 @@ fn explicit_option_features_with(
     seen: &Observed<'_>,
     prompt_tokens: &[String],
     context: &ChoiceContext<'_>,
+    choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
     cross: StateCross,
@@ -1077,6 +1087,7 @@ fn explicit_option_features_with(
         StateCross::None => {}
     }
 
+    payment_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1149,6 +1160,85 @@ fn canonical_feature_kind(kind: &str) -> &str {
 
 fn payload_string<'a>(option: &'a ChoiceOption, key: &str) -> Option<&'a str> {
     option.payload.get(key).and_then(Value::as_str)
+}
+
+/// Typed continuation and exact per-face consequences for a payment decision (OBS-008c1).
+///
+/// These live in the already-reviewed `pay` family. Missing consequences never become numeric
+/// zeros: the outcome marker says whether the producer knew, could not compute, or found the
+/// option unavailable, and deltas are read only from a certain outcome.
+fn payment_decision_features(choice: &Choice, option: &ChoiceOption, features: &mut FeatureVector) {
+    if canonical_feature_kind(&option.kind) != "pay" {
+        return;
+    }
+
+    add_named(
+        features,
+        format_args!("pay:option-count"),
+        count_value(choice.options.len()),
+    );
+    if let Some(context) = &choice.context {
+        add_named(
+            features,
+            format_args!("pay:subtype:{}", context.subtype),
+            1.0,
+        );
+        for debt in &context.outstanding {
+            let kind = match debt.kind {
+                ti4_engine::decision_context::ConstraintKind::Resources => "resources",
+                ti4_engine::decision_context::ConstraintKind::Influence => "influence",
+                _ => continue,
+            };
+            for (name, value) in [
+                ("amount", debt.amount),
+                ("paid", debt.paid),
+                ("remaining", debt.remaining()),
+            ] {
+                add_named(
+                    features,
+                    format_args!("pay:{kind}-{name}"),
+                    small_integer_value(value),
+                );
+            }
+        }
+    }
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("pay:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    ti4_engine::preview::Quantity::Resources => "resources",
+                    ti4_engine::preview::Quantity::Influence => "influence",
+                    ti4_engine::preview::Quantity::TradeGoods => "trade-goods",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("pay:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("pay:preview-known"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("pay:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(features, format_args!("pay:preview-unavailable"), 1.0);
+        }
+    }
 }
 
 fn structured_features(
@@ -1812,6 +1902,157 @@ mod tests {
     use ti4_model::content_types::POK;
     use ti4_model::id::FactionId;
     use ti4_model::state::GameState;
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture and its three single-variable counterfactuals stay together"
+    )]
+    fn obs008c1_payment_features_carry_debt_flexibility_and_exact_face_consequences() {
+        use ti4_engine::decision_context::{
+            ConstraintKind, DecisionContext, DecisionSource, OutstandingConstraint,
+        };
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let pay = ChoiceOption::new("exhaust|arinam", "pay")
+            .with("worth", 4)
+            .with("owed", 3)
+            .previewed(Preview::certain(vec![
+                Delta::new(Quantity::Resources, 6, 2),
+                Delta::new(Quantity::TradeGoods, 2, 2),
+            ]));
+        let choice = Choice::new(
+            player.clone(),
+            "display text is not the debt",
+            vec![pay, ChoiceOption::new("trade_good", "pay")],
+        )
+        .contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("75.2".to_owned()),
+                "pay_resources",
+                Phase::Action,
+                2,
+            )
+            .owing(OutstandingConstraint::new(ConstraintKind::Resources, 6, 3)),
+        );
+
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("pay:option-count", 2.0),
+            ("pay:resources-amount", 6.0),
+            ("pay:resources-paid", 3.0),
+            ("pay:resources-remaining", 3.0),
+            ("pay:preview-known", 1.0),
+            ("pay:resources-before", 6.0),
+            ("pay:resources-after", 2.0),
+            ("pay:resources-change", -4.0),
+            ("pay:overpay", 1.0),
+        ] {
+            assert_eq!(value_of(&features, name), Some(value), "missing {name}");
+        }
+        assert_eq!(value_of(&features, "pay:subtype:pay_resources"), Some(1.0));
+
+        // Counterfactual gate: vary one lawful input at a time while the prompt, selected option
+        // and all other inputs stay fixed. Absolute fixture values alone would not prove the
+        // extractor is sensitive to these fields.
+        let mut less_paid = choice.clone();
+        less_paid.context.as_mut().unwrap().outstanding[0].paid = 1;
+        let less_paid_features =
+            explicit_option_features(&seen, &less_paid, &less_paid.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&less_paid_features, "pay:resources-paid"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&less_paid_features, "pay:resources-remaining"),
+            Some(5.0)
+        );
+
+        let mut more_flexible = choice.clone();
+        more_flexible
+            .options
+            .push(ChoiceOption::new("exhaust|meer", "pay"));
+        let flexible_features = explicit_option_features(
+            &seen,
+            &more_flexible,
+            &more_flexible.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(value_of(&flexible_features, "pay:option-count"), Some(3.0));
+
+        let mut different_consequence = choice.clone();
+        different_consequence.options[0].preview = Some(Preview::certain(vec![
+            Delta::new(Quantity::Resources, 6, 1),
+            Delta::new(Quantity::TradeGoods, 2, 2),
+        ]));
+        let consequence_features = explicit_option_features(
+            &seen,
+            &different_consequence,
+            &different_consequence.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&consequence_features, "pay:resources-after"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&consequence_features, "pay:resources-change"),
+            Some(-5.0)
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &less_paid,
+            &less_paid.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "pay:resources-paid"), Some(1.0));
+        assert!(
+            crate::projection::admits("pay:resources-paid"),
+            "the counterfactual reaches the model rather than stopping at extraction"
+        );
+    }
+
+    #[test]
+    fn obs008c1_missing_preview_never_fabricates_numeric_consequences() {
+        use ti4_engine::preview::Preview;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let choice = Choice::new(
+            player.clone(),
+            "pay",
+            vec![
+                ChoiceOption::new("unknown", "pay").previewed(Preview::unknown("not computed")),
+                ChoiceOption::new("unavailable", "pay")
+                    .previewed(Preview::unavailable("cannot pay")),
+            ],
+        );
+        let unknown = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        let unavailable =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+
+        assert_eq!(value_of(&unknown, "pay:preview-unknown"), Some(1.0));
+        assert_eq!(value_of(&unavailable, "pay:preview-unavailable"), Some(1.0));
+        for vector in [&unknown, &unavailable] {
+            assert_eq!(value_of(vector, "pay:preview-known"), None);
+            assert_eq!(value_of(vector, "pay:resources-before"), None);
+            assert_eq!(value_of(vector, "pay:resources-after"), None);
+            assert_eq!(value_of(vector, "pay:resources-change"), None);
+        }
+    }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
 
@@ -3103,6 +3344,7 @@ mod tests {
                     &seen,
                     &prompt_tokens,
                     &context,
+                    &choice,
                     option,
                     &player,
                     StateCross::ByKind,
@@ -3226,6 +3468,7 @@ mod tests {
             &seen,
             &tokens(&choice.prompt),
             &context,
+            &choice,
             &choice.options[0],
             &player,
             StateCross::ByKind,

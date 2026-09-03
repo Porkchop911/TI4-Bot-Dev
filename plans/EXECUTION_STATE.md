@@ -3087,6 +3087,29 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-008c1 payment decision surface (2026-09-04)
+
+- Active branch: `wp/obs-008c1-payment-decision-surface`, based on `229519b`.
+- First bounded `OBS-008c` slice: choices now carry optional typed context, options carry
+  non-serialized analytic previews, and decision records retain producer-supplied context.
+- Shared resource/influence payment faces expose exact spendable-pool and trade-good aftermath.
+  Payment questions expose full bill, transaction-local credit/already-paid amount, remaining debt,
+  option-count flexibility, overpay and stable subtype through the existing transferable `pay`
+  family; unknown and unavailable previews remain distinct and never become numeric zero.
+- No option set, id, label, payload, payment legality or payment application changed. Old choices
+  remain serde-compatible and V1 decision hashes strip context as before.
+- Counterfactual tests independently vary paid debt, option count and exact consequence, and prove
+  the paid-debt fact survives the MLP projection.
+- Checks: engine 1,139 lib + 4 integration + 5 docs; policy 196/196 (the 102-game deterministic
+  campaign passed separately in 328.81 s); training 133; strict all-target Clippy green for engine
+  and policy.
+- Independent Tier-C review first found missing paired counterfactual coverage (P2); fixed and
+  rechecked **PASS / APPROVED**, with no remaining finding.
+- Next: `OBS-008c2`, marginal production choices and post-build production/capacity/fleet
+  constraints. Evidence: `plans/evidence/OBS-008C1.md`.
+
+---
+
 ### MLP policy branch — revision-5 plan review (2026-08-21)
 
 - **Branch/HEAD before this review:** `codex/mlp-policy`, `851f8ad`.

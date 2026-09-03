@@ -16,6 +16,10 @@ use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
+use crate::decision_context::{
+    ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
+};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// The two things a planet card can be exhausted for (LRR 75.2, 47).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +33,41 @@ const fn spend_name(kind: Spend) -> &'static str {
         Spend::Resources => "resources",
         Spend::Influence => "influence",
     }
+}
+
+const fn spend_constraint(kind: Spend) -> ConstraintKind {
+    match kind {
+        Spend::Resources => ConstraintKind::Resources,
+        Spend::Influence => ConstraintKind::Influence,
+    }
+}
+
+const fn spend_quantity(kind: Spend) -> Quantity {
+    match kind {
+        Spend::Resources => Quantity::Resources,
+        Spend::Influence => Quantity::Influence,
+    }
+}
+
+fn payment_context(
+    state: &GameState,
+    player: &PlayerId,
+    kind: Spend,
+    amount: i64,
+    paid: i64,
+) -> DecisionContext {
+    DecisionContext::new(
+        player.clone(),
+        DecisionSource::Rule("34.3/75.2/75.3".to_owned()),
+        format!("pay_{}", spend_name(kind)),
+        state.phase,
+        state.round,
+    )
+    .owing(OutstandingConstraint::new(
+        spend_constraint(kind),
+        amount,
+        paid,
+    ))
 }
 
 /// The choice kind for exhausting a planet to pay.
@@ -279,6 +318,10 @@ fn payment_options(
     cost: i64,
 ) -> Vec<ChoiceOption> {
     let spendable = spendable_planets(state, player);
+    let pool_before = available(state, content, sources, player, kind);
+    let goods_before = state
+        .player(player)
+        .map_or(0, |seat| i64::from(seat.trade_goods));
     // Goods capacity under the guard uses the `mc`-multiplied worth (engine/production.py pay()).
     let goods_capacity = state.player(player).map_or(0, |seat| {
         i64::from(seat.trade_goods) * trade_good_worth(state, player)
@@ -308,12 +351,24 @@ fn payment_options(
                 label.push_str(" using its ");
                 label.push_str(spend_name(source));
             }
+            // The spendable pool is the best legal face of every ready card. Exhausting this
+            // planet removes that whole best face even when the actor deliberately selects a
+            // smaller Archon's Gift face. The debt, separately, falls by `worth`.
+            let removed_from_pool = max_face_value(state, content, sources, player, planet, kind);
             options.push(
                 ChoiceOption::labelled(id, PAY_KIND, label)
                     .with("worth", worth)
                     .with("owed", cost - paid)
                     .with("kind", spend_name(kind))
-                    .with("source", spend_name(source)),
+                    .with("source", spend_name(source))
+                    .previewed(Preview::certain(vec![
+                        Delta::new(
+                            spend_quantity(kind),
+                            pool_before,
+                            pool_before - removed_from_pool,
+                        ),
+                        Delta::new(Quantity::TradeGoods, goods_before, goods_before),
+                    ])),
             );
         }
     }
@@ -321,11 +376,16 @@ fn payment_options(
         .player(player)
         .map_or(0, |seat| i64::from(seat.trade_goods));
     if goods_held > 0 {
+        let worth = trade_good_worth(state, player);
         options.push(
             ChoiceOption::labelled("trade_good", PAY_KIND, "spend a trade good")
-                .with("worth", trade_good_worth(state, player))
+                .with("worth", worth)
                 .with("owed", cost - paid)
-                .with("kind", spend_name(kind)),
+                .with("kind", spend_name(kind))
+                .previewed(Preview::certain(vec![
+                    Delta::new(spend_quantity(kind), pool_before, pool_before - worth),
+                    Delta::new(Quantity::TradeGoods, goods_before, goods_before - 1),
+                ])),
         );
     }
     options
@@ -529,7 +589,14 @@ fn pay_with_observation_credit(
                 player.clone(),
                 format!("pay {} more {}", owed - paid, spend_name(kind)),
                 options,
-            );
+            )
+            .contextualized(payment_context(
+                state,
+                player,
+                kind,
+                cost,
+                used_credit + paid,
+            ));
             table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
         };
 
@@ -1307,6 +1374,10 @@ enum Stage {
         id: String,
         owed: i64,
         made: usize,
+        /// Full unit bill before production-use credit.
+        cost: i64,
+        /// Credit and payment faces already committed to this bill.
+        paid: i64,
     },
     /// Placing it.
     Placing {
@@ -1560,7 +1631,9 @@ impl Window for ProductionWindow {
                     options,
                 ))
             }
-            Stage::Paying { owed, .. } => {
+            Stage::Paying {
+                owed, cost, paid, ..
+            } => {
                 // Same face set and affordability guard as the free `pay` function (engine/
                 // production.py pay()); a lone option settles in `settle`, never asked.
                 let options = payment_options(
@@ -1575,11 +1648,17 @@ impl Window for ProductionWindow {
                 if options.is_empty() {
                     return None; // unreachable under the affordability gate (see settle)
                 }
-                Some(Choice::new(
-                    self.player.clone(),
-                    format!("pay {owed} more resources"),
-                    options,
-                ))
+                Some(
+                    Choice::new(
+                        self.player.clone(),
+                        format!("pay {owed} more resources"),
+                        options,
+                    )
+                    .contextualized(
+                        payment_context(state, &self.player, Spend::Resources, *cost, *paid)
+                            .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
             Stage::Placing { id, .. } => {
                 let types = catalogue(content, sources);
@@ -1645,6 +1724,8 @@ impl Window for ProductionWindow {
                             id: id.to_owned(),
                             owed,
                             made,
+                            cost,
+                            paid: cost - owed,
                         }
                     } else {
                         Stage::Placing {
@@ -1654,7 +1735,13 @@ impl Window for ProductionWindow {
                     };
                 }
             }
-            Stage::Paying { id, owed, made } => {
+            Stage::Paying {
+                id,
+                owed,
+                made,
+                cost,
+                paid,
+            } => {
                 // Paid before placed: a unit that could not be afforded must not reach the
                 // board even for an instant, or an ability reacting to placement sees
                 // something never bought.
@@ -1672,8 +1759,15 @@ impl Window for ProductionWindow {
                     return Ok(());
                 };
                 let owed = owed - worth;
+                let paid = paid + worth;
                 self.stage = if owed > 0 {
-                    Stage::Paying { id, owed, made }
+                    Stage::Paying {
+                        id,
+                        owed,
+                        made,
+                        cost,
+                        paid,
+                    }
                 } else {
                     // Overpayment is kept for the rest of this use rather than discarded: one use
                     // of PRODUCTION is one bill, however many selections it was collected in.
@@ -1720,7 +1814,13 @@ impl ProductionWindow {
     fn settle(&mut self, state: &mut GameState, content: &ContentStore, sources: SourceSet) {
         loop {
             match self.stage.clone() {
-                Stage::Paying { id, owed, made } => {
+                Stage::Paying {
+                    id,
+                    owed,
+                    made,
+                    cost,
+                    paid,
+                } => {
                     // Oracle pay(): a lone option is taken without asking. Settle such degenerate
                     // steps here so the question never reaches a decider (and the trace gains no
                     // degenerate decision).
@@ -1757,6 +1857,8 @@ impl ProductionWindow {
                                     id,
                                     owed: owed - worth,
                                     made,
+                                    cost,
+                                    paid: paid + worth,
                                 };
                                 continue; // the next step may itself be degenerate
                             }
@@ -2273,6 +2375,8 @@ mod tests {
             id: "cruiser".to_owned(),
             owed: 3,
             made: 1,
+            cost: 3,
+            paid: 0,
         };
 
         let choice = window
@@ -2293,6 +2397,133 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn obs008c1_window_payment_context_carries_full_bill_and_prior_credit() {
+        let (mut state, system, planet) = seated();
+        state.system_mut(&system).set_control(planet, player());
+        state.player_mut(&player()).unwrap().trade_goods = 2;
+        let mut window =
+            ProductionWindow::new(&state, ContentStore::embedded(), POK, &player(), &system);
+        window.stage = Stage::Paying {
+            id: "dreadnought".to_owned(),
+            owed: 3,
+            made: 1,
+            cost: 5,
+            paid: 2,
+        };
+
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("more than one payment face");
+        let context = choice.context.expect("typed payment context");
+        assert_eq!(context.subtype, "pay_resources");
+        assert_eq!(context.target, Some(DecisionTarget::System(system)));
+        assert_eq!(context.outstanding.len(), 1);
+        let debt = &context.outstanding[0];
+        assert_eq!(debt.kind, ConstraintKind::Resources);
+        assert_eq!((debt.amount, debt.paid, debt.remaining()), (5, 2, 3));
+    }
+
+    #[test]
+    fn obs008c1_each_payment_face_preview_agrees_with_applying_that_face() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state.system_mut(&system).set_control(planet, player());
+        state.player_mut(&player()).unwrap().trade_goods = 2;
+        let options = payment_options(&state, content, POK, &player(), Spend::Resources, 0, 1);
+        assert!(options.len() >= 2, "planet and trade-good alternatives");
+
+        for option in options {
+            let preview = option.preview.as_ref().expect("every face is previewed");
+            assert!(preview.is_informative());
+            let mut applied = state.clone();
+            let worth = apply_payment_option(
+                &mut applied,
+                content,
+                POK,
+                &player(),
+                Spend::Resources,
+                &option,
+            )
+            .expect("offered face applies");
+            let pool_after = available(&applied, content, POK, &player(), Spend::Resources);
+            let goods_after = i64::from(applied.player(&player()).unwrap().trade_goods);
+            let delta = |quantity| {
+                preview
+                    .certain_deltas()
+                    .iter()
+                    .find(|delta| delta.quantity == quantity)
+                    .expect("quantity previewed")
+            };
+            assert_eq!(delta(Quantity::Resources).after, pool_after);
+            assert_eq!(delta(Quantity::TradeGoods).after, goods_after);
+            assert_eq!(
+                option
+                    .payload
+                    .get("worth")
+                    .and_then(serde_json::Value::as_i64),
+                Some(worth),
+                "the same face value drives debt and application"
+            );
+        }
+    }
+
+    #[test]
+    fn obs008c1_shared_payment_context_counts_transaction_credit_as_paid() {
+        struct ContextChecking {
+            amount: i64,
+            paid: i64,
+        }
+        impl crate::choice::Decider for ContextChecking {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                let context = choice.context.as_ref().expect("typed payment context");
+                let debt = context.outstanding.first().expect("one debt");
+                assert_eq!((debt.amount, debt.paid), (self.amount, self.paid));
+                assert_eq!(debt.remaining(), self.amount - self.paid);
+                Ok(choice.options[0].clone())
+            }
+        }
+
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        state.player_mut(&player()).unwrap().trade_goods = 1;
+        let worth = planet_value(content, POK, &planet, Spend::Resources);
+        assert!(worth > 0);
+        let cost = worth + 1;
+        let mut credit = 1;
+        let mut table = Table::new();
+        table.seat(
+            player(),
+            Box::new(ContextChecking {
+                amount: cost,
+                paid: 1,
+            }),
+        );
+        assert!(
+            pay_seeing_with_credit(
+                &mut state,
+                content,
+                POK,
+                None,
+                &mut table,
+                &player(),
+                cost,
+                Spend::Resources,
+                &mut credit,
+            )
+            .expect("payment resolves")
+        );
+        assert_eq!(
+            table.log.records.len(),
+            1,
+            "the genuine choice was recorded"
+        );
+        assert!(table.log.records[0].context.is_some());
     }
 
     #[test]
@@ -2585,6 +2816,8 @@ mod tests {
             id: "fighter".to_owned(),
             owed: 1,
             made: 1,
+            cost: 1,
+            paid: 0,
         };
         window.remaining = 0;
         window.settle(&mut state, store, POK);

@@ -50,6 +50,14 @@ pub struct ChoiceOption {
     /// the oracle: two options with the same id are the same option, and a payload that
     /// differed would mean the id was not stable.
     pub payload: BTreeMap<String, Value>,
+    /// What taking this option would do, when its producer can compute that without mutation.
+    ///
+    /// Runtime analysis rather than replay identity: the stable id and payload remain the
+    /// authoritative instruction applied by the engine. Skipping this field also keeps old
+    /// serialized choices readable while [`crate::preview::Outcome`] retains compile-time-only
+    /// diagnostic reasons.
+    #[serde(skip)]
+    pub preview: Option<crate::preview::Preview>,
 }
 
 impl PartialEq for ChoiceOption {
@@ -66,6 +74,7 @@ impl ChoiceOption {
             kind: kind.into(),
             label: String::new(),
             payload: BTreeMap::new(),
+            preview: None,
         }
     }
 
@@ -99,6 +108,13 @@ impl ChoiceOption {
         self
     }
 
+    /// Attach an analytic consequence summary without changing this option's identity.
+    #[must_use]
+    pub fn previewed(mut self, preview: crate::preview::Preview) -> Self {
+        self.preview = Some(preview);
+        self
+    }
+
     /// What to show: the label if there is one, else the id.
     #[must_use]
     pub fn display(&self) -> &str {
@@ -116,6 +132,9 @@ pub struct Choice {
     pub player: PlayerId,
     pub prompt: String,
     pub options: Vec<ChoiceOption>,
+    /// Why this question exists and what remains outstanding in its transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<crate::decision_context::DecisionContext>,
 }
 
 impl Choice {
@@ -125,7 +144,19 @@ impl Choice {
             player,
             prompt: prompt.into(),
             options,
+            context: None,
         }
+    }
+
+    /// Attach producer-authored typed semantics to this decision.
+    #[must_use]
+    pub fn contextualized(mut self, context: crate::decision_context::DecisionContext) -> Self {
+        debug_assert_eq!(
+            self.player, context.actor,
+            "a decision context must describe the seat receiving the choice"
+        );
+        self.context = Some(context);
+        self
     }
 
     #[must_use]
@@ -1353,9 +1384,7 @@ impl DecisionLog {
             prompt: choice.prompt.clone(),
             chosen: option.id.clone(),
             offered: choice.ids().into_iter().map(str::to_owned).collect(),
-            // No producer supplies a context yet; that is OBS-003d-h. Recording None here keeps
-            // every existing replay byte-identical.
-            context: None,
+            context: choice.context.clone(),
         });
     }
 
@@ -1545,6 +1574,52 @@ pub fn unit_label(verb: &str, type_id: &UnitTypeId, damaged: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn obs008c1_context_records_while_runtime_preview_stays_out_of_replay_identity() {
+        use crate::decision_context::{
+            ConstraintKind, DecisionContext, DecisionSource, OutstandingConstraint,
+        };
+        use crate::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let context = DecisionContext::new(
+            pid("a"),
+            DecisionSource::Rule("75.2".to_owned()),
+            "pay_resources",
+            Phase::Action,
+            2,
+        )
+        .owing(OutstandingConstraint::new(ConstraintKind::Resources, 4, 1));
+        let option =
+            ChoiceOption::new("trade_good", "pay").previewed(Preview::certain(vec![Delta::new(
+                Quantity::TradeGoods,
+                2,
+                1,
+            )]));
+        let encoded = serde_json::to_string(&option).expect("serialize option");
+        assert!(
+            !encoded.contains("preview"),
+            "analysis is not replay identity"
+        );
+        let decoded: ChoiceOption = serde_json::from_str(&encoded).expect("old shape reads");
+        assert!(decoded.preview.is_none());
+        assert_eq!(option, decoded, "preview does not change option identity");
+
+        let asked = Choice::new(pid("a"), "pay", vec![option]).contextualized(context.clone());
+        let mut table = Table::new();
+        table.ask(&asked).expect("first option is legal");
+        let record = table.log.records.first().expect("recorded");
+        assert_eq!(record.context.as_ref(), Some(&context));
+        assert_eq!(
+            crate::fingerprint::decision_hash(crate::fingerprint::CanonicalHashVersion::V1, record,),
+            crate::fingerprint::decision_hash(
+                crate::fingerprint::CanonicalHashVersion::V1,
+                &record.without_context(),
+            ),
+            "V1 remains byte-compatible by stripping typed context"
+        );
+    }
 
     fn pid(id: &str) -> PlayerId {
         PlayerId::new(id)
