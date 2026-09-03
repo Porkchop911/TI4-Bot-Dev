@@ -498,6 +498,22 @@ impl<'a> Observed<'a> {
         self.state.custodians_removed
     }
 
+    /// Laws in play, by alias to the outcome elected for them (LRR 8.20).
+    ///
+    /// Public: a law is enacted face up in front of the table, and its standing effect binds every
+    /// seat. Fourteen decision producers read this state for legality or application and no
+    /// feature carried any of it, which is the gap recorded in the OBS-002b matrix.
+    #[must_use]
+    pub const fn laws(&self) -> &'a BTreeMap<String, String> {
+        &self.state.laws
+    }
+
+    /// The outcome elected for one law, if that law is in play.
+    #[must_use]
+    pub fn law_outcome(&self, alias: &str) -> Option<&'a str> {
+        self.state.laws.get(alias).map(String::as_str)
+    }
+
     /// Every system holding anything. Absent systems are empty.
     #[must_use]
     pub const fn board(&self) -> &'a BTreeMap<SystemId, SystemState> {
@@ -925,6 +941,38 @@ impl<'a> SeatObservation<'a> {
             .state
             .player(&self.acting_seat)
             .map_or_else(Vec::new, |seat| seat.secret_objectives.clone())
+    }
+
+    /// The action cards in the bound seat's hand — and only that seat's.
+    ///
+    /// No arguments, for the same reason as [`SeatObservation::held_secrets`]: the seat is fixed
+    /// at binding time, so no caller can name another. The public position already carries
+    /// [`PublicSeat::action_cards_held`], a count, which is what the table can see; this is the
+    /// contents, which only their holder can.
+    #[must_use]
+    pub fn held_action_cards(&self) -> Vec<ti4_model::id::ActionCardId> {
+        self.observed
+            .state
+            .player(&self.acting_seat)
+            .map_or_else(Vec::new, |seat| seat.action_cards.clone())
+    }
+
+    /// The promissory notes in the bound seat's hand — held, and not yet faceup.
+    ///
+    /// A note faceup in a play area is public and reachable through
+    /// [`Observed::promissory_notes`]. A note still in hand is not, and the difference matters:
+    /// what a seat can still offer in a transaction is exactly what it holds unplayed.
+    #[must_use]
+    pub fn held_promissory_notes(&self) -> Vec<String> {
+        self.observed
+            .state
+            .promissory_notes
+            .iter()
+            .filter(|(id, holder)| {
+                **holder == self.acting_seat && !self.observed.state.promissory_faceup.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     /// Exact progress for the secrets the bound seat holds — and only that seat's.
@@ -2320,5 +2368,145 @@ mod tests {
             "the bound view named opponent data: {:?}",
             attacker.leaked
         );
+    }
+}
+
+#[cfg(test)]
+mod obs004_actor_owned_inventory {
+    use ti4_model::content_types::POK;
+
+    use super::*;
+
+    fn pid(name: &str) -> PlayerId {
+        PlayerId::new(name)
+    }
+
+    /// The bound seat reads its own hand; an opponent's mutations never reach it.
+    ///
+    /// The interesting half is the mutation. A view that merely *happens* to hold the right cards
+    /// proves nothing — it could be reading a snapshot taken before the opponent acted. Changing
+    /// the opponent's holdings and re-reading proves the accessor is bound to a seat rather than
+    /// to a moment.
+    #[test]
+    fn an_opponents_hand_never_reaches_the_bound_seat() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&pid("a")).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("sabotage")];
+        state.player_mut(&pid("b")).unwrap().action_cards = vec![
+            ti4_model::id::ActionCardId::new("direct_hit"),
+            ti4_model::id::ActionCardId::new("upgrade"),
+        ];
+
+        {
+            let seen = Observed::new(&state, content, POK, None);
+            let mine = SeatObservation::bind(&seen, pid("a"));
+            assert_eq!(mine.held_action_cards().len(), 1);
+            assert_eq!(mine.held_action_cards()[0].as_str(), "sabotage");
+            // The count is public; the contents are not.
+            assert_eq!(seen.seat(&pid("b")).map(|s| s.action_cards_held), Some(2));
+        }
+
+        // Give the opponent three more. The bound seat's own hand is unmoved.
+        state.player_mut(&pid("b")).unwrap().action_cards.extend([
+            ti4_model::id::ActionCardId::new("x"),
+            ti4_model::id::ActionCardId::new("y"),
+            ti4_model::id::ActionCardId::new("z"),
+        ]);
+        let seen = Observed::new(&state, content, POK, None);
+        let mine = SeatObservation::bind(&seen, pid("a"));
+        assert_eq!(
+            mine.held_action_cards(),
+            vec![ti4_model::id::ActionCardId::new("sabotage")],
+            "an opponent drawing cards changes nothing about what this seat holds"
+        );
+        assert_eq!(
+            seen.seat(&pid("b")).map(|s| s.action_cards_held),
+            Some(5),
+            "the public count does move, because a hand size is public"
+        );
+    }
+
+    /// A note in hand is private; the same note faceup is public.
+    #[test]
+    fn a_promissory_note_becomes_public_only_when_it_is_played() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .promissory_notes
+            .insert("ceasefire:b".to_owned(), pid("a"));
+
+        {
+            let seen = Observed::new(&state, content, POK, None);
+            let mine = SeatObservation::bind(&seen, pid("a"));
+            assert_eq!(
+                mine.held_promissory_notes(),
+                vec!["ceasefire:b".to_owned()],
+                "held unplayed, so its holder can see it"
+            );
+            assert!(
+                seen.promissory_notes().is_empty(),
+                "and the table cannot: only the faceup subset is public"
+            );
+        }
+
+        state.promissory_faceup.insert("ceasefire:b".to_owned());
+        let seen = Observed::new(&state, content, POK, None);
+        let mine = SeatObservation::bind(&seen, pid("a"));
+        assert!(
+            mine.held_promissory_notes().is_empty(),
+            "played, so no longer in hand"
+        );
+        assert_eq!(
+            seen.promissory_notes().get("ceasefire:b"),
+            Some(&pid("a")),
+            "and now public"
+        );
+    }
+
+    /// A seat cannot read another seat's unplayed notes.
+    #[test]
+    fn an_opponents_unplayed_notes_are_not_listed() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .promissory_notes
+            .insert("support:b".to_owned(), pid("b"));
+        let seen = Observed::new(&state, content, POK, None);
+        let mine = SeatObservation::bind(&seen, pid("a"));
+        assert!(
+            mine.held_promissory_notes().is_empty(),
+            "the note is B's and unplayed; A holds nothing"
+        );
+    }
+
+    /// Laws are public: every seat reads the same standing effects.
+    ///
+    /// Fourteen decision producers read this state for legality or application and no feature
+    /// carried any of it. The accessor is the first half of closing that; wiring it into features
+    /// is later work.
+    #[test]
+    fn laws_are_visible_to_every_seat_alike() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .laws
+            .insert("fleet_regulations".to_owned(), "for".to_owned());
+        state.laws.insert("censure".to_owned(), "a".to_owned());
+
+        let seen = Observed::new(&state, content, POK, None);
+        assert_eq!(seen.laws().len(), 2);
+        assert_eq!(seen.law_outcome("fleet_regulations"), Some("for"));
+        assert_eq!(seen.law_outcome("censure"), Some("a"));
+        assert_eq!(seen.law_outcome("not_in_play"), None);
+
+        for seat in [pid("a"), pid("b")] {
+            let bound = SeatObservation::bind(&seen, seat);
+            assert_eq!(
+                bound.laws().len(),
+                2,
+                "a standing law binds the table, so it reads the same from either seat"
+            );
+        }
     }
 }
