@@ -7124,7 +7124,19 @@ Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
   proved to measure the engine by adding a sixteenth ask and watching it fail 16 against 15.
   The stale "3/3" is corrected to 4/4, and two strict-Clippy findings were fixed so
   `RUSTFLAGS=-D warnings cargo clippy -p ti4-engine --all-targets` passes clean.
-- Next: OBS-002b. Its empirical half is done and committed --
+- OBS-002b COMPLETE. Matrix: `plans/evidence/OBS-002B_RULE_DEPENDENCY_MATRIX.md`, mapping all 80
+  producers from the OBS-002a registry to the state their legality and application read, and to
+  whether that class reaches the observation. Hard findings, ranked: laws/agenda/custodians is read
+  by 14 producers and `features.rs` contains ZERO occurrences of `laws` or `custodians`; actor-own
+  state is present but lost in the option-crossing (108 of 164 proven aliases); phase-timing carries
+  round but not phase, passed or initiative; four stochastic producers have no outcome
+  representation. Hidden information: nine producers touch hidden collections and every one is
+  actor-scoped or reads the public discard, so no leak was found -- cleared by reading, because the
+  automated scope heuristic over-flagged seven of them.
+- Next: OBS-003a typed choice-context schema. `Choice` has no typed source or subtype, so the router
+  falls back to free prompt text, and the prompt reaches the option-invariant state key in only
+  1,753 of 3,678 decisions.
+- Superseded note: the empirical half is done and committed --
   `plans/evidence/OBS-002B_ALIASING_CENSUS.md` and the `observation_alias` example -- finding
   164 PROVEN aliases where the engine held a distinction the model never received, 108 of them
   on the `tokens` head. The rule-dependency matrix itself is still to write.
