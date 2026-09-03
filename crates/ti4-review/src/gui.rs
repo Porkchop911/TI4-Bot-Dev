@@ -509,9 +509,8 @@ impl ReviewApp {
                 self.replay = None;
                 self.viewed = 0;
                 self.run_target = None;
-                self.status = format!(
-                    "Starting table loaded; no engine step has run. Seats 0–5: {lineup}"
-                );
+                self.status =
+                    format!("Starting table loaded; no engine step has run. Seats 0–5: {lineup}");
                 self.autosave_now();
                 if let Some(path) = &self.autosave {
                     self.last_review = Some(path.clone());

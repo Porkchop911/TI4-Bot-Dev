@@ -32,7 +32,9 @@ use ti4_policy::learned::{Profile, decision_head};
 use ti4_policy::progress::Baseline;
 use ti4_policy::vocabulary::Vocabulary;
 use ti4_sim::MapPool;
-use ti4_training::rollout::{OpeningMap, setup_game_with_decider_factory};
+use ti4_training::rollout::{
+    OpeningMap, scrambled_seated_faction, setup_game_with_decider_factory,
+};
 
 pub mod gui;
 
@@ -599,14 +601,14 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
-        let faction_order = seeded_faction_order(config.seed);
+        let faction_roster = FACTIONS.map(FactionId::new);
         let factions: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
             .map(|(index, player)| {
                 (
                     player.clone(),
-                    FactionId::new(faction_order[(index + config.rotation) % FACTIONS.len()]),
+                    scrambled_seated_faction(&faction_roster, config.seed, config.rotation, index),
                 )
             })
             .collect();
@@ -909,24 +911,6 @@ impl LiveReview {
         }
         report
     }
-}
-
-fn seeded_faction_order(seed: u64) -> [&'static str; FACTIONS.len()] {
-    // Keep seating independent from the map and policy RNG streams while making it reproducible
-    // from the review's public seed. Rotation remains a cyclic physical-seat counterbalance over
-    // this seed-specific permutation.
-    let mut order = FACTIONS;
-    let mut state = seed ^ 0x4641_4354_494f_4e53;
-    for upper in (1..order.len()).rev() {
-        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut random = state;
-        random = (random ^ (random >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        random = (random ^ (random >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        random ^= random >> 31;
-        let other = usize::try_from(random % (upper as u64 + 1)).expect("index fits usize");
-        order.swap(upper, other);
-    }
-    order
 }
 
 fn action_period_ended(actor: &PlayerId, state: &GameState, finished: bool) -> bool {
@@ -1796,7 +1780,7 @@ function controlledPlanets(f,p){const held=[];for(const t of session.board){cons
 function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).filter(([,holder])=>holder===p.id).map(([note])=>`${note}${list(f.state.promissory_faceup).includes(note)?' · faceup':''}`);for(const[owner,holder]of Object.entries(f.state.support_holders||{}))if(holder===p.id)notes.push(`Support for the Throne:${owner} · faceup`);return [...new Set(notes)].sort()}
 function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]);const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${x} · used`:x);const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${x} · exhausted`:x);const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${x} · exhausted`:x);return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',p.secret_objectives)}${chips('▣','Action cards',p.action_cards)}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',p.exploration_cards)}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${k} · ${v}`))}${chips('⌁','Plots',p.plots)}</article>`}
 function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${card} · ${goods} TG`:card});return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${law} · ${outcome}`))}${chips('↯','Discarded action cards',f.state.discarded_action_cards)}`}
-function policySummary(){const p=session.manifest.policy||{},format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Engine/training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':session.manifest.profile_table;return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(session.manifest.checkpoint_path)} · ${esc(mode)} · temperature ${session.manifest.temperature}</small>${source}${commit}${update}${dimensions}${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
+function policySummary(){const p=session.manifest.policy||{},format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Engine/training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':session.manifest.profile_table,seats=list(session.manifest.factions).map((faction,index)=>`seat${index}: ${faction}`).join(' · ');return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(session.manifest.checkpoint_path)} · ${esc(mode)} · temperature ${session.manifest.temperature}</small><br><small>${esc(seats)}</small>${source}${commit}${update}${dimensions}${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
 function objectives(f){return list(f.state.revealed_objectives).map(id=>{const m=objectiveMeta[id]||{name:id,text:'',points:0},scored=Object.entries(f.state.scored_objectives||{}).filter(([,v])=>list(v).includes(id)).map(([p])=>p);return `<div class="objective"><b>${esc(m.name)} · ${m.points} VP</b><br><small>${esc(id)} · scored by ${esc(scored.join(', ')||'nobody')}</small><div>${esc(m.text)}</div></div>`}).join('')||'None revealed yet.'}
 function actionSummary(i){for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has completed yet.'}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
@@ -1924,6 +1908,37 @@ mod tests {
         let restored: ReviewSession = serde_json::from_value(value).unwrap();
         assert_eq!(restored.manifest.policy, PolicySummary::default());
         restored.validate().unwrap();
+    }
+
+    #[test]
+    fn faction_order_is_seeded_reproducible_and_not_fixed() {
+        let factions = FACTIONS.map(FactionId::new);
+        let seating = |seed, rotation| {
+            (0..FACTIONS.len())
+                .map(|seat| scrambled_seated_faction(&factions, seed, rotation, seat).to_string())
+                .collect::<Vec<_>>()
+        };
+        let first = seating(42, 0);
+        assert_eq!(first, seating(42, 0));
+        assert_ne!(first, seating(43, 0));
+        assert_ne!(first, FACTIONS.map(str::to_owned));
+        assert_eq!(seating(42, 1)[0], first[1]);
+
+        let mut found = first;
+        found.sort_unstable();
+        let mut expected = FACTIONS.map(str::to_owned).to_vec();
+        expected.sort_unstable();
+        assert_eq!(found, expected);
+    }
+
+    #[test]
+    fn sessions_accept_any_permutation_of_the_standard_lineup() {
+        let mut session = fixture_session();
+        session.manifest.factions.rotate_left(2);
+        session.validate().unwrap();
+
+        session.manifest.factions[0] = session.manifest.factions[1].clone();
+        assert!(session.validate().is_err());
     }
 
     #[test]

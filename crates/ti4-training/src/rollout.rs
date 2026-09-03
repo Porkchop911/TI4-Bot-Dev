@@ -221,6 +221,24 @@ fn seated_faction(factions: &[FactionId], seed: u64, rotation: usize, seat: usiz
     if !seat_scramble() {
         return factions[(seat + rotation) % count].clone();
     }
+    scrambled_seated_faction(factions, seed, rotation, seat)
+}
+
+/// The faction seated at a physical seat under the training agent's seeded scramble contract.
+///
+/// This pure entry point is shared with tools that must reproduce training seating without
+/// changing the process-wide compatibility switch used by older training runs.
+#[must_use]
+pub fn scrambled_seated_faction(
+    factions: &[FactionId],
+    seed: u64,
+    rotation: usize,
+    seat: usize,
+) -> FactionId {
+    let count = factions.len();
+    if count == 0 {
+        return FactionId::new("");
+    }
     // Fisher-Yates over a seed-derived stream. The constant keeps this stream distinct from the
     // deck and sampling streams the same seed already drives, so seating does not move in lockstep
     // with them.
@@ -2449,6 +2467,29 @@ mod tests {
             DEFAULT_REQUIREMENT,
         );
         assert!(rollouts.is_empty());
+    }
+
+    #[test]
+    fn scrambled_seating_is_reproducible_and_rotation_shifts_the_drawn_order() {
+        let factions: Vec<FactionId> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        let order = |seed, rotation| {
+            (0..factions.len())
+                .map(|seat| scrambled_seated_faction(&factions, seed, rotation, seat))
+                .collect::<Vec<_>>()
+        };
+
+        let seed_501 = order(501, 0);
+        assert_eq!(seed_501, order(501, 0));
+        assert_ne!(seed_501, order(502, 0));
+        assert_eq!(order(501, 1)[0], seed_501[1]);
+        let mut found = seed_501;
+        found.sort();
+        let mut expected = factions;
+        expected.sort();
+        assert_eq!(found, expected);
     }
 
     #[test]
