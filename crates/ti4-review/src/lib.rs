@@ -114,7 +114,24 @@ pub struct SessionManifest {
     pub profile_table: ProfileTable,
     #[serde(default = "default_sampling_temperature")]
     pub temperature: f64,
+    #[serde(default)]
+    pub policy: PolicySummary,
     pub factions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PolicySummary {
+    pub format: String,
+    pub schema: Option<u64>,
+    pub name: Option<String>,
+    pub source: Option<String>,
+    pub git_commit: Option<String>,
+    pub update: Option<u64>,
+    pub dimensions: Option<String>,
+    pub heads: Vec<String>,
+    pub factions: Vec<String>,
+    pub profiles: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -566,7 +583,7 @@ impl LiveReview {
                 "temperature must be a finite number greater than zero".to_owned(),
             ));
         }
-        let (checkpoint_path, checkpoint_bytes, policy) =
+        let (checkpoint_path, checkpoint_bytes, policy, policy_summary) =
             load_policy(&config.checkpoint, config.table)?;
         let pool_bytes = read_bounded(&config.map_pool)?;
         let pool = MapPool::load_verified(&config.map_pool, &pool_bytes)
@@ -674,6 +691,7 @@ impl LiveReview {
             rotation: config.rotation,
             profile_table: config.table,
             temperature: config.temperature,
+            policy: policy_summary,
             factions: FACTIONS.map(str::to_owned).to_vec(),
         };
         let initial = ReviewFrame {
@@ -1298,7 +1316,10 @@ fn append_transactions(details: &mut Vec<String>, decisions: &[DecisionDetail], 
     }
 }
 
-fn load_policy(path: &Path, selection: ProfileTable) -> Result<(PathBuf, Vec<u8>, LoadedPolicy)> {
+fn load_policy(
+    path: &Path,
+    selection: ProfileTable,
+) -> Result<(PathBuf, Vec<u8>, LoadedPolicy, PolicySummary)> {
     let bundle_directory = if path.is_dir() {
         Some(path.to_path_buf())
     } else if matches!(
@@ -1320,6 +1341,9 @@ fn load_policy(path: &Path, selection: ProfileTable) -> Result<(PathBuf, Vec<u8>
             .map_err(|error| ReviewError::Invalid(format!("MLP checkpoint bundle: {error}")))?;
         let manifest_path = directory.join("manifest.json");
         let manifest_bytes = read_bounded(&manifest_path)?;
+        let manifest: Value = serde_json::from_slice(&manifest_bytes)
+            .map_err(|error| ReviewError::Invalid(format!("MLP manifest JSON: {error}")))?;
+        let summary = mlp_policy_summary(&manifest);
         return Ok((
             directory,
             manifest_bytes,
@@ -1327,6 +1351,7 @@ fn load_policy(path: &Path, selection: ProfileTable) -> Result<(PathBuf, Vec<u8>
                 actor: Rc::new(loaded.actor),
                 vocabulary: loaded.vocabulary,
             },
+            summary,
         ));
     }
 
@@ -1341,7 +1366,100 @@ fn load_policy(path: &Path, selection: ProfileTable) -> Result<(PathBuf, Vec<u8>
             error
         }
     })?;
-    Ok((path.to_path_buf(), bytes, LoadedPolicy::Linear(profiles)))
+    let summary = linear_policy_summary(&profiles, selection);
+    Ok((
+        path.to_path_buf(),
+        bytes,
+        LoadedPolicy::Linear(profiles),
+        summary,
+    ))
+}
+
+fn strings(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn mlp_policy_summary(manifest: &Value) -> PolicySummary {
+    let trunk = manifest.get("trunk");
+    let dimensions = [
+        manifest
+            .get("slot_count")
+            .and_then(Value::as_u64)
+            .map(|count| format!("{count} occupied slots")),
+        manifest
+            .get("slot_capacity")
+            .and_then(Value::as_u64)
+            .map(|count| format!("{count} slot capacity")),
+        manifest
+            .get("embed_dim")
+            .and_then(Value::as_u64)
+            .map(|width| format!("embedding {width}")),
+        trunk
+            .and_then(|trunk| trunk.get("width"))
+            .and_then(Value::as_u64)
+            .map(|width| format!("trunk width {width}")),
+        trunk
+            .and_then(|trunk| trunk.get("depth"))
+            .and_then(Value::as_u64)
+            .map(|depth| format!("depth {depth}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    PolicySummary {
+        format: "MLP inference bundle".to_owned(),
+        schema: manifest.get("schema").and_then(Value::as_u64),
+        name: None,
+        source: manifest
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        git_commit: manifest
+            .get("git_commit")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        update: manifest.get("update").and_then(Value::as_u64),
+        dimensions: (!dimensions.is_empty()).then_some(dimensions),
+        heads: strings(manifest.get("heads")),
+        factions: strings(manifest.get("factions")),
+        profiles: FACTIONS
+            .iter()
+            .map(|faction| format!("{faction} · faction-conditioned row"))
+            .collect(),
+    }
+}
+
+fn linear_policy_summary(
+    profiles: &BTreeMap<String, Profile>,
+    selection: ProfileTable,
+) -> PolicySummary {
+    let listed = FACTIONS
+        .iter()
+        .filter_map(|faction| profiles.get(*faction).map(|profile| (*faction, profile)))
+        .map(|(faction, profile)| {
+            format!(
+                "{faction}: {} · schema {} · {} heads · {} features/head",
+                profile.name,
+                profile.schema,
+                profile.learned.heads.len(),
+                profile.dimensions()
+            )
+        })
+        .collect();
+    PolicySummary {
+        format: "Linear profile table".to_owned(),
+        name: Some(selection.label().to_owned()),
+        factions: FACTIONS.map(str::to_owned).to_vec(),
+        profiles: listed,
+        ..PolicySummary::default()
+    }
 }
 
 fn load_profiles(bytes: &[u8], selection: ProfileTable) -> Result<BTreeMap<String, Profile>> {
@@ -1640,7 +1758,7 @@ main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{ba
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
 .player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}.objective,.action{background:#0b1625;border:1px solid #29415f;border-radius:6px;padding:7px;margin:5px 0}.objective small,.action small{color:#afbdd0}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
+<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
 <script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
 const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1652,10 +1770,11 @@ function controlledPlanets(f,p){const held=[];for(const t of session.board){cons
 function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).filter(([,holder])=>holder===p.id).map(([note])=>`${note}${list(f.state.promissory_faceup).includes(note)?' · faceup':''}`);for(const[owner,holder]of Object.entries(f.state.support_holders||{}))if(holder===p.id)notes.push(`Support for the Throne:${owner} · faceup`);return [...new Set(notes)].sort()}
 function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]);const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${x} · used`:x);const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${x} · exhausted`:x);const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${x} · exhausted`:x);return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',p.secret_objectives)}${chips('▣','Action cards',p.action_cards)}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',p.exploration_cards)}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${k} · ${v}`))}${chips('⌁','Plots',p.plots)}</article>`}
 function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${card} · ${goods} TG`:card});return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${law} · ${outcome}`))}${chips('↯','Discarded action cards',f.state.discarded_action_cards)}`}
+function policySummary(){const p=session.manifest.policy||{},format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Engine/training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':session.manifest.profile_table;return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(session.manifest.checkpoint_path)} · ${esc(mode)} · temperature ${session.manifest.temperature}</small>${source}${commit}${update}${dimensions}${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
 function objectives(f){return list(f.state.revealed_objectives).map(id=>{const m=objectiveMeta[id]||{name:id,text:'',points:0},scored=Object.entries(f.state.scored_objectives||{}).filter(([,v])=>list(v).includes(id)).map(([p])=>p);return `<div class="objective"><b>${esc(m.name)} · ${m.points} VP</b><br><small>${esc(id)} · scored by ${esc(scored.join(', ')||'nobody')}</small><div>${esc(m.text)}</div></div>`}).join('')||'None revealed yet.'}
 function actionSummary(i){for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has completed yet.'}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
-function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
 const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
 function kind(id){id=String(id).toLowerCase();for(const k of ['war_sun','space_dock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
 function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='space_dock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='war_sun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
@@ -1726,6 +1845,7 @@ mod tests {
                 rotation: 0,
                 profile_table: ProfileTable::Learner,
                 temperature: default_sampling_temperature(),
+                policy: PolicySummary::default(),
                 factions: FACTIONS.map(str::to_owned).to_vec(),
             },
             board: vec![],
@@ -1768,6 +1888,59 @@ mod tests {
         let restored: ReviewSession = serde_json::from_value(value).unwrap();
         assert!(restored.planet_catalog.is_empty());
         restored.validate().unwrap();
+    }
+
+    #[test]
+    fn old_sessions_default_missing_policy_details() {
+        let mut value = serde_json::to_value(fixture_session()).unwrap();
+        value["manifest"].as_object_mut().unwrap().remove("policy");
+
+        let restored: ReviewSession = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.manifest.policy, PolicySummary::default());
+        restored.validate().unwrap();
+    }
+
+    #[test]
+    fn current_schema_six_profile_metadata_is_displayable() {
+        let summary = mlp_policy_summary(&serde_json::json!({
+            "schema": 6,
+            "source": "M10-034 PPO, 500 updates",
+            "git_commit": "dbdaa61c2104fc307e330e124e69d11edc9fd0ab",
+            "update": 52436,
+            "slot_count": 11147,
+            "slot_capacity": 16384,
+            "embed_dim": 16,
+            "heads": ["strategy", "turn", "other"],
+            "factions": ["hacan", "jolnar", "sol"],
+            "trunk": { "width": 256, "depth": 2 }
+        }));
+
+        assert_eq!(summary.format, "MLP inference bundle");
+        assert_eq!(summary.schema, Some(6));
+        assert_eq!(summary.update, Some(52_436));
+        assert_eq!(summary.heads, ["strategy", "turn", "other"]);
+        assert_eq!(summary.factions, ["hacan", "jolnar", "sol"]);
+        assert_eq!(summary.profiles.len(), FACTIONS.len());
+        assert!(
+            summary
+                .profiles
+                .iter()
+                .any(|profile| profile.starts_with("sol"))
+        );
+        assert!(
+            summary
+                .dimensions
+                .as_deref()
+                .unwrap()
+                .contains("11147 occupied")
+        );
+        assert!(
+            summary
+                .dimensions
+                .as_deref()
+                .unwrap()
+                .contains("trunk width 256")
+        );
     }
 
     #[test]
@@ -1929,6 +2102,8 @@ mod tests {
         assert!(html.contains("function playerCard"));
         assert!(html.contains("function drawDynamic"));
         assert!(html.contains("function tableState"));
+        assert!(html.contains("function policySummary"));
+        assert!(html.contains("Current policy profiles"));
         assert!(html.contains("Promissory notes"));
         assert!(html.contains("Gray units are neutral"));
         assert!(html.contains("function unit(svg"));

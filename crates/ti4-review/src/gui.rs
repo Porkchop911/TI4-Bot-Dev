@@ -881,6 +881,70 @@ impl ReviewApp {
                 ui.heading("Omniscient players");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let content = ContentStore::embedded();
+                    ui.heading("Current policy profiles");
+                    let policy = &session.manifest.policy;
+                    ui.group(|ui| {
+                        ui.strong(if policy.format.is_empty() {
+                            "Legacy review · profile details unavailable".to_owned()
+                        } else {
+                            format!(
+                                "{}{}",
+                                policy.format,
+                                policy.schema.map_or_else(String::new, |schema| format!(
+                                    " · schema {schema}"
+                                ))
+                            )
+                        });
+                        ui.small(format!(
+                            "{} · {} · temperature {:.2}",
+                            session.manifest.checkpoint_path,
+                            if policy.format == "MLP inference bundle" {
+                                "shared actor with faction rows"
+                            } else {
+                                session.manifest.profile_table.label()
+                            },
+                            session.manifest.temperature
+                        ));
+                        if let Some(name) = &policy.name {
+                            ui.label(name);
+                        }
+                        if let Some(source) = &policy.source {
+                            ui.label(format!("Source: {source}"));
+                        }
+                        if let Some(commit) = &policy.git_commit {
+                            ui.small(format!("Engine/training commit: {commit}"));
+                        }
+                        if let Some(update) = policy.update {
+                            ui.small(format!("Training update: {update}"));
+                        }
+                        if let Some(dimensions) = &policy.dimensions {
+                            ui.small(dimensions);
+                        }
+                    });
+                    item_section(
+                        ui,
+                        "◫",
+                        "Decision heads",
+                        policy.heads.clone(),
+                        Color32::LIGHT_BLUE,
+                    );
+                    item_section(
+                        ui,
+                        "♙",
+                        "Available faction rows",
+                        policy.factions.clone(),
+                        Color32::LIGHT_BLUE,
+                    );
+                    if !policy.profiles.is_empty() {
+                        item_section(
+                            ui,
+                            "ƒ",
+                            "Loaded profiles",
+                            policy.profiles.clone(),
+                            Color32::LIGHT_BLUE,
+                        );
+                    }
+                    ui.separator();
                     ui.heading("Open public objectives");
                     if frame.state.revealed_objectives.is_empty() {
                         ui.label("None revealed yet.");
