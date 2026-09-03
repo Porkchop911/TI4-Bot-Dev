@@ -7096,3 +7096,28 @@ Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
   by this planning entry.
 
 ---
+
+## OBS-002a decision producer/delivery audit (2026-09-03)
+
+- Active branch: `wp/obs-002a-decision-delivery-audit`, based on planning commit `4276188`.
+- Added a checked production-source inventory and deterministic full-game decision census.
+- Static result: 26 engine modules participate in the decision surface; 15 consequential asks are
+  viewless (game 4, invasion 2, laws 1, relics 7, timing 1). None is an approved setup/offline
+  exception. No production module calls a decider directly outside `Table`.
+- Dynamic result: four deterministic four-round games exercised 3,869 non-forced choices across 18
+  heads but reached none of the rare viewless sites. `transit` was absent. This proves ordinary
+  rollout coverage cannot replace the static delivery gate.
+- Current `Choice` cannot identify a typed source or subtype; the router still falls back to free
+  prompt text for six categories. That is now an explicit dependency for OBS-003a.
+- Checks currently green: inventory 3/3, engine 1,108 + 3 integration + 5 docs, training 133, and
+  strict Clippy on the engine audit target. Strict training Clippy remains blocked by three existing
+  unrelated library findings; the package example is clean under a capped run.
+- Evidence: `plans/evidence/OBS-002A.md`. Independent Tier-C review APPROVED: the inventory was
+  recounted independently and matches exactly, and the gate was proved sensitive by mutation --
+  a compiling `.ask(` added inside `tokens.rs`'s production region was caught with the correct
+  module, function and classification, then reverted. Two non-blocking notes recorded: the
+  "3/3" count is stale (four tests), and the `assert_eq!(count, 15)` is a ratchet over the
+  registry constant rather than a direct measurement of the engine.
+- Next after acceptance: OBS-002b rule-dependency and aliasing matrix.
+
+---
