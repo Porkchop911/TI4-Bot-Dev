@@ -1088,6 +1088,7 @@ fn explicit_option_features_with(
     }
 
     payment_decision_features(choice, option, &mut features);
+    production_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1237,6 +1238,102 @@ fn payment_decision_features(choice: &Choice, option: &ChoiceOption, features: &
         }
         ti4_engine::preview::Outcome::Unavailable { .. } => {
             add_named(features, format_args!("pay:preview-unavailable"), 1.0);
+        }
+    }
+}
+
+/// Typed limit state and analytic marginal consequence of producing one offered unit
+/// (OBS-008c2a). Like the payment surface, these stay in an already-reviewed family rather than
+/// opening a vocabulary namespace before all production subtypes have been measured.
+fn production_decision_features(
+    choice: &Choice,
+    option: &ChoiceOption,
+    features: &mut FeatureVector,
+) {
+    if canonical_feature_kind(&option.kind) != "produce" {
+        return;
+    }
+
+    if let Some(context) = &choice.context {
+        add_named(
+            features,
+            format_args!("production:subtype:{}", context.subtype),
+            1.0,
+        );
+        for constraint in &context.outstanding {
+            if constraint.kind != ti4_engine::decision_context::ConstraintKind::ProductionCapacity {
+                continue;
+            }
+            for (name, value) in [
+                ("limit", constraint.amount),
+                ("used", constraint.paid),
+                ("remaining", constraint.remaining()),
+            ] {
+                add_named(
+                    features,
+                    format_args!("production:capacity-{name}"),
+                    small_integer_value(value),
+                );
+            }
+        }
+    }
+
+    for key in [
+        "cost",
+        "printed_cost",
+        "count",
+        "yield",
+        "credit",
+        "credit_used",
+        "owed",
+        "production_spent",
+    ] {
+        if let Some(value) = option.payload.get(key).and_then(Value::as_i64) {
+            add_named(
+                features,
+                format_args!("production:{key}"),
+                small_integer_value(value),
+            );
+        }
+    }
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("production:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    ti4_engine::preview::Quantity::ProductionRemaining => "remaining",
+                    ti4_engine::preview::Quantity::ProductionFreeCapacity => "free-allowance",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("production:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("production:preview-known"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("production:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(
+                features,
+                format_args!("production:preview-unavailable"),
+                1.0,
+            );
         }
     }
 }
@@ -2051,6 +2148,169 @@ mod tests {
             assert_eq!(value_of(vector, "pay:resources-before"), None);
             assert_eq!(value_of(vector, "pay:resources-after"), None);
             assert_eq!(value_of(vector, "pay:resources-change"), None);
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one production fixture and its three single-variable counterfactuals stay together"
+    )]
+    fn obs008c2a_production_features_change_with_limit_credit_and_allowance() {
+        use ti4_engine::decision_context::{
+            ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
+        };
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let build = ChoiceOption::new("build|carrier|1", "produce")
+            .with("cost", 3)
+            .with("printed_cost", 3)
+            .with("count", 1)
+            .with("yield", 1)
+            .with("credit", 2)
+            .with("credit_used", 2)
+            .with("owed", 1)
+            .with("production_spent", 1)
+            .with("unit", "carrier")
+            .with("system", "18")
+            .previewed(Preview::certain(vec![
+                Delta::new(Quantity::ProductionRemaining, 5, 4),
+                Delta::new(Quantity::ProductionFreeCapacity, 0, 4),
+            ]));
+        let choice = Choice::new(player.clone(), "produce", vec![build]).contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("68".to_owned()),
+                "produce_unit",
+                Phase::Action,
+                2,
+            )
+            .about(DecisionTarget::System(SystemId::new("18")))
+            .owing(OutstandingConstraint::new(
+                ConstraintKind::ProductionCapacity,
+                6,
+                1,
+            )),
+        );
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("production:capacity-limit", 6.0),
+            ("production:capacity-used", 1.0),
+            ("production:capacity-remaining", 5.0),
+            ("production:cost", 3.0),
+            ("production:credit", 2.0),
+            ("production:owed", 1.0),
+            ("production:remaining-after", 4.0),
+            ("production:free-allowance-after", 4.0),
+            ("production:preview-known", 1.0),
+        ] {
+            assert_eq!(value_of(&features, name), Some(value), "missing {name}");
+        }
+
+        let mut different_limit = choice.clone();
+        different_limit.context.as_mut().unwrap().outstanding[0].paid = 3;
+        let limit_features = explicit_option_features(
+            &seen,
+            &different_limit,
+            &different_limit.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&limit_features, "production:capacity-used"),
+            Some(3.0)
+        );
+        assert_eq!(
+            value_of(&limit_features, "production:capacity-remaining"),
+            Some(3.0)
+        );
+
+        let mut no_credit = choice.clone();
+        no_credit.options[0]
+            .payload
+            .insert("credit".to_owned(), 0.into());
+        no_credit.options[0]
+            .payload
+            .insert("credit_used".to_owned(), 0.into());
+        no_credit.options[0]
+            .payload
+            .insert("owed".to_owned(), 3.into());
+        let credit_features =
+            explicit_option_features(&seen, &no_credit, &no_credit.options[0], &player, &[]);
+        assert_eq!(value_of(&credit_features, "production:credit"), None);
+        assert_eq!(value_of(&credit_features, "production:owed"), Some(3.0));
+
+        let mut smaller_allowance = choice.clone();
+        smaller_allowance.options[0].preview = Some(Preview::certain(vec![
+            Delta::new(Quantity::ProductionRemaining, 5, 4),
+            Delta::new(Quantity::ProductionFreeCapacity, 0, 2),
+        ]));
+        let allowance_features = explicit_option_features(
+            &seen,
+            &smaller_allowance,
+            &smaller_allowance.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&allowance_features, "production:free-allowance-after"),
+            Some(2.0)
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &different_limit,
+            &different_limit.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "production:capacity-used"), Some(3.0));
+        assert!(crate::projection::admits("production:capacity-used"));
+    }
+
+    #[test]
+    fn obs008c2a_production_preview_states_never_fabricate_consequences() {
+        use ti4_engine::preview::Preview;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let choice = Choice::new(
+            player.clone(),
+            "produce",
+            vec![
+                ChoiceOption::new("absent", "produce"),
+                ChoiceOption::new("unknown", "produce")
+                    .previewed(Preview::unknown("later placement")),
+                ChoiceOption::new("unavailable", "produce")
+                    .previewed(Preview::unavailable("cannot place")),
+            ],
+        );
+        let absent = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        let unknown = explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        let unavailable =
+            explicit_option_features(&seen, &choice, &choice.options[2], &player, &[]);
+
+        assert_eq!(value_of(&unknown, "production:preview-unknown"), Some(1.0));
+        assert_eq!(
+            value_of(&unavailable, "production:preview-unavailable"),
+            Some(1.0)
+        );
+        for features in [&absent, &unknown, &unavailable] {
+            assert_eq!(value_of(features, "production:remaining-before"), None);
+            assert_eq!(value_of(features, "production:remaining-after"), None);
+            assert_eq!(value_of(features, "production:remaining-change"), None);
+            assert_eq!(value_of(features, "production:free-allowance-before"), None);
+            assert_eq!(value_of(features, "production:free-allowance-after"), None);
+            assert_eq!(value_of(features, "production:free-allowance-change"), None);
         }
     }
 

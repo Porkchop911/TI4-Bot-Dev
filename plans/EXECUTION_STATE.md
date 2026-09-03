@@ -3110,6 +3110,25 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-008c2a production-limit decision surface (2026-09-04)
+
+- Active branch: `wp/obs-008c2a-production-limit-surface`, based on `4bdf247` (`OBS-008c1`).
+- Production-unit choices now name Rule 68, their system, the full production limit and the amount
+  already consumed. Each option exposes its bill/credit/yield and analytic remaining-limit plus
+  Bellum Gloriosum allowance aftermath; policy receives bounded `production` facts.
+- Production legality, payment application, option IDs/labels/set, replay behavior and choice
+  identity remain unchanged. Fleet/transport final-placement consequences are deliberately held for
+  `OBS-008c2b`.
+- Checks: engine 1,141 lib + 4 integration + 5 docs; policy 198/198 (102-game deterministic
+  campaign separately passed in 328.21 s); training 133; strict all-target Clippy green for engine
+  and policy; diff check green. Workspace formatting has pre-existing unrelated drift and was not
+  rewritten.
+- Independent Tier-C review initially found two P2 coverage gaps (continued consumed-capacity
+  context and non-certain preview states); both are now covered and rechecked **PASS / APPROVED**.
+  Evidence: `plans/evidence/OBS-008C2A.md`.
+
+---
+
 ### MLP policy branch — revision-5 plan review (2026-08-21)
 
 - **Branch/HEAD before this review:** `codex/mlp-policy`, `851f8ad`.

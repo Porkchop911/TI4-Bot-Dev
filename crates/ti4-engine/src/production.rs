@@ -1394,6 +1394,8 @@ enum Stage {
 pub struct ProductionWindow {
     player: PlayerId,
     system: SystemId,
+    /// Full PRODUCTION limit for this use, after pre-production reactions have settled.
+    limit: i64,
     remaining: i64,
     stage: Stage,
     report: ProductionReport,
@@ -1430,6 +1432,7 @@ impl ProductionWindow {
         Self {
             player: player.clone(),
             system: system.clone(),
+            limit: remaining,
             remaining,
             stage: if remaining > 0 {
                 Stage::Choosing
@@ -1462,7 +1465,8 @@ impl ProductionWindow {
         if matches!(self.stage, Stage::Paying { .. } | Stage::Placing { .. }) {
             return;
         }
-        self.remaining = capacity(state, content, sources, &self.player, &self.system);
+        self.limit = capacity(state, content, sources, &self.player, &self.system);
+        self.remaining = self.limit;
         self.stage = if self.remaining > 0 {
             Stage::Choosing
         } else {
@@ -1475,6 +1479,55 @@ impl ProductionWindow {
         let used = self.credit.min(cost);
         self.credit -= used;
         cost - used
+    }
+
+    fn context(&self, state: &GameState) -> DecisionContext {
+        DecisionContext::new(
+            self.player.clone(),
+            DecisionSource::Rule("68".to_owned()),
+            "produce_unit",
+            state.phase,
+            state.round,
+        )
+        .about(DecisionTarget::System(self.system.clone()))
+        .owing(OutstandingConstraint::new(
+            ConstraintKind::ProductionCapacity,
+            self.limit,
+            (self.limit - self.remaining).max(0),
+        ))
+    }
+
+    /// The production-limit and Bellum allowance after placing this batch.
+    ///
+    /// This is analytic: it mirrors the two independently meaningful arithmetic operations in
+    /// [`Self::place`] without constructing a state or placing a unit. The unit's chosen location
+    /// does not affect either quantity, so it is truthful before the later placement choice.
+    fn post_build_constraints(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        id: &str,
+        made: usize,
+    ) -> (i64, i64) {
+        let count = i64::try_from(made).unwrap_or(i64::MAX);
+        let kind = UnitTypeId::new(id);
+        let granted = crate::breakthroughs::free_capacity_granted(
+            state,
+            content,
+            sources,
+            &self.player,
+            &kind,
+        ) * i64::from(made > 0);
+        let free = if crate::breakthroughs::spends_free_capacity(content, sources, &kind) {
+            count.min(self.free_capacity + granted)
+        } else {
+            0
+        };
+        (
+            self.remaining - (count - free),
+            self.free_capacity + granted - free,
+        )
     }
 
     /// Options for what to build now: affordable, placeable, one per unit type.
@@ -1518,6 +1571,10 @@ impl ProductionWindow {
             if made == 0 {
                 continue;
             }
+            let (remaining_after, free_capacity_after) =
+                self.post_build_constraints(state, content, sources, &id, made);
+            let credit_used = self.credit.min(cost);
+            let production_spent = self.remaining - remaining_after;
             options.push(
                 ChoiceOption::labelled(
                     format!("build|{id}|{made}"),
@@ -1525,9 +1582,27 @@ impl ProductionWindow {
                     format!("produce {made}x {id} for {cost}"),
                 )
                 .with("cost", cost)
+                .with("printed_cost", price_of(kind).0)
                 .with("count", i64::try_from(made).unwrap_or(1))
+                .with("yield", i64::try_from(pair).unwrap_or(1))
+                .with("credit", self.credit)
+                .with("credit_used", credit_used)
+                .with("owed", cost - credit_used)
+                .with("production_spent", production_spent)
                 .with("unit", id.clone())
-                .with("system", self.system.to_string()),
+                .with("system", self.system.to_string())
+                .previewed(Preview::certain(vec![
+                    Delta::new(
+                        Quantity::ProductionRemaining,
+                        self.remaining,
+                        remaining_after,
+                    ),
+                    Delta::new(
+                        Quantity::ProductionFreeCapacity,
+                        self.free_capacity,
+                        free_capacity_after,
+                    ),
+                ])),
             );
             // 68.3b -- "a player can choose to produce only one unit; however, they must still
             // pay the entire cost" -- is honoured where it matters and not offered where it does
@@ -1625,11 +1700,14 @@ impl Window for ProductionWindow {
                     "decline",
                     "produce nothing further",
                 ));
-                Some(Choice::new(
-                    self.player.clone(),
-                    format!("produce in {} ({} left)", self.system, self.remaining),
-                    options,
-                ))
+                Some(
+                    Choice::new(
+                        self.player.clone(),
+                        format!("produce in {} ({} left)", self.system, self.remaining),
+                        options,
+                    )
+                    .contextualized(self.context(state)),
+                )
             }
             Stage::Paying {
                 owed, cost, paid, ..
@@ -1714,7 +1792,9 @@ impl Window for ProductionWindow {
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(1);
                     let types = catalogue(content, sources);
-                    let cost = types.get(id).map_or(0, |kind| price_of(kind).0);
+                    let cost = types
+                        .get(id)
+                        .map_or(0, |kind| price_of_under(Some(state), kind).0);
                     // A purchase the credit covers outright goes straight to placing. Entering the
                     // paying stage owing nothing would ask `payment_options` for a bill of zero,
                     // which has no options, and the stage would abort with the unit unplaced.
@@ -3125,6 +3205,174 @@ mod tests {
 
         assert!(decisions > 1, "more than one decision was owed");
         assert!(!window.into_report().produced.is_empty());
+    }
+
+    #[test]
+    fn obs008c2a_build_context_and_preview_agree_with_completed_production() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.credit = 1; // the fighter batch is already paid, so this test reaches placement.
+
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice");
+        let context = choice.context.as_ref().expect("typed production context");
+        assert_eq!(context.subtype, "produce_unit");
+        assert_eq!(context.target, Some(DecisionTarget::System(system.clone())));
+        let capacity = context.outstanding.first().expect("one limit constraint");
+        assert_eq!(capacity.kind, ConstraintKind::ProductionCapacity);
+        assert_eq!(
+            (capacity.amount, capacity.paid, capacity.remaining()),
+            (window.limit, 0, window.remaining)
+        );
+
+        let fighter = choice
+            .options
+            .iter()
+            .find(|option| option.id.starts_with("build|fighter|"))
+            .cloned()
+            .expect("fighter batch");
+        assert_eq!(
+            fighter
+                .payload
+                .get("credit_used")
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
+        assert_eq!(
+            fighter
+                .payload
+                .get("owed")
+                .and_then(serde_json::Value::as_i64),
+            Some(0)
+        );
+        let preview = fighter.preview.clone().expect("analytic build preview");
+        let after = |quantity| {
+            preview
+                .certain_deltas()
+                .iter()
+                .find(|delta| delta.quantity == quantity)
+                .expect("quantity previewed")
+                .after
+        };
+
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        window.resolve(&mut state, &mut ctx, fighter).unwrap();
+
+        assert_eq!(
+            window.remaining,
+            after(Quantity::ProductionRemaining),
+            "preview and actual limit consumption agree"
+        );
+        assert_eq!(
+            window.free_capacity,
+            after(Quantity::ProductionFreeCapacity),
+            "preview and actual Bellum allowance agree"
+        );
+        let continued = window
+            .pending_choice(&state, content, POK)
+            .expect("continued production choice");
+        let capacity = continued
+            .context
+            .as_ref()
+            .and_then(|context| context.outstanding.first())
+            .expect("updated limit constraint");
+        assert_eq!(
+            (capacity.amount, capacity.paid, capacity.remaining()),
+            (window.limit, window.limit - window.remaining, window.remaining),
+            "the next choice reports capacity already consumed by the completed build"
+        );
+    }
+
+    #[test]
+    fn obs008c2a_capacity_ship_opens_and_fighter_spends_the_free_allowance() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.player_mut(&player()).unwrap().breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("solbt"));
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.credit = 10;
+
+        let resolve =
+            |window: &mut ProductionWindow, state: &mut GameState, option: ChoiceOption| {
+                let mut dice = crate::dice::Dice::new();
+                let mut rng = crate::rng::GameRng::new(0);
+                let mut table = Table::new();
+                let mut ctx = Resolving {
+                    content,
+                    sources: POK,
+                    dice: &mut dice,
+                    rng: &mut rng,
+                    table: &mut table,
+                    timing: None,
+                };
+                window.resolve(state, &mut ctx, option).unwrap();
+            };
+
+        let carrier = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        let carrier_preview = carrier.preview.clone().expect("carrier preview");
+        resolve(&mut window, &mut state, carrier);
+        assert_eq!(
+            window.free_capacity,
+            carrier_preview
+                .certain_deltas()
+                .iter()
+                .find(|delta| delta.quantity == Quantity::ProductionFreeCapacity)
+                .unwrap()
+                .after,
+            "capacity ship opened the previewed Bellum allowance"
+        );
+        assert!(window.free_capacity > 0, "the fixture gained an allowance");
+
+        let before_remaining = window.remaining;
+        let fighter = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|fighter|"))
+            .expect("fighter");
+        let fighter_preview = fighter.preview.clone().expect("fighter preview");
+        resolve(&mut window, &mut state, fighter);
+        assert_eq!(
+            window.remaining, before_remaining,
+            "free pair spent no limit"
+        );
+        assert_eq!(
+            window.free_capacity,
+            fighter_preview
+                .certain_deltas()
+                .iter()
+                .find(|delta| delta.quantity == Quantity::ProductionFreeCapacity)
+                .unwrap()
+                .after,
+            "fighter consumed exactly the previewed allowance"
+        );
     }
 
     #[test]

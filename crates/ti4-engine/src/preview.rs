@@ -59,6 +59,10 @@ pub enum Quantity {
     CapacityFree,
     /// Units left in one use of PRODUCTION (LRR 68).
     ProductionRemaining,
+    /// Sol's per-use Bellum Gloriosum allowance for fighters and ground forces.
+    ///
+    /// This is a production-limit exception, not transport capacity (LRR 68.1a).
+    ProductionFreeCapacity,
     PlanetsControlled,
     ShipsInSystem,
     GroundForcesOnPlanet,
