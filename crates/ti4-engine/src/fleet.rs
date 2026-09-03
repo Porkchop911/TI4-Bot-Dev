@@ -744,3 +744,67 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod obs_review_super_dreadnought {
+    use super::*;
+    use ti4_model::content_types::POK;
+    use ti4_model::id::UnitTypeId;
+
+    /// L1Z1X's Super Dreadnought carries two, and the engine's capacity arithmetic must use that.
+    ///
+    /// Reported from play as "super dreadnought seems not implemented as 2 capacity". Content gives
+    /// `l1z1x_dreadnought` capacityValue 2 against 1 for the generic `dreadnought`, so a wrong
+    /// answer here means capacity was read from the base type rather than the faction unit.
+    #[test]
+    fn a_super_dreadnought_carries_two_fighters() {
+        let content = ContentStore::embedded();
+        let types = ti4_content::units::catalogue(content, POK);
+        assert_eq!(
+            types.get("dreadnought").expect("generic").capacity(),
+            1,
+            "the generic dreadnought carries one"
+        );
+        assert_eq!(
+            types.get("l1z1x_dreadnought").expect("super").capacity(),
+            2,
+            "the super dreadnought carries two"
+        );
+
+        let player = PlayerId::new("a");
+        let system = SystemId::new("01");
+        let mut state = GameState::new(
+            std::slice::from_ref(&player),
+            &[],
+            Default::default(),
+            None,
+            0,
+        );
+        let board = state.system_mut(&system);
+        board.units.push(Unit::new(
+            UnitTypeId::new("l1z1x_dreadnought"),
+            player.clone(),
+        ));
+        for _ in 0..2 {
+            board
+                .units
+                .push(Unit::new(UnitTypeId::new("fighter"), player.clone()));
+        }
+
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            0,
+            "two fighters fit in a super dreadnought"
+        );
+
+        state
+            .system_mut(&system)
+            .units
+            .push(Unit::new(UnitTypeId::new("fighter"), player.clone()));
+        assert_eq!(
+            over_capacity(&state, content, POK, &player, &system),
+            1,
+            "the third fighter does not fit"
+        );
+    }
+}
