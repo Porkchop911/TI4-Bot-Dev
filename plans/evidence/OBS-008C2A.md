@@ -52,7 +52,7 @@ and `ti4-sim` files. Direct checking of the modified source files also reaches p
 elsewhere in `production.rs`; no formatter diff touches this package's added hunks. No unrelated
 formatting was written.
 
-The policy suite is intentionally split so the long nested-window campaign stays observable: 196
+The policy suite is intentionally split so the long nested-window campaign stays observable: 197
 ordinary tests plus its one 102-game campaign test cover all 198 policy library tests.
 
 ## Counterfactual and analytic-agreement evidence
