@@ -1272,6 +1272,24 @@ pub struct DecisionRecord {
     pub prompt: String,
     pub chosen: String,
     pub offered: Vec<String>,
+    /// Why the engine asked, when the producer supplies it (OBS-003a).
+    ///
+    /// Optional and skipped when absent, so a record written before contexts existed serialises to
+    /// exactly the bytes it always did. That is what keeps the V1 fingerprint of an old replay
+    /// stable while V2 can bind the context; see `fingerprint::decision_hash`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<crate::decision_context::DecisionContext>,
+}
+
+impl DecisionRecord {
+    /// The same record with no context, which is what the V1 fingerprint contract hashes.
+    #[must_use]
+    pub fn without_context(&self) -> Self {
+        Self {
+            context: None,
+            ..self.clone()
+        }
+    }
 }
 
 /// Ordered record of every choice made, sufficient to replay a game.
@@ -1287,6 +1305,9 @@ impl DecisionLog {
             prompt: choice.prompt.clone(),
             chosen: option.id.clone(),
             offered: choice.ids().into_iter().map(str::to_owned).collect(),
+            // No producer supplies a context yet; that is OBS-003d-h. Recording None here keeps
+            // every existing replay byte-identical.
+            context: None,
         });
     }
 
