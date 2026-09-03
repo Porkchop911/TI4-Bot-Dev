@@ -164,7 +164,7 @@ attempt in this review made exactly that mistake and produced a false pass.
 
 ### Notes
 
-1. The evidence and `EXECUTION_STATE.md` say "inventory 3/3"; there are four tests. Stale by one.
+1. The evidence and `EXECUTION_STATE.md` say "inventory 4/4"; there are four tests. Stale by one.
 2. `all_fifteen_viewless_asks_remain_explicit_migration_work` sums the `VIEWLESS_ASKS` constant, so
    in isolation it cannot fail — it is a ratchet, not a measurement. Its force is real but indirect:
    a new viewless ask trips the scan equality, the registry must then be edited to restore it, and

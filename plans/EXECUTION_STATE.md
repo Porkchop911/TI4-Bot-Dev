@@ -7109,7 +7109,7 @@ Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
   rollout coverage cannot replace the static delivery gate.
 - Current `Choice` cannot identify a typed source or subtype; the router still falls back to free
   prompt text for six categories. That is now an explicit dependency for OBS-003a.
-- Checks currently green: inventory 3/3, engine 1,108 + 3 integration + 5 docs, training 133, and
+- Checks currently green: inventory 4/4, engine 1,108 + 3 integration + 5 docs, training 133, and
   strict Clippy on the engine audit target. Strict training Clippy remains blocked by three existing
   unrelated library findings; the package example is clean under a capped run.
 - Evidence: `plans/evidence/OBS-002A.md`. Independent Tier-C review APPROVED: the inventory was
@@ -7118,6 +7118,15 @@ Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
   module, function and classification, then reverted. Two non-blocking notes recorded: the
   "3/3" count is stale (four tests), and the `assert_eq!(count, 15)` is a ratchet over the
   registry constant rather than a direct measurement of the engine.
-- Next after acceptance: OBS-002b rule-dependency and aliasing matrix.
+- ACCEPTED and committed. The deliverables had been left untracked; they are now in the tree with
+  the two review notes closed rather than merely recorded. The viewless-count test no longer
+  asserts only the registry constant: it also sums the SCANNED AskViewless sites, which was
+  proved to measure the engine by adding a sixteenth ask and watching it fail 16 against 15.
+  The stale "3/3" is corrected to 4/4, and two strict-Clippy findings were fixed so
+  `RUSTFLAGS=-D warnings cargo clippy -p ti4-engine --all-targets` passes clean.
+- Next: OBS-002b. Its empirical half is done and committed --
+  `plans/evidence/OBS-002B_ALIASING_CENSUS.md` and the `observation_alias` example -- finding
+  164 PROVEN aliases where the engine held a distinction the model never received, 108 of them
+  on the `tokens` head. The rule-dependency matrix itself is still to write.
 
 ---

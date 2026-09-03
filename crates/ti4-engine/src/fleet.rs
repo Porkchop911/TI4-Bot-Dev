@@ -776,7 +776,7 @@ mod obs_review_super_dreadnought {
         let mut state = GameState::new(
             std::slice::from_ref(&player),
             &[],
-            Default::default(),
+            std::collections::BTreeMap::new(),
             None,
             0,
         );
