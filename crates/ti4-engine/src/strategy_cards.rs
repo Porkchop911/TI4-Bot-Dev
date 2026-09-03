@@ -239,6 +239,9 @@ fn offer_research(
     if open.is_empty() {
         return Ok(None);
     }
+    // No decline. The Technology primary reads "Research 1 technology" -- it is not optional, and
+    // the second one, which is, goes through `paid_research`. The empty case returned above, so a
+    // seat reaching here always has something legal to take.
     let choice = Choice::new(
         player.clone(),
         "research a technology",
@@ -250,7 +253,6 @@ fn offer_research(
                     crate::technology::name(content, id),
                 )
             })
-            .chain(std::iter::once(ChoiceOption::decline()))
             .collect(),
     );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;

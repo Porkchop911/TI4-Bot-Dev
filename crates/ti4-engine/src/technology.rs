@@ -688,6 +688,24 @@ pub fn faction_of<'a>(content: &'a ContentStore, alias: &TechnologyId) -> Option
         .filter(|faction| !faction.is_empty())
 }
 
+/// Whether this faction has its own upgrade standing in for `alias`, making `alias` unresearchable
+/// for them (90.11 and the faction sheets).
+///
+/// `baseUpgrade` on a faction technology names the generic unit upgrade it replaces.
+#[must_use]
+pub fn replaced_for_faction(content: &ContentStore, faction: &str, alias: &TechnologyId) -> bool {
+    if faction.is_empty() {
+        return false;
+    }
+    content
+        .records(ContentType::Technologies)
+        .iter()
+        .any(|record| {
+            record.text("faction") == Some(faction)
+                && record.text("baseUpgrade") == Some(alias.as_str())
+        })
+}
+
 /// How many technologies of each colour this player owns (90.7a).
 #[must_use]
 pub fn owned_colours(
@@ -764,6 +782,15 @@ pub fn can_research(
     if let Some(faction) = faction_of(content, alias)
         && faction != seat.faction.as_str()
     {
+        return false;
+    }
+
+    // A faction whose own unit upgrade REPLACES a generic one cannot research the generic. Sol's
+    // Advanced Carrier II names Carrier II as its `baseUpgrade`, so Carrier II is not Sol's to
+    // research -- it upgrades a carrier Sol does not have. The check above only stops other
+    // factions taking `ac2`; nothing stopped Sol taking `cv2`, because the field that says so was
+    // validated by the content validator and never read by the engine.
+    if replaced_for_faction(content, seat.faction.as_str(), alias) {
         return false;
     }
 
@@ -1501,6 +1528,41 @@ mod tests {
         assert_eq!(
             open, sorted,
             "research options must be in canonical (sorted) order"
+        );
+    }
+}
+
+#[cfg(test)]
+mod replaced_upgrades {
+    use super::*;
+
+    /// Sol cannot research Carrier II: its Advanced Carrier replaces the carrier, and Advanced
+    /// Carrier II names `cv2` as its `baseUpgrade`.
+    ///
+    /// The field was validated by the content validator and read by nothing, so the generic
+    /// upgrade was offered to every faction that replaces it -- an illegal option in the list a
+    /// learned policy chooses from.
+    #[test]
+    fn a_faction_that_replaces_a_unit_cannot_research_the_generic_upgrade() {
+        let content = ContentStore::embedded();
+        let carrier_two = TechnologyId::new("cv2");
+        let advanced = TechnologyId::new("ac2");
+
+        assert!(
+            replaced_for_faction(content, "sol", &carrier_two),
+            "Sol's Advanced Carrier II replaces Carrier II"
+        );
+        assert!(
+            !replaced_for_faction(content, "sol", &advanced),
+            "its own upgrade is still Sol's to research"
+        );
+        assert!(
+            !replaced_for_faction(content, "hacan", &carrier_two),
+            "a faction with no carrier replacement researches the generic one"
+        );
+        assert!(
+            !replaced_for_faction(content, "", &carrier_two),
+            "an unseated faction blocks nothing"
         );
     }
 }
