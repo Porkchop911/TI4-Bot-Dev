@@ -44,7 +44,43 @@ distinct observations       2459
 observations seen more once  703
 CANDIDATE ALIASES (same state context AND same option set)  250
 same context, different options (expected, not a defect)    453
+PROVEN (candidate whose seat facts differed between decisions)  164
 ```
+
+## From candidate to proof
+
+A candidate becomes a proof without any value signal: record the seat's own facts at each decision
+and check whether they differ inside a group that already shares an observation and an option set.
+If they do, the engine held a distinction the model did not receive.
+
+**164 of the 250 are proven on that test.** The clearest:
+
+```text
+head tokens   7 decisions, 7 DISTINCT seat states, one input
+  prompt: gain a command token into which pool
+  options: fleet_tokens, strategic_tokens, tactic_tokens
+  round=3, tactic=0, strategic=0, fleet=2
+  round=3, tactic=1, strategic=0, fleet=2
+  round=4, tactic=1, strategic=1, fleet=2
+
+head other    9 decisions, 7 DISTINCT seat states, one input
+  prompt: Warfare: redistribute your command tokens
+  round=3, tactic=1, strategic=1, fleet=7
+  round=3, tactic=2, strategic=1, fleet=6
+  round=3, tactic=2, strategic=2, fleet=5
+```
+
+The decision is which pool to put a token in. Seven different pool positions, across two different
+rounds, arrive as one input.
+
+`seat_facts` computes `round`, `tactic_tokens`, `strategic_tokens` and `fleet_tokens`. They exist.
+They do not survive into anything that separates these decisions, because the per-seat facts are
+crossed with option identity and that crossing collapses here. The information is present in the
+engine, computed by the feature layer, and still absent from the decision.
+
+The round is worth stating separately: a four-round objective in which the model cannot tell round 3
+from round 4 at a token decision is missing the one fact that decides how much future there is to
+invest in.
 
 | head | observations | repeated | candidate aliases |
 |---|---:|---:|---:|

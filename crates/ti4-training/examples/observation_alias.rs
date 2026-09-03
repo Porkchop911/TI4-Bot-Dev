@@ -44,7 +44,7 @@ use ti4_engine::opening::DEFAULT_REQUIREMENT;
 use ti4_model::content_types::FULL;
 use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::bot::ScoredBot;
-use ti4_policy::features::{explicit_choice_features, names_of, value_of};
+use ti4_policy::features::{explicit_choice_features, names_of, seat_facts, value_of};
 use ti4_policy::learned::decision_head;
 use ti4_training::rollout::{Horizon, OpeningMap, play_with_deciders};
 
@@ -67,6 +67,11 @@ struct Seen {
     /// means the same observation was offered different legal actions.
     option_sets: BTreeSet<String>,
     prompts: BTreeSet<String>,
+    /// The seat's own facts at the moment of the decision, as ground truth. If these differ inside
+    /// a group that shares an observation AND an option set, the observation provably lost them:
+    /// the engine had the distinction and the model did not receive it. This is what turns a
+    /// candidate into a proof, and it needs no value signal to do it.
+    truths: BTreeSet<String>,
 }
 
 struct Watching {
@@ -139,6 +144,13 @@ impl Watching {
         row.option_sets.insert(options.join(","));
         row.prompts
             .insert(choice.prompt.chars().take(70).collect::<String>());
+        row.truths.insert(
+            seat_facts(seen, &self.player)
+                .iter()
+                .map(|(name, value)| format!("{name}={value:.3}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
 }
 
@@ -271,7 +283,35 @@ fn main() {
     println!(
         "  same context, different options (expected, not a defect)    {differing}"
     );
+    let proven: Vec<&(&Observation, &Seen)> = candidates
+        .iter()
+        .filter(|(_, row)| row.truths.len() > 1)
+        .collect();
+    println!(
+        "  PROVEN (candidate whose seat facts differed between decisions)  {}",
+        proven.len()
+    );
     println!();
+    if !proven.is_empty() {
+        println!("=== proven aliases: the engine distinguished these, the model did not ===");
+        let mut worst = proven.clone();
+        worst.sort_by_key(|(_, row)| std::cmp::Reverse(row.truths.len()));
+        for (key, row) in worst.iter().take(6) {
+            println!(
+                "  head {:<10} {} decisions, {} DISTINCT seat states, one input",
+                key.head,
+                row.decisions,
+                row.truths.len()
+            );
+            for prompt in row.prompts.iter().take(1) {
+                println!("      prompt: {prompt}");
+            }
+            for truth in row.truths.iter().take(3) {
+                println!("      seat:   {}", truth.chars().take(96).collect::<String>());
+            }
+        }
+        println!();
+    }
 
     if candidates.is_empty() {
         println!("  No candidate aliases in this sample. That is a lower bound, not a clean bill.");
