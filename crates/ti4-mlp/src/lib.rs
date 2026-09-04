@@ -1847,7 +1847,7 @@ mod tests {
         }
     }
 
-    /// A vocabulary shaped like the real one: 40 reserved columns, then ordinary names.
+    /// A vocabulary shaped like the real one: reserved columns, then ordinary names.
     fn vocabulary(slots: usize) -> Vocabulary {
         let names: Vec<String> = (0..slots).map(|n| format!("option:name{n}")).collect();
         Vocabulary::build(names).expect("builds")
@@ -1863,9 +1863,13 @@ mod tests {
         let actor = Actor::zeros(Width::W128, capacity);
 
         let rows = actor.inactive_rows(&built).expect("derives");
-        // Five reserved columns plus every free row above `slot_count`.
+        // Every retired reserved column plus every free row above `slot_count`.
         let free = built.capacity() - built.slot_count();
-        assert_eq!(rows.len(), free + 5, "wrong inactive-row count");
+        assert_eq!(
+            rows.len(),
+            free + ti4_policy::vocabulary::dead_reserved_families().len(),
+            "wrong inactive-row count"
+        );
         for family in ti4_policy::vocabulary::dead_reserved_families() {
             let column = i64::try_from(built.column_of(&ti4_policy::vocabulary::oov_name(family)))
                 .expect("fits");

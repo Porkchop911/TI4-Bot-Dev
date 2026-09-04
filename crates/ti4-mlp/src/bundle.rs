@@ -1,4 +1,4 @@
-//! The schema-6 inference bundle (M09-028), per MLP plan §§4.4–4.6.
+//! The schema-7 inference bundle (M09-028), per MLP plan §§4.4–4.6.
 //!
 //! # What a bundle is
 //!
@@ -47,7 +47,14 @@ use crate::{Actor, EMBED_DIM, FACTION_ROSTER, SeparateCritic, Width, heads};
 
 /// The schema this module reads and writes. Distinct from the linear schemas 2–5 so a wrong loader
 /// fails loudly rather than misreading a field it recognises.
-pub const SCHEMA: u32 = 6;
+pub const SCHEMA: u32 = 7;
+
+/// The feature-extraction contract that gives each input slot its meaning.
+///
+/// Schema 7 removes prompt and display-label text from MLP inputs. A slot digest protects names,
+/// but cannot prove that the producer still emits the same names, so this ABI is explicit and the
+/// loader rejects a bundle made for a different projection.
+pub const PROJECTION_ABI_VERSION: u32 = 2;
 
 /// §4.4's total size bound for a bundle directory.
 const MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
@@ -56,7 +63,7 @@ const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 /// §4.4's bound on `slots.json`.
 const MAX_SLOTS_BYTES: u64 = 32 * 1024 * 1024;
 
-/// The file names a schema-6 inference bundle may contain, and no others.
+/// The file names a schema-7 inference bundle may contain, and no others.
 ///
 /// A closed list rather than a filter: an unrecognised name is a hard error, so a bundle cannot
 /// carry an extra file that some other reader would honour.
@@ -353,6 +360,7 @@ fn manifest_document(
     validate_provenance(provenance)?;
     let document = serde_json::json!({
         "schema": SCHEMA,
+        "projection_abi": PROJECTION_ABI_VERSION,
         "dtype": "f32",
         "trunk": { "width": actor.width(), "depth": 2, "activation": "relu" },
         "embed_dim": EMBED_DIM,
@@ -395,7 +403,7 @@ fn validate_provenance(provenance: &Provenance) -> Result<(), BundleError> {
     Ok(())
 }
 
-/// A validated schema-6 bundle, and the model it describes.
+/// A validated schema-7 bundle, and the model it describes.
 #[derive(Debug)]
 pub struct Loaded {
     /// The actor, with every tensor placed and verified.
@@ -439,6 +447,12 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
     if schema != u64::from(SCHEMA) {
         return Err(BundleError::Invalid(format!(
             "schema {schema} is not {SCHEMA}"
+        )));
+    }
+    let projection_abi = u64_field(&manifest, "projection_abi")?;
+    if projection_abi != u64::from(PROJECTION_ABI_VERSION) {
+        return Err(BundleError::Invalid(format!(
+            "projection ABI {projection_abi} is not {PROJECTION_ABI_VERSION}"
         )));
     }
     let dtype = string_field(&manifest, "dtype")?;
@@ -524,8 +538,9 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
 }
 
 fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleError> {
-    const KEYS: [&str; 18] = [
+    const KEYS: [&str; 19] = [
         "schema",
+        "projection_abi",
         "dtype",
         "trunk",
         "embed_dim",
@@ -551,7 +566,7 @@ fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleErro
     let found: BTreeSet<&str> = object.keys().map(String::as_str).collect();
     if found != expected {
         return Err(BundleError::Invalid(format!(
-            "manifest fields do not match schema 6: {found:?}"
+            "manifest fields do not match schema {SCHEMA}: {found:?}"
         )));
     }
     Ok(())
@@ -811,7 +826,7 @@ fn inspect_directory(directory: &Path, critic_mode: CriticMode) -> Result<(), Bu
             .to_owned();
         if name != "manifest.json" && !INFERENCE_FILES.contains(&name.as_str()) {
             return Err(BundleError::Invalid(format!(
-                "unrecognised file {name}; schema-6 bundles are a closed set"
+                "unrecognised file {name}; schema-7 bundles are a closed set"
             )));
         }
         present.insert(name);
@@ -1151,6 +1166,20 @@ mod tests {
         }
         replace_manifest(&directory, &original);
         read(&directory).expect("restored manifest loads");
+    }
+
+    /// OBS-003i: schema-6 bundles used a projection that admitted prompt-kind. Even a perfectly
+    /// shaped tensor bundle must fail before it can silently ignore a learned prompt-kind row.
+    #[test]
+    fn a_prompt_bearing_schema_six_bundle_is_refused_before_model_construction() {
+        let scratch = Scratch::new("projection-abi");
+        let (directory, _) = write_bundle(&scratch, CriticMode::Shared);
+        let mut old = manifest(&directory);
+        old["schema"] = serde_json::json!(6);
+        replace_manifest(&directory, &old);
+
+        let error = read(&directory).expect_err("schema 6 uses the retired prompt-bearing ABI");
+        assert!(error.to_string().contains("schema 6 is not 7"), "{error}");
     }
 
     #[test]

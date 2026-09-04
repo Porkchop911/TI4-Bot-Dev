@@ -1292,13 +1292,14 @@ mod tests {
     #[test]
     fn the_suppressed_families_keep_dead_reserved_rows() {
         // They are retained so no v1 index moves, and they are unreachable: the MLP projection
-        // drops those names before lookup rather than routing them here. A reader asking why three
-        // columns are always zero should find the answer in the code, not in a commit message.
+        // drops those names before lookup rather than routing them here. A reader asking why these
+        // reserved columns are always zero should find the answer in the code, not in a commit
+        // message.
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         assert_eq!(
             dead_reserved_families().len(),
-            5,
-            "three crosses plus two legacy-only channels"
+            6,
+            "three crosses plus three retired/legacy-only channels"
         );
         for family in dead_reserved_families() {
             assert!(is_dead_reserved(family), "{family} is not marked dead");

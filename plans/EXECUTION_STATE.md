@@ -3194,6 +3194,21 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003i prompt-free MLP projection (2026-09-04)
+
+- Preserves the schema-4 extractor and proves MLP-vector invariance to prompt and
+  option-label rewording while retaining stable option-ID distinction. Focused regressions pass.
+- Tier-C review found a P1 compatibility break: schema-6 bundles may have learned nonzero
+  `prompt-kind` rows. Suppressing that input without a versioned bundle/projection ABI would let
+  old bundles load while silently changing their behavior.
+- User selected fail-closed compatibility: schema-7 bundle manifests require `projection_abi: 2`
+  before tensors/model construction. Schema-6 prompt-bearing bundles now reject clearly, rather
+  than silently ignoring learned prompt-kind weights. Tier-C P1 is resolved and re-reviewed; the
+  corrected schema terminology closes its P2 note. Policy 202/202-with-campaign-skipped and MLP
+  91/91 pass. Evidence: `plans/evidence/OBS-003I.md`.
+
+---
+
 ## OBS-003f: trade context producers (2026-09-04)
 
 - transactions::TradeWindow's two stages (Proposing, Answering) attach typed DecisionContext --

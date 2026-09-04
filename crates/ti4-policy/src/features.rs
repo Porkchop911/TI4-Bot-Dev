@@ -421,13 +421,7 @@ pub fn explicit_option_features(
     player: &PlayerId,
     held_secrets: &[ti4_engine::objectives::CardProgress],
 ) -> FeatureVector {
-    let context = ChoiceContext {
-        facts: seat_facts(seen, player),
-        own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, player, held_secrets),
-        ability_facts: ability_facts(seen, player),
-        opponent_facts: opponent_facts(seen, player),
-    };
+    let context = choice_context(seen, player, held_secrets);
     explicit_option_features_with(
         seen,
         &tokens(&choice.prompt),
@@ -436,6 +430,33 @@ pub fn explicit_option_features(
         option,
         player,
         state_cross(choice),
+        true,
+    )
+}
+
+/// The MLP's new-contract source vector for one option.
+///
+/// The schema-4 explicit extractor above is compatibility-frozen. This variant intentionally
+/// omits presentation-only prompt and label text before projection, while retaining stable option
+/// IDs and every structured factual feature.
+#[must_use]
+pub fn prompt_free_option_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+) -> FeatureVector {
+    let context = choice_context(seen, player, held_secrets);
+    explicit_option_features_with(
+        seen,
+        &[],
+        &context,
+        choice,
+        option,
+        player,
+        state_cross(choice),
+        false,
     )
 }
 
@@ -455,6 +476,20 @@ struct ChoiceContext<'a> {
     /// MLP plan section 5.2's opponent surface: public counts, no identities. Once per choice for
     /// the same reason — it walks every seat.
     opponent_facts: Vec<(String, f64)>,
+}
+
+fn choice_context<'a>(
+    seen: &Observed<'a>,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+) -> ChoiceContext<'a> {
+    ChoiceContext {
+        facts: seat_facts(seen, player),
+        own_units: seen.systems_with_units_of(player).into_iter().collect(),
+        objective_facts: objective_facts(seen, player, held_secrets),
+        ability_facts: ability_facts(seen, player),
+        opponent_facts: opponent_facts(seen, player),
+    }
 }
 
 /// Objective progress facts for the acting seat, computed once per choice.
@@ -739,13 +774,7 @@ pub fn explicit_choice_features(
 ) -> Vec<FeatureVector> {
     // All three are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
-    let context = ChoiceContext {
-        facts: seat_facts(seen, player),
-        own_units: seen.systems_with_units_of(player).into_iter().collect(),
-        objective_facts: objective_facts(seen, player, held_secrets),
-        ability_facts: ability_facts(seen, player),
-        opponent_facts: opponent_facts(seen, player),
-    };
+    let context = choice_context(seen, player, held_secrets);
     let cross = state_cross(choice);
     choice
         .options
@@ -759,7 +788,27 @@ pub fn explicit_choice_features(
                 option,
                 player,
                 cross,
+                true,
             )
+        })
+        .collect()
+}
+
+/// MLP source vectors for one choice under the prompt- and label-free decision contract.
+#[must_use]
+pub fn prompt_free_choice_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+) -> Vec<FeatureVector> {
+    let context = choice_context(seen, player, held_secrets);
+    let cross = state_cross(choice);
+    choice
+        .options
+        .iter()
+        .map(|option| {
+            explicit_option_features_with(seen, &[], &context, choice, option, player, cross, false)
         })
         .collect()
 }
@@ -869,6 +918,7 @@ fn explicit_option_features_with(
     option: &ChoiceOption,
     player: &PlayerId,
     cross: StateCross,
+    include_display_label: bool,
 ) -> FeatureVector {
     let mut features = FeatureVector::new();
     let kind = canonical_feature_kind(&option.kind);
@@ -904,9 +954,14 @@ fn explicit_option_features_with(
                 .collect()
         })
         .unwrap_or_default();
+    let labels = if include_display_label {
+        tokens(&option.label)
+    } else {
+        Vec::new()
+    };
     let mut option_tokens: BTreeSet<String> = tokens(&option.id)
         .into_iter()
-        .chain(tokens(&option.label))
+        .chain(labels)
         .filter(|token| !token.chars().all(|character| character.is_ascii_digit()))
         .filter(|token| !dropped.contains(token))
         .collect();
@@ -3947,6 +4002,7 @@ mod tests {
                     option,
                     &player,
                     StateCross::ByKind,
+                    true,
                 )
             })
             .collect();
@@ -4071,6 +4127,7 @@ mod tests {
             &choice.options[0],
             &player,
             StateCross::ByKind,
+            true,
         );
         assert_eq!(
             explicit_choice_features(

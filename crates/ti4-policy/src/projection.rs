@@ -126,7 +126,10 @@ const FAMILY_ROLES: [(&str, FamilyRole); 41] = [
     ("placement", FamilyRole::Transferable),
     ("production", FamilyRole::Transferable),
     ("prompt-bigram", FamilyRole::UnboundedCross),
-    ("prompt-kind", FamilyRole::Transferable),
+    // The schema-4 extractor retains this for compatibility, but the MLP contract never derives
+    // a feature from prompt wording. It is suppressed before vocabulary lookup like every other
+    // retired presentation channel.
+    ("prompt-kind", FamilyRole::LegacyOnly),
     ("prompt-option", FamilyRole::UnboundedCross),
     ("route", FamilyRole::Transferable),
     ("seat-state", FamilyRole::Transferable),
@@ -1089,7 +1092,7 @@ pub fn mlp_choice_features(
     // point of them. Zipping by position is safe because `explicit_choice_features` returns one
     // vector per option in the choice's own order -- a contract the length check below pins rather
     // than trusts.
-    let vectors = crate::features::explicit_choice_features(seen, choice, player, held_secrets);
+    let vectors = crate::features::prompt_free_choice_features(seen, choice, player, held_secrets);
     debug_assert_eq!(
         vectors.len(),
         choice.options.len(),
@@ -1137,7 +1140,7 @@ pub fn mlp_option_features(
 ) -> FeatureVector {
     let seat_state = interned_seat_state(seen, player, baseline);
     let vector =
-        crate::features::explicit_option_features(seen, choice, option, player, held_secrets);
+        crate::features::prompt_free_option_features(seen, choice, option, player, held_secrets);
     let action: Vec<(crate::intern::FeatureKey, f64)> = action_facts(seen, option, player)
         .into_iter()
         .map(|(name, value)| (crate::intern::register(&name), value))
@@ -1682,6 +1685,51 @@ mod tests {
         }
     }
 
+    /// OBS-003i: the MLP contract sees stable option identity and facts, never display wording.
+    #[test]
+    fn mlp_vectors_ignore_prompt_and_label_rewording_but_keep_stable_ids() {
+        let content = ti4_content::ContentStore::embedded();
+        let (state, player) = position();
+        let seen = Observed::new(&state, content, POK, None);
+        let original = Choice::new(
+            player.clone(),
+            "Choose one of these displayed actions",
+            vec![
+                ChoiceOption::labelled("stable-first", "ability", "take the first reward"),
+                ChoiceOption::labelled("stable-second", "ability", "take the second reward"),
+            ],
+        );
+        let reworded = Choice::new(
+            player.clone(),
+            "Completely unrelated presentation copy",
+            vec![
+                ChoiceOption::labelled("stable-first", "ability", "a translated display label"),
+                ChoiceOption::labelled("stable-second", "ability", "another translated label"),
+            ],
+        );
+        let renamed = Choice::new(
+            player.clone(),
+            original.prompt.clone(),
+            vec![
+                ChoiceOption::labelled("different-first", "ability", "take the first reward"),
+                ChoiceOption::labelled("stable-second", "ability", "take the second reward"),
+            ],
+        );
+        let baseline = crate::progress::Baseline::default();
+
+        let first = mlp_choice_features(&seen, &original, &player, &[], baseline);
+        let display_only = mlp_choice_features(&seen, &reworded, &player, &[], baseline);
+        let different_id = mlp_choice_features(&seen, &renamed, &player, &[], baseline);
+
+        assert_eq!(first, display_only, "display wording changed the MLP input");
+        assert_ne!(first[0], different_id[0], "stable option ID was erased");
+        assert_ne!(
+            crate::features::explicit_choice_features(&seen, &original, &player, &[]),
+            crate::features::explicit_choice_features(&seen, &reworded, &player, &[]),
+            "the fixture must prove the frozen extractor still sees the legacy text"
+        );
+    }
+
     #[test]
     fn the_projection_keeps_state_kind_and_the_bounded_families() {
         // The predicate excludes a shape, not everything crossed. `state-kind` crosses on the
@@ -2082,13 +2130,14 @@ mod tests {
 
     #[test]
     fn every_inactive_family_is_reported_and_every_other_is_live() {
-        // Five, not three: the two legacy-only channels are as unreachable from the MLP runtime
-        // path as the three crosses, and M09-026/M09-028 must zero and mask all five reserved rows.
+        // Six, not three: the two historical-only channels and the retired prompt-kind channel are
+        // as unreachable from the MLP runtime path as the three crosses, so their reserved rows
+        // stay zero and masked.
         let inactive = inactive_families();
         assert_eq!(
             inactive.len(),
-            5,
-            "three crosses plus two legacy-only channels"
+            6,
+            "three crosses plus three retired/legacy-only channels"
         );
         for family in [
             "prompt-bigram",
@@ -2096,6 +2145,7 @@ mod tests {
             "state-option",
             "kind-faction",
             "option-faction",
+            "prompt-kind",
         ] {
             assert!(
                 inactive.contains(&family),
