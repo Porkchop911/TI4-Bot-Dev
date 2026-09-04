@@ -725,6 +725,81 @@ impl<'a> Observed<'a> {
         self.state.players.iter().map(|seat| &seat.id).collect()
     }
 
+    /// One opponent's public relationship to `player` (OBS-005).
+    ///
+    /// Ranked by strategic salience, most urgent first, since the contract names the three kinds
+    /// without fixing a tie-break order among them: a live shared-system presence outranks a
+    /// standing Support tie, which outranks mere adjacency.
+    #[must_use]
+    pub fn opponent_relationship(
+        &self,
+        player: &PlayerId,
+        other: &PlayerId,
+    ) -> OpponentRelationship {
+        if self
+            .state
+            .board
+            .values()
+            .any(|system| system.has_units_of(player) && system.has_units_of(other))
+        {
+            return OpponentRelationship::CombatCounterpart;
+        }
+        if self.state.support_holders.get(other) == Some(player)
+            || self.state.support_holders.get(player) == Some(other)
+        {
+            return OpponentRelationship::Support;
+        }
+        if let Some(galaxy) = self.galaxy {
+            let mine = self.state.systems_with_units_of(player);
+            let theirs = self.state.systems_with_units_of(other);
+            let neighbors = mine.iter().any(|system| {
+                galaxy
+                    .adjacent(system.as_str())
+                    .into_iter()
+                    .any(|adjacent| theirs.iter().any(|their| their.as_str() == adjacent))
+            });
+            if neighbors {
+                return OpponentRelationship::Neighbor;
+            }
+        }
+        OpponentRelationship::None
+    }
+
+    /// Every opponent, assigned to a deterministic actor-relative slot (OBS-005).
+    ///
+    /// Sorted by `(relationship, initiative rank, seating offset)` ascending — the contract's
+    /// exact ordering. The **position** in the returned list is the slot index a caller may name in
+    /// a feature (`opponent-slot:0`, `opponent-slot:1`, ...), never the player id: relabeling every
+    /// seat in a game that has the same relative structure produces the same slot assignment.
+    #[must_use]
+    pub fn opponent_slots(&self, player: &PlayerId) -> Vec<&'a PlayerId> {
+        let seating = self.players();
+        let Some(seat_index) = seating.iter().position(|seat| *seat == player) else {
+            return Vec::new();
+        };
+        let initiative = self.initiative_order();
+        let mut opponents: Vec<&'a PlayerId> = seating
+            .iter()
+            .copied()
+            .filter(|seat| *seat != player)
+            .collect();
+        opponents.sort_by_key(|other| {
+            let relationship = self.opponent_relationship(player, other);
+            let initiative_rank = initiative
+                .iter()
+                .position(|seat| seat == *other)
+                .unwrap_or(initiative.len());
+            let seat_offset = seating
+                .iter()
+                .position(|seat| *seat == *other)
+                .map_or(usize::MAX, |index| {
+                    (index + seating.len() - seat_index) % seating.len()
+                });
+            (relationship, initiative_rank, seat_offset)
+        });
+        opponents
+    }
+
     /// Objectives revealed so far, which are faceup and public.
     #[must_use]
     pub const fn revealed_objectives(&self) -> &'a [ObjectiveId] {
@@ -1150,6 +1225,25 @@ pub fn ask_private(
 /// Not a valid alias anywhere, so a lookup against real content fails rather than quietly matching
 /// something.
 pub const HIDDEN: &str = "?";
+
+/// One opponent's public relationship to the acting seat (OBS-005).
+///
+/// Ordered by declared strategic salience, most urgent first: a live shared-system presence, then
+/// a standing Support tie, then mere adjacency, then nothing in particular. The derive order below
+/// **is** the ranking `Observed::opponent_slots` sorts by — reordering these variants changes slot
+/// assignment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OpponentRelationship {
+    /// Some system holds space units of both seats right now.
+    CombatCounterpart,
+    /// A Support for the Throne note is held between the two seats, in either direction.
+    Support,
+    /// With a galaxy known, some system holding either seat's units is adjacent to a system
+    /// holding the other's.
+    Neighbor,
+    /// None of the above, or no galaxy to test adjacency against.
+    None,
+}
 
 /// A seat as the rest of the table sees it: counts, never identities.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2120,6 +2214,75 @@ mod tests {
                 .held_secrets()
                 .contains(&ti4_model::id::SecretObjectiveId::new("become_a_legend")),
             "b's secret must not reach a's bound view"
+        );
+    }
+
+    #[test]
+    fn obs005_opponent_slots_are_relationship_then_initiative_then_seating() {
+        let hub = crate::fixtures::plain_hub();
+        let centre = SystemId::new(&hub.centre);
+        let outer0 = SystemId::new(&hub.outer[0]);
+        let mut state = crate::fixtures::game(&["a", "b", "c", "d", "e", "f"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        let (a, b, c, d, e, f) = (pid("a"), pid("b"), pid("c"), pid("d"), pid("e"), pid("f"));
+        crate::fixtures::put(&mut state, &centre, "fighter", &a, 1);
+        crate::fixtures::put(&mut state, &centre, "fighter", &b, 1); // shares a's system: combat
+        crate::fixtures::put(&mut state, &outer0, "fighter", &d, 1); // adjacent to a: neighbor
+        state.support_holders.insert(c.clone(), a.clone()); // c's note held by a: support
+
+        let imperial = ti4_model::id::StrategyCardId::new("imperial");
+        let diplomacy = ti4_model::id::StrategyCardId::new("diplomacy");
+        state.card_initiative.insert(imperial.clone(), 1);
+        state.card_initiative.insert(diplomacy.clone(), 2);
+        state.player_mut(&e).unwrap().strategy_cards.push(imperial);
+        state.player_mut(&f).unwrap().strategy_cards.push(diplomacy);
+
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, Some(&hub.galaxy));
+        assert_eq!(
+            seen.opponent_slots(&a),
+            vec![&b, &c, &d, &e, &f],
+            "combat, then support, then neighbor, then the two unrelated seats by initiative"
+        );
+    }
+
+    #[test]
+    fn obs005_opponent_slots_are_invariant_under_player_id_relabeling() {
+        // The contract's permutation-equivariance requirement: the same relative structure built
+        // from a completely different set of player ids produces the same *shape* of relationship
+        // classifications, never a coincidence about which literal id landed where.
+        fn build(ids: [&str; 6]) -> (GameState, ti4_content::galaxy::Galaxy, PlayerId) {
+            let hub = crate::fixtures::plain_hub();
+            let centre = SystemId::new(&hub.centre);
+            let outer0 = SystemId::new(&hub.outer[0]);
+            let mut state = crate::fixtures::game(&ids);
+            for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+                state.board.entry(SystemId::new(id)).or_default();
+            }
+            let actor = pid(ids[0]);
+            crate::fixtures::put(&mut state, &centre, "fighter", &actor, 1);
+            crate::fixtures::put(&mut state, &centre, "fighter", &pid(ids[1]), 1);
+            crate::fixtures::put(&mut state, &outer0, "fighter", &pid(ids[3]), 1);
+            state.support_holders.insert(pid(ids[2]), actor.clone());
+            (state, hub.galaxy, actor)
+        }
+
+        let (state_x, galaxy_x, actor_x) = build(["a", "b", "c", "d", "e", "f"]);
+        let (state_y, galaxy_y, actor_y) = build(["p", "q", "r", "s", "t", "u"]);
+        let seen_x = Observed::new(&state_x, ContentStore::embedded(), POK, Some(&galaxy_x));
+        let seen_y = Observed::new(&state_y, ContentStore::embedded(), POK, Some(&galaxy_y));
+
+        let shape = |seen: &Observed<'_>, actor: &PlayerId| -> Vec<OpponentRelationship> {
+            seen.opponent_slots(actor)
+                .into_iter()
+                .map(|other| seen.opponent_relationship(actor, other))
+                .collect()
+        };
+        assert_eq!(
+            shape(&seen_x, &actor_x),
+            shape(&seen_y, &actor_y),
+            "relabeling every seat must not change the relationship shape"
         );
     }
 

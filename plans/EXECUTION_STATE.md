@@ -24,6 +24,42 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-005 — relational public table state (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-004a (`fbd5548`).
+  Per the user's "omit reviews, continue until the plan is done" instruction, packages are now
+  implemented and committed in dependency order without waiting on independent review; every
+  package's evidence records review as OUTSTANDING.
+- Dependency check: with OBS-002b, OBS-003a-i, OBS-004/004a, OBS-007a/007b, and OBS-008c1-c3 all
+  already complete (confirmed from `plans/evidence/`, not assumed), the true unblocked frontier is
+  exactly OBS-005 and OBS-007c — everything else in OBS-006/008a/b/d/e/f/g/h/i needs one or both.
+  Picked OBS-005 first.
+- `Observed` gains `OpponentRelationship` (`CombatCounterpart` > `Support` > `Neighbor` > `None`,
+  ranked by strategic salience since the contract does not fix a tie-break order among the three
+  named kinds) and `opponent_slots(player)`: every other seat sorted by `(relationship, initiative
+  rank, seating offset)`. The engine always seats exactly six players (`seating.rs`), so there are
+  always exactly five opponent slots — closed and bounded, no player-count generalisation problem.
+- `crates/ti4-policy/src/features.rs::opponent_slot_facts` emits up to seven bounded facts per slot
+  under one new family, `opponent-slot` (victory points, trade goods, technology count, passed,
+  and the three relationship flags), reading only already-public `PublicSeat`/
+  `OpponentRelationship` state. `opponent_facts` (secrets-held, anonymous distribution) is
+  untouched — that family is correctly about hidden information and stays as is.
+- Vocabulary migration: `OOV_REGISTRY_VERSION` 5 → 6, `OOV_FAMILIES_V6` appends `opponent-slot`
+  (append-only), new pinned fingerprint. One-version-back inference window shifts to v5; v4 is now
+  refused exactly as v2/v3 are.
+- Proved permutation equivariance by test (the contract's explicit requirement): the same relative
+  structure built from two disjoint sets of player ids produces an identical relationship-shape
+  sequence; and that facts are relationship-relative, not identity-relative, by swapping which
+  concrete seat holds a fixed relationship and checking the emitted facts do not change.
+- Checks: engine 1,179 + 4 integration + 5 docs; policy 207 (includes the 102-game deterministic
+  campaign, 265.50 s, no regression); training 133; strict Clippy on engine+policy clean; targeted
+  fmt/diff-check clean.
+- Evidence: `plans/evidence/OBS-005.md`. Spec: `plans/OBS-005_RELATIONAL_PUBLIC_TABLE_STATE.md`.
+  Independent Tier-C review OUTSTANDING — not yet obtained, per current instruction.
+- Next: OBS-007c (stochastic preview foundation, the other unblocked package), then OBS-006
+  (candidate-centred board state, now unblocked by this package), then the remaining OBS-008
+  option-semantics packages, OBS-009, OBS-010, OBS-011, OBS-012.
+
 ### OBS-004a — actor-owned faceup inventory (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after the OBS-004 handover

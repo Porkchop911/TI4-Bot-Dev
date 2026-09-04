@@ -480,6 +480,9 @@ struct ChoiceContext<'a> {
     /// breakthrough, and leader readiness. Once per choice for the same reason as the families
     /// above.
     actor_inventory_facts: Vec<(String, f64)>,
+    /// OBS-005's deterministic actor-relative opponent-slot facts. Once per choice for the same
+    /// reason as the families above — it walks every seat.
+    opponent_slot_facts: Vec<(String, f64)>,
 }
 
 fn choice_context<'a>(
@@ -494,6 +497,7 @@ fn choice_context<'a>(
         ability_facts: ability_facts(seen, player),
         opponent_facts: opponent_facts(seen, player),
         actor_inventory_facts: actor_inventory_facts(seen, player),
+        opponent_slot_facts: opponent_slot_facts(seen, player),
     }
 }
 
@@ -787,6 +791,57 @@ const fn leader_status_token(status: ti4_model::state::LeaderStatus) -> &'static
         LeaderStatus::Unlocked => "unlocked",
         LeaderStatus::Purged => "purged",
     }
+}
+
+/// Deterministic actor-relative opponent-slot facts (OBS-005).
+///
+/// Every game seats exactly six players (`seating.rs`), so there are always exactly five opponent
+/// slots. The slot index is `Observed::opponent_slots`'s sort position — relationship, then
+/// initiative rank, then seating offset — never a player id, so relabeling every seat in a game
+/// with the same relative structure emits the same names. Every value is already public
+/// (`PublicSeat`/`OpponentRelationship`); nothing here reads a hidden collection.
+#[must_use]
+fn opponent_slot_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    for (index, other) in seen.opponent_slots(player).into_iter().enumerate() {
+        let Some(seat) = seen.seat(other) else {
+            continue;
+        };
+        if seat.victory_points != 0 {
+            facts.push((
+                format!("opponent-slot:{index}:victory-points"),
+                f64::from(seat.victory_points),
+            ));
+        }
+        if seat.trade_goods != 0 {
+            facts.push((
+                format!("opponent-slot:{index}:trade-goods"),
+                f64::from(seat.trade_goods),
+            ));
+        }
+        if !seat.technologies.is_empty() {
+            facts.push((
+                format!("opponent-slot:{index}:technologies"),
+                count_value(seat.technologies.len()),
+            ));
+        }
+        if seat.passed {
+            facts.push((format!("opponent-slot:{index}:passed"), 1.0));
+        }
+        match seen.opponent_relationship(player, other) {
+            ti4_engine::choice::OpponentRelationship::CombatCounterpart => {
+                facts.push((format!("opponent-slot:{index}:relationship-combat"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::Support => {
+                facts.push((format!("opponent-slot:{index}:relationship-support"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::Neighbor => {
+                facts.push((format!("opponent-slot:{index}:relationship-neighbor"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::None => {}
+        }
+    }
+    facts
 }
 
 /// The eight per-seat facts every option of a choice is described against.
@@ -1162,6 +1217,11 @@ fn explicit_option_features_with(
     for (name, value) in &context.actor_inventory_facts {
         add_named(&mut features, format_args!("{name}"), *value);
     }
+    // OBS-005: deterministic actor-relative opponent-slot facts, on the same terms as the four
+    // families above.
+    for (name, value) in &context.opponent_slot_facts {
+        add_named(&mut features, format_args!("{name}"), *value);
+    }
 
     match cross {
         StateCross::ByKind => {
@@ -1190,6 +1250,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.actor_inventory_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-kind:{kind}:{name}"),
+                    *value,
+                );
+            }
+            for (name, value) in &context.opponent_slot_facts {
                 add_named(
                     &mut features,
                     format_args!("state-kind:{kind}:{name}"),
@@ -1227,6 +1294,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.actor_inventory_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-option:{option_id}:{name}", option_id = option.id),
+                    *value,
+                );
+            }
+            for (name, value) in &context.opponent_slot_facts {
                 add_named(
                     &mut features,
                     format_args!("state-option:{option_id}:{name}", option_id = option.id),
@@ -2117,7 +2191,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 35] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 36] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2153,6 +2227,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 35] = [
     "faction-commodities",
     "opponent-secrets-held",
     "actor-inventory",
+    "opponent-slot",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -2996,6 +3071,75 @@ mod tests {
     }
 
     #[test]
+    fn obs005_opponent_slot_facts_are_relationship_relative_not_identity_relative() {
+        // OBS-005: the same relationship, put on a different seat, must emit the same facts (the
+        // slot index is a sort position, not a player id) -- and removing the relationship
+        // entirely must change what is emitted, or the relationship facts would be dead weight.
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::plain_hub();
+        let a = PlayerId::new("a");
+        let choice = Choice::new(
+            a.clone(),
+            "spend a strategy token to replenish commodities",
+            vec![ChoiceOption::labelled("no", "strategy", "decline")],
+        );
+
+        let build = |combat_partner: &str| -> GameState {
+            let centre = ti4_model::id::SystemId::new(&hub.centre);
+            let mut state = ti4_engine::fixtures::game(&["a", "b", "c", "d", "e", "f"]);
+            for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+                state
+                    .board
+                    .entry(ti4_model::id::SystemId::new(id))
+                    .or_default();
+            }
+            ti4_engine::fixtures::put(&mut state, &centre, "fighter", &a, 1);
+            ti4_engine::fixtures::put(
+                &mut state,
+                &centre,
+                "fighter",
+                &PlayerId::new(combat_partner),
+                1,
+            );
+            state
+                .player_mut(&PlayerId::new(combat_partner))
+                .unwrap()
+                .victory_points = 3;
+            state
+        };
+        let names_of_state = |state: &GameState| -> Vec<String> {
+            let seen = Observed::new(state, content, POK, Some(&hub.galaxy));
+            names_of(&explicit_option_features(
+                &seen,
+                &choice,
+                &choice.options[0],
+                &a,
+                &[],
+            ))
+        };
+
+        let with_b = names_of_state(&build("b"));
+        let with_e = names_of_state(&build("e"));
+        assert_eq!(
+            with_b, with_e,
+            "the same relationship on a different seat must emit the same facts"
+        );
+        assert!(
+            with_b
+                .iter()
+                .any(|name| name == "opponent-slot:0:relationship-combat"),
+            "sanity: the combat relationship fact is actually present: {with_b:?}"
+        );
+
+        let no_relationship =
+            names_of_state(&ti4_engine::fixtures::game(&["a", "b", "c", "d", "e", "f"]));
+        assert_ne!(
+            no_relationship, with_b,
+            "removing the relationship must change the emitted facts"
+        );
+    }
+
+    #[test]
     fn opponent_secret_counts_are_a_seat_anonymous_distribution() {
         // Two halves, and the second is the one that matters. Anonymity: which opponent holds
         // which count must not change the facts, or the feature has smuggled in a seat identity
@@ -3494,7 +3638,7 @@ mod tests {
     /// loose substring keeps the legacy `kind-faction:` and `option-faction:` channels — which
     /// contain `-faction:` but never `:faction-` — on the pinned side where they belong.
     fn is_post_baseline_family(name: &str) -> bool {
-        const ADDED: [&str; 9] = [
+        const ADDED: [&str; 10] = [
             "objective-",
             "ability:",
             "faction-start-tech:",
@@ -3504,6 +3648,7 @@ mod tests {
             "faction-commodities",
             "opponent-secrets-held:",
             "actor-inventory:",
+            "opponent-slot:",
         ];
         ADDED
             .iter()
@@ -4058,6 +4203,7 @@ mod tests {
                 "faction-commodities",
                 "opponent-secrets-held",
                 "actor-inventory",
+                "opponent-slot",
             ]
         );
 
@@ -4169,6 +4315,7 @@ mod tests {
             ability_facts: ability_facts(&seen, &player),
             opponent_facts: opponent_facts(&seen, &player),
             actor_inventory_facts: actor_inventory_facts(&seen, &player),
+            opponent_slot_facts: opponent_slot_facts(&seen, &player),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -4298,6 +4445,7 @@ mod tests {
             ability_facts: ability_facts(&seen, &player),
             opponent_facts: opponent_facts(&seen, &player),
             actor_inventory_facts: actor_inventory_facts(&seen, &player),
+            opponent_slot_facts: opponent_slot_facts(&seen, &player),
         };
         let full = explicit_option_features_with(
             &seen,
