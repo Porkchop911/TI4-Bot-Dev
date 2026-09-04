@@ -336,6 +336,62 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
     Choice::new(player.clone(), "movement", options)
 }
 
+/// Attach to each ship-move option the exact fleet-supply and transport change the ship makes on
+/// arrival in the active system (OBS-008a2, LRR 37 and 16).
+///
+/// Deterministic and destination-only: what a move costs the origin is not the fleet a seat is
+/// building, and the arrival is what the two limits are enforced against a turn later. Shares
+/// [`crate::fleet::standing_using`] with production placement and end-of-turn enforcement, so a
+/// preview of the arrival and the removal that may follow it cannot drift apart. The "finish
+/// movement" option keeps no preview: ending the step has no bounded quantity.
+#[must_use]
+pub fn preview_moves(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    active: &SystemId,
+    mut choice: Choice,
+) -> Choice {
+    let types = catalogue(content, sources);
+    let before = crate::fleet::standing_using(&types, state, content, player, active, None);
+    for option in &mut choice.options {
+        let Some(kind) = option
+            .payload
+            .get("unit")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|id| types.get(id).copied())
+        else {
+            continue;
+        };
+        let after = crate::fleet::standing_using(
+            &types,
+            state,
+            content,
+            player,
+            active,
+            Some(crate::fleet::Arrival {
+                kind,
+                count: 1,
+                in_space: true,
+            }),
+        );
+        option.preview = Some(Preview::certain(vec![
+            Delta::new(
+                Quantity::FleetSupplyHeadroom,
+                before.fleet_headroom(),
+                after.fleet_headroom(),
+            ),
+            Delta::new(
+                Quantity::CapacityFree,
+                before.capacity_free(),
+                after.capacity_free(),
+            ),
+        ]));
+    }
+    choice
+}
+
 /// What a movement-step answer asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveSelection {
@@ -682,6 +738,134 @@ mod tests {
         let (mut state, galaxy, _) = fixture();
         state.player_mut(&player()).unwrap().tactic_tokens = 0;
         assert!(activation_options(&state, &galaxy, &player()).is_none());
+    }
+
+    /// OBS-008a2: each ship-move option states the exact fleet-supply and transport change the ship
+    /// makes on arrival in the active system, and the previewed `after` matches `fleet::standing`
+    /// recomputed once the ship is actually there.
+    #[test]
+    fn obs008a2_move_options_preview_the_arriving_ships_fleet_and_capacity_effect() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let active = SystemId::new(hub.centre.clone());
+
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        crate::fixtures::put(&mut state, &origin, "cruiser", &player, 1);
+        activate(&mut state, &player, &active).unwrap();
+
+        let moves = movable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
+        let choice = preview_moves(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player,
+            &active,
+            movement_options(&player, &moves),
+        );
+
+        let carrier_capacity =
+            ti4_content::units::unit_type(ContentStore::embedded(), "carrier", POK)
+                .expect("carrier is a unit")
+                .capacity();
+
+        let mut saw_carrier = false;
+        let mut saw_cruiser = false;
+        for option in &choice.options {
+            let Some(unit) = option
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str)
+            else {
+                assert!(option.is_decline(), "only the decline option lacks a unit");
+                assert!(
+                    option.preview.is_none(),
+                    "finishing movement has no preview"
+                );
+                continue;
+            };
+            let deltas = match &option
+                .preview
+                .as_ref()
+                .expect("a move is previewed")
+                .outcome
+            {
+                crate::preview::Outcome::Certain { deltas } => deltas.clone(),
+                other => panic!("a move preview is certain, got {other:?}"),
+            };
+            let change = |quantity| {
+                deltas
+                    .iter()
+                    .find(|delta| delta.quantity == quantity)
+                    .map(Delta::change)
+                    .expect("the preview names this quantity")
+            };
+            assert_eq!(
+                change(Quantity::FleetSupplyHeadroom),
+                -1,
+                "a non-fighter ship costs one of the active system's fleet supply"
+            );
+            match unit {
+                "carrier" => {
+                    saw_carrier = true;
+                    assert_eq!(change(Quantity::CapacityFree), carrier_capacity);
+                }
+                "cruiser" => {
+                    saw_cruiser = true;
+                    assert_eq!(change(Quantity::CapacityFree), 0);
+                }
+                other => panic!("unexpected movable unit {other}"),
+            }
+        }
+        assert!(saw_carrier && saw_cruiser, "both ships offered a move");
+
+        // The previewed `after` is a claim about the real position once the ship is there.
+        let carrier_after = {
+            let choice = preview_moves(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &player,
+                &active,
+                movement_options(&player, &moves),
+            );
+            let option = choice
+                .options
+                .iter()
+                .find(|option| {
+                    option
+                        .payload
+                        .get("unit")
+                        .and_then(serde_json::Value::as_str)
+                        == Some("carrier")
+                })
+                .expect("the carrier move");
+            match &option.preview.as_ref().unwrap().outcome {
+                crate::preview::Outcome::Certain { deltas } => {
+                    deltas
+                        .iter()
+                        .find(|delta| delta.quantity == Quantity::CapacityFree)
+                        .unwrap()
+                        .after
+                }
+                _ => unreachable!(),
+            }
+        };
+        crate::fixtures::put(&mut state, &active, "carrier", &player, 1);
+        let standing = crate::fleet::standing(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player,
+            &active,
+            None,
+        );
+        assert_eq!(
+            standing.capacity_free(),
+            carrier_after,
+            "the capacity the preview promised is the capacity the arrival actually leaves"
+        );
     }
 
     #[test]

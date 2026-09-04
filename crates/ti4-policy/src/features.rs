@@ -1647,7 +1647,11 @@ fn tactical_decision_features(
             add_named(features, format_args!("tactical:preview-known"), 1.0);
             for delta in deltas {
                 let quantity = match delta.quantity {
+                    // OBS-008a1: the command-token an activation spends.
                     ti4_engine::preview::Quantity::TacticTokens => "tactic-tokens",
+                    // OBS-008a2: what a moved ship leaves of the active system's two limits.
+                    ti4_engine::preview::Quantity::FleetSupplyHeadroom => "fleet-headroom",
+                    ti4_engine::preview::Quantity::CapacityFree => "capacity-free",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -3126,6 +3130,88 @@ mod tests {
         assert!(crate::projection::admits(
             "tactical:subtype:activate_system"
         ));
+    }
+
+    /// OBS-008a2: a movement-step option carries the arriving ship's exact fleet-supply and
+    /// transport effect on the active system; the "finish movement" option carries the subtype and
+    /// count but no consequence facts.
+    #[test]
+    fn obs008a2_move_options_carry_the_arriving_ships_fleet_and_capacity_effect() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let carrier = ChoiceOption::labelled("move|18|0", "move", "move carrier from 18")
+            .with("unit", "carrier")
+            .previewed(Preview::certain(vec![
+                Delta::new(Quantity::FleetSupplyHeadroom, 3, 2),
+                Delta::new(Quantity::CapacityFree, 0, 4),
+            ]));
+        let done = ChoiceOption::labelled("done_moving", "decline", "finish movement");
+        let choice = Choice::new(player.clone(), "movement", vec![carrier, done]).contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("89.2".to_owned()),
+                "movement_step",
+                Phase::Action,
+                2,
+            ),
+        );
+
+        let move_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("tactical:subtype:movement_step", 1.0),
+            ("tactical:option-count", 2.0),
+            ("tactical:preview-known", 1.0),
+            ("tactical:fleet-headroom-before", 3.0),
+            ("tactical:fleet-headroom-after", 2.0),
+            ("tactical:fleet-headroom-change", -1.0),
+            ("tactical:capacity-free-before", 0.0),
+            ("tactical:capacity-free-after", 4.0),
+            ("tactical:capacity-free-change", 4.0),
+        ] {
+            // A genuine zero (`capacity-free-before`) is a dropped sparse entry, as elsewhere.
+            let got = value_of(&move_features, name);
+            if value == 0.0 {
+                assert_eq!(got, None, "{name} is a sparse zero");
+            } else {
+                assert_eq!(got, Some(value), "missing {name}");
+            }
+        }
+
+        let done_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        assert_eq!(
+            value_of(&done_features, "tactical:subtype:movement_step"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&done_features, "tactical:option-count"), Some(2.0));
+        assert_eq!(value_of(&done_features, "tactical:preview-known"), None);
+        assert_eq!(
+            value_of(&done_features, "tactical:fleet-headroom-after"),
+            None,
+            "finishing movement invents no consequence"
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "tactical:capacity-free-after"),
+            Some(4.0)
+        );
+        assert!(crate::projection::admits("tactical:fleet-headroom-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

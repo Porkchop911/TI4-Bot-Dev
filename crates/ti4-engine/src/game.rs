@@ -1457,8 +1457,8 @@ impl<'a> Game<'a> {
         let galaxy = self.galaxy.as_ref()?;
         match &window.stage {
             TacticalStage::Activating => activation_options(&self.state, galaxy, &window.player),
-            TacticalStage::Moving => Some(
-                movement_options(
+            TacticalStage::Moving => {
+                let choice = movement_options(
                     &window.player,
                     &movable(
                         &self.state,
@@ -1474,8 +1474,23 @@ impl<'a> Game<'a> {
                     "movement_step",
                     self.state.phase,
                     self.state.round,
-                )),
-            ),
+                ));
+                // OBS-008a2: state the exact fleet-supply and transport change each ship makes on
+                // arrival in the active system. Previews are runtime-only and touch no option id,
+                // legal set, or replay script.
+                let choice = match &self.state.active_system {
+                    Some(active) => crate::tactical::preview_moves(
+                        &self.state,
+                        self.content,
+                        self.sources,
+                        &window.player,
+                        active,
+                        choice,
+                    ),
+                    None => choice,
+                };
+                Some(choice)
+            }
             TacticalStage::Loading { window, .. } => window.pending_choice(),
         }
     }

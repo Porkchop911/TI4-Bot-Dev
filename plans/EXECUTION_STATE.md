@@ -24,6 +24,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008a2 — movement-step surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a1 (`a53ae23`).
+  Second slice of `OBS-008a`; `OBS-008a3` (load/cargo) and `OBS-008a4` (landing / ground
+  commitment) remain.
+- Engine: `tactical::preview_moves` attaches `Preview::certain([FleetSupplyHeadroom, CapacityFree]
+  before -> after)` to every ship-move option, computed from `fleet::standing_using` for the active
+  system with and without one `Arrival { count: 1, in_space: true }` of the option's unit type.
+  Shares the exact limit arithmetic with production placement (OBS-008c2b) and end-of-turn
+  enforcement. `game.rs::tactical_choice` calls it once the Moving choice is built. The
+  "finish movement" decline option keeps no preview.
+- Policy: `tactical_decision_features`'s preview-delta match (OBS-008a1) now also maps
+  `FleetSupplyHeadroom -> tactical:fleet-headroom-*` and `CapacityFree -> tactical:capacity-free-*`
+  (`before`/`after`/`change`), under `tactical:preview-known`. No new family, no vocabulary change.
+- Boundaries: previews are `#[serde(skip)]` — no option ID, label, payload, legal set, replay
+  script, or V1/V2 decision hash moves. No `DecisionContext` field changed: `movement_step` still
+  carries no `optional` flag and no `target` (deferred as a separately reviewed V2-hash touch).
+  Destination-only; a move spends no resource/influence/trade-good/token pool.
+- Checks: engine 1,188 lib + 4 integration + 5 docs; policy 212 (includes the 102-game
+  deterministic campaign, no regression); training 133; strict Clippy on engine+policy clean;
+  targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008A2.md`. Spec: `plans/OBS-008A2_MOVEMENT_STEP_SURFACE.md`.
+  Independent Tier-C review OUTSTANDING.
+- Next: `OBS-008a3` (load/cargo transit consequence facts) continues this row, then `OBS-008a4`
+  (landing / ground commitment). Then `OBS-008b` (combat/invasion), then the already-unblocked
+  `OBS-008d/g/h/i`.
+
 ### OBS-008a1 — activation decision surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-006 (`4880725`).
