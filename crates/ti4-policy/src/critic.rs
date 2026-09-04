@@ -157,6 +157,142 @@ fn seat_standing(seat: Option<&ti4_engine::choice::PublicSeat>) -> Vec<(String, 
     facts
 }
 
+/// The acting seat's own faceup inventory: relics, exploration cards, fragments, breakthrough,
+/// and leader readiness (OBS-010, matching the policy path's OBS-004a facts). All of it comes off
+/// the bound seat's own public-ish faceup holdings -- nothing here is a hidden-secret read, and
+/// none of it depends on a `Choice`.
+///
+/// Unprefixed names; [`critic_facts`] applies the namespace.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "public counts are small integers"
+)]
+fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let Some(seat) = seen.seat(player) else {
+        return Vec::new();
+    };
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    let mut push = |name: String, value: f64| facts.push((name, value));
+    if !seat.relics.is_empty() {
+        push("relics_held".to_owned(), seat.relics.len() as f64);
+    }
+    for relic in seat.relics {
+        let readiness = if seat.exhausted_relics.contains(relic) {
+            "exhausted"
+        } else {
+            "ready"
+        };
+        push(format!("relic:{}:{readiness}", relic.as_str()), 1.0);
+    }
+    if !seat.exhausted_relics.is_empty() {
+        push(
+            "relics_exhausted".to_owned(),
+            seat.exhausted_relics.len() as f64,
+        );
+    }
+    if !seat.exploration_cards.is_empty() {
+        push(
+            "exploration_cards_held".to_owned(),
+            seat.exploration_cards.len() as f64,
+        );
+    }
+    let fragments: i32 = seat.relic_fragments.values().sum();
+    if fragments != 0 {
+        push("relic_fragments_held".to_owned(), f64::from(fragments));
+    }
+    if let Some(breakthrough) = &seat.breakthrough {
+        push("breakthrough_held".to_owned(), 1.0);
+        push(format!("breakthrough:{}", breakthrough.as_str()), 1.0);
+    }
+    let mut by_status: BTreeMap<ti4_model::state::LeaderStatus, usize> = BTreeMap::new();
+    for status in seat.leaders.values() {
+        *by_status.entry(*status).or_default() += 1;
+    }
+    for (status, count) in by_status {
+        push(
+            format!("leaders_{}", leader_status_token(status)),
+            count as f64,
+        );
+    }
+    for (leader, status) in seat.leaders {
+        push(
+            format!(
+                "leader:{}:{}",
+                leader.as_str(),
+                leader_status_token(*status)
+            ),
+            1.0,
+        );
+    }
+    facts
+}
+
+/// The stable name a [`ti4_model::state::LeaderStatus`] contributes to `leaders_*`/`leader:*`.
+const fn leader_status_token(status: ti4_model::state::LeaderStatus) -> &'static str {
+    use ti4_model::state::LeaderStatus;
+    match status {
+        LeaderStatus::Locked => "locked",
+        LeaderStatus::Readied => "readied",
+        LeaderStatus::Exhausted => "exhausted",
+        LeaderStatus::Unlocked => "unlocked",
+        LeaderStatus::Purged => "purged",
+    }
+}
+
+/// Deterministic actor-relative opponent-slot facts (OBS-010, matching the policy path's OBS-005
+/// facts): every value is already public (`PublicSeat`/`OpponentRelationship`), and the slot
+/// index is [`Observed::opponent_slots`]'s sort position -- relationship, then initiative rank,
+/// then seating offset -- never a player id, so relabeling every seat with the same relative
+/// structure emits the same names.
+///
+/// Unprefixed names; [`critic_facts`] applies the namespace.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "public counts are small integers"
+)]
+fn opponent_slot_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    for (index, other) in seen.opponent_slots(player).into_iter().enumerate() {
+        let Some(seat) = seen.seat(other) else {
+            continue;
+        };
+        if seat.victory_points != 0 {
+            facts.push((
+                format!("opponent_slot:{index}:victory_points"),
+                f64::from(seat.victory_points),
+            ));
+        }
+        if seat.trade_goods != 0 {
+            facts.push((
+                format!("opponent_slot:{index}:trade_goods"),
+                f64::from(seat.trade_goods),
+            ));
+        }
+        if !seat.technologies.is_empty() {
+            facts.push((
+                format!("opponent_slot:{index}:technologies"),
+                seat.technologies.len() as f64,
+            ));
+        }
+        if seat.passed {
+            facts.push((format!("opponent_slot:{index}:passed"), 1.0));
+        }
+        match seen.opponent_relationship(player, other) {
+            ti4_engine::choice::OpponentRelationship::CombatCounterpart => {
+                facts.push((format!("opponent_slot:{index}:relationship_combat"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::Support => {
+                facts.push((format!("opponent_slot:{index}:relationship_support"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::Neighbor => {
+                facts.push((format!("opponent_slot:{index}:relationship_neighbor"), 1.0));
+            }
+            ti4_engine::choice::OpponentRelationship::None => {}
+        }
+    }
+    facts
+}
+
 /// The rest of the table, in aggregate and by count only.
 ///
 /// Unprefixed names; [`critic_facts`] applies the namespace.
@@ -236,6 +372,11 @@ pub fn critic_facts(view: &SeatObservation<'_>, enabled: CriticFeatures) -> Vec<
         push(&name, value);
     }
 
+    // -- the acting seat's own faceup inventory (OBS-010, matching OBS-004a's policy facts) --
+    for (name, value) in actor_inventory_facts(seen, player) {
+        push(&name, value);
+    }
+
     // -- what the acting seat holds on the board -------------------------------------------
     push(
         "controlled_planets",
@@ -255,6 +396,14 @@ pub fn critic_facts(view: &SeatObservation<'_>, enabled: CriticFeatures) -> Vec<
     for (name, value) in
         table_aggregate(seen, player, seat.as_ref().map_or(0, |s| s.victory_points))
     {
+        push(&name, value);
+    }
+
+    // -- deterministic actor-relative opponent slots (OBS-010, matching OBS-005's policy
+    // facts) -- relational structure the anonymized spread above cannot express: which
+    // opponent is a combat counterpart or a Support partner, not merely how many are on how
+    // many points.
+    for (name, value) in opponent_slot_facts(seen, player) {
         push(&name, value);
     }
 
@@ -575,6 +724,68 @@ mod tests {
         for (name, _) in &facts {
             assert!(seen_names.insert(name.clone()), "{name} appears twice");
         }
+    }
+
+    /// OBS-010: the critic rebuilt from the completed actor information state carries the same
+    /// faceup-inventory and opponent-relationship facts the policy path already reads (OBS-004a,
+    /// OBS-005) -- previously absent, since this module predates both.
+    #[test]
+    fn obs010_the_critic_carries_actor_inventory_and_opponent_relationship_facts() {
+        let (mut state, player) = position();
+        {
+            let seat = state.player_mut(&player).unwrap();
+            seat.relics = vec![
+                ti4_model::id::RelicId::new("codex"),
+                ti4_model::id::RelicId::new("dominusorb"),
+            ];
+            seat.exhausted_relics
+                .insert(ti4_model::id::RelicId::new("dominusorb"));
+            seat.breakthrough = Some(ti4_model::id::BreakthroughId::new("letnevbt"));
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("hero1"),
+                ti4_model::state::LeaderStatus::Unlocked,
+            );
+        }
+        // A combat counterpart: a shared system with both seats' units.
+        let (system, _) = ti4_engine::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                player.clone(),
+            ));
+        state
+            .system_mut(&system)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                PlayerId::new("b"),
+            ));
+
+        let facts = facts_via_engine(&state, &player, CriticFeatures::full());
+        for expected in [
+            "critic-state:relics_held",
+            "critic-state:relic:codex:ready",
+            "critic-state:relic:dominusorb:exhausted",
+            "critic-state:relics_exhausted",
+            "critic-state:breakthrough_held",
+            "critic-state:breakthrough:letnevbt",
+            "critic-state:leaders_unlocked",
+            "critic-state:leader:hero1:unlocked",
+        ] {
+            assert!(
+                facts.iter().any(|(name, _)| name == expected),
+                "missing {expected}"
+            );
+        }
+        assert!(
+            facts
+                .iter()
+                .any(|(name, _)| name.starts_with("critic-state:opponent_slot:")
+                    && name.ends_with(":relationship_combat")),
+            "no opponent-slot relationship fact reached the critic"
+        );
     }
 
     #[test]

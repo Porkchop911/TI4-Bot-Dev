@@ -24,6 +24,38 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-010 — critic alignment (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-009 (`b543dd5`).
+  Rebuilds the option-free critic inventory (`critic.rs`, M09-027) from the completed actor
+  information state: the module predates OBS-004a/OBS-005 and never gained either.
+- New critic-local `actor_inventory_facts`: the bound seat's own relics (held/exhausted,
+  per-relic readiness), exploration cards held, relic fragments, breakthrough, and leaders by
+  status/identity -- mirrors OBS-004a's policy-path facts, renamed to the critic's own snake_case
+  convention, unconditional (not `CriticFeatures`-gated, matching the policy path).
+- New critic-local `opponent_slot_facts`: deterministic actor-relative opponent slots (victory
+  points, trade goods, technologies, passed, relationship) -- mirrors OBS-005's policy-path facts.
+  Added *alongside* the existing anonymized `vp_spread`/`secret_spread` aggregate, not replacing
+  it: the two convey different information and existing aggregate columns stay meaningful.
+- `OBS-006`'s candidate-centred board facts checked and correctly excluded: inherently
+  target-specific, which the critic's founding "no fact derived from the legal set" constraint
+  forbids.
+- Verification: all five pre-existing critic invariant tests
+  (`opponents_contribute_counts_and_never_identities`, `the_inventory_excludes_everything_
+  section_four_one_forbids`, `every_critic_name_is_in_its_own_namespace`, `the_gated_groups_are_
+  absent_unless_enabled`, `the_vector_is_ordered_and_deduplicated`) pass **unmodified** against
+  the enlarged inventory -- real evidence the new facts respect every invariant those tests
+  police, not merely an assumption.
+- Checks: engine 1,208 lib + 4 integration + 5 docs (unchanged, no engine changes); policy 232
+  (231 + 1 new, incl. the 102-game deterministic campaign, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-010.md`. Spec: `plans/OBS-010_CRITIC_ALIGNMENT.md`. Independent
+  Tier-C review OUTSTANDING; flags the aggregate-vs-slot coexistence and the OBS-006 exclusion as
+  judgment calls worth checking.
+- Next: OBS-011 (vocabulary and corpus migration), OBS-012 (decision completeness qualification)
+  -- the plan's final two milestones. Opportunistically, further `content` previews and
+  OBS-008d1's four remaining unpreviewed strategy subtypes stay open.
+
 ### OBS-009 — information-history audit (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008h3 (`c6eef2e`).
