@@ -3110,6 +3110,26 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-008c3 production discount surface (2026-09-04)
+
+- Closes the `OBS-008c` row: build options' `discount` fact and AI Development Algorithm's own
+  exhaust-or-not ask (typed subtype `exhaust_for_production_discount`, `discount_offered` fact) now
+  reach the policy under the existing transferable `production` family.
+- Harrugh Gefhara's ask stays unexposed: it has no invocation path in real play yet
+  (`plans/BUG_2026-09-04_LEADER_USE_UNREACHABLE.md`), so there is no live choice to attach a feature
+  to. Recorded as a boundary.
+- Checks: engine 1,156 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 266.63 s; training 133; strict Clippy and `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-008C3.md`. **Independent Tier-C review OUTSTANDING.**
+- `OBS-008c` is now complete: marginal build (`c2a`), limit/fleet/transport (`c2a`/`c2b`),
+  debt/overpay (`c1`), and discount (`c3`). Payment-flexibility beyond `pay:option-count` was not
+  separately deepened; not claimed as covered.
+- Next ready package, per the plan's own recommended order (`STAGE2_COMPLETE_DECISION_CONTRACT.md`):
+  `OBS-008d`, strategy/technology/scoring facts, or `OBS-007c` (stochastic preview foundation) before
+  the combat-adjacent packages that depend on it. Not yet chosen.
+
+---
+
 ## Bug fix: production discount unwired (Sarween Tools, AID, Harrugh) (2026-09-04)
 
 - Found while scoping OBS-008c3: `GameState::production_discount_remaining` and

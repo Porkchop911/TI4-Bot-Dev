@@ -11,6 +11,7 @@ use ti4_model::id::{PlanetId, PlayerId, SystemId, TechnologyId, UnitTypeId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
 
 /// The four research tracks. Unit upgrades have no colour (90.7b), which is why
 /// `UNITUPGRADE` is deliberately absent.
@@ -519,10 +520,20 @@ pub fn production_used(
                         format!("exhaust to reduce the combined cost by {owned_upgrades}"),
                     )
                     .with("technology", "aida")
-                    .with("amount", i64::try_from(owned_upgrades).unwrap_or(i64::MAX)),
+                    .with(
+                        "discount_offered",
+                        i64::try_from(owned_upgrades).unwrap_or(i64::MAX),
+                    ),
                     ChoiceOption::decline(),
                 ],
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("aida".to_owned()),
+                "exhaust_for_production_discount",
+                state.phase,
+                state.round,
+            ));
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if !answer.is_decline() {

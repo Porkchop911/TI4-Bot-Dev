@@ -1149,7 +1149,7 @@ fn add_named(features: &mut FeatureVector, name: std::fmt::Arguments<'_>, value:
 fn canonical_feature_kind(kind: &str) -> &str {
     match kind {
         "land" => "commit",
-        "place" => "produce",
+        "place" | "production_discount" => "produce",
         "spend" => "pay",
         "ready_technology" => "technology",
         "open_transaction" | "answer" => "transaction",
@@ -1304,6 +1304,11 @@ fn production_decision_features(
         // Present only while the destination is undecided, so an unanswerable consequence is a
         // marker rather than a zero.
         "placement_pending",
+        // OBS-008c3: the resource-cost discount a build carries (Sarween Tools, AI Development
+        // Algorithm, Harrugh Gefhara) and, on the discount's own exhaust-or-not ask, how much
+        // accepting it would grant.
+        "discount",
+        "discount_offered",
     ] {
         if let Some(value) = option.payload.get(key).and_then(Value::as_i64) {
             add_named(
@@ -2539,6 +2544,100 @@ mod tests {
             Some(small_integer_value(4))
         );
         assert_eq!(value_of(&settled, "production:placement_pending"), None);
+    }
+
+    /// Two otherwise-identical build options differing only in discount (Sarween Tools, AI
+    /// Development Algorithm, Harrugh Gefhara) reach the policy as different, not as the same
+    /// option twice (OBS-008c3).
+    #[test]
+    fn obs008c3_a_builds_discount_reaches_the_policy_and_survives_projection() {
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let carrier = |discount: i64| {
+            ChoiceOption::new("build|carrier|1", "produce")
+                .with("cost", 3 - discount)
+                .with("printed_cost", 3)
+                .with("discount", discount)
+        };
+        let full_price = Choice::new(player.clone(), "produce", vec![carrier(0)]);
+        let discounted = Choice::new(player.clone(), "produce", vec![carrier(1)]);
+
+        let full_features =
+            explicit_option_features(&seen, &full_price, &full_price.options[0], &player, &[]);
+        let discounted_features =
+            explicit_option_features(&seen, &discounted, &discounted.options[0], &player, &[]);
+
+        assert_eq!(value_of(&full_features, "production:discount"), None);
+        assert_eq!(
+            value_of(&discounted_features, "production:discount"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&discounted_features, "production:cost"), Some(2.0));
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &discounted,
+            &discounted.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "production:discount"), Some(1.0));
+        assert!(crate::projection::admits("production:discount"));
+    }
+
+    /// AI Development Algorithm's own exhaust-or-not ask carries a typed subtype and states what
+    /// accepting would grant, distinct from an ordinary build option in the same family.
+    #[test]
+    fn obs008c3_ai_development_algorithms_ask_is_typed_and_states_what_accepting_grants() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let ask = Choice::new(
+            player.clone(),
+            "exhaust?",
+            vec![
+                ChoiceOption::new("exhaust", "production_discount")
+                    .with("technology", "aida")
+                    .with("discount_offered", 2),
+                ChoiceOption::decline(),
+            ],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("aida".to_owned()),
+            "exhaust_for_production_discount",
+            state.phase,
+            state.round,
+        ));
+
+        let features = explicit_option_features(&seen, &ask, &ask.options[0], &player, &[]);
+        assert_eq!(
+            value_of(
+                &features,
+                "production:subtype:exhaust_for_production_discount"
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&features, "production:discount_offered"),
+            Some(2.0)
+        );
+
+        let unrelated = ChoiceOption::new("build|carrier|1", "produce").with("cost", 3);
+        let build_choice = Choice::new(player.clone(), "produce", vec![unrelated]);
+        let build_features =
+            explicit_option_features(&seen, &build_choice, &build_choice.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&build_features, "production:discount_offered"),
+            None,
+            "an ordinary build carries no exhaust-ask fact"
+        );
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
