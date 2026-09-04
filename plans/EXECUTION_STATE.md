@@ -24,6 +24,38 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b5 — bombardment target surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b4 (`4ab638e`).
+  Fifth slice of `OBS-008b`.
+- The finding: `bombardment_target`'s (Coexistence 7.2) option id *is* the targeted seat's raw
+  `PlayerId`, and nothing suppressed it from the generic `option:` token pipeline -- a genuine
+  representation-doctrine violation (rule 3: opponent-relative slots, not player ids), not just a
+  missing fact. A policy could in principle key on a literal seat label that is arbitrary per game.
+- Engine: `bombardment_target_question` gains a `system` parameter and attaches `system`/`planet`
+  payload (this decision previously carried none at all); both call sites updated.
+- Policy fix: `explicit_option_features_with`'s `dropped`-token set, which already strips a board
+  identity out of a composite `verb|argument` id's argument half, gains a `bombardment_target`
+  case that drops the option's *whole* id -- there is no `verb|argument` split here, the whole id
+  is the identity, and since `dropped` filters the combined id-and-label token set this also
+  removes the seat from the label ("b's units"), not just the id.
+- Replacement fact: new `bombardment_target_features` maps the option id to its
+  `seen.opponent_slots(player)` position (OBS-005) and emits `combat:target-slot-{index}` under
+  the existing `combat` family. No new family, no vocabulary change.
+- Scope boundary: fixed only for this one confirmed producer. A grep during scoping found
+  `.as_str()` beside `ChoiceOption::labelled` in roughly twenty engine files; whether any other
+  producer shares this pattern is not established and is recorded as a residual for a dedicated
+  audit, not silently fixed everywhere here.
+- Checks: engine 1,195 lib + 4 integration + 5 docs (incl. `invasion::` 43/43); policy 220
+  (includes the 102-game deterministic campaign, 337.24 s, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B5.md`. Spec: `plans/OBS-008B5_BOMBARDMENT_TARGET_SURFACE.md`.
+  Independent Tier-C review OUTSTANDING -- flagged in the evidence as a priority review item since
+  it touches the shared tokenizer.
+- Next: the rest of `OBS-008b` -- ground casualty (Rule 42), fight-ground-combat-round,
+  start-next-ground-combat, and custodians removal. Also open: the residual raw-identity audit
+  this package's scoping surfaced but did not resolve.
+
 ### OBS-008b4 — sustain-damage consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after the Codex integration

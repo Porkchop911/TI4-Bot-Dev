@@ -522,6 +522,7 @@ fn take_bombard_hits(
 /// hits. Only players still holding ground forces there are offered.
 fn bombardment_target_question(
     invader: &PlayerId,
+    system: &SystemId,
     planet: &PlanetId,
     hits: usize,
     present: &std::collections::BTreeSet<PlayerId>,
@@ -535,11 +536,18 @@ fn bombardment_target_question(
         present
             .iter()
             .map(|player| {
+                // OBS-008b5: `system`/`planet` give the option board context through the
+                // existing generic pipeline. The option's own id is the targeted seat's raw
+                // identity -- necessary for the engine to route the answer, but not a fact
+                // `bombardment_target_features` lets reach the policy as one; it is represented
+                // as an OBS-005 opponent slot instead.
                 ChoiceOption::labelled(
                     player.as_str(),
                     "bombardment_target",
                     format!("{player}'s units"),
                 )
+                .with("system", system.to_string())
+                .with("planet", planet.to_string())
             })
             .collect(),
     ))
@@ -576,25 +584,28 @@ fn apply_bombard_plan(
                     .filter(|unit| &unit.owner != invader)
                     .map(|unit| unit.owner.clone())
                     .collect();
-                let Some(question) =
-                    bombardment_target_question(invader, &entry.planet, *produced, &present).map(
-                        |question| {
-                            question.contextualized(
-                                DecisionContext::new(
-                                    invader.clone(),
-                                    DecisionSource::Rule("Coexistence 7.2".to_owned()),
-                                    "bombardment_target",
-                                    state.phase,
-                                    state.round,
-                                )
-                                .about(DecisionTarget::Planet {
-                                    system: system.clone(),
-                                    planet: entry.planet.clone(),
-                                }),
-                            )
-                        },
+                let Some(question) = bombardment_target_question(
+                    invader,
+                    system,
+                    &entry.planet,
+                    *produced,
+                    &present,
+                )
+                .map(|question| {
+                    question.contextualized(
+                        DecisionContext::new(
+                            invader.clone(),
+                            DecisionSource::Rule("Coexistence 7.2".to_owned()),
+                            "bombardment_target",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Planet {
+                            system: system.clone(),
+                            planet: entry.planet.clone(),
+                        }),
                     )
-                else {
+                }) else {
                     // 7.2: nobody left with units takes the remaining hits.
                     break;
                 };
@@ -2065,23 +2076,28 @@ impl Window for InvasionWindow {
                     .filter(|unit| unit.owner != self.invader)
                     .map(|unit| unit.owner.clone())
                     .collect();
-                bombardment_target_question(&self.invader, planet, groups[next], &present).map(
-                    |question| {
-                        question.contextualized(
-                            DecisionContext::new(
-                                self.invader.clone(),
-                                DecisionSource::Rule("Coexistence 7.2".to_owned()),
-                                "bombardment_target",
-                                state.phase,
-                                state.round,
-                            )
-                            .about(DecisionTarget::Planet {
-                                system: self.system.clone(),
-                                planet: planet.clone(),
-                            }),
-                        )
-                    },
+                bombardment_target_question(
+                    &self.invader,
+                    &self.system,
+                    planet,
+                    groups[next],
+                    &present,
                 )
+                .map(|question| {
+                    question.contextualized(
+                        DecisionContext::new(
+                            self.invader.clone(),
+                            DecisionSource::Rule("Coexistence 7.2".to_owned()),
+                            "bombardment_target",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Planet {
+                            system: self.system.clone(),
+                            planet: planet.clone(),
+                        }),
+                    )
+                })
             }
             Stage::ChoosingNextCombat {
                 planet, remaining, ..
@@ -3119,6 +3135,48 @@ mod tests {
             "every infantry was named: C twice, B once, B's surplus hit wasted"
         );
         assert_eq!(dice.count(), 3, "one roll per bombarding ship");
+    }
+
+    /// OBS-008b5: a bombardment-target option names the system and planet it concerns, board
+    /// context it previously carried none of at all.
+    #[test]
+    fn obs008b5_bombardment_target_options_carry_their_system_and_planet() {
+        let system = SystemId::new("18");
+        let planet = PlanetId::new("mecatolrex");
+        let present: std::collections::BTreeSet<PlayerId> =
+            [PlayerId::new("b"), PlayerId::new("c")]
+                .into_iter()
+                .collect();
+
+        let choice =
+            bombardment_target_question(&PlayerId::new("a"), &system, &planet, 2, &present)
+                .expect("two seats present");
+
+        for option in &choice.options {
+            assert_eq!(
+                option
+                    .payload
+                    .get("system")
+                    .and_then(serde_json::Value::as_str),
+                Some("18")
+            );
+            assert_eq!(
+                option
+                    .payload
+                    .get("planet")
+                    .and_then(serde_json::Value::as_str),
+                Some("mecatolrex")
+            );
+        }
+        assert_eq!(
+            choice
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .collect::<std::collections::BTreeSet<_>>(),
+            ["b".to_owned(), "c".to_owned()].into_iter().collect(),
+            "the option id is still the targeted seat, for the engine to route the answer"
+        );
     }
 
     #[test]

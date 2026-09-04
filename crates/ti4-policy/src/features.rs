@@ -1105,16 +1105,25 @@ fn explicit_option_features_with(
     // The planet lookup is scoped to the argument of a composite id rather than run over every
     // word of every option: that is the only place a board identity appears, and testing all of
     // them cost 35% of an update.
-    let dropped: BTreeSet<String> = option
-        .id
-        .split_once('|')
-        .map(|(_, argument)| {
-            tokens(argument)
-                .into_iter()
-                .filter(|token| is_planet_id(token))
-                .collect()
-        })
-        .unwrap_or_default();
+    let dropped: BTreeSet<String> = if kind == "bombardment_target" {
+        // OBS-008b5: unlike a `verb|argument` id with a board reference buried in the argument,
+        // this option's *whole* id is an opposing seat's raw identity (Coexistence 7.2 asks
+        // "whose units take this hit") -- necessary for the engine to route the answer, never a
+        // fact this schema lets reach the policy as a literal token. It is represented as an
+        // OBS-005 opponent slot instead, by `bombardment_target_features`.
+        tokens(&option.id).into_iter().collect()
+    } else {
+        option
+            .id
+            .split_once('|')
+            .map(|(_, argument)| {
+                tokens(argument)
+                    .into_iter()
+                    .filter(|token| is_planet_id(token))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let labels = if include_display_label {
         tokens(&option.label)
     } else {
@@ -1346,6 +1355,7 @@ fn explicit_option_features_with(
     production_decision_features(choice, option, &mut features);
     tactical_decision_features(choice, option, &mut features);
     combat_decision_features(choice, option, &mut features);
+    bombardment_target_features(seen, choice, option, player, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1788,6 +1798,38 @@ fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &m
         ti4_engine::preview::Outcome::Unavailable { .. } => {
             add_named(features, format_args!("combat:preview-unavailable"), 1.0);
         }
+    }
+}
+
+/// Which opposing seat a bombardment-target option names, as an OBS-005 opponent slot rather
+/// than the raw identity the option's own id carries (OBS-008b5).
+///
+/// Coexistence 7.2 asks "whose units on this planet take the bombardment's next hits" among the
+/// seats still holding ground forces there; the option id is that seat's `PlayerId`, needed for
+/// the engine to route the answer but never admitted as a literal token (see the `dropped` set in
+/// `explicit_option_features_with`). This is the fact that replaces it: a bounded, relationship-
+/// ranked slot index that means the same thing across games, the way every other opponent-facing
+/// feature in this file already does.
+fn bombardment_target_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+    features: &mut FeatureVector,
+) {
+    let Some(context) = &choice.context else {
+        return;
+    };
+    if context.subtype != "bombardment_target" {
+        return;
+    }
+    let target = PlayerId::new(option.id.clone());
+    if let Some(index) = seen
+        .opponent_slots(player)
+        .iter()
+        .position(|slot| **slot == target)
+    {
+        add_named(features, format_args!("combat:target-slot-{index}"), 1.0);
     }
 }
 
@@ -3824,6 +3866,68 @@ mod tests {
         );
         assert_eq!(value_of(&projected, "combat:ships-after"), Some(1.0));
         assert!(crate::projection::admits("combat:ships-after"));
+    }
+
+    /// OBS-008b5: a bombardment-target option's raw seat identity never survives as an `option:`
+    /// token; the seat is represented instead as an OBS-005 opponent slot, and the option's
+    /// `system` payload still reaches the policy through the existing generic board-fact family.
+    #[test]
+    fn obs008b5_bombardment_target_options_use_a_slot_not_a_raw_identity() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::plain_hub();
+        let centre = SystemId::new(&hub.centre);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b"); // shares a system with a: sorts to combat slot 0
+
+        let mut state = ti4_engine::fixtures::game(&["a", "b", "c", "d", "e", "f"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        ti4_engine::fixtures::put(&mut state, &centre, "fighter", &a, 1);
+        ti4_engine::fixtures::put(&mut state, &centre, "fighter", &b, 1);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+
+        let target = ChoiceOption::labelled(b.to_string(), "bombardment_target", "b's units")
+            .with("system", hub.centre.clone())
+            .with("planet", "mecatolrex");
+        let choice = Choice::new(a.clone(), "whose units take the hit", vec![target])
+            .contextualized(
+                DecisionContext::new(
+                    a.clone(),
+                    DecisionSource::Rule("Coexistence 7.2".to_owned()),
+                    "bombardment_target",
+                    Phase::Action,
+                    2,
+                )
+                .about(DecisionTarget::Planet {
+                    system: centre.clone(),
+                    planet: ti4_model::id::PlanetId::new("mecatolrex"),
+                }),
+            );
+
+        let names = names_of(&explicit_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &a,
+            &[],
+        ));
+        assert!(
+            names.contains(&"combat:target-slot-0".to_owned()),
+            "b is a as own combat counterpart, so slot 0: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|name| name == "option:b"),
+            "the raw seat id must never survive as a literal token: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name.starts_with("option-system:")),
+            "the system payload still reaches the board-fact family: {names:?}"
+        );
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
