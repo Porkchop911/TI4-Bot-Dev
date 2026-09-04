@@ -18,6 +18,7 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
 use crate::movement::MovementRules;
+use crate::preview::{Delta, Preview, Quantity};
 use crate::rng::GameRng;
 
 /// The choice kind for loading a unit into a ship's hold.
@@ -306,6 +307,13 @@ impl CargoWindow {
                 CargoSource::Space => serde_json::Value::Null,
                 CargoSource::Planet(planet) => planet.to_string().into(),
             };
+            // OBS-008a3: the hold's own remaining slots, before and after this one pickup.
+            // `resolve` charges every accepted load exactly one slot regardless of the unit's
+            // printed capacity cost (95.2's "capacity_remaining" bookkeeping counts loads, not
+            // capacityUsed), so the preview states that same arithmetic rather than a corpus
+            // lookup that could disagree with what accepting the option actually does.
+            let capacity_remaining =
+                self.capacity - i64::try_from(self.loaded.len()).unwrap_or(i64::MAX);
             let mut option = ChoiceOption::labelled(
                 format!("load|{index}"),
                 LOAD_KIND,
@@ -315,10 +323,12 @@ impl CargoWindow {
             .with("source", source)
             .with("damaged", cargo.unit.sustained_damage)
             .with("galvanized", cargo.unit.galvanized)
-            .with(
-                "capacity_remaining",
-                self.capacity - i64::try_from(self.loaded.len()).unwrap_or(i64::MAX),
-            )
+            .with("capacity_remaining", capacity_remaining)
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::CapacityFree,
+                capacity_remaining,
+                capacity_remaining - 1,
+            )]))
             .with(
                 "loaded_ground",
                 self.loaded
@@ -570,6 +580,77 @@ mod tests {
         assert_eq!(context.source, DecisionSource::Rule("95".to_owned()));
         assert_eq!(context.subtype, "load_cargo");
         assert_eq!(context.target, Some(DecisionTarget::System(origin)));
+    }
+
+    /// OBS-008a3: each pickup option previews the hold's own remaining slots falling by exactly
+    /// one, matching what `resolve` actually charges; the "carry nothing further" option has no
+    /// preview; and the previewed `after` is what the next pickup choice's `before` actually is.
+    #[test]
+    fn obs008a3_load_options_preview_the_holds_own_capacity_falling_by_one() {
+        let (mut state, origin, _) = state_with_two_systems();
+        state.system_mut(&origin).units.push(unit("infantry"));
+        state.system_mut(&origin).units.push(unit("fighter"));
+        let ship = unit("carrier"); // capacity 4
+        state.system_mut(&origin).units.push(ship.clone());
+
+        let mut hold = CargoWindow::for_ship(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player(),
+            &origin,
+            &ship,
+            &[],
+        );
+        let choice = hold.pending_choice().expect("a pickup is offered");
+        let mut saw_pickup = false;
+        for option in &choice.options {
+            if option.is_decline() {
+                assert!(
+                    option.preview.is_none(),
+                    "declining to load anything has no preview"
+                );
+                continue;
+            }
+            saw_pickup = true;
+            match &option
+                .preview
+                .as_ref()
+                .expect("a pickup is previewed")
+                .outcome
+            {
+                crate::preview::Outcome::Certain { deltas } => {
+                    assert_eq!(
+                        deltas,
+                        &[Delta::new(Quantity::CapacityFree, 4, 3)],
+                        "a fresh hold of capacity 4 previews 4 -> 3 for any first pickup"
+                    );
+                }
+                other => panic!("a pickup preview is certain, got {other:?}"),
+            }
+        }
+        assert!(saw_pickup, "the hold offers at least one pickup");
+
+        // The previewed `after` is what `resolve` actually leaves: the next choice's `before`.
+        let taken = choice
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .unwrap()
+            .clone();
+        hold.resolve(taken).unwrap();
+        let next = hold.pending_choice().expect("capacity remains");
+        let next_pickup = next
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a second pickup is still offered");
+        match &next_pickup.preview.as_ref().unwrap().outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::CapacityFree, 3, 2)]);
+            }
+            other => panic!("a pickup preview is certain, got {other:?}"),
+        }
     }
 
     /// A passenger taken aboard en route leaves the system it was standing in, not the origin.

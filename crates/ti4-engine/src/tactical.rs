@@ -744,6 +744,10 @@ mod tests {
     /// makes on arrival in the active system, and the previewed `after` matches `fleet::standing`
     /// recomputed once the ship is actually there.
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture, the per-option loop, and the real-arrival agreement check stay together"
+    )]
     fn obs008a2_move_options_preview_the_arriving_ships_fleet_and_capacity_effect() {
         let hub = crate::fixtures::plain_hub();
         let player = PlayerId::new("a");

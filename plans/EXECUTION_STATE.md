@@ -24,6 +24,29 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008a3 — load/cargo surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a2 (`0528919`).
+  Third slice of `OBS-008a`; `OBS-008a4` (landing / ground commitment) remains.
+- Engine: `transit::CargoWindow::pending_choice` attaches `Preview::certain([CapacityFree] before
+  -> before-1)` to every pickup option, from the hold's own `capacity - loaded.len()` bookkeeping —
+  the same count `resolve`/`is_complete` charge, not a corpus `capacityUsed` lookup that could
+  disagree with what accepting the option actually does. The decline ("carry nothing further")
+  option keeps no preview.
+- `CapacityFree` is the same LRR 16 quantity OBS-008a2 already previews for a system's transport
+  capacity, here scoped to one ship's hold; the two never share a choice (`movement_step` vs
+  `load_cargo`), so the reused name is the shared vocabulary the `tactical` family exists for.
+- Policy: `tactical_decision_features`'s subtype guard now also accepts `load_cargo`; the existing
+  `CapacityFree` delta mapping needed no change. No new family, no vocabulary change.
+- Checks: engine 1,189 lib + 4 integration + 5 docs; policy 213 (includes the 102-game
+  deterministic campaign, 286.18 s, no regression); training 133; strict Clippy on engine+policy
+  clean (also fixed a pre-existing `too_many_lines` overage in the OBS-008a2 test, from an
+  intervening `rustfmt` reflow); targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008A3.md`. Spec: `plans/OBS-008A3_LOAD_CARGO_SURFACE.md`.
+  Independent Tier-C review OUTSTANDING.
+- Next: `OBS-008a4` (landing / ground-commitment consequence facts) closes out this row. Then
+  `OBS-008b` (combat/invasion), then the already-unblocked `OBS-008d/g/h/i`.
+
 ### OBS-008a2 — movement-step surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a1 (`a53ae23`).

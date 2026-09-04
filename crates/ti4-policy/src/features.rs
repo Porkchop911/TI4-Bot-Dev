@@ -1615,7 +1615,7 @@ fn tactical_decision_features(
         return;
     };
     match context.subtype.as_str() {
-        "activate_system" | "movement_step" => {}
+        "activate_system" | "movement_step" | "load_cargo" => {}
         _ => return,
     }
 
@@ -3212,6 +3212,67 @@ mod tests {
             Some(4.0)
         );
         assert!(crate::projection::admits("tactical:fleet-headroom-change"));
+    }
+
+    /// OBS-008a3: a load-cargo pickup option carries the hold's own capacity falling by one; the
+    /// "carry nothing further" option carries the subtype and count but no consequence fact.
+    #[test]
+    fn obs008a3_load_options_carry_the_holds_own_capacity_falling_by_one() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let pickup = ChoiceOption::labelled("load|0", "load", "load infantry from space")
+            .with("unit", "infantry")
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::CapacityFree,
+                4,
+                3,
+            )]));
+        let done = ChoiceOption::labelled("done_loading", "decline", "carry nothing further");
+        let choice = Choice::new(player.clone(), "load which unit", vec![pickup, done])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("95".to_owned()),
+                "load_cargo",
+                Phase::Action,
+                2,
+            ));
+
+        let pickup_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("tactical:subtype:load_cargo", 1.0),
+            ("tactical:option-count", 2.0),
+            ("tactical:preview-known", 1.0),
+            ("tactical:capacity-free-before", 4.0),
+            ("tactical:capacity-free-after", 3.0),
+            ("tactical:capacity-free-change", -1.0),
+        ] {
+            assert_eq!(
+                value_of(&pickup_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let done_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        assert_eq!(
+            value_of(&done_features, "tactical:subtype:load_cargo"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&done_features, "tactical:preview-known"), None);
+        assert_eq!(
+            value_of(&done_features, "tactical:capacity-free-after"),
+            None,
+            "carrying nothing further invents no consequence"
+        );
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
