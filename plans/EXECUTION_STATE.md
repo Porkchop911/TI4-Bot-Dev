@@ -3209,6 +3209,16 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-004 handover checkpoint (2026-09-04)
+
+- OBS-004 is split before implementation. First slice: capability-bound actor-owned play-area and
+  private inventory, then bounded policy facts and actor/opponent mutation leak tests. Preserve the
+  existing no-player-argument `SeatObservation` access pattern and never expose arbitrary state or
+  opponent-private holdings.
+- Durable continuation: `plans/HANDOVER_2026-09-04_OBS004.md`.
+
+---
+
 ## OBS-003f: trade context producers (2026-09-04)
 
 - transactions::TradeWindow's two stages (Proposing, Answering) attach typed DecisionContext --
