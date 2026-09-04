@@ -7,6 +7,7 @@ use ti4_model::id::{BreakthroughId, PlanetId, PlayerId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::production::Spend;
 
 const SLICES: [(&str, &str, f64); 6] = [
@@ -168,7 +169,14 @@ fn pay(
                     player.clone(),
                     "discard an action card for the expedition",
                     options,
-                );
+                )
+                .contextualized(DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Content("thunders_edge".to_owned()),
+                    "expedition_discard_action_card",
+                    state.phase,
+                    state.round,
+                ));
                 let chosen = if choice.options.len() == 1 {
                     choice.options[0].clone()
                 } else {
@@ -197,7 +205,14 @@ fn pay(
                         ChoiceOption::labelled(alias.to_string(), "return", label)
                     })
                     .collect(),
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("thunders_edge".to_owned()),
+                "expedition_discard_secret",
+                state.phase,
+                state.round,
+            ));
             let chosen = if choice.options.len() == 1 {
                 choice.options[0].clone()
             } else {

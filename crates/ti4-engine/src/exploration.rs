@@ -9,6 +9,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlanetId, PlayerId, RelicId, SystemId};
 use ti4_model::state::GameState;
 
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::deck::EXPLORATION_TRAITS;
 
 /// The frontier deck, which needs no planet (35.5).
@@ -99,6 +100,7 @@ fn ask(
     ctx: &mut crate::choice::Resolving<'_>,
     state: &GameState,
     player: &PlayerId,
+    card: &str,
     prompt: &str,
     options: &[(&str, &str)],
 ) -> Option<String> {
@@ -109,7 +111,14 @@ fn ask(
             .iter()
             .map(|(id, label)| crate::choice::ChoiceOption::labelled(*id, "explore", *label))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content(card.to_owned()),
+        format!("{card}_choose_reward"),
+        state.phase,
+        state.round,
+    ));
     ctx.ask_seeing(state, &choice).ok().map(|answer| answer.id)
 }
 
@@ -290,7 +299,9 @@ pub fn perform_action(
     {
         seat.exploration_cards.remove(at); // purged
     }
-    crate::relics::grant_chosen_technology(state, content, sources, table, galaxy, player, None)
+    crate::relics::grant_chosen_technology(
+        state, content, sources, table, galaxy, player, None, card,
+    )
 }
 
 /// The Enigmatic Device's price, on the relic and on both exploration cards.
@@ -407,6 +418,7 @@ fn resolve_instant(
                 ctx,
                 state,
                 player,
+                "ion_storm",
                 "Ion Storm: which side faceup",
                 &[("ALPHA", "alpha wormhole"), ("BETA", "beta wormhole")],
             )
@@ -475,6 +487,7 @@ fn resolve_instant(
                 ctx,
                 state,
                 player,
+                "abandoned_warehouses",
                 "Abandoned Warehouses",
                 &[
                     ("gain", "gain 2 commodities"),
@@ -493,6 +506,7 @@ fn resolve_instant(
                 ctx,
                 state,
                 player,
+                "merchant_station",
                 "Merchant Station",
                 &[
                     ("replenish", "replenish commodities"),
@@ -518,7 +532,14 @@ fn resolve_instant(
             if commodities_held >= 1 {
                 options.push(("spend_com", "spend 1 commodity to draw an action card"));
             }
-            let chosen = ask(ctx, state, player, "Functioning Base", &options);
+            let chosen = ask(
+                ctx,
+                state,
+                player,
+                "functioning_base",
+                "Functioning Base",
+                &options,
+            );
             match chosen.as_deref() {
                 Some("spend_tg" | "spend_com") => {
                     if let Some(seat) = state.player_mut(player) {
@@ -548,7 +569,14 @@ fn resolve_instant(
             if commodities_held >= 1 {
                 options.push(("spend_com", "spend 1 commodity to place a mech"));
             }
-            let chosen = ask(ctx, state, player, "Local Fabricators", &options);
+            let chosen = ask(
+                ctx,
+                state,
+                player,
+                "local_fabricators",
+                "Local Fabricators",
+                &options,
+            );
             match chosen.as_deref() {
                 Some("spend_tg" | "spend_com") => {
                     if !place_on_planet(state, content, sources, player, planet, "mech") {
@@ -574,6 +602,7 @@ fn resolve_instant(
                 ctx,
                 state,
                 player,
+                "mercenary_outfit",
                 "Mercenary Outfit",
                 &[("place", "place 1 infantry"), ("decline", "place nothing")],
             );
@@ -912,6 +941,43 @@ mod tests {
             "gw"
         ));
         assert!(state.wormhole_tokens.is_empty());
+    }
+
+    /// OBS-003h slice 2: an exploration decision identifies the card effect, rather than asking
+    /// the policy to recover it from its display prompt.
+    #[test]
+    fn obs003h_exploration_choice_carries_card_context() {
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.board.entry(system).or_default();
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(3);
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        assert!(resolve_instant(
+            &mut state,
+            &mut ctx,
+            &player,
+            Some(&planet),
+            "ion"
+        ));
+
+        let context = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(
+            context.source,
+            DecisionSource::Content("ion_storm".to_owned())
+        );
+        assert_eq!(context.subtype, "ion_storm_choose_reward");
     }
 
     use ti4_model::content_types::DEFAULT as ALL_SOURCES;

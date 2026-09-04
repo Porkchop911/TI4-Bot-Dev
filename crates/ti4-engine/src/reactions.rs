@@ -42,6 +42,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::state::{GameState, Player};
 
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::event::Event;
 use crate::timing::{
     Ability, Frequency, Relation, Resolver, TimingContext, TimingError, relation_name,
@@ -761,7 +762,18 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                         event.event_type
                     ),
                     reaction_card_options(context.content, &options),
-                );
+                )
+                .contextualized(DecisionContext::new(
+                    owner.clone(),
+                    DecisionSource::Rule("22.1".to_owned()),
+                    format!(
+                        "play_reaction_{}_{}",
+                        relation_name(relation),
+                        event.event_type
+                    ),
+                    context.state.phase,
+                    context.state.round,
+                ));
                 match context.ask_seeing(&choice) {
                     Ok(answer) => ActionCardId::new(answer.id),
                     Err(_) => return Ok(()),

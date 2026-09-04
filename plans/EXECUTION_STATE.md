@@ -3175,6 +3175,25 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003h slice 2: reaction and remaining content context producers (2026-09-04)
+
+- Continuation of `576150a`'s action-card slice: exploration, faction abilities, laws, reactions,
+  relics, secret-objective hand-limit enforcement, and Thunder's Edge expedition choices now attach
+  their real typed source and stable subtype. The relic technology helper receives the originating
+  content alias, so Enigmatic Device exploration and relic versions remain distinguishable.
+- No legal set, option ID/label, mechanics, replay behavior, or policy feature changed. A captured
+  Ion Storm decision proves a real exploration ask carries `Content("ion_storm")` and
+  `ion_storm_choose_reward` instead of relying on its prompt.
+- Specification: `plans/OBS-003H2_REACTION_CONTENT_CONTEXT.md`; evidence:
+  `plans/evidence/OBS-003H2.md`. Full engine (1,176 + 4 + 5), ordinary policy (201), and training
+  (133) suites pass alongside focused coverage and strict engine Clippy. Independent Tier-C review
+  is **PASS / APPROVED** after correcting the evidence inventory from 20 to the independently
+  verified 17 scoped `Choice::new` sites. Formatter output is confined to an out-of-package
+  pre-existing `strategy_cards.rs` hunk from the preceding remediation commit. Only the seven named
+  engine files plus this package's plan/evidence/state may be staged.
+
+---
+
 ## OBS-003f: trade context producers (2026-09-04)
 
 - transactions::TradeWindow's two stages (Proposing, Answering) attach typed DecisionContext --

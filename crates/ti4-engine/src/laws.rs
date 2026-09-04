@@ -12,6 +12,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::objectives::VICTORY_TARGET;
 
 /// Laws currently in play.
@@ -552,7 +553,14 @@ pub fn offer_discard(
             ),
             crate::choice::ChoiceOption::decline(),
         ],
-    );
+    )
+    .contextualized(DecisionContext::new(
+        owner.clone(),
+        DecisionSource::Content(alias.to_owned()),
+        "offer_discard_law".to_owned(),
+        state.phase,
+        state.round,
+    ));
     let answer = table
         .ask_seeing(
             &choice,

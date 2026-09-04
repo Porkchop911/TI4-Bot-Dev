@@ -20,6 +20,8 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
+use crate::decision_context::{DecisionContext, DecisionSource};
+
 /// Abilities that cannot be written until a subsystem exists, with the subsystem named.
 ///
 /// Separate from merely unwritten abilities on purpose: one is work, the other is a dependency,
@@ -369,7 +371,14 @@ pub fn perform_component(
                     .with("planet", planet.to_string())
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::FactionAbility("orbital_drop".to_owned()),
+            "orbital_drop_choose_planet",
+            context.state.phase,
+            context.state.round,
+        ));
         let Ok(answer) = context.ask_seeing(&choice) else {
             return false;
         };
@@ -426,7 +435,14 @@ pub fn perform_component(
             player.clone(),
             format!("Orbital Drop: deploy a mech on {planet}"),
             vec![deploy, crate::choice::ChoiceOption::decline()],
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::FactionAbility("orbital_drop".to_owned()),
+            "orbital_drop_deploy_mech",
+            context.state.phase,
+            context.state.round,
+        ));
         if let Ok(answer) = context.ask_seeing(&choice)
             && !answer.is_decline()
             && crate::production::pay_seeing(
@@ -558,7 +574,14 @@ pub fn strategy_resolved(
         .collect();
     options.push(crate::choice::ChoiceOption::decline());
     let choice =
-        crate::choice::Choice::new(player.clone(), "Peace Accords: annex a planet", options);
+        crate::choice::Choice::new(player.clone(), "Peace Accords: annex a planet", options)
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::FactionAbility("peace_accords".to_owned()),
+                "peace_accords_annex",
+                context.state.phase,
+                context.state.round,
+            ));
     let Ok(answer) = context.ask_seeing(&choice) else {
         return;
     };
@@ -681,7 +704,14 @@ pub fn space_combat_round_started(
             ),
             crate::choice::ChoiceOption::decline(),
         ],
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::FactionAbility("munitions".to_owned()),
+        "munitions_reserves_reroll",
+        state.phase,
+        state.round,
+    ));
     let Ok(answer) = table.ask_seeing(
         &choice,
         &crate::choice::Observed::new(state, content, sources, None),

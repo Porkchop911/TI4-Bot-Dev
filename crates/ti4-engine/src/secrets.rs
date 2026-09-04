@@ -9,6 +9,7 @@ use ti4_model::id::{PlayerId, SecretObjectiveId};
 use ti4_model::state::{Feat, FeatOccurrence, GameState};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
 
 /// 45.4: three in hand, counting scored ones.
 pub const HAND_LIMIT: usize = 3;
@@ -130,7 +131,14 @@ pub fn enforce_hand_limit(
                 player.clone(),
                 "return a secret objective to the deck",
                 options,
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("45.4".to_owned()),
+                "return_over_secret_hand_limit",
+                state.phase,
+                state.round,
+            ));
             SecretObjectiveId::new(
                 table
                     .ask_seeing(

@@ -12,6 +12,7 @@ use ti4_model::id::{PlanetId, PlayerId, RelicId};
 use ti4_model::state::GameState;
 
 use crate::choice::Observed;
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::objectives::VICTORY_TARGET;
 
 /// The Circlet of the Void: its owner's units do not roll for gravity rifts.
@@ -189,6 +190,7 @@ pub(crate) fn grant_chosen_technology(
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     colour: Option<&str>,
+    relic: &str,
 ) -> bool {
     let held: std::collections::BTreeSet<String> = state
         .player(player)
@@ -228,7 +230,14 @@ pub(crate) fn grant_chosen_technology(
     if options.is_empty() {
         return false;
     }
-    let choice = crate::choice::Choice::new(player.clone(), "gain which technology", options);
+    let choice = crate::choice::Choice::new(player.clone(), "gain which technology", options)
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content(relic.to_owned()),
+            format!("{relic}_choose_technology"),
+            state.phase,
+            state.round,
+        ));
     let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
     else {
         return false;
@@ -326,7 +335,14 @@ fn codex(
             player.clone(),
             "The Codex: take which action card",
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("codex".to_owned()),
+            "codex_take_action_card",
+            state.phase,
+            state.round,
+        ));
         let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
         else {
             break;
@@ -385,7 +401,14 @@ fn titan_prototype(
             player.clone(),
             "Titan Prototype: which player may build",
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("titanprototype".to_owned()),
+            "titan_prototype_choose_builder",
+            state.phase,
+            state.round,
+        ));
         let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
         else {
             return false;
@@ -469,7 +492,14 @@ fn stellar_converter(
         player.clone(),
         "Stellar Converter: destroy which planet",
         options,
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("stellarconverter".to_owned()),
+        "stellar_converter_choose_target",
+        state.phase,
+        state.round,
+    ));
     let Ok(answer) = table.ask_seeing(
         &choice,
         &Observed::new(state, content, sources, Some(galaxy)),
@@ -607,7 +637,14 @@ pub fn crown_of_emphidia_explore(
         player.clone(),
         "The Crown of Emphidia: exhaust to explore a planet",
         options,
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("emphidia".to_owned()),
+        "crown_of_emphidia_choose_planet",
+        state.phase,
+        state.round,
+    ));
     let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
     else {
         return false;
@@ -692,7 +729,14 @@ pub fn offer_dominus_orb(
             ),
             crate::choice::ChoiceOption::decline(),
         ],
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("dominusorb".to_owned()),
+        "dominus_orb_purge_to_move",
+        state.phase,
+        state.round,
+    ));
     let Ok(answer) = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
     else {
         return false;
@@ -756,7 +800,14 @@ pub fn neuraloop(
             })
             .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        holder.clone(),
+        DecisionSource::Content("neuraloop".to_owned()),
+        "neuraloop_choose_relic_to_purge",
+        state.phase,
+        state.round,
+    ));
     let answer = table
         .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
         .ok()?;
@@ -906,7 +957,16 @@ pub fn use_relic(
                     relic: relic.clone(),
                 };
             }
-            grant_chosen_technology(state, content, sources, table, galaxy, player, None);
+            grant_chosen_technology(
+                state,
+                content,
+                sources,
+                table,
+                galaxy,
+                player,
+                None,
+                "enigmaticdevice",
+            );
         }
         "mawofworlds" => {
             // "Purge this card and exhaust all of your planets to gain any 1 technology."
@@ -921,7 +981,16 @@ pub fn use_relic(
             for planet in planets {
                 state.exhaust_planet(planet);
             }
-            grant_chosen_technology(state, content, sources, table, galaxy, player, None);
+            grant_chosen_technology(
+                state,
+                content,
+                sources,
+                table,
+                galaxy,
+                player,
+                None,
+                "mawofworlds",
+            );
         }
         "codex" => codex(state, content, sources, table, galaxy, player),
         "stellarconverter" => {
