@@ -18,6 +18,7 @@ use ti4_model::units::Unit;
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::movement::{Board, MovementRules};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// The choice kind for activating a system.
 pub const ACTIVATE_KIND: &str = "activate";
@@ -59,12 +60,19 @@ pub fn activatable(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> Vec
 /// all rather than being offered one they cannot pay for.
 #[must_use]
 pub fn activation_options(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> Option<Choice> {
-    if state
+    let tactic_tokens = state
         .player(player)
-        .is_none_or(|seat| seat.tactic_tokens <= 0)
-    {
-        return None;
-    }
+        .map(|seat| seat.tactic_tokens)
+        .filter(|tokens| *tokens > 0)?;
+    // OBS-008a1: activating a system spends exactly one tactic token, unconditionally (LRR 89.1) —
+    // this mirrors `activate()`'s single `spend_token(TokenPool::Tactic)`, so the preview asserts
+    // only what the engine itself does. The cost is the same for every target, but the pool
+    // afterwards is a fact the policy would otherwise have to re-derive per option.
+    let spend = Preview::certain(vec![Delta::new(
+        Quantity::TacticTokens,
+        i64::from(tactic_tokens),
+        i64::from(tactic_tokens - 1),
+    )]);
     let options: Vec<ChoiceOption> = activatable(state, galaxy, player)
         .into_iter()
         .map(|system| {
@@ -73,6 +81,7 @@ pub fn activation_options(state: &GameState, galaxy: &Galaxy, player: &PlayerId)
                 ACTIVATE_KIND,
                 format!("activate {system}"),
             )
+            .previewed(spend.clone())
         })
         .collect();
     if options.is_empty() {
@@ -620,6 +629,59 @@ mod tests {
         assert_eq!(state.active_system, Some(ids[0].clone()));
         assert_eq!(state.pending.as_deref(), Some("move"));
         assert_eq!(state.activation_seq, 1);
+    }
+
+    /// OBS-008a1: every activation option previews the exact command-token consequence, and the
+    /// preview agrees with actually activating and re-measuring — two independent computations, not
+    /// one derived from the other. Option identity and the legal set are untouched.
+    #[test]
+    fn obs008a1_activation_options_preview_the_exact_tactic_token_spend() {
+        let (mut state, galaxy, ids) = fixture();
+        // A non-default pool so the test pins "one less", not "two".
+        state.player_mut(&player()).unwrap().tactic_tokens = 4;
+
+        let choice = activation_options(&state, &galaxy, &player()).expect("offered");
+        let ids_before: Vec<String> = choice.options.iter().map(|o| o.id.clone()).collect();
+
+        for option in &choice.options {
+            let preview = option.preview.as_ref().expect("every option is previewed");
+            assert_eq!(
+                preview.outcome,
+                crate::preview::Outcome::Certain {
+                    deltas: vec![Delta::new(Quantity::TacticTokens, 4, 3)],
+                },
+                "activating spends exactly one tactic token (LRR 89.1)"
+            );
+        }
+
+        // The preview is a claim about `activate()`; check it against `activate()`.
+        let target = choice
+            .options
+            .iter()
+            .map(|o| SystemId::new(o.id.clone()))
+            .find(|system| *system != ids[0])
+            .expect("a target to activate");
+        activate(&mut state, &player(), &target).unwrap();
+        assert_eq!(
+            state.player(&player()).unwrap().tactic_tokens,
+            3,
+            "the pool after activating is exactly what the preview said"
+        );
+
+        // Attaching a preview changes nothing a replay or the legal set reads.
+        let again = activation_options(&fixture().0, &galaxy, &player()).expect("offered");
+        let ids_after: Vec<String> = again.options.iter().map(|o| o.id.clone()).collect();
+        assert_eq!(ids_before, ids_after, "option identity is unchanged");
+        assert_eq!(again.options[0].label, format!("activate {}", ids_after[0]));
+    }
+
+    /// OBS-008a1: a seat that cannot pay is still not offered the action, so the preview never has
+    /// to describe an activation from a zero pool.
+    #[test]
+    fn obs008a1_no_activation_choice_means_no_preview_to_get_wrong() {
+        let (mut state, galaxy, _) = fixture();
+        state.player_mut(&player()).unwrap().tactic_tokens = 0;
+        assert!(activation_options(&state, &galaxy, &player()).is_none());
     }
 
     #[test]

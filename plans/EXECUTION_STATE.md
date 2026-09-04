@@ -24,6 +24,42 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008a1 — activation decision surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-006 (`4880725`).
+  First slice of `OBS-008a` (tactical continuation and options); the rest of the row —
+  `OBS-008a2/a3/a4` — is movement-step, load/cargo, landing, and ground-commitment consequence
+  facts, all unblocked by the same dependencies (OBS-003d, OBS-006, OBS-007b/c) and not started.
+- Engine: `tactical::activation_options` attaches `Preview::certain([TacticTokens: t -> t-1])` to
+  every option — the exact, unconditional single-token spend `activate()` performs (LRR 89.1).
+  Previews are `#[serde(skip)]`; no option ID, label, legal set, payload, replay script, V1/V2
+  decision hash, or `DecisionContext` field moves.
+- Policy: `tactical_decision_features` (alongside `payment_`/`production_decision_features`), guarded
+  on `choice.context.subtype in {activate_system, movement_step}`. Emits, under a new `tactical`
+  family: `tactical:subtype:{subtype}`, `tactical:option-count`, `tactical:optional` (context flag,
+  not populated yet — the movement context is not flagged, deferred so this slice cannot move a V2
+  hash), `tactical:target-system`, and from a `Certain` preview naming `TacticTokens`
+  `tactical:preview-known` + `tactical:tactic-tokens-{before,after,change}` (with
+  `-unknown`/`-unavailable` markers for the non-informative outcomes). A missing preview and a
+  computed-zero `after` emit no numeric fact, distinguished by `preview-known`, exactly as
+  `pay`/`production` do.
+- Vocabulary migration: `OOV_REGISTRY_VERSION` 6 -> 7, `OOV_FAMILIES_V7` appends `tactical`
+  (append-only, index 43), pinned fingerprint
+  `8643598ee52f0d3b4911c620d86b9b33e0d639c70d1571c4acd62bba68d8f931`. One-version-back inference
+  window shifts to v6; v5 is now refused exactly as v4/v3/v2. `tactical` classified `Transferable`
+  in `projection.rs`.
+- Checks: engine 1,187 lib + 4 integration + 5 docs; policy 211 (includes the 102-game
+  deterministic campaign, 282.74 s, no regression against the 260-305 s range); training 133;
+  strict Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+  `ti4-mlp` smoke will refuse the local gitignored `out/vocabulary/current.json` until it is
+  republished under v7 — the accepted consequence of every prior registry bump; out of scope here.
+- Evidence: `plans/evidence/OBS-008A1.md`. Spec:
+  `plans/OBS-008A1_ACTIVATION_DECISION_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: `OBS-008a2` (movement-step consequence facts) continues this row, or `OBS-008b`
+  (combat/invasion), or the already-unblocked `OBS-008d/g/h/i`. Recommended execution order in
+  `STAGE2_COMPLETE_DECISION_CONTRACT.md` puts the rest of tactical/combat (a2-a4, b) before
+  strategy/scoring (d) and the trade/agenda/content clusters (e/f/g/h/i).
+
 ### OBS-006 — candidate-centred board state (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-007c (`6cb09f5`).

@@ -1313,6 +1313,7 @@ fn explicit_option_features_with(
 
     payment_decision_features(choice, option, &mut features);
     production_decision_features(choice, option, &mut features);
+    tactical_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1595,6 +1596,81 @@ fn production_decision_features(
                 format_args!("production:preview-unavailable"),
                 1.0,
             );
+        }
+    }
+}
+
+/// Typed *why* and exact command-token consequence of a tactical decision (OBS-008a1).
+///
+/// Like the payment and production surfaces, these live in one bounded family rather than leaning
+/// on the prompt text `OBS-003d` replaced. A non-informative preview never becomes a numeric zero:
+/// the `preview-known` marker says whether the consequence was computed, so a missing
+/// `tactic-tokens-after` under it means "no room" rather than "no answer".
+fn tactical_decision_features(
+    choice: &Choice,
+    option: &ChoiceOption,
+    features: &mut FeatureVector,
+) {
+    let Some(context) = &choice.context else {
+        return;
+    };
+    match context.subtype.as_str() {
+        "activate_system" | "movement_step" => {}
+        _ => return,
+    }
+
+    add_named(
+        features,
+        format_args!("tactical:subtype:{}", context.subtype),
+        1.0,
+    );
+    add_named(
+        features,
+        format_args!("tactical:option-count"),
+        count_value(choice.options.len()),
+    );
+    if context.optional {
+        add_named(features, format_args!("tactical:optional"), 1.0);
+    }
+    if matches!(
+        context.target,
+        Some(ti4_engine::decision_context::DecisionTarget::System(_))
+    ) {
+        add_named(features, format_args!("tactical:target-system"), 1.0);
+    }
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("tactical:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    ti4_engine::preview::Quantity::TacticTokens => "tactic-tokens",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("tactical:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("tactical:preview-known"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("tactical:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(features, format_args!("tactical:preview-unavailable"), 1.0);
         }
     }
 }
@@ -2251,7 +2327,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 36] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 37] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2288,6 +2364,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 36] = [
     "opponent-secrets-held",
     "actor-inventory",
     "opponent-slot",
+    "tactical",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -2937,6 +3014,118 @@ mod tests {
             None,
             "an ordinary build carries no exhaust-ask fact"
         );
+    }
+
+    /// OBS-008a1: an activation decision carries its typed subtype and option count, and every
+    /// option's preview states the exact command-token pool afterwards. The consequence facts move
+    /// with the seat's pool; a missing preview fabricates nothing; the facts survive projection.
+    #[test]
+    fn obs008a1_tactical_features_carry_subtype_count_and_exact_token_consequence() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let context = |actor: &PlayerId| {
+            DecisionContext::new(
+                actor.clone(),
+                DecisionSource::Rule("89.1".to_owned()),
+                "activate_system",
+                Phase::Action,
+                2,
+            )
+            .about(DecisionTarget::System(SystemId::new("18")))
+        };
+        let activate = |before: i64, after: i64| {
+            ChoiceOption::labelled("18", "activate", "activate 18").previewed(Preview::certain(
+                vec![Delta::new(Quantity::TacticTokens, before, after)],
+            ))
+        };
+        let choice = Choice::new(
+            player.clone(),
+            "activate a system",
+            vec![activate(4, 3), activate(4, 3)],
+        )
+        .contextualized(context(&player));
+
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("tactical:subtype:activate_system", 1.0),
+            ("tactical:option-count", 2.0),
+            ("tactical:target-system", 1.0),
+            ("tactical:preview-known", 1.0),
+            ("tactical:tactic-tokens-before", 4.0),
+            ("tactical:tactic-tokens-after", 3.0),
+            ("tactical:tactic-tokens-change", -1.0),
+        ] {
+            assert_eq!(value_of(&features, name), Some(value), "missing {name}");
+        }
+
+        // A smaller pool moves the exact-consequence facts, not the markers.
+        let mut low = choice.clone();
+        low.options[0].preview = Some(Preview::certain(vec![Delta::new(
+            Quantity::TacticTokens,
+            1,
+            0,
+        )]));
+        let low_features = explicit_option_features(&seen, &low, &low.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&low_features, "tactical:tactic-tokens-before"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&low_features, "tactical:tactic-tokens-after"),
+            None,
+            "a computed zero is a dropped sparse entry, distinguished by preview-known"
+        );
+        assert_eq!(value_of(&low_features, "tactical:preview-known"), Some(1.0));
+
+        // No preview: the subtype and count still land, but no numeric consequence is invented.
+        let mut bare = choice.clone();
+        bare.options[0].preview = None;
+        let bare_features = explicit_option_features(&seen, &bare, &bare.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&bare_features, "tactical:subtype:activate_system"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&bare_features, "tactical:preview-known"), None);
+        assert_eq!(
+            value_of(&bare_features, "tactical:tactic-tokens-after"),
+            None
+        );
+
+        // A non-tactical decision is untouched by this surface.
+        let other = Choice::new(
+            player.clone(),
+            "produce",
+            vec![ChoiceOption::new("build|carrier|1", "produce").with("cost", 3)],
+        );
+        let other_features =
+            explicit_option_features(&seen, &other, &other.options[0], &player, &[]);
+        assert_eq!(value_of(&other_features, "tactical:option-count"), None);
+
+        // The facts survive the MLP projection.
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "tactical:tactic-tokens-after"),
+            Some(3.0)
+        );
+        assert!(crate::projection::admits("tactical:tactic-tokens-after"));
+        assert!(crate::projection::admits(
+            "tactical:subtype:activate_system"
+        ));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
@@ -4325,7 +4514,8 @@ mod tests {
         // 3. The explicit vocabulary is closed: fixed factual families plus bounded
         //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
         //    with the five bare objective families, M09-022 with the six faction-decomposition
-        //    families (MLP plan section 5.3), and OBS-004a with the actor-inventory family —
+        //    families (MLP plan section 5.3), OBS-004a with the actor-inventory family, OBS-005
+        //    with opponent-slot, and OBS-008a1 with the tactical decision-surface family —
         //    reviewed extensions of the closed grammar, not drift: every legacy name above is
         //    unchanged.
         assert_eq!(
@@ -4367,6 +4557,7 @@ mod tests {
                 "opponent-secrets-held",
                 "actor-inventory",
                 "opponent-slot",
+                "tactical",
             ]
         );
 
