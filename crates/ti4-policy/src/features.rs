@@ -4880,6 +4880,62 @@ mod tests {
         ));
     }
 
+    /// OBS-009: a later voter's running tally of each outcome (attached as `current_votes`
+    /// payload, since `Ballot` lives on the vote window rather than `GameState`) reaches the
+    /// policy through the existing generic `payload-number:*` pipeline with no new code.
+    #[test]
+    fn obs009_vote_ledger_payload_reaches_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let for_option = ChoiceOption::labelled("for", "vote", "for").with("current_votes", 3);
+        let against_option =
+            ChoiceOption::labelled("against", "vote", "against").with("current_votes", 0);
+        let choice = Choice::new(
+            player.clone(),
+            "vote for which outcome",
+            vec![for_option, against_option],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("8.10".to_owned()),
+            "cast_vote",
+            Phase::Action,
+            2,
+        ));
+        let for_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&for_features, "payload-number:current_votes"),
+            Some(3.0)
+        );
+        let against_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        assert_eq!(
+            value_of(&against_features, "payload-number:current_votes"),
+            None,
+            "zero is sparse -- absent, not a stored zero"
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "payload-number:current_votes"),
+            Some(3.0)
+        );
+    }
+
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
 
     /// A three-seat position with known, distinct secret holdings: a holds two, b holds one,

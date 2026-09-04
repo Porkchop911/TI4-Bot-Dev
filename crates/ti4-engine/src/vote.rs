@@ -356,10 +356,19 @@ impl VoteWindow {
             Stage::Done(_) => None,
             Stage::Outcome(index) => {
                 let player = self.order.get(*index)?;
+                // OBS-009: 8.2ii seats the speaker last specifically so they vote knowing every
+                // other vote already cast -- the public vote ledger, not merely a legal-set
+                // effect. `Ballot` lives on this window, not on `GameState`, so nothing an
+                // `Observed` builds from state alone could recover it; each option's own running
+                // tally closes that gap through the existing generic payload-number pipeline.
                 let mut options: Vec<ChoiceOption> = self
                     .choices
                     .iter()
-                    .map(|outcome| ChoiceOption::labelled(outcome, VOTE_KIND, outcome))
+                    .map(|outcome| {
+                        let tally = self.ballot.counts.get(outcome).copied().unwrap_or(0);
+                        ChoiceOption::labelled(outcome, VOTE_KIND, outcome)
+                            .with("current_votes", tally)
+                    })
                     .collect();
                 options.push(ChoiceOption::decline());
                 Some(
@@ -829,6 +838,56 @@ mod tests {
 
         assert_eq!(window.order.last(), Some(&state.speaker));
         assert_eq!(window.order.len(), 3);
+    }
+
+    #[test]
+    fn obs009_a_later_voter_sees_the_running_tally_of_every_outcome() {
+        // 8.2ii: the whole point of voting last is knowing every earlier vote. Ballot lives on
+        // this window, not on GameState, so a decision built from state alone could not recover
+        // it without this payload.
+        let (mut state, _) = game(&["a", "b"]);
+        let mut window = VoteWindow::new(&state, "x", for_against());
+        let first_voter = window.order[0].clone();
+        let expected = influence_of(
+            ContentStore::embedded(),
+            POK,
+            &give_voting_planet(&mut state, &first_voter),
+        );
+        window.open(&state, ContentStore::embedded(), POK);
+
+        let first = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap();
+        assert_eq!(
+            first.option(FOR).unwrap().payload.get("current_votes"),
+            Some(&0.into()),
+            "nobody has voted yet"
+        );
+        let outcome = pick(&window, &state, FOR);
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, outcome)
+            .unwrap();
+        let exhaust = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap()
+            .options[0]
+            .clone();
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, exhaust)
+            .unwrap();
+
+        let second = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .unwrap();
+        assert_eq!(
+            second.option(FOR).unwrap().payload.get("current_votes"),
+            Some(&expected.into()),
+            "the first vote is already on the ledger"
+        );
+        assert_eq!(
+            second.option(AGAINST).unwrap().payload.get("current_votes"),
+            Some(&0.into())
+        );
     }
 
     #[test]

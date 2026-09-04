@@ -24,6 +24,36 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-009 — information-history audit (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008h3 (`c6eef2e`).
+  First audit-shaped package this session, per the plan's own OBS-009 charter: check the five
+  continuation-state clusters plus the general public-history question against the completed
+  OBS-003/007/008 surface, then decide whether recurrence/belief features are warranted.
+- Checked and found already covered: tactical action, combat, production/payment, and strategy-
+  card continuation (all either durable in `GameState` or read fresh from an in-progress window's
+  own struct at ask time); once-per-turn/round ability usage and agenda-prediction history are
+  legality-gated, matching the plan's own instruction not to duplicate what the legal set already
+  expresses.
+- **Real finding**: the public vote ledger. LRR 8.2ii seats the speaker last specifically so they
+  vote knowing every other vote already cast -- `Ballot` lives on `VoteWindow`, not `GameState`, so
+  nothing an `Observed` built from state alone could recover it. Fixed:
+  `VoteWindow::pending_choice`'s `Stage::Outcome` branch now attaches a `current_votes` payload
+  (each outcome's running tally) to every option, reaching the policy through the existing generic
+  `payload-number:*` pipeline with **zero policy-side code changes**.
+- Conclusion: one real gap found and closed; no further recurrence/belief features warranted this
+  pass. `neighbours_who_transacted`/`transacted_with` (durable, already reconstructible) is flagged
+  as an unexploited feature opportunity for a future trade/relationship package, not a history gap.
+- Checks: engine 1,208 lib (1,207 + 1 new, incl. `vote::` 24/24) + 4 integration + 5 docs; policy
+  231 (230 + 1 new, incl. the 102-game deterministic campaign, no regression); training 133;
+  strict Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-009.md`. Spec: `plans/OBS-009_INFORMATION_HISTORY_AUDIT.md`.
+  Independent Tier-C review OUTSTANDING; flags the audit's own conclusion as a judgment call worth
+  checking, same spirit as `OBS-008EFGHI1`'s structural-matching flag.
+- Next: OBS-010 (critic alignment), OBS-011 (vocabulary/corpus migration), OBS-012 (decision
+  completeness qualification) -- the plan's remaining milestones. Opportunistically, further
+  `content` previews and OBS-008d1's four remaining unpreviewed strategy subtypes stay open.
+
 ### OBS-008h3 — secret-objective-count content consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008h2 (`7894b85`).
