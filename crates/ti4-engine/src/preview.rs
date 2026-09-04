@@ -640,3 +640,177 @@ mod obs007b_alternate_faces {
         }
     }
 }
+
+/// Exact public dice-mechanic distributions, computed rather than sampled (OBS-007c).
+///
+/// The stochastic counterpart to [`deterministic`]: shared math a per-class producer (OBS-008b's
+/// combat, invasion, and reroll steps) can build a [`Preview::chanced`] from, rather than each
+/// re-deriving the same binomial arithmetic. This module never rolls a die and never consumes
+/// [`crate::rng::GameRng`] — it describes the distribution a roll *would* have, from public rules
+/// alone.
+pub mod stochastic {
+    use super::{Chance, Delta, Preview};
+
+    /// The largest dice pool this module represents as an exact distribution.
+    ///
+    /// [`Chance::weight`] is `u32` (an OBS-007a decision, not reopened here), and `10^9` is the
+    /// largest power of ten that fits. A caller with more dice gets [`Preview::unknown`], never a
+    /// distribution silently rescaled to fit: approximating a rules-exact quantity is exactly what
+    /// this module's callers must not do.
+    pub const MAX_DICE: u32 = 9;
+
+    /// The exact distribution of hit counts from `dice` ten-sided dice, each hitting on `hit_on` or
+    /// higher (LRR 78.13) — the same threshold convention [`crate::dice::Roll::hits_on`] and
+    /// [`crate::dice::Roll::hits`] already use. `deltas_for(hits)` maps one hit count to the deltas
+    /// that result; what a hit count *means* is producer-specific, the odds are not.
+    ///
+    /// `hit_on <= 1` always hits and `hit_on > 10` never can (a d10 has no eleventh face); both
+    /// collapse to [`Preview::certain`] rather than a one-case distribution, since there is no
+    /// chance involved. So does `dice == 0`.
+    ///
+    /// # Panics
+    /// Never in practice: every weight is bounded by `10^dice <= 10^MAX_DICE`, which fits `u32`
+    /// by construction once `dice > MAX_DICE` has already returned early.
+    #[must_use]
+    pub fn hit_count_preview(
+        dice: u32,
+        hit_on: u32,
+        deltas_for: impl Fn(u32) -> Vec<Delta>,
+    ) -> Preview {
+        if dice == 0 {
+            return Preview::certain(deltas_for(0));
+        }
+        if hit_on <= 1 {
+            return Preview::certain(deltas_for(dice));
+        }
+        if hit_on > 10 {
+            return Preview::certain(deltas_for(0));
+        }
+        if dice > MAX_DICE {
+            return Preview::unknown("dice pool exceeds exact representable precision");
+        }
+        let successes = u128::from(11 - hit_on);
+        let misses = 10 - successes;
+        let cases: Vec<Chance> = (0..=dice)
+            .map(|hits| {
+                let weight = binomial(dice, hits) * successes.pow(hits) * misses.pow(dice - hits);
+                Chance {
+                    label: format!("{hits}-hits"),
+                    weight: u32::try_from(weight).expect("bounded by MAX_DICE"),
+                    deltas: deltas_for(hits),
+                }
+            })
+            .collect();
+        Preview::chanced(cases)
+    }
+
+    /// `n` choose `k`, exact. Only ever called with `n <= MAX_DICE`, so the running product never
+    /// approaches `u128`'s range; the incremental multiply-then-divide keeps every intermediate
+    /// value an exact integer (the standard identity for Pascal's-triangle-by-multiplication).
+    fn binomial(n: u32, k: u32) -> u128 {
+        let k = k.min(n - k);
+        let mut result: u128 = 1;
+        for i in 0..k {
+            result = result * u128::from(n - i) / u128::from(i + 1);
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod obs007c_stochastic {
+    use super::stochastic::{MAX_DICE, hit_count_preview};
+    use super::{Delta, Outcome, Quantity};
+
+    /// A fixed one-quantity delta per hit count, for tests that only care about the distribution
+    /// shape rather than what a hit means.
+    fn marker(hits: u32) -> Vec<Delta> {
+        vec![Delta::new(Quantity::ShipsInSystem, 0, i64::from(hits))]
+    }
+
+    #[test]
+    fn hit_count_distribution_matches_hand_computed_binomial_odds() {
+        // Two dice, hitting on 6+: 5/10 per die. P(0)=1/4, P(1)=1/2, P(2)=1/4 -- 25/50/25 of 100.
+        let preview = hit_count_preview(2, 6, marker);
+        let Outcome::Chanced { cases, out_of } = preview.outcome else {
+            panic!("expected a chanced outcome");
+        };
+        assert_eq!(out_of, 100);
+        let weight_of = |label: &str| {
+            cases
+                .iter()
+                .find(|case| case.label == label)
+                .map_or_else(|| panic!("no case labelled {label}"), |case| case.weight)
+        };
+        assert_eq!(weight_of("0-hits"), 25);
+        assert_eq!(weight_of("1-hits"), 50);
+        assert_eq!(weight_of("2-hits"), 25);
+    }
+
+    #[test]
+    fn hit_on_at_or_below_one_is_certain_not_a_one_case_distribution() {
+        let preview = hit_count_preview(3, 1, marker);
+        assert!(matches!(preview.outcome, Outcome::Certain { .. }));
+        assert_eq!(preview.certain_deltas(), marker(3).as_slice());
+
+        let preview = hit_count_preview(3, 0, marker);
+        assert!(matches!(preview.outcome, Outcome::Certain { .. }));
+    }
+
+    #[test]
+    fn hit_on_above_ten_is_certain_at_zero_hits() {
+        let preview = hit_count_preview(4, 11, marker);
+        assert!(matches!(preview.outcome, Outcome::Certain { .. }));
+        assert_eq!(preview.certain_deltas(), marker(0).as_slice());
+    }
+
+    #[test]
+    fn zero_dice_is_certain_at_zero_hits_for_any_threshold() {
+        for hit_on in [1, 6, 11] {
+            let preview = hit_count_preview(0, hit_on, marker);
+            assert!(matches!(preview.outcome, Outcome::Certain { .. }));
+            assert_eq!(preview.certain_deltas(), marker(0).as_slice());
+        }
+    }
+
+    #[test]
+    fn nine_dice_is_the_largest_exact_pool_and_ten_is_refused() {
+        let preview = hit_count_preview(MAX_DICE, 6, marker);
+        assert!(preview.is_informative(), "nine dice is still exact");
+
+        let preview = hit_count_preview(MAX_DICE + 1, 6, marker);
+        assert!(
+            !preview.is_informative(),
+            "ten dice must not be silently rescaled to fit u32"
+        );
+        assert!(matches!(preview.outcome, Outcome::Unknown { .. }));
+    }
+
+    #[test]
+    fn the_expected_hit_count_is_the_textbook_binomial_mean() {
+        // Three dice hitting on 7+ (4/10 per die): expected hits is 3 * 4/10 = 12/10, which does
+        // not reduce to a whole number -- proving the rational survives rather than being rounded.
+        let preview = hit_count_preview(3, 7, marker);
+        let (numerator, denominator) = preview
+            .expected(Quantity::ShipsInSystem)
+            .expect("a chanced preview is informative");
+        assert_eq!(
+            (numerator, denominator),
+            (1200, 1000),
+            "3 dice * 4/10 per die, as an exact rational over the full 10^3 denominator"
+        );
+        assert!(
+            (f64_from_i64(numerator) / f64::from(denominator)) > 1.0,
+            "sanity: 1.2 expected hits"
+        );
+    }
+
+    fn f64_from_i64(value: i64) -> f64 {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "test-only sanity check on a value far below f64's exact-integer range"
+        )]
+        let value = value as f64;
+        value
+    }
+}

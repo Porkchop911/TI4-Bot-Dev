@@ -24,6 +24,27 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-007c — stochastic preview foundation (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-005 (`4b69835`).
+- `preview::stochastic::hit_count_preview(dice, hit_on, deltas_for)` computes the exact binomial
+  hit-count distribution for a d10 pool, matching `dice.rs`'s own `hits_on`/`hits()` threshold
+  convention exactly. Degenerate cases (`hit_on <= 1`, `hit_on > 10`, `dice == 0`) collapse to
+  `Preview::certain` since no chance is involved. `MAX_DICE = 9` is the largest pool `Chance::
+  weight`'s `u32` can hold exactly (`10^9`); beyond it the function returns `Preview::unknown`
+  rather than rescaling or truncating a rules-exact quantity.
+- No new "hidden draw" helper: `Preview::unknown` (already shipped in OBS-007a) is correct and
+  sufficient, and the spec records why a parallel helper would be redundant. No producer attaches
+  this yet — that is OBS-008b's (combat/invasion) job.
+- Checks: engine 1,185 + 4 integration + 5 docs; strict Clippy clean; fmt/diff-check clean. Only
+  `ti4-engine` is touched, so policy/training suites and the deterministic campaign were not
+  rerun (no policy-facing code changed).
+- Evidence: `plans/evidence/OBS-007C.md`. Spec: `plans/OBS-007C_STOCHASTIC_PREVIEW_FOUNDATION.md`.
+  Independent Tier-C review OUTSTANDING.
+- Next: OBS-006 (candidate-centred board state, now unblocked by OBS-005), which in turn unblocks
+  OBS-008a/b; separately OBS-008d/g/h/i are now unblocked by OBS-004/004a + OBS-007b/c together
+  and do not need OBS-006, so any of those is also a legitimate next pick.
+
 ### OBS-005 — relational public table state (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-004a (`fbd5548`).
