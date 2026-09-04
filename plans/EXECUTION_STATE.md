@@ -24,6 +24,30 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008a4 — ground-commitment surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a3 (`c463f99`).
+  Fourth and closing slice of `OBS-008a` — `a1`-`a4` are all now done.
+- Engine: `invasion::commit_options` (shared by `commit_ground_forces` and
+  `InvasionWindow::committing_choice`) attaches `Preview::certain([GroundForcesOnPlanet] own-count
+  -> own-count+1)` to every landing option, from `state.system_state(system).on_planet_of(planet,
+  invader).len()` read once per choice. States only the immediate LRR 49.2 placement -- no claim
+  about the ground combat, casualties, or control transfer that may follow, the same boundary
+  OBS-008c2b drew for placement. The count is the invader's own only; an opposing seat's presence
+  on the same planet does not enter it. The "commit no more" decline option keeps no preview.
+  `commit_options` gained `state`/`invader`/`system` parameters; both call sites updated, all 41
+  pre-existing `invasion::` tests still pass.
+- Policy: `tactical_decision_features`'s subtype guard now also accepts `commit_ground_forces`; a
+  new `GroundForcesOnPlanet -> tactical:ground-forces-*` mapping joins the existing delta match.
+  No new family, no vocabulary change.
+- Checks: engine 1,190 lib + 4 integration + 5 docs; policy 214 (includes the 102-game
+  deterministic campaign, 290.73 s, no regression); training 133; strict Clippy on engine+policy
+  clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008A4.md`. Spec: `plans/OBS-008A4_GROUND_COMMITMENT_SURFACE.md`.
+  Independent Tier-C review OUTSTANDING (all four `OBS-008a` slices now owed one).
+- Next: `OBS-008a` is complete. `OBS-008b` (combat and invasion resolution semantics) is next per
+  the plan's recommended order, alongside the already-unblocked `OBS-008d/e/f/g/h/i`.
+
 ### OBS-008a3 — load/cargo surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a2 (`0528919`).

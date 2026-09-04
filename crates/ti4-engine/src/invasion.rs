@@ -18,6 +18,7 @@ use crate::choice::{
 use crate::combat::MAX_ROUNDS;
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
+use crate::preview::{Delta, Preview, Quantity};
 use crate::rng::GameRng;
 
 /// The choice kind for committing a ground force to a planet (the oracle's `commit`).
@@ -711,7 +712,19 @@ fn landable_planets(
 /// One option per *distinguishable* landing — unit type, sustained damage and planet — plus the
 /// terminator. Two identical undamaged infantry are one move written twice, not a choice; a
 /// damaged copy of the same type is its own options.
-fn commit_options(troops: &[Unit], planets: &[PlanetId]) -> Vec<ChoiceOption> {
+///
+/// Each landing previews the exact, immediate `GroundForcesOnPlanet` count it reaches for the
+/// invader on that planet (OBS-008a4) — what LRR 49.2 itself does, placing the unit down. It
+/// claims nothing about the ground combat and control transfer that may follow; those are a
+/// player choice and a later resolution, not this option's own consequence.
+fn commit_options(
+    state: &GameState,
+    invader: &PlayerId,
+    system: &SystemId,
+    troops: &[Unit],
+    planets: &[PlanetId],
+) -> Vec<ChoiceOption> {
+    let board = state.system_state(system);
     let mut seen = std::collections::BTreeSet::new();
     let mut options = Vec::new();
     for (index, unit) in troops.iter().enumerate() {
@@ -727,6 +740,8 @@ fn commit_options(troops: &[Unit], planets: &[PlanetId]) -> Vec<ChoiceOption> {
             if unit.sustained_damage {
                 label.push_str(" (damaged)");
             }
+            let own_ground =
+                i64::try_from(board.on_planet_of(planet, invader).len()).unwrap_or(i64::MAX);
             options.push(
                 ChoiceOption::labelled(
                     format!("commit|{index}|{planet}"),
@@ -734,7 +749,12 @@ fn commit_options(troops: &[Unit], planets: &[PlanetId]) -> Vec<ChoiceOption> {
                     format!("{label} on {planet}"),
                 )
                 .with("planet", planet.to_string())
-                .with("unit", unit.type_id.to_string()),
+                .with("unit", unit.type_id.to_string())
+                .previewed(Preview::certain(vec![Delta::new(
+                    Quantity::GroundForcesOnPlanet,
+                    own_ground,
+                    own_ground + 1,
+                )])),
             );
         }
     }
@@ -776,7 +796,7 @@ pub fn commit_ground_forces(
         // Re-read each iteration: the custodians token can come down mid-sequence and open
         // Mecatol Rex, exactly as in the oracle.
         let planets = landable_planets(state, content, sources, system);
-        let options = commit_options(&troops, &planets);
+        let options = commit_options(state, invader, system, &troops, &planets);
 
         let choice = Choice::new(
             invader.clone(),
@@ -1530,7 +1550,7 @@ impl InvasionWindow {
             return Vec::new();
         }
         let planets = landable_planets(state, content, sources, &self.system);
-        commit_options(&troops, &planets)
+        commit_options(state, &self.invader, &self.system, &troops, &planets)
     }
 
     /// The commit-ground-forces ask, or `None` when there is nothing left to land.
@@ -3882,6 +3902,90 @@ mod tests {
         assert_eq!(context.subtype, "commit_ground_forces");
         assert_eq!(context.target, Some(DecisionTarget::System(system)));
         let _ = planet;
+    }
+
+    /// OBS-008a4: each landing option previews the invader's own ground-force count on that
+    /// planet reaching one more, immediately -- what 49.2 itself does -- and claims nothing about
+    /// the ground combat and control transfer that may follow. The decline option has no preview.
+    #[test]
+    fn obs008a4_commit_options_preview_the_invaders_own_ground_count_rising_by_one() {
+        let (mut state, system, pa, pb) = two_planet_arena();
+        in_space(&mut state, &system, "infantry", &invader(), 2);
+        // A defender already standing on `pa` proves the preview counts only the invader's own.
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(pa.clone())
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("infantry"), PlayerId::new("b")));
+
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        let asked = seen.borrow();
+        let first = &asked[0];
+        for option in &first.options {
+            if option.is_decline() {
+                assert!(option.preview.is_none(), "declining to land has no preview");
+                continue;
+            }
+            assert!(
+                option.id.ends_with(&format!("|{pa}")) || option.id.ends_with(&format!("|{pb}")),
+                "unexpected option {}",
+                option.id
+            );
+            match &option
+                .preview
+                .as_ref()
+                .expect("a landing is previewed")
+                .outcome
+            {
+                crate::preview::Outcome::Certain { deltas } => {
+                    // 0 -> 1 on both planets: the invader has no ground forces on either yet, on
+                    // pa the defender's own presence notwithstanding -- this previews only the
+                    // invader's own count.
+                    assert_eq!(deltas, &[Delta::new(Quantity::GroundForcesOnPlanet, 0, 1)]);
+                }
+                other => panic!("a landing preview is certain, got {other:?}"),
+            }
+        }
+
+        // `FirstOptionCapturing` answered the first offered option -- whichever planet that
+        // named -- so the second ask's option for that same planet previews 1 -> 2: the first
+        // preview's `after` is what the next choice's `before` actually is.
+        let landed_on = first.options[0]
+            .payload
+            .get("planet")
+            .and_then(serde_json::Value::as_str)
+            .expect("the answered option names a planet")
+            .to_owned();
+        let second = &asked[1];
+        let landed_again = second
+            .options
+            .iter()
+            .find(|option| {
+                option
+                    .payload
+                    .get("planet")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(landed_on.as_str())
+            })
+            .expect("the same planet is still landable");
+        match &landed_again.preview.as_ref().unwrap().outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::GroundForcesOnPlanet, 1, 2)]);
+            }
+            other => panic!("a landing preview is certain, got {other:?}"),
+        }
     }
 
     /// OBS-003d: removing the custodians token is typed distinctly from committing ground

@@ -1615,7 +1615,7 @@ fn tactical_decision_features(
         return;
     };
     match context.subtype.as_str() {
-        "activate_system" | "movement_step" | "load_cargo" => {}
+        "activate_system" | "movement_step" | "load_cargo" | "commit_ground_forces" => {}
         _ => return,
     }
 
@@ -1649,9 +1649,12 @@ fn tactical_decision_features(
                 let quantity = match delta.quantity {
                     // OBS-008a1: the command-token an activation spends.
                     ti4_engine::preview::Quantity::TacticTokens => "tactic-tokens",
-                    // OBS-008a2: what a moved ship leaves of the active system's two limits.
+                    // OBS-008a2/a3: what a moved ship leaves of the active system's two limits,
+                    // and what a pickup leaves of the hold's own remaining capacity.
                     ti4_engine::preview::Quantity::FleetSupplyHeadroom => "fleet-headroom",
                     ti4_engine::preview::Quantity::CapacityFree => "capacity-free",
+                    // OBS-008a4: the invader's own ground-force count a landing reaches.
+                    ti4_engine::preview::Quantity::GroundForcesOnPlanet => "ground-forces",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -3273,6 +3276,96 @@ mod tests {
             None,
             "carrying nothing further invents no consequence"
         );
+    }
+
+    /// OBS-008a4: a ground-force landing option carries the invader's own ground-force count on
+    /// that planet rising by one; the "commit no more" option carries the subtype and count but
+    /// no consequence fact.
+    #[test]
+    fn obs008a4_commit_options_carry_the_invaders_own_ground_count_rising_by_one() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let land = ChoiceOption::labelled("commit|0|18", "commit", "land infantry on 18")
+            .with("planet", "18")
+            .with("unit", "infantry")
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::GroundForcesOnPlanet,
+                0,
+                1,
+            )]));
+        let done =
+            ChoiceOption::labelled("done_committing", "decline", "commit no more ground forces");
+        let choice = Choice::new(
+            player.clone(),
+            "commit ground forces in 18",
+            vec![land, done],
+        )
+        .contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("49".to_owned()),
+                "commit_ground_forces",
+                Phase::Action,
+                2,
+            )
+            .about(DecisionTarget::System(SystemId::new("18"))),
+        );
+
+        let land_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("tactical:subtype:commit_ground_forces", 1.0),
+            ("tactical:option-count", 2.0),
+            ("tactical:preview-known", 1.0),
+            ("tactical:ground-forces-after", 1.0),
+            ("tactical:ground-forces-change", 1.0),
+        ] {
+            assert_eq!(
+                value_of(&land_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+        assert_eq!(
+            value_of(&land_features, "tactical:ground-forces-before"),
+            None,
+            "a genuine zero before is a sparse entry"
+        );
+
+        let done_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        assert_eq!(
+            value_of(&done_features, "tactical:subtype:commit_ground_forces"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&done_features, "tactical:preview-known"), None);
+        assert_eq!(
+            value_of(&done_features, "tactical:ground-forces-after"),
+            None,
+            "committing no more invents no consequence"
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "tactical:ground-forces-after"),
+            Some(1.0)
+        );
+        assert!(crate::projection::admits("tactical:ground-forces-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
