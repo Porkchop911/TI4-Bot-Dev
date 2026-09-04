@@ -1366,7 +1366,7 @@ fn explicit_option_features_with(
     combat_decision_features(choice, option, &mut features);
     opponent_identity_features(seen, choice, option, player, &mut features);
     strategy_decision_features(choice, option, &mut features);
-    content_decision_features(choice, &mut features);
+    content_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1945,16 +1945,18 @@ fn strategy_decision_features(
 }
 
 /// Typed *why* of a trade, agenda, reaction, action-card, faction-ability, relic, exploration, or
-/// remaining-content decision (OBS-008e/f/g/h/i, first pass).
+/// remaining-content decision (OBS-008e/f/g/h/i).
 ///
 /// The broad, shallow read `OBS-008d1` established for strategy/technology/scoring, extended here
-/// across the rest of the plan's remaining rows in one pass: subtype and option count only, no
-/// preview, one family rather than five, since every one of these reads the same shape. Most
+/// across the rest of the plan's remaining rows in one pass (OBS-008efghi1): subtype and option
+/// count, one family rather than five, since every one of these reads the same shape. Most
 /// subtypes are fixed strings a producer chose once; a closed set is dynamic (an action-card or
 /// relic alias, or a reaction's timing relation, folded into the subtype at the point it is
 /// built) and is matched structurally instead -- still traced to real source, not an open
-/// catch-all.
-fn content_decision_features(choice: &Choice, features: &mut FeatureVector) {
+/// catch-all. OBS-008f2 begins the preview pass this family started without: where a subtype
+/// attaches one, its exact quantity reaches the policy the same way `strategy`/`combat`/
+/// `tactical` already do.
+fn content_decision_features(choice: &Choice, option: &ChoiceOption, features: &mut FeatureVector) {
     let Some(context) = &choice.context else {
         return;
     };
@@ -2017,6 +2019,42 @@ fn content_decision_features(choice: &Choice, features: &mut FeatureVector) {
     );
     if context.optional {
         add_named(features, format_args!("content:optional"), 1.0);
+    }
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("content:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    // OBS-008f2: the running vote total a planet exhaust would reach (LRR 8.11).
+                    ti4_engine::preview::Quantity::Votes => "votes",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("content:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("content:preview-known"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("content:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(features, format_args!("content:preview-unavailable"), 1.0);
+        }
     }
 }
 
@@ -4574,6 +4612,56 @@ mod tests {
             Some(1.0)
         );
         assert!(crate::projection::admits("content:option-count"));
+    }
+
+    /// OBS-008f2: a `vote_exhaust_planet` option's exact running vote total reaches the policy
+    /// under the existing `content` family.
+    #[test]
+    fn obs008f2_vote_exhaust_preview_reaches_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let exhaust = ChoiceOption::labelled("mecatol", "vote-planet", "exhaust for 6 votes")
+            .previewed(Preview::certain(vec![Delta::new(Quantity::Votes, 3, 9)]));
+        let choice = Choice::new(
+            player.clone(),
+            "exhaust a planet to vote for",
+            vec![exhaust],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("8.11".to_owned()),
+            "vote_exhaust_planet",
+            Phase::Action,
+            2,
+        ));
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("content:subtype:vote_exhaust_planet", 1.0),
+            ("content:preview-known", 1.0),
+            ("content:votes-before", 3.0),
+            ("content:votes-after", 9.0),
+            ("content:votes-change", 6.0),
+        ] {
+            assert_eq!(value_of(&features, name), Some(value), "missing {name}");
+        }
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "content:votes-after"), Some(9.0));
+        assert!(crate::projection::admits("content:votes-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

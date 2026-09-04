@@ -17,6 +17,7 @@ use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// The two outcomes of an agenda that elects nothing.
 pub const FOR: &str = "for";
@@ -376,24 +377,29 @@ impl VoteWindow {
             Stage::Planets {
                 index,
                 outcome,
-                votes: _,
+                votes,
             } => {
                 let player = self.order.get(*index)?;
                 let remaining = votable_planets(state, content, sources, player);
                 if remaining.is_empty() {
                     return None;
                 }
-                let mut options: Vec<ChoiceOption> = remaining
-                    .iter()
-                    .map(|planet| {
-                        let influence = influence_of(content, sources, planet);
-                        ChoiceOption::labelled(
-                            planet.as_str(),
-                            VOTE_PLANET_KIND,
-                            format!("exhaust {planet} for {influence} votes"),
-                        )
-                    })
-                    .collect();
+                let votes_so_far = *votes;
+                let mut options: Vec<ChoiceOption> =
+                    remaining
+                        .iter()
+                        .map(|planet| {
+                            let influence = influence_of(content, sources, planet);
+                            ChoiceOption::labelled(
+                                planet.as_str(),
+                                VOTE_PLANET_KIND,
+                                format!("exhaust {planet} for {influence} votes"),
+                            )
+                            .previewed(Preview::certain(vec![
+                                Delta::new(Quantity::Votes, votes_so_far, votes_so_far + influence),
+                            ]))
+                        })
+                        .collect();
                 options.push(ChoiceOption::decline());
                 Some(
                     Choice::new(
@@ -761,6 +767,41 @@ mod tests {
         planet
     }
 
+    /// Give `player` two distinct planets with influence, so a two-exhaust vote is possible.
+    fn give_two_voting_planets(
+        state: &mut GameState,
+        player: &PlayerId,
+    ) -> (PlanetId, i64, PlanetId, i64) {
+        let catalogue = all_planets(ContentStore::embedded(), POK);
+        let mut found: Vec<(PlanetId, &str, i64)> = catalogue
+            .iter()
+            .filter(|(_, planet)| planet.influence() > 0 && !planet.is_placed_during_play())
+            .take(2)
+            .map(|(id, record)| {
+                (
+                    PlanetId::new(*id),
+                    record.system_id().unwrap_or("18"),
+                    record.influence(),
+                )
+            })
+            .collect();
+        assert_eq!(found.len(), 2, "the corpus has two influential planets");
+        let (second_planet, second_system, second_influence) = found.pop().unwrap();
+        let (first_planet, first_system, first_influence) = found.pop().unwrap();
+        state
+            .system_mut(&ti4_model::id::SystemId::new(first_system))
+            .set_control(first_planet.clone(), player.clone());
+        state
+            .system_mut(&ti4_model::id::SystemId::new(second_system))
+            .set_control(second_planet.clone(), player.clone());
+        (
+            first_planet,
+            first_influence,
+            second_planet,
+            second_influence,
+        )
+    }
+
     fn pick(window: &VoteWindow, state: &GameState, id: &str) -> ChoiceOption {
         window
             .pending_choice(state, ContentStore::embedded(), POK)
@@ -837,6 +878,44 @@ mod tests {
         assert!(window.is_complete());
         assert_eq!(window.ballot().counts.get(FOR), Some(&expected));
         assert_eq!(window.winner(), Some(FOR));
+    }
+
+    #[test]
+    fn obs008f2_exhausting_planets_previews_the_running_vote_total() {
+        // 8.11: a second exhaust adds to the same outcome's running total, not a fresh count.
+        let (mut state, players) = game(&["a"]);
+        let (first, first_influence, second, second_influence) =
+            give_two_voting_planets(&mut state, &players[0]);
+
+        let mut window = VoteWindow::new(&state, "x", for_against());
+        window.open(&state, ContentStore::embedded(), POK);
+        let option = pick(&window, &state, FOR);
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, option)
+            .unwrap();
+
+        let first_option = pick(&window, &state, first.as_str());
+        assert_eq!(
+            first_option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::Votes,
+                0,
+                first_influence,
+            )]))
+        );
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, first_option)
+            .unwrap();
+
+        let second_option = pick(&window, &state, second.as_str());
+        assert_eq!(
+            second_option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::Votes,
+                first_influence,
+                first_influence + second_influence,
+            )]))
+        );
     }
 
     #[test]

@@ -74,6 +74,10 @@ pub enum Quantity {
     /// hits-on-N-or-higher convention). What a hit count implies downstream — a destroyed unit,
     /// a cancelled hit — is producer-specific; this names only the count itself (OBS-008b2).
     Hits,
+    /// Votes committed to the outcome a seat is backing (LRR 8.10-8.11). Distinct from
+    /// `ConstraintKind::Votes`, which bounds how many an ongoing multi-pick ask may still spend;
+    /// this is the exact running total a single option would reach (OBS-008f2).
+    Votes,
 }
 
 /// One quantity, before and after.

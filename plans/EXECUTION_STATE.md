@@ -24,6 +24,35 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008f2 — agenda vote consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after
+  OBS-008e/f/g/h/i pass 1 (`b59335c`). First preview slice of the `content` family: attaches an
+  exact preview to `vote_exhaust_planet` (LRR 8.11), the one subtype of the ~39 with the cleanest
+  single-quantity consequence.
+- New `Quantity::Votes` (`preview.rs`): the running vote total a seat's chosen outcome would reach,
+  distinct from `ConstraintKind::Votes` (an ongoing multi-pick ask's remaining allowance).
+  `VoteWindow::pending_choice`'s `Stage::Planets` branch previews each planet-exhaust option's exact
+  consequence, read fresh off the stage's own running total each ask (a second exhaust previews from
+  the first's own total, not from zero).
+- Policy: `content_decision_features` gains an `option: &ChoiceOption` parameter and now also reads
+  previews, mapping `Quantity::Votes` to `content:votes-{before,after,change}` -- the same shape
+  every other preview-reading family already uses. No new family, no vocabulary change (a specific
+  quantity name inside an already-registered family is not itself a reserved column).
+- `cast_vote`/`vote_tiebreak` (identity choices among outcomes) stay unpreviewed, matching how
+  OBS-008d1 left `ready_planet`/`politics_choose_speaker`/`politics_place_agenda` unpreviewed for
+  the same reason. The other ~37 `content` subtypes remain subtype/option-count only.
+- Checks: engine 1,199 lib (1,198 + 1 new, incl. `vote::` 23/23) + 4 integration + 5 docs; policy
+  227 (226 + 1 new, incl. the 102-game deterministic campaign, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008F2.md`. Spec:
+  `plans/OBS-008F2_AGENDA_VOTE_CONSEQUENCE_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: further opportunistic previews across the remaining `content` subtypes (trade terms,
+  reaction/action-card consequences, exploration/relic outcomes) where a clean single-quantity
+  consequence exists; OBS-008d1's four remaining unpreviewed strategy subtypes; then OBS-009
+  (information-history audit), OBS-010 (critic alignment), OBS-011 (vocabulary/corpus migration),
+  OBS-012 (decision completeness qualification).
+
 ### OBS-008e/f/g/h/i (pass 1) — content decision-surface subtype (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008d2. Per user
