@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 4;
+pub const OOV_REGISTRY_VERSION: u32 = 5;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -217,6 +217,21 @@ const OOV_FAMILIES_V4: [&str; 41] = {
     families
 };
 
+/// The version-5 registry: version 4 with the actor-inventory family appended.
+///
+/// OBS-004a. Appended rather than inserted, for the reason every prior version gives: every column
+/// a v4 vocabulary allocated keeps its index, so the change is additive in the one way that matters.
+const OOV_FAMILIES_V5: [&str; 42] = {
+    let mut families = [""; 42];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V4.len() {
+        families[index] = OOV_FAMILIES_V4[index];
+        index += 1;
+    }
+    families[41] = "actor-inventory";
+    families
+};
+
 /// The pinned fingerprint of the ordered version-1 registry.
 ///
 /// **Independent of how the list is built.** Pinning v2 against v1 alone proved nothing: v2 is
@@ -238,6 +253,10 @@ pub const OOV_FAMILIES_V3_FINGERPRINT: &str =
 pub const OOV_FAMILIES_V4_FINGERPRINT: &str =
     "e1fcb8f11f85c6a0c0a1c9331dacf0d0763c7dcc1c314c69e767f995d000234d";
 
+/// The pinned fingerprint of the ordered version-5 registry.
+pub const OOV_FAMILIES_V5_FINGERPRINT: &str =
+    "cf95e81daf11c00c272f25d0d0e57a506aaef731d812526df2dcec75ad7f0b31";
+
 /// The frozen v1 list, for migration checks. Nothing routes by it.
 #[must_use]
 pub const fn oov_families_v1() -> &'static [&'static str] {
@@ -250,7 +269,7 @@ pub const fn oov_families_v1() -> &'static [&'static str] {
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V4
+    &OOV_FAMILIES_V5
 }
 
 /// Families whose reserved rows exist only to hold v1's indices in place.
@@ -731,13 +750,14 @@ impl Vocabulary {
 
     /// Load a stored vocabulary for read-only model inference.
     ///
-    /// In addition to the current registry, this accepts version 3 with its exact frozen reserved
-    /// prefix. Version 4 only appended the `action-plan` OOV family; a v3 actor therefore keeps
-    /// every stored column at its original address, while new action-plan facts safely fall back
-    /// to the global OOV row. This does not relabel, rewrite, append to, or train the vocabulary.
+    /// In addition to the current registry, this accepts version 4 with its exact frozen reserved
+    /// prefix. Version 5 only appended the `actor-inventory` OOV family; a v4 actor therefore keeps
+    /// every stored column at its original address, while new actor-inventory facts safely fall
+    /// back to the global OOV row. This does not relabel, rewrite, append to, or train the
+    /// vocabulary.
     ///
     /// # Errors
-    /// [`LoadError::Json`] for malformed input, or [`LoadError::Invalid`] if neither the exact v3
+    /// [`LoadError::Json`] for malformed input, or [`LoadError::Invalid`] if neither the exact v4
     /// nor current frozen layout validates.
     pub fn from_json_for_inference(text: &str) -> Result<Self, LoadError> {
         let mut vocabulary: Self = serde_json::from_str(text).map_err(LoadError::Json)?;
@@ -768,12 +788,15 @@ impl Vocabulary {
         self.validate_versioned(false)
     }
 
-    fn validate_versioned(&self, allow_v3_inference: bool) -> Result<(), VocabularyError> {
+    fn validate_versioned(
+        &self,
+        allow_prior_version_inference: bool,
+    ) -> Result<(), VocabularyError> {
         // 1. Fail closed on a layout this build does not know. An unrecognised version means the
         //    reserved columns below are somebody else's, and nothing here can tell which.
         let families: &[&str] = match self.oov_registry_version {
-            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V4,
-            3 if allow_v3_inference => &OOV_FAMILIES_V3,
+            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V5,
+            4 if allow_prior_version_inference => &OOV_FAMILIES_V4,
             _ => {
                 return Err(VocabularyError::UnsupportedRegistry {
                     found: self.oov_registry_version,
@@ -1250,10 +1273,16 @@ mod tests {
             OOV_FAMILIES_V4_FINGERPRINT,
             "the ordered v4 registry changed"
         );
-        // The four digests must differ, or pinning them separately proves nothing.
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V5),
+            OOV_FAMILIES_V5_FINGERPRINT,
+            "the ordered v5 registry changed"
+        );
+        // The five digests must differ, or pinning them separately proves nothing.
         assert_ne!(OOV_FAMILIES_V1_FINGERPRINT, OOV_FAMILIES_V2_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V2_FINGERPRINT, OOV_FAMILIES_V3_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V3_FINGERPRINT, OOV_FAMILIES_V4_FINGERPRINT);
+        assert_ne!(OOV_FAMILIES_V4_FINGERPRINT, OOV_FAMILIES_V5_FINGERPRINT);
 
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
@@ -1281,10 +1310,36 @@ mod tests {
             "the appended family is not the critic namespace"
         );
 
+        assert_eq!(OOV_FAMILIES_V4.len(), OOV_FAMILIES_V3.len() + 1);
+        for (index, family) in OOV_FAMILIES_V3.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V4[index], *family,
+                "v4 moved the v3 reserved column at index {index}"
+            );
+        }
+        assert_eq!(
+            OOV_FAMILIES_V4[OOV_FAMILIES_V3.len()],
+            crate::projection::ACTION_FAMILY,
+            "the appended family is not the action-feasibility namespace"
+        );
+
+        assert_eq!(OOV_FAMILIES_V5.len(), OOV_FAMILIES_V4.len() + 1);
+        for (index, family) in OOV_FAMILIES_V4.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V5[index], *family,
+                "v5 moved the v4 reserved column at index {index}"
+            );
+        }
+        assert_eq!(
+            OOV_FAMILIES_V5[OOV_FAMILIES_V4.len()],
+            "actor-inventory",
+            "the appended family is not the actor-inventory namespace"
+        );
+
         // And the same property on the built vocabulary: reserved column i+1 is families[i].
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         assert_eq!(vocabulary.slots[0].name, GLOBAL_OOV);
-        for (index, family) in OOV_FAMILIES_V3.iter().enumerate() {
+        for (index, family) in OOV_FAMILIES_V5.iter().enumerate() {
             assert_eq!(vocabulary.slots[index + 1].name, oov_name(family));
         }
     }
@@ -1334,15 +1389,15 @@ mod tests {
     }
 
     #[test]
-    fn version_three_loads_for_inference_without_renumbering_its_columns() {
+    fn version_four_loads_for_inference_without_renumbering_its_columns() {
         let mut vocabulary = Vocabulary::build(sample()).expect("builds");
-        let action_column = 1 + OOV_FAMILIES_V3.len();
+        let appended_column = 1 + OOV_FAMILIES_V4.len();
         assert_eq!(
-            vocabulary.slots[action_column].name,
-            oov_name(crate::projection::ACTION_FAMILY)
+            vocabulary.slots[appended_column].name,
+            oov_name("actor-inventory")
         );
-        vocabulary.slots.remove(action_column);
-        vocabulary.oov_registry_version = 3;
+        vocabulary.slots.remove(appended_column);
+        vocabulary.oov_registry_version = 4;
         vocabulary.oov_count -= 1;
         vocabulary.allocated_for -= 1;
         vocabulary.reindex();
@@ -1354,14 +1409,28 @@ mod tests {
             Vocabulary::from_json(&text).is_err(),
             "training load must stay current"
         );
-        let loaded = Vocabulary::from_json_for_inference(&text).expect("v3 inference loads");
-        assert_eq!(loaded.oov_registry_version(), 3);
+        let loaded = Vocabulary::from_json_for_inference(&text).expect("v4 inference loads");
+        assert_eq!(loaded.oov_registry_version(), 4);
         assert_eq!(loaded.column_of(&assigned_name), assigned_column);
         assert_eq!(
-            loaded.column_of("action-plan:new-current-only-fact"),
+            loaded.column_of("actor-inventory:new-current-only-fact"),
             GLOBAL_OOV_COLUMN,
-            "the v4-only family must not alias an old trained row"
+            "the v5-only family must not alias an old trained row"
         );
+    }
+
+    #[test]
+    fn version_three_remains_refused_for_inference() {
+        // v5 only extends the one-version-back window to v4 (OBS-004a); v3 is now two versions
+        // back and must be refused exactly as v2 already is.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.oov_registry_version = 3;
+        let error = Vocabulary::from_json_for_inference(&vocabulary.to_json().expect("json"))
+            .expect_err("v3 is not an inference-compatible layout under the v5 registry");
+        assert!(matches!(
+            error,
+            LoadError::Invalid(VocabularyError::UnsupportedRegistry { .. })
+        ));
     }
 
     #[test]

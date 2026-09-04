@@ -24,6 +24,39 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-004a — actor-owned faceup inventory (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after the OBS-004 handover
+  (`c73649b`) which followed OBS-003i (`0a97f1b`).
+- The handover's first-pass instruction was to add relics/exhaustion, exploration cards, relic
+  fragments, breakthrough, and leaders as new `SeatObservation` (bound-seat-only) accessors.
+  Checking the actual `Player` field comments against LRR overturns that for all five: each is
+  faceup under current rules (73.4 relics; 35.9 fragments; exploration cards and leader sheets are
+  documented/known faceup; a breakthrough derives from the already-public `expedition_slices`).
+  They are added to `PublicSeat` instead — the same standing `technologies`/`strategy_cards`
+  already have — not to `SeatObservation`. `plots`/`plot_objectives` (Firmament) are excluded:
+  confirmed out of scope and never populated by any producer.
+- `crates/ti4-policy/src/features.rs` adds `actor_inventory_facts`: ten closed readiness/count
+  facts (relics held/exhausted, exploration cards held, fragment total, breakthrough held, five
+  leader-status buckets) under one new bounded family, `actor-inventory`, reading only the acting
+  seat's own row. Opponent crossing is deliberately deferred.
+- Vocabulary migration: `OOV_REGISTRY_VERSION` 4 → 5, `OOV_FAMILIES_V5` appends `actor-inventory`
+  (append-only), new pinned fingerprint. The one-version-back inference window shifts to v4; v3 is
+  now refused exactly as v2 is. A pre-existing gap in the reserved-order pinning test (no v3→v4
+  prefix-preservation block had ever been added) was filled alongside the new v4→v5 block.
+- Checks: engine 1,177 + 4 integration + 5 docs; policy 205 (includes the 102-game deterministic
+  campaign, 302.93 s, no regression); training 133; strict Clippy on engine+policy clean; targeted
+  fmt/diff-check clean. One accepted, root-caused `ti4-mlp` smoke fallout: the local (gitignored)
+  `out/vocabulary/current.json` generation was published under registry v4 and is now correctly
+  refused for training load — the identical consequence every prior registry bump (M09-027b,
+  M10-035, M10-036) produced; republishing a generation is out of this package's scope.
+- Evidence: `plans/evidence/OBS-004A.md`. Spec: `plans/OBS-004A_ACTOR_PRIVATE_INVENTORY.md`.
+  Independent Tier-C review OUTSTANDING (hidden-information boundary + schema migration) — not yet
+  committed.
+- Next: obtain Tier-C review, then commit by explicit scoped path. After that, the plan's stated
+  order continues with the remaining OBS-004 slices (public law/agenda modifiers) or OBS-005/006
+  per `plans/STAGE2_COMPLETE_DECISION_CONTRACT.md`.
+
 ### Stage 2 actor observation surface (2026-09-03)
 
 - Active implementation branch: `wp/stage2-actor-observation-surface`, based on `b77e18b`.

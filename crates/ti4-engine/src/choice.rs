@@ -27,8 +27,11 @@ use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::SourceSet;
-use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SecretObjectiveId, SystemId, UnitTypeId};
-use ti4_model::state::{GameState, SystemState};
+use ti4_model::id::{
+    BreakthroughId, LeaderId, ObjectiveId, PlanetId, PlayerId, RelicId, SecretObjectiveId,
+    SystemId, UnitTypeId,
+};
+use ti4_model::state::{GameState, LeaderStatus, SystemState};
 use ti4_model::units::Unit;
 
 use crate::movement::{Board, MovementRules};
@@ -707,6 +710,12 @@ impl<'a> Observed<'a> {
             action_cards_held: seat.action_cards.len(),
             secret_objectives_held: seat.secret_objectives.len(),
             passed: seat.passed,
+            relics: &seat.relics,
+            exhausted_relics: &seat.exhausted_relics,
+            exploration_cards: &seat.exploration_cards,
+            relic_fragments: &seat.relic_fragments,
+            breakthrough: seat.breakthrough.as_ref(),
+            leaders: &seat.leaders,
         })
     }
 
@@ -1173,6 +1182,19 @@ pub struct PublicSeat<'a> {
     pub secret_objectives_held: usize,
     /// Whether this seat has passed for the round.
     pub passed: bool,
+    /// Relics held faceup in the play area (73.4: cannot be traded, so identity is public).
+    pub relics: &'a [RelicId],
+    /// Held relics currently exhausted — visible on the same faceup card.
+    pub exhausted_relics: &'a BTreeSet<RelicId>,
+    /// Exploration cards placed faceup in the play area (e.g. Enigmatic Device).
+    pub exploration_cards: &'a [String],
+    /// Relic fragments by trait, kept faceup in the play area until purged (35.9).
+    pub relic_fragments: &'a BTreeMap<String, i32>,
+    /// The faction breakthrough, once earned — a passive-ability card, not a hand card.
+    pub breakthrough: Option<&'a BreakthroughId>,
+    /// Leader lifecycle states. A leader sheet's identity and lock/ready/exhaust/purge status are
+    /// never hidden information in TI4, unlike a hand of cards.
+    pub leaders: &'a BTreeMap<LeaderId, LeaderStatus>,
 }
 
 /// Anything that can answer a [`Choice`].
@@ -2061,6 +2083,44 @@ mod tests {
         let rival = seen.seat(&pid("b")).unwrap();
         assert_eq!(rival.strategy_cards, std::slice::from_ref(&imperial));
         assert!(rival.exhausted_strategy_cards.contains(&imperial));
+    }
+
+    #[test]
+    fn obs004a_public_seat_carries_faceup_inventory() {
+        // OBS-004a: relics, exhaustion, exploration cards, fragments, breakthrough, and leaders
+        // are all faceup under current LRR rules, so any seat can read another's -- the same
+        // standing `technologies`/`strategy_cards` already have. This is not a `SeatObservation`
+        // capability: `seen.seat(&pid("b"))` is called by the "a" side of the table.
+        let mut state = watched();
+        let leader = LeaderId::new("hackerleader");
+        {
+            let rival = state.player_mut(&pid("b")).unwrap();
+            rival.relics = vec![RelicId::new("codex")];
+            rival.exhausted_relics.insert(RelicId::new("codex"));
+            rival.exploration_cards = vec!["ed1".to_owned()];
+            rival.relic_fragments.insert("CULTURAL".to_owned(), 2);
+            rival.breakthrough = Some(BreakthroughId::new("letnevbt"));
+            rival.leaders.insert(leader.clone(), LeaderStatus::Unlocked);
+        }
+
+        let seen = Observed::new(&state, ContentStore::embedded(), POK, None);
+        let rival = seen.seat(&pid("b")).expect("b is seated");
+        assert_eq!(rival.relics, [RelicId::new("codex")]);
+        assert!(rival.exhausted_relics.contains(&RelicId::new("codex")));
+        assert_eq!(rival.exploration_cards, ["ed1".to_owned()]);
+        assert_eq!(rival.relic_fragments.get("CULTURAL"), Some(&2));
+        assert_eq!(rival.breakthrough, Some(&BreakthroughId::new("letnevbt")));
+        assert_eq!(rival.leaders.get(&leader), Some(&LeaderStatus::Unlocked));
+
+        // The private capability is unaffected: it still answers only for its own bound seat, and
+        // nothing about the new public fields changes what it exposes.
+        let mine = SeatObservation::bind(&seen, pid("a"));
+        assert!(
+            !mine
+                .held_secrets()
+                .contains(&ti4_model::id::SecretObjectiveId::new("become_a_legend")),
+            "b's secret must not reach a's bound view"
+        );
     }
 
     #[test]

@@ -476,6 +476,10 @@ struct ChoiceContext<'a> {
     /// MLP plan section 5.2's opponent surface: public counts, no identities. Once per choice for
     /// the same reason — it walks every seat.
     opponent_facts: Vec<(String, f64)>,
+    /// OBS-004a's actor-owned faceup inventory: relics, exploration cards, fragments,
+    /// breakthrough, and leader readiness. Once per choice for the same reason as the families
+    /// above.
+    actor_inventory_facts: Vec<(String, f64)>,
 }
 
 fn choice_context<'a>(
@@ -489,6 +493,7 @@ fn choice_context<'a>(
         objective_facts: objective_facts(seen, player, held_secrets),
         ability_facts: ability_facts(seen, player),
         opponent_facts: opponent_facts(seen, player),
+        actor_inventory_facts: actor_inventory_facts(seen, player),
     }
 }
 
@@ -712,6 +717,76 @@ fn opponent_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> 
         .into_iter()
         .map(|(held, seats)| (format!("opponent-secrets-held:{held}"), count_value(seats)))
         .collect()
+}
+
+/// The acting seat's faceup play-area inventory (OBS-004a): relics, exploration cards, relic
+/// fragments, its breakthrough, and leader lifecycle status.
+///
+/// Every field this reads is faceup under current LRR rules (73.4 relics; 35.9 fragments; a leader
+/// sheet is never hidden information), so [`ti4_engine::choice::PublicSeat`] already carries it for
+/// any seat — this function still reads only `player`'s own row. Opponent crossing is deferred, the
+/// same restraint [`opponent_facts`] documents for secrets.
+///
+/// Every fact is a closed readiness/count bucket, never a specific relic or leader identity: the
+/// acting player already knows which relic or leader that is without a feature naming it, and an
+/// open per-alias family would be the identity-crossing this package deliberately avoids.
+#[must_use]
+fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let Some(seat) = seen.seat(player) else {
+        return Vec::new();
+    };
+    let mut facts: Vec<(String, f64)> = Vec::new();
+    if !seat.relics.is_empty() {
+        facts.push((
+            "actor-inventory:relics-held".to_owned(),
+            count_value(seat.relics.len()),
+        ));
+    }
+    if !seat.exhausted_relics.is_empty() {
+        facts.push((
+            "actor-inventory:relics-exhausted".to_owned(),
+            count_value(seat.exhausted_relics.len()),
+        ));
+    }
+    if !seat.exploration_cards.is_empty() {
+        facts.push((
+            "actor-inventory:exploration-cards-held".to_owned(),
+            count_value(seat.exploration_cards.len()),
+        ));
+    }
+    let fragments: i32 = seat.relic_fragments.values().sum();
+    if fragments != 0 {
+        facts.push((
+            "actor-inventory:relic-fragments-held".to_owned(),
+            f64::from(fragments),
+        ));
+    }
+    if seat.breakthrough.is_some() {
+        facts.push(("actor-inventory:breakthrough-held".to_owned(), 1.0));
+    }
+    let mut by_status: BTreeMap<ti4_model::state::LeaderStatus, usize> = BTreeMap::new();
+    for status in seat.leaders.values() {
+        *by_status.entry(*status).or_default() += 1;
+    }
+    for (status, count) in by_status {
+        facts.push((
+            format!("actor-inventory:leaders-{}", leader_status_token(status)),
+            count_value(count),
+        ));
+    }
+    facts
+}
+
+/// The stable name a [`ti4_model::state::LeaderStatus`] contributes to `actor-inventory:leaders-*`.
+const fn leader_status_token(status: ti4_model::state::LeaderStatus) -> &'static str {
+    use ti4_model::state::LeaderStatus;
+    match status {
+        LeaderStatus::Locked => "locked",
+        LeaderStatus::Readied => "readied",
+        LeaderStatus::Exhausted => "exhausted",
+        LeaderStatus::Unlocked => "unlocked",
+        LeaderStatus::Purged => "purged",
+    }
 }
 
 /// The eight per-seat facts every option of a choice is described against.
@@ -1081,6 +1156,12 @@ fn explicit_option_features_with(
     for (name, value) in &context.opponent_facts {
         add_named(&mut features, format_args!("{name}"), *value);
     }
+    // OBS-004a: the acting seat's own faceup inventory, on the same terms as the three families
+    // above -- an option-invariant identity fact the nonlinear trunk must still see on every
+    // option under every crossing mode.
+    for (name, value) in &context.actor_inventory_facts {
+        add_named(&mut features, format_args!("{name}"), *value);
+    }
 
     match cross {
         StateCross::ByKind => {
@@ -1102,6 +1183,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.opponent_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-kind:{kind}:{name}"),
+                    *value,
+                );
+            }
+            for (name, value) in &context.actor_inventory_facts {
                 add_named(
                     &mut features,
                     format_args!("state-kind:{kind}:{name}"),
@@ -1132,6 +1220,13 @@ fn explicit_option_features_with(
                 );
             }
             for (name, value) in &context.opponent_facts {
+                add_named(
+                    &mut features,
+                    format_args!("state-option:{option_id}:{name}", option_id = option.id),
+                    *value,
+                );
+            }
+            for (name, value) in &context.actor_inventory_facts {
                 add_named(
                     &mut features,
                     format_args!("state-option:{option_id}:{name}", option_id = option.id),
@@ -2022,7 +2117,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 34] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 35] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2057,6 +2152,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 34] = [
     "faction-home",
     "faction-commodities",
     "opponent-secrets-held",
+    "actor-inventory",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -2821,6 +2917,85 @@ mod tests {
     }
 
     #[test]
+    fn obs004a_actor_inventory_facts_move_only_the_acting_seats_vector() {
+        // OBS-004a: giving the acting seat a faceup holding moves the acting seat's own facts;
+        // giving an opponent the identical holdings leaves the acting seat's vector unchanged,
+        // because `actor_inventory_facts` reads only `player`'s own `PublicSeat` row — opponent
+        // crossing is deferred, the same restraint `opponent_facts` documents for secrets.
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let choice = Choice::new(
+            a.clone(),
+            "spend a strategy token to replenish commodities",
+            vec![ChoiceOption::labelled("no", "strategy", "decline")],
+        );
+        let names = |state: &GameState| {
+            let seen = Observed::new(state, content, POK, None);
+            names_of(&explicit_option_features(
+                &seen,
+                &choice,
+                &choice.options[0],
+                &a,
+                &[],
+            ))
+        };
+
+        let baseline = names(&state);
+        assert!(
+            !baseline.iter().any(|name| name.contains("actor-inventory")),
+            "a fresh seat holds none of these yet: {baseline:?}"
+        );
+
+        let give_everything = |seat: &mut ti4_model::state::Player| {
+            seat.relics = vec![ti4_model::id::RelicId::new("codex")];
+            seat.exhausted_relics
+                .insert(ti4_model::id::RelicId::new("codex"));
+            seat.exploration_cards = vec!["ed1".to_owned()];
+            seat.relic_fragments.insert("CULTURAL".to_owned(), 2);
+            seat.breakthrough = Some(ti4_model::id::BreakthroughId::new("letnevbt"));
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("hackerleader"),
+                ti4_model::state::LeaderStatus::Unlocked,
+            );
+        };
+
+        give_everything(state.player_mut(&a).unwrap());
+        let mine = names(&state);
+        for expected in [
+            "actor-inventory:relics-held",
+            "actor-inventory:relics-exhausted",
+            "actor-inventory:exploration-cards-held",
+            "actor-inventory:relic-fragments-held",
+            "actor-inventory:breakthrough-held",
+            "actor-inventory:leaders-unlocked",
+        ] {
+            assert!(
+                mine.iter().any(|name| name == expected),
+                "missing {expected}: {mine:?}"
+            );
+        }
+
+        // Reset a to the baseline holdings, then give the identical holdings to b instead.
+        let clear = |seat: &mut ti4_model::state::Player| {
+            seat.relics.clear();
+            seat.exhausted_relics.clear();
+            seat.exploration_cards.clear();
+            seat.relic_fragments.clear();
+            seat.breakthrough = None;
+            seat.leaders.clear();
+        };
+        clear(state.player_mut(&a).unwrap());
+        give_everything(state.player_mut(&b).unwrap());
+        let after_opponent_mutation = names(&state);
+        assert_eq!(
+            after_opponent_mutation, baseline,
+            "b's public inventory reached a's feature vector"
+        );
+    }
+
+    #[test]
     fn opponent_secret_counts_are_a_seat_anonymous_distribution() {
         // Two halves, and the second is the one that matters. Anonymity: which opponent holds
         // which count must not change the facts, or the feature has smuggled in a seat identity
@@ -3319,7 +3494,7 @@ mod tests {
     /// loose substring keeps the legacy `kind-faction:` and `option-faction:` channels — which
     /// contain `-faction:` but never `:faction-` — on the pinned side where they belong.
     fn is_post_baseline_family(name: &str) -> bool {
-        const ADDED: [&str; 8] = [
+        const ADDED: [&str; 9] = [
             "objective-",
             "ability:",
             "faction-start-tech:",
@@ -3328,6 +3503,7 @@ mod tests {
             "faction-home:",
             "faction-commodities",
             "opponent-secrets-held:",
+            "actor-inventory:",
         ];
         ADDED
             .iter()
@@ -3840,9 +4016,10 @@ mod tests {
 
         // 3. The explicit vocabulary is closed: fixed factual families plus bounded
         //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
-        //    with the five bare objective families, and M09-022 with the six faction-decomposition
-        //    families (MLP plan section 5.3) — reviewed extensions of the closed grammar, not
-        //    drift: every legacy name above is unchanged.
+        //    with the five bare objective families, M09-022 with the six faction-decomposition
+        //    families (MLP plan section 5.3), and OBS-004a with the actor-inventory family —
+        //    reviewed extensions of the closed grammar, not drift: every legacy name above is
+        //    unchanged.
         assert_eq!(
             EXPLICIT_FIXED_FAMILIES,
             [
@@ -3880,6 +4057,7 @@ mod tests {
                 "faction-home",
                 "faction-commodities",
                 "opponent-secrets-held",
+                "actor-inventory",
             ]
         );
 
@@ -3990,6 +4168,7 @@ mod tests {
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
             ability_facts: ability_facts(&seen, &player),
             opponent_facts: opponent_facts(&seen, &player),
+            actor_inventory_facts: actor_inventory_facts(&seen, &player),
         };
         let full: Vec<FeatureVector> = options
             .iter()
@@ -4118,6 +4297,7 @@ mod tests {
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
             ability_facts: ability_facts(&seen, &player),
             opponent_facts: opponent_facts(&seen, &player),
+            actor_inventory_facts: actor_inventory_facts(&seen, &player),
         };
         let full = explicit_option_features_with(
             &seen,
