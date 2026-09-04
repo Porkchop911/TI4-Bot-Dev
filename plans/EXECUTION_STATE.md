@@ -3110,6 +3110,35 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003e slice 2: turn/token/scoring context producers, row complete (2026-09-04)
+
+- Closes OBS-003e: technology.rs's five remaining reactive asks (Psychoarchaeology, Transit
+  Diodes, Chaos Mapping, Predictive Intelligence, Bio-Stims), tokens::TokenGain (context attached
+  at game.rs::legal_options's dispatch site, the window's only real caller and the only place with
+  a board position to read phase/round from), objectives::ScoringWindow (score_objective for the
+  mixed status-phase list, score_secret_objective for the event-scoped secret-only path), draft's
+  strategy-card selection, and vote's three branches (cast_vote, vote_exhaust_planet,
+  vote_tiebreak).
+- Added a shared choice::Capturing decider (records every Choice, context included, delegating the
+  answer) rather than a fourth local copy of what invasion.rs and strategy_cards.rs each already
+  wrote separately in earlier packages -- those two are not retrofitted, to avoid unrelated cleanup.
+- One registry baseline moved: Capturing::choose's own body calls self.inner.choose(...), which the
+  decision_delivery_inventory scanner correctly counts as a new choice.rs::choose site (2 -> 3).
+  Updated rather than suppressed.
+- No legal-set, option-ID, or application change; no features.rs change (OBS-008d reads this into
+  features later).
+- Checks: engine 1,170 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 265.26 s (263.62 s for slice 1 -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003E2.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, OBS-008c3, OBS-003d, and OBS-003e slice 1 -- six
+  packages now owed review.
+- Next, per the plan's own recommended order: OBS-003f (trade), OBS-003g (agenda), OBS-003h
+  (reaction/content, split by crate if >5 files), OBS-003i (prompt-free projection, after all typed
+  context exists), then OBS-005/006, OBS-007c, before the OBS-008 decision-option packages.
+
+---
+
 ## OBS-003e slice 1: strategy-card context producers (2026-09-04)
 
 - Fourteen strategy_cards.rs producers, eighteen Choice sites, now attach typed DecisionContext:

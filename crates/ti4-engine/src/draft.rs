@@ -6,6 +6,7 @@ use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::phase::next_strategy_picker;
 
 /// The stable option kind for a strategy-card selection.
@@ -43,7 +44,17 @@ pub fn strategy_options(state: &GameState, content: &ContentStore) -> Option<Cho
             )
         })
         .collect();
-    Some(Choice::new(picker, "choose a strategy card", options))
+    Some(
+        Choice::new(picker.clone(), "choose a strategy card", options).contextualized(
+            DecisionContext::new(
+                picker,
+                DecisionSource::Rule("26".to_owned()),
+                "draft_strategy_card",
+                state.phase,
+                state.round,
+            ),
+        ),
+    )
 }
 
 /// Validate and apply one generated strategy-card choice.
@@ -134,6 +145,17 @@ mod tests {
             !state.strategy_card_goods.contains_key(&card),
             "and the card is empty afterwards, so they cannot be collected twice"
         );
+    }
+
+    /// OBS-003e: the strategy-card draft names its rule and a stable subtype.
+    #[test]
+    fn obs003e_strategy_draft_carries_its_typed_context() {
+        let content = ContentStore::embedded();
+        let state = crate::fixtures::game(&["a", "b"]);
+        let choice = strategy_options(&state, content).expect("a draft is open");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("26".to_owned()));
+        assert_eq!(context.subtype, "draft_strategy_card");
     }
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;

@@ -802,7 +802,16 @@ impl<'a> Game<'a> {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
         if let Some((window, _)) = &self.tokens {
-            return window.pending_choice();
+            return window.pending_choice().map(|choice| {
+                let actor = choice.player.clone();
+                choice.contextualized(DecisionContext::new(
+                    actor,
+                    DecisionSource::Rule("52.4".to_owned()),
+                    "gain_command_token",
+                    self.state.phase,
+                    self.state.round,
+                ))
+            });
         }
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
@@ -5019,6 +5028,26 @@ mod tests {
             }
         }
         cost.expect("the carrier was offered")
+    }
+
+    /// OBS-003e: the status-phase token-gain choice, wrapped at `legal_options`'s dispatch site
+    /// because `TokenGain` itself has no board position to read `phase`/`round` from, carries the
+    /// same typed context whichever of its two callers (status step 81.5, or Leadership through
+    /// `strategy_cards::gain_tokens`, typed separately) opened it.
+    #[test]
+    fn obs003e_status_phase_token_gain_carries_its_typed_context() {
+        let state = crate::fixtures::game(&["a", "b"]);
+        let table = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&[PlayerId::new("a")]),
+            Box::default(),
+        ));
+
+        let choice = game.legal_options().expect("a token is owed");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("52.4".to_owned()));
+        assert_eq!(context.subtype, "gain_command_token");
     }
 
     /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed

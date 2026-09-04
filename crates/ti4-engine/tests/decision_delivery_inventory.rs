@@ -858,7 +858,7 @@ fn expected_sites() -> BTreeMap<Site, usize> {
         ("ask", Operation::ChooseDirect, 1),
         ("ask_private", Operation::ChooseObservedDirect, 1),
         ("ask_seeing", Operation::ChooseObservedDirect, 1),
-        ("choose", Operation::ChooseDirect, 2),
+        ("choose", Operation::ChooseDirect, 3),
         ("choose_seeing", Operation::ChooseDirect, 1),
     ] {
         expected.insert(

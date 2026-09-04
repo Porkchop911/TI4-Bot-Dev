@@ -1308,6 +1308,39 @@ impl Decider for Scripted {
     }
 }
 
+/// Records every `Choice` it is asked, context included, before delegating the answer to an
+/// inner decider.
+///
+/// For tests that need to see a producer's typed context and not only its answer: `Scripted`
+/// and `FirstOption` answer without keeping what they were shown, and re-deriving a `Choice`
+/// outside the engine to inspect its context would test a second copy of the construction
+/// rather than the one a policy actually receives.
+pub struct Capturing {
+    seen: std::rc::Rc<std::cell::RefCell<Vec<Choice>>>,
+    inner: Box<dyn Decider>,
+}
+
+impl Capturing {
+    #[must_use]
+    pub fn new(inner: Box<dyn Decider>) -> (Self, std::rc::Rc<std::cell::RefCell<Vec<Choice>>>) {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        (
+            Self {
+                seen: seen.clone(),
+                inner,
+            },
+            seen,
+        )
+    }
+}
+
+impl Decider for Capturing {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        self.seen.borrow_mut().push(choice.clone());
+        self.inner.choose(choice)
+    }
+}
+
 /// Uniform random over legal options from a seed.
 ///
 /// Not a bot. This is what drives bot-versus-bot smoke runs that assert every game

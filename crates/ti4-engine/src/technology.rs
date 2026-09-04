@@ -189,7 +189,14 @@ pub fn start_turn(
                 player.clone(),
                 "Psychoarchaeology: exhaust a specialty for 1 trade good",
                 options,
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("pa".to_owned()),
+                "psychoarchaeology_exhaust_specialty",
+                state.phase,
+                state.round,
+            ));
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if answer.is_decline() {
@@ -227,7 +234,14 @@ pub fn start_turn(
                     4 - moved
                 ),
                 offered,
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("td".to_owned()),
+                "transit_diodes_redeploy",
+                state.phase,
+                state.round,
+            ));
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if answer.is_decline() {
@@ -291,7 +305,15 @@ pub fn start_turn(
                 })
                 .collect();
             options.push(ChoiceOption::decline());
-            let choice = Choice::new(player.clone(), "Chaos Mapping", options);
+            let choice = Choice::new(player.clone(), "Chaos Mapping", options).contextualized(
+                DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Content("cm".to_owned()),
+                    "chaos_mapping_choose_system",
+                    state.phase,
+                    state.round,
+                ),
+            );
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if !answer.is_decline() {
@@ -367,7 +389,14 @@ pub fn end_turn(
                 player.clone(),
                 "Predictive Intelligence: redistribute command tokens",
                 options,
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("pi".to_owned()),
+                "predictive_intelligence_redistribute",
+                state.phase,
+                state.round,
+            ));
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if answer.is_decline() {
@@ -444,7 +473,15 @@ pub fn end_turn(
         }
         if !options.is_empty() {
             options.push(ChoiceOption::decline());
-            let choice = Choice::new(player.clone(), "Bio-Stims", options);
+            let choice = Choice::new(player.clone(), "Bio-Stims", options).contextualized(
+                DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Content("bs".to_owned()),
+                    "bio_stims_ready",
+                    state.phase,
+                    state.round,
+                ),
+            );
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
             if !answer.is_decline() {
@@ -1332,6 +1369,54 @@ mod tests {
         let exhausted = &state.player(&player()).unwrap().exhausted_technologies;
         assert!(!exhausted.contains(&TechnologyId::new("td")));
         assert!(exhausted.contains(&TechnologyId::new("bs")));
+    }
+
+    /// OBS-003e: `start_turn`/`end_turn`'s remaining reactive asks -- Chaos Mapping and
+    /// Bio-Stims -- each carry a distinct, stable subtype naming the technology, rather than
+    /// being told apart only by prompt text. Psychoarchaeology and Transit Diodes are the same
+    /// shape (`technology.rs::start_turn`'s own `.contextualized` calls) and are covered by the
+    /// package's file-wide suite passing unmodified rather than by a bespoke fixture here.
+    #[test]
+    fn obs003e_technology_reactive_asks_carry_typed_context() {
+        let content = ContentStore::embedded();
+
+        let mut state = game(&["a"]);
+        give(&mut state, &["cm"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.player_mut(&player()).unwrap().trade_goods = 1;
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new([
+                system.to_string(),
+                "build|destroyer|1".to_owned(),
+                "trade_good".to_owned(),
+            ])));
+        let mut table = Table::with_default(Box::new(decider));
+        start_turn(&mut state, content, POK, None, &mut table, &player()).unwrap();
+        let cm = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(cm.source, DecisionSource::Content("cm".to_owned()));
+        assert_eq!(cm.subtype, "chaos_mapping_choose_system");
+
+        let mut state = game(&["a"]);
+        give(&mut state, &["bs", "td"]);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .exhausted_technologies
+            .insert(TechnologyId::new("td"));
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new([
+                "ready|technology|td".to_owned(),
+            ])));
+        let mut table = Table::with_default(Box::new(decider));
+        end_turn(&mut state, content, POK, None, &mut table, &player()).unwrap();
+        let bs = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(bs.source, DecisionSource::Content("bs".to_owned()));
+        assert_eq!(bs.subtype, "bio_stims_ready");
+        assert_ne!(cm.subtype, bs.subtype);
     }
 
     /// Sarween Tools names no "may" and nothing to exhaust: it always contributes its flat 1,

@@ -16,6 +16,7 @@ use ti4_model::id::{PlanetId, PlayerId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
+use crate::decision_context::{DecisionContext, DecisionSource};
 
 /// The two outcomes of an agenda that elects nothing.
 pub const FOR: &str = "for";
@@ -360,11 +361,17 @@ impl VoteWindow {
                     .map(|outcome| ChoiceOption::labelled(outcome, VOTE_KIND, outcome))
                     .collect();
                 options.push(ChoiceOption::decline());
-                Some(Choice::new(
-                    player.clone(),
-                    "vote for which outcome",
-                    options,
-                ))
+                Some(
+                    Choice::new(player.clone(), "vote for which outcome", options).contextualized(
+                        DecisionContext::new(
+                            player.clone(),
+                            DecisionSource::Rule("8.10".to_owned()),
+                            "cast_vote",
+                            state.phase,
+                            state.round,
+                        ),
+                    ),
+                )
             }
             Stage::Planets {
                 index,
@@ -388,22 +395,40 @@ impl VoteWindow {
                     })
                     .collect();
                 options.push(ChoiceOption::decline());
-                Some(Choice::new(
-                    player.clone(),
-                    format!("exhaust a planet to vote {outcome}"),
-                    options,
-                ))
+                Some(
+                    Choice::new(
+                        player.clone(),
+                        format!("exhaust a planet to vote {outcome}"),
+                        options,
+                    )
+                    .contextualized(DecisionContext::new(
+                        player.clone(),
+                        DecisionSource::Rule("8.11".to_owned()),
+                        "vote_exhaust_planet",
+                        state.phase,
+                        state.round,
+                    )),
+                )
             }
             Stage::Tiebreak => {
                 let candidates = tiebreak_candidates(&self.ballot, &self.choices);
-                Some(Choice::new(
-                    state.speaker.clone(),
-                    "speaker breaks the tie",
-                    candidates
-                        .iter()
-                        .map(|outcome| ChoiceOption::labelled(outcome, TIEBREAK_KIND, outcome))
-                        .collect(),
-                ))
+                Some(
+                    Choice::new(
+                        state.speaker.clone(),
+                        "speaker breaks the tie",
+                        candidates
+                            .iter()
+                            .map(|outcome| ChoiceOption::labelled(outcome, TIEBREAK_KIND, outcome))
+                            .collect(),
+                    )
+                    .contextualized(DecisionContext::new(
+                        state.speaker.clone(),
+                        DecisionSource::Rule("8.16".to_owned()),
+                        "vote_tiebreak",
+                        state.phase,
+                        state.round,
+                    )),
+                )
             }
         }
     }
@@ -695,6 +720,30 @@ mod tests {
 
     fn for_against() -> Vec<String> {
         vec![FOR.to_owned(), AGAINST.to_owned()]
+    }
+
+    /// OBS-003e: casting a vote and the speaker's tiebreak are typed distinctly, though both
+    /// arise from the same window over the same agenda.
+    #[test]
+    fn obs003e_vote_and_tiebreak_are_typed_distinctly() {
+        let (mut state, _) = game(&["a", "b"]);
+        state.speaker = PlayerId::new("a");
+        let window = VoteWindow::new(&state, "some_agenda", for_against());
+        let cast = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("somebody votes first");
+        let cast_context = cast.context.as_ref().expect("typed context");
+        assert_eq!(cast_context.subtype, "cast_vote");
+
+        let mut window = window;
+        window.stage = Stage::Tiebreak;
+        let tiebreak = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the speaker breaks the tie");
+        let tiebreak_context = tiebreak.context.as_ref().expect("typed context");
+        assert_eq!(tiebreak_context.subtype, "vote_tiebreak");
+        assert_eq!(tiebreak.player, state.speaker);
+        assert_ne!(cast_context.subtype, tiebreak_context.subtype);
     }
 
     /// Give `player` a planet with influence, so they have something to vote with.

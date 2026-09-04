@@ -21,6 +21,7 @@ use ti4_model::id::{ObjectiveId, PlayerId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
+use crate::decision_context::{DecisionContext, DecisionSource};
 
 /// Ten victory points wins (LRR 98).
 pub const VICTORY_TARGET: i32 = 10;
@@ -1748,7 +1749,25 @@ impl ScoringWindow {
             .map(|alias| ChoiceOption::labelled(alias.as_str(), SCORE_KIND, alias.as_str()))
             .collect();
         options.push(ChoiceOption::decline());
-        Some(Choice::new(player, "score an objective", options))
+        // Status timing offers a public and a secret objective in the same list (61.6), so
+        // "public" would misdescribe an option that might be either; only the non-status,
+        // event-scoped path is ever secret-only.
+        let subtype = if self.timing == crate::secrets::Timing::Status {
+            "score_objective"
+        } else {
+            "score_secret_objective"
+        };
+        Some(
+            Choice::new(player.clone(), "score an objective", options).contextualized(
+                DecisionContext::new(
+                    player,
+                    DecisionSource::Rule("61.6".to_owned()),
+                    subtype,
+                    state.phase,
+                    state.round,
+                ),
+            ),
+        )
     }
 
     /// The first pending player who can score, with how many entries to drop to reach them.
@@ -3166,6 +3185,40 @@ mod tests {
             "it left the hand"
         );
         assert!(state.player(&PlayerId::new("a")).unwrap().victory_points > 0);
+    }
+
+    /// OBS-003e: the status-phase scoring ask is typed `score_objective`, not
+    /// `score_public_objective`, because 61.6 offers a public and a secret candidate in the same
+    /// list -- a name that claimed "public" would misdescribe an option that might be either.
+    #[test]
+    fn obs003e_status_scoring_carries_its_typed_context() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives.clear();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        let window = ScoringWindow::new(&[PlayerId::new("a")]);
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a scoreable secret is offered");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("61.6".to_owned()));
+        assert_eq!(context.subtype, "score_objective");
     }
 
     #[test]
