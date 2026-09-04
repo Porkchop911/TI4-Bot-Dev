@@ -105,10 +105,17 @@ pub fn enforce_hand_limit(
         // card held two of was likelier to be discarded than the one held one of, whatever it
         // thought of either.
         let distinct = first_of_each(content, &hand);
+        let before = i64::try_from(hand.len()).unwrap_or(0);
         let options: Vec<ChoiceOption> = distinct
             .iter()
             .map(|(name, index)| {
-                ChoiceOption::labelled(index.to_string(), DISCARD_KIND, name.clone())
+                ChoiceOption::labelled(index.to_string(), DISCARD_KIND, name.clone()).previewed(
+                    Preview::certain(vec![Delta::new(
+                        Quantity::ActionCardsHeld,
+                        before,
+                        before - 1,
+                    )]),
+                )
             })
             .collect();
         let choice = Choice::new(
@@ -7385,6 +7392,35 @@ mod tests {
                 Quantity::ShipsInSystem,
                 0,
                 2,
+            )]))
+        );
+    }
+
+    /// OBS-008h2: discarding over the hand limit previews the seat's own hand count falling by
+    /// exactly one, whichever card leaves.
+    #[test]
+    fn obs008h2_discard_over_hand_limit_previews_the_exact_hand_loss() {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        let hand: Vec<ActionCardId> = (0..=HAND_LIMIT)
+            .map(|index| ActionCardId::new(format!("card{index}")))
+            .collect();
+        state.player_mut(&player).unwrap().action_cards = hand;
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["0"])));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+
+        enforce_hand_limit(&mut state, ContentStore::embedded(), &mut table, &player).unwrap();
+
+        let ask = seen.borrow();
+        let asked = ask.first().expect("the hand-limit ask reached");
+        let option = asked.option("0").expect("the discard was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::ActionCardsHeld,
+                i64::try_from(HAND_LIMIT + 1).unwrap(),
+                i64::try_from(HAND_LIMIT).unwrap(),
             )]))
         );
     }

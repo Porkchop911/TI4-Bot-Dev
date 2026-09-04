@@ -2038,6 +2038,10 @@ fn content_decision_features(choice: &Choice, option: &ChoiceOption, features: &
                     ti4_engine::preview::Quantity::TradeGoods => "trade-goods",
                     ti4_engine::preview::Quantity::PlanetsControlled => "planets-controlled",
                     ti4_engine::preview::Quantity::ShipsInSystem => "ships",
+                    // OBS-008h2: discarding over the hand limit and The Codex's own draw both
+                    // move the seat's own action-card count by exactly one, in opposite
+                    // directions.
+                    ti4_engine::preview::Quantity::ActionCardsHeld => "action-cards",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -4766,6 +4770,72 @@ mod tests {
             "content:planets-controlled-change"
         ));
         assert!(crate::projection::admits("content:ships-change"));
+    }
+
+    /// OBS-008h2: discarding over the hand limit and The Codex's own draw both reach the policy
+    /// under the existing `content` family, moving `content:action-cards-*` in opposite
+    /// directions.
+    #[test]
+    fn obs008h2_action_card_count_previews_reach_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let discard = ChoiceOption::labelled("0", "discard", "discard card0").previewed(
+            Preview::certain(vec![Delta::new(Quantity::ActionCardsHeld, 8, 7)]),
+        );
+        let discard_choice = Choice::new(
+            player.clone(),
+            "over the hand limit -- discard one of 8",
+            vec![discard],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("2.4".to_owned()),
+            "discard_over_hand_limit",
+            Phase::Action,
+            2,
+        ));
+        let discard_features = explicit_option_features(
+            &seen,
+            &discard_choice,
+            &discard_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&discard_features, "content:action-cards-after"),
+            Some(7.0)
+        );
+
+        let take = ChoiceOption::labelled("sabotage", "action_card", "take sabotage").previewed(
+            Preview::certain(vec![Delta::new(Quantity::ActionCardsHeld, 0, 1)]),
+        );
+        let take_choice = Choice::new(
+            player.clone(),
+            "The Codex: take which action card",
+            vec![take],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("codex".to_owned()),
+            "codex_take_action_card",
+            Phase::Action,
+            2,
+        ));
+        let take_features =
+            explicit_option_features(&seen, &take_choice, &take_choice.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&take_features, "content:action-cards-after"),
+            Some(1.0)
+        );
+
+        assert!(crate::projection::admits("content:action-cards-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

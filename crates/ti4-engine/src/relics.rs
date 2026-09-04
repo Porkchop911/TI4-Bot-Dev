@@ -14,6 +14,7 @@ use ti4_model::state::GameState;
 use crate::choice::Observed;
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::objectives::VICTORY_TARGET;
+use crate::preview::{Delta, Preview, Quantity};
 
 /// The Circlet of the Void: its owner's units do not roll for gravity rifts.
 pub const CIRCLET: &str = "circletofthevoid";
@@ -315,6 +316,12 @@ fn codex(
     // Up to three, and taken one at a time so a shrinking pile is offered honestly rather
     // than three questions asked against the pile as it stood.
     for _ in 0..3 {
+        let held = i64::try_from(
+            state
+                .player(player)
+                .map_or(0, |seat| seat.action_cards.len()),
+        )
+        .unwrap_or(0);
         let options: Vec<crate::choice::ChoiceOption> = state
             .discarded_action_cards
             .clone()
@@ -325,6 +332,11 @@ fn codex(
                     "action_card",
                     format!("take {alias}"),
                 )
+                .previewed(Preview::certain(vec![Delta::new(
+                    Quantity::ActionCardsHeld,
+                    held,
+                    held + 1,
+                )]))
             })
             .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
             .collect();
@@ -1178,6 +1190,46 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<RelicId>
 
 #[cfg(test)]
 mod tests {
+    /// OBS-008h2: The Codex previews the seat's own action-card count rising by exactly one,
+    /// whichever discarded card is taken -- read fresh each of the card's up-to-three iterations.
+    #[test]
+    fn obs008h2_codex_previews_the_exact_action_card_gain() {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        state.player_mut(&player).unwrap().relics = vec![RelicId::new("codex")];
+        state.discarded_action_cards = vec![ti4_model::id::ActionCardId::new("sabotage")];
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["sabotage"])));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+
+        use_relic(
+            &mut state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(1),
+            &mut table,
+            None,
+            &player,
+            &RelicId::new("codex"),
+        );
+
+        let ask = seen.borrow();
+        let asked = ask.first().expect("The Codex asked which card to take");
+        let option = asked
+            .option("sabotage")
+            .expect("the discarded card was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::ActionCardsHeld,
+                0,
+                1,
+            )]))
+        );
+    }
+
     /// Every relic offered as an action must have an arm that resolves it (22.3).
     ///
     /// This exists because adding five *passive* relics to `registered_aliases` for coverage very

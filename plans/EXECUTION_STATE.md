@@ -24,6 +24,36 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008h2 — action-card-count content consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008g2 (`7ba99a3`).
+  Third preview slice of `content`: two subtypes whose consequence is the seat's own action-card
+  count moving by one, in opposite directions.
+- `discard_over_hand_limit` (`enforce_hand_limit`, LRR 2.4): every discard option previews the
+  hand count falling by one, read fresh each iteration of the over-limit loop.
+- `codex_take_action_card` (`codex`): every take option previews the action-card count rising by
+  one, read fresh each of the card's up-to-three iterations -- first use of
+  `Quantity::ActionCardsHeld`, declared since OBS-007a but never wired to a producer until now.
+- Policy: `content_decision_features` gains a fourth preview quantity mapping (`ActionCardsHeld`
+  -> `content:action-cards-*`) under the existing family. No new family, no vocabulary change.
+- Checked and left unpreviewed: `expedition_discard_action_card`/`expedition_discard_secret`/
+  `return_over_secret_hand_limit` are the same shape for secret objectives, but need a new
+  `SecretObjectivesHeld` quantity -- left for a future package rather than growing this one's
+  scope. `titan_prototype_choose_builder`/`stellar_converter_choose_target`/`crown_of_emphidia_
+  choose_planet`/`dominus_orb_purge_to_move`/`neuraloop_choose_relic_to_purge` are identity or
+  permission choices without a uniform per-option quantity.
+- Checks: engine 1,204 lib (1,202 + 2 new, incl. `action_cards::` 101/101, `relics::` 28/28) + 4
+  integration + 5 docs; policy 229 (228 + 1 new, incl. the 102-game deterministic campaign, no
+  regression); training 133; strict Clippy on engine+policy clean; targeted fmt (scoped files) +
+  `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008H2.md`. Spec:
+  `plans/OBS-008H2_ACTION_CARD_COUNT_CONSEQUENCE_SURFACE.md`. Independent Tier-C review
+  OUTSTANDING.
+- Next: a `SecretObjectivesHeld` quantity for the secret-hand-limit/expedition-discard subtypes;
+  further opportunistic `content` previews; OBS-008d1's four remaining unpreviewed strategy
+  subtypes; then OBS-009 (information-history audit), OBS-010 (critic alignment), OBS-011
+  (vocabulary/corpus migration), OBS-012 (decision completeness qualification).
+
 ### OBS-008g2 — reused-quantity content consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008f2 (`6a5985b`).
