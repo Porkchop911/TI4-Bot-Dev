@@ -1314,6 +1314,7 @@ fn explicit_option_features_with(
     payment_decision_features(choice, option, &mut features);
     production_decision_features(choice, option, &mut features);
     tactical_decision_features(choice, option, &mut features);
+    combat_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1678,6 +1679,79 @@ fn tactical_decision_features(
         }
         ti4_engine::preview::Outcome::Unavailable { .. } => {
             add_named(features, format_args!("tactical:preview-unavailable"), 1.0);
+        }
+    }
+}
+
+/// Typed *why* and the exact-or-expected consequence of a combat decision (OBS-008b2).
+///
+/// A `Certain` preview (a die that always or never hits) reads like the tactical surface's:
+/// exact before/after/change. A `Chanced` preview — the ordinary case, a d10 reroll — reads as
+/// its exact expected hit count (`Preview::expected`) rather than the whole per-case breakdown:
+/// the odds themselves are exact, but exposing the full distribution as features is not this
+/// family's job yet.
+fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &mut FeatureVector) {
+    let Some(context) = &choice.context else {
+        return;
+    };
+    match context.subtype.as_str() {
+        "reroll_die" => {}
+        _ => return,
+    }
+
+    add_named(
+        features,
+        format_args!("combat:subtype:{}", context.subtype),
+        1.0,
+    );
+    add_named(
+        features,
+        format_args!("combat:option-count"),
+        count_value(choice.options.len()),
+    );
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("combat:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    ti4_engine::preview::Quantity::Hits => "hits",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("combat:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("combat:preview-known"), 1.0);
+            if let Some((numerator, denominator)) =
+                preview.expected(ti4_engine::preview::Quantity::Hits)
+            {
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a hit-count expectation is a small bounded rational"
+                )]
+                let expected = numerator as f64 / f64::from(denominator);
+                add_named(features, format_args!("combat:hits-expected"), expected);
+            }
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("combat:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(features, format_args!("combat:preview-unavailable"), 1.0);
         }
     }
 }
@@ -2334,7 +2408,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 37] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 38] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2372,6 +2446,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 37] = [
     "actor-inventory",
     "opponent-slot",
     "tactical",
+    "combat",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -3415,6 +3490,105 @@ mod tests {
         );
         assert_eq!(value_of(&projected, "casualty-unit:is-ship"), Some(1.0));
         assert!(crate::projection::admits("casualty-unit:sustain"));
+    }
+
+    /// OBS-008b2: a reroll option's `Chanced` hit-count preview reaches the policy as its exact
+    /// expected value, not the whole distribution; a `Certain` preview (hitting on 1, or not
+    /// hitting at all) reads before/after/change like the tactical surface's own previews do.
+    #[test]
+    fn obs008b2_reroll_options_carry_subtype_and_hit_expectation() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Chance, Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        // Hitting on 6+: 5 of 10 faces hit, so the expectation is exactly 0.5.
+        let reroll = ChoiceOption::labelled("reroll|0:0", "reroll_die", "reroll die 1 of carrier")
+            .with("unit", "carrier")
+            .with("face", 5)
+            .with("hits_on", 6)
+            .previewed(Preview::chanced(vec![
+                Chance {
+                    label: "0-hits".to_owned(),
+                    weight: 5,
+                    deltas: vec![Delta::new(Quantity::Hits, 0, 0)],
+                },
+                Chance {
+                    label: "1-hits".to_owned(),
+                    weight: 5,
+                    deltas: vec![Delta::new(Quantity::Hits, 0, 1)],
+                },
+            ]));
+        let decline = ChoiceOption::decline()
+            .with("unit", "carrier")
+            .previewed(Preview::certain(vec![Delta::new(Quantity::Hits, 0, 0)]));
+        let choice = Choice::new(
+            player.clone(),
+            "reroll die 1 of carrier",
+            vec![reroll, decline],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("78.3".to_owned()),
+            "reroll_die",
+            Phase::Action,
+            2,
+        ));
+
+        let reroll_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("combat:subtype:reroll_die", 1.0),
+            ("combat:option-count", 2.0),
+            ("combat:preview-known", 1.0),
+            ("combat:hits-expected", 0.5),
+        ] {
+            assert_eq!(
+                value_of(&reroll_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let decline_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        assert_eq!(
+            value_of(&decline_features, "combat:subtype:reroll_die"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&decline_features, "combat:preview-known"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&decline_features, "combat:hits-expected"),
+            None,
+            "a certain preview has no chanced expectation"
+        );
+
+        // Certain: hitting on 1 always hits.
+        let mut always_hits = choice.clone();
+        always_hits.options[0].preview =
+            Some(Preview::certain(vec![Delta::new(Quantity::Hits, 0, 1)]));
+        let always_features =
+            explicit_option_features(&seen, &always_hits, &always_hits.options[0], &player, &[]);
+        assert_eq!(value_of(&always_features, "combat:hits-after"), Some(1.0));
+        assert_eq!(value_of(&always_features, "combat:hits-change"), Some(1.0));
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "combat:hits-expected"), Some(0.5));
+        assert!(crate::projection::admits("combat:hits-expected"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
@@ -4804,9 +4978,9 @@ mod tests {
         //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
         //    with the five bare objective families, M09-022 with the six faction-decomposition
         //    families (MLP plan section 5.3), OBS-004a with the actor-inventory family, OBS-005
-        //    with opponent-slot, and OBS-008a1 with the tactical decision-surface family —
-        //    reviewed extensions of the closed grammar, not drift: every legacy name above is
-        //    unchanged.
+        //    with opponent-slot, OBS-008a1 with the tactical decision-surface family, and
+        //    OBS-008b2 with the combat decision-surface family — reviewed extensions of the
+        //    closed grammar, not drift: every legacy name above is unchanged.
         assert_eq!(
             EXPLICIT_FIXED_FAMILIES,
             [
@@ -4847,6 +5021,7 @@ mod tests {
                 "actor-inventory",
                 "opponent-slot",
                 "tactical",
+                "combat",
             ]
         );
 

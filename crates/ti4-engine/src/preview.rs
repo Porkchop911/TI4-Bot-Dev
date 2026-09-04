@@ -70,6 +70,10 @@ pub enum Quantity {
     ScoreableObjectives,
     ActionCardsHeld,
     TechnologiesOwned,
+    /// Hits one roll (or one die) produces, before any casualty is assigned (LRR 78.13's
+    /// hits-on-N-or-higher convention). What a hit count implies downstream — a destroyed unit,
+    /// a cancelled hit — is producer-specific; this names only the count itself (OBS-008b2).
+    Hits,
 }
 
 /// One quantity, before and after.

@@ -24,6 +24,42 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b2 — reroll-die stochastic surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b1 (`aab65bc`).
+  Second slice of `OBS-008b`. First package to connect OBS-007c's stochastic preview foundation
+  (`hit_count_preview`, deliberately built with "no producer attaches this yet") to a real
+  producer.
+- `preview::Quantity` gains `Hits`: hits one roll (or one die) produces, before any casualty is
+  assigned. Producer-specific meaning downstream; the count itself is what is named.
+- Engine: `combat::choose_reroll_dice` computes each die's current hit status (face plus any
+  per-die adjustment still on that position -- the same arithmetic `RerollEntry::hits` sums per
+  entry, applied per-die) and attaches: to the reroll option, `unit`/`face`/`hits_on` payload plus
+  `stochastic::hit_count_preview(1, hits_on, ...)` -- exact because a redraw clears the die's
+  adjustment along with its face, so the post-reroll distribution is precisely the uniform
+  threshold roll the helper models; to the decline option, the same `unit` payload and a certain,
+  unchanged fact instead of the reroll's chance. Both omitted when `hits_on` is `None`.
+- Policy: new `combat_decision_features` (guarded on subtype `reroll_die`) mirrors the tactical
+  surface for `Certain` outcomes and adds the first read of a `Chanced` outcome's exact expected
+  value (`Preview::expected`) as `combat:hits-expected` -- the full per-case breakdown remains
+  deliberately unexposed as features this slice.
+- `combat` is a genuinely new family (not a `tactical` reuse): `EXPLICIT_FIXED_FAMILIES` (37 ->
+  38), `projection::FAMILY_ROLES` (44 -> 45, Transferable), and `OOV_REGISTRY_VERSION` 7 -> 8
+  (`OOV_FAMILIES_V8` appends `combat`), new pinned fingerprint, one-version-back window moved to
+  v7.
+- Checks: engine 1,192 lib + 4 integration + 5 docs (incl. `combat::` 52/52); policy 217 (includes
+  the 102-game deterministic campaign, 357.94 s -- consistent with OBS-008b1's 349.95 s, so this
+  confirms a workstream-wide wall-clock shift rather than a per-package regression); training 133;
+  `ti4-mlp` 97/98 -- the one failure (`a_pool_without_an_allowed_manifest_role_is_refused`)
+  reproduces identically at the prior commit `aab65bc`, confirmed pre-existing and unrelated
+  before committing; strict Clippy on engine+policy clean; targeted fmt (scoped files) +
+  `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B2.md`. Spec:
+  `plans/OBS-008B2_REROLL_DIE_STOCHASTIC_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: the rest of `OBS-008b` -- retreat (announce/destination), sustain damage's own preview
+  (declined today, unlike casualty/sustain's b1 identity fix), bombardment, ground casualty
+  (Rule 42), fight-ground-combat-round, start-next-ground-combat, and custodians removal.
+
 ### OBS-008b1 — casualty and sustain unit-identity surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a4 (`1b55fe6`).

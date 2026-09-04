@@ -19,6 +19,7 @@ use ti4_model::units::Unit;
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
+use crate::preview::{Delta, Preview, Quantity, stochastic};
 use crate::rng::GameRng;
 
 /// A bound on the round loop, so an unresolvable fight fails loudly instead of hanging.
@@ -236,17 +237,47 @@ pub fn choose_reroll_dice(
     let mut picks = Vec::new();
     for (unit, entry) in set.rolls.iter().enumerate() {
         for (die, face) in entry.faces.iter().enumerate() {
+            // OBS-008b2: the die's own current hit status (its face plus whatever adjustment --
+            // Thalnos's +1 -- still sits on this position), the same per-die arithmetic
+            // `RerollEntry::hits` sums over the whole entry.
+            let adjusted = i64::from(*face)
+                + entry
+                    .deltas
+                    .get(&die)
+                    .map_or(0, |offset| i64::from(*offset));
+            let current_hit = entry.hits_on.map(|on| i64::from(adjusted >= i64::from(on)));
+
+            let mut reroll = ChoiceOption::labelled(
+                format!("reroll|{unit}:{die}"),
+                "reroll_die",
+                format!("reroll die {} of {} (shows {})", die + 1, entry.unit, face),
+            )
+            .with("unit", entry.unit.clone())
+            .with("face", i64::from(*face));
+            let mut decline = ChoiceOption::decline().with("unit", entry.unit.clone());
+            if let (Some(hits_on), Some(current_hit)) = (entry.hits_on, current_hit) {
+                reroll = reroll
+                    .with("hits_on", i64::from(hits_on))
+                    // A fresh d10 draw replaces the face *and* any per-die adjustment it carried
+                    // (`RerollEntry::deltas`'s own doc: "the adjustment dies with the die"), so
+                    // the redraw is exactly the uniform, unmodified threshold roll
+                    // `stochastic::hit_count_preview` already models.
+                    .previewed(stochastic::hit_count_preview(1, hits_on, |hits| {
+                        vec![Delta::new(Quantity::Hits, current_hit, i64::from(hits))]
+                    }));
+                // Declining leaves this die exactly as it stands -- a certain, zero-chance fact,
+                // not the reroll's distribution.
+                decline = decline.previewed(Preview::certain(vec![Delta::new(
+                    Quantity::Hits,
+                    current_hit,
+                    current_hit,
+                )]));
+            }
+
             let choice = Choice::new(
                 player.clone(),
                 format!("reroll die {} of {}", die + 1, entry.unit),
-                vec![
-                    ChoiceOption::labelled(
-                        format!("reroll|{unit}:{die}"),
-                        "reroll_die",
-                        format!("reroll die {} of {} (shows {})", die + 1, entry.unit, face),
-                    ),
-                    ChoiceOption::decline(),
-                ],
+                vec![reroll, decline],
             )
             .contextualized(DecisionContext::new(
                 player.clone(),
@@ -4647,6 +4678,124 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("dreadnought")
         );
+    }
+
+    /// OBS-008b2: a reroll option names its unit, current face, and hit threshold, and previews
+    /// the exact d10 hit distribution the redraw would produce -- the odds `hit_count_preview`
+    /// (OBS-007c) already computed exactly, finally attached to a real producer. Declining
+    /// previews a certain, unchanged fact instead of the reroll's chance.
+    #[test]
+    fn obs008b2_reroll_options_preview_the_dies_exact_hit_distribution() {
+        let (mut state, system) = arena();
+        let player = defender();
+        state.reroll_staging.insert(
+            player.clone(),
+            RerollSet {
+                kind: "ground".to_owned(),
+                system: system.clone(),
+                rolls: vec![RerollEntry {
+                    unit: "dreadnought".to_owned(),
+                    planet: None,
+                    hits_on: Some(6),
+                    faces: vec![5], // 5 < 6: a current miss
+                    rerolled: std::collections::BTreeSet::new(),
+                    deltas: std::collections::BTreeMap::new(),
+                    unit_types: std::collections::BTreeMap::new(),
+                }],
+            },
+        );
+
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+        let _ = choose_reroll_dice(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+        );
+
+        let asked = seen.borrow();
+        let choice = &asked[0];
+        let reroll = choice
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a reroll option");
+        assert_eq!(
+            reroll
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
+        assert_eq!(
+            reroll
+                .payload
+                .get("face")
+                .and_then(serde_json::Value::as_i64),
+            Some(5)
+        );
+        assert_eq!(
+            reroll
+                .payload
+                .get("hits_on")
+                .and_then(serde_json::Value::as_i64),
+            Some(6)
+        );
+        match &reroll
+            .preview
+            .as_ref()
+            .expect("a reroll is previewed")
+            .outcome
+        {
+            crate::preview::Outcome::Chanced { cases, out_of } => {
+                // Hitting on 6+: 5 of 10 faces hit.
+                assert_eq!(*out_of, 10);
+                let hit = cases
+                    .iter()
+                    .find(|case| case.label == "1-hits")
+                    .expect("a hit case");
+                assert_eq!(hit.weight, 5);
+                assert_eq!(hit.deltas, vec![Delta::new(Quantity::Hits, 0, 1)]);
+                let miss = cases
+                    .iter()
+                    .find(|case| case.label == "0-hits")
+                    .expect("a miss case");
+                assert_eq!(miss.weight, 5);
+                assert_eq!(miss.deltas, vec![Delta::new(Quantity::Hits, 0, 0)]);
+            }
+            other => panic!("a reroll preview is chanced, got {other:?}"),
+        }
+
+        let decline = choice
+            .options
+            .iter()
+            .find(|option| option.is_decline())
+            .expect("a decline option");
+        assert_eq!(
+            decline
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
+        match &decline
+            .preview
+            .as_ref()
+            .expect("declining is previewed")
+            .outcome
+        {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(
+                    deltas,
+                    &[Delta::new(Quantity::Hits, 0, 0)],
+                    "declining leaves this die's current miss unchanged, not a chance"
+                );
+            }
+            other => panic!("a decline preview is certain, got {other:?}"),
+        }
     }
 
     #[test]

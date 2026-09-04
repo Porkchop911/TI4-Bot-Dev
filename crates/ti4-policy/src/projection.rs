@@ -79,7 +79,7 @@ pub enum FamilyRole {
 /// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
 /// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
 /// so the decision cannot be skipped.
-const FAMILY_ROLES: [(&str, FamilyRole); 44] = [
+const FAMILY_ROLES: [(&str, FamilyRole); 45] = [
     // M10-035. Transferable: every action-feasibility fact is a bounded count or flag about the
     // option under consideration -- "planets this activation could take" means the same thing in
     // every game, on every map, for every faction.
@@ -91,6 +91,9 @@ const FAMILY_ROLES: [(&str, FamilyRole); 44] = [
     // every game, the same way `faction-commodities` and `ability` already do.
     ("actor-inventory", FamilyRole::Transferable),
     ("card", FamilyRole::Transferable),
+    // OBS-008b2. Transferable: the combat decision surface is a stable subtype, an option count,
+    // and a bounded hit-count fact or expectation -- each means the same thing in any game.
+    ("combat", FamilyRole::Transferable),
     // M09-027b. Transferable: every critic identity is bounded and means the same thing next game
     // — the round, the acting seat's economy and score, opponent counts, and the `objective_
     // progress:<family>` / `ability:<x>` / `faction_tech:<t>` tokens, all of which are corpus
@@ -2095,7 +2098,7 @@ mod tests {
             "a registered family has no MLP role, or a role names a family nobody registers. \
              Admission is an architecture decision: classify it deliberately, do not default it."
         );
-        assert_eq!(FAMILY_ROLES.len(), 44, "one role per registered family");
+        assert_eq!(FAMILY_ROLES.len(), 45, "one role per registered family");
     }
 
     #[test]
