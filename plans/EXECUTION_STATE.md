@@ -24,6 +24,52 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### Codex pass: action-card decision attribution, a preview correctness fix, and actor-inventory identity (2026-09-04)
+
+- Authored by a concurrent Codex session working the same tree (branch
+  `wp/tier-c-review-remediation-obs008c2b-003e1`) alongside this one, landed after OBS-008b3
+  (`93839d9`). This session did not author it; it is recorded here from reading the diff, for the
+  same reason every other package's evidence is recorded, and reformatted to the project's pinned
+  `rustfmt` before commit (the source tree's own formatting did not match). User-confirmed
+  reviewed and accepted.
+- `action_cards.rs` gains a resolver-local `with_action_card_source`/`active_action_card` (a
+  thread-local, not game state, so the identity cannot leak into a later timing window or replay
+  position) recording which action card is currently executing through `reactions::announce`.
+  `choose_reroll_dice` and `choose_casualty` (`combat.rs`) each gain `source`/`subtype` (and
+  `choose_casualty` a `target`) parameters instead of a hardcoded `Rule("78.3")`/`Rule("78.4")`, so
+  Fire Team's reroll, Courageous to the End's casualty, the Jol-Nar Commander's and Crown of
+  Thalnos's (relic and law) rerolls, and `pick`'s many action-card asks each carry their real card
+  identity as `DecisionSource::ActionCard`/`DecisionSource::Content` and a card-specific subtype.
+  Every base-rule call site (78.3/78.4/78.7/78.9/82's own producers) passes the prior hardcoded
+  values explicitly, so no non-action-card decision's context changes.
+- `tactical::preview_moves` (this session's own OBS-008a2) is corrected: a move whose route exits
+  a gravity rift can destroy the ship in transit (41.2), so `Preview::certain` was wrong for that
+  case. The fix takes an added `galaxy` parameter, re-derives the route, and downgrades to
+  `Preview::unknown("gravity-rift survival is unresolved")` when the route exits one. A real,
+  accepted bug fix to committed work, not new work of this package's own.
+- `invasion::commit_options` (OBS-008a4) is corrected in the same spirit: the previewed
+  `GroundForcesOnPlanet` count now filters `on_planet_of` to actual ground forces, since a
+  structure (a PDS) the invader owns on the target planet was previously counted as if it were one
+  of their landed ground forces.
+- `actor_inventory_facts` (`ti4-engine-rs-23`'s OBS-004a) changes from closed readiness/count
+  buckets only to also emitting open per-alias identity facts —
+  `actor-inventory:relic:{alias}:{readiness}`, `:exploration:{card}`, `:breakthrough:{alias}`,
+  `:leader:{alias}:{status}` — and replaces the doc comment that stated the closed-bucket design
+  was deliberate ("an open per-alias family would be the identity-crossing this package
+  deliberately avoids") with a rationale for the opposite design (a ready Crown and a ready
+  Sceptre need to stay legally distinguishable, not collapsed into one count). This contradicts
+  `plans/OBS-004A_ACTOR_PRIVATE_INVENTORY.md`'s stated position and was raised directly to the user
+  before commit; the user confirmed it is reviewed and to continue. `OBS-004A_ACTOR_PRIVATE_
+  INVENTORY.md` itself is not yet updated to match — still says closed-bucket-only.
+- Checks (after this session's own reformat to the pinned `rustfmt`): engine 1,193 lib + 4
+  integration + 5 docs (no new tests — Codex's existing-test call sites were adapted to the new
+  signatures, not extended); policy 218 (includes the 102-game deterministic campaign, run twice
+  clean at 339.81 s and 326.80 s); training 133; strict Clippy on engine+policy clean; `rustfmt
+  --check` and `git diff --check` clean after reformatting.
+- Not evidenced or spec'd the way this session's own OBS-008 packages are — no
+  `plans/evidence/*.md` exists for it, since it is not this session's design. Independent Tier-C
+  review status: per the user, reviewed and accepted.
+
 ### OBS-008b3 — retreat fleet-arrival surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b2 (`4b9c383`).

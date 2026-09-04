@@ -627,7 +627,7 @@ pub fn announce(
     // A card with no registered effect is announced unresolved rather than passed off as having
     // done something. This is the registry design used everywhere else here: a gap is visible.
     if let Some(effect) = crate::action_cards::effect_for(alias) {
-        effect(context, player);
+        crate::action_cards::with_action_card_source(alias, || effect(context, player));
     } else {
         let mut payload = BTreeMap::new();
         payload.insert("card".to_owned(), alias.to_string().into());

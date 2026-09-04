@@ -719,12 +719,15 @@ fn landable_planets(
 /// player choice and a later resolution, not this option's own consequence.
 fn commit_options(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     invader: &PlayerId,
     system: &SystemId,
     troops: &[Unit],
     planets: &[PlanetId],
 ) -> Vec<ChoiceOption> {
     let board = state.system_state(system);
+    let types = catalogue(content, sources);
     let mut seen = std::collections::BTreeSet::new();
     let mut options = Vec::new();
     for (index, unit) in troops.iter().enumerate() {
@@ -740,8 +743,18 @@ fn commit_options(
             if unit.sustained_damage {
                 label.push_str(" (damaged)");
             }
-            let own_ground =
-                i64::try_from(board.on_planet_of(planet, invader).len()).unwrap_or(i64::MAX);
+            let own_ground = i64::try_from(
+                board
+                    .on_planet_of(planet, invader)
+                    .into_iter()
+                    .filter(|standing| {
+                        types
+                            .get(standing.type_id.as_str())
+                            .is_some_and(UnitType::is_ground_force)
+                    })
+                    .count(),
+            )
+            .unwrap_or(i64::MAX);
             options.push(
                 ChoiceOption::labelled(
                     format!("commit|{index}|{planet}"),
@@ -796,7 +809,7 @@ pub fn commit_ground_forces(
         // Re-read each iteration: the custodians token can come down mid-sequence and open
         // Mecatol Rex, exactly as in the oracle.
         let planets = landable_planets(state, content, sources, system);
-        let options = commit_options(state, invader, system, &troops, &planets);
+        let options = commit_options(state, content, sources, invader, system, &troops, &planets);
 
         let choice = Choice::new(
             invader.clone(),
@@ -1550,7 +1563,15 @@ impl InvasionWindow {
             return Vec::new();
         }
         let planets = landable_planets(state, content, sources, &self.system);
-        commit_options(state, &self.invader, &self.system, &troops, &planets)
+        commit_options(
+            state,
+            content,
+            sources,
+            &self.invader,
+            &self.system,
+            &troops,
+            &planets,
+        )
     }
 
     /// The commit-ground-forces ask, or `None` when there is nothing left to land.
@@ -3918,6 +3939,9 @@ mod tests {
             .entry(pa.clone())
             .or_default()
             .push(Unit::new(UnitTypeId::new("infantry"), PlayerId::new("b")));
+        // A PDS is owned by the invader but is a structure, not a ground force. It must not
+        // inflate the previewed count (unlike the Titans' PDS II, which is a ground force).
+        on_planet(&mut state, &system, &pa, "pds", &invader(), 1);
 
         let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));

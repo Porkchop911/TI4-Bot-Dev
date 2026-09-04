@@ -229,6 +229,8 @@ pub fn choose_reroll_dice(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
+    source: &DecisionSource,
+    subtype: &str,
 ) -> Vec<(usize, usize)> {
     let Some(set) = state.reroll_staging.get(player) else {
         return Vec::new();
@@ -274,18 +276,20 @@ pub fn choose_reroll_dice(
                 )]));
             }
 
+            let mut context = DecisionContext::new(
+                player.clone(),
+                source.clone(),
+                subtype,
+                state.phase,
+                state.round,
+            );
+            context = context.about(DecisionTarget::System(set.system.clone()));
             let choice = Choice::new(
                 player.clone(),
                 format!("reroll die {} of {}", die + 1, entry.unit),
                 vec![reroll, decline],
             )
-            .contextualized(DecisionContext::new(
-                player.clone(),
-                DecisionSource::Rule("78.3".to_owned()),
-                "reroll_die",
-                state.phase,
-                state.round,
-            ));
+            .contextualized(context);
             let Ok(answer) = table.ask_seeing(&choice, &observed) else {
                 continue;
             };
@@ -384,7 +388,16 @@ fn reroll_window(
             })
         });
     if commander_reroll {
-        let picks = choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side);
+        let picks = choose_reroll_dice(
+            state,
+            ctx.content,
+            ctx.sources,
+            None,
+            ctx.table,
+            side,
+            &DecisionSource::Content("jolnarcommander".to_owned()),
+            "jolnar_commander_reroll",
+        );
         if !picks.is_empty() {
             let set = state.reroll_staging.get_mut(side).expect("checked above");
             apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, "jolnar commander");
@@ -398,7 +411,16 @@ fn reroll_window(
     // invasion, not rounds -- so neither card reaches them, however tempting the dice look.
     let combat_round = matches!(kind.as_str(), "fleet" | "ground");
     let thalnos_picks = if combat_round && has_dice && holds_crown_relic(state, side) {
-        choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
+        choose_reroll_dice(
+            state,
+            ctx.content,
+            ctx.sources,
+            None,
+            ctx.table,
+            side,
+            &DecisionSource::Content("thalnos".to_owned()),
+            "crown_of_thalnos_relic_reroll",
+        )
     } else {
         Vec::new()
     };
@@ -414,7 +436,16 @@ fn reroll_window(
     // The Crown of Thalnos (law): the elected player "may reroll any number of dice" —
     // the destruction clause below does not forgive the misses the reroll leaves.
     let crown_picks = if combat_round && has_dice && owns_crown_law(state, side) {
-        choose_reroll_dice(state, ctx.content, ctx.sources, None, ctx.table, side)
+        choose_reroll_dice(
+            state,
+            ctx.content,
+            ctx.sources,
+            None,
+            ctx.table,
+            side,
+            &DecisionSource::Agenda("crown_of_thalnos".to_owned()),
+            "crown_of_thalnos_law_reroll",
+        )
     } else {
         Vec::new()
     };
@@ -1568,7 +1599,18 @@ pub fn absorb_hits_seeing(
         if alive.is_empty() {
             return Ok(()); // 15.2a
         }
-        let casualty = choose_casualty(state, content, sources, galaxy, ctx.table, player, &alive)?;
+        let casualty = choose_casualty(
+            state,
+            content,
+            sources,
+            galaxy,
+            ctx.table,
+            player,
+            &alive,
+            &DecisionSource::Rule("78.4".to_owned()),
+            "assign_casualty",
+            Some(system),
+        )?;
         state
             .system_mut(system)
             .remove(std::slice::from_ref(&casualty));
@@ -1707,6 +1749,9 @@ pub(crate) fn choose_casualty(
     table: &mut Table,
     player: &PlayerId,
     units: &[Unit],
+    source: &DecisionSource,
+    subtype: &str,
+    target: Option<&SystemId>,
 ) -> Result<Unit, CombatError> {
     if let [only] = units {
         return Ok(only.clone());
@@ -1739,14 +1784,17 @@ pub(crate) fn choose_casualty(
             .with("damaged", unit.sustained_damage),
         );
     }
-    let choice =
-        Choice::new(player.clone(), "assign a hit", options).contextualized(DecisionContext::new(
-            player.clone(),
-            DecisionSource::Rule("78.4".to_owned()),
-            "assign_casualty",
-            state.phase,
-            state.round,
-        ));
+    let mut context = DecisionContext::new(
+        player.clone(),
+        source.clone(),
+        subtype,
+        state.phase,
+        state.round,
+    );
+    if let Some(system) = target {
+        context = context.about(DecisionTarget::System(system.clone()));
+    }
+    let choice = Choice::new(player.clone(), "assign a hit", options).contextualized(context);
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
@@ -4528,6 +4576,9 @@ mod tests {
             &mut table,
             &defender(),
             &units,
+            &DecisionSource::Rule("78.4".to_owned()),
+            "assign_casualty",
+            Some(&system),
         )
         .unwrap();
         let offered = table.log.records.last().expect("a choice was recorded");
@@ -4555,6 +4606,9 @@ mod tests {
             &mut table,
             &defender(),
             &units,
+            &DecisionSource::Rule("78.4".to_owned()),
+            "assign_casualty",
+            Some(&system),
         )
         .unwrap();
         let offered = table.log.records.last().unwrap();
@@ -4590,6 +4644,9 @@ mod tests {
             &mut table,
             &defender(),
             &units,
+            &DecisionSource::Rule("78.4".to_owned()),
+            "assign_casualty",
+            Some(&system),
         )
         .unwrap();
         let asked = seen.borrow();
@@ -4759,6 +4816,8 @@ mod tests {
             None,
             &mut table,
             &player,
+            &DecisionSource::Content("test".to_owned()),
+            "test_reroll",
         );
 
         let asked = seen.borrow();

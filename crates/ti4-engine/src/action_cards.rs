@@ -272,6 +272,27 @@ pub fn perform(
 /// from one that worked.
 pub type Effect = fn(&mut crate::timing::TimingContext<'_>, &PlayerId);
 
+thread_local! {
+    /// The card currently executing through the timing resolver. This is resolver-local rather
+    /// than game state: nested choices need the provenance, but it must not persist after the
+    /// effect returns.
+    static ACTIVE_ACTION_CARD: std::cell::RefCell<Option<ActionCardId>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run one card effect while exposing its identity to helpers shared by many card effects.
+pub(crate) fn with_action_card_source<T>(card: &ActionCardId, action: impl FnOnce() -> T) -> T {
+    ACTIVE_ACTION_CARD.with(|active| {
+        let prior = active.replace(Some(card.clone()));
+        let result = action();
+        active.replace(prior);
+        result
+    })
+}
+
+fn active_action_card() -> Option<ActionCardId> {
+    ACTIVE_ACTION_CARD.with(|active| active.borrow().clone())
+}
+
 /// Morale Boost: "+1 to the result of each of your unit's combat rolls during this combat round."
 ///
 /// Scoped to [`GameState::combat_round_seq`] rather than a flag, so the bonus expires with the
@@ -1070,6 +1091,9 @@ fn courageous(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
             context.table,
             opponent,
             &alive,
+            &DecisionSource::ActionCard("courageous".to_owned()),
+            "courageous_to_the_end_assign_casualty",
+            Some(&system),
         ) else {
             break; // the decider refused to choose a loss; the card stops where it is
         };
@@ -4143,11 +4167,20 @@ fn pick(
                         crate::choice::ChoiceOption::labelled(id.clone(), kind, label.clone())
                     })
                     .collect(),
-            )
-            .contextualized(DecisionContext::new(
+            );
+            let action_card = active_action_card();
+            let source = action_card.as_ref().map_or_else(
+                || DecisionSource::Rule("2".to_owned()),
+                |card| DecisionSource::ActionCard(card.to_string()),
+            );
+            let subtype = action_card.as_ref().map_or_else(
+                || format!("pick_{kind}"),
+                |card| format!("{}_pick_{kind}", card.as_str()),
+            );
+            let choice = choice.contextualized(DecisionContext::new(
                 player.clone(),
-                DecisionSource::Rule("2".to_owned()),
-                format!("pick_{kind}"),
+                source,
+                subtype,
                 context.state.phase,
                 context.state.round,
             ));
@@ -5283,6 +5316,8 @@ fn fire_team(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) 
         context.galaxy,
         context.table,
         player,
+        &DecisionSource::ActionCard("fire_team".to_owned()),
+        "fire_team_reroll",
     );
     if picks.is_empty() {
         return;

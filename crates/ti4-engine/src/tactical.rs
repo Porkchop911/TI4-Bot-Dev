@@ -349,6 +349,7 @@ pub fn preview_moves(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
+    galaxy: &Galaxy,
     player: &PlayerId,
     active: &SystemId,
     mut choice: Choice,
@@ -376,6 +377,44 @@ pub fn preview_moves(
                 in_space: true,
             }),
         );
+        // `sail` follows the deterministic movement path, then rolls once for every rift it
+        // exits. An arrival cannot be presented as certain when that route can destroy the ship.
+        let origin = option
+            .payload
+            .get("origin")
+            .and_then(serde_json::Value::as_str);
+        let gravity_drive = option
+            .payload
+            .get("gravity_drive")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let route_exits_rift = origin.is_some_and(|origin| {
+            let mut rules = MovementRules::new(
+                galaxy,
+                content,
+                sources,
+                active.as_str(),
+                Board::for_player(state, content, sources, player),
+            );
+            crate::action_cards::apply_movement_effects(&mut rules, state, player);
+            let path = rules.path_from(
+                origin,
+                effective_move_value_with_gravity(
+                    state,
+                    &kind,
+                    player,
+                    &SystemId::new(origin),
+                    gravity_drive,
+                ),
+            );
+            !rules.anomalies_ignored
+                && !rules.rifts_ignored
+                && path.is_some_and(|path| !crate::transit::rifts_exited(&rules, &path).is_empty())
+        });
+        if route_exits_rift {
+            option.preview = Some(Preview::unknown("gravity-rift survival is unresolved"));
+            continue;
+        }
         option.preview = Some(Preview::certain(vec![
             Delta::new(
                 Quantity::FleetSupplyHeadroom,
@@ -764,6 +803,7 @@ mod tests {
             &state,
             ContentStore::embedded(),
             POK,
+            &hub.galaxy,
             &player,
             &active,
             movement_options(&player, &moves),
@@ -830,6 +870,7 @@ mod tests {
                 &state,
                 ContentStore::embedded(),
                 POK,
+                &hub.galaxy,
                 &player,
                 &active,
                 movement_options(&player, &moves),

@@ -731,9 +731,10 @@ fn opponent_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> 
 /// any seat — this function still reads only `player`'s own row. Opponent crossing is deferred, the
 /// same restraint [`opponent_facts`] documents for secrets.
 ///
-/// Every fact is a closed readiness/count bucket, never a specific relic or leader identity: the
-/// acting player already knows which relic or leader that is without a feature naming it, and an
-/// open per-alias family would be the identity-crossing this package deliberately avoids.
+/// Identity is retained for actor-owned faceup cards. The player may know their cards, but a policy
+/// only receives this feature vector: collapsing a ready Crown and a ready Scepter into the same
+/// count would make their distinct legal effects indistinguishable. These aliases remain bounded
+/// to the actor's public play area and never cross into an opponent's private holdings.
 #[must_use]
 fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
     let Some(seat) = seen.seat(player) else {
@@ -744,6 +745,17 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
         facts.push((
             "actor-inventory:relics-held".to_owned(),
             count_value(seat.relics.len()),
+        ));
+    }
+    for relic in seat.relics {
+        let readiness = if seat.exhausted_relics.contains(relic) {
+            "exhausted"
+        } else {
+            "ready"
+        };
+        facts.push((
+            format!("actor-inventory:relic:{}:{readiness}", relic.as_str()),
+            1.0,
         ));
     }
     if !seat.exhausted_relics.is_empty() {
@@ -758,6 +770,9 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
             count_value(seat.exploration_cards.len()),
         ));
     }
+    for card in seat.exploration_cards {
+        facts.push((format!("actor-inventory:exploration:{card}"), 1.0));
+    }
     let fragments: i32 = seat.relic_fragments.values().sum();
     if fragments != 0 {
         facts.push((
@@ -768,6 +783,12 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
     if seat.breakthrough.is_some() {
         facts.push(("actor-inventory:breakthrough-held".to_owned(), 1.0));
     }
+    if let Some(breakthrough) = &seat.breakthrough {
+        facts.push((
+            format!("actor-inventory:breakthrough:{}", breakthrough.as_str()),
+            1.0,
+        ));
+    }
     let mut by_status: BTreeMap<ti4_model::state::LeaderStatus, usize> = BTreeMap::new();
     for status in seat.leaders.values() {
         *by_status.entry(*status).or_default() += 1;
@@ -776,6 +797,16 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
         facts.push((
             format!("actor-inventory:leaders-{}", leader_status_token(status)),
             count_value(count),
+        ));
+    }
+    for (leader, status) in seat.leaders {
+        facts.push((
+            format!(
+                "actor-inventory:leader:{}:{}",
+                leader.as_str(),
+                leader_status_token(*status)
+            ),
+            1.0,
         ));
     }
     facts

@@ -1483,6 +1483,7 @@ impl<'a> Game<'a> {
                         &self.state,
                         self.content,
                         self.sources,
+                        self.galaxy.as_ref().expect("a tactical action needs a map"),
                         &window.player,
                         active,
                         choice,
