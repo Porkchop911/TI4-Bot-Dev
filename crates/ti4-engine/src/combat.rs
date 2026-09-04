@@ -1466,6 +1466,12 @@ fn offer_sustain(
             return Ok(hits);
         }
 
+        // OBS-008b4: sustaining keeps the ship, damaged; declining loses it. Either way every
+        // sustain-or-decline option in this ask shares the same before count and the same two
+        // possible afters, so it is read once per ask rather than once per option.
+        let own_ships = i64::try_from(ships_of(state, content, sources, player, system).len())
+            .unwrap_or(i64::MAX);
+
         // One option per unit *type*. Every unit here is undamaged by the filter above, so two
         // of the same type are the same decision written twice — and the copies skew it,
         // because a sampling decider would sustain on whichever type it happened to own more of.
@@ -1482,14 +1488,26 @@ fn offer_sustain(
                     SUSTAIN_KIND,
                     format!("sustain damage on {}", unit.type_id),
                 )
-                .with("unit", unit.type_id.to_string()),
+                .with("unit", unit.type_id.to_string())
+                .previewed(Preview::certain(vec![Delta::new(
+                    Quantity::ShipsInSystem,
+                    own_ships,
+                    own_ships,
+                )])),
             );
         }
-        options.push(ChoiceOption::labelled(
-            crate::choice::DECLINE_ID,
-            crate::choice::DECLINE_KIND,
-            "take the hit",
-        ));
+        options.push(
+            ChoiceOption::labelled(
+                crate::choice::DECLINE_ID,
+                crate::choice::DECLINE_KIND,
+                "take the hit",
+            )
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                own_ships,
+                own_ships - 1,
+            )])),
+        );
 
         let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options)
             .contextualized(
@@ -2685,6 +2703,13 @@ impl Window for CombatWindow {
                 if available.is_empty() {
                     return None;
                 }
+                // OBS-008b4: sustaining keeps the ship, damaged; declining loses it -- the same
+                // shared before/after every sustain-or-decline option in this ask carries.
+                let own_ships = i64::try_from(
+                    ships_of(state, content, sources, &front.player, &self.system).len(),
+                )
+                .unwrap_or(i64::MAX);
+
                 // One option per unit *type*: everything here is undamaged by definition, so
                 // two of a type are the same decision written twice, and a sampling decider
                 // would sustain on whichever type it happened to own more of.
@@ -2701,14 +2726,26 @@ impl Window for CombatWindow {
                             SUSTAIN_KIND,
                             format!("sustain damage on {}", unit.type_id),
                         )
-                        .with("unit", unit.type_id.to_string()),
+                        .with("unit", unit.type_id.to_string())
+                        .previewed(Preview::certain(vec![Delta::new(
+                            Quantity::ShipsInSystem,
+                            own_ships,
+                            own_ships,
+                        )])),
                     );
                 }
-                options.push(ChoiceOption::labelled(
-                    crate::choice::DECLINE_ID,
-                    crate::choice::DECLINE_KIND,
-                    "take the hit",
-                ));
+                options.push(
+                    ChoiceOption::labelled(
+                        crate::choice::DECLINE_ID,
+                        crate::choice::DECLINE_KIND,
+                        "take the hit",
+                    )
+                    .previewed(Preview::certain(vec![Delta::new(
+                        Quantity::ShipsInSystem,
+                        own_ships,
+                        own_ships - 1,
+                    )])),
+                );
                 Some(
                     Choice::new(
                         front.player.clone(),
@@ -4988,6 +5025,112 @@ mod tests {
                 }
                 other => panic!("a retreat destination preview is certain, got {other:?}"),
             }
+        }
+    }
+
+    /// OBS-008b4: sustaining previews the fleet unchanged (the ship survives, damaged);
+    /// declining previews it falling by one (the ship is destroyed) -- through both the
+    /// standalone `offer_sustain` and the windowed `Sustaining` stage that duplicates it.
+    #[test]
+    fn obs008b4_sustain_options_preview_the_fleet_surviving_or_falling_by_one() {
+        let (mut state, system) = arena();
+        let player = defender();
+        put(&mut state, &system, "dreadnought", &player, 1);
+        put(&mut state, &system, "cruiser", &player, 1); // no sustain, but still counts as a ship
+
+        let content = ContentStore::embedded();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(FirstOption));
+        let mut inner = Table::with_default(Box::new(decider));
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        offer_sustain(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut ctx,
+            &player,
+            &system,
+            &attacker(),
+            1,
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let choice = &asked[0];
+        let sustain = choice
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a sustain option");
+        match &sustain.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(
+                    deltas,
+                    &[Delta::new(Quantity::ShipsInSystem, 2, 2)],
+                    "the ship survives, damaged -- the fleet count does not change"
+                );
+            }
+            other => panic!("a sustain preview is certain, got {other:?}"),
+        }
+        let decline = choice
+            .options
+            .iter()
+            .find(|option| option.is_decline())
+            .expect("a decline option");
+        match &decline.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(
+                    deltas,
+                    &[Delta::new(Quantity::ShipsInSystem, 2, 1)],
+                    "declining loses the ship -- the fleet falls by exactly one"
+                );
+            }
+            other => panic!("a decline preview is certain, got {other:?}"),
+        }
+
+        // A fresh position: `offer_sustain` above already damaged the dreadnought (it accepted
+        // the first offered option), and a damaged ship no longer offers to sustain.
+        let (mut window_state, window_system) = arena();
+        put(&mut window_state, &window_system, "dreadnought", &player, 1);
+        put(&mut window_state, &window_system, "cruiser", &player, 1);
+
+        // The windowed Sustaining stage duplicates this option-building and must agree.
+        let mut window =
+            CombatWindow::new(&window_state, ContentStore::embedded(), POK, &window_system);
+        window.stage = Stage::Sustaining {
+            queue: vec![Pending {
+                player: player.clone(),
+                hits: 1,
+                producer: attacker(),
+            }],
+            round: 1,
+        };
+        let sustaining = window
+            .pending_choice(&window_state, ContentStore::embedded(), POK)
+            .expect("a hit is queued");
+        let windowed_sustain = sustaining
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a sustain option");
+        match &windowed_sustain
+            .preview
+            .as_ref()
+            .expect("previewed")
+            .outcome
+        {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::ShipsInSystem, 2, 2)]);
+            }
+            other => panic!("a sustain preview is certain, got {other:?}"),
         }
     }
 

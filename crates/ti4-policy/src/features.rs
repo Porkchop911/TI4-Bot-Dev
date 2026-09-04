@@ -1727,7 +1727,7 @@ fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &m
         return;
     };
     match context.subtype.as_str() {
-        "reroll_die" | "announce_retreat" | "retreat_to" => {}
+        "reroll_die" | "announce_retreat" | "retreat_to" | "sustain_damage" => {}
         _ => return,
     }
 
@@ -3737,6 +3737,92 @@ mod tests {
             crate::progress::Baseline::default(),
         );
         assert_eq!(value_of(&projected, "combat:ships-after"), Some(3.0));
+        assert!(crate::projection::admits("combat:ships-after"));
+    }
+
+    /// OBS-008b4: sustaining previews the fleet unchanged (the ship survives, damaged);
+    /// declining previews it falling by one -- the same `combat:ships-*` reading the retreat
+    /// surface already uses, since both are `ShipsInSystem` previews under the `combat` family.
+    #[test]
+    fn obs008b4_sustain_options_carry_subtype_and_exact_ship_counts() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let sustain =
+            ChoiceOption::labelled("sustain|0", "sustain", "sustain damage on dreadnought")
+                .with("unit", "dreadnought")
+                .previewed(Preview::certain(vec![Delta::new(
+                    Quantity::ShipsInSystem,
+                    2,
+                    2,
+                )]));
+        let decline = ChoiceOption::labelled("decline", "decline", "take the hit").previewed(
+            Preview::certain(vec![Delta::new(Quantity::ShipsInSystem, 2, 1)]),
+        );
+        let choice = Choice::new(player.clone(), "cancel a hit", vec![sustain, decline])
+            .contextualized(
+                DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Rule("82".to_owned()),
+                    "sustain_damage",
+                    Phase::Action,
+                    2,
+                )
+                .about(DecisionTarget::System(SystemId::new("18"))),
+            );
+
+        let sustain_features =
+            explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("combat:subtype:sustain_damage", 1.0),
+            ("combat:option-count", 2.0),
+            ("combat:preview-known", 1.0),
+            ("combat:ships-before", 2.0),
+            ("combat:ships-after", 2.0),
+        ] {
+            assert_eq!(
+                value_of(&sustain_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+        assert_eq!(
+            value_of(&sustain_features, "combat:ships-change"),
+            None,
+            "sustaining is a genuine zero change, dropped as sparse"
+        );
+
+        let decline_features =
+            explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+        for (name, value) in [
+            ("combat:subtype:sustain_damage", 1.0),
+            ("combat:ships-before", 2.0),
+            ("combat:ships-after", 1.0),
+            ("combat:ships-change", -1.0),
+        ] {
+            assert_eq!(
+                value_of(&decline_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[1],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "combat:ships-after"), Some(1.0));
         assert!(crate::projection::admits("combat:ships-after"));
     }
 

@@ -24,6 +24,31 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b4 — sustain-damage consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after the Codex integration
+  commit (`7315f97`), itself after OBS-008b3 (`93839d9`). Fourth slice of `OBS-008b`.
+- The gap: OBS-008b1 gave casualty and sustain options their `unit` identity but attached no
+  preview to either -- sustain was the one option kind left with no consequence fact at all.
+- Interrupted mid-implementation by a concurrent Codex session editing the same tree; the
+  in-progress diff was cleanly separated (verified independently on both sides), Codex's work
+  committed first (`7315f97`), and this slice reapplied and completed on the clean base. See that
+  commit's own entry above for what it changed.
+- Engine: `offer_sustain` and the windowed `Stage::Sustaining` (its long-standing duplicate) each
+  attach `Preview::certain([ShipsInSystem])`, computed once per ask: sustaining previews no
+  change (the ship survives, damaged); declining previews the seat's own ship count falling by
+  exactly one (the ship is destroyed).
+- Policy: `combat_decision_features`'s subtype guard now also accepts `sustain_damage`; the
+  existing `ShipsInSystem -> "ships"` mapping (OBS-008b3) needed no change. No new family, no
+  vocabulary change.
+- Checks: engine 1,194 lib + 4 integration + 5 docs (incl. `combat::` 54/54); policy 219 (includes
+  the 102-game deterministic campaign, 338.05 s, no regression); training 133; strict Clippy on
+  engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B4.md`. Spec:
+  `plans/OBS-008B4_SUSTAIN_CONSEQUENCE_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: the rest of `OBS-008b` -- bombardment, ground casualty (Rule 42), fight-ground-combat-
+  round, start-next-ground-combat, and custodians removal.
+
 ### Codex pass: action-card decision attribution, a preview correctness fix, and actor-inventory identity (2026-09-04)
 
 - Authored by a concurrent Codex session working the same tree (branch
