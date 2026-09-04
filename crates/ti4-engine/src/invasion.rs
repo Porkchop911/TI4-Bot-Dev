@@ -18,7 +18,8 @@ use crate::choice::{
 use crate::combat::MAX_ROUNDS;
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
-use crate::preview::{Delta, Preview, Quantity};
+use crate::preview::{Delta, Preview, Quantity, deterministic};
+use crate::production::Spend;
 use crate::rng::GameRng;
 
 /// The choice kind for committing a ground force to a planet (the oracle's `commit`).
@@ -982,11 +983,15 @@ fn absorb_ground(
                 if !seen.insert((unit.type_id.to_string(), unit.sustained_damage)) {
                     continue;
                 }
-                options.push(ChoiceOption::labelled(
-                    format!("destroy|{index}"),
-                    GROUND_CASUALTY_KIND,
-                    format!("destroy {}", unit.type_id),
-                ));
+                options.push(
+                    ChoiceOption::labelled(
+                        format!("destroy|{index}"),
+                        GROUND_CASUALTY_KIND,
+                        format!("destroy {}", unit.type_id),
+                    )
+                    .with("unit", unit.type_id.to_string())
+                    .with("damaged", unit.sustained_damage),
+                );
             }
             let choice = Choice::new(player.clone(), format!("assign a hit on {planet}"), options)
                 .contextualized(
@@ -2142,17 +2147,47 @@ impl Window for InvasionWindow {
                 if !custodians_removable(state, content, sources, &self.invader, &self.system) {
                     return self.committing_choice(state, content, sources);
                 }
+                // OBS-008b6: 27.3 is a payment (six influence) plus a capped victory-point gain.
+                // `custodians_removable` already proved the six influence is affordable, so
+                // `deterministic::spend` mirrors the same arithmetic `production::pay` will use.
+                let vp = i64::from(
+                    state
+                        .player(&self.invader)
+                        .map_or(0, |seat| seat.victory_points),
+                );
+                let vp_after = (vp + 1).min(i64::from(crate::objectives::VICTORY_TARGET));
+                let spend = deterministic::spend(
+                    state,
+                    content,
+                    sources,
+                    &self.invader,
+                    CUSTODIANS_COST,
+                    Spend::Influence,
+                );
+                let yes_preview = match spend.outcome {
+                    crate::preview::Outcome::Certain { mut deltas } => {
+                        deltas.push(Delta::new(Quantity::VictoryPoints, vp, vp_after));
+                        Preview::certain(deltas)
+                    }
+                    // Fail closed: `custodians_removable` already guards affordability, so this
+                    // should not be reached in practice, but an unaffordable or unmodelled plan
+                    // must not silently claim the victory point either.
+                    _ => spend,
+                };
                 Some(
                     Choice::new(
                         self.invader.clone(),
                         format!("spend {CUSTODIANS_COST} influence to remove the custodians token"),
                         vec![
-                            ChoiceOption::labelled("no", "decline", "leave it"),
+                            ChoiceOption::labelled("no", "decline", "leave it").previewed(
+                                Preview::certain(vec![Delta::new(Quantity::VictoryPoints, vp, vp)]),
+                            ),
                             ChoiceOption::labelled(
                                 "yes",
                                 "custodians",
                                 "remove it for a victory point",
-                            ),
+                            )
+                            .previewed(yes_preview),
                         ],
                     )
                     .contextualized(
@@ -3177,6 +3212,130 @@ mod tests {
             ["b".to_owned(), "c".to_owned()].into_iter().collect(),
             "the option id is still the targeted seat, for the engine to route the answer"
         );
+    }
+
+    /// OBS-008b6: three more producers closed out in one pass. A ground casualty names its unit
+    /// and damage state, the same payload space combat's casualty already carries; "fight this
+    /// coexisting player next" still routes on the seat's raw id (the policy-side leak fix is
+    /// tested in `features.rs`); removing the custodians token previews the capped victory-point
+    /// gain and, when declined, no change at all.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one batched package's three fixtures stay together rather than splitting artificially"
+    )]
+    fn obs008b6_ground_casualty_and_custodians_previews() {
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let content = ContentStore::embedded();
+        let player = invader();
+
+        // A ground casualty names its unit.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        on_planet(&mut state, &system, &planet, "infantry", &player, 1);
+        on_planet(&mut state, &system, &planet, "mech", &player, 1);
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+        absorb_ground(
+            &mut state, content, POK, &mut table, &player, &system, &planet, 1,
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let choice = asked.first().expect("two ground forces means a real ask");
+        for option in &choice.options {
+            assert!(
+                option.payload.contains_key("unit"),
+                "every ground casualty option names its unit: {option:?}"
+            );
+        }
+
+        // "fight this coexisting player next" still routes on the seat's own raw id.
+        let mut window = InvasionWindow {
+            invader: player.clone(),
+            system: system.clone(),
+            stage: Stage::ChoosingNextCombat {
+                planets: vec![planet.clone()],
+                index: 0,
+                planet: planet.clone(),
+                remaining: vec![PlayerId::new("b")],
+            },
+            report: InvasionReport::default(),
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
+        };
+        let next_combat = window
+            .pending_choice(&state, content, POK)
+            .expect("a coexisting player remains");
+        assert!(
+            next_combat
+                .options
+                .iter()
+                .any(|option| option.id == "fight|b"),
+            "the engine still routes on the raw seat id: {:?}",
+            next_combat.options
+        );
+        window.stage = Stage::ChoosingNextCombat {
+            planets: vec![planet.clone()],
+            index: 0,
+            planet: planet.clone(),
+            remaining: vec![],
+        };
+
+        // Removing the custodians token previews the capped victory-point gain; declining
+        // previews no change.
+        let mecatol = SystemId::new(crate::seating::MECATOL);
+        let mut mecatol_state = crate::fixtures::game(&["a", "b"]);
+        mecatol_state.board.entry(mecatol.clone()).or_default();
+        crate::fixtures::put(&mut mecatol_state, &mecatol, "infantry", &player, 1);
+        if let Some(seat) = mecatol_state.player_mut(&player) {
+            seat.trade_goods = i32::try_from(CUSTODIANS_COST).unwrap();
+        }
+        let custodians_window = InvasionWindow {
+            invader: player.clone(),
+            system: mecatol,
+            stage: Stage::Custodians,
+            report: InvasionReport::default(),
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&mecatol_state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: mecatol_state.begin_feat_occurrence(),
+            bombard_announced: true,
+        };
+        let removal = custodians_window
+            .pending_choice(&mecatol_state, content, POK)
+            .expect("removable");
+        let yes = removal
+            .options
+            .iter()
+            .find(|option| option.id == "yes")
+            .expect("the removal option");
+        match &yes.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                let vp = deltas
+                    .iter()
+                    .find(|delta| delta.quantity == Quantity::VictoryPoints)
+                    .expect("a victory-point delta");
+                assert_eq!((vp.before, vp.after), (0, 1));
+            }
+            other => panic!("removal preview is certain, got {other:?}"),
+        }
+        let no = removal
+            .options
+            .iter()
+            .find(|option| option.id == "no")
+            .expect("the decline option");
+        match &no.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::VictoryPoints, 0, 0)]);
+            }
+            other => panic!("decline preview is certain, got {other:?}"),
+        }
     }
 
     #[test]

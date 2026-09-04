@@ -1105,22 +1105,31 @@ fn explicit_option_features_with(
     // The planet lookup is scoped to the argument of a composite id rather than run over every
     // word of every option: that is the only place a board identity appears, and testing all of
     // them cost 35% of an update.
+    let subtype = choice.context.as_ref().map(|c| c.subtype.as_str());
     let dropped: BTreeSet<String> = if kind == "bombardment_target" {
         // OBS-008b5: unlike a `verb|argument` id with a board reference buried in the argument,
         // this option's *whole* id is an opposing seat's raw identity (Coexistence 7.2 asks
         // "whose units take this hit") -- necessary for the engine to route the answer, never a
         // fact this schema lets reach the policy as a literal token. It is represented as an
-        // OBS-005 opponent slot instead, by `bombardment_target_features`.
+        // OBS-005 opponent slot instead, by `opponent_identity_features`.
         tokens(&option.id).into_iter().collect()
     } else {
         option
             .id
             .split_once('|')
             .map(|(_, argument)| {
-                tokens(argument)
-                    .into_iter()
-                    .filter(|token| is_planet_id(token))
-                    .collect()
+                // OBS-008b6: `start_next_ground_combat`'s `fight|{seat}` argument is the same
+                // raw-identity shape bombardment's whole id was -- Coexistence 12 asks which
+                // coexisting *player* to fight next -- so every one of its tokens is dropped
+                // unconditionally rather than filtered to planet ids.
+                if subtype == Some("start_next_ground_combat") {
+                    tokens(argument).into_iter().collect()
+                } else {
+                    tokens(argument)
+                        .into_iter()
+                        .filter(|token| is_planet_id(token))
+                        .collect()
+                }
             })
             .unwrap_or_default()
     };
@@ -1355,7 +1364,7 @@ fn explicit_option_features_with(
     production_decision_features(choice, option, &mut features);
     tactical_decision_features(choice, option, &mut features);
     combat_decision_features(choice, option, &mut features);
-    bombardment_target_features(seen, choice, option, player, &mut features);
+    opponent_identity_features(seen, choice, option, player, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1436,7 +1445,14 @@ fn payload_string<'a>(option: &'a ChoiceOption, key: &str) -> Option<&'a str> {
 /// zeros: the outcome marker says whether the producer knew, could not compute, or found the
 /// option unavailable, and deltas are read only from a certain outcome.
 fn payment_decision_features(choice: &Choice, option: &ChoiceOption, features: &mut FeatureVector) {
-    if canonical_feature_kind(&option.kind) != "pay" {
+    // OBS-008b6: `remove_custodians` (27.3) is a payment too -- six influence for a victory
+    // point -- but its options keep the `decline`/`custodians` kinds the rest of the invasion
+    // window uses, not `pay`, so it is admitted here by subtype alongside the kind check.
+    let is_custodians_removal = choice
+        .context
+        .as_ref()
+        .is_some_and(|context| context.subtype == "remove_custodians");
+    if canonical_feature_kind(&option.kind) != "pay" && !is_custodians_removal {
         return;
     }
 
@@ -1482,6 +1498,10 @@ fn payment_decision_features(choice: &Choice, option: &ChoiceOption, features: &
                     ti4_engine::preview::Quantity::Resources => "resources",
                     ti4_engine::preview::Quantity::Influence => "influence",
                     ti4_engine::preview::Quantity::TradeGoods => "trade-goods",
+                    // OBS-008b6: 27.3's own consequence -- a capped victory-point gain -- shares
+                    // this family's exact before/after/change reading rather than needing one of
+                    // its own.
+                    ti4_engine::preview::Quantity::VictoryPoints => "victory-points",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -1801,16 +1821,17 @@ fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &m
     }
 }
 
-/// Which opposing seat a bombardment-target option names, as an OBS-005 opponent slot rather
-/// than the raw identity the option's own id carries (OBS-008b5).
+/// Which opposing seat an option names, as an OBS-005 opponent slot rather than the raw identity
+/// the option's own id carries (OBS-008b5, `start_next_ground_combat` added by OBS-008b6).
 ///
-/// Coexistence 7.2 asks "whose units on this planet take the bombardment's next hits" among the
-/// seats still holding ground forces there; the option id is that seat's `PlayerId`, needed for
-/// the engine to route the answer but never admitted as a literal token (see the `dropped` set in
+/// Two producers ask "which opposing seat": Coexistence 7.2's bombardment target (the option id
+/// itself is that seat's `PlayerId`) and Coexistence 12's "fight this coexisting player next"
+/// (the seat is the argument of a `fight|{seat}` id). Both are needed for the engine to route the
+/// answer, and neither is admitted as a literal token (see the `dropped` set in
 /// `explicit_option_features_with`). This is the fact that replaces it: a bounded, relationship-
 /// ranked slot index that means the same thing across games, the way every other opponent-facing
 /// feature in this file already does.
-fn bombardment_target_features(
+fn opponent_identity_features(
     seen: &Observed<'_>,
     choice: &Choice,
     option: &ChoiceOption,
@@ -1820,10 +1841,15 @@ fn bombardment_target_features(
     let Some(context) = &choice.context else {
         return;
     };
-    if context.subtype != "bombardment_target" {
+    let raw_id = match context.subtype.as_str() {
+        "bombardment_target" => Some(option.id.as_str()),
+        "start_next_ground_combat" => option.id.split_once('|').map(|(_, argument)| argument),
+        _ => None,
+    };
+    let Some(raw_id) = raw_id else {
         return;
-    }
-    let target = PlayerId::new(option.id.clone());
+    };
+    let target = PlayerId::new(raw_id);
     if let Some(index) = seen
         .opponent_slots(player)
         .iter()
@@ -3927,6 +3953,139 @@ mod tests {
         assert!(
             names.iter().any(|name| name.starts_with("option-system:")),
             "the system payload still reaches the board-fact family: {names:?}"
+        );
+    }
+
+    /// OBS-008b6: three more producers closed out in one pass. A ground casualty's `unit`
+    /// payload already reaches `casualty-unit` (the family OBS-008b1 approved) with no further
+    /// wiring; `start_next_ground_combat`'s `fight|{seat}` id shares bombardment's leak and its
+    /// fix; removing the custodians token reads under the existing `pay` family by subtype.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one batched package's three fixtures stay together rather than splitting artificially"
+    )]
+    fn obs008b6_ground_casualty_next_combat_and_custodians_features() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::{PlanetId, SystemId};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::plain_hub();
+        let centre = SystemId::new(&hub.centre);
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b"); // shares a system with a: sorts to combat slot 0
+
+        let mut state = ti4_engine::fixtures::game(&["a", "b", "c", "d", "e", "f"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        ti4_engine::fixtures::put(&mut state, &centre, "fighter", &a, 1);
+        ti4_engine::fixtures::put(&mut state, &centre, "fighter", &b, 1);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+
+        // A ground casualty's unit payload already reaches `casualty-unit`.
+        let casualty = ChoiceOption::labelled("destroy|0", "ground_casualty", "destroy mech")
+            .with("unit", "mech")
+            .with("damaged", false);
+        let casualty_choice = Choice::new(a.clone(), "assign a hit", vec![casualty]);
+        let casualty_features = explicit_option_features(
+            &seen,
+            &casualty_choice,
+            &casualty_choice.options[0],
+            &a,
+            &[],
+        );
+        assert_eq!(
+            value_of(&casualty_features, "casualty-unit:is-ground"),
+            Some(1.0)
+        );
+
+        // "fight this coexisting player next" shares bombardment's fix.
+        let fight = ChoiceOption::labelled(format!("fight|{b}"), "ground_casualty", "fight b");
+        let decline = ChoiceOption::labelled("decline", "decline", "leave b coexisting");
+        let combat_choice = Choice::new(
+            a.clone(),
+            "start another ground combat",
+            vec![fight, decline],
+        )
+        .contextualized(
+            DecisionContext::new(
+                a.clone(),
+                DecisionSource::Rule("Coexistence".to_owned()),
+                "start_next_ground_combat",
+                Phase::Action,
+                2,
+            )
+            .about(DecisionTarget::Planet {
+                system: centre.clone(),
+                planet: PlanetId::new("mecatolrex"),
+            }),
+        );
+        let fight_names = names_of(&explicit_option_features(
+            &seen,
+            &combat_choice,
+            &combat_choice.options[0],
+            &a,
+            &[],
+        ));
+        assert!(
+            fight_names.contains(&"combat:target-slot-0".to_owned()),
+            "b is a's own combat counterpart, so slot 0: {fight_names:?}"
+        );
+        assert!(
+            !fight_names.iter().any(|name| name == "option:b"),
+            "the raw seat id must never survive as a literal token: {fight_names:?}"
+        );
+
+        // Removing the custodians token reads under the existing `pay` family by subtype.
+        let yes = ChoiceOption::labelled("yes", "custodians", "remove it for a victory point")
+            .previewed(Preview::certain(vec![
+                Delta::new(Quantity::Influence, 0, -6),
+                Delta::new(Quantity::TradeGoods, 6, 0),
+                Delta::new(Quantity::VictoryPoints, 0, 1),
+            ]));
+        let no =
+            ChoiceOption::labelled("no", "decline", "leave it").previewed(Preview::certain(vec![
+                Delta::new(Quantity::VictoryPoints, 0, 0),
+            ]));
+        let custodians_choice =
+            Choice::new(a.clone(), "remove the custodians token", vec![yes, no]).contextualized(
+                DecisionContext::new(
+                    a.clone(),
+                    DecisionSource::Rule("27.2".to_owned()),
+                    "remove_custodians",
+                    Phase::Action,
+                    2,
+                ),
+            );
+        let yes_features = explicit_option_features(
+            &seen,
+            &custodians_choice,
+            &custodians_choice.options[0],
+            &a,
+            &[],
+        );
+        for (name, value) in [
+            ("pay:subtype:remove_custodians", 1.0),
+            ("pay:preview-known", 1.0),
+            ("pay:victory-points-after", 1.0),
+            ("pay:victory-points-change", 1.0),
+        ] {
+            assert_eq!(value_of(&yes_features, name), Some(value), "missing {name}");
+        }
+        let no_features = explicit_option_features(
+            &seen,
+            &custodians_choice,
+            &custodians_choice.options[1],
+            &a,
+            &[],
+        );
+        assert_eq!(
+            value_of(&no_features, "pay:victory-points-change"),
+            None,
+            "declining is a genuine zero change, dropped as sparse"
         );
     }
 

@@ -24,6 +24,35 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b6 — ground casualty, coexisting-combat identity, and custodians (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b5 (`39a7c05`).
+  Sixth and closing slice of `OBS-008b`. Batched per the owner's direction (three producers, one
+  commit, one verification pass, instead of three more round trips) after being asked why the
+  per-package ceremony was taking so long -- the fine slicing (nine packages for OBS-008a/b1-b5)
+  was the fixable driver, not the plan itself.
+- Ground casualty (`absorb_ground`, Rule 42): `unit`/`damaged` payload, same fix as space combat's
+  casualty (OBS-008b1); reaches the already-approved `casualty-unit` family with no new wiring.
+- Coexisting-combat identity (`start_next_ground_combat`, Coexistence 12): `fight|{seat}` shared
+  bombardment's raw-identity leak (OBS-008b5); the `dropped`-token computation gained a
+  subtype-keyed case, and `bombardment_target_features` (renamed `opponent_identity_features`) now
+  handles both producers, emitting `combat:target-slot-{index}`.
+- Custodians removal (27.2/27.3): "yes" previews the exact payment via `deterministic::spend`
+  (OBS-007b) plus a capped `VictoryPoints` delta; "no" previews no change.
+  `payment_decision_features` is admitted by subtype for `remove_custodians` (these options keep
+  the `decline`/`custodians` kinds, not `pay`); a `VictoryPoints` delta arm joins its match.
+- No vocabulary change; all three reuse existing families.
+- Checks: engine 1,196 lib + 4 integration + 5 docs (incl. `invasion::` 44/44); policy 221
+  (includes the 102-game deterministic campaign, 335.67 s, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B6.md`. Spec:
+  `plans/OBS-008B6_GROUND_COMBAT_AND_CUSTODIANS_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- `OBS-008b` (six slices) is now closed. `OBS-008a` and `OBS-008b` together close the tactical and
+  combat/invasion option-semantics rows.
+- Next: `OBS-008d/e/f/g/h/i` (strategy/scoring, trade, agenda, reactions/action-cards,
+  exploration/relics, leaders/breakthroughs) are all unblocked; also open, the residual
+  raw-identity audit `OBS-008b5`/`b6` found but did not resolve everywhere.
+
 ### OBS-008b5 — bombardment target surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b4 (`4ab638e`).
