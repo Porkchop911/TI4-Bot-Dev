@@ -1414,11 +1414,14 @@ fn offer_sustain(
             if !seen.insert(unit.type_id.to_string()) {
                 continue;
             }
-            options.push(ChoiceOption::labelled(
-                format!("sustain|{index}"),
-                SUSTAIN_KIND,
-                format!("sustain damage on {}", unit.type_id),
-            ));
+            options.push(
+                ChoiceOption::labelled(
+                    format!("sustain|{index}"),
+                    SUSTAIN_KIND,
+                    format!("sustain damage on {}", unit.type_id),
+                )
+                .with("unit", unit.type_id.to_string()),
+            );
         }
         options.push(ChoiceOption::labelled(
             crate::choice::DECLINE_ID,
@@ -1695,11 +1698,15 @@ pub(crate) fn choose_casualty(
         } else {
             ""
         };
-        options.push(ChoiceOption::labelled(
-            format!("destroy|{index}"),
-            CASUALTY_KIND,
-            format!("destroy {}{damaged}", unit.type_id),
-        ));
+        options.push(
+            ChoiceOption::labelled(
+                format!("destroy|{index}"),
+                CASUALTY_KIND,
+                format!("destroy {}{damaged}", unit.type_id),
+            )
+            .with("unit", unit.type_id.to_string())
+            .with("damaged", unit.sustained_damage),
+        );
     }
     let choice =
         Choice::new(player.clone(), "assign a hit", options).contextualized(DecisionContext::new(
@@ -2568,11 +2575,14 @@ impl Window for CombatWindow {
                     if !seen.insert(unit.type_id.to_string()) {
                         continue;
                     }
-                    options.push(ChoiceOption::labelled(
-                        format!("sustain|{index}"),
-                        SUSTAIN_KIND,
-                        format!("sustain damage on {}", unit.type_id),
-                    ));
+                    options.push(
+                        ChoiceOption::labelled(
+                            format!("sustain|{index}"),
+                            SUSTAIN_KIND,
+                            format!("sustain damage on {}", unit.type_id),
+                        )
+                        .with("unit", unit.type_id.to_string()),
+                    );
                 }
                 options.push(ChoiceOption::labelled(
                     crate::choice::DECLINE_ID,
@@ -2615,11 +2625,15 @@ impl Window for CombatWindow {
                     } else {
                         ""
                     };
-                    options.push(ChoiceOption::labelled(
-                        format!("destroy|{index}"),
-                        CASUALTY_KIND,
-                        format!("destroy {}{damaged}", unit.type_id),
-                    ));
+                    options.push(
+                        ChoiceOption::labelled(
+                            format!("destroy|{index}"),
+                            CASUALTY_KIND,
+                            format!("destroy {}{damaged}", unit.type_id),
+                        )
+                        .with("unit", unit.type_id.to_string())
+                        .with("damaged", unit.sustained_damage),
+                    );
                 }
                 Some(
                     Choice::new(front.player.clone(), "assign a hit", options).contextualized(
@@ -4474,6 +4488,165 @@ mod tests {
         let offered = table.log.records.last().unwrap();
 
         assert_eq!(offered.offered.len(), 2, "fresh and damaged are distinct");
+    }
+
+    /// OBS-008b1: a casualty option names the unit type and damage state it would destroy, and a
+    /// sustain option names the unit type it would damage instead -- structured facts under the
+    /// existing `unit`/`damaged` payload keys, not only the label. Both the standalone functions
+    /// and `CombatWindow`'s own duplicated option-building carry it.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture exercising all four casualty/sustain option-building sites stays together"
+    )]
+    fn obs008b1_casualty_and_sustain_options_carry_their_unit_identity() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        state
+            .system_mut(&system)
+            .units
+            .push(Unit::new(UnitTypeId::new("dreadnought"), defender()).sustained());
+        let units = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
+
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+        choose_casualty(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &defender(),
+            &units,
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let fresh = asked[0]
+            .options
+            .iter()
+            .find(|option| option.payload.get("damaged") == Some(&false.into()))
+            .expect("the fresh dreadnought's option");
+        assert_eq!(
+            fresh
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
+        let damaged = asked[0]
+            .options
+            .iter()
+            .find(|option| option.payload.get("damaged") == Some(&true.into()))
+            .expect("the damaged dreadnought's option");
+        assert_eq!(
+            damaged
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
+
+        // The window's own Assigning stage duplicates this option-building and must agree.
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        window.stage = Stage::Assigning {
+            queue: vec![Pending {
+                player: defender(),
+                hits: 1,
+                producer: attacker(),
+            }],
+            round: 1,
+        };
+        let assigning = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a hit is queued");
+        assert!(
+            assigning
+                .options
+                .iter()
+                .all(|option| option.payload.contains_key("unit")),
+            "every windowed casualty option names its unit"
+        );
+
+        // Sustain: one dreadnought, undamaged, so "damaged" would be dead weight and is omitted.
+        state.system_mut(&system).units.pop(); // drop the already-damaged copy
+        let content = ContentStore::embedded();
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let (decider, sustain_seen) = crate::choice::Capturing::new(Box::new(FirstOption));
+        let mut inner = Table::with_default(Box::new(decider));
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut inner,
+            timing: None,
+        };
+        offer_sustain(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut ctx,
+            &defender(),
+            &system,
+            &attacker(),
+            1,
+        )
+        .unwrap();
+        let sustain_asked = sustain_seen.borrow();
+        let sustain_option = sustain_asked[0]
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a sustain option was offered");
+        assert_eq!(
+            sustain_option
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
+        assert!(
+            !sustain_option.payload.contains_key("damaged"),
+            "every sustain candidate is undamaged by construction; the key is omitted, not false"
+        );
+
+        // A fresh dreadnought: `offer_sustain` above already damaged the previous one (it accepted
+        // the first offered option), and a damaged ship no longer offers to sustain.
+        let (mut window_state, window_system) = arena();
+        put(
+            &mut window_state,
+            &window_system,
+            "dreadnought",
+            &defender(),
+            1,
+        );
+        let mut window =
+            CombatWindow::new(&window_state, ContentStore::embedded(), POK, &window_system);
+        window.stage = Stage::Sustaining {
+            queue: vec![Pending {
+                player: defender(),
+                hits: 1,
+                producer: attacker(),
+            }],
+            round: 1,
+        };
+        let sustaining = window
+            .pending_choice(&window_state, ContentStore::embedded(), POK)
+            .expect("a hit is queued");
+        let sustain_option = sustaining
+            .options
+            .iter()
+            .find(|option| !option.is_decline())
+            .expect("a sustain option");
+        assert_eq!(
+            sustain_option
+                .payload
+                .get("unit")
+                .and_then(serde_json::Value::as_str),
+            Some("dreadnought")
+        );
     }
 
     #[test]

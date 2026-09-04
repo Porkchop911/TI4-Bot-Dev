@@ -24,6 +24,39 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b1 — casualty and sustain unit-identity surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a4 (`1b55fe6`).
+  First slice of `OBS-008b` (combat and invasion options). `OBS-008a` (`a1`-`a4`) is complete.
+- The gap: under the completed prompt-free contract (OBS-003i), a casualty/sustain option's
+  identity was `destroy|0`/`sustain|1` -- a bare index with no structured content once the display
+  label (the only place the unit type appeared) is dropped. Two such options were indistinguishable
+  to the policy.
+- Engine: both casualty-building sites (`choose_casualty`, and `CombatWindow::pending_choice`'s
+  duplicated `Assigning` stage) now attach `.with("unit", type_id).with("damaged",
+  sustained_damage)`. Both sustain-building sites (`offer_sustain`, `Sustaining` stage) attach
+  `.with("unit", type_id)` only -- every sustain candidate is undamaged by the filter, so `damaged`
+  would always read false and carry no information.
+- No new `features.rs` wiring: `canonical_feature_kind` already maps both raw kinds to canonical
+  `"casualty"`, and `structured_features`'s existing generic unit-payload tail already fires once
+  the payload exists. This package supplied only the missing payload.
+- `casualty-unit` joins `projection::APPROVED_UNIT_FAMILIES` (5 -> 6), resolving to the
+  pre-existing shared `*-unit` reserved OOV column every other approved unit family already
+  shares -- no new column, no registry version bump. This is the architecture-review decision the
+  family's own doc comment calls for, made under the standing "continue, review deferred"
+  instruction.
+- Checks: engine 1,191 lib + 4 integration + 5 docs (incl. `combat::` 51/51, all pre-existing green
+  through the four call-site changes); policy 215 (includes the 102-game deterministic campaign,
+  349.95 s -- the highest wall-clock this workstream has measured, above the prior 260-310 s
+  range; 0 test failures, reported as a timing observation rather than a "no regression" claim);
+  training 133; strict Clippy on engine+policy clean; targeted fmt (scoped files) +
+  `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B1.md`. Spec:
+  `plans/OBS-008B1_CASUALTY_SUSTAIN_UNIT_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: the rest of `OBS-008b` -- reroll dice (where OBS-007c's stochastic hit-count preview was
+  deliberately left unattached, "that is OBS-008b's job"), retreat, bombardment, ground casualty
+  (Rule 42), fight-ground-combat-round, start-next-ground-combat, and custodians removal.
+
 ### OBS-008a4 — ground-commitment surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008a3 (`c463f99`).

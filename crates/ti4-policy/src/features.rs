@@ -3368,6 +3368,55 @@ mod tests {
         assert!(crate::projection::admits("tactical:ground-forces-change"));
     }
 
+    /// OBS-008b1: a casualty option's `unit` payload (now attached by `combat.rs`) reaches the
+    /// policy as the unit's own stats under `casualty-unit`, the approved unit-suffix family a
+    /// sustain option shares -- `canonical_feature_kind` already unifies the two kinds, so no new
+    /// wiring beyond approving the family was needed.
+    #[test]
+    fn obs008b1_casualty_options_expose_the_named_units_own_stats() {
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let destroy = ChoiceOption::labelled("destroy|0", "casualty", "destroy dreadnought")
+            .with("unit", "dreadnought")
+            .with("damaged", false);
+        let choice = Choice::new(player.clone(), "assign a hit", vec![destroy]);
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        assert_eq!(value_of(&features, "casualty-unit:is-ship"), Some(1.0));
+        assert_eq!(value_of(&features, "casualty-unit:sustain"), Some(1.0));
+        assert_eq!(value_of(&features, "casualty-unit:is-fighter"), None);
+
+        let sustain = ChoiceOption::labelled("sustain|0", "sustain", "sustain damage on carrier")
+            .with("unit", "carrier");
+        let sustain_choice = Choice::new(player.clone(), "cancel a hit", vec![sustain]);
+        let sustain_features = explicit_option_features(
+            &seen,
+            &sustain_choice,
+            &sustain_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&sustain_features, "casualty-unit:is-ship"),
+            Some(1.0),
+            "sustain shares the casualty-unit family: canonical_feature_kind unifies the two kinds"
+        );
+        assert!(value_of(&sustain_features, "casualty-unit:capacity").unwrap_or(0.0) > 0.0);
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &choice,
+            &choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "casualty-unit:is-ship"), Some(1.0));
+        assert!(crate::projection::admits("casualty-unit:sustain"));
+    }
+
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
 
     /// A three-seat position with known, distinct secret holdings: a holds two, b holds one,

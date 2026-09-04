@@ -182,7 +182,8 @@ pub fn role_of(family: &str) -> Option<FamilyRole> {
 /// extractor *could* emit is open. The set the architecture approved is not. Adding one is a
 /// review, and `every_approved_unit_family_is_emitted_by_the_grammar` fails when this list and the
 /// observed families disagree.
-pub const APPROVED_UNIT_FAMILIES: [&str; 5] = [
+pub const APPROVED_UNIT_FAMILIES: [&str; 6] = [
+    "casualty-unit",
     "commit-unit",
     "load-unit",
     "move-unit",
