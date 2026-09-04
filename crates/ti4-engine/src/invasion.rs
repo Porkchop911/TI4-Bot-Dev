@@ -16,6 +16,7 @@ use crate::choice::{
     Choice, ChoiceOption, DECLINE_KIND, IllegalChoice, Observed, Resolving, Table, Window,
 };
 use crate::combat::MAX_ROUNDS;
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
 use crate::rng::GameRng;
 
@@ -285,6 +286,19 @@ fn dunlain_reaper(
             ),
             crate::choice::ChoiceOption::decline(),
         ],
+    )
+    .contextualized(
+        DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("dunlain_reaper".to_owned()),
+            "deploy_mech",
+            state.phase,
+            state.round,
+        )
+        .about(DecisionTarget::Planet {
+            system: system.clone(),
+            planet: planet.clone(),
+        }),
     );
     let Ok(answer) = ctx.ask_seeing(state, &choice) else {
         return;
@@ -562,7 +576,23 @@ fn apply_bombard_plan(
                     .map(|unit| unit.owner.clone())
                     .collect();
                 let Some(question) =
-                    bombardment_target_question(invader, &entry.planet, *produced, &present)
+                    bombardment_target_question(invader, &entry.planet, *produced, &present).map(
+                        |question| {
+                            question.contextualized(
+                                DecisionContext::new(
+                                    invader.clone(),
+                                    DecisionSource::Rule("Coexistence 7.2".to_owned()),
+                                    "bombardment_target",
+                                    state.phase,
+                                    state.round,
+                                )
+                                .about(DecisionTarget::Planet {
+                                    system: system.clone(),
+                                    planet: entry.planet.clone(),
+                                }),
+                            )
+                        },
+                    )
                 else {
                     // 7.2: nobody left with units takes the remaining hits.
                     break;
@@ -752,6 +782,16 @@ pub fn commit_ground_forces(
             invader.clone(),
             format!("commit ground forces in {system}"),
             options,
+        )
+        .contextualized(
+            DecisionContext::new(
+                invader.clone(),
+                DecisionSource::Rule("49".to_owned()),
+                "commit_ground_forces",
+                state.phase,
+                state.round,
+            )
+            .about(DecisionTarget::System(system.clone())),
         );
         let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, None))?;
         if answer.is_decline() {
@@ -904,7 +944,20 @@ fn absorb_ground(
                     format!("destroy {}", unit.type_id),
                 ));
             }
-            let choice = Choice::new(player.clone(), format!("assign a hit on {planet}"), options);
+            let choice = Choice::new(player.clone(), format!("assign a hit on {planet}"), options)
+                .contextualized(
+                    DecisionContext::new(
+                        player.clone(),
+                        DecisionSource::Rule("42".to_owned()),
+                        "assign_ground_casualty",
+                        state.phase,
+                        state.round,
+                    )
+                    .about(DecisionTarget::Planet {
+                        system: system.clone(),
+                        planet: planet.clone(),
+                    }),
+                );
             let answer =
                 table.ask_seeing(&choice, &Observed::new(state, content, sources, None))?;
             let index = answer
@@ -1491,11 +1544,23 @@ impl InvasionWindow {
         if options.is_empty() {
             return None;
         }
-        Some(Choice::new(
-            self.invader.clone(),
-            format!("commit ground forces in {}", self.system),
-            options,
-        ))
+        Some(
+            Choice::new(
+                self.invader.clone(),
+                format!("commit ground forces in {}", self.system),
+                options,
+            )
+            .contextualized(
+                DecisionContext::new(
+                    self.invader.clone(),
+                    DecisionSource::Rule("49".to_owned()),
+                    "commit_ground_forces",
+                    state.phase,
+                    state.round,
+                )
+                .about(DecisionTarget::System(self.system.clone())),
+            ),
+        )
     }
 
     fn finish_committing(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
@@ -1923,6 +1988,11 @@ impl Window for InvasionWindow {
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per invasion stage, read as a table; OBS-003d added one typed context \
+                  literal per arm rather than splitting the table apart"
+    )]
     fn pending_choice(
         &self,
         state: &GameState,
@@ -1954,28 +2024,59 @@ impl Window for InvasionWindow {
                     .filter(|unit| unit.owner != self.invader)
                     .map(|unit| unit.owner.clone())
                     .collect();
-                bombardment_target_question(&self.invader, planet, groups[next], &present)
+                bombardment_target_question(&self.invader, planet, groups[next], &present).map(
+                    |question| {
+                        question.contextualized(
+                            DecisionContext::new(
+                                self.invader.clone(),
+                                DecisionSource::Rule("Coexistence 7.2".to_owned()),
+                                "bombardment_target",
+                                state.phase,
+                                state.round,
+                            )
+                            .about(DecisionTarget::Planet {
+                                system: self.system.clone(),
+                                planet: planet.clone(),
+                            }),
+                        )
+                    },
+                )
             }
             Stage::ChoosingNextCombat {
                 planet, remaining, ..
             } => {
                 let next = remaining.first()?;
-                Some(Choice::new(
-                    self.invader.clone(),
-                    format!("start another ground combat on {planet}"),
-                    vec![
-                        ChoiceOption::labelled(
-                            format!("fight|{next}"),
-                            GROUND_CASUALTY_KIND,
-                            format!("fight {next} on {planet}"),
-                        ),
-                        ChoiceOption::labelled(
-                            "decline",
-                            crate::choice::DECLINE_KIND,
-                            format!("leave {next} coexisting on {planet}"),
-                        ),
-                    ],
-                ))
+                Some(
+                    Choice::new(
+                        self.invader.clone(),
+                        format!("start another ground combat on {planet}"),
+                        vec![
+                            ChoiceOption::labelled(
+                                format!("fight|{next}"),
+                                GROUND_CASUALTY_KIND,
+                                format!("fight {next} on {planet}"),
+                            ),
+                            ChoiceOption::labelled(
+                                "decline",
+                                crate::choice::DECLINE_KIND,
+                                format!("leave {next} coexisting on {planet}"),
+                            ),
+                        ],
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            self.invader.clone(),
+                            DecisionSource::Rule("Coexistence".to_owned()),
+                            "start_next_ground_combat",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Planet {
+                            system: self.system.clone(),
+                            planet: planet.clone(),
+                        }),
+                    ),
+                )
             }
             Stage::Custodians => {
                 // Falls through rather than returning None: the driver stops the moment a window
@@ -1984,18 +2085,30 @@ impl Window for InvasionWindow {
                 if !custodians_removable(state, content, sources, &self.invader, &self.system) {
                     return self.committing_choice(state, content, sources);
                 }
-                Some(Choice::new(
-                    self.invader.clone(),
-                    format!("spend {CUSTODIANS_COST} influence to remove the custodians token"),
-                    vec![
-                        ChoiceOption::labelled("no", "decline", "leave it"),
-                        ChoiceOption::labelled(
-                            "yes",
-                            "custodians",
-                            "remove it for a victory point",
-                        ),
-                    ],
-                ))
+                Some(
+                    Choice::new(
+                        self.invader.clone(),
+                        format!("spend {CUSTODIANS_COST} influence to remove the custodians token"),
+                        vec![
+                            ChoiceOption::labelled("no", "decline", "leave it"),
+                            ChoiceOption::labelled(
+                                "yes",
+                                "custodians",
+                                "remove it for a victory point",
+                            ),
+                        ],
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            self.invader.clone(),
+                            DecisionSource::Rule("27.2".to_owned()),
+                            "remove_custodians",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
             Stage::Committing => self.committing_choice(state, content, sources),
             Stage::Fighting {
@@ -2013,15 +2126,30 @@ impl Window for InvasionWindow {
                 {
                     return None;
                 }
-                Some(Choice::new(
-                    self.invader.clone(),
-                    format!("fight a round on {planet}"),
-                    vec![ChoiceOption::labelled(
-                        "fight",
-                        GROUND_CASUALTY_KIND,
+                Some(
+                    Choice::new(
+                        self.invader.clone(),
                         format!("fight a round on {planet}"),
-                    )],
-                ))
+                        vec![ChoiceOption::labelled(
+                            "fight",
+                            GROUND_CASUALTY_KIND,
+                            format!("fight a round on {planet}"),
+                        )],
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            self.invader.clone(),
+                            DecisionSource::Rule("42".to_owned()),
+                            "fight_ground_combat_round",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Planet {
+                            system: self.system.clone(),
+                            planet: planet.clone(),
+                        }),
+                    ),
+                )
             }
         }
     }
@@ -3704,6 +3832,94 @@ mod tests {
             ]
         );
         assert_eq!(asks[1].0, format!("commit ground forces in {system}"));
+    }
+
+    /// A decider that answers the first offered option and keeps every `Choice` it was asked,
+    /// context included -- `CommitRecording` deliberately does not, so this is separate rather
+    /// than widening a shared, already-approved test helper.
+    struct FirstOptionCapturing {
+        seen: std::rc::Rc<std::cell::RefCell<Vec<crate::choice::Choice>>>,
+    }
+
+    impl crate::choice::Decider for FirstOptionCapturing {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen.borrow_mut().push(choice.clone());
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    /// OBS-003d: committing ground forces names its rule and the system landed in.
+    #[test]
+    fn obs003d_commit_ground_forces_carries_its_typed_context() {
+        let (mut state, system, planet, _) = two_planet_arena();
+        in_space(&mut state, &system, "infantry", &invader(), 1);
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        commit_ground_forces(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &invader(),
+            &system,
+        )
+        .unwrap();
+
+        let asked = seen.borrow();
+        let context = asked[0].context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("49".to_owned()));
+        assert_eq!(context.subtype, "commit_ground_forces");
+        assert_eq!(context.target, Some(DecisionTarget::System(system)));
+        let _ = planet;
+    }
+
+    /// OBS-003d: removing the custodians token is typed distinctly from committing ground
+    /// forces, though both arise from the same invasion of Mecatol Rex.
+    #[test]
+    fn obs003d_custodians_removal_carries_its_typed_context() {
+        let content = ContentStore::embedded();
+        let player = invader();
+        let mecatol = SystemId::new(crate::seating::MECATOL);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.board.entry(mecatol.clone()).or_default();
+        crate::fixtures::put(&mut state, &mecatol, "infantry", &player, 1);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.trade_goods = i32::try_from(CUSTODIANS_COST).unwrap();
+        }
+        assert!(custodians_removable(
+            &state, content, POK, &player, &mecatol
+        ));
+
+        let window = InvasionWindow {
+            invader: player,
+            system: mecatol,
+            stage: Stage::Custodians,
+            report: InvasionReport::default(),
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
+        };
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("the custodians question is asked before landing");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("27.2".to_owned()));
+        assert_eq!(context.subtype, "remove_custodians");
     }
 
     #[test]

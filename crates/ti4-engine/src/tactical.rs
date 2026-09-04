@@ -16,6 +16,7 @@ use ti4_model::state::{GameState, TokenPool};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::movement::{Board, MovementRules};
 
 /// The choice kind for activating a system.
@@ -77,7 +78,17 @@ pub fn activation_options(state: &GameState, galaxy: &Galaxy, player: &PlayerId)
     if options.is_empty() {
         return None;
     }
-    Some(Choice::new(player.clone(), "activate a system", options))
+    Some(
+        Choice::new(player.clone(), "activate a system", options).contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("89.1".to_owned()),
+                "activate_system",
+                state.phase,
+                state.round,
+            ),
+        ),
+    )
 }
 
 /// 89.1: place a tactic token in the system, making it the active system.
@@ -571,6 +582,21 @@ mod tests {
         state.player_mut(&player()).unwrap().tactic_tokens = 0;
 
         assert!(activation_options(&state, &galaxy, &player()).is_none());
+    }
+
+    /// OBS-003d: the activation choice names its rule and stays constant across an unrelated
+    /// state change, so a policy sees "this is 89.1" rather than inferring it from the prompt.
+    #[test]
+    fn obs003d_activation_carries_its_typed_context() {
+        let (state, galaxy, _) = fixture();
+        let choice = activation_options(&state, &galaxy, &player()).expect("offered");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(
+            context.source,
+            crate::decision_context::DecisionSource::Rule("89.1".to_owned())
+        );
+        assert_eq!(context.subtype, "activate_system");
+        assert_eq!(context.actor, player());
     }
 
     #[test]

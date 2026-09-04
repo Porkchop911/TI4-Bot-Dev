@@ -3110,6 +3110,30 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003d tactical/combat context producers (2026-09-04)
+
+- Thirteen producers across tactical.rs, combat.rs, invasion.rs, transit.rs and game.rs now attach
+  typed DecisionContext (rule/content source, stable subtype, target where the decision has one):
+  activation, movement, cargo loading, casualty assignment, dice reroll, sustain damage, Heart of
+  the Ixth, retreat announce/destination, ground-force commitment, ground casualty, Dunlain Reaper
+  deploy, bombardment target, next-ground-combat, custodians removal, and fighting a ground round.
+- No legal-set, option-ID, or application change anywhere -- every existing test in the five files
+  passed unmodified. No features.rs change: this package is the typed-context foundation, per its
+  own row; reading these contexts into policy features is OBS-008a/008b's job.
+- transit::CargoWindow gained phase/round fields, fixed once at for_ship construction, matching how
+  the window already fixes player/origin there.
+- Checks: engine 1,163 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 264.29 s (266.63 s for c3 -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003D.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, and OBS-008c3 -- four packages now owed review.
+- Next, per the plan's own recommended order: the remainder of OBS-003e (turn, strategy-card,
+  technology beyond this session's production work, token, scoring producers -- production/payment
+  producers are already typed from OBS-008c1/c2a/c2b/c3), then OBS-003f-i, OBS-005/006, OBS-007c,
+  before the OBS-008 decision-option packages that depend on them.
+
+---
+
 ## OBS-008c3 production discount surface (2026-09-04)
 
 - Closes the `OBS-008c` row: build options' `discount` fact and AI Development Algorithm's own

@@ -17,6 +17,7 @@ use ti4_model::state::{Feat, FeatOccurrence, GameState, RerollEntry, RerollSet};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
 use crate::rng::GameRng;
 
@@ -246,7 +247,14 @@ pub fn choose_reroll_dice(
                     ),
                     ChoiceOption::decline(),
                 ],
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("78.3".to_owned()),
+                "reroll_die",
+                state.phase,
+                state.round,
+            ));
             let Ok(answer) = table.ask_seeing(&choice, &observed) else {
                 continue;
             };
@@ -632,7 +640,14 @@ fn heart_ixth(state: &mut GameState, ctx: &mut Resolving<'_>, side: &PlayerId) {
             seat_id.clone(),
             "Heart of Ixth: add or subtract 1 from a die that was just rolled",
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            seat_id.clone(),
+            DecisionSource::Content("heartofixth".to_owned()),
+            "heart_ixth_die_adjust",
+            state.phase,
+            state.round,
+        ));
         let picked = {
             let observed = Observed::new(state, ctx.content, ctx.sources, None);
             match ctx.table.ask_seeing(&choice, &observed) {
@@ -1411,7 +1426,17 @@ fn offer_sustain(
             "take the hit",
         ));
 
-        let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options);
+        let choice = Choice::new(player.clone(), format!("cancel a hit at {system}"), options)
+            .contextualized(
+                DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Rule("82".to_owned()),
+                    "sustain_damage",
+                    state.phase,
+                    state.round,
+                )
+                .about(DecisionTarget::System(system.clone())),
+            );
         let answer = ctx
             .table
             .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
@@ -1676,7 +1701,14 @@ pub(crate) fn choose_casualty(
             format!("destroy {}{damaged}", unit.type_id),
         ));
     }
-    let choice = Choice::new(player.clone(), "assign a hit", options);
+    let choice =
+        Choice::new(player.clone(), "assign a hit", options).contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("78.4".to_owned()),
+            "assign_casualty",
+            state.phase,
+            state.round,
+        ));
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
@@ -2469,11 +2501,23 @@ impl Window for CombatWindow {
                         ChoiceOption::labelled("retreat", RETREAT_KIND, "announce a retreat"),
                     ]
                 };
-                Some(Choice::new(
-                    asking.clone(),
-                    format!("announce a retreat from {}", self.system),
-                    options,
-                ))
+                Some(
+                    Choice::new(
+                        asking.clone(),
+                        format!("announce a retreat from {}", self.system),
+                        options,
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            asking.clone(),
+                            DecisionSource::Rule("78.9".to_owned()),
+                            "announce_retreat",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
             Stage::Retreating { leaving, .. } => {
                 let player = leaving.first()?;
@@ -2481,20 +2525,32 @@ impl Window for CombatWindow {
                 if destinations.len() < 2 {
                     return None; // 78.7b: one destination is not a decision
                 }
-                Some(Choice::new(
-                    player.clone(),
-                    "retreat to which system",
-                    destinations
-                        .iter()
-                        .map(|id| {
-                            ChoiceOption::labelled(
-                                id.to_string(),
-                                RETREAT_TO_KIND,
-                                format!("retreat to {id}"),
-                            )
-                        })
-                        .collect(),
-                ))
+                Some(
+                    Choice::new(
+                        player.clone(),
+                        "retreat to which system",
+                        destinations
+                            .iter()
+                            .map(|id| {
+                                ChoiceOption::labelled(
+                                    id.to_string(),
+                                    RETREAT_TO_KIND,
+                                    format!("retreat to {id}"),
+                                )
+                            })
+                            .collect(),
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            player.clone(),
+                            DecisionSource::Rule("78.7".to_owned()),
+                            "retreat_to",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
             Stage::Sustaining { queue, .. } => {
                 let front = queue.first()?;
@@ -2523,11 +2579,23 @@ impl Window for CombatWindow {
                     crate::choice::DECLINE_KIND,
                     "take the hit",
                 ));
-                Some(Choice::new(
-                    front.player.clone(),
-                    format!("cancel a hit at {}", self.system),
-                    options,
-                ))
+                Some(
+                    Choice::new(
+                        front.player.clone(),
+                        format!("cancel a hit at {}", self.system),
+                        options,
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            front.player.clone(),
+                            DecisionSource::Rule("82".to_owned()),
+                            "sustain_damage",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
             Stage::Assigning { queue, .. } => {
                 let front = queue.first()?;
@@ -2553,7 +2621,18 @@ impl Window for CombatWindow {
                         format!("destroy {}{damaged}", unit.type_id),
                     ));
                 }
-                Some(Choice::new(front.player.clone(), "assign a hit", options))
+                Some(
+                    Choice::new(front.player.clone(), "assign a hit", options).contextualized(
+                        DecisionContext::new(
+                            front.player.clone(),
+                            DecisionSource::Rule("78.4".to_owned()),
+                            "assign_casualty",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::System(self.system.clone())),
+                    ),
+                )
             }
         }
     }
@@ -3115,6 +3194,84 @@ mod tests {
                 .push(Unit::new(UnitTypeId::new("xxcha_mech"), defender()));
         }
         assert_eq!(guns(&state), 2, "and so does Xxcha's Indomitus mech");
+    }
+
+    /// OBS-003d: the retreat-announce choice a fresh combat opens into names its rule and the
+    /// system fought over.
+    #[test]
+    fn obs003d_announce_retreat_carries_its_typed_context() {
+        let hub = crate::fixtures::plain_hub();
+        let system = SystemId::new(&hub.centre);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 1);
+        // A destination: the defender must already hold a system to retreat to (78.7c), and the
+        // outer ring starts empty.
+        let refuge = SystemId::new(&hub.outer[0]);
+        state.board.entry(refuge.clone()).or_default();
+        put(&mut state, &refuge, "fighter", &defender(), 1);
+
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+            .with_galaxy(hub.galaxy);
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a fresh combat opens by asking the defender to announce");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("78.9".to_owned()));
+        assert_eq!(context.subtype, "announce_retreat");
+        assert_eq!(context.target, Some(DecisionTarget::System(system)));
+    }
+
+    /// OBS-003d: casualty assignment and sustain damage are typed distinctly from each other and
+    /// from the retreat announcement above, though all three arise from the same combat.
+    #[test]
+    fn obs003d_assigning_and_sustaining_are_typed_distinctly() {
+        let (mut state, system) = arena();
+        // Two distinguishable ships, so Assigning has a real choice (a lone one resolves without
+        // asking), and a dreadnought, which has SUSTAIN DAMAGE, for Sustaining to offer.
+        put(&mut state, &system, "cruiser", &defender(), 1);
+        put(&mut state, &system, "destroyer", &defender(), 1);
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+
+        window.stage = Stage::Assigning {
+            queue: vec![Pending {
+                player: defender(),
+                hits: 1,
+                producer: attacker(),
+            }],
+            round: 1,
+        };
+        let assigning = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a hit is queued");
+        assert_eq!(
+            assigning.context.as_ref().unwrap().subtype,
+            "assign_casualty"
+        );
+
+        window.stage = Stage::Sustaining {
+            queue: vec![Pending {
+                player: defender(),
+                hits: 1,
+                producer: attacker(),
+            }],
+            round: 1,
+        };
+        let sustaining = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a hit is queued");
+        assert_eq!(
+            sustaining.context.as_ref().unwrap().subtype,
+            "sustain_damage"
+        );
+        assert_ne!(
+            assigning.context.as_ref().unwrap().subtype,
+            sustaining.context.as_ref().unwrap().subtype
+        );
     }
 
     /// Non-Euclidean Shielding cancels two hits per sustain, not two sustains.

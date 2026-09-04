@@ -11,10 +11,11 @@ use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
-use ti4_model::state::GameState;
+use ti4_model::state::{GameState, Phase};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use crate::dice::Dice;
 use crate::movement::MovementRules;
 use crate::rng::GameRng;
@@ -150,10 +151,18 @@ pub struct CargoWindow {
     loaded: Vec<usize>,
     capacity: i64,
     closed: bool,
+    /// The phase and round this hold was opened in, for the typed context [`Self::pending_choice`]
+    /// reports. Fixed at construction: loading answers no question about a later phase or round.
+    phase: Phase,
+    round: u32,
 }
 
 impl CargoWindow {
     /// Open a hold of `capacity` over everything loadable in the origin system.
+    ///
+    /// Test-only in practice — every real caller goes through [`Self::for_ship`], which is why
+    /// `phase`/`round` default rather than take new required parameters here: a bare hold with no
+    /// game position to read them from never reaches a real decider.
     #[must_use]
     pub const fn new(player: PlayerId, candidates: Vec<Cargo>, capacity: i64) -> Self {
         Self {
@@ -166,6 +175,8 @@ impl CargoWindow {
             loaded: Vec::new(),
             capacity,
             closed: capacity <= 0,
+            phase: Phase::Action,
+            round: 0,
         }
     }
 
@@ -227,6 +238,8 @@ impl CargoWindow {
             loaded: Vec::new(),
             capacity,
             closed: capacity <= 0,
+            phase: state.phase,
+            round: state.round,
         }
     }
 
@@ -259,6 +272,10 @@ impl CargoWindow {
     /// tidiness this matters because a sampling decider draws per option, so a pickup written
     /// three times would carry three times the weight of an equally good one written once.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass building every pickup option plus the typed context OBS-003d added"
+    )]
     pub fn pending_choice(&self) -> Option<Choice> {
         if self.is_complete() {
             return None;
@@ -359,7 +376,17 @@ impl CargoWindow {
                 )
             },
         );
-        Some(Choice::new(self.player.clone(), prompt, options))
+        let mut context = DecisionContext::new(
+            self.player.clone(),
+            DecisionSource::Rule("95".to_owned()),
+            "load_cargo",
+            self.phase,
+            self.round,
+        );
+        if let Some(origin) = &self.origin {
+            context = context.about(DecisionTarget::System(origin.clone()));
+        }
+        Some(Choice::new(self.player.clone(), prompt, options).contextualized(context))
     }
 
     /// Take one unit aboard, or close the hold.
@@ -518,6 +545,31 @@ mod tests {
             offered.iter().any(|system| **system == midpoint),
             "the infantry on the route is loadable: {offered:?}"
         );
+    }
+
+    /// OBS-003d: the load-cargo choice names its rule and the system it is asked in, taken from
+    /// the state the hold was opened with rather than recomputed per question.
+    #[test]
+    fn obs003d_load_cargo_carries_its_typed_context() {
+        let (mut state, origin, _) = state_with_two_systems();
+        state.system_mut(&origin).units.push(unit("infantry"));
+        let ship = unit("carrier");
+        state.system_mut(&origin).units.push(ship.clone());
+
+        let hold = CargoWindow::for_ship(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &player(),
+            &origin,
+            &ship,
+            &[],
+        );
+        let choice = hold.pending_choice().expect("a pickup is offered");
+        let context = choice.context.as_ref().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("95".to_owned()));
+        assert_eq!(context.subtype, "load_cargo");
+        assert_eq!(context.target, Some(DecisionTarget::System(origin)));
     }
 
     /// A passenger taken aboard en route leaves the system it was standing in, not the origin.

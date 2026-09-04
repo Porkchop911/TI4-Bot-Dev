@@ -11,6 +11,7 @@ use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, SeededRandom, Table, Window};
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::dice::Dice;
 use crate::draft::{DraftError, strategy_options, take_strategy_card};
 use crate::event::{EventSequence, EventSequenceError};
@@ -1447,16 +1448,25 @@ impl<'a> Game<'a> {
         let galaxy = self.galaxy.as_ref()?;
         match &window.stage {
             TacticalStage::Activating => activation_options(&self.state, galaxy, &window.player),
-            TacticalStage::Moving => Some(movement_options(
-                &window.player,
-                &movable(
-                    &self.state,
-                    self.content,
-                    self.sources,
-                    galaxy,
+            TacticalStage::Moving => Some(
+                movement_options(
                     &window.player,
-                ),
-            )),
+                    &movable(
+                        &self.state,
+                        self.content,
+                        self.sources,
+                        galaxy,
+                        &window.player,
+                    ),
+                )
+                .contextualized(DecisionContext::new(
+                    window.player.clone(),
+                    DecisionSource::Rule("89.2".to_owned()),
+                    "movement_step",
+                    self.state.phase,
+                    self.state.round,
+                )),
+            ),
             TacticalStage::Loading { window, .. } => window.pending_choice(),
         }
     }
@@ -5009,6 +5019,36 @@ mod tests {
             }
         }
         cost.expect("the carrier was offered")
+    }
+
+    /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed
+    /// context through the real driven path, not just in an isolated call to
+    /// `tactical::movement_options`.
+    #[test]
+    fn obs003d_movement_carries_its_typed_context_in_a_driven_game() {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        crate::fixtures::put(&mut state, &ids[1], "destroyer", &a, 1);
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+        let mut context = None;
+        for _ in 0..10 {
+            if let Some(choice) = game.legal_options()
+                && choice.prompt == "movement"
+            {
+                context = choice.context;
+                break;
+            }
+            assert_eq!(game.step().error, None, "no step here should refuse");
+        }
+        let context = context.expect("the movement step was reached");
+        assert_eq!(context.source, DecisionSource::Rule("89.2".to_owned()));
+        assert_eq!(context.subtype, "movement_step");
     }
 
     #[test]
