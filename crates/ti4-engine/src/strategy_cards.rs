@@ -13,6 +13,7 @@ use ti4_model::state::{GameState, TokenPool};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::production::Spend;
 
 pub const LEADERSHIP_TOKENS: u32 = 3;
@@ -84,7 +85,14 @@ pub(crate) fn gain_tokens(
                 ChoiceOption::labelled("fleet_tokens", "pool", "fleet pool"),
                 ChoiceOption::labelled("strategic_tokens", "pool", "strategy pool"),
             ],
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("52.4".to_owned()),
+            "gain_command_token",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         let pool = match answer.id.as_str() {
             "tactic_tokens" => TokenPool::Tactic,
@@ -134,7 +142,7 @@ fn buy_tokens_with_influence(
             sources,
             galaxy,
             table,
-            &influence_purchase_choice(player, credit),
+            &influence_purchase_choice(state, player, credit),
         )?;
         if answer.id != "yes" {
             return Ok(());
@@ -170,7 +178,7 @@ fn buy_tokens_first_yes_assumed(
             sources,
             galaxy,
             table,
-            &influence_purchase_choice(player, credit),
+            &influence_purchase_choice(state, player, credit),
         )?;
         if answer.id != "yes" {
             return Ok(());
@@ -194,7 +202,7 @@ fn leadership_influence_eligible_with_credit(
         >= INFLUENCE_PER_TOKEN
 }
 
-fn influence_purchase_choice(player: &PlayerId, credit: i64) -> Choice {
+fn influence_purchase_choice(state: &GameState, player: &PlayerId, credit: i64) -> Choice {
     let owed = (INFLUENCE_PER_TOKEN - credit).max(0);
     let prompt = if credit > 0 {
         format!("spend {owed} more influence for a command token")
@@ -219,6 +227,13 @@ fn influence_purchase_choice(player: &PlayerId, credit: i64) -> Choice {
             ChoiceOption::labelled("yes", crate::strategy::STRATEGY_KIND, yes),
         ],
     )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Rule("52.3".to_owned()),
+        "buy_token_with_influence",
+        state.phase,
+        state.round,
+    ))
 }
 
 /// Pay three influence through the ask-based payment loop and gain one command token.
@@ -307,7 +322,17 @@ fn offer_research(
         open.iter()
             .map(|id| research_option(content, id, 0, 0))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::StrategyCard {
+            card: "Technology".to_owned(),
+            secondary: false,
+        },
+        "research_technology",
+        state.phase,
+        state.round,
+    ));
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(None);
@@ -371,7 +396,14 @@ fn specialist_compounds(
             })
             .chain(std::iter::once(ChoiceOption::decline()))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::FactionAbility("specialist_compounds".to_owned()),
+        "specialist_compounds_choose_planet",
+        state.phase,
+        state.round,
+    ));
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(false);
@@ -403,7 +435,14 @@ fn specialist_compounds(
                 )
             })
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::FactionAbility("specialist_compounds".to_owned()),
+        "specialist_compounds_choose_technology",
+        state.phase,
+        state.round,
+    ));
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     crate::technology::research(
         state,
@@ -429,6 +468,10 @@ fn specialist_compounds(
 /// Returns the reduced cost. Infantry are removed one at a time, each naming where it comes from:
 /// units are interchangeable but their *locations* are not, and a seat losing a garrison it needed
 /// is a real decision rather than an accounting detail.
+#[expect(
+    clippy::too_many_lines,
+    reason = "two asks (exhaust the agent, then which infantry) plus OBS-003e's typed context on each"
+)]
 fn doctor_sucaban(
     state: &mut GameState,
     content: &ContentStore,
@@ -461,7 +504,14 @@ fn doctor_sucaban(
             ChoiceOption::labelled("yes".to_owned(), "leader", "exhaust the agent".to_owned()),
             ChoiceOption::decline(),
         ],
-    );
+    )
+    .contextualized(DecisionContext::new(
+        owner.clone(),
+        DecisionSource::Content("jolnaragent".to_owned()),
+        "doctor_sucaban_exhaust",
+        state.phase,
+        state.round,
+    ));
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() || !crate::leaders::exhaust(state, &owner, &agent) {
         return Ok(cost);
@@ -497,7 +547,14 @@ fn doctor_sucaban(
                 })
                 .chain(std::iter::once(ChoiceOption::decline()))
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("jolnaragent".to_owned()),
+            "doctor_sucaban_remove_infantry",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if answer.is_decline() {
             break;
@@ -596,7 +653,17 @@ fn paid_research(
             .map(|id| research_option(content, id, cost, 0))
             .chain(std::iter::once(ChoiceOption::decline()))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::StrategyCard {
+            card: "Technology".to_owned(),
+            secondary: true,
+        },
+        "research_technology",
+        state.phase,
+        state.round,
+    ));
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(());
@@ -650,7 +717,14 @@ fn ready_planets(
                     ChoiceOption::labelled(planet.to_string(), "ready", format!("ready {planet}"))
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("34.2".to_owned()),
+            "ready_planet",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         state.ready_planet(&PlanetId::new(answer.id));
     }
@@ -683,7 +757,17 @@ fn diplomacy_primary(
                     ChoiceOption::labelled(system.to_string(), "system", system.to_string())
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Diplomacy".to_owned(),
+                secondary: false,
+            },
+            "diplomacy_choose_system",
+            state.phase,
+            state.round,
+        ));
         let chosen = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
         for other in state.seating_order.clone() {
             if &other != player {
@@ -733,7 +817,17 @@ fn politics_primary(
                     )
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Politics".to_owned(),
+                secondary: false,
+            },
+            "politics_choose_speaker",
+            state.phase,
+            state.round,
+        ));
         let chosen = ask(state, content, sources, galaxy, table, &choice)?.id;
         state.speaker = named
             .iter()
@@ -757,7 +851,17 @@ fn politics_primary(
                 ChoiceOption::labelled("top", "agenda", "on top of the deck"),
                 ChoiceOption::labelled("bottom", "agenda", "on the bottom"),
             ],
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Politics".to_owned(),
+                secondary: false,
+            },
+            "politics_place_agenda",
+            state.phase,
+            state.round,
+        ));
         if ask(state, content, sources, galaxy, table, &choice)?.id == "top" {
             state.agenda_deck.insert(0, agenda);
         } else {
@@ -816,7 +920,18 @@ pub(crate) fn place_structure(
         return Ok(None);
     }
     options.push(ChoiceOption::decline());
-    let choice = Choice::new(player.clone(), "place a structure", options);
+    // Shared across every card offering the structure ability (Construction, and Politics/Warfare
+    // where a law extends it) with which unit `structure_options` prices, so this names the
+    // mechanic rather than one card that does not always own it.
+    let choice = Choice::new(player.clone(), "place a structure", options).contextualized(
+        DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("place_structure".to_owned()),
+            "place_structure",
+            state.phase,
+            state.round,
+        ),
+    );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(None);
@@ -947,7 +1062,17 @@ fn trade_primary(
                     "nobody else replenishes",
                 )))
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Trade".to_owned(),
+                secondary: false,
+            },
+            "trade_choose_replenish",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if answer.is_decline() {
             break;
@@ -1010,7 +1135,17 @@ fn warfare_primary(
             .iter()
             .map(|system| ChoiceOption::labelled(system.to_string(), "recall", system.to_string()))
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::StrategyCard {
+            card: "Warfare".to_owned(),
+            secondary: false,
+        },
+        "warfare_recall_token",
+        state.phase,
+        state.round,
+    ));
     let system = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
     state.system_mut(&system).command_tokens.remove(player);
     gain_tokens(state, content, sources, galaxy, table, player, 1)?;
@@ -1074,7 +1209,17 @@ pub(crate) fn redistribute_tokens(
             player.clone(),
             "Warfare: redistribute your command tokens",
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Warfare".to_owned(),
+                secondary: false,
+            },
+            "warfare_redistribute_tokens",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if answer.is_decline() {
             break;
@@ -1128,7 +1273,17 @@ fn imperial_primary(
                 })
                 .chain(std::iter::once(ChoiceOption::decline()))
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::StrategyCard {
+                card: "Imperial".to_owned(),
+                secondary: false,
+            },
+            "imperial_score_objective",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if !answer.is_decline() {
             let _ = crate::objectives::award(
@@ -1201,7 +1356,14 @@ pub fn primary(
                     )
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("te6warfare".to_owned()),
+            "warfare_free_tactical",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, Some(galaxy), table, &choice)?;
         return Ok(Ability::FreeTactical(SystemId::new(answer.id)));
     }
@@ -1235,7 +1397,14 @@ pub fn primary(
             player.clone(),
             "Construction: a structure or a production",
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("te4construction".to_owned()),
+            "construction_choose_ability",
+            state.phase,
+            state.round,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         if let Some(system) = answer.id.strip_prefix("produce|") {
             crate::production::resolve(
@@ -1391,6 +1560,126 @@ mod tests {
     use super::*;
     use crate::fixtures::{a_placed_planet, game, plain_hub, put_on_planet};
     use ti4_model::content_types::POK;
+
+    /// A decider that answers the first offered option and keeps every `Choice` it was asked,
+    /// context included.
+    struct FirstOptionCapturing {
+        seen: std::rc::Rc<std::cell::RefCell<Vec<Choice>>>,
+    }
+
+    impl crate::choice::Decider for FirstOptionCapturing {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen.borrow_mut().push(choice.clone());
+            choice
+                .options
+                .first()
+                .cloned()
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    /// OBS-003e: the production/payment producers this module shares with `OBS-008c` were
+    /// already typed; these are the card-specific asks that were not.
+    #[test]
+    fn obs003e_strategy_card_choices_carry_typed_context() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+
+        // gain_tokens: a generic LRR 52.4 mechanic, not one card's own text.
+        let mut state = game(&["a"]);
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        gain_tokens(&mut state, content, POK, None, &mut table, &player, 1).unwrap();
+        let context = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("52.4".to_owned()));
+        assert_eq!(context.subtype, "gain_command_token");
+
+        // offer_research (Technology primary, mandatory) vs paid_research (Technology secondary,
+        // optional): the same subtype, distinguished by the source's `secondary` flag.
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().trade_goods = 20;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        offer_research(&mut state, content, POK, None, &mut table, &player).unwrap();
+        let primary_context = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(primary_context.subtype, "research_technology");
+        assert_eq!(
+            primary_context.source,
+            DecisionSource::StrategyCard {
+                card: "Technology".to_owned(),
+                secondary: false
+            }
+        );
+
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().trade_goods = 20;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+        let secondary_context = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(secondary_context.subtype, "research_technology");
+        assert_eq!(
+            secondary_context.source,
+            DecisionSource::StrategyCard {
+                card: "Technology".to_owned(),
+                secondary: true
+            }
+        );
+        assert_ne!(
+            primary_context.source, secondary_context.source,
+            "the same subtype, distinguished by which half of the card it is"
+        );
+    }
+
+    /// OBS-003e: Politics' speaker choice and its agenda-placement choice are typed distinctly,
+    /// though both come from the same primary.
+    #[test]
+    fn obs003e_politics_primary_types_its_two_choices_distinctly() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a", "b"]);
+        state.speaker = player.clone();
+        for _ in 0..4 {
+            state
+                .agenda_deck
+                .push(format!("agenda{}", state.agenda_deck.len()));
+        }
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        politics_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let asked = seen.borrow();
+        let speaker = asked
+            .iter()
+            .find(|choice| choice.prompt == "who becomes speaker")
+            .expect("the speaker ask happened")
+            .context
+            .clone()
+            .expect("typed context");
+        assert_eq!(speaker.subtype, "politics_choose_speaker");
+        let agenda = asked
+            .iter()
+            .find(|choice| choice.prompt.starts_with("place "))
+            .expect("an agenda-placement ask happened")
+            .context
+            .clone()
+            .expect("typed context");
+        assert_eq!(agenda.subtype, "politics_place_agenda");
+        assert_ne!(speaker.subtype, agenda.subtype);
+    }
 
     fn card(name: &str) -> String {
         ContentStore::embedded()

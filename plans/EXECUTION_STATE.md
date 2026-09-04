@@ -3110,6 +3110,31 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003e slice 1: strategy-card context producers (2026-09-04)
+
+- Fourteen strategy_cards.rs producers, eighteen Choice sites, now attach typed DecisionContext:
+  token gain/purchase, planet readying, Technology primary/secondary (same subtype
+  research_technology, distinguished by the source's secondary flag), Jol-Nar's Specialist
+  Compounds and Doctor Sucaban, Diplomacy, Politics (two distinct asks), the shared place_structure
+  primitive, Trade, Warfare (recall plus redistribute), Imperial, and primary()'s two Thunder's Edge
+  sites (te6warfare, te4construction), tagged Content(alias) rather than StrategyCard because the
+  module's own header says they deliberately share printed names with materially different cards.
+- No legal-set, option-ID, or application change; no features.rs change (typed-context foundation,
+  per OBS-003e's own row -- OBS-008d reads it into features later).
+- production/payment producers OBS-003e's row also names were already typed by OBS-008c1/c2a/c2b/c3.
+  Turn (technology.rs's remaining reactive asks), token (tokens.rs) and scoring (objectives.rs,
+  draft.rs, vote.rs) producers are explicitly deferred to a following slice, not silently claimed.
+- Checks: engine 1,165 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 263.62 s (264.29 s for OBS-003d -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003E1.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, OBS-008c3, and OBS-003d -- five packages now owed
+  review.
+- Next: OBS-003e slice 2 (turn/token/scoring producers), then OBS-003f-i, OBS-005/006, OBS-007c,
+  before the OBS-008 decision-option packages that depend on them.
+
+---
+
 ## OBS-003d tactical/combat context producers (2026-09-04)
 
 - Thirteen producers across tactical.rs, combat.rs, invasion.rs, transit.rs and game.rs now attach
