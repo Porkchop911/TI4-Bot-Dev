@@ -1366,6 +1366,7 @@ fn explicit_option_features_with(
     combat_decision_features(choice, option, &mut features);
     opponent_identity_features(seen, choice, option, player, &mut features);
     strategy_decision_features(choice, option, &mut features);
+    content_decision_features(choice, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1940,6 +1941,82 @@ fn strategy_decision_features(
         ti4_engine::preview::Outcome::Unavailable { .. } => {
             add_named(features, format_args!("strategy:preview-unavailable"), 1.0);
         }
+    }
+}
+
+/// Typed *why* of a trade, agenda, reaction, action-card, faction-ability, relic, exploration, or
+/// remaining-content decision (OBS-008e/f/g/h/i, first pass).
+///
+/// The broad, shallow read `OBS-008d1` established for strategy/technology/scoring, extended here
+/// across the rest of the plan's remaining rows in one pass: subtype and option count only, no
+/// preview, one family rather than five, since every one of these reads the same shape. Most
+/// subtypes are fixed strings a producer chose once; a closed set is dynamic (an action-card or
+/// relic alias, or a reaction's timing relation, folded into the subtype at the point it is
+/// built) and is matched structurally instead -- still traced to real source, not an open
+/// catch-all.
+fn content_decision_features(choice: &Choice, features: &mut FeatureVector) {
+    let Some(context) = &choice.context else {
+        return;
+    };
+    let subtype = context.subtype.as_str();
+    let fixed = matches!(
+        subtype,
+        // Trade (OBS-008e).
+        "propose_transaction"
+            | "answer_transaction"
+            // Agenda (OBS-008f).
+            | "cast_vote"
+            | "vote_exhaust_planet"
+            | "vote_tiebreak"
+            | "defense_act_choose_pds"
+            | "agenda_elect_tiebreak"
+            | "redistribution_choose_settler"
+            // Reactions, action cards, faction abilities (OBS-008g).
+            | "discard_over_hand_limit"
+            | "confusing_legal_text_elect"
+            | "public_disgrace_choose_card"
+            | "reparations_exhaust"
+            | "reparations_ready"
+            | "crashlanding_choose_ground"
+            | "crashlanding_choose_planet"
+            | "silence_choose_system"
+            | "skilled_retreat_choose_system"
+            | "predict_agenda_outcome"
+            | "ghost_squad_move"
+            | "exchange_program_answer"
+            | "orbital_drop_choose_planet"
+            | "orbital_drop_deploy_mech"
+            | "peace_accords_annex"
+            | "munitions_reserves_reroll"
+            // Exploration and relics (OBS-008h).
+            | "codex_take_action_card"
+            | "titan_prototype_choose_builder"
+            | "stellar_converter_choose_target"
+            | "crown_of_emphidia_choose_planet"
+            | "dominus_orb_purge_to_move"
+            | "neuraloop_choose_relic_to_purge"
+            // Leaders, breakthroughs, and the remaining audit rows (OBS-008i).
+            | "expedition_discard_action_card"
+            | "expedition_discard_secret"
+            | "return_over_secret_hand_limit"
+            | "offer_discard_law"
+    );
+    let dynamic = subtype.ends_with("_choose_technology") // relics.rs
+        || subtype.ends_with("_choose_reward") // exploration.rs
+        || subtype.starts_with("play_reaction_") // reactions.rs
+        || subtype.starts_with("pick_") // action_cards.rs: card-agnostic pick
+        || subtype.contains("_pick_"); // action_cards.rs: {card}_pick_{kind}
+    if !fixed && !dynamic {
+        return;
+    }
+    add_named(features, format_args!("content:subtype:{subtype}"), 1.0);
+    add_named(
+        features,
+        format_args!("content:option-count"),
+        count_value(choice.options.len()),
+    );
+    if context.optional {
+        add_named(features, format_args!("content:optional"), 1.0);
     }
 }
 
@@ -2595,7 +2672,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 39] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 40] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2635,6 +2712,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 39] = [
     "tactical",
     "combat",
     "strategy",
+    "content",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -4396,6 +4474,108 @@ mod tests {
         assert!(crate::projection::admits("strategy:technologies-change"));
     }
 
+    /// OBS-008e/f/g/h/i: a fixed subtype (trade) and a structurally-matched dynamic subtype
+    /// (a reaction's timing relation) both reach the policy under the new `content` family, and an
+    /// unrecognised subtype gets no `content:*` fact at all.
+    #[test]
+    fn obs008efghi_content_subtypes_reach_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let fixed_option = ChoiceOption::labelled("propose", "trade", "propose a transaction");
+        let fixed_choice = Choice::new(player.clone(), "propose a transaction", vec![fixed_option])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("trade".to_owned()),
+                "propose_transaction",
+                Phase::Action,
+                2,
+            ));
+        let fixed_features =
+            explicit_option_features(&seen, &fixed_choice, &fixed_choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("content:subtype:propose_transaction", 1.0),
+            ("content:option-count", 1.0),
+        ] {
+            assert_eq!(
+                value_of(&fixed_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let dynamic_option = ChoiceOption::labelled("yes", "reaction", "play the reaction");
+        let dynamic_choice = Choice::new(player.clone(), "play a reaction", vec![dynamic_option])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("reaction".to_owned()),
+                "play_reaction_after_combat",
+                Phase::Action,
+                2,
+            ));
+        let dynamic_features = explicit_option_features(
+            &seen,
+            &dynamic_choice,
+            &dynamic_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(
+                &dynamic_features,
+                "content:subtype:play_reaction_after_combat"
+            ),
+            Some(1.0)
+        );
+
+        let unrecognised_option = ChoiceOption::labelled("x", "other", "an unrelated decision");
+        let unrecognised_choice = Choice::new(
+            player.clone(),
+            "an unrelated decision",
+            vec![unrecognised_option],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("other".to_owned()),
+            "some_other_subtype_entirely",
+            Phase::Action,
+            2,
+        ));
+        let unrecognised_features = explicit_option_features(
+            &seen,
+            &unrecognised_choice,
+            &unrecognised_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(
+                &unrecognised_features,
+                "content:subtype:some_other_subtype_entirely"
+            ),
+            None
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &fixed_choice,
+            &fixed_choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "content:subtype:propose_transaction"),
+            Some(1.0)
+        );
+        assert!(crate::projection::admits("content:option-count"));
+    }
+
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
 
     /// A three-seat position with known, distinct secret holdings: a holds two, b holds one,
@@ -5784,7 +5964,8 @@ mod tests {
         //    with the five bare objective families, M09-022 with the six faction-decomposition
         //    families (MLP plan section 5.3), OBS-004a with the actor-inventory family, OBS-005
         //    with opponent-slot, OBS-008a1 with the tactical decision-surface family, OBS-008b2
-        //    with the combat decision-surface family, and OBS-008d1 with the strategy
+        //    with the combat decision-surface family, OBS-008d1 with the strategy
+        //    decision-surface family, and OBS-008e/f/g/h/i's first pass with the content
         //    decision-surface family — reviewed extensions of the closed grammar, not drift:
         //    every legacy name above is unchanged.
         assert_eq!(
@@ -5829,6 +6010,7 @@ mod tests {
                 "tactical",
                 "combat",
                 "strategy",
+                "content",
             ]
         );
 

@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 9;
+pub const OOV_REGISTRY_VERSION: u32 = 10;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -292,6 +292,22 @@ const OOV_FAMILIES_V9: [&str; 46] = {
     families
 };
 
+/// The version-10 registry: version 9 with the content decision-surface family appended.
+///
+/// OBS-008e/f/g/h/i. Appended rather than inserted, for the reason every prior version gives: every
+/// column a v9 vocabulary allocated keeps its index, so the change is additive in the one way that
+/// matters.
+const OOV_FAMILIES_V10: [&str; 47] = {
+    let mut families = [""; 47];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V9.len() {
+        families[index] = OOV_FAMILIES_V9[index];
+        index += 1;
+    }
+    families[46] = "content";
+    families
+};
+
 /// The pinned fingerprint of the ordered version-1 registry.
 ///
 /// **Independent of how the list is built.** Pinning v2 against v1 alone proved nothing: v2 is
@@ -333,6 +349,10 @@ pub const OOV_FAMILIES_V8_FINGERPRINT: &str =
 pub const OOV_FAMILIES_V9_FINGERPRINT: &str =
     "446509f90c8d17270f081b4cd86d79364ff30e40b51da6a49b2b513b636731a5";
 
+/// The pinned fingerprint of the ordered version-10 registry.
+pub const OOV_FAMILIES_V10_FINGERPRINT: &str =
+    "9ab64bd1953cb9ac46ef9da9ec34a94ca25ee1082a41971d1687488a17e3c831";
+
 /// The frozen v1 list, for migration checks. Nothing routes by it.
 #[must_use]
 pub const fn oov_families_v1() -> &'static [&'static str] {
@@ -345,7 +365,7 @@ pub const fn oov_families_v1() -> &'static [&'static str] {
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V9
+    &OOV_FAMILIES_V10
 }
 
 /// Families whose reserved rows exist only to hold v1's indices in place.
@@ -871,8 +891,8 @@ impl Vocabulary {
         // 1. Fail closed on a layout this build does not know. An unrecognised version means the
         //    reserved columns below are somebody else's, and nothing here can tell which.
         let families: &[&str] = match self.oov_registry_version {
-            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V9,
-            8 if allow_prior_version_inference => &OOV_FAMILIES_V8,
+            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V10,
+            9 if allow_prior_version_inference => &OOV_FAMILIES_V9,
             _ => {
                 return Err(VocabularyError::UnsupportedRegistry {
                     found: self.oov_registry_version,
@@ -1378,7 +1398,12 @@ mod tests {
             OOV_FAMILIES_V9_FINGERPRINT,
             "the ordered v9 registry changed"
         );
-        // The nine digests must differ, or pinning them separately proves nothing.
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V10),
+            OOV_FAMILIES_V10_FINGERPRINT,
+            "the ordered v10 registry changed"
+        );
+        // The ten digests must differ, or pinning them separately proves nothing.
         assert_ne!(OOV_FAMILIES_V1_FINGERPRINT, OOV_FAMILIES_V2_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V2_FINGERPRINT, OOV_FAMILIES_V3_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V3_FINGERPRINT, OOV_FAMILIES_V4_FINGERPRINT);
@@ -1387,6 +1412,7 @@ mod tests {
         assert_ne!(OOV_FAMILIES_V6_FINGERPRINT, OOV_FAMILIES_V7_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V7_FINGERPRINT, OOV_FAMILIES_V8_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V8_FINGERPRINT, OOV_FAMILIES_V9_FINGERPRINT);
+        assert_ne!(OOV_FAMILIES_V9_FINGERPRINT, OOV_FAMILIES_V10_FINGERPRINT);
 
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
@@ -1492,10 +1518,23 @@ mod tests {
             "the appended family is not the strategy decision-surface namespace"
         );
 
+        assert_eq!(OOV_FAMILIES_V10.len(), OOV_FAMILIES_V9.len() + 1);
+        for (index, family) in OOV_FAMILIES_V9.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V10[index], *family,
+                "v10 moved the v9 reserved column at index {index}"
+            );
+        }
+        assert_eq!(
+            OOV_FAMILIES_V10[OOV_FAMILIES_V9.len()],
+            "content",
+            "the appended family is not the content decision-surface namespace"
+        );
+
         // And the same property on the built vocabulary: reserved column i+1 is families[i].
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         assert_eq!(vocabulary.slots[0].name, GLOBAL_OOV);
-        for (index, family) in OOV_FAMILIES_V9.iter().enumerate() {
+        for (index, family) in OOV_FAMILIES_V10.iter().enumerate() {
             assert_eq!(vocabulary.slots[index + 1].name, oov_name(family));
         }
     }
@@ -1545,12 +1584,12 @@ mod tests {
     }
 
     #[test]
-    fn version_eight_loads_for_inference_without_renumbering_its_columns() {
+    fn version_nine_loads_for_inference_without_renumbering_its_columns() {
         let mut vocabulary = Vocabulary::build(sample()).expect("builds");
-        let appended_column = 1 + OOV_FAMILIES_V8.len();
-        assert_eq!(vocabulary.slots[appended_column].name, oov_name("strategy"));
+        let appended_column = 1 + OOV_FAMILIES_V9.len();
+        assert_eq!(vocabulary.slots[appended_column].name, oov_name("content"));
         vocabulary.slots.remove(appended_column);
-        vocabulary.oov_registry_version = 8;
+        vocabulary.oov_registry_version = 9;
         vocabulary.oov_count -= 1;
         vocabulary.allocated_for -= 1;
         vocabulary.reindex();
@@ -1562,24 +1601,36 @@ mod tests {
             Vocabulary::from_json(&text).is_err(),
             "training load must stay current"
         );
-        let loaded = Vocabulary::from_json_for_inference(&text).expect("v8 inference loads");
-        assert_eq!(loaded.oov_registry_version(), 8);
+        let loaded = Vocabulary::from_json_for_inference(&text).expect("v9 inference loads");
+        assert_eq!(loaded.oov_registry_version(), 9);
         assert_eq!(loaded.column_of(&assigned_name), assigned_column);
         assert_eq!(
-            loaded.column_of("strategy:new-current-only-fact"),
+            loaded.column_of("content:new-current-only-fact"),
             GLOBAL_OOV_COLUMN,
-            "the v9-only family must not alias an old trained row"
+            "the v10-only family must not alias an old trained row"
         );
     }
 
     #[test]
+    fn version_eight_remains_refused_for_inference() {
+        // v10 only extends the one-version-back window to v9 (OBS-008e/f/g/h/i); v8 is now two
+        // versions back and must be refused exactly as v2-v7 already are.
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        vocabulary.oov_registry_version = 8;
+        let error = Vocabulary::from_json_for_inference(&vocabulary.to_json().expect("json"))
+            .expect_err("v8 is not an inference-compatible layout under the v10 registry");
+        assert!(matches!(
+            error,
+            LoadError::Invalid(VocabularyError::UnsupportedRegistry { .. })
+        ));
+    }
+
+    #[test]
     fn version_seven_remains_refused_for_inference() {
-        // v9 only extends the one-version-back window to v8 (OBS-008d1); v7 is now two versions
-        // back and must be refused exactly as v2-v6 already are.
         let mut vocabulary = Vocabulary::build(sample()).expect("builds");
         vocabulary.oov_registry_version = 7;
         let error = Vocabulary::from_json_for_inference(&vocabulary.to_json().expect("json"))
-            .expect_err("v7 is not an inference-compatible layout under the v9 registry");
+            .expect_err("v7 is not an inference-compatible layout");
         assert!(matches!(
             error,
             LoadError::Invalid(VocabularyError::UnsupportedRegistry { .. })

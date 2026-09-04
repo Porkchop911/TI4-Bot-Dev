@@ -24,6 +24,39 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008e/f/g/h/i (pass 1) — content decision-surface subtype (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008d2. Per user
+  instruction to batch rather than over-slice, this covers five plan rows in one commit: trade (e),
+  agenda (f), reactions/action-cards/faction-abilities (g), exploration/relics (h), and leaders/
+  breakthroughs/remaining audit rows (i) -- mirroring OBS-008d1's "broad, shallow read, zero engine
+  change" pattern.
+- New `content` feature family: `content_decision_features` reads `choice.context.subtype`, matches
+  ~34 fixed strings (each an existing OBS-003 `DecisionContext::new` call site) plus 5 structural
+  rules (`ends_with`/`starts_with`/`contains`) for the small number of genuinely runtime-constructed
+  subtype strings (relic technology picks, exploration rewards, a reaction's timing relation,
+  action-card "pick" mechanics), emitting `content:subtype:*`/`content:option-count`/
+  `content:optional`. No preview this pass. Zero engine changes -- every subtype already existed.
+- `EXPLICIT_FIXED_FAMILIES` gains `"content"` (39 -> 40). `FAMILY_ROLES` in `projection.rs` gains
+  `("content", FamilyRole::Transferable)` alphabetically between `"combat"` and `"critic-state"`
+  (46 -> 47). `vocabulary.rs` migrated `OOV_REGISTRY_VERSION` 9 -> 10: new `OOV_FAMILIES_V10` (47
+  entries, appending `"content"`) with a real computed fingerprint; `oov_families()` and
+  `validate_versioned`'s one-version-back arm updated to 10/9; reserved-order test extended;
+  `version_eight_loads_for_inference_*` renamed to `version_nine_loads_for_inference_*`, new
+  `version_eight_remains_refused_for_inference` added -- the same mechanical pattern used for every
+  prior family bump this session.
+- Checks: engine 1,198 lib + 4 integration + 5 docs (unchanged, no engine changes); policy 226
+  (224 + 2 new, incl. the 102-game deterministic campaign, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files, policy-only this time -- no
+  `redistribute_tokens` drift to manage) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008EFGHI1.md`. Spec:
+  `plans/OBS-008EFGHI1_CONTENT_SUBTYPE_SURFACE.md`. Independent Tier-C review OUTSTANDING; flags the
+  five structural subtype-matching rules as a judgment call worth checking, and notes no preview was
+  attached this pass.
+- Next: opportunistic preview passes for `content` subtypes and OBS-008d1's four remaining
+  unpreviewed strategy subtypes; then OBS-009 (information-history audit), OBS-010 (critic
+  alignment), OBS-011 (vocabulary/corpus migration), OBS-012 (decision completeness qualification).
+
 ### OBS-008d2 — strategy/technology/scoring consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008d1 (`451eded`).
