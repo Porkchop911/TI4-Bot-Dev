@@ -2600,6 +2600,9 @@ impl<'a> Game<'a> {
                 self.galaxy.as_ref(),
                 &mut self.table,
                 &player,
+                &DecisionSource::Rule("81.5".to_owned()),
+                "status_redistribute_tokens",
+                "redistribute your command tokens",
             );
         }
         // "When you would return strategy cards during the status phase" — fired per seat

@@ -103,18 +103,20 @@ fn limit_deltas(before: &Standing, after: &Standing) -> [Delta; 2] {
 
 /// The exact fleet and transport aftermath of one placement, as option payload facts.
 ///
-/// Separate from [`limit_deltas`] because a preview states change while these state the position
-/// reached, including the units the enforcement that follows would remove — the fact that makes
-/// producing into a full space area visibly different from producing into an empty one.
+/// Separate from [`limit_deltas`] because a preview states the change while these state the exact
+/// pre-enforcement violations the placement reaches.
+///
+/// Enforcement removes fleet-supply candidates first, and that removal can change the capacity
+/// answer. It also asks the owner which unit to remove. A sum of the independent excesses is
+/// therefore not a truthful prediction of units that will leave the board; these facts deliberately
+/// name the violations rather than inventing such a prediction.
 fn placement_facts(option: ChoiceOption, before: &Standing, after: &Standing) -> ChoiceOption {
     option
         .with("capacity_used", after.consumed - before.consumed)
         .with("fleet_headroom_after", after.fleet_headroom())
         .with("capacity_free_after", after.capacity_free())
-        .with(
-            "units_removed_after",
-            after.fleet_excess() + after.capacity_excess,
-        )
+        .with("fleet_excess_after", after.fleet_excess())
+        .with("capacity_excess_after", after.capacity_excess)
 }
 
 /// What may be produced at all. Structures arrive through Construction, not PRODUCTION.
@@ -4053,6 +4055,49 @@ mod tests {
                 && settled.contains(&Quantity::CapacityFree),
             "the same position answers both for a unit whose destination is forced: {settled:?}"
         );
+    }
+
+    /// Tier-C review remediation: these are pre-enforcement violations, not a prediction of what
+    /// the owner will remove. Fleet enforcement happens first and can change capacity afterwards.
+    #[test]
+    fn placement_facts_name_each_pre_enforcement_violation_without_predicting_removals() {
+        let before = Standing {
+            fleet_limit: 3,
+            fleet_charged: 1,
+            transport: 4,
+            consumed: 2,
+            fighters_charged: 0,
+            capacity_excess: 0,
+        };
+        let after = Standing {
+            fleet_limit: 3,
+            fleet_charged: 4,
+            transport: 4,
+            consumed: 6,
+            fighters_charged: 0,
+            capacity_excess: 2,
+        };
+        let facts = placement_facts(
+            ChoiceOption::new("place|space", PLACE_KIND),
+            &before,
+            &after,
+        );
+
+        assert_eq!(
+            facts
+                .payload
+                .get("fleet_excess_after")
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
+        assert_eq!(
+            facts
+                .payload
+                .get("capacity_excess_after")
+                .and_then(serde_json::Value::as_i64),
+            Some(2)
+        );
+        assert_eq!(facts.payload.get("units_removed_after"), None);
     }
 
     #[test]

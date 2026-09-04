@@ -1152,11 +1152,24 @@ fn warfare_primary(
     // "Then, the active player can redistribute their command tokens." A separate sentence from the
     // gain above and a separate decision: the token just recovered goes into a pool of the player's
     // choice, and *then* every token they hold may be moved between pools.
-    redistribute_tokens(state, content, sources, galaxy, table, player)?;
+    redistribute_tokens(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        &DecisionSource::StrategyCard {
+            card: "Warfare".to_owned(),
+            secondary: false,
+        },
+        "warfare_redistribute_tokens",
+        "Warfare: redistribute your command tokens",
+    )?;
     Ok(())
 }
 
-/// Warfare's second half: move any number of command tokens between your own pools.
+/// Move command tokens between a player's own pools under the caller's named rule/effect.
 ///
 /// Offered one move at a time until the player declines, which is what "redistribute" allows and
 /// what keeps each move a decision a policy can see. Bounded by the tokens actually held, so a
@@ -1168,6 +1181,9 @@ pub(crate) fn redistribute_tokens(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
+    source: &DecisionSource,
+    subtype: &str,
+    prompt: &str,
 ) -> Result<Ability, IllegalChoice> {
     use ti4_model::state::TokenPool;
     const POOLS: [(TokenPool, &str); 3] = [
@@ -1207,16 +1223,13 @@ pub(crate) fn redistribute_tokens(
         options.push(ChoiceOption::decline());
         let choice = Choice::new(
             player.clone(),
-            "Warfare: redistribute your command tokens",
+            prompt,
             options,
         )
         .contextualized(DecisionContext::new(
             player.clone(),
-            DecisionSource::StrategyCard {
-                card: "Warfare".to_owned(),
-                secondary: false,
-            },
-            "warfare_redistribute_tokens",
+            source.clone(),
+            subtype,
             state.phase,
             state.round,
         ));
@@ -1544,6 +1557,12 @@ mod tests {
             None,
             &mut table,
             &player,
+            &DecisionSource::StrategyCard {
+                card: "Warfare".to_owned(),
+                secondary: false,
+            },
+            "warfare_redistribute_tokens",
+            "Warfare: redistribute your command tokens",
         )
         .expect("redistribution resolves");
 
@@ -1556,6 +1575,38 @@ mod tests {
             "redistribution moves tokens, it does not mint them"
         );
         let _ = TokenPool::Tactic;
+    }
+
+    /// Tier-C review remediation: the same redistribution mechanic is also the status-phase
+    /// 81.5 step, so the caller supplies its real source instead of this helper always claiming
+    /// Warfare's primary.
+    #[test]
+    fn status_redistribution_carries_the_status_rule_not_warfare() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().tactic_tokens = 1;
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+
+        redistribute_tokens(
+            &mut state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            None,
+            &mut table,
+            &player,
+            &DecisionSource::Rule("81.5".to_owned()),
+            "status_redistribute_tokens",
+            "redistribute your command tokens",
+        )
+        .expect("status redistribution resolves");
+
+        let asked = seen.borrow();
+        assert_eq!(asked[0].prompt, "redistribute your command tokens");
+        let context = asked[0].context.clone().expect("typed context");
+        assert_eq!(context.source, DecisionSource::Rule("81.5".to_owned()));
+        assert_eq!(context.subtype, "status_redistribute_tokens");
     }
     use super::*;
     use crate::fixtures::{a_placed_planet, game, plain_hub, put_on_planet};

@@ -1245,6 +1245,10 @@ fn payment_decision_features(choice: &Choice, option: &ChoiceOption, features: &
 /// Typed limit state and analytic marginal consequence of producing one offered unit
 /// (OBS-008c2a). Like the payment surface, these stay in an already-reviewed family rather than
 /// opening a vocabulary namespace before all production subtypes have been measured.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one bounded production surface keeps its shared context, payload and preview facts together"
+)]
 fn production_decision_features(
     choice: &Choice,
     option: &ChoiceOption,
@@ -1295,12 +1299,14 @@ fn production_decision_features(
         "credit_used",
         "owed",
         "production_spent",
-        // OBS-008c2b: what the destination does to the two limits it can spend, and how many units
-        // the enforcement that follows would take back off the board.
+        // OBS-008c2b: what the destination does to the two limits it can spend, plus the exact
+        // pre-enforcement violations. The owner chooses enforcement removals, so these deliberately
+        // do not claim to predict how many units will ultimately leave the board.
         "capacity_used",
         "fleet_headroom_after",
         "capacity_free_after",
-        "units_removed_after",
+        "fleet_excess_after",
+        "capacity_excess_after",
         // Present only while the destination is undecided, so an unanswerable consequence is a
         // marker rather than a zero.
         "placement_pending",
@@ -2367,7 +2373,7 @@ mod tests {
         let state = ti4_engine::fixtures::game(&["a"]);
         let player = PlayerId::new("a");
         let seen = Observed::new(&state, content, POK, None);
-        let placement = |free_after: i64, used: i64, removed: i64| {
+        let placement = |free_after: i64, used: i64, fleet_excess: i64, capacity_excess: i64| {
             ChoiceOption::new("place|space", "place")
                 .with("system", "18")
                 .with("unit", "infantry")
@@ -2377,7 +2383,8 @@ mod tests {
                 .with("capacity_used", used)
                 .with("fleet_headroom_after", 1)
                 .with("capacity_free_after", free_after)
-                .with("units_removed_after", removed)
+                .with("fleet_excess_after", fleet_excess)
+                .with("capacity_excess_after", capacity_excess)
                 .previewed(Preview::certain(vec![
                     Delta::new(Quantity::FleetSupplyHeadroom, 2, 1),
                     Delta::new(Quantity::CapacityFree, 4, free_after),
@@ -2406,7 +2413,7 @@ mod tests {
             )
         };
 
-        let roomy = contextualized(placement(2, 2, 0), 2);
+        let roomy = contextualized(placement(2, 2, 0, 0), 2);
         let features = explicit_option_features(&seen, &roomy, &roomy.options[0], &player, &[]);
         for (name, value) in [
             ("production:subtype:place_unit", 1.0),
@@ -2426,8 +2433,8 @@ mod tests {
         }
 
         // The same placement into a space area that cannot hold it. Nothing about the option
-        // changes except what it leaves behind, and what it leaves behind is units removed.
-        let full = contextualized(placement(0, 2, 2), 6);
+        // changes except the exact pre-enforcement violations it leaves behind.
+        let full = contextualized(placement(0, 2, 1, 2), 6);
         let crowded = explicit_option_features(&seen, &full, &full.options[0], &player, &[]);
         assert_eq!(roomy.options[0].id, full.options[0].id, "same option");
         assert_eq!(
@@ -2444,13 +2451,17 @@ mod tests {
             Some(1.0)
         );
         assert_eq!(
-            value_of(&crowded, "production:units_removed_after"),
+            value_of(&crowded, "production:fleet_excess_after"),
+            Some(small_integer_value(1))
+        );
+        assert_eq!(
+            value_of(&crowded, "production:capacity_excess_after"),
             Some(small_integer_value(2))
         );
         assert_eq!(
-            value_of(&features, "production:units_removed_after"),
+            value_of(&features, "production:fleet_excess_after"),
             None,
-            "a placement that loses nothing says nothing, rather than saying zero"
+            "a placement with no fleet violation says nothing, rather than saying zero"
         );
 
         let projected = crate::projection::mlp_option_features(
@@ -2462,10 +2473,12 @@ mod tests {
             crate::progress::Baseline::default(),
         );
         assert_eq!(
-            value_of(&projected, "production:units_removed_after"),
+            value_of(&projected, "production:capacity_excess_after"),
             Some(small_integer_value(2))
         );
-        assert!(crate::projection::admits("production:units_removed_after"));
+        assert!(crate::projection::admits(
+            "production:capacity_excess_after"
+        ));
         assert!(crate::projection::admits("production:fleet-headroom-after"));
     }
 

@@ -3166,9 +3166,12 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - Intentional package files: production, strategy_cards, game, policy features, specification,
   evidence, and this execution state. Preserve the unrelated modified `action_cards.rs` and the two
   untracked samples.
-- Checks/review: focused engine tests and the full engine suite are green; policy linking is waiting
-  on another live policy-test executable. Next: retry policy after its lock clears, run the remaining
-  gates, then obtain a re-review and commit only the scoped paths.
+- Checks: engine 1,175 lib + 4 integration + 5 docs; policy 202/202 (102-game campaign separately
+  passed in 307.26 s from an isolated temporary target); training 133; strict all-target Clippy and
+  diff check green. Formatter output is only the concurrently modified, out-of-scope exploration
+  file. Independent Tier-C re-review **PASS / APPROVED**: it confirmed truthful pre-enforcement
+  excess facts plus the Rule 81.5 source, status subtype, and neutral prompt. Commit only the
+  scoped paths afterward.
 
 ---
 
