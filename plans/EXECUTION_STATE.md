@@ -24,6 +24,32 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-006 — candidate-centred board state (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-007c (`6cb09f5`).
+- No new engine code: `add_system_features` (the pre-existing per-target board-fact function every
+  board-targeting option kind already calls: activation, production, placement, load) gains two
+  fact groups over already-registered families (`target`, `production`, `placement`, `origin`,
+  `option-system`), both pure `features.rs` wiring over capability that already existed.
+- `{prefix}:present-slot-{0..4}` closes representation rule 4's "relevant relationships": whether
+  each OBS-005 opponent slot's seat has any presence in the target system, where the existing
+  `rival-seats`/`enemy-ships` facts were aggregate-only and could not say which *kind* of opponent
+  was there.
+- `{prefix}:objective-progress-gain` / `:objective-newly-satisfied` wires
+  `Observed::revealed_objective_progress_gaining` — the engine's own "what if I also controlled
+  these planets" counterfactual, which existed and was called from nowhere in `features.rs` — into
+  every board-targeting option, closing the row's "objective-location" gap.
+- Fixture trap found and fixed while writing the objective test: `plain_hub()`'s low-numbered ring
+  is every faction's homeworld tile, which `expand_borders`'s own predicate excludes; the test now
+  builds around tile 19 (an ordinary non-home system) explicitly.
+- Checks: engine 1,185 + 4 integration + 5 docs (sanity, unchanged); policy 209 (includes the
+  102-game deterministic campaign, 269.68 s, no regression); training 133; strict Clippy on
+  ti4-policy clean; targeted fmt/diff-check clean.
+- Evidence: `plans/evidence/OBS-006.md`. Spec: `plans/OBS-006_CANDIDATE_CENTRED_BOARD_STATE.md`.
+  Independent Tier-C review OUTSTANDING.
+- Next: with OBS-005 and OBS-006 both done, OBS-008a/b (tactical/combat/invasion option semantics)
+  are now unblocked alongside the already-unblocked OBS-008d/g/h/i.
+
 ### OBS-007c — stochastic preview foundation (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-005 (`4b69835`).

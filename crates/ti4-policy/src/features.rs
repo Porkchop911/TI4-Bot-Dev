@@ -2095,6 +2095,66 @@ fn add_system_features(
     ] {
         add_named(features, format_args!("{prefix}:{name}"), value);
     }
+
+    // OBS-006: which *kind* of opponent is here, not just how many. The slot index is OBS-005's
+    // sort position -- relationship, then initiative, then seating -- never a player id, so "the
+    // combat counterpart is here" reads the same way in every game.
+    for (index, other) in seen.opponent_slots(player).into_iter().enumerate() {
+        let present = system.has_units_of(other)
+            || system
+                .planet_units
+                .values()
+                .flatten()
+                .any(|unit| &unit.owner == other)
+            || controls.values().any(|owner| owner == other);
+        if present {
+            add_named(features, format_args!("{prefix}:present-slot-{index}"), 1.0);
+        }
+    }
+
+    // OBS-006: objective-location. `revealed_objective_progress_gaining` is the engine's own
+    // counterfactual for "what if I also controlled these planets"; wiring it here is the only
+    // change this fact needs, since the helper already existed and nothing called it.
+    let uncontrolled: Vec<PlanetId> = planet_ids
+        .iter()
+        .filter(|planet| controls.get(**planet) != Some(player))
+        .map(|planet| PlanetId::new(*planet))
+        .collect();
+    if !uncontrolled.is_empty() {
+        let current = seen.revealed_objective_progress(player);
+        let gaining = seen.revealed_objective_progress_gaining(player, &uncontrolled);
+        let ratio =
+            |card: &ti4_engine::objectives::CardProgress| (card.have / card.threshold).min(1.0);
+        let mut progress_gain = 0.0;
+        let mut newly_satisfied = 0usize;
+        for after in &gaining {
+            let before_ratio = current
+                .iter()
+                .find(|card| card.alias == after.alias)
+                .map_or(0.0, ratio);
+            progress_gain += (ratio(after) - before_ratio).max(0.0);
+            let was_satisfied = current
+                .iter()
+                .any(|card| card.alias == after.alias && card.satisfied);
+            if after.satisfied && !was_satisfied {
+                newly_satisfied += 1;
+            }
+        }
+        if progress_gain > 0.0 {
+            add_named(
+                features,
+                format_args!("{prefix}:objective-progress-gain"),
+                progress_gain,
+            );
+        }
+        if newly_satisfied > 0 {
+            add_named(
+                features,
+                format_args!("{prefix}:objective-newly-satisfied"),
+                count_value(newly_satisfied),
+            );
+        }
+    }
 }
 
 /// Every planet id the content defines, built once.
@@ -3136,6 +3196,109 @@ mod tests {
         assert_ne!(
             no_relationship, with_b,
             "removing the relationship must change the emitted facts"
+        );
+    }
+
+    #[test]
+    fn obs006_present_slot_facts_are_relationship_relative_not_identity_relative() {
+        // OBS-006: the same opponent presence in a *target* system, put on a different concrete
+        // seat that holds the same relationship to the actor, must emit the same
+        // `target:present-slot-*` fact -- the slot index is OBS-005's sort position, not identity.
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::plain_hub();
+        let a = PlayerId::new("a");
+        let target = hub.outer[1].clone();
+        let option = ChoiceOption::labelled(&target, "activate", format!("activate {target}"));
+
+        let build = |combat_partner: &str| -> GameState {
+            let centre = ti4_model::id::SystemId::new(&hub.centre);
+            let target_system = ti4_model::id::SystemId::new(&target);
+            let mut state = ti4_engine::fixtures::game(&["a", "b", "c", "d", "e", "f"]);
+            for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+                state
+                    .board
+                    .entry(ti4_model::id::SystemId::new(id))
+                    .or_default();
+            }
+            // The relationship is established in the centre (shared with the actor); presence in
+            // the *target* system, elsewhere, is what this test actually measures.
+            ti4_engine::fixtures::put(&mut state, &centre, "fighter", &a, 1);
+            ti4_engine::fixtures::put(
+                &mut state,
+                &centre,
+                "fighter",
+                &PlayerId::new(combat_partner),
+                1,
+            );
+            ti4_engine::fixtures::put(
+                &mut state,
+                &target_system,
+                "fighter",
+                &PlayerId::new(combat_partner),
+                1,
+            );
+            state
+        };
+        let choice = Choice::new(a.clone(), "activate a system", vec![option.clone()]);
+        let names_of_state = |state: &GameState| -> Vec<String> {
+            let seen = Observed::new(state, content, POK, Some(&hub.galaxy));
+            names_of(&explicit_option_features(&seen, &choice, &option, &a, &[]))
+        };
+
+        let with_b = names_of_state(&build("b"));
+        let with_e = names_of_state(&build("e"));
+        assert_eq!(
+            with_b, with_e,
+            "the same relationship's presence in the target must emit the same facts"
+        );
+        assert!(
+            with_b.iter().any(|name| name == "target:present-slot-0"),
+            "sanity: the combat counterpart's presence in the target is actually reported: {with_b:?}"
+        );
+    }
+
+    #[test]
+    fn obs006_objective_progress_gain_reflects_the_counterfactual_not_the_current_position() {
+        // OBS-006: `expand_borders` ("control 6 planets in non-home systems") is a plain count with
+        // no trait/tech matching, so a target holding one uncontrolled planet must move the ratio
+        // even though the *current*, ungained position does not.
+        let content = ti4_content::ContentStore::embedded();
+        // `plain_hub`'s low-numbered ring is every faction's homeworld, which `expand_borders`
+        // excludes by construction (`non_home_count`); tile 19 is an ordinary, single-planet,
+        // non-home system, so the hub is built around it explicitly instead.
+        let target_system = "19".to_owned();
+        let hub = ti4_engine::fixtures::hub_with_outer(&target_system);
+        assert!(
+            ti4_content::galaxy::planets_in(content, &target_system, POK)
+                .iter()
+                .any(|planet| planet.homeworld_of().is_none()),
+            "tile 19 must be an ordinary, non-homeworld system"
+        );
+        let a = PlayerId::new("a");
+
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        state.revealed_objectives = vec![ti4_model::id::ObjectiveId::new("expand_borders")];
+
+        let option = ChoiceOption::labelled(
+            &target_system,
+            "activate",
+            format!("activate {target_system}"),
+        );
+        let choice = Choice::new(a.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        let features = explicit_option_features(&seen, &choice, &option, &a, &[]);
+
+        assert!(
+            value_of(&features, "target:objective-progress-gain").is_some_and(|gain| gain > 0.0),
+            "an uncontrolled planet that counts towards a revealed objective must show a gain: \
+             {:?}",
+            names_of(&features)
         );
     }
 
