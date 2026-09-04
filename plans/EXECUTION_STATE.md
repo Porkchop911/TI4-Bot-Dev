@@ -24,6 +24,38 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008h3 — secret-objective-count content consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008h2 (`7894b85`).
+  Fourth preview slice of `content`, closing the gap h2 flagged and deferred: three subtypes whose
+  consequence is the seat's own held-secret count falling by one.
+- New `Quantity::SecretObjectivesHeld` (`preview.rs`): declared alongside `ActionCardsHeld` in
+  OBS-007a but never wired to a producer until now.
+- `return_over_secret_hand_limit` (`secrets::enforce_hand_limit`, LRR 45.4): every return option
+  previews the seat's own held-secret total (via `held_count`, so a scored secret still counts)
+  falling by exactly one.
+- `expedition_discard_action_card` (`thunders_edge::pay`, "action_cards" slice): every discard
+  option previews the action-card count falling by one, read fresh each of the two iterations --
+  reuses `ActionCardsHeld`, no new quantity needed.
+- `expedition_discard_secret` (`thunders_edge::pay`, "secret" slice): every discard option previews
+  the held-secret total (via `secrets::held_count`) falling by exactly one.
+- Policy: `content_decision_features` gains a fifth preview quantity mapping
+  (`SecretObjectivesHeld` -> `content:secret-objectives-*`) under the existing family. No new
+  family, no vocabulary change.
+- Checks: engine 1,207 lib (1,204 + 3 new, incl. `secrets::` 43/43, `thunders_edge::` 3/3) + 4
+  integration + 5 docs; policy 230 (229 + 1 new, incl. the 102-game deterministic campaign, no
+  regression); training 133; strict Clippy on engine+policy clean; targeted fmt (scoped files) +
+  `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008H3.md`. Spec:
+  `plans/OBS-008H3_SECRET_OBJECTIVE_COUNT_CONSEQUENCE_SURFACE.md`. Independent Tier-C review
+  OUTSTANDING.
+- Next: `titan_prototype_choose_builder`/`stellar_converter_choose_target`/`crown_of_emphidia_
+  choose_planet`/`dominus_orb_purge_to_move`/`neuraloop_choose_relic_to_purge` remain identity or
+  permission choices without a uniform per-option quantity; trade terms and most reactions/
+  action-cards remain subtype-only. OBS-008d1's four remaining unpreviewed strategy subtypes; then
+  OBS-009 (information-history audit), OBS-010 (critic alignment), OBS-011 (vocabulary/corpus
+  migration), OBS-012 (decision completeness qualification).
+
 ### OBS-008h2 — action-card-count content consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008g2 (`7ba99a3`).

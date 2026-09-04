@@ -2042,6 +2042,9 @@ fn content_decision_features(choice: &Choice, option: &ChoiceOption, features: &
                     // move the seat's own action-card count by exactly one, in opposite
                     // directions.
                     ti4_engine::preview::Quantity::ActionCardsHeld => "action-cards",
+                    // OBS-008h3: mirrors ActionCardsHeld for the other over-the-limit hand --
+                    // returning or discarding a secret objective moves this by exactly one.
+                    ti4_engine::preview::Quantity::SecretObjectivesHeld => "secret-objectives",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -4836,6 +4839,45 @@ mod tests {
         );
 
         assert!(crate::projection::admits("content:action-cards-change"));
+    }
+
+    /// OBS-008h3: returning over the secret hand limit reaches the policy under the existing
+    /// `content` family via a first-used `SecretObjectivesHeld` quantity.
+    #[test]
+    fn obs008h3_secret_objective_count_preview_reaches_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let ret =
+            ChoiceOption::labelled("s0", "return", "return s0").previewed(Preview::certain(vec![
+                Delta::new(Quantity::SecretObjectivesHeld, 4, 3),
+            ]));
+        let choice = Choice::new(
+            player.clone(),
+            "return a secret objective to the deck",
+            vec![ret],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("45.4".to_owned()),
+            "return_over_secret_hand_limit",
+            Phase::Action,
+            2,
+        ));
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&features, "content:secret-objectives-after"),
+            Some(3.0)
+        );
+        assert!(crate::projection::admits(
+            "content:secret-objectives-change"
+        ));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

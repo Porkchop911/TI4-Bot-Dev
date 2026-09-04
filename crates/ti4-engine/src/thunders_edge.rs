@@ -8,6 +8,7 @@ use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 use crate::production::Spend;
 
 const SLICES: [(&str, &str, f64); 6] = [
@@ -154,6 +155,7 @@ fn pay(
                     .expect("player exists")
                     .action_cards
                     .clone();
+                let before = i64::try_from(hand.len()).unwrap_or(0);
                 let options: Vec<ChoiceOption> = hand
                     .iter()
                     .enumerate()
@@ -162,7 +164,13 @@ fn pay(
                             .get(ContentType::ActionCards, alias.as_str())
                             .and_then(|record| record.text("name"))
                             .unwrap_or_else(|| alias.as_str());
-                        ChoiceOption::labelled(index.to_string(), "discard", label)
+                        ChoiceOption::labelled(index.to_string(), "discard", label).previewed(
+                            Preview::certain(vec![Delta::new(
+                                Quantity::ActionCardsHeld,
+                                before,
+                                before - 1,
+                            )]),
+                        )
                     })
                     .collect();
                 let choice = Choice::new(
@@ -193,6 +201,8 @@ fn pay(
                 .expect("player exists")
                 .secret_objectives
                 .clone();
+            let before =
+                i64::try_from(crate::secrets::held_count(state, content, player)).unwrap_or(0);
             let choice = Choice::new(
                 player.clone(),
                 "discard a secret objective for the expedition",
@@ -202,7 +212,13 @@ fn pay(
                             .get(ContentType::SecretObjectives, alias.as_str())
                             .and_then(|record| record.text("name"))
                             .unwrap_or_else(|| alias.as_str());
-                        ChoiceOption::labelled(alias.to_string(), "return", label)
+                        ChoiceOption::labelled(alias.to_string(), "return", label).previewed(
+                            Preview::certain(vec![Delta::new(
+                                Quantity::SecretObjectivesHeld,
+                                before,
+                                before - 1,
+                            )]),
+                        )
                     })
                     .collect(),
             )
@@ -337,5 +353,75 @@ mod tests {
             Some(BreakthroughId::new("letnevbt"))
         );
         assert_eq!(state.expedition_slices.get("secret"), Some(&player));
+    }
+
+    /// OBS-008h3: the expedition's action-card discard previews the seat's own hand count
+    /// falling by exactly one, on the first of its two iterations (the second offers no choice).
+    #[test]
+    fn obs008h3_expedition_action_card_discard_previews_the_exact_loss() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().action_cards = vec![
+            ti4_model::id::ActionCardId::new("sabotage"),
+            ti4_model::id::ActionCardId::new("upgrade"),
+        ];
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["0"])));
+        let mut table = Table::with_default(Box::new(decider));
+
+        pay(
+            &mut state,
+            content,
+            DEFAULT,
+            None,
+            &mut table,
+            &player,
+            "action_cards",
+        )
+        .unwrap();
+
+        let ask = seen.borrow();
+        let asked = ask.first().expect("the first discard asked");
+        let option = asked.option("0").expect("the first card was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::ActionCardsHeld,
+                2,
+                1,
+            )]))
+        );
+    }
+
+    /// OBS-008h3: the expedition's secret discard previews the seat's own held-secret count
+    /// falling by exactly one.
+    #[test]
+    fn obs008h3_expedition_secret_discard_previews_the_exact_loss() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().secret_objectives =
+            vec![SecretObjectiveId::new("s0"), SecretObjectiveId::new("s1")];
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["s0"])));
+        let mut table = Table::with_default(Box::new(decider));
+
+        pay(
+            &mut state, content, DEFAULT, None, &mut table, &player, "secret",
+        )
+        .unwrap();
+
+        let ask = seen.borrow();
+        let asked = ask.first().expect("the secret discard asked");
+        let option = asked.option("s0").expect("the secret was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::SecretObjectivesHeld,
+                2,
+                1,
+            )]))
+        );
     }
 }

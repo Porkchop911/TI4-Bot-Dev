@@ -10,6 +10,7 @@ use ti4_model::state::{Feat, FeatOccurrence, GameState};
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// 45.4: three in hand, counting scored ones.
 pub const HAND_LIMIT: usize = 3;
@@ -114,40 +115,45 @@ pub fn enforce_hand_limit(
             return Ok(()); // every one is scored, so there is nothing to hand back
         };
 
-        let chosen = if held.len() == 1 {
-            first
-        } else {
-            let options: Vec<ChoiceOption> = held
-                .iter()
-                .map(|alias| {
-                    ChoiceOption::labelled(
-                        alias.to_string(),
-                        RETURN_KIND,
-                        format!("return {alias}"),
-                    )
-                })
-                .collect();
-            let choice = Choice::new(
-                player.clone(),
-                "return a secret objective to the deck",
-                options,
-            )
-            .contextualized(DecisionContext::new(
-                player.clone(),
-                DecisionSource::Rule("45.4".to_owned()),
-                "return_over_secret_hand_limit",
-                state.phase,
-                state.round,
-            ));
-            SecretObjectiveId::new(
-                table
-                    .ask_seeing(
-                        &choice,
-                        &Observed::new(state, content, ti4_model::content_types::POK, None),
-                    )?
-                    .id,
-            )
-        };
+        let chosen =
+            if held.len() == 1 {
+                first
+            } else {
+                let before = i64::try_from(held_count(state, content, player)).unwrap_or(0);
+                let options: Vec<ChoiceOption> =
+                    held.iter()
+                        .map(|alias| {
+                            ChoiceOption::labelled(
+                                alias.to_string(),
+                                RETURN_KIND,
+                                format!("return {alias}"),
+                            )
+                            .previewed(Preview::certain(vec![
+                                Delta::new(Quantity::SecretObjectivesHeld, before, before - 1),
+                            ]))
+                        })
+                        .collect();
+                let choice = Choice::new(
+                    player.clone(),
+                    "return a secret objective to the deck",
+                    options,
+                )
+                .contextualized(DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Rule("45.4".to_owned()),
+                    "return_over_secret_hand_limit",
+                    state.phase,
+                    state.round,
+                ));
+                SecretObjectiveId::new(
+                    table
+                        .ask_seeing(
+                            &choice,
+                            &Observed::new(state, content, ti4_model::content_types::POK, None),
+                        )?
+                        .id,
+                )
+            };
 
         if let Some(seat) = state.player_mut(player) {
             seat.secret_objectives.retain(|alias| alias != &chosen);
@@ -1314,6 +1320,33 @@ mod tests {
         }
 
         assert_eq!(hand(&state).len(), HAND_LIMIT, "the fourth was handed back");
+    }
+
+    /// OBS-008h3: returning over the secret hand limit previews the seat's own held-secret
+    /// count falling by exactly one, whichever secret goes back.
+    #[test]
+    fn obs008h3_return_over_secret_hand_limit_previews_the_exact_loss() {
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().secret_objectives = (0..=HAND_LIMIT)
+            .map(|n| SecretObjectiveId::new(format!("s{n}")))
+            .collect();
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["s0"])));
+        let mut table = Table::with_default(Box::new(decider));
+
+        enforce_hand_limit(&mut state, ContentStore::embedded(), &mut table, &player()).unwrap();
+
+        let ask = seen.borrow();
+        let asked = ask.first().expect("the over-limit ask reached");
+        let option = asked.option("s0").expect("the secret was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::SecretObjectivesHeld,
+                i64::try_from(HAND_LIMIT + 1).unwrap(),
+                i64::try_from(HAND_LIMIT).unwrap(),
+            )]))
+        );
     }
 
     #[test]

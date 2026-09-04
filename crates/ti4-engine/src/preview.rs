@@ -78,6 +78,10 @@ pub enum Quantity {
     /// `ConstraintKind::Votes`, which bounds how many an ongoing multi-pick ask may still spend;
     /// this is the exact running total a single option would reach (OBS-008f2).
     Votes,
+    /// Secret objectives this seat holds, scored or not (LRR 45). Mirrors `ActionCardsHeld`'s
+    /// role for the other over-the-limit hand: a return or a discard moves this by exactly one
+    /// (OBS-008h3).
+    SecretObjectivesHeld,
 }
 
 /// One quantity, before and after.
