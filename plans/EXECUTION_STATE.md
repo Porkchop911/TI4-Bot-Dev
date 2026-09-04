@@ -24,6 +24,35 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008b3 — retreat fleet-arrival surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b2 (`4b9c383`).
+  Third slice of `OBS-008b`.
+- The gap: `announce_retreat`'s "stay"/"retreat" and `retreat_to`'s destination options carried no
+  payload at all -- not even the generic `option-system:*` board-fact pipeline reached them, since
+  it fires only when an option names a `system`. These were the only combat producers exposing
+  nothing beyond option ID and label.
+- Engine: `Announcing` now attaches `system` and a `ShipsInSystem` preview to "stay" (no change)
+  and "retreat"/the forced retreat (the asking seat's own count there falling to zero -- 78.7
+  retreats the whole fleet together, never selectively). `Retreating` attaches `system` and a
+  `ShipsInSystem` preview to each destination: its own existing count there, to that count plus
+  the whole retreating fleet's size, read once per choice via `ships_of`.
+- Attaching `system` also activates the pre-existing, already-approved `option-system:*` family
+  through the generic board-fact pipeline -- no further wiring, the same mechanism OBS-008b1's
+  `unit` payload activated for `casualty-unit`.
+- Policy: `combat_decision_features`'s subtype guard now also accepts `announce_retreat`/
+  `retreat_to`; a `ShipsInSystem -> "ships"` mapping joins the existing delta match, sharing
+  `combat:ships-*` between the departure and arrival facts. No new family, no vocabulary change.
+- Checks: engine 1,193 lib + 4 integration + 5 docs (incl. `combat::` 53/53); policy 218 (includes
+  the 102-game deterministic campaign, 291.07 s -- back within the 260-310 s range, confirming
+  b1/b2's ~350-358 s readings were transient system load); training 133; strict Clippy on
+  engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008B3.md`. Spec:
+  `plans/OBS-008B3_RETREAT_FLEET_ARRIVAL_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: the rest of `OBS-008b` -- sustain damage's own consequence preview (b1 only fixed its
+  identity), bombardment, ground casualty (Rule 42), fight-ground-combat-round,
+  start-next-ground-combat, and custodians removal.
+
 ### OBS-008b2 — reroll-die stochastic surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b1 (`aab65bc`).

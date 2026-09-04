@@ -1683,19 +1683,20 @@ fn tactical_decision_features(
     }
 }
 
-/// Typed *why* and the exact-or-expected consequence of a combat decision (OBS-008b2).
+/// Typed *why* and the exact-or-expected consequence of a combat decision (OBS-008b2, `OBS-008b3`
+/// for retreat).
 ///
-/// A `Certain` preview (a die that always or never hits) reads like the tactical surface's:
-/// exact before/after/change. A `Chanced` preview — the ordinary case, a d10 reroll — reads as
-/// its exact expected hit count (`Preview::expected`) rather than the whole per-case breakdown:
-/// the odds themselves are exact, but exposing the full distribution as features is not this
-/// family's job yet.
+/// A `Certain` preview (a die that always or never hits; staying, retreating, or a retreat
+/// destination) reads like the tactical surface's: exact before/after/change. A `Chanced`
+/// preview — the ordinary reroll case — reads as its exact expected hit count
+/// (`Preview::expected`) rather than the whole per-case breakdown: the odds themselves are
+/// exact, but exposing the full distribution as features is not this family's job yet.
 fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &mut FeatureVector) {
     let Some(context) = &choice.context else {
         return;
     };
     match context.subtype.as_str() {
-        "reroll_die" => {}
+        "reroll_die" | "announce_retreat" | "retreat_to" => {}
         _ => return,
     }
 
@@ -1719,6 +1720,9 @@ fn combat_decision_features(choice: &Choice, option: &ChoiceOption, features: &m
             for delta in deltas {
                 let quantity = match delta.quantity {
                     ti4_engine::preview::Quantity::Hits => "hits",
+                    // OBS-008b3: the whole retreating fleet's arrival, at the system it leaves
+                    // (falling to zero) or the destination it reaches (rising by the fleet size).
+                    ti4_engine::preview::Quantity::ShipsInSystem => "ships",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -3589,6 +3593,120 @@ mod tests {
         );
         assert_eq!(value_of(&projected, "combat:hits-expected"), Some(0.5));
         assert!(crate::projection::admits("combat:hits-expected"));
+    }
+
+    /// OBS-008b3: announcing a retreat carries the exact fleet-departure fact, and a retreat
+    /// destination carries the exact arrival fact -- the same `combat:ships-*` reading for both,
+    /// since both are `ShipsInSystem` previews under the `combat` family this package already
+    /// approved for the reroll surface.
+    #[test]
+    fn obs008b3_retreat_options_carry_subtype_and_exact_ship_counts() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let announce_context = |subtype: &str, source: &str| {
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule(source.to_owned()),
+                subtype.to_owned(),
+                Phase::Action,
+                2,
+            )
+            .about(DecisionTarget::System(SystemId::new("18")))
+        };
+
+        let retreat = ChoiceOption::labelled("retreat", "retreat", "announce a retreat")
+            .with("system", "18")
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                2,
+                0,
+            )]));
+        let stay = ChoiceOption::labelled("stay", "retreat", "stay and fight")
+            .with("system", "18")
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                2,
+                2,
+            )]));
+        let announcing = Choice::new(player.clone(), "announce a retreat", vec![retreat, stay])
+            .contextualized(announce_context("announce_retreat", "78.9"));
+
+        let retreat_features =
+            explicit_option_features(&seen, &announcing, &announcing.options[0], &player, &[]);
+        for (name, value) in [
+            ("combat:subtype:announce_retreat", 1.0),
+            ("combat:option-count", 2.0),
+            ("combat:preview-known", 1.0),
+            ("combat:ships-after", 0.0), // dropped as a sparse zero, see below
+            ("combat:ships-change", -2.0),
+        ] {
+            if value == 0.0 {
+                assert_eq!(
+                    value_of(&retreat_features, name),
+                    None,
+                    "{name} is a sparse zero"
+                );
+            } else {
+                assert_eq!(
+                    value_of(&retreat_features, name),
+                    Some(value),
+                    "missing {name}"
+                );
+            }
+        }
+
+        let stay_features =
+            explicit_option_features(&seen, &announcing, &announcing.options[1], &player, &[]);
+        assert_eq!(value_of(&stay_features, "combat:ships-before"), Some(2.0));
+        assert_eq!(value_of(&stay_features, "combat:ships-after"), Some(2.0));
+        assert_eq!(
+            value_of(&stay_features, "combat:ships-change"),
+            None,
+            "staying is a genuine zero change, dropped as sparse"
+        );
+
+        let destination = ChoiceOption::labelled("19", "retreat_to", "retreat to 19")
+            .with("system", "19")
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                1,
+                3,
+            )]));
+        let retreating = Choice::new(player.clone(), "retreat to which system", vec![destination])
+            .contextualized(announce_context("retreat_to", "78.7"));
+        let destination_features =
+            explicit_option_features(&seen, &retreating, &retreating.options[0], &player, &[]);
+        for (name, value) in [
+            ("combat:subtype:retreat_to", 1.0),
+            ("combat:ships-before", 1.0),
+            ("combat:ships-after", 3.0),
+            ("combat:ships-change", 2.0),
+        ] {
+            assert_eq!(
+                value_of(&destination_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &retreating,
+            &retreating.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(value_of(&projected, "combat:ships-after"), Some(3.0));
+        assert!(crate::projection::admits("combat:ships-after"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

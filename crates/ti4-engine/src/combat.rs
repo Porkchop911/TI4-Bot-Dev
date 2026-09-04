@@ -2527,16 +2527,40 @@ impl Window for CombatWindow {
                         .player(&self.defender)
                         .and_then(|seat| seat.rout_round)
                         .is_some_and(|played| played == state.combat_round_seq);
+                // OBS-008b3: 78.7 retreats the *whole* remaining fleet together, so "retreat"
+                // previews it leaving this system entirely; "stay" previews no change. Both carry
+                // `system` so the existing generic board-fact pipeline (`option-system:*`) also
+                // reaches this decision, which previously carried no payload at all.
+                let own_ships =
+                    i64::try_from(ships_of(state, content, sources, asking, &self.system).len())
+                        .unwrap_or(i64::MAX);
+                let here = self.system.to_string();
                 let options = if forced {
-                    vec![ChoiceOption::labelled(
-                        "retreat",
-                        RETREAT_KIND,
-                        "retreat (forced)",
-                    )]
+                    vec![
+                        ChoiceOption::labelled("retreat", RETREAT_KIND, "retreat (forced)")
+                            .with("system", here)
+                            .previewed(Preview::certain(vec![Delta::new(
+                                Quantity::ShipsInSystem,
+                                own_ships,
+                                0,
+                            )])),
+                    ]
                 } else {
                     vec![
-                        ChoiceOption::labelled("stay", RETREAT_KIND, "stay and fight"),
-                        ChoiceOption::labelled("retreat", RETREAT_KIND, "announce a retreat"),
+                        ChoiceOption::labelled("stay", RETREAT_KIND, "stay and fight")
+                            .with("system", here.clone())
+                            .previewed(Preview::certain(vec![Delta::new(
+                                Quantity::ShipsInSystem,
+                                own_ships,
+                                own_ships,
+                            )])),
+                        ChoiceOption::labelled("retreat", RETREAT_KIND, "announce a retreat")
+                            .with("system", here)
+                            .previewed(Preview::certain(vec![Delta::new(
+                                Quantity::ShipsInSystem,
+                                own_ships,
+                                0,
+                            )])),
                     ]
                 };
                 Some(
@@ -2563,6 +2587,13 @@ impl Window for CombatWindow {
                 if destinations.len() < 2 {
                     return None; // 78.7b: one destination is not a decision
                 }
+                // OBS-008b3: 78.7 retreats the whole remaining fleet together, so every
+                // destination previews the same arrival count -- what changes between options is
+                // the destination itself, carried by `system` for the existing generic
+                // board-fact pipeline (`option-system:*`).
+                let fleet_size =
+                    i64::try_from(ships_of(state, content, sources, player, &self.system).len())
+                        .unwrap_or(i64::MAX);
                 Some(
                     Choice::new(
                         player.clone(),
@@ -2570,11 +2601,21 @@ impl Window for CombatWindow {
                         destinations
                             .iter()
                             .map(|id| {
+                                let already_there = i64::try_from(
+                                    ships_of(state, content, sources, player, id).len(),
+                                )
+                                .unwrap_or(i64::MAX);
                                 ChoiceOption::labelled(
                                     id.to_string(),
                                     RETREAT_TO_KIND,
                                     format!("retreat to {id}"),
                                 )
+                                .with("system", id.to_string())
+                                .previewed(Preview::certain(vec![Delta::new(
+                                    Quantity::ShipsInSystem,
+                                    already_there,
+                                    already_there + fleet_size,
+                                )]))
                             })
                             .collect(),
                     )
@@ -4685,6 +4726,10 @@ mod tests {
     /// (OBS-007c) already computed exactly, finally attached to a real producer. Declining
     /// previews a certain, unchanged fact instead of the reroll's chance.
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture exercising the reroll and decline previews stays together"
+    )]
     fn obs008b2_reroll_options_preview_the_dies_exact_hit_distribution() {
         let (mut state, system) = arena();
         let player = defender();
@@ -4795,6 +4840,95 @@ mod tests {
                 );
             }
             other => panic!("a decline preview is certain, got {other:?}"),
+        }
+    }
+
+    /// OBS-008b3: announcing a retreat previews the whole fleet leaving the combat system (78.7
+    /// retreats it together, not selectively); staying previews no change; both now carry
+    /// `system`, which they previously lacked entirely. Choosing a destination previews the
+    /// fleet arriving there, added to whatever the seat already holds.
+    #[test]
+    fn obs008b3_retreat_options_preview_the_whole_fleets_arrival() {
+        let hub = crate::fixtures::plain_hub();
+        let system = SystemId::new(&hub.centre);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter().take(2)) {
+            state.board.entry(SystemId::new(id)).or_default();
+        }
+        put(&mut state, &system, "fighter", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 2);
+        let refuge_a = SystemId::new(&hub.outer[0]);
+        let refuge_b = SystemId::new(&hub.outer[1]);
+        put(&mut state, &refuge_a, "fighter", &defender(), 1);
+        put(&mut state, &refuge_b, "fighter", &defender(), 3);
+
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+            .with_galaxy(hub.galaxy);
+
+        // Announcing: the defender's own two fighters here previews 2 -> 2 for "stay" and
+        // 2 -> 0 for "retreat", both carrying `system`.
+        let announcing = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a fresh combat opens by asking the defender to announce");
+        for (id, before, after) in [("stay", 2, 2), ("retreat", 2, 0)] {
+            let option = announcing
+                .options
+                .iter()
+                .find(|option| option.id == id)
+                .unwrap_or_else(|| panic!("a {id} option"));
+            assert_eq!(
+                option
+                    .payload
+                    .get("system")
+                    .and_then(serde_json::Value::as_str),
+                Some(system.as_str())
+            );
+            match &option.preview.as_ref().expect("previewed").outcome {
+                crate::preview::Outcome::Certain { deltas } => {
+                    assert_eq!(
+                        deltas,
+                        &[Delta::new(Quantity::ShipsInSystem, before, after)]
+                    );
+                }
+                other => panic!("a retreat announcement preview is certain, got {other:?}"),
+            }
+        }
+
+        // Retreating: two fighters leave, arriving atop whatever is already at each refuge.
+        let mut window = window;
+        window.stage = Stage::Retreating {
+            round: 1,
+            leaving: vec![defender()],
+        };
+        let retreating = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("two eligible destinations");
+        for (id, already_there) in [(&refuge_a, 1), (&refuge_b, 3)] {
+            let option = retreating
+                .options
+                .iter()
+                .find(|option| option.id == id.to_string())
+                .unwrap_or_else(|| panic!("a retreat-to-{id} option"));
+            assert_eq!(
+                option
+                    .payload
+                    .get("system")
+                    .and_then(serde_json::Value::as_str),
+                Some(id.as_str())
+            );
+            match &option.preview.as_ref().expect("previewed").outcome {
+                crate::preview::Outcome::Certain { deltas } => {
+                    assert_eq!(
+                        deltas,
+                        &[Delta::new(
+                            Quantity::ShipsInSystem,
+                            already_there,
+                            already_there + 2
+                        )]
+                    );
+                }
+                other => panic!("a retreat destination preview is certain, got {other:?}"),
+            }
         }
     }
 
