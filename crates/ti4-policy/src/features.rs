@@ -2031,6 +2031,13 @@ fn content_decision_features(choice: &Choice, option: &ChoiceOption, features: &
                 let quantity = match delta.quantity {
                     // OBS-008f2: the running vote total a planet exhaust would reach (LRR 8.11).
                     ti4_engine::preview::Quantity::Votes => "votes",
+                    // OBS-008g2: Munitions Reserves' exact trade-good cost, Peace Accords'
+                    // planet-count gain, and Skilled Retreat's exact arrival count -- reusing the
+                    // same quantities `pay`/`tactical`/`combat` already carry, under this
+                    // family's own name.
+                    ti4_engine::preview::Quantity::TradeGoods => "trade-goods",
+                    ti4_engine::preview::Quantity::PlanetsControlled => "planets-controlled",
+                    ti4_engine::preview::Quantity::ShipsInSystem => "ships",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -4662,6 +4669,103 @@ mod tests {
         );
         assert_eq!(value_of(&projected, "content:votes-after"), Some(9.0));
         assert!(crate::projection::admits("content:votes-change"));
+    }
+
+    /// OBS-008g2: Munitions Reserves' trade-good cost, Peace Accords' planet-count gain, and
+    /// Skilled Retreat's arrival count each reach the policy under the existing `content` family,
+    /// reusing the same quantities `pay`/`tactical`/`combat` already carry.
+    #[test]
+    fn obs008g2_reused_quantity_previews_reach_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let munitions =
+            ChoiceOption::labelled("munitions", "ability", "reroll this round's misses").previewed(
+                Preview::certain(vec![Delta::new(Quantity::TradeGoods, 5, 3)]),
+            );
+        let munitions_choice = Choice::new(
+            player.clone(),
+            "spend 2 trade goods for Munitions Reserves",
+            vec![munitions],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::FactionAbility("munitions".to_owned()),
+            "munitions_reserves_reroll",
+            Phase::Action,
+            2,
+        ));
+        let munitions_features = explicit_option_features(
+            &seen,
+            &munitions_choice,
+            &munitions_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&munitions_features, "content:trade-goods-after"),
+            Some(3.0)
+        );
+
+        let annex =
+            ChoiceOption::labelled("planet-x", "annex", "gain control of planet-x").previewed(
+                Preview::certain(vec![Delta::new(Quantity::PlanetsControlled, 4, 5)]),
+            );
+        let annex_choice =
+            Choice::new(player.clone(), "Peace Accords: annex a planet", vec![annex])
+                .contextualized(DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::FactionAbility("peace_accords".to_owned()),
+                    "peace_accords_annex",
+                    Phase::Action,
+                    2,
+                ));
+        let annex_features =
+            explicit_option_features(&seen, &annex_choice, &annex_choice.options[0], &player, &[]);
+        assert_eq!(
+            value_of(&annex_features, "content:planets-controlled-change"),
+            Some(1.0)
+        );
+
+        let retreat =
+            ChoiceOption::labelled("sys-1", "skilled_retreat", "withdraw to sys-1").previewed(
+                Preview::certain(vec![Delta::new(Quantity::ShipsInSystem, 0, 2)]),
+            );
+        let retreat_choice = Choice::new(
+            player.clone(),
+            "Skilled Retreat: withdraw to which system",
+            vec![retreat],
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::ActionCard("skilled_retreat".to_owned()),
+            "skilled_retreat_choose_system",
+            Phase::Action,
+            2,
+        ));
+        let retreat_features = explicit_option_features(
+            &seen,
+            &retreat_choice,
+            &retreat_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&retreat_features, "content:ships-after"),
+            Some(2.0)
+        );
+
+        assert!(crate::projection::admits("content:trade-goods-change"));
+        assert!(crate::projection::admits(
+            "content:planets-controlled-change"
+        ));
+        assert!(crate::projection::admits("content:ships-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

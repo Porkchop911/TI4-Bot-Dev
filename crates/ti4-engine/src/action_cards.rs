@@ -15,6 +15,7 @@ use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// 2.4: seven cards in hand at the end of a turn.
 pub const HAND_LIMIT: usize = 7;
@@ -1380,17 +1381,47 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
     let chosen = if destinations.len() == 1 {
         first
     } else {
+        // Mirrors OBS-008b3's retreat_to preview: 78.7 (which this card borrows) moves the
+        // whole remaining fleet together, so every destination previews the same arrival count
+        // -- what changes between options is where it lands.
+        let fleet_size = i64::try_from(
+            crate::combat::ships_of(
+                context.state,
+                context.content,
+                context.sources,
+                player,
+                &system,
+            )
+            .len(),
+        )
+        .unwrap_or(i64::MAX);
         let choice = crate::choice::Choice::new(
             player.clone(),
             "Skilled Retreat: withdraw to which system",
             destinations
                 .iter()
-                .map(|system| {
-                    crate::choice::ChoiceOption::labelled(
-                        system.to_string(),
-                        "skilled_retreat",
-                        format!("withdraw to {system}"),
+                .map(|destination| {
+                    let already_there = i64::try_from(
+                        crate::combat::ships_of(
+                            context.state,
+                            context.content,
+                            context.sources,
+                            player,
+                            destination,
+                        )
+                        .len(),
                     )
+                    .unwrap_or(i64::MAX);
+                    crate::choice::ChoiceOption::labelled(
+                        destination.to_string(),
+                        "skilled_retreat",
+                        format!("withdraw to {destination}"),
+                    )
+                    .previewed(Preview::certain(vec![Delta::new(
+                        Quantity::ShipsInSystem,
+                        already_there,
+                        already_there + fleet_size,
+                    )]))
                 })
                 .collect(),
         )
@@ -7253,6 +7284,109 @@ mod tests {
             galaxy: Some(galaxy),
         };
         effect(&mut context, player);
+    }
+
+    /// [`resolve_card_on`], keeping every `Choice` asked (context and preview included).
+    fn resolve_card_capturing_on(
+        state: &mut GameState,
+        galaxy: &ti4_content::galaxy::Galaxy,
+        alias: &str,
+        player: &PlayerId,
+        answers: &[&str],
+    ) -> std::rc::Rc<std::cell::RefCell<Vec<Choice>>> {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new(answers.iter().map(|a| (*a).to_owned())),
+        ));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: Some(galaxy),
+        };
+        effect(&mut context, player);
+        seen
+    }
+
+    /// OBS-008g2: Skilled Retreat's destination choice previews the exact arrival count, the
+    /// whole retreating fleet landing on top of whatever the seat already has there -- the same
+    /// consequence OBS-008b3 gave the ordinary `retreat_to` decision.
+    #[test]
+    fn obs008g2_skilled_retreat_previews_the_exact_arrival_count() {
+        let hub = crate::fixtures::plain_hub();
+        let mine = PlayerId::new("a");
+        let system = ti4_model::id::SystemId::new(hub.centre.clone());
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.active_system = Some(system.clone());
+        for _ in 0..2 {
+            state.system_mut(&system).units.push(Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                mine.clone(),
+            ));
+        }
+        let mut destinations: Vec<ti4_model::id::SystemId> = hub
+            .galaxy
+            .adjacent(&hub.centre)
+            .into_iter()
+            .map(ti4_model::id::SystemId::new)
+            .collect();
+        destinations.sort();
+        let occupied = destinations[0].clone();
+        let empty = destinations[1].clone();
+        state.system_mut(&occupied).units.push(Unit::new(
+            ti4_model::id::UnitTypeId::new("cruiser"),
+            mine.clone(),
+        ));
+
+        let seen = resolve_card_capturing_on(
+            &mut state,
+            &hub.galaxy,
+            "s_retreat1",
+            &mine,
+            &[empty.as_str()],
+        );
+        let ask = seen
+            .borrow()
+            .iter()
+            .find(|choice| {
+                choice
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.subtype == "skilled_retreat_choose_system")
+            })
+            .cloned()
+            .expect("the destination ask reached");
+
+        let occupied_option = ask
+            .option(occupied.as_str())
+            .expect("occupied destination offered");
+        assert_eq!(
+            occupied_option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                1,
+                3,
+            )]))
+        );
+        let empty_option = ask
+            .option(empty.as_str())
+            .expect("empty destination offered");
+        assert_eq!(
+            empty_option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::ShipsInSystem,
+                0,
+                2,
+            )]))
+        );
     }
 
     fn on_planet(state: &GameState, planet: &ti4_model::id::PlanetId) -> usize {

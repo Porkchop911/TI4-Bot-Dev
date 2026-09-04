@@ -21,6 +21,7 @@ use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// Abilities that cannot be written until a subsystem exists, with the subsystem named.
 ///
@@ -560,6 +561,7 @@ pub fn strategy_resolved(
     if candidates.is_empty() {
         return;
     }
+    let controlled = i64::try_from(context.state.controlled_planets(player).len()).unwrap_or(0);
     let mut options: Vec<crate::choice::ChoiceOption> = candidates
         .iter()
         .map(|(system, planet)| {
@@ -570,6 +572,11 @@ pub fn strategy_resolved(
             )
             .with("system", system.to_string())
             .with("planet", planet.to_string())
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::PlanetsControlled,
+                controlled,
+                controlled + 1,
+            )]))
         })
         .collect();
     options.push(crate::choice::ChoiceOption::decline());
@@ -701,7 +708,12 @@ pub fn space_combat_round_started(
                 "munitions",
                 "ability",
                 "reroll this round's misses",
-            ),
+            )
+            .previewed(Preview::certain(vec![Delta::new(
+                Quantity::TradeGoods,
+                i64::from(held),
+                i64::from(held - MUNITIONS_COST),
+            )])),
             crate::choice::ChoiceOption::decline(),
         ],
     )
@@ -1306,6 +1318,53 @@ mod tests {
     }
 
     #[test]
+    fn obs008g2_peace_accords_previews_the_planet_count_gain() {
+        let Some(xxcha) = faction_with("peace_accords") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let hub = crate::fixtures::plain_hub();
+        let (mut state, player) = seated(&xxcha);
+        let mine = ti4_model::id::SystemId::new(hub.centre.clone());
+        let Some(held) = ti4_content::galaxy::planets_in(content, hub.centre.as_str(), POK)
+            .first()
+            .map(|planet| ti4_model::id::PlanetId::new(planet.id()))
+        else {
+            return;
+        };
+        state.system_mut(&mine).set_control(held, player.clone());
+        let before = i64::try_from(state.controlled_planets(&player).len()).unwrap();
+        let Some((_, first_candidate)) = annexable(&state, content, POK, &hub.galaxy, &player)
+            .into_iter()
+            .next()
+        else {
+            return;
+        };
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new([
+                first_candidate.to_string(),
+            ])));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+
+        with_table_context(&mut state, Some(&hub.galaxy), &mut table, |context| {
+            strategy_resolved(context, &player, "Diplomacy");
+        });
+
+        let ask = seen.borrow();
+        let option = ask[0]
+            .option(first_candidate.as_str())
+            .expect("the candidate was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::PlanetsControlled,
+                before,
+                before + 1,
+            )]))
+        );
+    }
+
+    #[test]
     fn peace_accords_candidates_follow_the_system_record_planet_order() {
         // F-M08-019-1: candidate order must follow the system record's own `planets` array,
         // not the file layout of planets.json. System 58 prints [valk, ylir, avar]; in
@@ -1384,6 +1443,32 @@ mod tests {
         let seat = state.player(&player).unwrap();
         assert_eq!(seat.trade_goods, 3, "two paid");
         assert_eq!(seat.munitions_round, Some(3), "for this round only");
+    }
+
+    #[test]
+    fn obs008g2_munitions_reserves_previews_its_exact_trade_good_cost() {
+        let Some(letnev) = faction_with("munitions") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&letnev);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["munitions"])));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
+
+        let ask = seen.borrow();
+        let option = ask[0].option("munitions").expect("the reroll was offered");
+        assert_eq!(
+            option.preview,
+            Some(Preview::certain(vec![Delta::new(
+                Quantity::TradeGoods,
+                5,
+                3
+            )]))
+        );
     }
 
     #[test]

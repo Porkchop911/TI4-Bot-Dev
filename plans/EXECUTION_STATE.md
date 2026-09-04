@@ -24,6 +24,39 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008g2 — reused-quantity content consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008f2 (`6a5985b`).
+  Second preview slice of `content`: three subtypes whose consequence is exactly a quantity the
+  engine already models.
+- `munitions_reserves_reroll` (`space_combat_round_started`): the reroll option previews the
+  trade-good pool falling by exactly `MUNITIONS_COST` -- closing a real gap, since the option's
+  kind (`"ability"`) never routed through `payment_decision_features` and its 2-good cost
+  previously reached no numeric feature at all.
+- `peace_accords_annex` (`strategy_resolved`): every candidate uniformly previews the seat's
+  controlled-planet count rising by one -- first use of `Quantity::PlanetsControlled`, declared
+  since OBS-007a but never wired to a producer until now.
+- `skilled_retreat_choose_system` (`skilled_retreat`): mirrors OBS-008b3's `retreat_to` exactly --
+  every destination previews the seat's own ship count there rising by the fleet size leaving the
+  active system.
+- Policy: `content_decision_features` gains three more preview quantity mappings (`TradeGoods`,
+  `PlanetsControlled`, `ShipsInSystem`) under the existing family. No new family, no vocabulary
+  change.
+- Checked and left unpreviewed: `orbital_drop_choose_planet`/`crashlanding_choose_ground`/
+  `crashlanding_choose_planet`/`silence_choose_system` are genuine identity choices without a
+  per-option quantity delta. Checked and found already covered: `orbital_drop_deploy_mech`'s kind
+  already routes it through the `production` family.
+- Checks: engine 1,202 lib (1,199 + 3 new, incl. `faction_abilities::` 26/26, `action_cards::`
+  100/100) + 4 integration + 5 docs; policy 228 (227 + 1 new, incl. the 102-game deterministic
+  campaign, no regression); training 133; strict Clippy on engine+policy clean; targeted fmt
+  (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008G2.md`. Spec:
+  `plans/OBS-008G2_REUSED_QUANTITY_CONSEQUENCE_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: further opportunistic previews across the remaining `content` subtypes (trade terms,
+  exploration/relic outcomes, remaining reactions); OBS-008d1's four remaining unpreviewed strategy
+  subtypes; then OBS-009 (information-history audit), OBS-010 (critic alignment), OBS-011
+  (vocabulary/corpus migration), OBS-012 (decision completeness qualification).
+
 ### OBS-008f2 — agenda vote consequence surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after
