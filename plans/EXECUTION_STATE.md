@@ -3110,6 +3110,29 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003h slice 1: action-card context producers (2026-09-04)
+
+- All 12 registered action_cards.rs producers (13 Choice sites) attach typed DecisionContext.
+  pick and predicted_outcome are genuinely card-agnostic (pick alone has ~25 call sites) and are
+  typed generically (pick_{kind}, a shared Rule 8 prediction subtype) rather than attributed to one
+  card -- recorded as a residual, not silently claimed complete.
+- Split from the rest of OBS-003h per the plan's own allowance: faction_abilities.rs, reactions.rs,
+  relics.rs, exploration.rs, thunders_edge.rs, secrets.rs, laws.rs remain for a second slice.
+- No legal-set, option-ID, or application change; no features.rs change (OBS-008g reads this into
+  features later).
+- Checks: engine 1,173 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 270.98 s (267.34 s for OBS-003g -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003H1.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, OBS-008c3, OBS-003d, OBS-003e slices 1-2, OBS-003f,
+  and OBS-003g -- nine packages now owed review. The user has started an independent review pass
+  (Codex) over this session's outstanding packages, in parallel with continued implementation.
+- Next: OBS-003h slice 2 (the remaining seven files), then OBS-003i (prompt-free projection, after
+  all typed context exists), then OBS-005/006, OBS-007c, before the OBS-008 decision-option
+  packages.
+
+---
+
 ## OBS-003g: agenda context producers (2026-09-04)
 
 - agenda_effects.rs's three registered producers attach typed DecisionContext: choose_structure
@@ -3131,6 +3154,21 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 - Next, per the plan's own recommended order: OBS-003h (reaction/content, split by crate if >5
   files), OBS-003i (prompt-free projection, after all typed context exists), then OBS-005/006,
   OBS-007c, before the OBS-008 decision-option packages.
+
+---
+
+## Tier-C remediation: OBS-008c2b and OBS-003e1 (2026-09-04)
+
+- Active branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, based on `6ccdfb0`.
+- The c2b placement surface no longer claims `fleet_excess + capacity_excess` is an exact future
+  removal count; it exposes the two pre-enforcement violations separately. The shared redistribution
+  helper now receives its origin: Warfare stays card-scoped; status uses Rule 81.5.
+- Intentional package files: production, strategy_cards, game, policy features, specification,
+  evidence, and this execution state. Preserve the unrelated modified `action_cards.rs` and the two
+  untracked samples.
+- Checks/review: focused engine tests and the full engine suite are green; policy linking is waiting
+  on another live policy-test executable. Next: retry policy after its lock clears, run the remaining
+  gates, then obtain a re-review and commit only the scoped paths.
 
 ---
 

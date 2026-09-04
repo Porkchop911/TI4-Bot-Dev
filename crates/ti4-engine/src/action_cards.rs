@@ -14,6 +14,7 @@ use ti4_model::state::{GameState, TransientFlags};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 
 /// 2.4: seven cards in hand at the end of a turn.
 pub const HAND_LIMIT: usize = 7;
@@ -113,7 +114,14 @@ pub fn enforce_hand_limit(
             player.clone(),
             format!("over the hand limit — discard one of {}", hand.len()),
             options,
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Rule("2.4".to_owned()),
+            "discard_over_hand_limit",
+            state.phase,
+            state.round,
+        ));
         let answer = table.ask_seeing(&choice, &Observed::new(state, content, POK, None))?;
         let index = answer.id.parse::<usize>().unwrap_or(0);
         discard(state, player, index);
@@ -391,7 +399,14 @@ fn confusing(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) 
                 .iter()
                 .map(|id| ChoiceOption::labelled(id.to_string(), "elect", format!("elect {id}")))
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::ActionCard("confusing".to_owned()),
+            "confusing_legal_text_elect",
+            context.state.phase,
+            context.state.round,
+        ));
         match context.ask_seeing(&choice) {
             Ok(answer) => PlayerId::new(answer.id),
             Err(_) => return,
@@ -566,7 +581,14 @@ fn public_disgrace(context: &mut crate::timing::TimingContext<'_>, player: &Play
         picker.clone(),
         "choose a different strategy card",
         alternatives,
-    );
+    )
+    .contextualized(DecisionContext::new(
+        picker.clone(),
+        DecisionSource::ActionCard("public_disgrace".to_owned()),
+        "public_disgrace_choose_card",
+        context.state.phase,
+        context.state.round,
+    ));
     let Ok(answer) = context.ask_seeing(&choice) else {
         restore_first_choice(context, &picker, &first);
         return;
@@ -725,6 +747,10 @@ fn infiltrate(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
 /// controller chooses which of their planets exhausts — the one just taken is among them — and
 /// the holder chooses which of their exhausted planets readies; a single candidate needs no
 /// question, and a side with no candidate simply skips its half.
+#[expect(
+    clippy::too_many_lines,
+    reason = "two independent asks (exhaust, ready), each with OBS-003h's typed context"
+)]
 fn reparations(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let Some((_system, _planet, gainer, previous)) = context.state.last_control_gained.clone()
     else {
@@ -766,7 +792,14 @@ fn reparations(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
                 gainer.clone(),
                 "exhaust a planet (Reparations)",
                 options,
-            );
+            )
+            .contextualized(DecisionContext::new(
+                gainer.clone(),
+                DecisionSource::ActionCard("reparations".to_owned()),
+                "reparations_exhaust",
+                context.state.phase,
+                context.state.round,
+            ));
             match context.table.ask_seeing(
                 &choice,
                 &crate::choice::Observed::new(
@@ -803,7 +836,14 @@ fn reparations(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
                 })
                 .collect();
             let choice =
-                crate::choice::Choice::new(player.clone(), "ready a planet (Reparations)", options);
+                crate::choice::Choice::new(player.clone(), "ready a planet (Reparations)", options)
+                    .contextualized(DecisionContext::new(
+                        player.clone(),
+                        DecisionSource::ActionCard("reparations".to_owned()),
+                        "reparations_ready",
+                        context.state.phase,
+                        context.state.round,
+                    ));
             match context.table.ask_seeing(
                 &choice,
                 &crate::choice::Observed::new(
@@ -1160,6 +1200,16 @@ fn choose_crashlanding_ground(
         player.clone(),
         format!("Crash Landing: choose a ground force in {system}"),
         options,
+    )
+    .contextualized(
+        DecisionContext::new(
+            player.clone(),
+            DecisionSource::ActionCard("crashlanding".to_owned()),
+            "crashlanding_choose_ground",
+            context.state.phase,
+            context.state.round,
+        )
+        .about(DecisionTarget::System(system.clone())),
     );
     let Ok(answer) = context.ask_seeing(&choice) else {
         return None;
@@ -1197,6 +1247,16 @@ fn choose_crashlanding_planet(
         player.clone(),
         format!("Crash Landing: choose a planet in {system}"),
         options,
+    )
+    .contextualized(
+        DecisionContext::new(
+            player.clone(),
+            DecisionSource::ActionCard("crashlanding".to_owned()),
+            "crashlanding_choose_planet",
+            context.state.phase,
+            context.state.round,
+        )
+        .about(DecisionTarget::System(system.clone())),
     );
     let Ok(answer) = context.ask_seeing(&choice) else {
         return None;
@@ -1248,7 +1308,14 @@ fn in_the_silence_of_space(context: &mut crate::timing::TimingContext<'_>, playe
                     )
                 })
                 .collect(),
-        );
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::ActionCard("in_the_silence_of_space".to_owned()),
+            "silence_choose_system",
+            context.state.phase,
+            context.state.round,
+        ));
         match context.ask_seeing(&choice) {
             Ok(answer) => ti4_model::id::SystemId::new(answer.id),
             Err(_) => return,
@@ -1302,6 +1369,16 @@ fn skilled_retreat(context: &mut crate::timing::TimingContext<'_>, player: &Play
                     )
                 })
                 .collect(),
+        )
+        .contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::ActionCard("skilled_retreat".to_owned()),
+                "skilled_retreat_choose_system",
+                context.state.phase,
+                context.state.round,
+            )
+            .about(DecisionTarget::System(system.clone())),
         );
         match context.ask_seeing(&choice) {
             Ok(answer) => ti4_model::id::SystemId::new(answer.id),
@@ -1370,7 +1447,14 @@ fn predicted_outcome(
                         )
                     })
                     .collect(),
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("8".to_owned()),
+                "predict_agenda_outcome",
+                context.state.phase,
+                context.state.round,
+            ));
             context.ask_seeing(&choice).ok().map(|answer| answer.id)
         }
     }
@@ -2206,6 +2290,16 @@ fn ghost_squad(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
             player.clone(),
             format!("Ghost Squad: move ground forces in {system}"),
             offered,
+        )
+        .contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::ActionCard("ghost_squad".to_owned()),
+                "ghost_squad_move",
+                context.state.phase,
+                context.state.round,
+            )
+            .about(DecisionTarget::System(system.clone())),
         );
         let Ok(answer) = context.ask_seeing(&choice) else {
             return;
@@ -3622,6 +3716,16 @@ fn exchange_program(context: &mut crate::timing::TimingContext<'_>, player: &Pla
             crate::choice::ChoiceOption::labelled("yes", "answer", "accept"),
             crate::choice::ChoiceOption::labelled("no", "answer", "refuse"),
         ],
+    )
+    .contextualized(
+        DecisionContext::new(
+            other.clone(),
+            DecisionSource::ActionCard("exchange_program".to_owned()),
+            "exchange_program_answer",
+            context.state.phase,
+            context.state.round,
+        )
+        .about(DecisionTarget::Player(player.clone())),
     );
     let answer = context.table.ask_seeing(
         &decision,
@@ -4039,7 +4143,14 @@ fn pick(
                         crate::choice::ChoiceOption::labelled(id.clone(), kind, label.clone())
                     })
                     .collect(),
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("2".to_owned()),
+                format!("pick_{kind}"),
+                context.state.phase,
+                context.state.round,
+            ));
             context.ask_seeing(&choice).ok().map(|answer| answer.id)
         }
     }
@@ -6970,6 +7081,115 @@ mod tests {
             galaxy: None,
         };
         effect(&mut context, player);
+    }
+
+    /// [`resolve_card`], keeping every `Choice` asked (context included) rather than only
+    /// answering it.
+    fn resolve_card_capturing(
+        state: &mut GameState,
+        alias: &str,
+        player: &PlayerId,
+        answers: &[&str],
+    ) -> std::rc::Rc<std::cell::RefCell<Vec<Choice>>> {
+        let effect = effect_for(&ActionCardId::new(alias)).expect("a registered effect");
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new(answers.iter().map(|a| (*a).to_owned())),
+        ));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        effect(&mut context, player);
+        seen
+    }
+
+    /// OBS-003h: Confusing Legal Text, Reparations' two asks, and Exchange Program's answer are
+    /// typed distinctly, each naming its own card.
+    #[test]
+    fn obs003h_action_card_effects_carry_typed_context() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        let seen = resolve_card_capturing(&mut state, "confusing", &a, &["b"]);
+        let confusing = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(
+            confusing.source,
+            DecisionSource::ActionCard("confusing".to_owned())
+        );
+        assert_eq!(confusing.subtype, "confusing_legal_text_elect");
+
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let (system, planet1) = crate::fixtures::a_placed_planet();
+        let planet2 = ti4_model::id::PlanetId::new(format!("{planet1}-b"));
+        let planet3 = ti4_model::id::PlanetId::new(format!("{planet1}-a"));
+        // b just took planet1 from a; both b (planet1, planet2) and a (planet3, and one more
+        // already exhausted) have two candidates, so both halves of the card ask rather than
+        // taking a lone option without a question.
+        state
+            .system_mut(&system)
+            .set_control(planet1.clone(), b.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet2.clone(), b.clone());
+        state
+            .system_mut(&system)
+            .set_control(planet3.clone(), a.clone());
+        state.exhausted_planets.insert(planet3.clone());
+        let planet4 = ti4_model::id::PlanetId::new(format!("{planet1}-a2"));
+        state
+            .system_mut(&system)
+            .set_control(planet4.clone(), a.clone());
+        state.exhausted_planets.insert(planet4);
+        state.last_control_gained = Some((system.clone(), planet1, b.clone(), Some(a.clone())));
+        let seen = resolve_card_capturing(&mut state, "reparations", &a, &["placeholder"]);
+        assert!(!seen.borrow().is_empty(), "at least one ask reached");
+        let reparations = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(
+            reparations.source,
+            DecisionSource::ActionCard("reparations".to_owned())
+        );
+        assert!(
+            reparations.subtype == "reparations_exhaust"
+                || reparations.subtype == "reparations_ready",
+            "got {}",
+            reparations.subtype
+        );
+
+        let me = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), other.clone());
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                other.clone(),
+            ));
+        let seen = resolve_card_capturing(&mut state, "exchangeprogram", &me, &["yes"]);
+        let answer = seen
+            .borrow()
+            .iter()
+            .find_map(|choice| choice.context.clone())
+            .expect("the accept ask carries typed context");
+        assert_eq!(answer.subtype, "exchange_program_answer");
+        assert_ne!(confusing.subtype, answer.subtype);
     }
 
     /// [`resolve_card`] with the map attached, for cards that read adjacency.
