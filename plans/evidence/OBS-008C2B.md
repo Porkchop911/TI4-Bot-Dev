@@ -139,6 +139,40 @@ for the count — into a single call removed one full-board walk per offered uni
 or a semantic gate. The measurement supports only the negative statement it is here for: adding
 per-option fleet and transport previews produced no measurable regression.
 
+## Stage-2 regression check after the feature change
+
+The new `production:*` names are not in any trained bundle's vocabulary, so an existing champion
+routes them through family OOV slots (contract representation rule 2). That can shift a trained
+policy's behaviour, so the three stage-2 champions were re-measured after this package.
+
+Cross-play, 30 seeds from base 1300000000 -- seeds none of them was selected on -- 1,080 seat-games
+each, 4 rounds, benchmark `best-94.97_r2-epoch22`, null margin about -0.150:
+
+| candidate | recorded margin | re-measured | delta |
+|---|---|---|---|
+| `stage2-r5-m2.526_clear93.75` | +2.526 | **+2.475** | -0.051 |
+| `stage2-r4-m2.587_clear93.22` | +2.587 | **+2.450** | -0.137 |
+| `stage2-r3-m2.494_clear93.32` | +2.494 | **+2.495** | +0.001 |
+
+Clearance, 300 seeds greedy, 10,800 games each:
+
+| candidate | recorded | re-measured | delta |
+|---|---|---|---|
+| `stage2-r5` | 93.75% | **93.63% +-0.46** | -0.12 |
+| `stage2-r4` | 93.22% | **93.13% +-0.48** | -0.09 |
+| `stage2-r3` | 93.32% | **93.24% +-0.47** | -0.08 |
+
+Every margin delta is inside the 0.223 leg-winner noise floor and every clearance delta is inside
+its own half-width. **The observation changes did not move stage-2 performance.**
+
+The same run reproduces the selection-bias finding rather than adding to it: the three candidates
+span 0.045 of margin against a 0.223 noise floor, and the ordering that selected r4 as best inverts
+on fresh seeds. They separate on behaviour, not on margin -- r3 wastes 3.52% of activations
+(Jol-Nar 10.56%), r4 declines 5.43% of offers against r3's 0.74%, and r5's Sol clearance is
+90.61% +-1.35 against r4's 87.72% +-1.52.
+
+Raw output: `out/confirm/` and `out/c2b-clearance/` (not committed).
+
 ## Independent review
 
 **OUTSTANDING.** This package is Tier C (legality-adjacent arithmetic and a shared-helper
