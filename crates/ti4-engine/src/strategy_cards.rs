@@ -14,6 +14,7 @@ use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 use crate::production::Spend;
 
 pub const LEADERSHIP_TOKENS: u32 = 3;
@@ -77,13 +78,36 @@ pub(crate) fn gain_tokens(
     count: u32,
 ) -> Result<(), IllegalChoice> {
     for _ in 0..count {
+        // OBS-008d2: each pool option previews the exact count it would reach, read fresh every
+        // iteration since an earlier pick in this same ask already changed it.
+        let (tactic, fleet, strategic) = state.player(player).map_or((0, 0, 0), |seat| {
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+        });
         let choice = Choice::new(
             player.clone(),
             "gain a command token into which pool",
             vec![
-                ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool"),
-                ChoiceOption::labelled("fleet_tokens", "pool", "fleet pool"),
-                ChoiceOption::labelled("strategic_tokens", "pool", "strategy pool"),
+                ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool").previewed(
+                    Preview::certain(vec![Delta::new(
+                        Quantity::TacticTokens,
+                        i64::from(tactic),
+                        i64::from(tactic + 1),
+                    )]),
+                ),
+                ChoiceOption::labelled("fleet_tokens", "pool", "fleet pool").previewed(
+                    Preview::certain(vec![Delta::new(
+                        Quantity::FleetTokens,
+                        i64::from(fleet),
+                        i64::from(fleet + 1),
+                    )]),
+                ),
+                ChoiceOption::labelled("strategic_tokens", "pool", "strategy pool").previewed(
+                    Preview::certain(vec![Delta::new(
+                        Quantity::StrategicTokens,
+                        i64::from(strategic),
+                        i64::from(strategic + 1),
+                    )]),
+                ),
             ],
         )
         .contextualized(DecisionContext::new(
@@ -281,17 +305,28 @@ fn pay_influence_and_gain_one(
 /// `resources` is the cost AFTER any discount already applied (Doctor Sucaban reduces it before the
 /// offer is built), so it is what this seat would actually spend. `tokens` counts command tokens
 /// charged at this decision, which is zero everywhere the follower window has already taken one.
+///
+/// `techs_owned` previews the one exact, universal consequence every research shares regardless
+/// of price: the seat's technology count rising by one (OBS-008d2). The resource/token bill
+/// itself is not previewed here -- it is already an exact payload fact, and a full payment
+/// preview needs the plan machinery `OBS-008c1` gives payment questions, not this one.
 fn research_option(
     content: &ContentStore,
     id: &TechnologyId,
     resources: i64,
     tokens: i64,
+    techs_owned: i64,
 ) -> ChoiceOption {
     let mut option = ChoiceOption::labelled(
         id.to_string(),
         RESEARCH_KIND,
         crate::technology::name(content, id),
-    );
+    )
+    .previewed(Preview::certain(vec![Delta::new(
+        Quantity::TechnologiesOwned,
+        techs_owned,
+        techs_owned + 1,
+    )]));
     option
         .payload
         .insert("cost".to_owned(), serde_json::Value::from(resources));
@@ -316,11 +351,17 @@ fn offer_research(
     // No decline. The Technology primary reads "Research 1 technology" -- it is not optional, and
     // the second one, which is, goes through `paid_research`. The empty case returned above, so a
     // seat reaching here always has something legal to take.
+    let techs_owned = i64::try_from(
+        state
+            .player(player)
+            .map_or(0, |seat| seat.technologies.len()),
+    )
+    .unwrap_or(i64::MAX);
     let choice = Choice::new(
         player.clone(),
         "research a technology",
         open.iter()
-            .map(|id| research_option(content, id, 0, 0))
+            .map(|id| research_option(content, id, 0, 0, techs_owned))
             .collect(),
     )
     .contextualized(DecisionContext::new(
@@ -646,11 +687,17 @@ fn paid_research(
     if open.is_empty() {
         return Ok(());
     }
+    let techs_owned = i64::try_from(
+        state
+            .player(player)
+            .map_or(0, |seat| seat.technologies.len()),
+    )
+    .unwrap_or(i64::MAX);
     let choice = Choice::new(
         player.clone(),
         "research a technology",
         open.iter()
-            .map(|id| research_option(content, id, cost, 0))
+            .map(|id| research_option(content, id, cost, 0, techs_owned))
             .chain(std::iter::once(ChoiceOption::decline()))
             .collect(),
     )
@@ -1694,6 +1741,69 @@ mod tests {
         );
     }
 
+    /// OBS-008d2: each command-token pool option previews the exact count it reaches, and a
+    /// research option previews the seat's technology count rising by one, regardless of price.
+    #[test]
+    fn obs008d2_token_gain_and_research_preview_their_exact_consequence() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().tactic_tokens = 3;
+        state.player_mut(&player).unwrap().fleet_tokens = 2;
+        state.player_mut(&player).unwrap().strategic_tokens = 1;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        gain_tokens(&mut state, content, POK, None, &mut table, &player, 1).unwrap();
+        let asked = seen.borrow();
+        let choice = &asked[0];
+        for (id, quantity, before) in [
+            ("tactic_tokens", Quantity::TacticTokens, 3),
+            ("fleet_tokens", Quantity::FleetTokens, 2),
+            ("strategic_tokens", Quantity::StrategicTokens, 1),
+        ] {
+            let option = choice
+                .options
+                .iter()
+                .find(|option| option.id == id)
+                .unwrap_or_else(|| panic!("a {id} option"));
+            match &option.preview.as_ref().expect("previewed").outcome {
+                crate::preview::Outcome::Certain { deltas } => {
+                    assert_eq!(deltas, &[Delta::new(quantity, before, before + 1)]);
+                }
+                other => panic!("a token-pool preview is certain, got {other:?}"),
+            }
+        }
+        drop(asked);
+
+        let mut state = game(&["a"]);
+        state.player_mut(&player).unwrap().trade_goods = 20;
+        state
+            .player_mut(&player)
+            .unwrap()
+            .technologies
+            .insert(TechnologyId::new("gd"));
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        offer_research(&mut state, content, POK, None, &mut table, &player).unwrap();
+        let research_choice = &seen.borrow()[0];
+        match &research_choice.options[0]
+            .preview
+            .as_ref()
+            .expect("previewed")
+            .outcome
+        {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(
+                    deltas,
+                    &[Delta::new(Quantity::TechnologiesOwned, 1, 2)],
+                    "the seat already owns one technology, so research previews 1 -> 2"
+                );
+            }
+            other => panic!("a research preview is certain, got {other:?}"),
+        }
+    }
+
     /// OBS-003e: Politics' speaker choice and its agenda-placement choice are typed distinctly,
     /// though both come from the same primary.
     #[test]
@@ -2662,9 +2772,9 @@ mod research_carries_its_price {
         let content = ContentStore::embedded();
         let id = TechnologyId::new("cv2");
 
-        let free = research_option(content, &id, 0, 0);
-        let second = research_option(content, &id, TECHNOLOGY_PRIMARY_SECOND_COST, 0);
-        let secondary = research_option(content, &id, TECHNOLOGY_SECONDARY_COST, 1);
+        let free = research_option(content, &id, 0, 0, 3);
+        let second = research_option(content, &id, TECHNOLOGY_PRIMARY_SECOND_COST, 0, 3);
+        let secondary = research_option(content, &id, TECHNOLOGY_SECONDARY_COST, 1, 3);
 
         for (option, resources, tokens) in [
             (&free, 0, 0),

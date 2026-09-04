@@ -1365,7 +1365,7 @@ fn explicit_option_features_with(
     tactical_decision_features(choice, option, &mut features);
     combat_decision_features(choice, option, &mut features);
     opponent_identity_features(seen, choice, option, player, &mut features);
-    strategy_decision_features(choice, &mut features);
+    strategy_decision_features(choice, option, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1860,14 +1860,19 @@ fn opponent_identity_features(
     }
 }
 
-/// Typed *why* of a strategy-card, technology, or objective-scoring decision (OBS-008d1).
+/// Typed *why*, and (`OBS-008d2`) the exact consequence, of a strategy-card, technology, or
+/// objective-scoring decision (`OBS-008d1`).
 ///
-/// Reads only what `OBS-003e` already populated on `choice.context` -- subtype, option count, and
-/// whether declining is legal -- across a first, deliberately broad set of common subtypes: no new
-/// engine preview is attached in this slice. Board/unit context these options already carry
-/// (`cost`, `cost_tokens`, and similar payload numbers) reaches the policy through the existing
-/// generic `payload-number:*` pipeline with no further wiring.
-fn strategy_decision_features(choice: &Choice, features: &mut FeatureVector) {
+/// Subtype, option count, and whether declining is legal come from what `OBS-003e` already
+/// populated on `choice.context`, across a first, deliberately broad set of common subtypes.
+/// Board/unit context these options already carry (`cost`, `cost_tokens`, and similar payload
+/// numbers) reaches the policy through the existing generic `payload-number:*` pipeline with no
+/// further wiring. The preview reading follows the same shape `tactical`/`combat` already use.
+fn strategy_decision_features(
+    choice: &Choice,
+    option: &ChoiceOption,
+    features: &mut FeatureVector,
+) {
     let Some(context) = &choice.context else {
         return;
     };
@@ -1894,6 +1899,47 @@ fn strategy_decision_features(choice: &Choice, features: &mut FeatureVector) {
     );
     if context.optional {
         add_named(features, format_args!("strategy:optional"), 1.0);
+    }
+
+    let Some(preview) = &option.preview else {
+        return;
+    };
+    match &preview.outcome {
+        ti4_engine::preview::Outcome::Certain { deltas } => {
+            add_named(features, format_args!("strategy:preview-known"), 1.0);
+            for delta in deltas {
+                let quantity = match delta.quantity {
+                    // OBS-008d2: gain_command_token's exact pool, research's technology count,
+                    // and scoring's exact (capped) victory-point gain.
+                    ti4_engine::preview::Quantity::TacticTokens => "tactic-tokens",
+                    ti4_engine::preview::Quantity::FleetTokens => "fleet-tokens",
+                    ti4_engine::preview::Quantity::StrategicTokens => "strategic-tokens",
+                    ti4_engine::preview::Quantity::TechnologiesOwned => "technologies",
+                    ti4_engine::preview::Quantity::VictoryPoints => "victory-points",
+                    _ => continue,
+                };
+                for (name, value) in [
+                    ("before", delta.before),
+                    ("after", delta.after),
+                    ("change", delta.change()),
+                ] {
+                    add_named(
+                        features,
+                        format_args!("strategy:{quantity}-{name}"),
+                        small_integer_value(value),
+                    );
+                }
+            }
+        }
+        ti4_engine::preview::Outcome::Chanced { .. } => {
+            add_named(features, format_args!("strategy:preview-known"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unknown { .. } => {
+            add_named(features, format_args!("strategy:preview-unknown"), 1.0);
+        }
+        ti4_engine::preview::Outcome::Unavailable { .. } => {
+            add_named(features, format_args!("strategy:preview-unavailable"), 1.0);
+        }
     }
 }
 
@@ -4267,6 +4313,87 @@ mod tests {
             Some(1.0)
         );
         assert!(crate::projection::admits("strategy:option-count"));
+    }
+
+    /// OBS-008d2: a token-gain option's exact pool consequence and a research option's exact
+    /// technology-count consequence reach the policy under the existing `strategy` family.
+    #[test]
+    fn obs008d2_strategy_previews_reach_the_policy() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let tactic = ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool").previewed(
+            Preview::certain(vec![Delta::new(Quantity::TacticTokens, 3, 4)]),
+        );
+        let token_choice = Choice::new(player.clone(), "gain a command token", vec![tactic])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("52.4".to_owned()),
+                "gain_command_token",
+                Phase::Action,
+                2,
+            ));
+        let token_features =
+            explicit_option_features(&seen, &token_choice, &token_choice.options[0], &player, &[]);
+        for (name, value) in [
+            ("strategy:subtype:gain_command_token", 1.0),
+            ("strategy:preview-known", 1.0),
+            ("strategy:tactic-tokens-before", 3.0),
+            ("strategy:tactic-tokens-after", 4.0),
+            ("strategy:tactic-tokens-change", 1.0),
+        ] {
+            assert_eq!(
+                value_of(&token_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+
+        let research = ChoiceOption::labelled("gd", "research", "Gravity Drive").previewed(
+            Preview::certain(vec![Delta::new(Quantity::TechnologiesOwned, 1, 2)]),
+        );
+        let research_choice = Choice::new(player.clone(), "research a technology", vec![research])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::StrategyCard {
+                    card: "Technology".to_owned(),
+                    secondary: false,
+                },
+                "research_technology",
+                Phase::Action,
+                2,
+            ));
+        let research_features = explicit_option_features(
+            &seen,
+            &research_choice,
+            &research_choice.options[0],
+            &player,
+            &[],
+        );
+        assert_eq!(
+            value_of(&research_features, "strategy:technologies-after"),
+            Some(2.0)
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &research_choice,
+            &research_choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "strategy:technologies-after"),
+            Some(2.0)
+        );
+        assert!(crate::projection::admits("strategy:technologies-change"));
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

@@ -22,6 +22,7 @@ use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 use crate::decision_context::{DecisionContext, DecisionSource};
+use crate::preview::{Delta, Preview, Quantity};
 
 /// Ten victory points wins (LRR 98).
 pub const VICTORY_TARGET: i32 = 10;
@@ -1744,11 +1745,26 @@ impl ScoringWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         let (_, player, available) = self.next_askable(state, content, sources)?;
+        // OBS-008d2: every objective card grants exactly one victory point (LRR 98); the option
+        // previews the seat's own count reaching one more, capped the same way custodians removal
+        // already caps it.
+        let vp = i64::from(state.player(&player).map_or(0, |seat| seat.victory_points));
+        let vp_after = (vp + 1).min(i64::from(VICTORY_TARGET));
         let mut options: Vec<ChoiceOption> = available
             .into_iter()
-            .map(|alias| ChoiceOption::labelled(alias.as_str(), SCORE_KIND, alias.as_str()))
+            .map(|alias| {
+                ChoiceOption::labelled(alias.as_str(), SCORE_KIND, alias.as_str()).previewed(
+                    Preview::certain(vec![Delta::new(Quantity::VictoryPoints, vp, vp_after)]),
+                )
+            })
             .collect();
-        options.push(ChoiceOption::decline());
+        options.push(
+            ChoiceOption::decline().previewed(Preview::certain(vec![Delta::new(
+                Quantity::VictoryPoints,
+                vp,
+                vp,
+            )])),
+        );
         // Status timing offers a public and a secret objective in the same list (61.6), so
         // "public" would misdescribe an option that might be either; only the non-status,
         // event-scoped path is ever secret-only.
@@ -3219,6 +3235,58 @@ mod tests {
         let context = choice.context.as_ref().expect("typed context");
         assert_eq!(context.source, DecisionSource::Rule("61.6".to_owned()));
         assert_eq!(context.subtype, "score_objective");
+    }
+
+    /// OBS-008d2: scoring previews the seat's own victory-point count rising by exactly one (LRR
+    /// 98); declining previews no change.
+    #[test]
+    fn obs008d2_scoring_previews_the_exact_victory_point_gain() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        state.revealed_objectives.clear();
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .victory_points = 2;
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        let window = ScoringWindow::new(&[PlayerId::new("a")]);
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("a scoreable secret is offered");
+        let score = choice.option("eap").expect("the secret is offered");
+        match &score.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::VictoryPoints, 2, 3)]);
+            }
+            other => panic!("a scoring preview is certain, got {other:?}"),
+        }
+        let decline = choice
+            .options
+            .iter()
+            .find(|option| option.is_decline())
+            .expect("a decline option");
+        match &decline.preview.as_ref().expect("previewed").outcome {
+            crate::preview::Outcome::Certain { deltas } => {
+                assert_eq!(deltas, &[Delta::new(Quantity::VictoryPoints, 2, 2)]);
+            }
+            other => panic!("a decline preview is certain, got {other:?}"),
+        }
     }
 
     #[test]

@@ -24,6 +24,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008d2 — strategy/technology/scoring consequence surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008d1 (`451eded`).
+  Second slice of `OBS-008d`, closing d1's "no preview" non-goal for three of its eight subtypes.
+- `gain_command_token`: each of the three pool options (`gain_tokens`, LRR 52.4) previews its own
+  pool rising by exactly one, read fresh every iteration of a multi-token ask.
+- `research_technology`: `research_option` (shared by `offer_research`/`paid_research`) previews
+  the seat's technology count rising by exactly one regardless of price -- the resource/token bill
+  stays an exact payload fact, already reaching the policy via the generic pipeline.
+- `score_objective`/`score_secret_objective`: `ScoringWindow::pending_choice` previews the seat's
+  own victory-point count rising by exactly one (LRR 98), capped the same way OBS-008b6's
+  custodians removal already caps it; declining previews no change.
+- Policy: `strategy_decision_features` now also reads previews, mapping `TacticTokens`/
+  `FleetTokens`/`StrategicTokens`/`TechnologiesOwned`/`VictoryPoints` to `strategy:*` under the
+  existing family. No new family, no vocabulary change.
+- `place_structure`, `ready_planet`, `politics_choose_speaker`, `politics_place_agenda` are left
+  without a preview this slice -- not every subtype has an equally clean single-quantity
+  consequence; recorded as remaining, not silently done.
+- Checks: engine 1,198 lib + 4 integration + 5 docs (incl. `strategy_cards::` 27/27); policy 224
+  (includes the 102-game deterministic campaign, 339.35 s, no regression); training 133; strict
+  Clippy on engine+policy clean; targeted fmt (scoped files) + `git diff --check` clean (a
+  pre-existing, unrelated fmt drift in `redistribute_tokens` was left untouched, as with prior
+  packages).
+- Evidence: `plans/evidence/OBS-008D2.md`. Spec:
+  `plans/OBS-008D2_STRATEGY_CONSEQUENCE_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: the remaining `OBS-008d` subtypes and previews; `OBS-008e/f/g/h/i` remain unblocked.
+
 ### OBS-008d1 — strategy/technology/scoring subtype surface (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b6 (`9fd9a23`).
