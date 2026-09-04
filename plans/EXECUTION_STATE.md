@@ -24,6 +24,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-011 — vocabulary and corpus migration (2026-09-05)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-010 (`183c83b`).
+  User explicitly chose to run this now (AskUserQuestion: "Run the vocabulary publish now") rather
+  than keep enriching first, accepting the "families still growing" caveat.
+- Ran `cargo run --release -p ti4-training --example vocabulary_discovery` against the accepted
+  r6 checkpoint and train pool (both pre-existing, untouched, integrity-verified by the tool
+  itself) -- the first operational (non-code-change) package this session.
+- Result: 14,829 names across 44 families discovered (r6 champions 1,868, content 295, replay
+  14,328 over 768/768 completed games, zero failures); published as generation `fa3d6f9...`,
+  14,877 slots, `oov_registry_version: 10`, `oov_count: 48`. `critic-state` reached 221 names (up
+  from 121 at the family's introduction, reflecting OBS-010's enrichment); `content` reached 134
+  names (a family that did not exist before this session's OBS-008EFGHI1). All nine of the tool's
+  own gates passed, including the double-build determinism check and the critic-namespace floor.
+- The previous accepted generation (`e30b9165...`, `oov_registry_version: 4`, 11,147 slots) stays
+  on disk unmodified; only the `current.json` pointer moved. No tracked file changed -- `out/` is
+  git-ignored.
+- Old-bundle backward-compatibility: not re-derived empirically, since the previous generation's
+  own `oov_registry_version: 4` is a live instance of exactly the version gap
+  `version_four_remains_refused_for_inference` (in `vocabulary.rs`'s existing 34-test suite,
+  exercised on every OOV bump this session) already proves is refused for inference.
+- Evidence: `plans/evidence/OBS-011.md` (full captured tool output). Spec:
+  `plans/OBS-011_VOCABULARY_CORPUS_MIGRATION.md`. Independent Tier-C review OUTSTANDING; flagged
+  as an operational run rather than a code change.
+- Next: OBS-012 (decision completeness qualification) -- the plan's final milestone, which runs
+  ablations against this freshly published generation.
+
 ### OBS-010 — critic alignment (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-009 (`b543dd5`).
