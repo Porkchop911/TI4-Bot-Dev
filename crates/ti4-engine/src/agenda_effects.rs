@@ -11,6 +11,7 @@ use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
+use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::objectives::VICTORY_TARGET;
 use crate::vote::{AGAINST, Ballot, FOR};
 
@@ -183,7 +184,14 @@ fn choose_structure(
                         )
                     })
                     .collect(),
-            );
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("defense_act".to_owned()),
+                "defense_act_choose_pds",
+                state.phase,
+                state.round,
+            ));
             let answer = ctx.ask_seeing(state, &choice).ok()?;
             let index: usize = answer.id.parse().ok()?;
             many.get(index).cloned()
@@ -367,7 +375,14 @@ fn ask_the_speaker(
                 )
             })
             .collect(),
-    );
+    )
+    .contextualized(DecisionContext::new(
+        state.speaker.clone(),
+        DecisionSource::Rule("8.18".to_owned()),
+        "agenda_elect_tiebreak",
+        state.phase,
+        state.round,
+    ));
     ctx.ask_seeing(state, &choice)
         .ok()
         .map(|answer| PlayerId::new(answer.id))
@@ -502,7 +517,7 @@ pub fn resolve_with(
                 [only] => Some(only.clone()),
                 many => {
                     let choice = crate::choice::Choice::new(
-                        controller,
+                        controller.clone(),
                         "which of the trailing players may settle the planet",
                         many.iter()
                             .map(|player| {
@@ -513,7 +528,14 @@ pub fn resolve_with(
                                 )
                             })
                             .collect(),
-                    );
+                    )
+                    .contextualized(DecisionContext::new(
+                        controller,
+                        DecisionSource::Content("redistribution".to_owned()),
+                        "redistribution_choose_settler",
+                        state.phase,
+                        state.round,
+                    ));
                     ctx.ask_seeing(state, &choice)
                         .ok()
                         .map(|answer| PlayerId::new(answer.id))
@@ -1462,6 +1484,125 @@ mod tests {
             timing: None,
         };
         resolve_with(state, &mut ctx, galaxy, agenda, outcome, &Ballot::default())
+    }
+
+    /// OBS-003g: Homeland Defense Act's PDS choice, Colonial Redistribution's settler choice, and
+    /// Seed of an Empire's tiebreak are typed distinctly by the agenda that asks, though the first
+    /// two are "elect one of several candidates" in shape.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "three agenda fixtures, one per subtype this package adds, kept together"
+    )]
+    fn obs003g_defense_act_and_redistribution_are_typed_distinctly() {
+        let mut state = game(&["a"]);
+        let hub = crate::fixtures::plain_hub();
+        let planets: Vec<ti4_model::id::PlanetId> = ti4_content::galaxy::all_planets(
+            ContentStore::embedded(),
+            ti4_model::content_types::POK,
+        )
+        .into_keys()
+        .map(ti4_model::id::PlanetId::new)
+        .take(2)
+        .collect();
+        let system = ti4_model::id::SystemId::new(hub.centre.clone());
+        for planet in &planets {
+            crate::fixtures::put_on_planet(&mut state, &system, planet, "pds", &a(), 1);
+        }
+
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["1".to_owned()])));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        resolve_with(
+            &mut state,
+            &mut ctx,
+            None,
+            "defense_act",
+            AGAINST,
+            &Ballot::default(),
+        );
+        let defense = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(
+            defense.source,
+            DecisionSource::Content("defense_act".to_owned())
+        );
+        assert_eq!(defense.subtype, "defense_act_choose_pds");
+
+        let mut state = game(&["a", "b", "c"]);
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        state.system_mut(&system).set_control(planet.clone(), a());
+        crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &a(), 2);
+        state.player_mut(&a()).unwrap().victory_points = 5;
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["c".to_owned()])));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        resolve_with(
+            &mut state,
+            &mut ctx,
+            None,
+            "redistribution",
+            planet.as_str(),
+            &Ballot::default(),
+        );
+        let redistribution = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(
+            redistribution.source,
+            DecisionSource::Content("redistribution".to_owned())
+        );
+        assert_eq!(redistribution.subtype, "redistribution_choose_settler");
+        assert_ne!(defense.subtype, redistribution.subtype);
+
+        // Seed of an Empire's tie: two seats level at the top, and 8.18 makes the tie the
+        // speaker's call.
+        let mut state = game(&["a", "b"]);
+        state.speaker = a();
+        state.player_mut(&a()).unwrap().victory_points = 3;
+        state.player_mut(&b()).unwrap().victory_points = 3;
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["a".to_owned()])));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        resolve_with(
+            &mut state,
+            &mut ctx,
+            None,
+            "seed_empire",
+            FOR,
+            &Ballot::default(),
+        );
+        let tiebreak = seen.borrow()[0].context.clone().expect("typed context");
+        assert_eq!(tiebreak.source, DecisionSource::Rule("8.18".to_owned()));
+        assert_eq!(tiebreak.subtype, "agenda_elect_tiebreak");
+        assert_eq!(tiebreak.actor, a(), "8.18 makes it the speaker's call");
     }
 
     #[test]

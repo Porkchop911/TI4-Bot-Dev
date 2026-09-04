@@ -3110,6 +3110,30 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003g: agenda context producers (2026-09-04)
+
+- agenda_effects.rs's three registered producers attach typed DecisionContext: choose_structure
+  (Homeland Defense Act's PDS choice, Content("defense_act")/defense_act_choose_pds),
+  ask_the_speaker (8.18's tied-election call, Rule("8.18")/agenda_elect_tiebreak), and
+  resolve_with's own direct ask (Colonial Redistribution's settler choice,
+  Content("redistribution")/redistribution_choose_settler).
+- Kept distinct from vote.rs's own vote_tiebreak (OBS-003e slice 2, 8.19a, speaker breaks a tie
+  between outcomes): agenda_elect_tiebreak (8.18) is the speaker naming which tied PLAYER an
+  agenda's own election names -- a different rule, recorded so the two are not later conflated.
+- No legal-set, option-ID, or application change; no features.rs change (OBS-008f reads this into
+  features later).
+- Checks: engine 1,172 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 267.34 s (266.91 s for OBS-003f -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003G.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, OBS-008c3, OBS-003d, OBS-003e slices 1-2, and
+  OBS-003f -- eight packages now owed review.
+- Next, per the plan's own recommended order: OBS-003h (reaction/content, split by crate if >5
+  files), OBS-003i (prompt-free projection, after all typed context exists), then OBS-005/006,
+  OBS-007c, before the OBS-008 decision-option packages.
+
+---
+
 ## OBS-003f: trade context producers (2026-09-04)
 
 - transactions::TradeWindow's two stages (Proposing, Answering) attach typed DecisionContext --
