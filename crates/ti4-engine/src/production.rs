@@ -19,6 +19,7 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Ta
 use crate::decision_context::{
     ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
 };
+use crate::fleet::{Arrival, Standing};
 use crate::preview::{Delta, Preview, Quantity};
 
 /// The two things a planet card can be exhausted for (LRR 75.2, 47).
@@ -78,6 +79,43 @@ pub const PRODUCE_KIND: &str = "produce";
 pub const PLACE_KIND: &str = "place";
 /// The id standing for a system's space area.
 pub const SPACE: &str = "space";
+
+/// What a placement leaves of the two limits it can spend (LRR 37, 16).
+///
+/// Headroom is signed and free capacity is not. Production places units first and the limits are
+/// enforced afterwards, so a negative headroom is a position a seat can genuinely reach and its
+/// magnitude is what will be taken off the board; free capacity has no such reading, because what
+/// does not fit is excess rather than negative room.
+fn limit_deltas(before: &Standing, after: &Standing) -> [Delta; 2] {
+    [
+        Delta::new(
+            Quantity::FleetSupplyHeadroom,
+            before.fleet_headroom(),
+            after.fleet_headroom(),
+        ),
+        Delta::new(
+            Quantity::CapacityFree,
+            before.capacity_free(),
+            after.capacity_free(),
+        ),
+    ]
+}
+
+/// The exact fleet and transport aftermath of one placement, as option payload facts.
+///
+/// Separate from [`limit_deltas`] because a preview states change while these state the position
+/// reached, including the units the enforcement that follows would remove — the fact that makes
+/// producing into a full space area visibly different from producing into an empty one.
+fn placement_facts(option: ChoiceOption, before: &Standing, after: &Standing) -> ChoiceOption {
+    option
+        .with("capacity_used", after.consumed - before.consumed)
+        .with("fleet_headroom_after", after.fleet_headroom())
+        .with("capacity_free_after", after.capacity_free())
+        .with(
+            "units_removed_after",
+            after.fleet_excess() + after.capacity_excess,
+        )
+}
 
 /// What may be produced at all. Structures arrive through Construction, not PRODUCTION.
 pub const BUILDABLE: [&str; 9] = [
@@ -1530,6 +1568,136 @@ impl ProductionWindow {
         )
     }
 
+    /// Fleet supply and transport as they would stand with `count` copies of `kind` at `where_to`.
+    ///
+    /// Analytic. It asks [`crate::fleet::standing`] the question the end-of-turn enforcement will
+    /// ask, with the unit counted as already there, and builds no state and places nothing. The
+    /// two limits are answered together because Fighter II couples them: a ground force put in a
+    /// space area can push fighters out of capacity and onto the fleet pool.
+    fn standing_after(
+        &self,
+        types: &BTreeMap<&str, UnitType<'_>>,
+        state: &GameState,
+        content: &ContentStore,
+        kind: UnitType<'_>,
+        where_to: &str,
+        count: i64,
+    ) -> Standing {
+        crate::fleet::standing_using(
+            types,
+            state,
+            content,
+            &self.player,
+            &self.system,
+            Some(Arrival {
+                kind,
+                count,
+                in_space: where_to == SPACE,
+            }),
+        )
+    }
+
+    /// Where to put what was just produced, and what each destination would leave behind.
+    ///
+    /// Returns nothing when there is one destination or none: the placement settles without a
+    /// question, and its consequence was already stated on the build option that chose the unit.
+    fn placement_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        id: &str,
+        made: usize,
+    ) -> Option<Choice> {
+        let types = catalogue(content, sources);
+        let kind = types.get(id)?;
+        let spots = placements(state, content, sources, &self.player, &self.system, kind);
+        if spots.len() < 2 {
+            return None; // settled without a question
+        }
+        let placed = i64::try_from(self.will_place(state, content, sources, id, made)).unwrap_or(0);
+        let before =
+            crate::fleet::standing_using(&types, state, content, &self.player, &self.system, None);
+        Some(
+            Choice::new(
+                self.player.clone(),
+                format!("place the {id}"),
+                spots
+                    .iter()
+                    .map(|spot| {
+                        let after =
+                            self.standing_after(&types, state, content, *kind, spot, placed);
+                        placement_facts(
+                            ChoiceOption::labelled(
+                                format!("place|{spot}"),
+                                PLACE_KIND,
+                                format!("place on {spot}"),
+                            )
+                            .with("system", self.system.to_string())
+                            .with("unit", id.to_owned())
+                            .with("destination", spot.clone())
+                            .with("count", i64::try_from(made).unwrap_or(1))
+                            .with("placed", placed),
+                            &before,
+                            &after,
+                        )
+                        .previewed(Preview::certain(limit_deltas(&before, &after).to_vec()))
+                    })
+                    .collect(),
+            )
+            .contextualized(self.placement_context(state, &before)),
+        )
+    }
+
+    /// Why a destination is being asked for, and what the two limits stand at while it is asked.
+    ///
+    /// Both constraints are reported as the position rather than as a bill: `amount` is the limit
+    /// the system offers and `paid` is what is already spent against it, so `remaining` is the room
+    /// a further unit could take. A seat already over a limit reports no room, which is true; how
+    /// far over it is belongs to the per-option preview, where it differs by destination.
+    fn placement_context(&self, state: &GameState, standing: &Standing) -> DecisionContext {
+        DecisionContext::new(
+            self.player.clone(),
+            DecisionSource::Rule("68".to_owned()),
+            "place_unit",
+            state.phase,
+            state.round,
+        )
+        .about(DecisionTarget::System(self.system.clone()))
+        .owing(OutstandingConstraint::new(
+            ConstraintKind::FleetSupply,
+            standing.fleet_limit,
+            standing.fleet_charged,
+        ))
+        .owing(OutstandingConstraint::new(
+            ConstraintKind::TransportCapacity,
+            standing.transport,
+            standing.consumed,
+        ))
+    }
+
+    /// The units that will actually arrive, which is not always the batch that was bought.
+    ///
+    /// 31.4 is applied when the unit is placed, so a preview that assumed the whole batch would
+    /// state a consequence the box cannot deliver.
+    fn will_place(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        id: &str,
+        made: usize,
+    ) -> usize {
+        crate::supply::allowed(
+            state,
+            content,
+            sources,
+            &self.player,
+            &UnitTypeId::new(id),
+            made,
+        )
+    }
+
     /// Options for what to build now: affordable, placeable, one per unit type.
     fn build_options(
         &self,
@@ -1538,6 +1706,9 @@ impl ProductionWindow {
         sources: SourceSet,
     ) -> Vec<ChoiceOption> {
         let types = catalogue(content, sources);
+        // The position before any of these options is taken, read once for all of them.
+        let before =
+            crate::fleet::standing_using(&types, state, content, &self.player, &self.system, None);
         let mut options = Vec::new();
         for id in buildable_for(state, content, sources, &self.player) {
             let Some(kind) = types.get(id.as_str()) else {
@@ -1551,59 +1722,73 @@ impl ProductionWindow {
             {
                 continue;
             }
-            if placements(state, content, sources, &self.player, &self.system, kind).is_empty() {
-                continue;
-            }
-            // 31.4: a unit with no plastic left in the box is not offered. Offering it would let
-            // a player spend resources on something that cannot be placed.
-            if crate::supply::allowed(
-                state,
-                content,
-                sources,
-                &self.player,
-                &UnitTypeId::new(id.clone()),
-                1,
-            ) == 0
-            {
+            let spots = placements(state, content, sources, &self.player, &self.system, kind);
+            if spots.is_empty() {
                 continue;
             }
             let made = pair.min(usize::try_from(self.remaining).unwrap_or(0));
             if made == 0 {
                 continue;
             }
+            // 31.4, asked once for two answers: the batch the box can actually supply, and whether
+            // the unit may be offered at all. Offering a unit with no plastic left would let a
+            // player spend resources on something that cannot be placed. Every quantity below is
+            // stated about the units that will arrive, not the batch that was bought -- and this
+            // walks the whole board for the count, which is why it is not asked twice.
+            let placed = self.will_place(state, content, sources, &id, made);
+            if placed == 0 {
+                continue;
+            }
             let (remaining_after, free_capacity_after) =
-                self.post_build_constraints(state, content, sources, &id, made);
+                self.post_build_constraints(state, content, sources, &id, placed);
             let credit_used = self.credit.min(cost);
             let production_spent = self.remaining - remaining_after;
-            options.push(
-                ChoiceOption::labelled(
-                    format!("build|{id}|{made}"),
-                    PRODUCE_KIND,
-                    format!("produce {made}x {id} for {cost}"),
-                )
-                .with("cost", cost)
-                .with("printed_cost", price_of(kind).0)
-                .with("count", i64::try_from(made).unwrap_or(1))
-                .with("yield", i64::try_from(pair).unwrap_or(1))
-                .with("credit", self.credit)
-                .with("credit_used", credit_used)
-                .with("owed", cost - credit_used)
-                .with("production_spent", production_spent)
-                .with("unit", id.clone())
-                .with("system", self.system.to_string())
-                .previewed(Preview::certain(vec![
-                    Delta::new(
-                        Quantity::ProductionRemaining,
-                        self.remaining,
-                        remaining_after,
-                    ),
-                    Delta::new(
-                        Quantity::ProductionFreeCapacity,
-                        self.free_capacity,
-                        free_capacity_after,
-                    ),
-                ])),
-            );
+            let mut deltas = vec![
+                Delta::new(
+                    Quantity::ProductionRemaining,
+                    self.remaining,
+                    remaining_after,
+                ),
+                Delta::new(
+                    Quantity::ProductionFreeCapacity,
+                    self.free_capacity,
+                    free_capacity_after,
+                ),
+            ];
+            let mut option = ChoiceOption::labelled(
+                format!("build|{id}|{made}"),
+                PRODUCE_KIND,
+                format!("produce {made}x {id} for {cost}"),
+            )
+            .with("cost", cost)
+            .with("printed_cost", price_of(kind).0)
+            .with("count", i64::try_from(made).unwrap_or(1))
+            .with("placed", i64::try_from(placed).unwrap_or(1))
+            .with("yield", i64::try_from(pair).unwrap_or(1))
+            .with("credit", self.credit)
+            .with("credit_used", credit_used)
+            .with("owed", cost - credit_used)
+            .with("production_spent", production_spent)
+            .with("unit", id.clone())
+            .with("system", self.system.to_string());
+            // A ship has one destination and no placement question follows, so its fleet and
+            // transport aftermath is settled here. A unit with a choice of destinations does not
+            // have one yet, and says so rather than reporting a consequence it cannot know.
+            if let [only] = spots.as_slice() {
+                let after = self.standing_after(
+                    &types,
+                    state,
+                    content,
+                    *kind,
+                    only,
+                    i64::try_from(placed).unwrap_or(0),
+                );
+                deltas.extend(limit_deltas(&before, &after));
+                option = placement_facts(option.with("destination", only.clone()), &before, &after);
+            } else {
+                option = option.with("placement_pending", i64::try_from(spots.len()).unwrap_or(2));
+            }
+            options.push(option.previewed(Preview::certain(deltas)));
             // 68.3b -- "a player can choose to produce only one unit; however, they must still
             // pay the entire cost" -- is honoured where it matters and not offered where it does
             // not. When the production limit leaves room for one, `made` is already 1 above and
@@ -1738,29 +1923,8 @@ impl Window for ProductionWindow {
                     ),
                 )
             }
-            Stage::Placing { id, .. } => {
-                let types = catalogue(content, sources);
-                let kind = types.get(id.as_str())?;
-                let spots = placements(state, content, sources, &self.player, &self.system, kind);
-                if spots.len() < 2 {
-                    return None; // settled without a question
-                }
-                Some(Choice::new(
-                    self.player.clone(),
-                    format!("place the {id}"),
-                    spots
-                        .iter()
-                        .map(|spot| {
-                            ChoiceOption::labelled(
-                                format!("place|{spot}"),
-                                PLACE_KIND,
-                                format!("place on {spot}"),
-                            )
-                            .with("system", self.system.to_string())
-                            .with("unit", id.clone())
-                        })
-                        .collect(),
-                ))
+            Stage::Placing { id, made } => {
+                self.placement_choice(state, content, sources, id, *made)
             }
         }
     }
@@ -3372,6 +3536,277 @@ mod tests {
                 .unwrap()
                 .after,
             "fighter consumed exactly the previewed allowance"
+        );
+    }
+
+    /// A ship has nowhere else to go, so its fleet and transport aftermath is settled at the build.
+    ///
+    /// The agreement that matters is with the position the placement actually reaches: the preview
+    /// is read before resolving and compared afterwards against the same `fleet::standing` the
+    /// end-of-turn enforcement consults. A second implementation of the rule would pass a test that
+    /// only checked the preview against itself.
+    #[test]
+    fn obs008c2b_forced_ship_destination_previews_the_position_it_reaches() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        if let Some(seat) = state.player_mut(&player()) {
+            seat.fleet_tokens = 1; // one ship of room, so a second one is a visible consequence
+        }
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.credit = 10; // paid already, so the build reaches placement in one step
+
+        let carrier = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice")
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("destination")
+                .and_then(serde_json::Value::as_str),
+            Some(SPACE),
+            "a ship states the one destination it can have"
+        );
+        assert_eq!(
+            carrier
+                .payload
+                .get("placement_pending")
+                .and_then(serde_json::Value::as_i64),
+            None,
+            "nothing is pending when the destination is forced"
+        );
+        let preview = carrier.preview.clone().expect("build preview");
+        let after = |quantity| {
+            preview
+                .certain_deltas()
+                .iter()
+                .find(|delta| delta.quantity == quantity)
+                .unwrap_or_else(|| panic!("{quantity:?} previewed"))
+                .after
+        };
+        let (headroom, free) = (
+            after(Quantity::FleetSupplyHeadroom),
+            after(Quantity::CapacityFree),
+        );
+        let placed = carrier
+            .payload
+            .get("placed")
+            .and_then(serde_json::Value::as_i64)
+            .expect("stated arrivals");
+
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        window.resolve(&mut state, &mut ctx, carrier).unwrap();
+
+        let standing = crate::fleet::standing(&state, content, POK, &player(), &system, None);
+        assert_eq!(
+            (standing.fleet_headroom(), standing.capacity_free()),
+            (headroom, free),
+            "the previewed position is the position the placement reached"
+        );
+        assert_eq!(
+            i64::try_from(window.report.produced.len()).unwrap(),
+            placed,
+            "the stated arrivals are the units that arrived"
+        );
+    }
+
+    /// Where a ground force goes decides whether it costs transport, and the options say so.
+    ///
+    /// Saar's Floating Factory sits in the space area, so an infantry produced here may go to a
+    /// planet or into space. Only the second consumes capacity, and this is the case that could
+    /// not be answered before the destination was known -- which is why it was split out of
+    /// `OBS-008c2a` rather than guessed there.
+    #[test]
+    fn obs008c2b_a_ground_force_placement_separates_space_from_a_planet() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        put(&mut state, &system, "saar_spacedock", &player(), 1);
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.credit = 10;
+
+        let infantry = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice")
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|infantry|"))
+            .expect("infantry");
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        window.resolve(&mut state, &mut ctx, infantry).unwrap();
+
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("a destination is asked for");
+        let context = choice.context.as_ref().expect("typed placement context");
+        assert_eq!(context.subtype, "place_unit");
+        assert_eq!(context.target, Some(DecisionTarget::System(system.clone())));
+        let standing = crate::fleet::standing(&state, content, POK, &player(), &system, None);
+        for constraint in &context.outstanding {
+            let (amount, paid) = match constraint.kind {
+                ConstraintKind::FleetSupply => (standing.fleet_limit, standing.fleet_charged),
+                ConstraintKind::TransportCapacity => (standing.transport, standing.consumed),
+                other => panic!("unexpected constraint {other:?}"),
+            };
+            assert_eq!((constraint.amount, constraint.paid), (amount, paid));
+        }
+        assert_eq!(context.outstanding.len(), 2, "both limits are reported");
+
+        let free_of = |option: &ChoiceOption| {
+            option
+                .payload
+                .get("capacity_free_after")
+                .and_then(serde_json::Value::as_i64)
+                .expect("capacity aftermath")
+        };
+        let space = choice
+            .options
+            .iter()
+            .find(|option| option.id == format!("place|{SPACE}"))
+            .expect("the space area");
+        let ground = choice
+            .options
+            .iter()
+            .find(|option| option.id != format!("place|{SPACE}"))
+            .expect("a planet");
+        assert!(
+            free_of(space) < free_of(ground),
+            "an infantry in the space area consumes capacity a landed one does not"
+        );
+        assert_eq!(
+            space
+                .payload
+                .get("capacity_used")
+                .and_then(serde_json::Value::as_i64),
+            Some(2),
+            "two infantry of the produced pair consume two capacity"
+        );
+        assert_eq!(
+            ground
+                .payload
+                .get("capacity_used")
+                .and_then(serde_json::Value::as_i64),
+            Some(0),
+            "a landed ground force consumes none"
+        );
+
+        let previewed = space
+            .preview
+            .clone()
+            .expect("placement preview")
+            .certain_deltas()
+            .iter()
+            .find(|delta| delta.quantity == Quantity::CapacityFree)
+            .expect("capacity previewed")
+            .after;
+        let taken = space.clone();
+        window.resolve(&mut state, &mut ctx, taken).unwrap();
+        assert_eq!(
+            crate::fleet::standing(&state, content, POK, &player(), &system, None).capacity_free(),
+            previewed,
+            "the previewed capacity is the capacity the placement reached"
+        );
+    }
+
+    /// An undecided destination is stated as undecided rather than previewed as no consequence.
+    ///
+    /// Representation rule 6: a fact that is not yet determined must not arrive as a factual zero.
+    /// The infantry here has two destinations and no fleet or transport answer; the ship beside it,
+    /// in the same position, has one destination and both answers.
+    #[test]
+    fn obs008c2b_an_open_destination_is_marked_open_not_previewed_as_nothing() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        put(&mut state, &system, "saar_spacedock", &player(), 1);
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.credit = 10;
+
+        let options = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice")
+            .options;
+        let quantities = |option: &ChoiceOption| {
+            option
+                .preview
+                .as_ref()
+                .expect("a preview")
+                .certain_deltas()
+                .iter()
+                .map(|delta| delta.quantity)
+                .collect::<Vec<_>>()
+        };
+
+        let infantry = options
+            .iter()
+            .find(|option| option.id.starts_with("build|infantry|"))
+            .expect("infantry");
+        assert_eq!(
+            infantry
+                .payload
+                .get("placement_pending")
+                .and_then(serde_json::Value::as_i64),
+            Some(2),
+            "two destinations are still open"
+        );
+        assert_eq!(
+            infantry.payload.get("destination"),
+            None,
+            "no destination is claimed"
+        );
+        let open = quantities(infantry);
+        assert!(
+            !open.contains(&Quantity::FleetSupplyHeadroom)
+                && !open.contains(&Quantity::CapacityFree),
+            "an undetermined consequence is absent, not zero: {open:?}"
+        );
+        assert!(
+            open.contains(&Quantity::ProductionRemaining),
+            "the limits that are already determined are still stated"
+        );
+
+        let carrier = options
+            .iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        let settled = quantities(carrier);
+        assert!(
+            settled.contains(&Quantity::FleetSupplyHeadroom)
+                && settled.contains(&Quantity::CapacityFree),
+            "the same position answers both for a unit whose destination is forced: {settled:?}"
         );
     }
 

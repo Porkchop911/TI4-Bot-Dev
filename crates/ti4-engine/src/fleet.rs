@@ -37,6 +37,219 @@ pub fn limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i3
     crate::faction_abilities::fleet_supply(state, content, player, capped)
 }
 
+/// One unit that has not been placed yet, for asking what a placement would leave behind.
+///
+/// A production placement puts `count` copies of one type at one destination, which is why this is
+/// a single arrival rather than a list. `in_space` matters to more than bookkeeping: a ground force
+/// in the space area consumes capacity, while the same ground force on a planet consumes none, and
+/// a space dock on a planet adds fighter support that changes the answer without ever entering the
+/// space area.
+#[derive(Debug, Clone, Copy)]
+pub struct Arrival<'a> {
+    pub kind: UnitType<'a>,
+    pub count: i64,
+    /// Placed in the space area rather than on a planet.
+    pub in_space: bool,
+}
+
+/// Fleet supply and transport for one seat in one system, answered together.
+///
+/// Together because the two limits are not independent: Fighter II moves fighters the capacity
+/// cannot hold onto the fleet pool, so a ground force placed in a space area can push fighters out
+/// of capacity and consume fleet supply without a single ship being produced. Answering either
+/// question on its own gets that case wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Standing {
+    /// Non-fighter ships this seat may keep here (37.1).
+    pub fleet_limit: i64,
+    /// Ships charged against that limit, including the fighters the pool carries.
+    pub fleet_charged: i64,
+    /// Capacity the ships present provide (16.1).
+    pub transport: i64,
+    /// Capacity that fighters and ground forces in the space area consume, after a structure's
+    /// fighter-only support has excused what it can.
+    pub consumed: i64,
+    /// Fighters the fleet pool carries instead of capacity (Fighter II).
+    pub fighters_charged: i64,
+    /// Capacity-consuming units that cannot legally remain here (16.3).
+    pub capacity_excess: i64,
+}
+
+impl Standing {
+    /// Ships this seat could still add before 37.3 takes any off the board.
+    ///
+    /// Signed on purpose. A negative headroom is a real position -- production places units first
+    /// and the limit is enforced afterwards -- and its magnitude is exactly what will be removed.
+    #[must_use]
+    pub const fn fleet_headroom(&self) -> i64 {
+        self.fleet_limit - self.fleet_charged
+    }
+
+    /// Ships 37.3 would remove.
+    #[must_use]
+    pub const fn fleet_excess(&self) -> i64 {
+        let over = self.fleet_charged - self.fleet_limit;
+        if over < 0 { 0 } else { over }
+    }
+
+    /// Capacity still free. Never negative: what does not fit is [`Self::capacity_excess`].
+    #[must_use]
+    pub const fn capacity_free(&self) -> i64 {
+        let free = self.transport - self.consumed;
+        if free < 0 { 0 } else { free }
+    }
+}
+
+/// Fleet supply and transport for one seat in one system, optionally with a unit not yet placed.
+///
+/// The one arithmetic behind every answer in this module. [`over_supply`], [`over_capacity`] and
+/// [`fighters_over_capacity`] are expressed through it, so a preview of what a placement would
+/// leave and the enforcement that later removes units cannot drift apart: there is only one
+/// calculation to be right or wrong about.
+#[must_use]
+pub fn standing(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    arriving: Option<Arrival<'_>>,
+) -> Standing {
+    let types = catalogue(content, sources);
+    standing_using(&types, state, content, player, system, arriving)
+}
+
+/// [`standing`] for a caller that has already built the catalogue.
+///
+/// A producer asking what each of its options would leave asks this once per option, and
+/// `catalogue` allocates a fresh map every call. Building one map per production choice rather than
+/// two per offered unit is the difference between a preview that is free and one that is not.
+pub(crate) fn standing_using(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    system: &SystemId,
+    arriving: Option<Arrival<'_>>,
+) -> Standing {
+    standing_with(
+        types,
+        state.board.get(system),
+        player,
+        i64::from(limit(state, content, player)).max(0),
+        arriving,
+    )
+}
+
+/// [`standing`] with the catalogue built, the board borrowed and the fleet limit already known.
+///
+/// Borrowed, not cloned: `GameState::system_state` returns a CLONE of the whole system, units and
+/// planet units included, and the enforcement path asks this for every occupied seat-and-system
+/// pair at every turn end.
+///
+/// `fleet_limit` is passed in rather than read, because the two capacity callers do not need it and
+/// reading it costs a law and an ability lookup each time.
+fn standing_with(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    board: Option<&ti4_model::state::SystemState>,
+    player: &PlayerId,
+    fleet_limit: i64,
+    arriving: Option<Arrival<'_>>,
+) -> Standing {
+    let space: Vec<UnitType<'_>> = board
+        .map(|board| {
+            board
+                .units_of(player)
+                .iter()
+                .filter_map(|unit| types.get(unit.type_id.as_str()).copied())
+                .collect()
+        })
+        .unwrap_or_default();
+    // A unit landing on a planet never reaches the space area; it can still change the answer by
+    // being a structure that supports fighters.
+    let landing = arriving.filter(|arrival| !arrival.in_space);
+    let arrival = arriving.filter(|arrival| arrival.in_space);
+    // What the arrival adds to each sum. Written out rather than routed through a helper, which
+    // would have to be generic over the catalogue's lifetime to accept these as functions.
+    let (mut new_ships, mut new_transport, mut new_carried, mut new_fighters) = (0, 0, 0, 0);
+    if let Some(arrival) = arrival {
+        new_transport = arrival.kind.capacity() * arrival.count;
+        if counts_against_supply(&arrival.kind) {
+            new_ships = arrival.count;
+        }
+        if arrival.kind.is_fighter() {
+            new_fighters = arrival.kind.capacity_cost() * arrival.count;
+        } else if arrival.kind.consumes_capacity() {
+            new_carried = arrival.kind.capacity_cost() * arrival.count;
+        }
+    }
+
+    let present = i64::try_from(
+        space
+            .iter()
+            .filter(|kind| counts_against_supply(kind))
+            .count(),
+    )
+    .unwrap_or(i64::MAX)
+        + new_ships;
+    let transport: i64 = space.iter().map(UnitType::capacity).sum::<i64>() + new_transport;
+    let carried: i64 = space
+        .iter()
+        .filter(|kind| kind.consumes_capacity() && !kind.is_fighter())
+        .map(UnitType::capacity_cost)
+        .sum::<i64>()
+        + new_carried;
+    let fighters: i64 = space
+        .iter()
+        .filter(|kind| kind.is_fighter())
+        .map(UnitType::capacity_cost)
+        .sum::<i64>()
+        + new_fighters;
+    let support: i64 = board
+        .map(|board| {
+            board
+                .planet_units
+                .values()
+                .flatten()
+                .filter(|unit| &unit.owner == player)
+                .filter_map(|unit| types.get(unit.type_id.as_str()))
+                .map(UnitType::fighter_support)
+                .sum()
+        })
+        .map_or(0, |support: i64| support)
+        + landing.map_or(0, |arrival| arrival.kind.fighter_support() * arrival.count);
+
+    // 16.3 counts fighters *and* ground forces against one combined total, and 16.3a lets the
+    // owner choose which of the excess to remove -- which only means anything if a ground force
+    // can be the excess.
+    //
+    // This used to subtract the ground forces from the transport first and then test the fighters
+    // against what was left, so six infantry on a four-capacity carrier reported *no* excess: the
+    // subtraction went negative, `max(0)` swallowed it, and there were no fighters to catch it.
+    // Ground forces stranded in a space area were therefore never removed.
+    //
+    // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why it
+    // cannot simply be added to the transport: it excuses fighters and nothing else.
+    let excused = fighters.min(support);
+    let consumed = carried + fighters - excused;
+    let overflow = (consumed - transport).max(0);
+    let upgraded = space
+        .iter()
+        .chain(arrival.as_ref().map(|arrival| &arrival.kind))
+        .any(|kind| kind.is_fighter() && kind.required_technology().is_some());
+    let fighters_charged = fighters_charged_to_fleet_pool(upgraded, fighters, excused, overflow);
+    Standing {
+        fleet_limit,
+        // Fighter II from the other side: fighters the capacity cannot hold are ships as far as the
+        // fleet pool is concerned, so they are counted here rather than removed there.
+        fleet_charged: present + fighters_charged,
+        transport,
+        consumed,
+        fighters_charged,
+        capacity_excess: (overflow - fighters_charged).max(0),
+    }
+}
+
 /// Ships beyond the cap in this system, if any.
 #[must_use]
 pub fn over_supply(
@@ -47,7 +260,7 @@ pub fn over_supply(
     system: &SystemId,
 ) -> usize {
     let types = catalogue(content, sources);
-    over_supply_with(&types, state, content, sources, player, system)
+    over_supply_with(&types, state, content, player, system)
 }
 
 /// [`over_supply`] with the unit catalogue already built.
@@ -60,29 +273,17 @@ fn over_supply_with(
     types: &BTreeMap<&str, UnitType<'_>>,
     state: &GameState,
     content: &ContentStore,
-    sources: SourceSet,
     player: &PlayerId,
     system: &SystemId,
 ) -> usize {
-    let Some(board) = state.board.get(system) else {
-        return 0;
-    };
-    let present = board
-        .units_of(player)
-        .into_iter()
-        .filter(|unit| {
-            types
-                .get(unit.type_id.as_str())
-                .is_some_and(counts_against_supply)
-        })
-        .count();
-    // Fighter II again, from the other side: fighters the capacity cannot hold are ships as far as
-    // the fleet pool is concerned, so they are counted here rather than removed there.
-    let carried_fighters =
-        usize::try_from(fighters_over_capacity_with(types, board, player).max(0)).unwrap_or(0);
-    let _ = (content, sources);
-    (present + carried_fighters)
-        .saturating_sub(usize::try_from(limit(state, content, player).max(0)).unwrap_or(0))
+    let standing = standing_with(
+        types,
+        state.board.get(system),
+        player,
+        i64::from(limit(state, content, player)).max(0),
+        None,
+    );
+    usize::try_from(standing.fleet_excess()).unwrap_or(0)
 }
 
 /// Capacity-consuming units that cannot legally remain in this space area (16.3).
@@ -106,62 +307,13 @@ pub fn over_capacity(
 
 /// [`over_capacity`] with the catalogue already built and the board already borrowed.
 ///
-/// Same reason as [`over_supply_with`]: this runs for every occupied seat-and-system pair at every
-/// turn end, and rebuilding the catalogue and cloning the system there dominated the cost of
-/// enforcing the rule at all.
+/// The fleet limit is irrelevant to a capacity answer, so this does not pay to look it up.
 fn over_capacity_with(
     types: &BTreeMap<&str, UnitType<'_>>,
     board: &ti4_model::state::SystemState,
     player: &PlayerId,
 ) -> usize {
-    let space = board.units_of(player);
-
-    // Resolved once rather than looked up per sum.
-    let held: Vec<UnitType<'_>> = space
-        .iter()
-        .filter_map(|unit| types.get(unit.type_id.as_str()).copied())
-        .collect();
-
-    let transport: i64 = held.iter().map(UnitType::capacity).sum();
-    let support: i64 = board
-        .planet_units
-        .values()
-        .flatten()
-        .filter(|unit| &unit.owner == player)
-        .filter_map(|unit| types.get(unit.type_id.as_str()))
-        .map(UnitType::fighter_support)
-        .sum();
-    let carried: i64 = held
-        .iter()
-        .filter(|kind| kind.consumes_capacity() && !kind.is_fighter())
-        .map(UnitType::capacity_cost)
-        .sum();
-    let fighters: i64 = held
-        .iter()
-        .filter(|kind| kind.is_fighter())
-        .map(UnitType::capacity_cost)
-        .sum();
-
-    // 16.3 counts fighters *and* ground forces against one combined total, and 16.3a lets the
-    // owner choose which of the excess to remove -- which only means anything if a ground force
-    // can be the excess.
-    //
-    // Fighter II: "fighters in excess of your ships' capacity count against your fleet pool." Those
-    // fighters are not capacity-excess at all; they become fleet-pool ships, and `over_supply`
-    // charges them there. Ground forces in the overflow are still excess, because the card speaks
-    // only of fighters.
-    //
-    // This used to subtract the ground forces from the transport first and then test the fighters
-    // against what was left, so six infantry on a four-capacity carrier reported *no* excess: the
-    // subtraction went negative, `max(0)` swallowed it, and there were no fighters to catch it.
-    // Ground forces stranded in a space area were therefore never removed.
-    //
-    // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why it
-    // cannot simply be added to the transport: it excuses fighters and nothing else.
-    let excused_fighters = fighters.min(support);
-    let overflow = (carried + fighters - excused_fighters - transport).max(0);
-    let to_fleet_pool = fighters_charged_to_fleet_pool(&held, fighters, excused_fighters, overflow);
-    usize::try_from((overflow - to_fleet_pool).max(0)).unwrap_or(0)
+    usize::try_from(standing_with(types, Some(board), player, 0, None).capacity_excess).unwrap_or(0)
 }
 
 /// Fighters that the fleet pool absorbs instead of capacity (Fighter II).
@@ -172,19 +324,18 @@ fn over_capacity_with(
 /// once (90.8), so a seat's fighters are all base or all upgraded and there is no mixed case to
 /// apportion. The overflow is taken from the fighters first because the ground forces in it are
 /// still ordinary excess -- the card says nothing about them.
-fn fighters_charged_to_fleet_pool(
-    held: &[UnitType<'_>],
+const fn fighters_charged_to_fleet_pool(
+    upgraded: bool,
     fighters: i64,
     excused_fighters: i64,
     overflow: i64,
 ) -> i64 {
-    let upgraded = held
-        .iter()
-        .any(|kind| kind.is_fighter() && kind.required_technology().is_some());
     if !upgraded {
         return 0;
     }
-    overflow.min((fighters - excused_fighters).max(0))
+    let unexcused = fighters - excused_fighters;
+    let cap = if unexcused < 0 { 0 } else { unexcused };
+    if overflow < cap { overflow } else { cap }
 }
 
 /// Fighters this player has in a system that the fleet pool must carry (Fighter II).
@@ -200,45 +351,7 @@ pub fn fighters_over_capacity(
     let Some(board) = state.board.get(system) else {
         return 0;
     };
-    fighters_over_capacity_with(&types, board, player)
-}
-
-/// [`fighters_over_capacity`] with the catalogue already built and the board already borrowed.
-///
-/// Borrowed, not cloned: `GameState::system_state` returns a CLONE of the whole system, units and
-/// planet units included, and this used to be called several times per check.
-fn fighters_over_capacity_with(
-    types: &BTreeMap<&str, UnitType<'_>>,
-    board: &ti4_model::state::SystemState,
-    player: &PlayerId,
-) -> i64 {
-    let held: Vec<UnitType<'_>> = board
-        .units_of(player)
-        .iter()
-        .filter_map(|unit| types.get(unit.type_id.as_str()).copied())
-        .collect();
-    let transport: i64 = held.iter().map(UnitType::capacity).sum();
-    let support: i64 = board
-        .planet_units
-        .values()
-        .flatten()
-        .filter(|unit| &unit.owner == player)
-        .filter_map(|unit| types.get(unit.type_id.as_str()))
-        .map(UnitType::fighter_support)
-        .sum();
-    let carried: i64 = held
-        .iter()
-        .filter(|kind| kind.consumes_capacity() && !kind.is_fighter())
-        .map(UnitType::capacity_cost)
-        .sum();
-    let fighters: i64 = held
-        .iter()
-        .filter(|kind| kind.is_fighter())
-        .map(UnitType::capacity_cost)
-        .sum();
-    let excused_fighters = fighters.min(support);
-    let overflow = (carried + fighters - excused_fighters - transport).max(0);
-    fighters_charged_to_fleet_pool(&held, fighters, excused_fighters, overflow)
+    standing_with(&types, Some(board), player, 0, None).fighters_charged
 }
 
 /// 37.3 and 16.3: the owner chooses and removes units until within the limit.
@@ -266,12 +379,11 @@ pub fn enforce(
 /// those sites lacks a decider, and a limit that is only checked where ships move leaves ships on
 /// the board that the rules have already removed.
 ///
-/// **Not yet called from the game loop.** Running it every step enforces limits for every seat in
-/// every system continuously, which is arguably what 58.4 says — and it changes long-standing
-/// behaviour broadly: eight existing fixtures set up positions that were legal only because nobody
-/// looked. That is a behavioural change large enough to move the `ti4-sim` baseline, so it belongs
-/// in its own reviewed change rather than riding along with a targeted fix. See
-/// `plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md`.
+/// **Called at every turn end** from `Game::advance_turn`, which is what makes a produced unit's
+/// fleet and capacity aftermath a real consequence rather than a position nobody looks at. Running
+/// it enforces limits for every seat in every system, which is what 58.4 says, and it changed
+/// long-standing behaviour: eight fixtures set up positions that were legal only because nothing
+/// checked. See `plans/BUG_2026-08-29_LEAD_FLEET_SUPPLY.md`.
 ///
 /// # Errors
 /// [`IllegalChoice`] when a decider answers a casualty choice with something not offered.
@@ -314,7 +426,7 @@ pub fn enforce_seeing(
     let mut removed = 0;
 
     // Supply first: removing a carrier can strand fighters, so capacity is judged after.
-    while over_supply_with(&types, state, content, sources, player, system) > 0 {
+    while over_supply_with(&types, state, content, player, system) > 0 {
         let candidates: Vec<Unit> = state
             .system_state(system)
             .units_of(player)
@@ -741,6 +853,94 @@ mod tests {
         assert_eq!(
             over_capacity(&state, ContentStore::embedded(), POK, &player, &system),
             0
+        );
+    }
+
+    /// The one arithmetic answers what enforcement answers, and an arrival counts as the unit.
+    ///
+    /// The second half is what every production preview rests on: asking about a unit that has not
+    /// been placed must give the same answer as placing it and asking again. Anything less makes a
+    /// preview a second implementation of the rule, free to drift from the one that removes units
+    /// at the end of the turn.
+    #[test]
+    fn obs008c2b_standing_matches_enforcement_and_counts_an_arrival_as_a_unit() {
+        use super::*;
+        use ti4_model::content_types::POK;
+
+        let content = ContentStore::embedded();
+        let types = catalogue(content, POK);
+        let player = PlayerId::new("a");
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        let mut state = crate::fixtures::game(&["a"]);
+        state.board.entry(system.clone()).or_default();
+        // Two Fighter IIs and nothing to carry them: the pool takes them, so both limits are
+        // engaged at once and a wrong split between the two cannot pass unnoticed.
+        crate::fixtures::put(&mut state, &system, "fighter2", &player, 2);
+        if let Some(seat) = state.player_mut(&player) {
+            seat.fleet_tokens = 1;
+        }
+
+        let now = standing(&state, content, POK, &player, &system, None);
+        assert_eq!(
+            usize::try_from(now.capacity_excess).unwrap(),
+            over_capacity(&state, content, POK, &player, &system),
+        );
+        assert_eq!(
+            now.fighters_charged,
+            fighters_over_capacity(&state, content, POK, &player, &system),
+        );
+        assert_eq!(
+            usize::try_from(now.fleet_excess()).unwrap(),
+            over_supply(&state, content, POK, &player, &system),
+        );
+        assert!(
+            now.fighters_charged > 0 && now.fleet_excess() > 0,
+            "the fixture engages both limits: {now:?}"
+        );
+
+        // An infantry that has not been placed yet, against the same infantry placed for real.
+        let infantry = types.get("infantry").copied().expect("infantry");
+        let previewed = standing(
+            &state,
+            content,
+            POK,
+            &player,
+            &system,
+            Some(Arrival {
+                kind: infantry,
+                count: 2,
+                in_space: true,
+            }),
+        );
+        let mut in_space = state.clone();
+        crate::fixtures::put(&mut in_space, &system, "infantry", &player, 2);
+        assert_eq!(
+            previewed,
+            standing(&in_space, content, POK, &player, &system, None),
+            "an arrival in the space area counts exactly as the placed unit"
+        );
+
+        // And on a planet, where the same arrival consumes nothing but a structure can still
+        // change the answer by supporting fighters.
+        let dock = types.get("spacedock").copied().expect("space dock");
+        let previewed = standing(
+            &state,
+            content,
+            POK,
+            &player,
+            &system,
+            Some(Arrival {
+                kind: dock,
+                count: 1,
+                in_space: false,
+            }),
+        );
+        let mut landed = state.clone();
+        crate::fixtures::put_on_planet(&mut landed, &system, &planet, "spacedock", &player, 1);
+        assert_eq!(
+            previewed,
+            standing(&landed, content, POK, &player, &system, None),
+            "an arrival on a planet counts exactly as the placed structure"
         );
     }
 }

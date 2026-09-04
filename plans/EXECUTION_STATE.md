@@ -3110,6 +3110,37 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-008c2b placement fleet and transport surface (2026-09-04)
+
+- Active branch: `wp/obs-008c2b-placement-consequence-surface`, based on `3c5262e`
+  (`OBS-008c2a` plus the milestone handover).
+- `fleet::standing` is now the one arithmetic behind fleet supply and transport; `over_supply`,
+  `over_capacity` and `fighters_over_capacity` go through it, and it optionally counts an `Arrival`
+  that has not been placed. Agreement between a preview and the enforcement that removes units is
+  therefore structural, and is proved by asking about an arrival and then placing it for real.
+- Placement choices name Rule 68, their system, and both limits with what is already charged.
+  Each option states its destination, the units that will actually arrive under 31.4, the capacity
+  it consumes, the headroom and free capacity it leaves, and how many units enforcement would then
+  remove -- with an analytic `FleetSupplyHeadroom`/`CapacityFree` preview.
+- A build option whose destination is forced carries the same two quantities, which is the only way
+  a ship's fleet-supply consequence is ever stated: a ship never reaches a placement question. An
+  open destination states `placement_pending` and no fleet or transport quantity.
+- Placement legality, option IDs/labels/set, payment application, replay behavior, choice identity
+  and the point at which enforcement runs are unchanged.
+- Checks: engine 1,145 lib + 4 integration + 5 docs; policy 199 + the 102-game deterministic
+  campaign in 305.41 s (against 328.21 s for c2a -- no speedup claimed, single runs); training 133;
+  strict all-target Clippy green; diff check green; formatting clean for every hunk this package
+  added.
+- Registry: `production.rs::placement_choice` added to the OBS-002a reviewed inventory and
+  `pending_choice` dropped 3 -> 2, because the placement arm became its own method.
+- Recorded residuals: c2a's preview used the purchased batch where `place` uses the clamped one
+  (corrected; not reachable today because every two-for-one unit is uncapped); a sparse feature
+  vector drops an exact zero, closed for these facts by `production:destination-known`; one planet
+  destination is still not separated from another, which needs OBS-006/008a.
+- **Independent Tier-C review OUTSTANDING.** Evidence: `plans/evidence/OBS-008C2B.md`.
+
+---
+
 ## OBS-008c2a production-limit decision surface (2026-09-04)
 
 - Active branch: `wp/obs-008c2a-production-limit-surface`, based on `4bdf247` (`OBS-008c1`).

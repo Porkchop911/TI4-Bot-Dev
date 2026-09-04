@@ -1261,9 +1261,16 @@ fn production_decision_features(
             1.0,
         );
         for constraint in &context.outstanding {
-            if constraint.kind != ti4_engine::decision_context::ConstraintKind::ProductionCapacity {
-                continue;
-            }
+            use ti4_engine::decision_context::ConstraintKind;
+            // One shape for three limits: the production limit a use of PRODUCTION spends, and the
+            // fleet supply and transport a placement spends (OBS-008c2b). All three are read the
+            // same way -- what the position offers, what is already against it, what is left.
+            let limit = match constraint.kind {
+                ConstraintKind::ProductionCapacity => "capacity",
+                ConstraintKind::FleetSupply => "fleet",
+                ConstraintKind::TransportCapacity => "transport",
+                _ => continue,
+            };
             for (name, value) in [
                 ("limit", constraint.amount),
                 ("used", constraint.paid),
@@ -1271,7 +1278,7 @@ fn production_decision_features(
             ] {
                 add_named(
                     features,
-                    format_args!("production:capacity-{name}"),
+                    format_args!("production:{limit}-{name}"),
                     small_integer_value(value),
                 );
             }
@@ -1282,11 +1289,21 @@ fn production_decision_features(
         "cost",
         "printed_cost",
         "count",
+        "placed",
         "yield",
         "credit",
         "credit_used",
         "owed",
         "production_spent",
+        // OBS-008c2b: what the destination does to the two limits it can spend, and how many units
+        // the enforcement that follows would take back off the board.
+        "capacity_used",
+        "fleet_headroom_after",
+        "capacity_free_after",
+        "units_removed_after",
+        // Present only while the destination is undecided, so an unanswerable consequence is a
+        // marker rather than a zero.
+        "placement_pending",
     ] {
         if let Some(value) = option.payload.get(key).and_then(Value::as_i64) {
             add_named(
@@ -1295,6 +1312,13 @@ fn production_decision_features(
                 small_integer_value(value),
             );
         }
+    }
+
+    // A feature vector is sparse, so a quantity of exactly zero is indistinguishable from one that
+    // was never stated. This marker separates the two for the placement facts: with it present, a
+    // missing headroom means no room left rather than no answer yet.
+    if option.payload.contains_key("destination") {
+        add_named(features, format_args!("production:destination-known"), 1.0);
     }
 
     let Some(preview) = &option.preview else {
@@ -1307,6 +1331,8 @@ fn production_decision_features(
                 let quantity = match delta.quantity {
                     ti4_engine::preview::Quantity::ProductionRemaining => "remaining",
                     ti4_engine::preview::Quantity::ProductionFreeCapacity => "free-allowance",
+                    ti4_engine::preview::Quantity::FleetSupplyHeadroom => "fleet-headroom",
+                    ti4_engine::preview::Quantity::CapacityFree => "capacity-free",
                     _ => continue,
                 };
                 for (name, value) in [
@@ -2312,6 +2338,207 @@ mod tests {
             assert_eq!(value_of(features, "production:free-allowance-after"), None);
             assert_eq!(value_of(features, "production:free-allowance-change"), None);
         }
+    }
+
+    /// A destination the policy can tell apart by what it costs the two limits (OBS-008c2b).
+    ///
+    /// The pair differs only in the aftermath: same ids, same kind, same unit, same batch. If the
+    /// features do not move, the placement decision is invisible to the model however correct the
+    /// engine is.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one placement fixture and the crowded counterfactual it is compared against"
+    )]
+    fn obs008c2b_placement_features_change_with_fleet_and_transport_aftermath() {
+        use ti4_engine::decision_context::{
+            ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
+        };
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+        use ti4_model::id::SystemId;
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let placement = |free_after: i64, used: i64, removed: i64| {
+            ChoiceOption::new("place|space", "place")
+                .with("system", "18")
+                .with("unit", "infantry")
+                .with("destination", "space")
+                .with("count", 2)
+                .with("placed", 2)
+                .with("capacity_used", used)
+                .with("fleet_headroom_after", 1)
+                .with("capacity_free_after", free_after)
+                .with("units_removed_after", removed)
+                .previewed(Preview::certain(vec![
+                    Delta::new(Quantity::FleetSupplyHeadroom, 2, 1),
+                    Delta::new(Quantity::CapacityFree, 4, free_after),
+                ]))
+        };
+        let contextualized = |option: ChoiceOption, consumed: i64| {
+            Choice::new(player.clone(), "place the infantry", vec![option]).contextualized(
+                DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Rule("68".to_owned()),
+                    "place_unit",
+                    Phase::Action,
+                    2,
+                )
+                .about(DecisionTarget::System(SystemId::new("18")))
+                .owing(OutstandingConstraint::new(
+                    ConstraintKind::FleetSupply,
+                    3,
+                    1,
+                ))
+                .owing(OutstandingConstraint::new(
+                    ConstraintKind::TransportCapacity,
+                    6,
+                    consumed,
+                )),
+            )
+        };
+
+        let roomy = contextualized(placement(2, 2, 0), 2);
+        let features = explicit_option_features(&seen, &roomy, &roomy.options[0], &player, &[]);
+        for (name, value) in [
+            ("production:subtype:place_unit", 1.0),
+            ("production:fleet-limit", 3.0),
+            ("production:fleet-used", 1.0),
+            ("production:fleet-remaining", 2.0),
+            ("production:transport-limit", 6.0),
+            ("production:transport-used", 2.0),
+            ("production:transport-remaining", 4.0),
+            ("production:capacity_used", 2.0),
+            ("production:capacity-free-after", 2.0),
+            ("production:capacity-free-change", -2.0),
+            ("production:fleet-headroom-after", 1.0),
+            ("production:preview-known", 1.0),
+        ] {
+            assert_eq!(value_of(&features, name), Some(value), "missing {name}");
+        }
+
+        // The same placement into a space area that cannot hold it. Nothing about the option
+        // changes except what it leaves behind, and what it leaves behind is units removed.
+        let full = contextualized(placement(0, 2, 2), 6);
+        let crowded = explicit_option_features(&seen, &full, &full.options[0], &player, &[]);
+        assert_eq!(roomy.options[0].id, full.options[0].id, "same option");
+        assert_eq!(
+            value_of(&crowded, "production:capacity-free-change"),
+            Some(-4.0),
+            "the crowded space area loses twice the room the roomy one does"
+        );
+        // Both of these are exactly zero here, and a sparse vector carries no zero. The marker is
+        // what keeps that readable as "none left" rather than "never answered".
+        assert_eq!(value_of(&crowded, "production:capacity-free-after"), None);
+        assert_eq!(value_of(&crowded, "production:transport-remaining"), None);
+        assert_eq!(
+            value_of(&crowded, "production:destination-known"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&crowded, "production:units_removed_after"),
+            Some(small_integer_value(2))
+        );
+        assert_eq!(
+            value_of(&features, "production:units_removed_after"),
+            None,
+            "a placement that loses nothing says nothing, rather than saying zero"
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &full,
+            &full.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "production:units_removed_after"),
+            Some(small_integer_value(2))
+        );
+        assert!(crate::projection::admits("production:units_removed_after"));
+        assert!(crate::projection::admits("production:fleet-headroom-after"));
+    }
+
+    /// An undecided destination reaches the model as undecided, not as a consequence of nothing.
+    #[test]
+    fn obs008c2b_a_pending_destination_never_becomes_a_numeric_zero() {
+        use ti4_engine::preview::{Delta, Preview, Quantity};
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+        let choice = Choice::new(
+            player.clone(),
+            "produce",
+            vec![
+                ChoiceOption::new("build|infantry|2", "produce")
+                    .with("placement_pending", 2)
+                    .previewed(Preview::certain(vec![Delta::new(
+                        Quantity::ProductionRemaining,
+                        5,
+                        3,
+                    )])),
+                ChoiceOption::new("build|carrier|1", "produce")
+                    .with("destination", "space")
+                    .with("fleet_headroom_after", 1)
+                    .previewed(Preview::certain(vec![
+                        Delta::new(Quantity::ProductionRemaining, 5, 4),
+                        Delta::new(Quantity::FleetSupplyHeadroom, 2, 1),
+                        Delta::new(Quantity::CapacityFree, 0, 4),
+                    ])),
+            ],
+        );
+
+        let pending = explicit_option_features(&seen, &choice, &choice.options[0], &player, &[]);
+        let settled = explicit_option_features(&seen, &choice, &choice.options[1], &player, &[]);
+
+        assert_eq!(
+            value_of(&pending, "production:placement_pending"),
+            Some(small_integer_value(2)),
+            "the open destination is stated as open"
+        );
+        for name in [
+            "production:fleet-headroom-before",
+            "production:fleet-headroom-after",
+            "production:fleet-headroom-change",
+            "production:capacity-free-before",
+            "production:capacity-free-after",
+            "production:capacity-free-change",
+        ] {
+            assert_eq!(
+                value_of(&pending, name),
+                None,
+                "{name} is absent while the destination is open"
+            );
+        }
+        assert_eq!(
+            value_of(&pending, "production:remaining-after"),
+            Some(small_integer_value(3)),
+            "the consequences that are already settled are still stated"
+        );
+
+        // The forced destination in the same choice answers both, and says so: a sparse vector
+        // drops a zero, so the marker is what separates "no room left" from "not asked yet".
+        assert_eq!(value_of(&pending, "production:destination-known"), None);
+        assert_eq!(
+            value_of(&settled, "production:destination-known"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&settled, "production:fleet-headroom-after"),
+            Some(small_integer_value(1))
+        );
+        assert_eq!(
+            value_of(&settled, "production:capacity-free-after"),
+            Some(small_integer_value(4))
+        );
+        assert_eq!(value_of(&settled, "production:placement_pending"), None);
     }
 
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------

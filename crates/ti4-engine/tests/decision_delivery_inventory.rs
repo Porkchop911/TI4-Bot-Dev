@@ -500,8 +500,14 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "production.rs",
+        function: "placement_choice",
+        count: 1,
+        delivery: Delivery::ObservedVia("game.rs::step_aftermath"),
+    },
+    Producer {
+        module: "production.rs",
         function: "pending_choice",
-        count: 3,
+        count: 2,
         delivery: Delivery::ObservedVia("game.rs::step_aftermath"),
     },
     Producer {
