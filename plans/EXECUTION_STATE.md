@@ -24,6 +24,40 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-012 — decision completeness qualification (2026-09-05)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-011 (`4b0bbaf`).
+  Plan's final milestone. Per the plan's own "publish remaining exceptions rather than claiming
+  blanket completeness" charter: ran what is feasible in a session, recorded the rest as explicit
+  exceptions.
+- Static contract, hidden-information, and equivariance gates: confirmed via existing tests that
+  have run green on every commit this session (`decision_delivery_inventory.rs`'s 4 tests,
+  `mlp_vectors_ignore_prompt_and_label_rewording_but_keep_stable_ids`, the M09-023/critic
+  redaction tests, `obs005_opponent_slots_are_invariant_under_player_id_relabeling`) -- cited, not
+  re-derived.
+- Counterfactual gate: 6 of the plan's 10 listed properties spot-checked against existing
+  citations; 4 (strategy-card used/ready, opponent passed/active, payment debt, cargo capacity,
+  public law/agenda outcome) recorded as open rather than assumed covered.
+- **Empirical separability gate actually run**: `cargo run --release -p ti4-training --example
+  separability -- --checkpoint out/stage2_r6/final10000.json --games 60` against the OBS-011
+  generation, 98,600 pooled decisions. Thirteen of nineteen heads fully separable (0% blind,
+  ceiling 1.000). Two genuine plateaus found and reported honestly: `other` (80.4% blind, ceiling
+  0.746 -- the legacy catch-all most of `content`'s ~30 still-unpreviewed subtypes fall into,
+  confirming OBS-008g2/h2/h3's own finding has real, sizeable cost) and `payment` (57.7% blind,
+  ceiling 0.793, not investigated further).
+- **Learning and performance gate: explicitly not run.** A multi-arm pre-registered ablation at
+  fixed seeds/corpus/budget is a multi-hour-to-multi-day training commitment, qualitatively beyond
+  this session's scope -- named as the package's headline remaining exception rather than silently
+  skipped. Distillation and PPO ablations depend on it and are likewise not run.
+- Checks: no source changed, so engine/policy/training suites not re-run for this package.
+- Evidence: `plans/evidence/OBS-012.md` (full separability output). Spec:
+  `plans/OBS-012_DECISION_COMPLETENESS_QUALIFICATION.md`. Independent Tier-C review OUTSTANDING.
+- **Plan status**: every row of `plans/STAGE2_COMPLETE_DECISION_CONTRACT.md`'s work-package table
+  has now been touched. Two honest exceptions remain open: closing `other`'s separability
+  blindness (candidate-relative board facts for the content family's remaining identity-choice
+  subtypes) and the learning/performance gate's multi-arm ablation sweep, both requiring dedicated
+  follow-up sessions with either more design work or substantial compute budget.
+
 ### OBS-011 — vocabulary and corpus migration (2026-09-05)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-010 (`183c83b`).
