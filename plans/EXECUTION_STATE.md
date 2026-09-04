@@ -24,6 +24,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### OBS-008d1 — strategy/technology/scoring subtype surface (2026-09-04)
+
+- Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b6 (`9fd9a23`).
+  First slice of `OBS-008d`, which closed OBS-008a/b's tactical and combat/invasion rows. Zero
+  engine changes -- pure read of context OBS-003e already populated, no new preview.
+- New `strategy_decision_features` (features.rs only), guarded on eight subtypes:
+  `research_technology`, `gain_command_token`, `place_structure`, `ready_planet`,
+  `politics_choose_speaker`, `politics_place_agenda`, `score_objective`,
+  `score_secret_objective`. Emits `strategy:subtype:*`, `strategy:option-count`,
+  `strategy:optional`. Board/unit payload these options already carry (`cost`, `cost_tokens`)
+  reaches the policy through the pre-existing generic `payload-number:*` pipeline -- confirmed by
+  test, not new wiring.
+- New `strategy` family: `EXPLICIT_FIXED_FAMILIES` (38 -> 39), `projection::FAMILY_ROLES` (45 ->
+  46, Transferable), `OOV_REGISTRY_VERSION` 8 -> 9 (`OOV_FAMILIES_V9` appends `strategy`), new
+  pinned fingerprint, one-version-back window moved to v8.
+- Explicit non-goal: no preview on any of these eight subtypes' options; the row's remaining
+  subtypes (turn/pass mechanics, ~13 more strategy-card subtypes found while scoping, deeper
+  objective-consequence facts) are not covered and are recorded as open follow-up, not silently
+  claimed complete.
+- Checks: engine 1,196 lib + 4 integration + 5 docs (unchanged -- no engine file touched); policy
+  223 (includes the 102-game deterministic campaign, 333.54 s, no regression); training 133;
+  strict Clippy on policy clean; targeted fmt (scoped files) + `git diff --check` clean.
+- Evidence: `plans/evidence/OBS-008D1.md`. Spec:
+  `plans/OBS-008D1_STRATEGY_DECISION_SUBTYPE_SURFACE.md`. Independent Tier-C review OUTSTANDING.
+- Next: further `OBS-008d` slices for the remaining strategy-card subtypes and any previews worth
+  attaching; `OBS-008e/f/g/h/i` also remain unblocked.
+
 ### OBS-008b6 — ground casualty, coexisting-combat identity, and custodians (2026-09-04)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-008b5 (`39a7c05`).

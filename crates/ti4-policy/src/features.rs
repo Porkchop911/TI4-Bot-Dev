@@ -1365,6 +1365,7 @@ fn explicit_option_features_with(
     tactical_decision_features(choice, option, &mut features);
     combat_decision_features(choice, option, &mut features);
     opponent_identity_features(seen, choice, option, player, &mut features);
+    strategy_decision_features(choice, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1856,6 +1857,43 @@ fn opponent_identity_features(
         .position(|slot| **slot == target)
     {
         add_named(features, format_args!("combat:target-slot-{index}"), 1.0);
+    }
+}
+
+/// Typed *why* of a strategy-card, technology, or objective-scoring decision (OBS-008d1).
+///
+/// Reads only what `OBS-003e` already populated on `choice.context` -- subtype, option count, and
+/// whether declining is legal -- across a first, deliberately broad set of common subtypes: no new
+/// engine preview is attached in this slice. Board/unit context these options already carry
+/// (`cost`, `cost_tokens`, and similar payload numbers) reaches the policy through the existing
+/// generic `payload-number:*` pipeline with no further wiring.
+fn strategy_decision_features(choice: &Choice, features: &mut FeatureVector) {
+    let Some(context) = &choice.context else {
+        return;
+    };
+    match context.subtype.as_str() {
+        "research_technology"
+        | "gain_command_token"
+        | "place_structure"
+        | "ready_planet"
+        | "politics_choose_speaker"
+        | "politics_place_agenda"
+        | "score_objective"
+        | "score_secret_objective" => {}
+        _ => return,
+    }
+    add_named(
+        features,
+        format_args!("strategy:subtype:{}", context.subtype),
+        1.0,
+    );
+    add_named(
+        features,
+        format_args!("strategy:option-count"),
+        count_value(choice.options.len()),
+    );
+    if context.optional {
+        add_named(features, format_args!("strategy:optional"), 1.0);
     }
 }
 
@@ -2511,7 +2549,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 38] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 39] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2550,6 +2588,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 38] = [
     "opponent-slot",
     "tactical",
     "combat",
+    "strategy",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -4089,6 +4128,147 @@ mod tests {
         );
     }
 
+    /// OBS-008d1: a first, deliberately broad pass over strategy/technology/scoring subtypes --
+    /// each already carries its typed context from OBS-003e, and this reads subtype and option
+    /// count from it (no new engine preview yet), across three representative producers plus one
+    /// negative case proving the guard is closed.
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one batched pass over four representative subtypes stays together"
+    )]
+    fn obs008d1_strategy_decisions_carry_their_subtype_and_option_count() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let seen = Observed::new(&state, content, POK, None);
+
+        let research = ChoiceOption::labelled("gd", "research", "Gravity Drive")
+            .with("cost", 6)
+            .with("cost_tokens", 0);
+        let research_choice = Choice::new(player.clone(), "research a technology", vec![research])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::StrategyCard {
+                    card: "Technology".to_owned(),
+                    secondary: false,
+                },
+                "research_technology",
+                Phase::Action,
+                2,
+            ));
+        let research_features = explicit_option_features(
+            &seen,
+            &research_choice,
+            &research_choice.options[0],
+            &player,
+            &[],
+        );
+        for (name, value) in [
+            ("strategy:subtype:research_technology", 1.0),
+            ("strategy:option-count", 1.0),
+        ] {
+            assert_eq!(
+                value_of(&research_features, name),
+                Some(value),
+                "missing {name}"
+            );
+        }
+        // The cost already reaches the policy through the generic payload-number pipeline.
+        assert_eq!(
+            value_of(&research_features, "payload-number:cost"),
+            Some(6.0)
+        );
+
+        let token = ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool");
+        let token_choice = Choice::new(player.clone(), "gain a command token", vec![token])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("52.4".to_owned()),
+                "gain_command_token",
+                Phase::Action,
+                2,
+            ));
+        assert_eq!(
+            value_of(
+                &explicit_option_features(
+                    &seen,
+                    &token_choice,
+                    &token_choice.options[0],
+                    &player,
+                    &[]
+                ),
+                "strategy:subtype:gain_command_token"
+            ),
+            Some(1.0)
+        );
+
+        let score = ChoiceOption::labelled("expand_borders", "score", "expand_borders");
+        let score_choice = Choice::new(player.clone(), "score an objective", vec![score])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("61.6".to_owned()),
+                "score_objective",
+                Phase::Status,
+                2,
+            ));
+        assert_eq!(
+            value_of(
+                &explicit_option_features(
+                    &seen,
+                    &score_choice,
+                    &score_choice.options[0],
+                    &player,
+                    &[]
+                ),
+                "strategy:subtype:score_objective"
+            ),
+            Some(1.0)
+        );
+
+        // A subtype outside the covered set is untouched -- the guard is closed, not a catch-all.
+        let other = ChoiceOption::labelled("no", "decline", "leave it");
+        let other_choice = Choice::new(player.clone(), "an unrelated ask", vec![other])
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("0".to_owned()),
+                "some_other_subtype",
+                Phase::Action,
+                2,
+            ));
+        assert_eq!(
+            value_of(
+                &explicit_option_features(
+                    &seen,
+                    &other_choice,
+                    &other_choice.options[0],
+                    &player,
+                    &[]
+                ),
+                "strategy:option-count"
+            ),
+            None,
+            "an uncovered subtype must not gain strategy facts"
+        );
+
+        let projected = crate::projection::mlp_option_features(
+            &seen,
+            &research_choice,
+            &research_choice.options[0],
+            &player,
+            &[],
+            crate::progress::Baseline::default(),
+        );
+        assert_eq!(
+            value_of(&projected, "strategy:subtype:research_technology"),
+            Some(1.0)
+        );
+        assert!(crate::projection::admits("strategy:option-count"));
+    }
+
     // --- M09-023: secret redaction across every feature set (MLP plan section 5.2) -----------
 
     /// A three-seat position with known, distinct secret holdings: a holds two, b holds one,
@@ -5476,9 +5656,10 @@ mod tests {
         //    `<canonical-kind>-unit` structured families. M09-021 (F-M09-021-2) extended the set
         //    with the five bare objective families, M09-022 with the six faction-decomposition
         //    families (MLP plan section 5.3), OBS-004a with the actor-inventory family, OBS-005
-        //    with opponent-slot, OBS-008a1 with the tactical decision-surface family, and
-        //    OBS-008b2 with the combat decision-surface family — reviewed extensions of the
-        //    closed grammar, not drift: every legacy name above is unchanged.
+        //    with opponent-slot, OBS-008a1 with the tactical decision-surface family, OBS-008b2
+        //    with the combat decision-surface family, and OBS-008d1 with the strategy
+        //    decision-surface family — reviewed extensions of the closed grammar, not drift:
+        //    every legacy name above is unchanged.
         assert_eq!(
             EXPLICIT_FIXED_FAMILIES,
             [
@@ -5520,6 +5701,7 @@ mod tests {
                 "opponent-slot",
                 "tactical",
                 "combat",
+                "strategy",
             ]
         );
 
