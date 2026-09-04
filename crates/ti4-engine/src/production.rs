@@ -1454,6 +1454,24 @@ pub struct ProductionWindow {
     /// It never leaves the window, so it cannot reach another use of PRODUCTION: `new` starts it
     /// at zero and nothing else constructs one.
     credit: i64,
+    /// Resource-cost discount still available against this use's combined bill (Sarween Tools,
+    /// AI Development Algorithm). Distinct from `credit`: this reduces what a build costs before
+    /// any payment is collected, rather than pre-paying it.
+    ///
+    /// Read from [`GameState::production_discount_remaining`] in [`Self::refresh`] rather than
+    /// computed here, because both sources are decided by [`crate::technology::production_used`]
+    /// before this window's first choice — Sarween Tools automatically, AI Development Algorithm
+    /// by an ask this window has no table to make. `new` starts it at zero so a caller that never
+    /// calls `refresh` (every test that opens a window directly) sees no discount it never asked
+    /// for.
+    discount_remaining: i64,
+    /// Harrugh Gefhara: every build this use costs nothing, once the leader's `ACTION` has been
+    /// paid by purging it.
+    ///
+    /// True only when the marker in [`GameState::free_production_use`] names *this* production's
+    /// sequence number, so a marker left over from a leader used earlier for a since-finished
+    /// production cannot make a later, unrelated one free.
+    free_this_use: bool,
 }
 
 impl ProductionWindow {
@@ -1481,6 +1499,8 @@ impl ProductionWindow {
             settled: false,
             free_capacity: 0,
             credit: 0,
+            discount_remaining: 0,
+            free_this_use: false,
         }
     }
 
@@ -1505,6 +1525,10 @@ impl ProductionWindow {
         }
         self.limit = capacity(state, content, sources, &self.player, &self.system);
         self.remaining = self.limit;
+        self.discount_remaining = i64::from(state.production_discount_remaining);
+        self.free_this_use = state
+            .player(&self.player)
+            .is_some_and(|seat| seat.free_production_use == Some(state.production_seq));
         self.stage = if self.remaining > 0 {
             Stage::Choosing
         } else {
@@ -1676,6 +1700,30 @@ impl ProductionWindow {
         ))
     }
 
+    /// What one build's printed cost becomes after this use's discount (Sarween Tools, AI
+    /// Development Algorithm, Harrugh Gefhara).
+    ///
+    /// Returns `(effective_cost, discount_used)`. Read-only: spending the discount for real is
+    /// [`Self::spend_discount`], called only for the option actually chosen. A preview built from
+    /// this must therefore treat the discount as available to every offered option alike, exactly
+    /// as [`Self::credit`] already does -- two build options shown in the same choice cannot both
+    /// spend the same single point of discount, so each preview states what taking *that one*
+    /// option would cost, not what taking all of them together would.
+    fn discounted(&self, printed: i64) -> (i64, i64) {
+        if self.free_this_use {
+            return (0, printed);
+        }
+        let used = self.discount_remaining.min(printed);
+        (printed - used, used)
+    }
+
+    /// Spend the discount actually used by the option that was chosen.
+    fn spend_discount(&mut self, used: i64) {
+        if !self.free_this_use {
+            self.discount_remaining -= used;
+        }
+    }
+
     /// The units that will actually arrive, which is not always the batch that was bought.
     ///
     /// 31.4 is applied when the unit is placed, so a preview that assumed the whole batch would
@@ -1714,9 +1762,12 @@ impl ProductionWindow {
             let Some(kind) = types.get(id.as_str()) else {
                 continue;
             };
-            let (cost, pair) = price_of_under(Some(state), kind);
+            let (printed, pair) = price_of_under(Some(state), kind);
+            let (cost, discount_used) = self.discounted(printed);
             // Credit already paid counts towards affordability, or a build the player has in fact
-            // paid for would be withheld as unaffordable.
+            // paid for would be withheld as unaffordable. Affordability is judged on the
+            // discounted bill: a unit Sarween Tools or Harrugh Gefhara brings within reach must
+            // not be withheld for a price nobody would actually charge.
             if cost
                 > available(state, content, sources, &self.player, Spend::Resources) + self.credit
             {
@@ -1761,7 +1812,8 @@ impl ProductionWindow {
                 format!("produce {made}x {id} for {cost}"),
             )
             .with("cost", cost)
-            .with("printed_cost", price_of(kind).0)
+            .with("printed_cost", printed)
+            .with("discount", discount_used)
             .with("count", i64::try_from(made).unwrap_or(1))
             .with("placed", i64::try_from(placed).unwrap_or(1))
             .with("yield", i64::try_from(pair).unwrap_or(1))
@@ -1956,9 +2008,12 @@ impl Window for ProductionWindow {
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(1);
                     let types = catalogue(content, sources);
-                    let cost = types
-                        .get(id)
-                        .map_or(0, |kind| price_of_under(Some(state), kind).0);
+                    let (cost, discount_used) = types.get(id).map_or((0, 0), |kind| {
+                        self.discounted(price_of_under(Some(state), kind).0)
+                    });
+                    // Spent for real only for the option actually chosen: `build_options` offered
+                    // this discount to every option shown, and only one could ever be taken.
+                    self.spend_discount(discount_used);
                     // A purchase the credit covers outright goes straight to placing. Entering the
                     // paying stage owing nothing would ask `payment_options` for a bill of zero,
                     // which has no options, and the stage would abort with the unit unplaced.
@@ -3458,7 +3513,11 @@ mod tests {
             .expect("updated limit constraint");
         assert_eq!(
             (capacity.amount, capacity.paid, capacity.remaining()),
-            (window.limit, window.limit - window.remaining, window.remaining),
+            (
+                window.limit,
+                window.limit - window.remaining,
+                window.remaining
+            ),
             "the next choice reports capacity already consumed by the completed build"
         );
     }
@@ -3536,6 +3595,192 @@ mod tests {
                 .unwrap()
                 .after,
             "fighter consumed exactly the previewed allowance"
+        );
+    }
+
+    /// Sarween Tools reduces the combined bill, not the printed face: `cost` moves, `printed_cost`
+    /// does not, and the amount taken is stated rather than left to be inferred from the two.
+    #[test]
+    fn sarween_tools_reduces_the_bill_the_option_actually_charges() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.production_discount_remaining = 1; // as technology::production_used would set it
+
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.refresh(&state, content, POK);
+        let choice = window.pending_choice(&state, content, POK).expect("choice");
+        let carrier = choice
+            .options
+            .iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("printed_cost")
+                .and_then(serde_json::Value::as_i64),
+            Some(3),
+            "the face value is untouched"
+        );
+        assert_eq!(
+            carrier
+                .payload
+                .get("cost")
+                .and_then(serde_json::Value::as_i64),
+            Some(2)
+        );
+        assert_eq!(
+            carrier
+                .payload
+                .get("discount")
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
+    }
+
+    /// One use of PRODUCTION has one combined discount, exactly as one combined cost: the second
+    /// selection in the same use sees it already spent, whichever build spent it first.
+    #[test]
+    fn the_discount_is_spent_once_across_two_selections_in_the_same_use() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.production_discount_remaining = 1;
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.refresh(&state, content, POK);
+        window.credit = 10; // paid outright, so both selections reach placement without a bill
+
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table = Table::new();
+        let mut ctx = Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        let carrier = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("discount")
+                .and_then(serde_json::Value::as_i64),
+            Some(1),
+            "the discount is offered to the first selection"
+        );
+        window.resolve(&mut state, &mut ctx, carrier).unwrap();
+        assert_eq!(window.discount_remaining, 0, "spent by the chosen option");
+
+        let second = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("a second carrier");
+        assert_eq!(
+            second
+                .payload
+                .get("discount")
+                .and_then(serde_json::Value::as_i64),
+            Some(0),
+            "nothing left for a second selection in the same use"
+        );
+        assert_eq!(
+            second
+                .payload
+                .get("cost")
+                .and_then(serde_json::Value::as_i64),
+            Some(3),
+            "the second carrier pays the full printed price"
+        );
+    }
+
+    /// Harrugh Gefhara's marker, read directly rather than through `use_leader`: the invocation
+    /// path (offering "use a leader" as a choice) is a separate, unreached defect recorded in
+    /// `plans/BUG_2026-09-04_LEADER_USE_UNREACHABLE.md`. This proves the *consumption* side --
+    /// once a marker exists, this use of PRODUCTION genuinely costs nothing -- so fixing the
+    /// invocation gap later needs no further change here.
+    #[test]
+    fn a_free_production_marker_for_this_seq_zeroes_every_build() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.production_seq = 4;
+        state.player_mut(&player()).unwrap().free_production_use = Some(4);
+
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.refresh(&state, content, POK);
+        let carrier = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("cost")
+                .and_then(serde_json::Value::as_i64),
+            Some(0)
+        );
+        assert_eq!(
+            carrier
+                .payload
+                .get("discount")
+                .and_then(serde_json::Value::as_i64),
+            Some(3),
+            "the whole printed price is discounted away"
+        );
+    }
+
+    /// A marker left over from a different production sequence must not make an unrelated later
+    /// use free: Harrugh's ability is spent once, for the use it was granted to, not forever.
+    #[test]
+    fn a_free_production_marker_for_a_different_seq_grants_nothing() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        state.production_seq = 5;
+        state.player_mut(&player()).unwrap().free_production_use = Some(4);
+
+        let mut window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        window.refresh(&state, content, POK);
+        let carrier = window
+            .pending_choice(&state, content, POK)
+            .unwrap()
+            .options
+            .into_iter()
+            .find(|option| option.id.starts_with("build|carrier|"))
+            .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("cost")
+                .and_then(serde_json::Value::as_i64),
+            Some(3)
         );
     }
 

@@ -3110,6 +3110,35 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## Bug fix: production discount unwired (Sarween Tools, AID, Harrugh) (2026-09-04)
+
+- Found while scoping OBS-008c3: `GameState::production_discount_remaining` and
+  `Player::free_production_use` were declared, typed and correctly initialized, with no writer and
+  no reader anywhere. Every game a Sarween-Tools-owning faction (Jol-Nar, from the start) has ever
+  played through this engine charged full printed price for every build.
+- Fixed: `technology::production_used`, called from `game.rs::enter_production` at the same
+  "when 1+ units use PRODUCTION" moment War Machine reacts to, grants Sarween Tools automatically
+  and asks AI Development Algorithm's genuine exhaust-or-not choice. `ProductionWindow` now applies
+  the discount to `cost` (offered to every option in a choice, spent only by the one resolved,
+  mirroring `credit`); `printed_cost` is untouched. `production_seq` is now incremented, matching
+  `activation_seq`'s existing pattern, so Harrugh Gefhara's marker check is meaningful.
+- Not fixed, and separately recorded as larger: nothing in the driven game loop ever offers "use a
+  leader" at all -- fifteen registered abilities across every implemented leader are unreachable.
+  `plans/BUG_2026-09-04_LEADER_USE_UNREACHABLE.md`. Harrugh's *consumption* is proven correct by
+  writing the marker directly into state; only the *invocation* is missing.
+- Decisive test: `game::tests::sarween_tools_lowers_a_real_production_bill_in_a_driven_game` drives
+  a real tactical action to completion twice through `Game`/`Table`/`Scripted`, with and without the
+  tech, and asserts the live-offered cost differs by exactly one.
+- Checks: engine 1,156 lib + 4 integration + 5 docs; policy 199 + the 102-game deterministic
+  campaign in 307.50 s (305.41 s for c2b -- no regression); training 133; strict Clippy and
+  `cargo fmt --check` clean.
+- Evidence: `plans/evidence/BUG_2026-09-04_PRODUCTION_DISCOUNT.md`.
+  **Independent Tier-C review OUTSTANDING.**
+- Next: `OBS-008c3`, exposing `cost`/`printed_cost`/`discount` (now meaningful) to the policy under
+  the existing transferable `production` family.
+
+---
+
 ## OBS-008c2b placement fleet and transport surface (2026-09-04)
 
 - Active branch: `wp/obs-008c2b-placement-consequence-surface`, based on `3c5262e`

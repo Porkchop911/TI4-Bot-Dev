@@ -280,11 +280,15 @@ impl AftermathWindow {
     /// cannot create the production it answers). Reactions resolve inside the emit; [`ProductionWindow::refresh`]
     /// then re-derives the budget so faces a reaction added are spent, and a step that would
     /// otherwise have been done re-opens.
+    ///
+    /// # Errors
+    /// [`IllegalChoice`] if a decider answers a discount or reaction prompt with something not
+    /// offered.
     fn enter_production(
         &self,
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
-    ) -> crate::production::ProductionWindow {
+    ) -> Result<crate::production::ProductionWindow, IllegalChoice> {
         let mut window = crate::production::ProductionWindow::new(
             state,
             ctx.content,
@@ -295,8 +299,26 @@ impl AftermathWindow {
         if crate::production::capacity(state, ctx.content, ctx.sources, &self.player, &self.system)
             == 0
         {
-            return window;
+            return Ok(window);
         }
+        state.production_seq = state.production_seq.saturating_add(1);
+        // Sarween Tools and AI Development Algorithm ask "when 1 or more of your units use
+        // PRODUCTION", the same moment War Machine reacts to below. Resolved first so a discount
+        // an "AFTER" reaction to the emitted event might itself use (none does today) would see
+        // it already spent, not double-counted.
+        //
+        // Galaxy comes from the same `TimingHandle` `ctx.emit` below reads, rather than a
+        // hardcoded `None`: `Resolving::ask_seeing` drops it deliberately for callers with no map
+        // handle to attach, and this caller has one whenever real play does.
+        let galaxy = ctx.timing.as_ref().and_then(|handle| handle.galaxy);
+        crate::technology::production_used(
+            state,
+            ctx.content,
+            ctx.sources,
+            galaxy,
+            ctx.table,
+            &self.player,
+        )?;
         let mut payload = BTreeMap::new();
         payload.insert(
             "player".to_owned(),
@@ -308,7 +330,7 @@ impl AftermathWindow {
         );
         let _ = ctx.emit(state, "PRODUCTION_USED", payload);
         window.refresh(state, ctx.content, ctx.sources);
-        window
+        Ok(window)
     }
 
     /// Move to the next step once the current one owes nothing.
@@ -455,7 +477,7 @@ impl AftermathWindow {
                     } else {
                         // No invasion: straight to production, and the production window opens
                         // before the step makes its first choice (see `enter_production`).
-                        let window = self.enter_production(state, ctx);
+                        let window = self.enter_production(state, ctx)?;
                         Aftermath::Producing(Box::new(window))
                     };
                 }
@@ -496,7 +518,7 @@ impl AftermathWindow {
                     // The production window opens before the step makes its first choice, so a
                     // reaction (War Machine) can change this step rather than one that has
                     // already spent its budget.
-                    let window = self.enter_production(state, ctx);
+                    let window = self.enter_production(state, ctx)?;
                     self.stage = Aftermath::Producing(Box::new(window));
                 }
                 Aftermath::Producing(window) => {
@@ -4945,6 +4967,80 @@ mod tests {
             boosted_budget,
             plain_budget + 5,
             "the machine played at the window buys five faces into the step it answers"
+        );
+    }
+
+    /// Drive a tactical action through to the production step and report what a carrier would
+    /// actually cost there, then decline so the game completes cleanly.
+    fn drive_to_a_carrier_offer(
+        state: GameState,
+        galaxy: ti4_content::galaxy::Galaxy,
+        ids: &[SystemId],
+    ) -> i64 {
+        let answers = vec![
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+            "done_moving".to_owned(),
+            "done_producing".to_owned(),
+        ];
+        let table = Table::with_default(Box::new(Scripted::new(answers)));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+
+        let mut cost = None;
+        for _ in 0..80 {
+            if let Some(choice) = game.legal_options()
+                && choice.prompt.starts_with("produce in ")
+            {
+                cost = choice
+                    .options
+                    .iter()
+                    .find(|option| option.id.starts_with("build|carrier|"))
+                    .and_then(|option| option.payload.get("cost"))
+                    .and_then(serde_json::Value::as_i64);
+            }
+            assert_eq!(game.step().error, None, "no tactical step should refuse");
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        cost.expect("the carrier was offered")
+    }
+
+    #[test]
+    fn sarween_tools_lowers_a_real_production_bill_in_a_driven_game() {
+        // Jol-Nar starts every game holding Sarween Tools. Nothing read
+        // `GameState::production_discount_remaining` before this fix, so every game Jol-Nar has
+        // ever played through this engine charged its full printed price for every build.
+        let (mut base, galaxy, ids) = tactical_fixture();
+        let a = PlayerId::new("a");
+        // The fixture producer is a Hel-Titan I (production 1, no planet involved), matching
+        // `a_war_machine_played_in_the_production_window_grows_that_steps_budget`'s own fixture.
+        crate::fixtures::put(&mut base, &ids[1], "destroyer", &a, 1);
+        crate::fixtures::put(&mut base, &ids[0], "titans_pds", &a, 1);
+        base.player_mut(&a).unwrap().trade_goods = 10;
+
+        let bare_state = base.clone();
+        base.player_mut(&a)
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("st"));
+
+        let plain_cost = drive_to_a_carrier_offer(bare_state, galaxy.clone(), &ids);
+        let discounted_cost = drive_to_a_carrier_offer(base, galaxy, &ids);
+
+        assert_eq!(
+            discounted_cost,
+            plain_cost - 1,
+            "Sarween Tools takes exactly one resource off the combined bill"
+        );
+        assert!(
+            plain_cost > 0,
+            "the control game must actually charge something for the discount to be visible"
         );
     }
 

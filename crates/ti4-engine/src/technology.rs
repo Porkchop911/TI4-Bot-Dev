@@ -464,6 +464,80 @@ pub fn end_turn(
     Ok(())
 }
 
+/// Sarween Tools and AI Development Algorithm, "when 1 or more of your units use PRODUCTION".
+///
+/// Sarween Tools is unconditional: it names no "may" and nothing to exhaust, so it always
+/// contributes its flat 1 while owned. AI Development Algorithm is a genuine decision — exhausting
+/// it here forecloses its other ability (ignoring a prerequisite) until it readies, so a player who
+/// wants that instead must be asked, not defaulted into spending it.
+///
+/// The result lands in [`GameState::production_discount_remaining`] rather than being returned,
+/// because the caller opens a [`crate::production::ProductionWindow`] immediately afterward and has
+/// no window to hand a value to yet; the window reads the field back out in
+/// [`crate::production::ProductionWindow::refresh`]. Writing rather than adding is deliberate: this
+/// runs exactly once per use, so a value left over from an unrelated earlier use — one that never
+/// spent it because its combined cost was already zero — must not leak forward into this one.
+///
+/// # Errors
+/// [`IllegalChoice`] if a decider answers the exhaust prompt with something not offered.
+pub fn production_used(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    let sarween = TechnologyId::new("st");
+    let mut discount: i32 = i32::from(
+        state
+            .player(player)
+            .is_some_and(|seat| seat.technologies.contains(&sarween)),
+    );
+
+    let aida = TechnologyId::new("aida");
+    let offered = state.player(player).is_some_and(|seat| {
+        seat.technologies.contains(&aida) && !seat.exhausted_technologies.contains(&aida)
+    });
+    if offered {
+        let owned_upgrades = state.player(player).map_or(0, |seat| {
+            seat.technologies
+                .iter()
+                .filter(|owned| is_unit_upgrade(content, owned))
+                .count()
+        });
+        if owned_upgrades > 0 {
+            let choice = Choice::new(
+                player.clone(),
+                format!(
+                    "AI Development Algorithm: exhaust to reduce this use's combined cost by {owned_upgrades}"
+                ),
+                vec![
+                    ChoiceOption::labelled(
+                        "exhaust",
+                        "production_discount",
+                        format!("exhaust to reduce the combined cost by {owned_upgrades}"),
+                    )
+                    .with("technology", "aida")
+                    .with("amount", i64::try_from(owned_upgrades).unwrap_or(i64::MAX)),
+                    ChoiceOption::decline(),
+                ],
+            );
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if !answer.is_decline() {
+                if let Some(seat) = state.player_mut(player) {
+                    seat.exhausted_technologies.insert(aida.clone());
+                }
+                discount += i32::try_from(owned_upgrades).unwrap_or(i32::MAX);
+            }
+        }
+    }
+
+    state.production_discount_remaining = discount;
+    Ok(())
+}
+
 /// Resolve technology effects caused by this player gaining control of a planet.
 ///
 /// Integrated Economy is an `AFTER PLANET_CONTROL_GAINED` effect in the oracle.  Keeping the
@@ -1247,6 +1321,171 @@ mod tests {
         let exhausted = &state.player(&player()).unwrap().exhausted_technologies;
         assert!(!exhausted.contains(&TechnologyId::new("td")));
         assert!(exhausted.contains(&TechnologyId::new("bs")));
+    }
+
+    /// Sarween Tools names no "may" and nothing to exhaust: it always contributes its flat 1,
+    /// unconditionally, every time PRODUCTION is used.
+    #[test]
+    fn sarween_tools_contributes_automatically_with_nothing_to_ask() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["st"]);
+        let mut table =
+            Table::with_default(Box::new(crate::choice::Scripted::new(Vec::<String>::new())));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(state.production_discount_remaining, 1);
+        assert!(
+            table.log.records.is_empty(),
+            "an automatic effect asks nothing"
+        );
+    }
+
+    /// AI Development Algorithm is a real choice: accepting exhausts the card and forecloses its
+    /// other ability (ignoring a prerequisite) until it readies, so a decider must be asked rather
+    /// than defaulted into spending it.
+    #[test]
+    fn ai_development_algorithm_asks_and_reduces_by_owned_unit_upgrades() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["aida", "cr2", "dn2"]);
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "exhaust".to_owned()
+        ])));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.production_discount_remaining, 2,
+            "two owned unit-upgrade technologies"
+        );
+        assert!(
+            state
+                .player(&player())
+                .unwrap()
+                .exhausted_technologies
+                .contains(&TechnologyId::new("aida")),
+            "accepting exhausts the card"
+        );
+    }
+
+    #[test]
+    fn declining_ai_development_algorithm_leaves_it_ready_and_grants_nothing() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["aida", "cr2"]);
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "decline".to_owned()
+        ])));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(state.production_discount_remaining, 0);
+        assert!(
+            !state
+                .player(&player())
+                .unwrap()
+                .exhausted_technologies
+                .contains(&TechnologyId::new("aida")),
+            "declining leaves it ready for its other ability"
+        );
+    }
+
+    /// An already-exhausted AI Development Algorithm offers nothing: it cannot be exhausted twice
+    /// in the same round, whichever ability spent it first.
+    #[test]
+    fn an_exhausted_ai_development_algorithm_is_not_offered_again() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["aida", "cr2"]);
+        state
+            .player_mut(&player())
+            .unwrap()
+            .exhausted_technologies
+            .insert(TechnologyId::new("aida"));
+        let mut table =
+            Table::with_default(Box::new(crate::choice::Scripted::new(Vec::<String>::new())));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(state.production_discount_remaining, 0);
+        assert!(table.log.records.is_empty(), "nothing left to ask");
+    }
+
+    /// Both together: Sarween Tools' automatic 1 and AI Development Algorithm's asked-for amount
+    /// combine into one bill, exactly as their card texts each independently claim.
+    #[test]
+    fn sarween_tools_and_ai_development_algorithm_combine() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["st", "aida", "cr2"]);
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "exhaust".to_owned()
+        ])));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(state.production_discount_remaining, 2);
+    }
+
+    /// Called a second time, for a new and unrelated use of PRODUCTION, the field is overwritten
+    /// rather than accumulated: an unused discount from a use whose combined cost never reached it
+    /// must not leak into a later, separate use.
+    #[test]
+    fn a_later_use_overwrites_rather_than_accumulates() {
+        let mut state = game(&["a"]);
+        give(&mut state, &["st"]);
+        state.production_discount_remaining = 7; // stale, as if left over from an earlier use
+        let mut table =
+            Table::with_default(Box::new(crate::choice::Scripted::new(Vec::<String>::new())));
+
+        production_used(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .unwrap();
+
+        assert_eq!(state.production_discount_remaining, 1);
     }
 
     #[test]
