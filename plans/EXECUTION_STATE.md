@@ -3110,6 +3110,28 @@ had already shipped — it is worth re-deriving this rather than trusting it.
 
 ---
 
+## OBS-003f: trade context producers (2026-09-04)
+
+- transactions::TradeWindow's two stages (Proposing, Answering) attach typed DecisionContext --
+  Rule 60, subtypes propose_transaction/answer_transaction, target the counterpart. This is the
+  entire producer surface the row names, confirmed against the OBS-002a registry
+  (transactions.rs::pending_choice, count 2, is the module's only producer). "Promises" live inside
+  Terms as part of the same offer/answer question; "replenishment" is strategy_cards::gain_tokens's
+  family, already typed in OBS-003e slice 1.
+- No legal-set, option-ID, or application change; no features.rs change (OBS-008e reads this into
+  features later).
+- Checks: engine 1,171 lib + 4 integration + 5 docs; policy 201 + the 102-game deterministic
+  campaign in 266.91 s (265.26 s for OBS-003e slice 2 -- no regression); training 133; strict
+  Clippy and `cargo fmt --check` clean.
+- Evidence: `plans/evidence/OBS-003F.md`. **Independent Tier-C review OUTSTANDING**, alongside
+  OBS-008c2b, the production-discount bug fix, OBS-008c3, OBS-003d, and OBS-003e slices 1-2 --
+  seven packages now owed review.
+- Next, per the plan's own recommended order: OBS-003g (agenda), OBS-003h (reaction/content, split
+  by crate if >5 files), OBS-003i (prompt-free projection, after all typed context exists), then
+  OBS-005/006, OBS-007c, before the OBS-008 decision-option packages.
+
+---
+
 ## OBS-003e slice 2: turn/token/scoring context producers, row complete (2026-09-04)
 
 - Closes OBS-003e: technology.rs's five remaining reactive asks (Psychoarchaeology, Transit

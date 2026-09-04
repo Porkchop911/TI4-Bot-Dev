@@ -12,6 +12,8 @@ use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{ActionCardId, PlayerId, SecretObjectiveId, SystemId};
 use ti4_model::state::{GameState, TransientFlags};
 
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+
 /// What one side of a deal hands over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Terms {
@@ -1124,11 +1126,23 @@ impl TradeWindow {
                     return None;
                 }
                 options.push(crate::choice::ChoiceOption::decline());
-                Some(crate::choice::Choice::new(
-                    self.proposer.clone(),
-                    format!("transaction with {}", faction_name(state, &self.partner)),
-                    options,
-                ))
+                Some(
+                    crate::choice::Choice::new(
+                        self.proposer.clone(),
+                        format!("transaction with {}", faction_name(state, &self.partner)),
+                        options,
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            self.proposer.clone(),
+                            DecisionSource::Rule("60".to_owned()),
+                            "propose_transaction",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Player(self.partner.clone())),
+                    ),
+                )
             }
             Stage::Answering(offer) => {
                 // Priced from the *receiver's* side: what they are being handed against what is
@@ -1140,23 +1154,35 @@ impl TradeWindow {
                         offer.given.worth_to_receiver(state, content)
                             - offer.received.cost_to_giver(state, content),
                     );
-                Some(crate::choice::Choice::new(
-                    self.partner.clone(),
-                    format!("{} -- accept?", offer.describe(state)),
-                    vec![
-                        accept,
-                        crate::choice::ChoiceOption::labelled(
-                            "refuse",
-                            crate::choice::DECLINE_KIND,
-                            "refuse",
-                        ),
-                        crate::choice::ChoiceOption::labelled(
-                            "counter",
-                            ANSWER_KIND,
-                            "counter-offer",
-                        ),
-                    ],
-                ))
+                Some(
+                    crate::choice::Choice::new(
+                        self.partner.clone(),
+                        format!("{} -- accept?", offer.describe(state)),
+                        vec![
+                            accept,
+                            crate::choice::ChoiceOption::labelled(
+                                "refuse",
+                                crate::choice::DECLINE_KIND,
+                                "refuse",
+                            ),
+                            crate::choice::ChoiceOption::labelled(
+                                "counter",
+                                ANSWER_KIND,
+                                "counter-offer",
+                            ),
+                        ],
+                    )
+                    .contextualized(
+                        DecisionContext::new(
+                            self.partner.clone(),
+                            DecisionSource::Rule("60".to_owned()),
+                            "answer_transaction",
+                            state.phase,
+                            state.round,
+                        )
+                        .about(DecisionTarget::Player(self.proposer.clone())),
+                    ),
+                )
             }
         }
     }
@@ -1238,6 +1264,47 @@ mod tests {
             commodities: n,
             ..Terms::default()
         }
+    }
+
+    /// OBS-003f: proposing and answering a transaction are typed distinctly, though both arise
+    /// from the same negotiation between the same two players.
+    #[test]
+    fn obs003f_propose_and_answer_carry_typed_context() {
+        let players = [a(), b()];
+        let content = ContentStore::embedded();
+        let hub = plain_hub();
+        let mut state = crate::setup::start_game(content, &players, POK, None).unwrap();
+        let centre = SystemId::new(hub.centre.clone());
+        put(&mut state, &centre, "cruiser", &a(), 1);
+        put(&mut state, &centre, "cruiser", &b(), 1);
+        for player in &players {
+            let seat = state.player_mut(player).unwrap();
+            seat.trade_goods = 2;
+            seat.commodities = 3;
+        }
+
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let proposing = window
+            .pending_choice(&state, content)
+            .expect("there are deals to propose");
+        let propose_context = proposing.context.as_ref().expect("typed context");
+        assert_eq!(
+            propose_context.source,
+            DecisionSource::Rule("60".to_owned())
+        );
+        assert_eq!(propose_context.subtype, "propose_transaction");
+        assert_eq!(propose_context.target, Some(DecisionTarget::Player(b())));
+
+        let deal = proposing.option("cc3").expect("a swap is offered").clone();
+        let outcome = window.resolve(&mut state, content, &hub.galaxy, &deal);
+        assert_eq!(outcome, Traded::Offered, "the offer reached the partner");
+        let answering = window
+            .pending_choice(&state, content)
+            .expect("the partner answers");
+        let answer_context = answering.context.as_ref().expect("typed context");
+        assert_eq!(answer_context.subtype, "answer_transaction");
+        assert_eq!(answer_context.target, Some(DecisionTarget::Player(a())));
+        assert_ne!(propose_context.subtype, answer_context.subtype);
     }
 
     #[test]
