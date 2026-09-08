@@ -8,6 +8,8 @@
 
 **Synchronization pass:** implemented immediately after the engine freeze. The checkboxes below distinguish completed integration work from useful follow-up enhancements; unchecked items are not required to understand the final-engine state already represented by the reviewer.
 
+**2026-09-08 current-bundle pass:** validated `out/checkpoints/stage2-mlp-shaped/checkpoint-372212` (bundle schema 7, projection ABI 2, OOV registry 10, shared critic, trained temperature 1.0) with `out/pools/full_np8_12_train.json`. The reviewer now records typed decision context, structured option payloads and consequence previews; records initial speaker, exact selected map arrangement, engine/content identity and source scope; exposes current initiative order and speaker changes; resolves the main player-sheet and table ids to names; and presents the same diagnostics in native and self-contained HTML views. The smoke artifact is `out/reviews/reviewer-current-validation.ti4review.json` with its adjacent HTML export.
+
 ## Current result
 
 `cargo test -p ti4-review` passes all 11 tests at the inspected tree. This proves that the reviewer still compiles and its existing session tests pass. It does **not** prove that new engine state, timing paths, or card effects are represented correctly.
@@ -35,7 +37,7 @@ The most important current mismatches are:
 - [x] Load real pre-sync review files in addition to synthetic compatibility fixtures.
 - [ ] Confirm every new serialized `Player`, `SystemState`, and `GameState` field has a safe old-file default. In particular cover purged planets, exhausted relics, exploration cards, discarded action cards, ion-storm and placed-planet state, agenda state, transaction history, and reroll staging.
 - [ ] Decide whether the richer board/event representation requires review-session schema v3. If it does, provide a v2-to-v3 loader instead of simply rejecting all existing reviews.
-- [ ] Record engine/content version or a content digest in the manifest so a replay cannot silently render against different card or planet data.
+- [x] Record engine/content version or a content digest in the manifest so a replay cannot silently render against different card or planet data.
 - [x] Keep the sampling temperature, profile-table selection, checkpoint digest, map-pool digest, seed, rotation, and faction seating reproducible.
 - [ ] Test loading the previously reported real autosaves and checkpoint bundles, including selection of a bundle directory, `manifest.json`, and `slots.json` beside its manifest.
 
@@ -82,7 +84,7 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [x] Mark exhausted relics instead of presenting all relics identically.
 - [x] Show faceup exploration cards.
 - [x] Show promissory notes by current holder, including Support for the Throne's faceup scoring state and ordinary notes in hand. The view is omniscient by user choice.
-- [ ] Resolve card, relic, leader, breakthrough, technology, objective, plot, and exploration ids to readable names; retain ids in details/tooltips.
+- [ ] Resolve every remaining id to a readable name. Strategy/action cards, laws, relics, leaders, breakthroughs, technologies, objectives, promissory notes, and exploration cards are resolved with their ids retained; plots and effect-specific ids still need a catalog or presentation mapping.
 - [ ] Show leader state, exhausted technologies, exhausted planets, used strategy cards, commodity capacity, and any meaningful once-per-round or once-per-action readiness state.
 - [ ] Show faction unit variants and unit-upgrade stats where that changes how a human reads the board.
 - [x] Add table state for speaker, unclaimed strategy cards and accumulated card trade goods, custodians status, laws, and discarded action cards.
@@ -108,14 +110,16 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [ ] Add readable grouping for reactions, rerolls, dice modification, hit cancellation, retreat, agenda redirection, unit replacement, special payment, and multi-party choices.
 - [x] Display the policy path, resolved head, actual sampling temperature, chosen probability, rank, and probability of the highest-scored option.
 - [x] Add a concise “sampled below the greedy choice” indication when applicable.
+- [x] Preserve typed `DecisionContext`, structured option payloads, and consequence previews in new sessions; old sessions default those fields safely.
 - [ ] Preserve complete feature inspection, but add search/filtering so large option sets remain usable.
 - [ ] Audit blind decisions. A blind trace currently has no meaningful score/probability; either provide the correct observation path or label it as unavailable rather than equivalent to a scored decision.
-- [ ] Verify OOV registry and MLP-bundle versions against the final engine/policy checkpoint format.
+- [x] Verify OOV registry and MLP-bundle versions against the current schema-7/OOV-v10 engine-policy checkpoint format.
 
 ## P1 — GUI and HTML parity
 
 - [ ] Define one presentation model used by both native GUI and HTML export instead of maintaining two independently drifting renderers.
 - [x] Bring dynamic planets, destroyed systems, tokens, neutral units, expanded player sheets, objectives, table state, and summaries to both outputs.
+- [x] Show current profile/bundle metadata, provenance, initiative order, speaker changes, readable content names, and structured decisions in both outputs.
 - [x] Preserve view-only behavior for loaded review files.
 - [x] Keep the HTML self-contained and escape embedded session/content text.
 
@@ -140,9 +144,9 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [ ] Transaction fixture containing a non-Support promissory note and Black Market terms.
 - [ ] Action-boundary fixtures for Fleet Logistics, Master Plan, Puppets, skipped turn, forced end, pass, and game end.
 - [ ] GUI visual inspection at normal and constrained window sizes.
-- [ ] Interactive HTML visual inspection. Browser setup failed in this environment; the real smoke export rendered successfully and its JavaScript passed `node --check`.
-- [x] `cargo test -p ti4-review` (15 passing tests).
-- [x] Reviewer clippy with warnings denied, allowing only the package's pre-existing missing-panics-doc lint.
+- [ ] Interactive HTML visual inspection in a browser. The real schema-7 smoke export rendered successfully and its embedded JavaScript passed a syntax parse.
+- [x] `cargo test -p ti4-review` (21 passing tests).
+- [x] Reviewer-only clippy with warnings denied (`--no-deps`; the concurrently modified training crate has unrelated lint failures under a full dependency lint).
 
 ## Completion definition
 

@@ -108,6 +108,26 @@ fn unit_base(content: &ContentStore, unit: &Unit) -> String {
     )
 }
 
+fn content_label(
+    content: &ContentStore,
+    category: ContentType,
+    id: impl std::fmt::Display,
+) -> String {
+    let id = id.to_string();
+    let Some(record) = content.get(category, &id) else {
+        return id;
+    };
+    let Some(name) = record
+        .text("name")
+        .or_else(|| record.text("shortName"))
+        .or_else(|| record.text("title"))
+        .filter(|name| !name.eq_ignore_ascii_case(&id))
+    else {
+        return id;
+    };
+    format!("{name} [{id}]")
+}
+
 fn planets_for_tile(
     session: &ReviewSession,
     frame: &ReviewFrame,
@@ -930,6 +950,51 @@ impl ReviewApp {
                         if let Some(dimensions) = &policy.dimensions {
                             ui.small(dimensions);
                         }
+                        let mut runtime = Vec::new();
+                        if let Some(abi) = policy.projection_abi {
+                            runtime.push(format!("projection ABI {abi}"));
+                        }
+                        if let Some(version) = policy.oov_registry_version {
+                            runtime.push(format!("OOV registry v{version}"));
+                        }
+                        if let Some(mode) = &policy.critic_mode {
+                            runtime.push(format!("critic {mode}"));
+                        }
+                        if let Some(temperature) = policy.trained_temperature {
+                            runtime.push(format!("trained temperature {temperature:.2}"));
+                        }
+                        if !runtime.is_empty() {
+                            ui.small(runtime.join(" · "));
+                        }
+                        ui.separator();
+                        ui.small(format!(
+                            "Initial speaker: {} · map arrangement: {}",
+                            session
+                                .manifest
+                                .initial_speaker
+                                .as_deref()
+                                .unwrap_or("legacy/unrecorded"),
+                            session.manifest.map_arrangement_index.map_or_else(
+                                || "legacy/unrecorded".to_owned(),
+                                |value| value.to_string()
+                            )
+                        ));
+                        if let Some(commit) = &session.manifest.engine_commit {
+                            ui.small(format!(
+                                "Review engine: {commit}{}",
+                                if session.manifest.engine_dirty {
+                                    " (dirty build)"
+                                } else {
+                                    ""
+                                }
+                            ));
+                        }
+                        if let Some(digest) = &session.manifest.content_sha256 {
+                            ui.small(format!("Content: {digest}"));
+                        }
+                        if let Some(scope) = &session.manifest.source_scope {
+                            ui.small(format!("Scope: {scope}"));
+                        }
                     });
                     item_section(
                         ui,
@@ -1017,6 +1082,65 @@ impl ReviewApp {
                             frame.state.discarded_action_cards.len(),
                         );
                     });
+                    let initiative_order: Vec<String> = frame
+                        .state
+                        .initiative_order()
+                        .into_iter()
+                        .map(|player_id| {
+                            let Some(player) = frame.state.player(&player_id) else {
+                                return player_id.to_string();
+                            };
+                            let cards = player
+                                .strategy_cards
+                                .iter()
+                                .map(|card| {
+                                    let initiative = frame
+                                        .state
+                                        .card_initiative
+                                        .get(card)
+                                        .copied()
+                                        .unwrap_or(99);
+                                    format!("{card} ({initiative})")
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "{} {}{}",
+                                player.id,
+                                player.faction,
+                                if cards.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" · {cards}")
+                                }
+                            )
+                        })
+                        .collect();
+                    item_section(
+                        ui,
+                        "➜",
+                        "Initiative turn order",
+                        initiative_order,
+                        Color32::LIGHT_BLUE,
+                    );
+                    if frame.index > 0 {
+                        let previous = &session.frames[frame.index - 1];
+                        if previous.state.speaker != frame.state.speaker {
+                            ui.colored_label(
+                                Color32::LIGHT_YELLOW,
+                                format!(
+                                    "Speaker changed: {} → {} · events: {}",
+                                    previous.state.speaker,
+                                    frame.state.speaker,
+                                    if frame.new_events.is_empty() {
+                                        "unrecorded cause".to_owned()
+                                    } else {
+                                        frame.new_events.join(", ")
+                                    }
+                                ),
+                            );
+                        }
+                    }
                     item_section(
                         ui,
                         "◆",
@@ -1033,9 +1157,12 @@ impl ReviewApp {
                                     .copied()
                                     .unwrap_or_default();
                                 if goods > 0 {
-                                    format!("{card} · {goods} TG")
+                                    format!(
+                                        "{} · {goods} TG",
+                                        content_label(content, ContentType::StrategyCards, card)
+                                    )
                                 } else {
-                                    card.to_string()
+                                    content_label(content, ContentType::StrategyCards, card)
                                 }
                             })
                             .collect(),
@@ -1049,7 +1176,12 @@ impl ReviewApp {
                             .state
                             .laws
                             .iter()
-                            .map(|(law, outcome)| format!("{law} · {outcome}"))
+                            .map(|(law, outcome)| {
+                                format!(
+                                    "{} · {outcome}",
+                                    content_label(content, ContentType::Agendas, law)
+                                )
+                            })
                             .collect(),
                         Color32::LIGHT_BLUE,
                     );
@@ -1061,7 +1193,7 @@ impl ReviewApp {
                             .state
                             .discarded_action_cards
                             .iter()
-                            .map(ToString::to_string)
+                            .map(|card| content_label(content, ContentType::ActionCards, card))
                             .collect(),
                         Color32::LIGHT_BLUE,
                     );
@@ -1098,10 +1230,12 @@ impl ReviewApp {
                                 .strategy_cards
                                 .iter()
                                 .map(|card| {
+                                    let label =
+                                        content_label(content, ContentType::StrategyCards, card);
                                     if player.exhausted_strategy_cards.contains(card) {
-                                        format!("{card} · used")
+                                        format!("{label} · used")
                                     } else {
-                                        card.to_string()
+                                        label
                                     }
                                 })
                                 .collect();
@@ -1171,10 +1305,15 @@ impl ReviewApp {
                                     .technologies
                                     .iter()
                                     .map(|technology| {
+                                        let label = content_label(
+                                            content,
+                                            ContentType::Technologies,
+                                            technology,
+                                        );
                                         if player.exhausted_technologies.contains(technology) {
-                                            format!("{technology} · exhausted")
+                                            format!("{label} · exhausted")
                                         } else {
-                                            technology.to_string()
+                                            label
                                         }
                                     })
                                     .collect(),
@@ -1190,7 +1329,13 @@ impl ReviewApp {
                                     .get(&player.id)
                                     .into_iter()
                                     .flatten()
-                                    .map(ToString::to_string)
+                                    .map(|objective| {
+                                        content_label(
+                                            content,
+                                            ContentType::PublicObjectives,
+                                            objective,
+                                        )
+                                    })
                                     .collect(),
                                 color,
                             );
@@ -1201,7 +1346,13 @@ impl ReviewApp {
                                 player
                                     .secret_objectives
                                     .iter()
-                                    .map(ToString::to_string)
+                                    .map(|objective| {
+                                        content_label(
+                                            content,
+                                            ContentType::SecretObjectives,
+                                            objective,
+                                        )
+                                    })
                                     .collect(),
                                 color,
                             );
@@ -1212,7 +1363,9 @@ impl ReviewApp {
                                 player
                                     .action_cards
                                     .iter()
-                                    .map(ToString::to_string)
+                                    .map(|card| {
+                                        content_label(content, ContentType::ActionCards, card)
+                                    })
                                     .collect(),
                                 color,
                             );
@@ -1224,10 +1377,12 @@ impl ReviewApp {
                                     .relics
                                     .iter()
                                     .map(|relic| {
+                                        let label =
+                                            content_label(content, ContentType::Relics, relic);
                                         if player.exhausted_relics.contains(relic) {
-                                            format!("{relic} · exhausted")
+                                            format!("{label} · exhausted")
                                         } else {
-                                            relic.to_string()
+                                            label
                                         }
                                     })
                                     .chain(player.relic_fragments.iter().map(
@@ -1242,7 +1397,11 @@ impl ReviewApp {
                                 ui,
                                 "◈",
                                 "Exploration cards in play",
-                                player.exploration_cards.clone(),
+                                player
+                                    .exploration_cards
+                                    .iter()
+                                    .map(|card| content_label(content, ContentType::Explores, card))
+                                    .collect(),
                                 color,
                             );
                             let mut promissory: Vec<String> = frame
@@ -1251,10 +1410,12 @@ impl ReviewApp {
                                 .iter()
                                 .filter(|(_, holder)| *holder == &player.id)
                                 .map(|(note, _)| {
+                                    let label =
+                                        content_label(content, ContentType::PromissoryNotes, note);
                                     if frame.state.promissory_faceup.contains(note) {
-                                        format!("{note} · faceup")
+                                        format!("{label} · faceup")
                                     } else {
-                                        note.clone()
+                                        label
                                     }
                                 })
                                 .collect();
@@ -1278,7 +1439,12 @@ impl ReviewApp {
                                 player
                                     .leaders
                                     .iter()
-                                    .map(|(leader, status)| format!("{leader} · {status:?}"))
+                                    .map(|(leader, status)| {
+                                        format!(
+                                            "{} · {status:?}",
+                                            content_label(content, ContentType::Leaders, leader)
+                                        )
+                                    })
                                     .collect(),
                                 color,
                             );
@@ -1288,7 +1454,11 @@ impl ReviewApp {
                                     ui,
                                     "⚡",
                                     "Breakthrough",
-                                    vec![breakthrough.to_string()],
+                                    vec![content_label(
+                                        content,
+                                        ContentType::Breakthroughs,
+                                        breakthrough,
+                                    )],
                                     color,
                                 );
                             }
@@ -1356,6 +1526,16 @@ impl ReviewApp {
                                 decision.sequence, decision.player, decision.faction
                             ));
                             ui.label(&decision.prompt);
+                            if let Some(context) = &decision.context {
+                                ui.collapsing("Typed decision context", |ui| {
+                                    ui.monospace(
+                                        serde_json::to_string_pretty(context)
+                                            .unwrap_or_else(|error| error.to_string()),
+                                    );
+                                });
+                            } else {
+                                ui.small("Typed decision context unavailable (legacy or viewless choice)");
+                            }
                             ui.label(format!(
                                 "{} → {} · temperature {:?} · chosen {}",
                                 decision.requested_head,
@@ -1412,6 +1592,24 @@ impl ReviewApp {
                                 .default_open(selected)
                                 .show(ui, |ui| {
                                     ui.label(format!("id={} kind={}", option.id, option.kind));
+                                    if !option.payload.is_empty() {
+                                        ui.collapsing("Structured payload", |ui| {
+                                            ui.monospace(
+                                                serde_json::to_string_pretty(&option.payload)
+                                                    .unwrap_or_else(|error| error.to_string()),
+                                            );
+                                        });
+                                    }
+                                    if let Some(preview) = &option.preview {
+                                        ui.collapsing("Consequence preview", |ui| {
+                                            ui.monospace(
+                                                serde_json::to_string_pretty(preview)
+                                                    .unwrap_or_else(|error| error.to_string()),
+                                            );
+                                        });
+                                    } else {
+                                        ui.small("Consequence preview unavailable");
+                                    }
                                     egui::Grid::new(format!(
                                         "features-{}-{decision_index}-{}",
                                         frame.index, option.id

@@ -9,6 +9,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -119,6 +120,20 @@ pub struct SessionManifest {
     #[serde(default)]
     pub policy: PolicySummary,
     pub factions: Vec<String>,
+    #[serde(default)]
+    pub initial_speaker: Option<String>,
+    #[serde(default)]
+    pub map_arrangement_index: Option<usize>,
+    #[serde(default)]
+    pub map_arrangement_sha256: Option<String>,
+    #[serde(default)]
+    pub engine_commit: Option<String>,
+    #[serde(default)]
+    pub engine_dirty: bool,
+    #[serde(default)]
+    pub content_sha256: Option<String>,
+    #[serde(default)]
+    pub source_scope: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -134,6 +149,10 @@ pub struct PolicySummary {
     pub heads: Vec<String>,
     pub factions: Vec<String>,
     pub profiles: Vec<String>,
+    pub projection_abi: Option<u64>,
+    pub oov_registry_version: Option<u32>,
+    pub critic_mode: Option<String>,
+    pub trained_temperature: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -180,6 +199,10 @@ pub struct OptionDetail {
     pub score: Option<f64>,
     pub probability: Option<f64>,
     pub features: Vec<FeatureContribution>,
+    #[serde(default)]
+    pub payload: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub preview: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -194,6 +217,8 @@ pub struct DecisionDetail {
     pub temperature: Option<f64>,
     pub chosen: Option<String>,
     pub options: Vec<OptionDetail>,
+    #[serde(default)]
+    pub context: Option<Value>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -295,6 +320,8 @@ impl ReviewSession {
         Ok(())
     }
 
+    /// # Panics
+    /// Panics when called on an unvalidated session with no frames.
     #[must_use]
     pub fn latest(&self) -> &ReviewFrame {
         self.frames.last().expect("validated sessions have a frame")
@@ -334,6 +361,11 @@ impl TraceBot {
                 score: None,
                 probability: None,
                 features: Vec::new(),
+                payload: option.payload.clone(),
+                preview: option
+                    .preview
+                    .as_ref()
+                    .and_then(|preview| serde_json::to_value(preview).ok()),
             })
             .collect()
     }
@@ -360,6 +392,10 @@ impl TraceBot {
             temperature,
             chosen: chosen.as_ref().ok().map(|option| option.id.clone()),
             options,
+            context: choice
+                .context
+                .as_ref()
+                .and_then(|context| serde_json::to_value(context).ok()),
         });
     }
 }
@@ -467,6 +503,10 @@ impl MlpTraceBot {
             temperature: Some(self.temperature),
             chosen: chosen.as_ref().ok().map(|option| option.id.clone()),
             options,
+            context: choice
+                .context
+                .as_ref()
+                .and_then(|context| serde_json::to_value(context).ok()),
         });
     }
 }
@@ -578,6 +618,8 @@ struct StateTransition {
 }
 
 impl LiveReview {
+    /// # Panics
+    /// Panics only if the fixed six-seat setup fails to provide a configured faction.
     pub fn start(config: &SimulationConfig) -> Result<Self> {
         if config.rotation >= FACTIONS.len() {
             return Err(ReviewError::Invalid(
@@ -597,6 +639,16 @@ impl LiveReview {
         let content = ContentStore::embedded();
         pool.validate_systems(content, FULL)
             .map_err(|error| ReviewError::Invalid(format!("map pool content: {error}")))?;
+        let tile_seed = config.seed.wrapping_add(TILE_SEED_OFFSET);
+        let pool_len = u64::try_from(pool.len())
+            .map_err(|_| ReviewError::Invalid("map pool is too large".to_owned()))?;
+        let map_arrangement_index = usize::try_from(tile_seed % pool_len)
+            .map_err(|_| ReviewError::Invalid("map arrangement index is too large".to_owned()))?;
+        let map_arrangement_sha256 = sha256(
+            &serde_json::to_vec(pool.draw(tile_seed))
+                .map_err(|error| ReviewError::Invalid(format!("map arrangement: {error}")))?,
+        );
+        let content_sha256 = ti4_content::embedded_digest().corpus;
 
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
@@ -688,13 +740,14 @@ impl LiveReview {
 
         let board = board_metadata(content, game.galaxy().expect("setup installs galaxy"));
         let planet_catalog = planet_catalog(content);
+        let initial_speaker = game.state.speaker.to_string();
         let manifest = SessionManifest {
             checkpoint_path: checkpoint_path.display().to_string(),
             checkpoint_sha256: sha256(&checkpoint_bytes),
             map_pool_path: config.map_pool.display().to_string(),
             map_pool_sha256: sha256(&pool_bytes),
             seed: config.seed,
-            tile_seed: config.seed.wrapping_add(TILE_SEED_OFFSET),
+            tile_seed,
             rotation: config.rotation,
             profile_table: config.table,
             temperature: config.temperature,
@@ -703,6 +756,13 @@ impl LiveReview {
                 .iter()
                 .map(|player| factions[player].to_string())
                 .collect(),
+            initial_speaker: Some(initial_speaker),
+            map_arrangement_index: Some(map_arrangement_index),
+            map_arrangement_sha256: Some(map_arrangement_sha256),
+            engine_commit: Some(env!("TI4_REVIEW_ENGINE_COMMIT").to_owned()),
+            engine_dirty: env!("TI4_REVIEW_ENGINE_DIRTY") == "true",
+            content_sha256: Some(content_sha256),
+            source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
         };
         let initial = ReviewFrame {
             index: 0,
@@ -751,6 +811,8 @@ impl LiveReview {
     }
 
     #[must_use]
+    /// # Panics
+    /// Panics only if the internal action-capture invariant is violated.
     pub fn step_once(&mut self) -> &ReviewFrame {
         if self.is_terminal() || self.session.frames.len() >= MAX_FRAMES {
             if self.session.frames.len() >= MAX_FRAMES {
@@ -1004,15 +1066,27 @@ fn summarize_action(
     for system in &system_names {
         details.push(format!("Activated {system}"));
     }
+    let decisions_describe_unit_changes = action.decisions.iter().any(|decision| {
+        matches!(
+            decision.requested_head.as_str(),
+            "movement" | "cargo" | "landing" | "production"
+        )
+    });
+    let combat_occurred = action.events.iter().any(|event| {
+        event.contains("COMBAT") || matches!(event.as_str(), "BOMBARDMENT" | "ANTI_FIGHTER_BARRAGE")
+    });
+    let include_unit_deltas = !decisions_describe_unit_changes || combat_occurred;
     if action.transitions.is_empty() {
-        append_unit_changes(
-            &mut details,
-            &action.start_state,
-            end,
-            board,
-            &action.actor,
-            false,
-        );
+        if include_unit_deltas {
+            append_unit_changes(
+                &mut details,
+                &action.start_state,
+                end,
+                board,
+                &action.actor,
+                false,
+            );
+        }
         append_control_changes(&mut details, &action.start_state, end, board);
     } else {
         for transition in &action.transitions {
@@ -1022,14 +1096,16 @@ fn summarize_action(
                     "SHIP_MOVED" | "UNITS_COMMITTED" | "RETREAT_DECLARED"
                 )
             });
-            append_unit_changes(
-                &mut details,
-                &transition.before,
-                &transition.after,
-                board,
-                &action.actor,
-                movement,
-            );
+            if include_unit_deltas {
+                append_unit_changes(
+                    &mut details,
+                    &transition.before,
+                    &transition.after,
+                    board,
+                    &action.actor,
+                    movement,
+                );
+            }
             append_control_changes(&mut details, &transition.before, &transition.after, board);
         }
     }
@@ -1068,10 +1144,34 @@ fn append_notable_decisions(details: &mut Vec<String>, decisions: &[DecisionDeta
         if matches!(option.kind.as_str(), "decline" | "pass") {
             continue;
         }
+        let mut choice = option.label.clone();
+        if !option.payload.is_empty() {
+            let fields = option
+                .payload
+                .iter()
+                .take(4)
+                .map(|(key, value)| format!("{key}={}", compact_value(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(&mut choice, " ({fields})").expect("writing to a string cannot fail");
+        }
         details.push(format!(
-            "{}: {} → {}",
-            decision.player, decision.prompt, option.label
+            "{}: {} → {choice}",
+            decision.player, decision.prompt
         ));
+    }
+}
+
+fn compact_value(value: &Value) -> String {
+    const LIMIT: usize = 160;
+    let rendered = match value {
+        Value::String(value) => value.clone(),
+        other => other.to_string(),
+    };
+    if rendered.chars().count() <= LIMIT {
+        rendered
+    } else {
+        format!("{}…", rendered.chars().take(LIMIT).collect::<String>())
     }
 }
 
@@ -1210,37 +1310,30 @@ fn append_unit_changes(
                 arrivals.push((location, delta));
             }
         }
-        if movement {
-            for (from, remaining) in &mut departures {
-                for (to, available) in &mut arrivals {
-                    let moved = (*remaining).min(*available);
-                    if moved == 0 {
-                        continue;
-                    }
-                    let owner_label = if owner == actor.as_str() {
-                        String::new()
-                    } else {
-                        format!("{owner}: ")
-                    };
-                    details.push(format!(
-                        "{owner_label}Moved {moved} {kind} from {} to {}",
-                        location_label(board, from),
-                        location_label(board, to)
-                    ));
-                    *remaining -= moved;
-                    *available -= moved;
-                }
-            }
-        }
+        let owner_label = if owner == actor.as_str() {
+            String::new()
+        } else {
+            format!("{owner}: ")
+        };
         for (location, count) in departures.into_iter().filter(|(_, count)| *count > 0) {
             details.push(format!(
-                "{owner}: lost or removed {count} {kind} at {}",
+                "{owner_label}{} {count} {kind} at {}",
+                if movement {
+                    "departed or removed"
+                } else {
+                    "lost or removed"
+                },
                 location_label(board, &location)
             ));
         }
         for (location, count) in arrivals.into_iter().filter(|(_, count)| *count > 0) {
             details.push(format!(
-                "{owner}: added {count} {kind} at {}",
+                "{owner_label}{} {count} {kind} at {}",
+                if movement {
+                    "arrived or added"
+                } else {
+                    "added"
+                },
                 location_label(board, &location)
             ));
         }
@@ -1353,7 +1446,7 @@ fn load_policy(
         let manifest_bytes = read_bounded(&manifest_path)?;
         let manifest: Value = serde_json::from_slice(&manifest_bytes)
             .map_err(|error| ReviewError::Invalid(format!("MLP manifest JSON: {error}")))?;
-        let summary = mlp_policy_summary(&manifest);
+        let summary = mlp_policy_summary(&manifest, loaded.vocabulary.oov_registry_version());
         return Ok((
             directory,
             manifest_bytes,
@@ -1395,7 +1488,7 @@ fn strings(value: Option<&Value>) -> Vec<String> {
         .collect()
 }
 
-fn mlp_policy_summary(manifest: &Value) -> PolicySummary {
+fn mlp_policy_summary(manifest: &Value, oov_registry_version: u32) -> PolicySummary {
     let trunk = manifest.get("trunk");
     let dimensions = [
         manifest
@@ -1443,6 +1536,13 @@ fn mlp_policy_summary(manifest: &Value) -> PolicySummary {
             .iter()
             .map(|faction| format!("{faction} · faction-conditioned row"))
             .collect(),
+        projection_abi: manifest.get("projection_abi").and_then(Value::as_u64),
+        oov_registry_version: Some(oov_registry_version),
+        critic_mode: manifest
+            .get("critic_mode")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        trained_temperature: manifest.get("student_temperature").and_then(Value::as_f64),
     }
 }
 
@@ -1761,6 +1861,53 @@ pub fn render_html(session: &ReviewSession) -> Result<String> {
     let objective_meta = serde_json::to_string(&objective_meta)
         .map_err(|error| ReviewError::Invalid(format!("serialize objective metadata: {error}")))?
         .replace('<', "\\u003c");
+    let categories = [
+        ("action", ti4_model::content_types::ContentType::ActionCards),
+        ("agenda", ti4_model::content_types::ContentType::Agendas),
+        (
+            "breakthrough",
+            ti4_model::content_types::ContentType::Breakthroughs,
+        ),
+        ("explore", ti4_model::content_types::ContentType::Explores),
+        ("leader", ti4_model::content_types::ContentType::Leaders),
+        (
+            "promissory",
+            ti4_model::content_types::ContentType::PromissoryNotes,
+        ),
+        (
+            "public",
+            ti4_model::content_types::ContentType::PublicObjectives,
+        ),
+        ("relic", ti4_model::content_types::ContentType::Relics),
+        (
+            "secret",
+            ti4_model::content_types::ContentType::SecretObjectives,
+        ),
+        (
+            "strategy",
+            ti4_model::content_types::ContentType::StrategyCards,
+        ),
+        (
+            "technology",
+            ti4_model::content_types::ContentType::Technologies,
+        ),
+    ];
+    let content_meta: BTreeMap<String, String> = categories
+        .into_iter()
+        .flat_map(|(category, kind)| {
+            content.records(kind).iter().filter_map(move |record| {
+                let id = record.id()?;
+                let name = record
+                    .text("name")
+                    .or_else(|| record.text("shortName"))
+                    .or_else(|| record.text("title"))?;
+                Some((format!("{category}:{id}"), name.to_owned()))
+            })
+        })
+        .collect();
+    let content_meta = serde_json::to_string(&content_meta)
+        .map_err(|error| ReviewError::Invalid(format!("serialize content metadata: {error}")))?
+        .replace('<', "\\u003c");
     let template = r#"<!doctype html><html><head><meta charset="utf-8"><title>TI4 Review</title><style>
 body{margin:0;background:#09111e;color:#e9f0fb;font:14px system-ui}header{padding:12px 18px;background:#111e31;position:sticky;top:0;z-index:2}
 main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{background:#101b2c;border:1px solid #29415f;border-radius:8px;padding:12px}
@@ -1768,23 +1915,26 @@ main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{ba
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
 .player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}.objective,.action{background:#0b1625;border:1px solid #29415f;border-radius:6px;padding:7px;margin:5px 0}.objective small,.action small{color:#afbdd0}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><pre id="decision"></pre><h3>Events</h3><pre id="events"></pre></section></main>
-<script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
+<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
+<script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__,contentMeta=__CONTENT_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
 const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const colorOf=id=>/^seat\d+$/.test(String(id))?colors[(+String(id).slice(4))%6]:'#a6aeb8';
 const list=x=>Array.from(x||[],String);const objList=x=>Object.entries(x||{}).map(([k,v])=>`${k} ×${v}`);
+const named=(category,id)=>{const name=contentMeta[`${category}:${id}`];return name&&name.toLowerCase()!==String(id).toLowerCase()?`${name} [${id}]`:String(id)};
 function chips(icon,title,values){values=list(values);return `<div class="sheet"><b>${icon} ${esc(title)} · ${values.length}</b><div class="chips">${values.length?values.map(v=>`<span class="chip">${esc(v)}</span>`).join(''):'<span class="chip">None</span>'}</div></div>`}
 function planetsIn(t,f){const found=[...(t.planets||[])];for(const [id,system] of Object.entries(f.state.placed_planets||{}))if(system===t.system&&!found.some(p=>p.id===id)){const p=(session.planet_catalog||[]).find(candidate=>candidate.id===id);if(p)found.push(p)}return found}
 function controlledPlanets(f,p){const held=[];for(const t of session.board){const s=f.state.board[t.system];if(!s)continue;for(const planet of planetsIn(t,f))if(s.planet_control?.[planet.id]===p.id){const attachments=list(f.state.planet_attachments?.[planet.id]).length;held.push(`${planet.label} ${planet.resources}/${planet.influence}${f.state.exhausted_planets.includes(planet.id)?' · exhausted':''}${attachments?` · ${attachments} attachment(s)`:''}`)}}return held}
-function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).filter(([,holder])=>holder===p.id).map(([note])=>`${note}${list(f.state.promissory_faceup).includes(note)?' · faceup':''}`);for(const[owner,holder]of Object.entries(f.state.support_holders||{}))if(holder===p.id)notes.push(`Support for the Throne:${owner} · faceup`);return [...new Set(notes)].sort()}
-function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]);const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${x} · used`:x);const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${x} · exhausted`:x);const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${x} · exhausted`:x);return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',p.secret_objectives)}${chips('▣','Action cards',p.action_cards)}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',p.exploration_cards)}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${k} · ${v}`))}${chips('⌁','Plots',p.plots)}</article>`}
-function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${card} · ${goods} TG`:card});return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${law} · ${outcome}`))}${chips('↯','Discarded action cards',f.state.discarded_action_cards)}`}
-function policySummary(){const p=session.manifest.policy||{},format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Engine/training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':session.manifest.profile_table,seats=list(session.manifest.factions).map((faction,index)=>`seat${index}: ${faction}`).join(' · ');return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(session.manifest.checkpoint_path)} · ${esc(mode)} · temperature ${session.manifest.temperature}</small><br><small>${esc(seats)}</small>${source}${commit}${update}${dimensions}${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
+function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).filter(([,holder])=>holder===p.id).map(([note])=>`${named('promissory',note)}${list(f.state.promissory_faceup).includes(note)?' · faceup':''}`);for(const[owner,holder]of Object.entries(f.state.support_holders||{}))if(holder===p.id)notes.push(`Support for the Throne:${owner} · faceup`);return [...new Set(notes)].sort()}
+function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]).map(x=>named('public',x));const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${named('strategy',x)} · used`:named('strategy',x));const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${named('technology',x)} · exhausted`:named('technology',x));const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${named('relic',x)} · exhausted`:named('relic',x));return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',list(p.secret_objectives).map(x=>named('secret',x)))}${chips('▣','Action cards',list(p.action_cards).map(x=>named('action',x)))}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',list(p.exploration_cards).map(x=>named('explore',x)))}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${named('leader',k)} · ${v}`))}${chips('⌁','Plots',p.plots)}${p.breakthrough?chips('⚡','Breakthrough',[named('breakthrough',p.breakthrough)]):''}</article>`}
+function initiativeOrder(f){const seat=new Map(list(f.state.seating_order).map((id,index)=>[id,index]));return [...f.state.players].sort((a,b)=>{const ai=Math.min(...list(a.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99),bi=Math.min(...list(b.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99);return (ai-bi)||((seat.get(a.id)??999)-(seat.get(b.id)??999))}).map(p=>`${p.id} ${p.faction}${list(p.strategy_cards).length?' · '+list(p.strategy_cards).map(c=>`${named('strategy',c)} (${f.state.card_initiative?.[c]??99})`).join(', '):''}`)}
+function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${named('strategy',card)} · ${goods} TG`:named('strategy',card)}),previous=at>0?session.frames[at-1]:null,speakerChange=previous&&previous.state.speaker!==f.state.speaker?`<div class="action">Speaker changed: ${esc(previous.state.speaker)} → ${esc(f.state.speaker)} · ${esc(list(f.new_events).join(', ')||'unrecorded cause')}</div>`:'';return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${speakerChange}${chips('➜','Initiative turn order',initiativeOrder(f))}${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${named('agenda',law)} · ${outcome}`))}${chips('↯','Discarded action cards',list(f.state.discarded_action_cards).map(x=>named('action',x)))}`}
+function policySummary(){const p=session.manifest.policy||{},m=session.manifest,format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small><br>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':m.profile_table,seats=list(m.factions).map((faction,index)=>`seat${index}: ${faction}`).join(' · '),runtime=[p.projection_abi==null?'':`projection ABI ${p.projection_abi}`,p.oov_registry_version==null?'':`OOV registry v${p.oov_registry_version}`,p.critic_mode?`critic ${p.critic_mode}`:'',p.trained_temperature==null?'':`trained temperature ${p.trained_temperature}`].filter(Boolean).join(' · '),engine=m.engine_commit?`${m.engine_commit}${m.engine_dirty?' (dirty build)':''}`:'legacy/unrecorded';return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(m.checkpoint_path)} · ${esc(mode)} · temperature ${m.temperature}</small><br><small>${esc(seats)}</small>${source}${commit}${update}${dimensions}<small>${esc(runtime)}</small><hr><small>Initial speaker: ${esc(m.initial_speaker||'legacy/unrecorded')} · map arrangement: ${m.map_arrangement_index??'legacy/unrecorded'}<br>Review engine: ${esc(engine)}<br>Content: ${esc(m.content_sha256||'legacy/unrecorded')}<br>Scope: ${esc(m.source_scope||'legacy/unrecorded')}</small>${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
 function objectives(f){return list(f.state.revealed_objectives).map(id=>{const m=objectiveMeta[id]||{name:id,text:'',points:0},scored=Object.entries(f.state.scored_objectives||{}).filter(([,v])=>list(v).includes(id)).map(([p])=>p);return `<div class="objective"><b>${esc(m.name)} · ${m.points} VP</b><br><small>${esc(id)} · scored by ${esc(scored.join(', ')||'nobody')}</small><div>${esc(m.text)}</div></div>`}).join('')||'None revealed yet.'}
 function actionSummary(i){for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has completed yet.'}
+function decisionCards(f){if(!f.decisions.length)return 'No policy decision on this engine step.';return f.decisions.map(d=>{const chosen=d.options.find(o=>o.id===d.chosen),context=d.context?`<details><summary>Decision context</summary><pre>${esc(JSON.stringify(d.context,null,2))}</pre></details>`:'<small>Legacy review: decision context unavailable.</small>',options=d.options.map(o=>`<div class="chip">${o.id===d.chosen?'✓ ':''}${esc(o.label)}${o.score==null?'':` · score ${Number(o.score).toFixed(5)}`}${o.probability==null?'':` · p ${Number(o.probability).toFixed(5)}`}${Object.keys(o.payload||{}).length?`<pre>${esc(JSON.stringify(o.payload,null,2))}</pre>`:''}${o.preview?`<details><summary>Consequence preview</summary><pre>${esc(JSON.stringify(o.preview,null,2))}</pre></details>`:''}</div>`).join('');return `<div class="action"><b>${esc(d.player)} (${esc(d.faction)}) · ${esc(d.prompt)}</b><div>Path: ${esc(d.path)} · head ${esc(d.requested_head)} → ${esc(d.resolved_head)}${d.temperature==null?'':` · temperature ${d.temperature}`}</div><div>Chosen: ${esc(chosen?.label||d.chosen||'illegal/no choice')}</div>${context}<details><summary>${d.options.length} options</summary>${options}</details></div>`}).join('')}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
-function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').textContent=f.decisions.length?JSON.stringify(f.decisions,null,2):'No policy decision on this engine step.';document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
 const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
 function kind(id){id=String(id).toLowerCase();for(const k of ['war_sun','space_dock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
 function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='space_dock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='war_sun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
@@ -1805,7 +1955,8 @@ function drawDynamic(f){
 show(0);</script></body></html>"#;
     let html = template
         .replace("__SESSION_DATA__", &data)
-        .replace("__OBJECTIVE_META__", &objective_meta);
+        .replace("__OBJECTIVE_META__", &objective_meta)
+        .replace("__CONTENT_META__", &content_meta);
     if html.len() > MAX_HTML_BYTES {
         return Err(ReviewError::HtmlTooLarge);
     }
@@ -1865,6 +2016,13 @@ mod tests {
                 temperature: default_sampling_temperature(),
                 policy: PolicySummary::default(),
                 factions: FACTIONS.map(str::to_owned).to_vec(),
+                initial_speaker: None,
+                map_arrangement_index: None,
+                map_arrangement_sha256: None,
+                engine_commit: None,
+                engine_dirty: false,
+                content_sha256: None,
+                source_scope: None,
             },
             board: vec![],
             planet_catalog: vec![],
@@ -1919,6 +2077,52 @@ mod tests {
     }
 
     #[test]
+    fn old_sessions_default_reproducibility_and_structured_decision_fields() {
+        let mut value = serde_json::to_value(fixture_session()).unwrap();
+        let manifest = value["manifest"].as_object_mut().unwrap();
+        for field in [
+            "initial_speaker",
+            "map_arrangement_index",
+            "map_arrangement_sha256",
+            "engine_commit",
+            "engine_dirty",
+            "content_sha256",
+            "source_scope",
+        ] {
+            manifest.remove(field);
+        }
+        value["frames"][0]["decisions"] = serde_json::json!([{
+            "sequence": 0,
+            "player": "seat0",
+            "faction": "sol",
+            "prompt": "legacy choice",
+            "path": "linear",
+            "requested_head": "other",
+            "resolved_head": "other",
+            "temperature": null,
+            "chosen": "pass",
+            "options": [{
+                "id": "pass",
+                "kind": "pass",
+                "label": "Pass",
+                "score": 0.0,
+                "probability": 1.0,
+                "features": []
+            }]
+        }]);
+
+        let restored: ReviewSession = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.manifest.initial_speaker, None);
+        assert_eq!(restored.manifest.map_arrangement_index, None);
+        assert!(!restored.manifest.engine_dirty);
+        let decision = &restored.frames[0].decisions[0];
+        assert_eq!(decision.context, None);
+        assert!(decision.options[0].payload.is_empty());
+        assert_eq!(decision.options[0].preview, None);
+        restored.validate().unwrap();
+    }
+
+    #[test]
     fn faction_order_is_seeded_reproducible_and_not_fixed() {
         let factions = FACTIONS.map(FactionId::new);
         let seating = |seed, rotation| {
@@ -1950,23 +2154,33 @@ mod tests {
     }
 
     #[test]
-    fn current_schema_six_profile_metadata_is_displayable() {
-        let summary = mlp_policy_summary(&serde_json::json!({
-            "schema": 6,
-            "source": "M10-034 PPO, 500 updates",
-            "git_commit": "dbdaa61c2104fc307e330e124e69d11edc9fd0ab",
-            "update": 52436,
-            "slot_count": 11147,
-            "slot_capacity": 16384,
-            "embed_dim": 16,
-            "heads": ["strategy", "turn", "other"],
-            "factions": ["hacan", "jolnar", "sol"],
-            "trunk": { "width": 256, "depth": 2 }
-        }));
+    fn current_schema_seven_profile_metadata_is_displayable() {
+        let summary = mlp_policy_summary(
+            &serde_json::json!({
+                "schema": 7,
+                "source": "stage2 shaped training",
+                "git_commit": "c7c4e23",
+                "update": 372_212,
+                "slot_count": 14877,
+                "slot_capacity": 16384,
+                "embed_dim": 16,
+                "heads": ["strategy", "turn", "other"],
+                "factions": ["hacan", "jolnar", "sol"],
+                "trunk": { "width": 256, "depth": 2 },
+                "projection_abi": 2,
+                "critic_mode": "shared",
+                "student_temperature": 1.0
+            }),
+            10,
+        );
 
         assert_eq!(summary.format, "MLP inference bundle");
-        assert_eq!(summary.schema, Some(6));
-        assert_eq!(summary.update, Some(52_436));
+        assert_eq!(summary.schema, Some(7));
+        assert_eq!(summary.update, Some(372_212));
+        assert_eq!(summary.projection_abi, Some(2));
+        assert_eq!(summary.oov_registry_version, Some(10));
+        assert_eq!(summary.critic_mode.as_deref(), Some("shared"));
+        assert_eq!(summary.trained_temperature, Some(1.0));
         assert_eq!(summary.heads, ["strategy", "turn", "other"]);
         assert_eq!(summary.factions, ["hacan", "jolnar", "sol"]);
         assert_eq!(summary.profiles.len(), FACTIONS.len());
@@ -1981,7 +2195,7 @@ mod tests {
                 .dimensions
                 .as_deref()
                 .unwrap()
-                .contains("11147 occupied")
+                .contains("14877 occupied")
         );
         assert!(
             summary
