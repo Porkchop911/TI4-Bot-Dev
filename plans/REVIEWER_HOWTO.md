@@ -2,9 +2,28 @@
 
 Watch a trained policy play, step by step, on a real map.
 
-**The repository alone is not enough.** `/out/` is gitignored, so a fresh clone has no libtorch, no
-map pools and no trained checkpoints. §1 covers what you must obtain separately and how to check you
-got the right thing; §2–§4 are the actual run.
+**A working example ships with the repository**, so you need obtain only one thing — libtorch (§1a).
+
+```
+examples/reviewer/full_np8_12_holdout.json     the map pool  (Validation role)
+examples/reviewer/checkpoint-473312/           a trained policy, schema 7, update 3,600
+```
+
+That checkpoint is the current best: measured 92.31% ± 0.36 stage-1 clearance and 0.26% any-waste at
+update 3,400. Point the reviewer at those two paths and it runs.
+
+Verified working from those exact paths:
+
+```powershell
+.\target\release\ti4-review.exe simulate `
+  --checkpoint examples\reviewer\checkpoint-473312 `
+  --map-pool examples\reviewer\full_np8_12_holdout.json `
+  --out out\reviews\smoke.ti4review.json `
+  --seed 42 --rotation 0 --temperature 0.01 --unit action --count 3
+```
+
+§1b and §1c below matter only when you want *other* pools or checkpoints: `/out/` is gitignored, so
+nothing beyond the example above is in a fresh clone.
 
 Paths below are **relative to the repository root**. Set this once per shell and everything else
 follows:
@@ -23,7 +42,7 @@ cd "$REPO"
 
 ---
 
-## 1. The three things that are not in the repository
+## 1. What you need beyond the repository
 
 ### 1a. libtorch — the tensor runtime
 
@@ -77,7 +96,9 @@ To verify against the project's pinned copy, compare `lib/` file hashes with
 `plans/artifacts/libtorch-2.9.1-cpu.manifest.json` (or the `cu128` one) — 55 files are pinned there
 with sizes and sha256s.
 
-### 1b. Map pools — ask for them, then verify
+### 1b. Other map pools — ask for them, then verify
+
+Only needed if the bundled Validation pool is not what you want.
 
 Pools are generated artifacts, not source. They are **verified against a durable manifest of pinned
 sha256 hashes** (`crates/ti4-sim/src/artifacts.rs`), and the reviewer refuses anything not in it, so
@@ -117,7 +138,9 @@ Note the name/role mismatch that catches everyone once: `full_np8_12_holdout.jso
 **Validation** role, not Final. `artifacts.rs` explains why — that pool already informed architecture
 and thresholds, so its logical role is validation despite the filename.
 
-### 1c. A trained checkpoint — ask for one
+### 1c. Other checkpoints — ask for one
+
+Only needed if the bundled checkpoint is not what you want.
 
 Checkpoints are training output, roughly **23 MB per checkpoint directory**, and are not
 reproducible without a multi-hour training run. Ask for one and put it under `out/checkpoints/`.
@@ -165,12 +188,12 @@ Running with no arguments opens the native GUI.
 
 ## 3. What to choose in the GUI
 
-**The checkpoint.** The file picker wants a *file* while the loader wants a *bundle*. `load_policy`
+**The checkpoint.** `examples/reviewer/checkpoint-473312`. The file picker wants a *file* while the loader wants a *bundle*. `load_policy`
 (`ti4-review/src/lib.rs:1426-1438`) accepts the checkpoint **directory**, or `manifest.json`, or
 `slots.json` inside it, and resolves all three to the same bundle. Selecting `slots.json` in the
 dialog is correct, not a workaround.
 
-**The map pool.** `out/pools/full_np8_12_train.json`, per §1b.
+**The map pool.** `examples/reviewer/full_np8_12_holdout.json`, or another per §1b.
 
 **Settings:**
 
@@ -189,8 +212,8 @@ rather than clamped (`lib.rs:625-632`).
 ```powershell
 # Play a whole game into a session file
 .\target\release\ti4-review.exe simulate `
-  --checkpoint out\checkpoints\stage2-mlp-shaped\checkpoint-473312 `
-  --map-pool out\pools\full_np8_12_train.json `
+  --checkpoint examples\reviewer\checkpoint-473312 `
+  --map-pool examples\reviewer\full_np8_12_holdout.json `
   --out out\reviews\game.ti4review.json `
   --seed 42 --rotation 0 --temperature 0.01 --until end
 

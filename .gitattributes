@@ -17,3 +17,10 @@ crates/ti4-content/content/CHECKSUMS.sha256 -text
 # and failed on the first fresh checkout of the same commit.
 fixtures/legacy_entropy/**/*.ndjson -text
 fixtures/legacy_entropy/**/*.json -text
+
+# The bundled reviewer example is verified by content hash, not by path: the map pool's SHA-256
+# must match the durable manifest in crates/ti4-sim/src/artifacts.rs or the loader refuses it as
+# an unknown artifact, and the checkpoint's tensors and slot table are read as exact bytes.
+# End-of-line conversion would change every one of those digests on a Windows checkout, which is
+# the same failure the content corpus and the legacy trace corpus above already hit.
+examples/reviewer/** -text
