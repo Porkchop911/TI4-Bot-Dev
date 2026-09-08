@@ -385,6 +385,15 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step"),
     },
     Producer {
+        // Entropic Scar rule 6: spend a strategy token at the start of the status phase to gain a
+        // faction technology. Options are the unowned faction technologies, each carrying the
+        // technology id and the token cost, plus a decline; asked once per available grant.
+        module: "entropic_scars.rs",
+        function: "resolve_status_start",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "exploration.rs",
         function: "ask",
         count: 1,
@@ -411,6 +420,16 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "fleet.rs",
         function: "remove_one",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // The Fracture, rules 9-12: choose the ingress system for each of the breakthrough's
+        // technology-specialty colours. Options are the legal (system, planet) candidates for that
+        // colour; no decline, because placement is not optional once the breakthrough is gained,
+        // and an empty candidate set breaks out before a choice is built rather than offering none.
+        module: "fracture.rs",
+        function: "after_breakthrough_gained",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -709,6 +728,20 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // Which player places the Thunder's Edge expedition slice.
+        module: "thunders_edge.rs",
+        function: "choose_placer",
+        count: 1,
+        delivery: Delivery::ObservedVia("thunders_edge.rs::ask_seeing"),
+    },
+    Producer {
+        // Which system the slice is placed in.
+        module: "thunders_edge.rs",
+        function: "choose_system",
+        count: 1,
+        delivery: Delivery::ObservedVia("thunders_edge.rs::ask_seeing"),
+    },
+    Producer {
         module: "thunders_edge.rs",
         function: "pay",
         count: 2,
@@ -729,7 +762,13 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "tokens.rs",
         function: "pending_choice",
-        count: 1,
+        // Two `Choice::new` sites share this function name: `TokenGain::pending_choice` (81.5's
+        // token-gain window, wired below) and `TokenRedistribution::pending_choice` (81.5's
+        // token-redistribution window -- see its doc comment in `tokens.rs`). The redistribution
+        // window is not wired into a driver yet; `strategy_cards::redistribute_tokens` still
+        // drives the sequential single-move mechanic it is meant to replace. Bug-fix note
+        // 2026-09-07 in `plans/current_bugs_2026-09-07.txt`.
+        count: 2,
         delivery: Delivery::ObservedVia("game.rs::step_token_gain"),
     },
     Producer {
@@ -806,6 +845,8 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("relics.rs", "offer_dominus_orb", 1),
     ("relics.rs", "stellar_converter", 1),
     ("relics.rs", "titan_prototype", 1),
+    ("entropic_scars.rs", "resolve_status_start", 1),
+    ("fracture.rs", "after_breakthrough_gained", 1),
     ("invasion.rs", "apply_bombard_plan", 1),
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),

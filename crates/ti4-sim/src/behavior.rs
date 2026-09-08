@@ -871,46 +871,72 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     // option ordering again. Option reordering changes bot sampling on tied scores; one seed
     // flipped its ending (ObjectivesExhausted → VictoryPoints) and every metric moved modestly.
     // v1 (base `45fe569`) and v2 values are preserved side by side in plans/evidence/M08-021.md.
+    // v34 — 2026-09-08. Five engine defects fixed together, so this re-baseline names them
+    // collectively rather than isolating which moved which metric; that attribution was not run.
+    //
+    // - Capacity is enforced the moment a space combat resolves, not at the end of the turn, so
+    //   cargo stranded by a destroyed carrier no longer survives to invade.
+    // - Space-station control follows the space area alone; ground forces on a planet no longer
+    //   make the system permanently contested.
+    // - Ground forces can no longer be placed on a space station (Decoy Operation).
+    // - SPACE CANNON reaches an adjacent system from every unit whose card grants it, which adds
+    //   the Xxcha flagship and Hel-Titan II to the two that already fired.
+    // - Brilliance grants a player their own breakthrough instead of taking another player's.
+    //
+    // Four metrics leave v33, and they move as one story rather than independently: activity rises
+    // -- `share_SYSTEM_ACTIVATED` [0.066241, 0.068995] -> [0.069461, 0.072148],
+    // `share_TACTICAL_ACTION_BEGAN` [0.032716, 0.034039] -> [0.034278, 0.035610],
+    // `share_PRODUCTION_RESOLVED` [0.033527, 0.034959] -> [0.035169, 0.036517] -- while
+    // `vp_pace` falls [0.409877, 0.459259] -> [0.378858, 0.439352]. Removing stranded cargo before
+    // the invasion takes ground forces off planets that used to be captured, which is a loss of
+    // points, and the games run longer in consequence. All thirty still finish cleanly.
+    //
+    // `faction_differentiation` moves too, [0.620533, 1.111333] -> [0.508690, 1.077319]. The
+    // rebaseline example does not print it -- it is gated by the integrity check rather than by the
+    // bounds comparison -- so it is taken from that check's own recomputation.
+    //
+    // Recomputed with `cargo run --release -p ti4-sim --example rebaseline_behavior`, the versioned
+    // derivation; the bootstrap seed and draw count are unchanged.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.409_876_543_209_876_5, 0.459_259_259_259_259_2),
+        (0.378_858_024_691_358_1, 0.439_351_851_851_851_8),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.788_309_619_169_000_7, 2.162_747_842_990_479_6),
+        (1.579_641_208_720_407_7, 2.116_592_851_392_181_0),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.620_533_422_464_142_1, 1.111_333_311_115_554_6),
+        (0.508_689_917_433_759_8, 1.077_319_490_193_423_0),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_440_396_850_950_645, 0.020_849_441_782_567_427),
+        (0.019_671_820_909_831_775, 0.020_855_314_957_237_327),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_526_653_608_992_64, 0.034_958_525_757_324_28),
+        (0.035_168_870_389_333_48, 0.036_516_840_030_658_866),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.045_355_679_121_139_955, 0.049_026_743_108_860_5),
+        (0.046_047_176_291_172_79, 0.049_035_751_313_794_4),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_624_809_559_758_814_5, 0.005_396_550_545_011_29),
+        (0.004_337_396_651_791_467, 0.005_187_692_807_868_566),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.066_240_594_586_514_16, 0.068_995_183_520_890_18),
+        (0.069_460_869_166_149_0, 0.072_147_760_000_549_12),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_716_134_917_816_976, 0.034_038_657_714_529_21),
+        (0.034_278_434_777_948_785, 0.035_609_595_370_520_81),
     );
     bounds
 }
