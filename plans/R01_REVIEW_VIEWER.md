@@ -140,7 +140,7 @@ artifacts).
 - Read-only external paths: none. The historical Python repository is not used.
 - Network: crates.io metadata/downloads only for the pinned native GUI/file-dialog dependencies.
 - Processes/ports: bounded Cargo build/test processes; no server and no port.
-- Generated artifacts: ignored `out/reviews/`, maximum 512 MiB per session or HTML export. Test
+- Generated artifacts: ignored `out/reviews/`, maximum 1,024 MiB per session or HTML export. Test
   artifacts use task-specific temporary directories.
 - Destructive actions: replacement/removal of exact adjacent temporary or backup save files only.
 - External-state changes: none. No push, deployment, TTS mutation, or live service.
@@ -153,8 +153,8 @@ artifacts).
 - All numeric checkpoint parameters used for inference must be finite. Every required faction must
   resolve to an explicit supported profile.
 - A command may attempt at most 2,000,000 engine steps; configurable `Run N` is capped at 1,000,000.
-- A session holds at most 1,000,001 frames and refuses serialization above 512 MiB. HTML export
-  refuses output above 512 MiB. Bounds are reported, never silently truncated as success.
+- A session holds at most 1,000,001 frames and refuses serialization above 1,024 MiB. HTML export
+  refuses output above 1,024 MiB. Bounds are reported, never silently truncated as success.
 - Every frame records its exact engine-step index, round, phase, active seat, choice-resolution flag,
   action boundary, completion flag, error, state snapshot, map placement, new events, and optional
   decision detail.

@@ -41,9 +41,9 @@ pub mod gui;
 pub const SESSION_SCHEMA: &str = "ti4-review-session";
 pub const SESSION_VERSION: u32 = 2;
 pub const TILE_SEED_OFFSET: u64 = 20_000_000;
-pub const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
-pub const MAX_SESSION_BYTES: usize = 512 * 1024 * 1024;
-pub const MAX_HTML_BYTES: usize = 512 * 1024 * 1024;
+pub const MAX_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
+pub const MAX_SESSION_BYTES: usize = 1024 * 1024 * 1024;
+pub const MAX_HTML_BYTES: usize = 1024 * 1024 * 1024;
 pub const MAX_FRAMES: usize = 1_000_001;
 pub const MAX_COMMAND_STEPS: usize = 2_000_000;
 pub const MAX_RUN_COUNT: usize = 1_000_000;
@@ -1819,6 +1819,14 @@ pub fn export_html(path: &Path, session: &ReviewSession) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_artifact_limits_are_one_gibibyte() {
+        const ONE_GIBIBYTE: usize = 1_073_741_824;
+        assert_eq!(MAX_INPUT_BYTES, ONE_GIBIBYTE as u64);
+        assert_eq!(MAX_SESSION_BYTES, ONE_GIBIBYTE);
+        assert_eq!(MAX_HTML_BYTES, ONE_GIBIBYTE);
+    }
 
     fn fixture_session() -> ReviewSession {
         let players = (0..6)

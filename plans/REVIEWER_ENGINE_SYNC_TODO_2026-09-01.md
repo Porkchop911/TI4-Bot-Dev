@@ -123,7 +123,7 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 
 - [ ] Measure frames per round, serialized bytes per frame, autosave latency, GUI history latency, and final file size on a complete current game.
 - [ ] Pay special attention to repeated full-state snapshots containing decks, discard piles, agenda state, reroll staging, and other new fields.
-- [ ] If realistic games approach the 512 MiB session limit, design periodic full checkpoints plus deterministic deltas rather than merely raising the limit.
+- [ ] Realistic games have reached 524,063,643 bytes. The temporary artifact limit is now 1,024 MiB; design periodic full checkpoints plus deterministic deltas rather than relying on the raised limit.
 - [ ] Keep autosaves recoverable and atomic while long `Run N` or `Run to end` commands are active.
 - [ ] Verify that stopping and autosaving during a large combat/reroll window does not corrupt replay reconstruction.
 
