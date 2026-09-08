@@ -881,62 +881,65 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     // - Ground forces can no longer be placed on a space station (Decoy Operation).
     // - SPACE CANNON reaches an adjacent system from every unit whose card grants it, which adds
     //   the Xxcha flagship and Hel-Titan II to the two that already fired.
-    // - Brilliance grants a player their own breakthrough instead of taking another player's.
+    // - Sol's Versatile grants its extra status token, which had been computed and never applied.
     //
-    // Four metrics leave v33, and they move as one story rather than independently: activity rises
-    // -- `share_SYSTEM_ACTIVATED` [0.066241, 0.068995] -> [0.069461, 0.072148],
-    // `share_TACTICAL_ACTION_BEGAN` [0.032716, 0.034039] -> [0.034278, 0.035610],
-    // `share_PRODUCTION_RESOLVED` [0.033527, 0.034959] -> [0.035169, 0.036517] -- while
-    // `vp_pace` falls [0.409877, 0.459259] -> [0.378858, 0.439352]. Removing stranded cargo before
-    // the invasion takes ground forces off planets that used to be captured, which is a loss of
-    // points, and the games run longer in consequence. All thirty still finish cleanly.
+    // The movement is modest. `vp_pace` falls [0.409877, 0.459259] -> [0.388426, 0.443210] and
+    // `score_spread` rises [1.788310, 2.162748] -> [1.916356, 2.308221]: enforcing capacity at the
+    // combat takes ground forces off planets that used to be captured, which costs points and
+    // widens the gap between seats that lost a carrier and seats that did not. `share_SHIP_MOVED`
+    // rises [0.045356, 0.049027] -> [0.047297, 0.051156]. Every other share moves by less than its
+    // own interval width. All thirty games still finish cleanly.
     //
-    // `faction_differentiation` moves too, [0.620533, 1.111333] -> [0.508690, 1.077319]. The
-    // rebaseline example does not print it -- it is gated by the integrity check rather than by the
-    // bounds comparison -- so it is taken from that check's own recomputation.
+    // Recorded against the committed tree, not the working tree. A first attempt derived these in a
+    // checkout carrying ~50 files of other sessions' uncommitted work and produced a much larger
+    // apparent shift -- activity up across three shares -- which belonged to that work and not to
+    // the fixes above. Bounds recomputed in a clean worktree at the commit they ship with; anyone
+    // repeating this must do the same or they will record somebody else's tree.
     //
     // Recomputed with `cargo run --release -p ti4-sim --example rebaseline_behavior`, the versioned
-    // derivation; the bootstrap seed and draw count are unchanged.
+    // derivation; the bootstrap seed and draw count are unchanged. `faction_differentiation` moves
+    // [0.620533, 1.111333] -> [0.533131, 1.121342]; the example does not print it, so it comes from
+    // the gate's own integrity recomputation.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.378_858_024_691_358_1, 0.439_351_851_851_851_8),
+        (0.388_425_925_925_925_9, 0.443_209_876_543_209_8),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.579_641_208_720_407_7, 2.116_592_851_392_181_0),
+        (1.916_355_936_519_165_8, 2.308_221_213_278_595_3),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.508_689_917_433_759_8, 1.077_319_490_193_423_0),
+        (0.533_130_748_561_484_1, 1.121_341_788_843_797_3),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_671_820_909_831_775, 0.020_855_314_957_237_327),
+        (0.019_597_055_088_779_156, 0.020_635_618_702_435_674),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.035_168_870_389_333_48, 0.036_516_840_030_658_866),
+        (0.033_743_919_970_482_24, 0.035_053_415_204_335_0),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_047_176_291_172_79, 0.049_035_751_313_794_4),
+        (0.047_297_110_244_949_81, 0.051_155_654_849_200_836),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_337_396_651_791_467, 0.005_187_692_807_868_566),
+        (0.004_665_249_738_519_836, 0.005_503_239_707_255_309),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.069_460_869_166_149_0, 0.072_147_760_000_549_12),
+        (0.066_641_039_705_445_05, 0.069_316_842_832_839_02),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.034_278_434_777_948_785, 0.035_609_595_370_520_81),
+        (0.032_877_048_409_703_73, 0.034_243_558_328_385_69),
     );
     bounds
 }
