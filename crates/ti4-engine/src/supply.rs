@@ -68,9 +68,18 @@ pub fn held(
     player: &PlayerId,
     base_type: &str,
 ) -> i64 {
+    // Every unit is counted against the same immutable source scope. Rebuilding its entire
+    // catalogue for each owned unit made production offers scale with repeated catalogue work.
+    let types = ti4_content::units::catalogue(content, sources);
+    let matches_base = |unit: &UnitTypeId| {
+        types
+            .get(unit.as_str())
+            .map_or(unit.as_str(), |kind| kind.base_type())
+            == base_type
+    };
     let mut total = 0;
     let mut count = |unit: &ti4_model::units::Unit| {
-        if &unit.owner == player && base_type_of(content, sources, &unit.type_id) == base_type {
+        if &unit.owner == player && matches_base(&unit.type_id) {
             total += 1;
         }
     };
@@ -86,7 +95,7 @@ pub fn held(
     }
     for captor in &state.players {
         for (owner, unit) in &captor.captured_units {
-            if owner == player && base_type_of(content, sources, unit) == base_type {
+            if owner == player && matches_base(unit) {
                 total += 1;
             }
         }
@@ -136,6 +145,75 @@ mod tests {
 
     fn player() -> PlayerId {
         PlayerId::new("a")
+    }
+
+    #[test]
+    fn catalogue_reuse_preserves_counts_for_every_corpus_unit_source_scope_and_location() {
+        let content = ContentStore::embedded();
+        let a = player();
+        let b = PlayerId::new("b");
+        let mut state = game(&["a", "b"]);
+        let (system, planet) = a_placed_planet();
+        let types = ti4_content::units::catalogue(content, ti4_model::content_types::DEFAULT);
+        // Include unknown ids: falling back to the original id is part of the existing contract.
+        let mut ids: Vec<&str> = types.keys().copied().collect();
+        ids.push("unknown_supply_fixture");
+        for (index, id) in ids.iter().enumerate() {
+            let owner = if index % 2 == 0 { &a } else { &b };
+            match index % 3 {
+                0 => put(&mut state, &system, id, owner, 1),
+                1 => put_on_planet(&mut state, &system, &planet, id, owner, 1),
+                _ => state
+                    .player_mut(&b)
+                    .expect("captor")
+                    .captured_units
+                    .push((owner.clone(), UnitTypeId::new(*id))),
+            }
+        }
+        // The reference deliberately calls the original public resolver per unit. It is slow,
+        // but independently prices all corpus ids under each scope, including excluded records.
+        for sources in [
+            ti4_model::content_types::BASE,
+            POK,
+            ti4_model::content_types::DEFAULT,
+        ] {
+            for owner in [&a, &b, &PlayerId::new("absent")] {
+                let mut expected: std::collections::BTreeMap<String, i64> =
+                    std::collections::BTreeMap::new();
+                for board in state.board.values() {
+                    for unit in board
+                        .units
+                        .iter()
+                        .chain(board.planet_units.values().flatten())
+                    {
+                        if &unit.owner == owner {
+                            *expected
+                                .entry(base_type_of(content, sources, &unit.type_id))
+                                .or_default() += 1;
+                        }
+                    }
+                }
+                for captor in &state.players {
+                    for (original_owner, unit) in &captor.captured_units {
+                        if original_owner == owner {
+                            *expected
+                                .entry(base_type_of(content, sources, unit))
+                                .or_default() += 1;
+                        }
+                    }
+                }
+                expected
+                    .entry("missing_base_fixture".to_owned())
+                    .or_default();
+                for (base, count) in expected {
+                    assert_eq!(
+                        held(&state, content, sources, owner, &base),
+                        count,
+                        "{sources:?} {owner} {base}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
