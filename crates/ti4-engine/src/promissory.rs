@@ -273,6 +273,56 @@ pub fn return_support(state: &mut GameState, owner: &PlayerId) -> bool {
     true
 }
 
+/// Owners whose Support for the Throne is spent by `activator` activating `system`.
+///
+/// The printed card (69.3): "When you activate a system that contains 1 or more of the
+/// `<color>` player's units... lose 1 victory point and return this card to the `<color>`
+/// player." Unlike Ceasefire, whose card names the *move* that follows activation (see
+/// [`denies_movement_into`]), Support's trigger is the activation itself — so this reads
+/// whatever the system already holds at that step rather than waiting on a move.
+#[must_use]
+pub fn support_triggered_by_activation(
+    state: &GameState,
+    activator: &PlayerId,
+    system: &ti4_model::id::SystemId,
+) -> Vec<PlayerId> {
+    let board = state.system_state(system);
+    let mut present: std::collections::BTreeSet<&PlayerId> =
+        board.units.iter().map(|unit| &unit.owner).collect();
+    present.extend(
+        board
+            .planet_units
+            .values()
+            .flatten()
+            .map(|unit| &unit.owner),
+    );
+    state
+        .support_holders
+        .iter()
+        .filter(|(_, holder)| *holder == activator)
+        .filter(|(owner, _)| present.contains(owner))
+        .map(|(owner, _)| owner.clone())
+        .collect()
+}
+
+/// Return every Support triggered by activating `system`, and report whose it was.
+///
+/// Wraps [`support_triggered_by_activation`] and [`return_support`] the way [`use_ceasefire`]
+/// wraps [`denies_movement_into`] and [`give_back`]: one call for whatever drives the
+/// `SYSTEM_ACTIVATED` step, so an activator holding two lent-out Supports against owners both
+/// present pays both back in one pass instead of making the caller loop by hand.
+pub fn spend_support_on_activation(
+    state: &mut GameState,
+    activator: &PlayerId,
+    system: &ti4_model::id::SystemId,
+) -> Vec<PlayerId> {
+    let owners = support_triggered_by_activation(state, activator, system);
+    for owner in &owners {
+        return_support(state, owner);
+    }
+    owners
+}
+
 /// Trade Convoys: its holder may transact with the whole table, not only their neighbours.
 ///
 /// Only while the card is faceup in a play area — that is where it lives once lent (69.3), and
@@ -844,6 +894,67 @@ mod tests {
             !state.promissory_faceup.contains("convoys:hacan"),
             "the play area is where a lent note lives, not its home"
         );
+    }
+
+    #[test]
+    fn support_for_the_throne_returns_when_its_holder_activates_the_owners_system() {
+        // 69.3: "When you activate a system that contains 1 or more of the <color> player's
+        // units... lose 1 victory point and return this card to the <color> player." This bug
+        // report was that the note never came home; nothing in the engine called
+        // `return_support` at all (grep confirms no caller outside these tests), so this pins
+        // the rule the missing wiring is supposed to invoke.
+        let mut state = game_hacan_jolnar();
+        let (system, _) = crate::fixtures::a_placed_planet();
+        let before = state.player(&b()).unwrap().victory_points;
+        assert!(receive(&mut state, &b(), &support("hacan"))); // a's Support, held by b
+        crate::fixtures::put(&mut state, &system, "cruiser", &a(), 1); // a (the owner) present
+
+        let owners = spend_support_on_activation(&mut state, &b(), &system);
+
+        assert_eq!(owners, vec![a()]);
+        assert_eq!(
+            state.player(&b()).unwrap().victory_points,
+            before,
+            "the point went home with the card"
+        );
+        assert!(state.support_holders.is_empty(), "and the card with it");
+    }
+
+    #[test]
+    fn activating_a_system_without_the_owners_units_does_not_return_support() {
+        // The trigger names the *owner's* units in the activated system, not any units at all
+        // and not the holder's own presence there.
+        let mut state = game_hacan_jolnar();
+        let (system, _) = crate::fixtures::a_placed_planet();
+        assert!(receive(&mut state, &b(), &support("hacan")));
+        crate::fixtures::put(&mut state, &system, "cruiser", &b(), 1); // holder's own units only
+
+        let owners = spend_support_on_activation(&mut state, &b(), &system);
+
+        assert!(owners.is_empty());
+        assert_eq!(
+            state.support_holders.get(&a()),
+            Some(&b()),
+            "still lent out"
+        );
+    }
+
+    #[test]
+    fn a_support_held_by_a_different_activator_is_untouched() {
+        // Support only returns to whoever gave it out, and only when the note's own owner has
+        // units in the system that player just activated -- a third player activating the same
+        // system must not spend somebody else's loan.
+        let mut state = game(&["a", "b", "c"]);
+        state.player_mut(&a()).unwrap().faction = FactionId::new("hacan");
+        state.player_mut(&b()).unwrap().faction = FactionId::new("jolnar");
+        let (system, _) = crate::fixtures::a_placed_planet();
+        assert!(receive(&mut state, &b(), &support("hacan")));
+        crate::fixtures::put(&mut state, &system, "cruiser", &a(), 1);
+
+        let owners = spend_support_on_activation(&mut state, &PlayerId::new("c"), &system);
+
+        assert!(owners.is_empty(), "c never held a's Support");
+        assert_eq!(state.support_holders.get(&a()), Some(&b()));
     }
 
     #[test]

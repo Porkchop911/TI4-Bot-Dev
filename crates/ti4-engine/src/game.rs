@@ -450,6 +450,38 @@ impl AftermathWindow {
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
                     }
+                    // 16.3 at the moment the carrier dies, not at the end of the turn.
+                    //
+                    // A space combat that destroys a carrier strands whatever it was holding:
+                    // fighters, ground forces and mechs that no longer have capacity to sit in.
+                    // Enforcement ran only at the end of the turn, so those units were still on the
+                    // board for the invasion below and could capture a planet they should never
+                    // have reached -- the rules had already removed them, and the board was only
+                    // reconciled once the invasion was over. Both players' fleets are checked,
+                    // because either can lose a carrier here.
+                    //
+                    // This asks the losing seat which units to drop, so it moves a decision earlier
+                    // in the turn rather than adding a new kind of one. That perturbs recorded
+                    // trajectories against policies trained before it; accepted deliberately on the
+                    // owner's ruling, 2026-09-08.
+                    let galaxy = ctx.timing.as_ref().and_then(|timing| timing.galaxy);
+                    for seat in state
+                        .players
+                        .iter()
+                        .map(|seat| seat.id.clone())
+                        .collect::<Vec<_>>()
+                    {
+                        crate::fleet::enforce_seeing(
+                            state,
+                            ctx.content,
+                            ctx.sources,
+                            galaxy,
+                            ctx.table,
+                            &seat,
+                            &self.system,
+                        )
+                        .map_err(crate::combat::CombatError::from)?;
+                    }
                     self.stage = if holds {
                         // Two cards read "at the start of an invasion", so the window opens
                         // before the invasion does rather than after it has resolved.
@@ -1183,6 +1215,10 @@ impl<'a> Game<'a> {
                     return Ok(());
                 }
                 if answer.id.starts_with("component|expedition|") {
+                    let had_breakthrough = self
+                        .state
+                        .player(&active)
+                        .is_some_and(|seat| seat.breakthrough.is_some());
                     let done = crate::thunders_edge::perform(
                         &mut self.state,
                         self.content,
@@ -1192,6 +1228,24 @@ impl<'a> Game<'a> {
                         &active,
                         &answer,
                     )?;
+                    let gained_breakthrough = !had_breakthrough
+                        && self
+                            .state
+                            .player(&active)
+                            .is_some_and(|seat| seat.breakthrough.is_some());
+                    if gained_breakthrough
+                        && crate::fracture::after_breakthrough_gained(
+                            &mut self.state,
+                            self.content,
+                            self.sources,
+                            self.galaxy.as_ref(),
+                            &mut self.table,
+                            &mut self.rng,
+                            &active,
+                        )?
+                    {
+                        self.emit("FRACTURE_ENTERED_PLAY");
+                    }
                     self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
@@ -1688,6 +1742,13 @@ impl<'a> Game<'a> {
             TacticalStage::Activating => {
                 let system = SystemId::new(answer.id);
                 activate(&mut self.state, &window.player, &system)?;
+                for owner in crate::promissory::spend_support_on_activation(
+                    &mut self.state,
+                    &window.player,
+                    &system,
+                ) {
+                    self.emit(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"));
+                }
                 self.state.gravleash_move_values.clear();
                 self.emit(&format!("SYSTEM_ACTIVATED:{system}"));
                 // Typed as well as logged, so the eight cards that read "After you activate a
@@ -1836,12 +1897,13 @@ impl<'a> Game<'a> {
             .map(|unit| (*unit).clone())
             .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
 
-        let mut rules = MovementRules::new(
+        let mut rules = MovementRules::with_laws(
             &galaxy,
             self.content,
             self.sources,
             active.as_str(),
             Board::for_player(&self.state, self.content, self.sources, &window.player),
+            Some(&self.state),
         );
         crate::action_cards::apply_movement_effects(&mut rules, &self.state, &window.player);
         let path = ti4_content::units::catalogue(self.content, self.sources)
@@ -2384,6 +2446,22 @@ impl<'a> Game<'a> {
     /// Scoring can end the game (98.7), which is why LRR 81 puts it first and why the rest of
     /// the phase is not touched until the window closes.
     fn step_status(&mut self) -> StepResult {
+        match crate::entropic_scars::resolve_status_start(
+            &mut self.state,
+            self.content,
+            self.sources,
+            self.galaxy.as_ref(),
+            &mut self.table,
+        ) {
+            Ok(grants) => {
+                for (player, technology) in grants {
+                    self.emit(&format!(
+                        "ENTROPIC_SCAR_TECHNOLOGY_GAINED:{player}:{technology}"
+                    ));
+                }
+            }
+            Err(error) => return self.result(false, Some(error.into())),
+        }
         self.status_resolved = true;
         // With the map, so objectives that ask about the board's shape can be scored at all.
         let mut window = ScoringWindow::new(&self.state.initiative_order());
@@ -2551,7 +2629,7 @@ impl<'a> Game<'a> {
                 }
                 self.emit("STATUS_BOOKKEEPING_RESOLVED");
                 self.tokens = Some((
-                    TokenGain::for_status(&report.initiative_order),
+                    TokenGain::for_status(&self.state, self.content, &report.initiative_order),
                     Box::new(report),
                 ));
                 self.result(false, None)
@@ -4216,6 +4294,40 @@ mod tests {
     }
 
     #[test]
+    fn activating_the_support_owners_system_returns_support_in_the_driven_game() {
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let holder = PlayerId::new("a");
+        let owner = PlayerId::new("b");
+        state.player_mut(&holder).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        assert!(crate::promissory::receive(
+            &mut state,
+            &holder,
+            &crate::promissory::support("hacan")
+        ));
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &owner, 1);
+        let points_with_support = state.player(&holder).unwrap().victory_points;
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        assert_eq!(game.step().error, None, "the tactical action opens");
+        assert_eq!(game.step().error, None, "the system activates");
+
+        assert!(!game.state.support_holders.contains_key(&owner));
+        assert_eq!(
+            game.state.player(&holder).unwrap().victory_points,
+            points_with_support - 1
+        );
+        assert!(
+            game.events
+                .contains(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"))
+        );
+    }
+
+    #[test]
     fn arriving_on_a_frontier_token_without_det_does_not_explore_it() {
         // LRR 35: a frontier token is explored only by a player who owns the Dark Energy Tap
         // technology "or if another game effect allows them to". Arriving with a ship is
@@ -5059,7 +5171,11 @@ mod tests {
         let table = Table::with_default(Box::new(crate::choice::FirstOption));
         let mut game = Game::with_table(state, ContentStore::embedded(), table);
         game.tokens = Some((
-            crate::tokens::TokenGain::for_status(&[PlayerId::new("a")]),
+            crate::tokens::TokenGain::for_status(
+                &game.state,
+                ContentStore::embedded(),
+                &[PlayerId::new("a")],
+            ),
             Box::default(),
         ));
 
@@ -5402,6 +5518,88 @@ mod tests {
         assert!(
             survivors.is_empty(),
             "the waylay hit took the cruiser, and B's fighter has nothing left to sit in; log: {events:?}"
+        );
+    }
+
+    /// Cargo stranded by the combat is removed, and the removal is driven from the combat itself.
+    ///
+    /// **What this pins and what it does not.** It pins the substance: a fighter whose carrier died
+    /// is gone. It does *not* independently pin the ordering against the invasion, because the
+    /// whole aftermath -- combat, capacity, invasion, production -- resolves inside a single
+    /// `Game::step()` whenever no decision is pending, so no game-level observation falls between
+    /// them. The ordering is structural instead: the `enforce_seeing` loop sits in
+    /// `AftermathWindow::settle` between pushing `SPACE_COMBAT_RESOLVED` and constructing the
+    /// `InvasionWindow`, and nothing can run between two adjacent statements.
+    ///
+    /// That ordering is the whole point. Enforcement used to run only at the end of the turn, so an
+    /// invader whose carrier died mid-combat still had its infantry aboard for the invasion and
+    /// could take a planet with ground forces the rules had already removed.
+    #[test]
+    fn cargo_stranded_by_the_combat_is_removed() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let (mut state, galaxy, ids) = combat_fixture(&["waylay"], &[]);
+        crate::fixtures::put(&mut state, &ids[0], "destroyer", &a, 2);
+        crate::fixtures::put(&mut state, &ids[0], "fighter", &b, 2);
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &b, 1);
+
+        let script: Vec<String> = [
+            TACTICAL_ACTION_ID,
+            ids[0].as_str(),
+            "done_moving",
+            "stay",
+            "reaction:generic:ANTI_FIGHTER_BARRAGE_STARTED:when",
+            "destroy|2",
+            "destroy|0",
+            "stay",
+            "retreat",
+            "02",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let table = Table::with_default(Box::new(Scripted::new(script)));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let faces: [u32; 17] = [
+            10, 1, 1, 1, // A's four barrage dice: one hit, spent on the cruiser
+            10, 1, // A's first fleet round: one hit
+            1, 1, 1, // B's first fleet round
+            1, 1, // A's second round
+            1, 1, // B's second round
+            1, 1, // A's third round
+            1, 1, // B's third round
+        ];
+        game.dice = Dice::from_faces(faces);
+
+        for _ in 0..60 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            if game
+                .events
+                .iter()
+                .any(|event| event == "SPACE_COMBAT_RESOLVED")
+            {
+                break;
+            }
+        }
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "SPACE_COMBAT_RESOLVED"),
+            "the fixture must actually resolve a space combat; log: {:?}",
+            game.events
+        );
+        let board = game.state.system_state(&ids[0]);
+        let stranded: Vec<&str> = board
+            .units
+            .iter()
+            .filter(|unit| unit.owner == b)
+            .map(|unit| unit.type_id.as_str())
+            .collect();
+        assert!(
+            stranded.is_empty(),
+            "B's cruiser died in the combat, so its fighters have nothing to sit in and must be \
+             gone already; found {stranded:?}; log: {:?}",
+            game.events
         );
     }
 
@@ -6486,6 +6684,149 @@ mod tests {
                     prompt: choice.prompt.clone(),
                 })
         }
+    }
+
+    #[test]
+    /// Assimilate converts after a ground combat, and stops when the plastic has run out.
+    ///
+    /// Two things the no-fight test next door cannot see. The first arm answers "does Assimilate
+    /// need a fight" -- the existing coverage captures an undefended planet, so the whole
+    /// `Fighting` path was untested. The second arm is the more likely explanation for the
+    /// mechanic looking dead in real games: conversion is gated on `supply::remaining`, space docks
+    /// cap at three, and a player who already has three on the board converts *nothing* and is told
+    /// nothing about why.
+    #[test]
+    fn assimilate_converts_after_a_ground_combat_and_is_capped_by_supply() {
+        let content = ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+
+        let run = |docks_already_held: usize, defended: bool| -> Vec<(String, PlayerId)> {
+            let (mut state, system, planet) = {
+                let state = start_game(content, &[a.clone(), b.clone()], POK, None).unwrap();
+                let planets = ti4_content::galaxy::all_planets(content, POK);
+                let (id, p) = planets
+                    .iter()
+                    .find(|(_, p)| {
+                        p.system_id().is_some()
+                            && !p.is_placed_during_play()
+                            && p.system_id() != Some(crate::seating::MECATOL)
+                    })
+                    .expect("the corpus has a placed planet outside Mecatol Rex");
+                (
+                    state,
+                    SystemId::new(p.system_id().unwrap()),
+                    ti4_model::id::PlanetId::new(*id),
+                )
+            };
+            state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("l1z1x");
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), b.clone());
+
+            // b's holdings on the planet: one spacedock to convert, plus an infantry only when the
+            // arm wants the capture to go through a real ground combat rather than walking on.
+            let held: &[&str] = if defended {
+                &["spacedock", "infantry"]
+            } else {
+                &["spacedock"]
+            };
+            for kind in held {
+                state
+                    .system_mut(&system)
+                    .planet_units
+                    .entry(planet.clone())
+                    .or_default()
+                    .push(Unit::new(ti4_model::id::UnitTypeId::new(*kind), b.clone()));
+            }
+            // a's own docks, parked on another planet, to exhaust the three-dock cap in the
+            // second arm without touching the contested planet.
+            let elsewhere = ti4_model::id::PlanetId::new("elsewhere_for_docks");
+            for _ in 0..docks_already_held {
+                state
+                    .system_mut(&system)
+                    .planet_units
+                    .entry(elsewhere.clone())
+                    .or_default()
+                    .push(Unit::new(
+                        ti4_model::id::UnitTypeId::new("spacedock"),
+                        a.clone(),
+                    ));
+            }
+            for _ in 0..3 {
+                state.system_mut(&system).units.push(Unit::new(
+                    ti4_model::id::UnitTypeId::new("infantry"),
+                    a.clone(),
+                ));
+            }
+
+            // a's three ground dice all hit, b's one misses, so a wins in one round.
+            let mut dice = Dice::from_faces([10, 10, 10, 1, 1, 1, 1, 1]);
+            let mut rng = crate::rng::GameRng::new(1);
+            let mut table = Table::with_default(Box::new(CommitTo(planet.clone())));
+            let mut window = crate::invasion::InvasionWindow::new(
+                &mut state, content, POK, &mut dice, &mut rng, &a, &system,
+            );
+            let mut ctx = crate::choice::Resolving {
+                content,
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: None,
+            };
+            crate::choice::Window::drive(&mut window, &mut state, &mut ctx).unwrap();
+            while !window.is_done() {
+                window.settle(&mut state, &mut ctx);
+                if window.take_scoring_occurrence().is_none() {
+                    break;
+                }
+            }
+
+            assert_eq!(
+                state.system_state(&system).planet_control.get(&planet),
+                Some(&a),
+                "a must win the ground combat for the capture to happen at all"
+            );
+            state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|unit| (unit.type_id.to_string(), unit.owner))
+                .collect()
+        };
+
+        let after_a_fight = run(0, true);
+        assert!(
+            after_a_fight
+                .iter()
+                .any(|(kind, owner)| kind == "spacedock" && *owner == a),
+            "a fight does not stop Assimilate: the dock is a's now; found {after_a_fight:?}"
+        );
+
+        // The reported case: docks in supply, and the planet taken without resistance. The only
+        // existing no-fight coverage captures a *home* planet, which raises a scoring occurrence
+        // and resumes through `Stage::FinalizingControl`; an ordinary planet never pauses and
+        // reaches `finish_control_gain` by the other branch, which nothing exercised.
+        let without_a_fight = run(0, false);
+        assert!(
+            without_a_fight
+                .iter()
+                .any(|(kind, owner)| kind == "spacedock" && *owner == a),
+            "walking onto an undefended planet must convert too; found {without_a_fight:?}"
+        );
+
+        let without_supply = run(3, true);
+        assert!(
+            !without_supply
+                .iter()
+                .any(|(kind, owner)| kind == "spacedock" && *owner == a),
+            "three docks already on the board is the whole supply, so nothing converts; \
+             found {without_supply:?}"
+        );
     }
 
     #[test]
@@ -8235,8 +8576,9 @@ mod tests {
         // round one's strategy phase, before that phase's first draft choice. Both
         // games below are the same seeded game — they draft the same eight-card mat
         // and take the same forced strategic actions, so the only difference the runs
-        // can show is the card's: two fleet tokens (the decider names every gained
-        // token into the fleet pool, card tokens included) and a spent card.
+        // can show is the card's two additional command tokens and a spent card. The
+        // later status redistribution is a whole-sheet decision, so it may move both
+        // the card and ordinary gains after their initial pool choices.
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
         let content = ContentStore::embedded();
@@ -8271,16 +8613,9 @@ mod tests {
         let (control_tactic, control_fleet, control_strategic) = pools(&control);
 
         assert_eq!(
-            arm_fleet,
-            control_fleet + 2,
-            "Summit is worth exactly two tokens, both named into the fleet pool; arm log {:?} / control log {:?}",
-            arm.events,
-            control.events
-        );
-        assert_eq!(
-            (arm_tactic, arm_strategic),
-            (control_tactic, control_strategic),
-            "the card touched only the pool its gain named; arm log {:?} / control log {:?}",
+            arm_tactic + arm_fleet + arm_strategic,
+            control_tactic + control_fleet + control_strategic + 2,
+            "Summit is worth exactly two command tokens regardless of their later redistribution; arm log {:?} / control log {:?}",
             arm.events,
             control.events
         );

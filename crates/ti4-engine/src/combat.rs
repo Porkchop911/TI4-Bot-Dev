@@ -1209,28 +1209,58 @@ fn destroy_fighters(
 /// Xxcha's Indomitus mech, which prints the same clause. Both stand on planets, so only planets are
 /// searched; and both belong to somebody other than the active player, since space cannon offence
 /// fires at the seat that activated the system.
+/// Does this unit's own card let its SPACE CANNON reach an adjacent system?
+///
+/// Read from the unit's ability text rather than matched against a list of ids. The list this
+/// replaces held `["pds2", "xxcha_mech"]` and had gone stale: four units in the corpus carry the
+/// clause -- PDS II, Hel-Titan II, Xxcha's Indomitus mech and the Xxcha flagship Loncara Ssodu --
+/// and two of them never fired. A list is exactly the wrong shape for "every unit whose card says
+/// this", because adding the fifth unit means editing code that looks unrelated to the content
+/// change. `every_unit_that_reaches_an_adjacent_system_is_found` pins the derived set so a reworded
+/// card fails a test instead of silently disarming a gun.
+fn reaches_adjacent(kind: ti4_content::units::UnitType<'_>) -> bool {
+    let Some(ability) = kind.record().text("ability") else {
+        return false;
+    };
+    let ability = ability.to_ascii_lowercase();
+    // Both phrasings in the corpus: "against ships that are in adjacent systems" (PDS II, the mech
+    // and the flagship) and "against ships that are adjacent to this unit's systems" (Hel-Titan II).
+    ability.contains("space cannon against ships that are") && ability.contains("adjacent")
+}
+
+/// Guns in neighbouring systems whose cards let them fire into this one.
+///
+/// Scans the space area as well as the planets. The planet-only version could not see the Xxcha
+/// flagship, which is a ship and never stands on a planet, so that gun was unreachable even before
+/// the id list is considered.
 fn reaching_guns(
     state: &GameState,
+    types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
     system: &SystemId,
     active: &PlayerId,
 ) -> Vec<Unit> {
-    const REACHES: [&str; 2] = ["pds2", "xxcha_mech"];
     let Some(galaxy) = galaxy else {
         return Vec::new();
     };
     let mut found = Vec::new();
     for neighbour in galaxy.adjacent(system.as_str()) {
         let board = state.system_state(&SystemId::new(neighbour));
-        for standing in board.planet_units.values() {
-            found.extend(
-                standing
-                    .iter()
-                    .filter(|unit| &unit.owner != active)
-                    .filter(|unit| REACHES.contains(&unit.type_id.as_str()))
-                    .cloned(),
-            );
-        }
+        let standing = board
+            .planet_units
+            .values()
+            .flat_map(|units| units.iter())
+            .chain(board.units.iter());
+        found.extend(
+            standing
+                .filter(|unit| &unit.owner != active)
+                .filter(|unit| {
+                    types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| reaches_adjacent(*kind))
+                })
+                .cloned(),
+        );
     }
     found
 }
@@ -1279,7 +1309,7 @@ pub fn space_cannon_offense(
     // ships that are in adjacent systems." Two cards, one clause, and neither reached the active
     // system before: `space_cannon_offense` read only the system being activated, so an upgraded
     // PDS next door -- a technology every faction can research -- never fired at all.
-    guns.extend(reaching_guns(state, galaxy, system, active));
+    guns.extend(reaching_guns(state, &types, galaxy, system, active));
 
     let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
         std::collections::BTreeMap::new();
@@ -3339,8 +3369,10 @@ mod tests {
         }
         put(&mut state, &active, "cruiser", &attacker(), 1);
 
-        let guns =
-            |state: &GameState| reaching_guns(state, Some(&hub.galaxy), &active, &attacker()).len();
+        let types = catalogue(ContentStore::embedded(), POK);
+        let guns = |state: &GameState| {
+            reaching_guns(state, &types, Some(&hub.galaxy), &active, &attacker()).len()
+        };
 
         if let Some(here) = state.board.get_mut(&next_door) {
             here.planet_units
@@ -3365,6 +3397,56 @@ mod tests {
                 .push(Unit::new(UnitTypeId::new("xxcha_mech"), defender()));
         }
         assert_eq!(guns(&state), 2, "and so does Xxcha's Indomitus mech");
+
+        // The flagship is a ship: it is never on a planet, and the planet-only scan could not see
+        // it however the unit list was written.
+        if let Some(here) = state.board.get_mut(&next_door) {
+            here.units
+                .push(Unit::new(UnitTypeId::new("xxcha_flagship"), defender()));
+        }
+        assert_eq!(
+            guns(&state),
+            3,
+            "Loncara Ssodu reaches next door from the space area"
+        );
+
+        if let Some(here) = state.board.get_mut(&next_door) {
+            here.planet_units
+                .entry(planet)
+                .or_default()
+                .push(Unit::new(UnitTypeId::new("titans_pds2"), defender()));
+        }
+        assert_eq!(guns(&state), 4, "and so does Hel-Titan II");
+    }
+
+    /// Every unit whose card grants the adjacent-system clause is found, and nothing else is.
+    ///
+    /// The predicate reads prose, so it is pinned against the corpus rather than trusted. A
+    /// reworded card or a newly added unit fails here instead of quietly losing a gun, which is
+    /// how the previous hard-coded `["pds2", "xxcha_mech"]` list came to be missing half the units
+    /// that carry the clause.
+    #[test]
+    fn every_unit_that_reaches_an_adjacent_system_is_found() {
+        let types = catalogue(ContentStore::embedded(), POK);
+        let mut reaching: Vec<&str> = types
+            .iter()
+            .filter(|(_, kind)| reaches_adjacent(**kind))
+            .map(|(id, _)| *id)
+            .collect();
+        reaching.sort_unstable();
+        assert_eq!(
+            reaching,
+            vec!["pds2", "titans_pds2", "xxcha_flagship", "xxcha_mech"],
+            "the corpus units carrying \"SPACE CANNON against ships that are ... adjacent\""
+        );
+        for id in &reaching {
+            assert!(
+                types
+                    .get(id)
+                    .is_some_and(|kind| kind.space_cannon_hits_on().is_some()),
+                "{id} reaches an adjacent system but has no SPACE CANNON to fire"
+            );
+        }
     }
 
     /// OBS-003d: the retreat-announce choice a fresh combat opens into names its rule and the

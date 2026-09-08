@@ -15,8 +15,15 @@
 //! Control is therefore a *function of occupancy*, re-evaluated whenever occupancy changes, rather
 //! than an event fired by an invasion. The three clauses collapse into one rule with one exception:
 //!
-//! - exactly one player has units in the system → that player controls every station in it;
+//! - exactly one player has **ships in the space area** → that player controls every station in it;
 //! - anyone else → control is left exactly as it was.
+//!
+//! **Occupancy is the space area only, not ground forces on planets.** Clause 2a settles it: a
+//! player takes the station by winning *the resulting space combat*, which is a fact about ships.
+//! Counting armies too made any defender infantry anywhere in the system — on a planet the attacker
+//! never touched, or standing on the station itself, which [`crate::invasion`] should not permit —
+//! read as a second occupant, so the system stayed permanently "contested" and the station never
+//! transferred to the player who had actually taken the space.
 //!
 //! That single "leave it alone" branch covers both 2a and 2b. Two players present is a contested
 //! system whose combat has not yet resolved, so the previous holder keeps it (2a). Nobody present
@@ -43,17 +50,18 @@ pub fn stations_in(content: &ContentStore, sources: SourceSet, system: &SystemId
     })
 }
 
-/// Everyone holding a unit anywhere in this system, in space or on a planet.
+/// Everyone with a unit in this system's **space area**.
 ///
-/// "Units", not "ships": rule 2 says units, and a seat that left ground forces on a planet in the
-/// system is still present there. Ships alone would hand a station to a passing fleet over the head
-/// of the player actually holding the ground.
+/// Ships, not "every unit". Rule 2 says units and this once read ground forces too, but clause 2a
+/// decides the question: a player takes the station by winning *the resulting space combat*. Under
+/// the wider reading a single defending infantry — on any planet of the tile, or on the station
+/// itself — made the system permanently contested, so a fleet that had cleared the space never
+/// gained the station. Owner's ruling, 2026-09-08.
 fn occupants(state: &GameState, system: &SystemId) -> std::collections::BTreeSet<PlayerId> {
-    let record = state.system_state(system);
-    record
+    state
+        .system_state(system)
         .units
         .iter()
-        .chain(record.planet_units.values().flatten())
         .map(|unit| unit.owner.clone())
         .collect()
 }
@@ -134,6 +142,50 @@ mod tests {
             .cloned()
     }
 
+    /// Winning the space combat takes the station even while the loser still holds ground.
+    ///
+    /// Occupancy used to count ground forces on planets as well as ships, so a defender with a
+    /// single infantry anywhere in the system -- including on the station itself, which rule 5
+    /// forbids and which [`crate::action_cards`]'s Decoy Operation used to allow -- read as a
+    /// second occupant. The system was then permanently "contested" and the station never
+    /// transferred to the player who had actually taken the space.
+    #[test]
+    fn taking_the_space_takes_the_station_even_if_the_loser_still_holds_ground() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, a, b, system) = setup();
+        state.system_mut(&system).units.push(ship(&a));
+        state.system_mut(&system).planet_units.insert(
+            PlanetId::new(WATCHTOWER),
+            vec![Unit::new(
+                ti4_model::id::UnitTypeId::new("infantry"),
+                b.clone(),
+            )],
+        );
+
+        assert!(reconcile(&mut state, content, ALL_SOURCES, &system));
+        assert_eq!(
+            holder(&state, &system),
+            Some(a),
+            "2a: A won the space, so A holds the station"
+        );
+    }
+
+    /// Two fleets present is still contested, which is what 2a is actually about.
+    #[test]
+    fn two_players_with_ships_leave_the_station_alone() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, a, b, system) = setup();
+        state.system_mut(&system).units.push(ship(&a));
+        state.system_mut(&system).units.push(ship(&b));
+
+        assert!(!reconcile(&mut state, content, ALL_SOURCES, &system));
+        assert_eq!(
+            holder(&state, &system),
+            None,
+            "2a: the combat has not resolved, so nothing transfers"
+        );
+    }
+
     #[test]
     fn the_only_player_in_the_system_gains_the_station() {
         let content = ti4_content::ContentStore::embedded();
@@ -196,9 +248,16 @@ mod tests {
         );
     }
 
+    /// Ground forces on a *real* planet do not contest the station on the same tile.
+    ///
+    /// This reverses an earlier reading. Rule 2 says "units", and holding the real planet of a
+    /// mixed tile was taken as presence, so the station on it could never change hands while the
+    /// other seat kept a single infantry there. Clause 2a is what settles it: a player takes the
+    /// station by winning *the resulting space combat*, which is a fact about ships. Owner's ruling,
+    /// 2026-09-08, against the bug "space stations don't turn over control when the space is taken
+    /// over by an other faction" in `plans/current_bugs_2026-09-08.txt`.
     #[test]
-    fn ground_forces_in_the_system_count_as_presence() {
-        // Rule 2 says units, not ships. A seat holding the real planet on a mixed tile is present.
+    fn ground_forces_on_a_real_planet_do_not_contest_the_station() {
         let content = ti4_content::ContentStore::embedded();
         let mut state = crate::fixtures::game(&["a", "b"]);
         let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
@@ -219,8 +278,8 @@ mod tests {
                 .system_state(&system)
                 .planet_control
                 .get(&PlanetId::new("tsionstation")),
-            None,
-            "two players are present, so nobody takes the station"
+            Some(&b),
+            "B is the only seat with ships, so B takes the station (2a)"
         );
     }
 

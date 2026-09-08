@@ -884,6 +884,33 @@ mod tests {
     }
 
     #[test]
+    fn versatile_grants_one_more_status_token() {
+        // Sol's Versatile. The hook itself is correct and pinned here; the reported bug ("sol
+        // still does not get extra cc from versatile") is that nothing in the engine calls it —
+        // `tokens::TokenGain::for_status` grants `tokens::STATUS_TOKENS` uniformly to every
+        // player and never reaches this function (that module's own doc comment says as much:
+        // "None of those are implemented, so the base is used unmodified"). Wiring it in needs a
+        // per-player count in `tokens.rs` and its caller in `game.rs`, both outside this file.
+        let Some(sol) = faction_with("versatile") else {
+            return; // this corpus does not print Versatile
+        };
+        let content = ContentStore::embedded();
+        let (with, player) = seated(&sol);
+        let (without, _) = seated("jolnar");
+
+        assert_eq!(
+            status_tokens(&with, content, &player, 2),
+            3,
+            "Versatile grants one more"
+        );
+        assert_eq!(
+            status_tokens(&without, content, &player, 2),
+            2,
+            "and nobody else gets it"
+        );
+    }
+
+    #[test]
     fn a_die_shift_is_signed() {
         // Fragile subtracts and Unrelenting adds. A hook that returned a magnitude would make
         // Jol-Nar the best shots in the game.

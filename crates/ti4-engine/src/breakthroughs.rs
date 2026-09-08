@@ -191,6 +191,24 @@ pub fn specialty_research_planets(
     found
 }
 
+/// This faction's breakthrough alias, if the corpus lists one.
+///
+/// Looked up by alias across every source rather than through [`ContentStore::from_sources`]: a
+/// player only ever holds a breakthrough because Thunder's Edge is already in the game (nothing
+/// else grants one), so filtering this particular lookup by the active source scope would just
+/// risk a false negative for a card resolved under a narrower scope than the one that seated
+/// the player. `crate::thunders_edge::breakthrough_for` makes the identical choice when a
+/// breakthrough is first granted.
+#[must_use]
+pub fn for_faction(content: &ContentStore, faction: &str) -> Option<BreakthroughId> {
+    content
+        .records(ti4_model::content_types::ContentType::Breakthroughs)
+        .iter()
+        .find(|record| record.text("faction") == Some(faction))
+        .and_then(|record| record.text("alias"))
+        .map(BreakthroughId::new)
+}
+
 /// Whether this player holds this breakthrough.
 #[must_use]
 pub fn holds(state: &GameState, player: &PlayerId, alias: &str) -> bool {
@@ -440,6 +458,16 @@ mod tests {
         let after = crate::technology::owned_colours(&state, content, &player);
         assert_eq!(before, after, "a breakthrough is not a technology");
         assert!(after.is_empty(), "and this seat owns none");
+    }
+
+    #[test]
+    fn for_faction_finds_the_one_breakthrough_that_faction_owns() {
+        let content = ti4_content::ContentStore::embedded();
+        assert_eq!(
+            for_faction(content, "l1z1x"),
+            Some(BreakthroughId::new("l1z1xbt"))
+        );
+        assert_eq!(for_faction(content, "not-a-faction"), None);
     }
 
     /// Every breakthrough of the six trained factions is implemented.

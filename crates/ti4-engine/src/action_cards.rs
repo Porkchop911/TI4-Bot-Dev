@@ -2531,6 +2531,18 @@ fn decoy_operation(context: &mut crate::timing::TimingContext<'_>, player: &Play
         .controlled_planets(player)
         .iter()
         .filter(|(held, _)| held.as_str() == system.as_str())
+        // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
+        // a space station." A station is listed in its system's `planets` array and can be
+        // controlled, so `controlled_planets` offers it like any other planet. `invasion` filters it
+        // out of a commit; this card places ground forces by another route and did not, which is how
+        // armies ended up standing on stations.
+        .filter(|(_, planet)| {
+            !ti4_content::galaxy::is_space_station(
+                context.content,
+                planet.as_str(),
+                context.sources,
+            )
+        })
         .map(|(_, planet)| (planet.to_string(), planet.to_string()))
         .collect();
     if destinations.is_empty() {
@@ -4028,57 +4040,65 @@ fn pirate_contract(context: &mut crate::timing::TimingContext<'_>, player: &Play
 ///
 /// The corpus does not mark which planets carry a technology specialty, so that half of the
 /// card is not offered: guessing which planets qualify would invent a rule the content does
-/// not state. The breakthrough half is the whole choice when any other player holds one, and
-/// gaining it takes it from them.
+/// not state. The breakthrough half lets the caster choose any player -- themselves included --
+/// who then gains *their own* breakthrough, the one tied to their own faction (the same lookup
+/// [`crate::breakthroughs::for_faction`] uses for the grant Thunder's Edge makes on the first
+/// expedition claim). It is never taken from someone else: a breakthrough is faction-specific,
+/// so there is no other breakthrough for a chosen player to gain. Only a player who does not
+/// already hold one is offered, since a second grant would just overwrite the one they have.
 fn brilliance(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let options: Vec<(String, String, ti4_model::id::PlayerId)> = context
+    let options: Vec<(String, String)> = context
         .state
         .seating_order
         .iter()
-        .filter(|other| *other != player)
-        .filter_map(|other| {
-            let seat = context.state.player(other)?;
-            seat.breakthrough.is_some().then(|| {
-                (
-                    other.to_string(),
-                    format!("gain {other}'s breakthrough"),
-                    other.clone(),
-                )
-            })
+        .filter(|candidate| {
+            context
+                .state
+                .player(candidate)
+                .is_some_and(|seat| seat.breakthrough.is_none())
+        })
+        .map(|candidate| {
+            (
+                candidate.to_string(),
+                format!("{candidate} gains their own breakthrough"),
+            )
         })
         .collect();
     if options.is_empty() {
         return;
     }
-    let options_only = options
-        .iter()
-        .map(|(id, label, _)| (id.clone(), label.clone()))
-        .collect::<Vec<_>>();
     let Some(chosen) = pick(
         context,
         player,
-        "Brilliance: which breakthrough to gain",
+        "Brilliance: which player gains their own breakthrough",
         "player",
-        &options_only,
+        &options,
     ) else {
         return;
     };
-    let Some((_, _, owner)) = options.iter().find(|(id, _, _)| *id == chosen).cloned() else {
-        return;
-    };
-    let Some(theirs) = context
+    let target = PlayerId::new(chosen);
+    let Some(faction) = context
         .state
-        .player(&owner)
-        .and_then(|seat| seat.breakthrough.clone())
+        .player(&target)
+        .map(|seat| seat.faction.to_string())
     else {
         return;
     };
-    if let Some(seat) = context.state.player_mut(&owner) {
-        seat.breakthrough = None;
+    let Some(own) = crate::breakthroughs::for_faction(context.content, &faction) else {
+        return;
+    };
+    if let Some(seat) = context.state.player_mut(&target) {
+        seat.breakthrough = Some(own);
     }
-    if let Some(seat) = context.state.player_mut(player) {
-        seat.breakthrough = Some(theirs);
-    }
+    let _ = crate::fracture::after_breakthrough_gained(
+        context.state,
+        context.content,
+        context.sources,
+        context.galaxy,
+        context.table,
+        context.rng,
+        &target,
+    );
 }
 
 /// The strategy-card half of Overrule and Strategize: run the chosen card's ability through
@@ -9359,23 +9379,35 @@ mod tests {
     }
 
     #[test]
-    fn brilliance_takes_the_other_players_breakthrough() {
+    fn brilliance_grants_the_chosen_players_own_breakthrough_only_if_they_lack_one() {
         let me = PlayerId::new("a");
         let other = PlayerId::new("b");
-        let mut state = crate::fixtures::game(&["a", "b"]);
-        let breakthrough = ti4_model::BreakthroughId::new("test_breakthrough");
-        state.player_mut(&other).unwrap().breakthrough = Some(breakthrough.clone());
+        let ally = PlayerId::new("c");
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        state.player_mut(&me).unwrap().faction = ti4_model::id::FactionId::new("l1z1x");
+        state.player_mut(&ally).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        // "other" already holds their own breakthrough: they must not be offered as a target,
+        // and playing the card must not disturb what they hold.
+        let already = ti4_model::BreakthroughId::new("test_breakthrough");
+        state.player_mut(&other).unwrap().breakthrough = Some(already.clone());
 
-        resolve_card(&mut state, "brilliance", &me, &[]);
+        // The caster may choose an ally rather than themselves -- nothing restricts the target
+        // to self -- and the ally gains *their own* breakthrough, not the caster's.
+        resolve_card(&mut state, "brilliance", &me, &[&ally.to_string()]);
 
         assert_eq!(
-            state.player(&me).unwrap().breakthrough.as_ref(),
-            Some(&breakthrough),
-            "the breakthrough is gained"
+            state.player(&ally).unwrap().breakthrough.as_ref(),
+            Some(&ti4_model::BreakthroughId::new("hacanbt")),
+            "the chosen player gains their own breakthrough"
         );
         assert!(
-            state.player(&other).unwrap().breakthrough.is_none(),
-            "and is taken from its owner"
+            state.player(&me).unwrap().breakthrough.is_none(),
+            "the caster is untouched when they choose someone else"
+        );
+        assert_eq!(
+            state.player(&other).unwrap().breakthrough.as_ref(),
+            Some(&already),
+            "a player who already holds a breakthrough is not offered and keeps what they have"
         );
     }
 

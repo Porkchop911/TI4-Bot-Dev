@@ -799,6 +799,60 @@ fn remaining_position_satisfied(alias: &str, position: &Position<'_>) -> bool {
         .is_some_and(|progress| progress.satisfied())
 }
 
+/// The board locations a map-shaped requirement checks, when that set is a fixed part of the
+/// board rather than something that moves with an opponent's position.
+///
+/// A revealed objective that names a shape of the map -- Intimidate Council's "in or adjacent to
+/// the Mecatol Rex system" -- otherwise leaves that shape implicit: a player or policy sees only
+/// a count (`RequirementProgress::have`) and has to re-derive which tiles it is counting by
+/// reading the card text and the map by eye. This is the engine's own answer instead, built from
+/// the exact same adjacency the requirement checks against, so nothing downstream can drift from
+/// it.
+///
+/// Returns the *whole* set the requirement cares about, not filtered to systems this player
+/// currently holds a unit in -- "which tiles matter" is a fact about the card and the map, fixed
+/// the moment the map is built, not about this instant's fleet positions.
+///
+/// `None` when either the caller has no map to derive one from, or the named objective's
+/// implicated set is not fixed by the map alone: Distant Lands, Push Boundaries and Weaker
+/// Neighbours all ask about systems relative to *an opponent's* position, so their answer would
+/// have to be keyed per rival rather than returned as one flat set, which is left as a follow-on
+/// rather than guessed at here.
+#[must_use]
+pub fn implicated_systems(
+    alias: &ObjectiveId,
+    position: &Position<'_>,
+) -> Option<Vec<ti4_model::id::SystemId>> {
+    let galaxy = position.galaxy?;
+    let systems: std::collections::BTreeSet<String> = match alias.as_str() {
+        // Intimidate Council: "1 or more of your ships are in 2 systems that are each adjacent
+        // to the Mecatol Rex system" -- the ring around Mecatol, exactly as
+        // `ships_adjacent_to_mecatol_count` checks it, whoever currently sits there.
+        "intimidate" => galaxy
+            .adjacent(crate::seating::MECATOL)
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect(),
+        // Populate the Outer Rim / Control the Borderlands: the rim itself, minus this player's
+        // home -- the same exclusion `on_the_rim_count` applies, so the two never disagree about
+        // which tiles are "the rim" for this player.
+        "outer_rim" | "control_borderlands" => {
+            let mut edge = edge_systems(galaxy);
+            if let Some(home) = position.home_system() {
+                edge.remove(&home);
+            }
+            edge
+        }
+        _ => return None,
+    };
+    Some(
+        systems
+            .into_iter()
+            .map(ti4_model::id::SystemId::new)
+            .collect(),
+    )
+}
+
 fn conquer_the_weak(position: &Position<'_>) -> bool {
     remaining_position_satisfied("conquer", position)
 }
@@ -1657,7 +1711,9 @@ pub enum EventScoreLimit {
     AnyPerPlayer,
 }
 
-/// The ordered 81.1 window: in initiative order, each player may score one public objective.
+/// The ordered 81.1 window: in initiative order, each player may score one public objective and
+/// one secret objective (61.6) -- two independent limits, not one shared "score one card"
+/// allowance.
 ///
 /// Players with nothing scoreable are skipped rather than asked. The oracle offers them their
 /// secret objectives instead; secrets are not implemented, so there is nothing to ask and a
@@ -1678,6 +1734,14 @@ pub struct ScoringWindow {
     event_occurrence: Option<ti4_model::state::FeatOccurrence>,
     /// Whether one score exhausts the player's permission in this window.
     event_score_limit: EventScoreLimit,
+    /// Status-timing bookkeeping (61.6): players who have already used their one public-objective
+    /// score this window. Never written outside [`crate::secrets::Timing::Status`], because only
+    /// that timing ever offers a public objective at all.
+    scored_public_this_window: std::collections::BTreeSet<PlayerId>,
+    /// Status-timing bookkeeping (61.6): players who have already used their one secret-objective
+    /// score this window. The event-window secret cap is tracked separately, on `state` itself,
+    /// via `record_occurrence_score`; this set is status-only.
+    scored_secret_this_window: std::collections::BTreeSet<PlayerId>,
 }
 
 impl ScoringWindow {
@@ -1704,6 +1768,8 @@ impl ScoringWindow {
             timing: crate::secrets::Timing::Status,
             event_occurrence: None,
             event_score_limit: EventScoreLimit::OnePerPlayer,
+            scored_public_this_window: std::collections::BTreeSet::new(),
+            scored_secret_this_window: std::collections::BTreeSet::new(),
         }
     }
 
@@ -1796,16 +1862,32 @@ impl ScoringWindow {
         for (offset, player) in self.pending.iter().rev().enumerate() {
             // 61.6: one public and one secret at most per status phase, and the oracle offers
             // both in the same window. A player with no public objective in reach may still
-            // have a secret in reach, so this must not stop at the public list.
-            let mut available = if self.timing == crate::secrets::Timing::Status {
+            // have a secret in reach, so this must not stop at the public list. The two limits
+            // are independent: a player who already used this window's public score can still be
+            // offered a secret, and vice versa, which is why each list is gated on its own
+            // bookkeeping set rather than on whether the player has scored anything at all.
+            let mut available = if self.timing == crate::secrets::Timing::Status
+                && !self.scored_public_this_window.contains(player)
+            {
                 scoreable_on(state, content, sources, player, self.galaxy.as_ref())
             } else {
                 // Public objectives are a status-phase thing (61.6); an action window offers the
-                // secret that its event satisfied and nothing else.
+                // secret that its event satisfied and nothing else. In the status window itself,
+                // an empty list here means this player's one public score is already spent.
                 Vec::new()
             };
             let secrets = if self.timing == crate::secrets::Timing::Status {
-                crate::secrets::scoreable_on(state, content, sources, player, self.galaxy.as_ref())
+                if self.scored_secret_this_window.contains(player) {
+                    Vec::new()
+                } else {
+                    crate::secrets::scoreable_on(
+                        state,
+                        content,
+                        sources,
+                        player,
+                        self.galaxy.as_ref(),
+                    )
+                }
             } else {
                 crate::secrets::scoreable_event(
                     state,
@@ -1859,16 +1941,10 @@ impl ScoringWindow {
             .next_askable(state, content, sources)
             .ok_or(ScoringError::Complete)?;
 
-        // Everyone ahead of this player had nothing to score and is now past. An unlimited
-        // action/agenda window keeps a scorer in place after a score so their next eligible
-        // secret is offered immediately; declining always closes their opportunity.
-        let keep = if option.is_decline() || self.event_score_limit == EventScoreLimit::OnePerPlayer
-        {
-            self.pending.len() - offset - 1
-        } else {
-            self.pending.len() - offset
-        };
         if option.is_decline() {
+            // Declining ends this player's whole turn in the window, both categories included --
+            // the same behaviour as before 61.6's public and secret caps were tracked apart.
+            let keep = self.pending.len() - offset - 1;
             self.pending.truncate(keep);
             return Ok(None);
         }
@@ -1884,11 +1960,11 @@ impl ScoringWindow {
         // corpus membership sent it to `secrets::award`, which refused it for not being in the
         // scorer's hand.
         let is_public_now = state.revealed_objectives.contains(&alias);
-        if !is_public_now
+        let scored_as_secret = !is_public_now
             && content
                 .get(ContentType::SecretObjectives, secret.as_str())
-                .is_some()
-        {
+                .is_some();
+        if scored_as_secret {
             if crate::secrets::award(state, content, &player, &secret).is_none() {
                 // A selected secret may become unawardable only through a stale/invalidated
                 // window (for example a future costed action secret). It is never a public
@@ -1899,6 +1975,32 @@ impl ScoringWindow {
         } else {
             award(state, content, sources, &player, &alias)?;
         }
+
+        // 61.6: the public and secret caps are separate. Record which of the two this score just
+        // used, then keep the player pending only if the other category might still have
+        // something on offer -- the same "stay in place for what's left" shape the unlimited
+        // event windows already use, bounded here to at most one of each instead of unlimited.
+        if self.timing == crate::secrets::Timing::Status {
+            if scored_as_secret {
+                self.scored_secret_this_window.insert(player.clone());
+            } else {
+                self.scored_public_this_window.insert(player.clone());
+            }
+        }
+        let keep = if self.timing == crate::secrets::Timing::Status {
+            let still_has_more = self.next_askable(state, content, sources).is_some_and(
+                |(next_offset, next_player, _)| next_offset == offset && next_player == player,
+            );
+            if still_has_more {
+                self.pending.len() - offset
+            } else {
+                self.pending.len() - offset - 1
+            }
+        } else if self.event_score_limit == EventScoreLimit::OnePerPlayer {
+            self.pending.len() - offset - 1
+        } else {
+            self.pending.len() - offset
+        };
         self.pending.truncate(keep);
         if winner(state).is_some() {
             state.finished = true;
@@ -2686,6 +2788,82 @@ mod tests {
         assert!(two_systems.satisfied());
     }
 
+    /// The board bug: "if intimidate council is out it needs to be obvious which tiles are
+    /// affected". `implicated_systems` answers with exactly the ring around Mecatol, whether or
+    /// not this player has a ship in any of it yet -- the set is a fact about the card and the
+    /// map, not about who happens to be there right now.
+    #[test]
+    fn intimidate_council_implicates_every_system_adjacent_to_mecatol() {
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let players = ids(&["a"]);
+        let state = game(&players);
+        let seat = PlayerId::new("a");
+
+        let implicated = implicated_systems(
+            &ObjectiveId::new("intimidate"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .expect("intimidate council names a fixed part of the map");
+
+        let expected: std::collections::BTreeSet<String> = hub.outer.iter().cloned().collect();
+        let got: std::collections::BTreeSet<String> =
+            implicated.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            got, expected,
+            "exactly the ring, nothing gained by sitting in it"
+        );
+    }
+
+    #[test]
+    fn outer_rim_implicates_the_edge_minus_home() {
+        let hub = crate::fixtures::plain_hub();
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        let seat = PlayerId::new("a");
+        state.player_mut(&seat).unwrap().home_system = Some(SystemId::new(hub.outer[0].clone()));
+
+        let implicated = implicated_systems(
+            &ObjectiveId::new("outer_rim"),
+            &on_map(&state, &seat, &hub.galaxy),
+        )
+        .expect("the rim is a fixed part of this map");
+
+        let ids: std::collections::BTreeSet<String> =
+            implicated.iter().map(ToString::to_string).collect();
+        assert!(
+            !ids.contains(&hub.outer[0]),
+            "home does not count toward the player's own rim"
+        );
+        for outer in &hub.outer[1..] {
+            assert!(ids.contains(outer), "{outer} is on the rim");
+        }
+    }
+
+    #[test]
+    fn implicated_systems_is_none_without_a_map_or_for_a_non_map_shaped_objective() {
+        let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
+        let players = ids(&["a"]);
+        let state = game(&players);
+        let seat = PlayerId::new("a");
+
+        assert!(
+            implicated_systems(
+                &ObjectiveId::new("intimidate"),
+                &Position::new(&state, ContentStore::embedded(), POK, &seat),
+            )
+            .is_none(),
+            "no galaxy, no answer"
+        );
+        assert!(
+            implicated_systems(
+                &ObjectiveId::new("expand_borders"),
+                &on_map(&state, &seat, &hub.galaxy),
+            )
+            .is_none(),
+            "expand_borders is not shaped by fixed tiles at all"
+        );
+    }
+
     #[test]
     fn intimidating_the_council_ignores_ground_forces() {
         let hub = crate::fixtures::hub_with_centre(crate::seating::MECATOL);
@@ -3201,6 +3379,75 @@ mod tests {
             "it left the hand"
         );
         assert!(state.player(&PlayerId::new("a")).unwrap().victory_points > 0);
+    }
+
+    /// 61.6: a public objective and a secret objective are separate limits during the status
+    /// phase. Scoring one must not use up the other -- a player with both satisfied gets both,
+    /// in the same window, without a second window ever opening.
+    #[test]
+    fn scoring_a_public_objective_does_not_use_up_the_secret_slot_in_the_same_window() {
+        let players = ids(&["a"]);
+        let mut state = game(&players);
+        // "expand_borders" is satisfied by six non-home planets.
+        state.revealed_objectives = vec![ObjectiveId::new("expand_borders")];
+        for planet in non_home_planets(6) {
+            give(&mut state, &planet, "a");
+        }
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("eap")];
+        let (system, planet) = crate::fixtures::a_placed_planet();
+        for _ in 0..4 {
+            state
+                .system_mut(&system)
+                .planet_units
+                .entry(planet.clone())
+                .or_default()
+                .push(ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("pds"),
+                    PlayerId::new("a"),
+                ));
+        }
+
+        let mut window = ScoringWindow::new(&[PlayerId::new("a")]);
+        let first = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("both a public and a secret are satisfied");
+        assert!(first.ids().contains(&"expand_borders"));
+        assert!(first.ids().contains(&"eap"), "both are offered together");
+        let public_pick = first.option("expand_borders").unwrap().clone();
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, public_pick)
+            .unwrap();
+
+        let second = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect(
+                "the secret objective is still on offer -- scoring the public one did not spend \
+                 the player's separate secret allowance",
+            );
+        assert!(second.ids().contains(&"eap"), "the secret is still offered");
+        assert!(
+            !second.ids().contains(&"expand_borders"),
+            "the public objective was already scored"
+        );
+        let secret_pick = second.option("eap").unwrap().clone();
+        window
+            .resolve(&mut state, ContentStore::embedded(), POK, secret_pick)
+            .unwrap();
+
+        assert!(
+            window
+                .pending_choice(&state, ContentStore::embedded(), POK)
+                .is_none(),
+            "both slots are spent, so the window has nothing left to offer this player"
+        );
+        assert_eq!(
+            state.scored_by(&PlayerId::new("a")).len(),
+            2,
+            "one public and one secret, not one of either"
+        );
     }
 
     /// OBS-003e: the status-phase scoring ask is typed `score_objective`, not
