@@ -47,6 +47,9 @@ use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, SystemId, TechnologyId};
 use ti4_model::state::{GameState, TokenPool};
 
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
+
 /// Whether this system is an entropic scar.
 #[must_use]
 pub fn is_scar(content: &ContentStore, sources: SourceSet, system: &SystemId) -> bool {
@@ -175,6 +178,72 @@ pub fn grant(
     Ok(())
 }
 
+/// Resolve every optional Entropic Scar technology grant at the start of the status phase.
+///
+/// Each offered option names both sides of the exchange: the faction technology gained and the
+/// strategy token spent. A seat with ships in two scars may resolve this window twice (rule 6.3),
+/// while declining ends that seat's window without spending anything.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] if a decider answers outside the generated legal set.
+pub fn resolve_status_start(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+) -> Result<Vec<(PlayerId, TechnologyId)>, IllegalChoice> {
+    let players = state.initiative_order();
+    let mut granted = Vec::new();
+    for player in players {
+        let allowed = grants_available(state, content, sources, &player);
+        for _ in 0..allowed {
+            let mut options: Vec<ChoiceOption> =
+                unowned_faction_technologies(state, content, sources, &player)
+                    .into_iter()
+                    .map(|technology| {
+                        ChoiceOption::labelled(
+                            technology.to_string(),
+                            "technology",
+                            format!(
+                                "spend 1 strategy token to gain {}",
+                                crate::technology::name(content, &technology)
+                            ),
+                        )
+                        .with("technology", technology.to_string())
+                        .with("strategic_tokens_spent", 1_i64)
+                    })
+                    .collect();
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(
+                player.clone(),
+                "Entropic Scar: spend 1 strategy token to gain a faction technology",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Rule("Entropic Scar 6".to_owned()),
+                "entropic_scar_gain_faction_technology",
+                state.phase,
+                state.round,
+            ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if answer.is_decline() {
+                break;
+            }
+            let technology = TechnologyId::new(answer.id);
+            // The answer was validated against the same live state above. A failure here would
+            // indicate an engine invariant violation, not a recoverable player choice.
+            if grant(state, content, sources, &player, &technology).is_err() {
+                break;
+            }
+            granted.push((player.clone(), technology));
+        }
+    }
+    Ok(granted)
+}
+
 /// A scar grant that cannot be made.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScarError {
@@ -297,6 +366,39 @@ mod tests {
         let seat = state.player(&player).expect("seated");
         assert!(seat.technologies.contains(&wanted));
         assert_eq!(seat.tokens(TokenPool::Strategic), before - 1);
+    }
+
+    #[test]
+    fn the_status_start_window_names_the_technology_and_its_token_cost() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, player) = seated();
+        state.phase = ti4_model::state::Phase::Status;
+        state
+            .system_mut(&SystemId::new(SCAR))
+            .units
+            .push(ship(&player, "carrier"));
+        let wanted = unowned_faction_technologies(&state, content, ALL_SOURCES, &player)
+            .into_iter()
+            .next()
+            .expect("Sol has a faction technology");
+        let mut table =
+            Table::with_default(Box::new(crate::choice::Scripted::new([wanted.to_string()])));
+
+        let granted = resolve_status_start(&mut state, content, ALL_SOURCES, None, &mut table)
+            .expect("the generated answer is legal");
+
+        assert_eq!(granted, vec![(player.clone(), wanted.clone())]);
+        let record = table.log.records.first().expect("the window was asked");
+        assert_eq!(record.chosen, wanted.to_string());
+        assert!(record.prompt.contains("spend 1 strategy token"));
+        assert_eq!(record.chosen, wanted.to_string());
+        assert!(
+            state
+                .player(&player)
+                .unwrap()
+                .technologies
+                .contains(&wanted)
+        );
     }
 
     #[test]

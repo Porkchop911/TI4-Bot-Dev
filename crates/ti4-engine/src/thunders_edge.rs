@@ -3,8 +3,9 @@
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{BreakthroughId, PlanetId, PlayerId};
+use ti4_model::id::{BreakthroughId, PlanetId, PlayerId, SystemId, UnitTypeId};
 use ti4_model::state::GameState;
+use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
@@ -66,6 +67,12 @@ fn can_pay(
 }
 
 /// Expedition slices this player can currently claim.
+///
+/// Suppressed once the player already holds their faction breakthrough. LRR still permits
+/// claiming further slices ("a player can claim multiple expedition slices in a game"), but the
+/// only thing a slice buys past the first is a tie-break on who eventually places infantry on
+/// Thunder's Edge -- not worth offering as a real decision once the one thing every slice is for
+/// has already happened.
 #[must_use]
 pub fn available_actions(
     state: &GameState,
@@ -76,9 +83,12 @@ pub fn available_actions(
     if !sources.contains(ti4_model::content_types::Source::ThundersEdge) {
         return Vec::new();
     }
-    let first = state
+    let has_breakthrough = state
         .player(player)
-        .is_some_and(|seat| seat.breakthrough.is_none());
+        .is_some_and(|seat| seat.breakthrough.is_some());
+    if has_breakthrough {
+        return Vec::new();
+    }
     SLICES
         .iter()
         .filter(|(slice, _, _)| !state.expedition_slices.contains_key(*slice))
@@ -90,7 +100,7 @@ pub fn available_actions(
                 format!("Thunder's Edge expedition: {label}"),
             )
             .with("slice", *slice)
-            .with("grants_breakthrough", first)
+            .with("grants_breakthrough", true)
             .with("opportunity_cost", *opportunity_cost)
         })
         .collect()
@@ -311,7 +321,194 @@ pub fn perform(
             seat.breakthrough = Some(breakthrough);
         }
     }
+    if state.expedition_slices.len() == SLICES.len() {
+        complete_expedition(state, content, sources, galaxy, table, player)?;
+    }
     Ok(true)
+}
+
+/// A system this game's map offers to place Thunder's Edge in: no planet, no supernova, no
+/// printed wormhole ("a system of their choice that does not contain a planet, a supernova, or a
+/// printed wormhole"), and not in the Fracture ("Thunder's Edge cannot be placed in the
+/// Fracture").
+fn eligible_systems(content: &ContentStore, sources: SourceSet, galaxy: &Galaxy) -> Vec<SystemId> {
+    let mut systems: Vec<SystemId> = galaxy
+        .system_ids()
+        .into_iter()
+        .filter(|id| {
+            ti4_content::galaxy::system(content, id, sources).is_some_and(|record| {
+                record.planets().is_empty()
+                    && !record.is_supernova()
+                    && record.wormholes().is_empty()
+            })
+        })
+        .map(SystemId::new)
+        .filter(|system| !crate::fracture::is_fracture_system(content, sources, system))
+        .collect();
+    systems.sort();
+    systems
+}
+
+/// The finishing player's choice of where to place Thunder's Edge, or `None` when this game's
+/// map has nowhere legal for it.
+fn choose_system(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    finisher: &PlayerId,
+) -> Result<Option<SystemId>, IllegalChoice> {
+    let Some(galaxy) = galaxy else {
+        return Ok(None); // no board to place it on
+    };
+    let candidates = eligible_systems(content, sources, galaxy);
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some(only.clone())),
+        many => {
+            let choice = Choice::new(
+                finisher.clone(),
+                "Thunder's Edge expedition: choose a system with no planet, no supernova, and \
+                 no printed wormhole"
+                    .to_owned(),
+                many.iter()
+                    .map(|system| {
+                        ChoiceOption::labelled(
+                            system.to_string(),
+                            "component",
+                            format!("place Thunder's Edge in system {system}"),
+                        )
+                    })
+                    .collect(),
+            )
+            .contextualized(DecisionContext::new(
+                finisher.clone(),
+                DecisionSource::Content("thunders_edge".to_owned()),
+                "expedition_place_system",
+                state.phase,
+                state.round,
+            ));
+            let answer = ask_seeing(state, content, sources, Some(galaxy), table, &choice)?;
+            Ok(Some(SystemId::new(answer.id)))
+        }
+    }
+}
+
+/// The player with the most claimed slices places the infantry; the finisher breaks a tie
+/// ("In the case of a tie, the player who claimed the final slice chooses which tied player
+/// places infantry on Thunder's Edge").
+fn choose_placer(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    finisher: &PlayerId,
+) -> Result<PlayerId, IllegalChoice> {
+    let mut counts: std::collections::BTreeMap<PlayerId, usize> = std::collections::BTreeMap::new();
+    for owner in state.expedition_slices.values() {
+        *counts.entry(owner.clone()).or_insert(0) += 1;
+    }
+    let max = counts.values().copied().max().unwrap_or(0);
+    let tied: Vec<PlayerId> = counts
+        .into_iter()
+        .filter(|(_, count)| *count == max)
+        .map(|(player, _)| player)
+        .collect();
+    if let [only] = tied.as_slice() {
+        return Ok(only.clone());
+    }
+    let choice = Choice::new(
+        finisher.clone(),
+        "Thunder's Edge expedition: which tied player places the infantry".to_owned(),
+        tied.iter()
+            .map(|player| ChoiceOption::labelled(player.as_str(), "component", player.to_string()))
+            .collect(),
+    )
+    .contextualized(DecisionContext::new(
+        finisher.clone(),
+        DecisionSource::Content("thunders_edge".to_owned()),
+        "expedition_placement_tiebreak",
+        state.phase,
+        state.round,
+    ));
+    let answer = ask_seeing(state, content, sources, galaxy, table, &choice)?;
+    Ok(PlayerId::new(answer.id))
+}
+
+/// Place `count` of `player`'s infantry (their faction's own version, when the corpus has one)
+/// on `planet`.
+fn place_infantry(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &PlanetId,
+    count: usize,
+) {
+    if count == 0 {
+        return;
+    }
+    let faction = state
+        .player(player)
+        .map(|seat| seat.faction.to_string())
+        .unwrap_or_default();
+    let generic = ti4_content::units::catalogue(content, sources)
+        .get("infantry")
+        .map(|unit| unit.id().to_owned());
+    let Some(id) = ti4_content::units::faction_unit(content, &faction, "infantry", sources)
+        .map(|unit| unit.id().to_owned())
+        .or(generic)
+    else {
+        return;
+    };
+    let type_id = UnitTypeId::new(id);
+    // 31.4: infantry is cardboard and effectively uncapped, but the door is the same one every
+    // other placement in this engine goes through.
+    let placeable = crate::supply::allowed(state, content, sources, player, &type_id, count);
+    let held = state
+        .system_mut(system)
+        .planet_units
+        .entry(planet.clone())
+        .or_default();
+    for _ in 0..placeable {
+        held.push(Unit::new(type_id.clone(), player.clone()));
+    }
+}
+
+/// "When all slices are claimed" (rules.json "expeditions"): flip Thunder's Edge to its planet
+/// side, place it in a system of the finishing player's choice, then give the player with the
+/// most claimed slices that many infantry on it.
+///
+/// Nothing did this before: `thunders_edge_system` existed and `fracture::brings_into_play`
+/// already read it for Rule 13's ingress token, but the expedition's own completion never wrote
+/// it, so the trigger fired -- the sixth slice really was claimed -- and nothing was ever placed.
+fn complete_expedition(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    finisher: &PlayerId,
+) -> Result<(), IllegalChoice> {
+    let Some(system) = choose_system(state, content, sources, galaxy, table, finisher)? else {
+        return Ok(()); // this game's map has nowhere legal to place it
+    };
+    let placer = choose_placer(state, content, sources, galaxy, table, finisher)?;
+    let count = state
+        .expedition_slices
+        .values()
+        .filter(|owner| *owner == &placer)
+        .count();
+
+    let planet = PlanetId::new("thundersedge");
+    state.placed_planets.insert(planet.clone(), system.clone());
+    state.board.entry(system.clone()).or_default();
+    place_infantry(state, content, sources, &placer, &system, &planet, count);
+    state.thunders_edge_system = Some(system);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -321,6 +518,117 @@ mod tests {
 
     use super::*;
     use crate::fixtures::game;
+
+    /// While legal to invest further, offering the expedition to a faction that already holds
+    /// its breakthrough is not fun: the one thing every slice is for has already happened.
+    #[test]
+    fn a_player_who_already_holds_the_breakthrough_is_not_offered_the_expedition() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        let seat = state.player_mut(&player).unwrap();
+        seat.faction = FactionId::new("letnev");
+        seat.breakthrough = Some(BreakthroughId::new("letnevbt"));
+        // Affordable by every slice, so an empty result here proves the breakthrough gate, not a
+        // gate on the ability to pay.
+        seat.trade_goods = 10;
+        seat.action_cards = vec![
+            ti4_model::id::ActionCardId::new("sabotage"),
+            ti4_model::id::ActionCardId::new("upgrade"),
+        ];
+        seat.secret_objectives
+            .push(SecretObjectiveId::new("destroy_their_greatest_ship"));
+
+        assert!(
+            available_actions(&state, content, DEFAULT, &player).is_empty(),
+            "already holding the breakthrough, so nothing is offered"
+        );
+    }
+
+    /// Claiming the sixth and final slice flips Thunder's Edge onto the board and gives the
+    /// player with the most claimed slices that many infantry on it.
+    ///
+    /// Before `complete_expedition` existed, `perform` claimed the slice and stopped:
+    /// `thunders_edge_system` stayed `None` forever, so `fracture::brings_into_play`'s Rule-13
+    /// hookup for it -- which already read the field -- had nothing to find, and no infantry ever
+    /// reached the board no matter how many slices were claimed.
+    #[test]
+    fn completing_the_expedition_places_thunders_edge_and_its_infantry() {
+        let content = ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = game(&["a", "b"]);
+        state.player_mut(&a).unwrap().faction = FactionId::new("letnev");
+        state.player_mut(&a).unwrap().trade_goods = 3;
+
+        // Five slices already claimed elsewhere in the game, split 2/3 so the sixth ties the two
+        // players and exercises the finisher's tie-break.
+        state.claim_slice("resources", &a);
+        state.claim_slice("influence", &a);
+        state.claim_slice("action_cards", &b);
+        state.claim_slice("secret", &b);
+        state.claim_slice("tech_planet", &b);
+
+        // A tiny map with exactly one legal placement: 41 (Gravity Rift) has no planet, no
+        // supernova and no printed wormhole; the padding tile has a real planet and is filtered
+        // out, so only "41" is ever offered.
+        let padding = ti4_content::galaxy::all_systems(content, DEFAULT)
+            .into_iter()
+            .find(|(_, system)| !system.is_hyperlane() && !system.planets().is_empty())
+            .map(|(id, _)| id.to_owned())
+            .expect("the corpus has a system with a planet");
+        let galaxy = Galaxy::build(content, &[padding.as_str(), "41"], DEFAULT, 1).unwrap();
+
+        let option = available_actions(&state, content, DEFAULT, &a)
+            .into_iter()
+            .find(|option| option.id == "component|expedition|trade_goods")
+            .expect("the trade_goods slice is still unclaimed and affordable");
+
+        // Only the placer tie-break needs scripting: with one legal system, `choose_system`
+        // never asks.
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(["a"])));
+        assert!(
+            perform(
+                &mut state,
+                content,
+                DEFAULT,
+                Some(&galaxy),
+                &mut table,
+                &a,
+                &option,
+            )
+            .unwrap(),
+            "the sixth slice completes the expedition"
+        );
+
+        let system = SystemId::new("41");
+        assert_eq!(
+            state.thunders_edge_system,
+            Some(system.clone()),
+            "Thunder's Edge was placed, and the engine remembers where"
+        );
+        let planet = PlanetId::new("thundersedge");
+        assert_eq!(
+            state.placed_planets.get(&planet),
+            Some(&system),
+            "the planet joins the system it was placed in"
+        );
+        let infantry = state
+            .board
+            .get(&system)
+            .and_then(|board| board.planet_units.get(&planet))
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            infantry.len(),
+            3,
+            "the tied player the finisher chose places their own claimed-slice count"
+        );
+        assert!(
+            infantry.iter().all(|unit| unit.owner == a),
+            "the finisher broke the tie in their own favor, as scripted"
+        );
+    }
 
     #[test]
     fn a_first_expedition_slice_grants_the_faction_breakthrough() {

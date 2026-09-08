@@ -54,21 +54,24 @@
 //! egress, and vice versa; an ingress is not adjacent to an ingress, and an egress is not adjacent
 //! to an egress*. [`ingress_egress_adjacent`] is exactly that, and it needs no coordinates.
 //!
-//! # What is not determinable here
+//! # Interior geometry
 //!
-//! Two things are game data this corpus does not carry, and neither is invented:
+//! The three printed Fracture pieces form one seven-system chain in their numbered corpus order:
+//! Cocytus, left egress, left void, Styx, right void, right egress, Lethe/Phlegethon. Systems that
+//! share a border in that chain are adjacent just like ordinary system tiles.
 //!
-//! * **Adjacency between the seven Fracture systems.** The rules describe how to get *in*, not how
-//!   the interior connects. The corpus gives the seven systems and no geometry, and no published
-//!   source states it. [`interior_adjacency_known`] reports this.
-//! * **The garrison.** Rule 6 says neutral units are placed but not which, or how many.
-//!   [`enter_play`] therefore takes the garrison as an argument rather than choosing one.
+//! The neutral garrison is printed on the backs of the three Fracture tiles. It is fixed setup
+//! data, encoded by [`place_printed_garrison`] rather than supplied by a caller.
 
 use ti4_content::ContentStore;
+use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{ContentType, SourceSet};
 use ti4_model::id::{PlanetId, SystemId, UnitTypeId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
+
+use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource};
 
 /// The tile back that marks a Fracture system in the corpus.
 const FRACTURE_BACK: &str = "fracture";
@@ -128,21 +131,18 @@ pub fn ingress_egress_adjacent(
 }
 
 /// Whether adjacency *within* the Fracture is known.
-///
-/// False: the corpus records the seven systems with no geometry, and the rules describe entry rather
-/// than interior layout. Movement between two Fracture systems cannot be resolved until this is
-/// supplied, and [`interior_adjacent`] refuses rather than guessing.
 #[must_use]
 pub const fn interior_adjacency_known() -> bool {
-    false
+    true
 }
 
 /// Whether two Fracture systems are adjacent to each other.
-///
-/// # Errors
-/// [`FractureError::InteriorLayoutUnknown`] always, until the layout is supplied.
-pub const fn interior_adjacent(_left: &SystemId, _right: &SystemId) -> Result<bool, FractureError> {
-    Err(FractureError::InteriorLayoutUnknown)
+#[must_use]
+pub fn interior_adjacent(left: &SystemId, right: &SystemId) -> bool {
+    fn index(system: &SystemId) -> Option<i32> {
+        system.as_str().strip_prefix("fracture")?.parse().ok()
+    }
+    matches!((index(left), index(right)), (Some(a), Some(b)) if (a - b).abs() == 1)
 }
 
 /// The breakthrough roll (rules 2, 3): a d10 where 1 or 10 brings the Fracture into play.
@@ -153,6 +153,132 @@ pub const fn interior_adjacent(_left: &SystemId, _right: &SystemId) -> Result<bo
 pub fn breakthrough_roll(rng: &mut crate::rng::GameRng) -> bool {
     let face = rng.die("fracture-breakthrough", 10);
     face == 1 || face == 10
+}
+
+fn specialty_candidates(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    colour: &str,
+    already_chosen: &std::collections::BTreeSet<SystemId>,
+) -> Vec<(SystemId, PlanetId)> {
+    let planets = ti4_content::galaxy::all_planets(content, sources);
+    state
+        .board
+        .keys()
+        .filter(|system| !already_chosen.contains(*system))
+        .filter(|system| !is_fracture_system(content, sources, system))
+        .filter_map(|system| {
+            let tile = ti4_content::galaxy::system(content, system.as_str(), sources)?;
+            let planet = tile.planets().into_iter().find(|planet| {
+                planets.get(*planet).is_some_and(|record| {
+                    record
+                        .tech_specialties()
+                        .iter()
+                        .any(|specialty| specialty.eq_ignore_ascii_case(colour))
+                })
+            })?;
+            Some((system.clone(), PlanetId::new(planet)))
+        })
+        .collect()
+}
+
+/// Roll for and, when triggered, put the Fracture into play after a breakthrough is gained.
+///
+/// Ingress locations are selected by the player from the currently legal specialty systems.
+/// Breakthroughs with two synergy colours place up to three for each colour; a breakthrough with
+/// no synergy uses one system of each technology colour.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] when an ingress choice is not one the engine offered.
+pub fn after_breakthrough_gained(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    rng: &mut crate::rng::GameRng,
+    player: &ti4_model::id::PlayerId,
+) -> Result<bool, IllegalChoice> {
+    if state.fracture_in_play {
+        return Ok(false);
+    }
+    let Some(breakthrough) = state
+        .player(player)
+        .and_then(|seat| seat.breakthrough.clone())
+    else {
+        return Ok(false);
+    };
+    let Some(record) = content.get(ContentType::Breakthroughs, breakthrough.as_str()) else {
+        return Ok(false);
+    };
+    if !breakthrough_roll(rng) {
+        return Ok(false);
+    }
+
+    let synergy = record.strings("synergy");
+    let quotas: Vec<(&str, usize)> = if synergy.len() >= 2 {
+        synergy
+            .into_iter()
+            .take(2)
+            .map(|colour| (colour, 3))
+            .collect()
+    } else {
+        crate::technology::COLOURS
+            .into_iter()
+            .map(|colour| (colour, 1))
+            .collect()
+    };
+    let mut chosen = std::collections::BTreeSet::new();
+    for (colour, maximum) in quotas {
+        for _ in 0..maximum {
+            let candidates = specialty_candidates(state, content, sources, colour, &chosen);
+            if candidates.is_empty() {
+                break;
+            }
+            let options: Vec<ChoiceOption> = candidates
+                .iter()
+                .map(|(system, planet)| {
+                    ChoiceOption::labelled(
+                        system.to_string(),
+                        "ingress_system",
+                        format!("place a {colour} ingress in {system} ({planet})"),
+                    )
+                    .with("system", system.to_string())
+                    .with("planet", planet.to_string())
+                    .with("technology_colour", colour)
+                })
+                .collect();
+            let choice = Choice::new(
+                player.clone(),
+                format!("The Fracture: choose a {colour} technology-specialty ingress system"),
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content(breakthrough.to_string()),
+                "fracture_choose_ingress_system",
+                state.phase,
+                state.round,
+            ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            chosen.insert(SystemId::new(answer.id));
+        }
+    }
+
+    enter_play(
+        state,
+        content,
+        sources,
+        &chosen.into_iter().collect::<Vec<_>>(),
+    )
+    .map_err(|error| IllegalChoice::DeciderFailed {
+        player: player.clone(),
+        prompt: "put The Fracture into play".to_owned(),
+        reason: error.to_string(),
+    })?;
+    Ok(true)
 }
 
 /// Planets that may take an ingress token, one per technology-specialty colour (rules 9–12).
@@ -206,10 +332,6 @@ pub fn ingress_candidates(
 
 /// Bring the Fracture into play (rules 1, 6, 7, 13, 14).
 ///
-/// `garrison` is the neutral force placed on each Fracture planet and in the space area of its
-/// system. Rule 6 says neutral units are placed and does not say which, so the composition is the
-/// caller's to supply rather than this function's to invent.
-///
 /// # Errors
 /// [`FractureError`] when the Fracture is already in play or neutral units are unavailable.
 pub fn enter_play(
@@ -217,54 +339,63 @@ pub fn enter_play(
     content: &ContentStore,
     sources: SourceSet,
     ingresses: &[SystemId],
-    garrison: &[UnitTypeId],
 ) -> Result<(), FractureError> {
     if state.fracture_in_play {
         return Err(FractureError::AlreadyInPlay);
     }
     crate::neutral_units::can_place(content, sources).map_err(|_| FractureError::NoNeutralUnits)?;
 
-    let neutral = crate::neutral_units::owner();
     for system in systems(content, sources) {
-        let Some(tile) = ti4_content::galaxy::system(content, system.as_str(), sources) else {
-            continue;
-        };
-        let planets: Vec<String> = tile
-            .planets()
-            .into_iter()
-            .map(std::borrow::ToOwned::to_owned)
-            .collect();
-        if planets.is_empty() {
-            continue; // rule 6 places them on planets and in *those planets'* systems
-        }
-        for planet in planets {
-            let record = state.system_mut(&system);
-            let standing = record
-                .planet_units
-                .entry(PlanetId::new(planet))
-                .or_default();
-            for kind in garrison {
-                standing.push(Unit::new(kind.clone(), neutral.clone()));
-            }
-        }
-        for kind in garrison {
-            state
-                .system_mut(&system)
-                .units
-                .push(Unit::new(kind.clone(), neutral.clone()));
-        }
+        state.board.entry(system).or_default();
     }
+    place_printed_garrison(state);
 
     // Rule 14: a set, so two tokens cannot land in one system.
     for system in ingresses {
         state.ingress_tokens.insert(system.clone());
     }
     // Rule 13: one more, into Thunder's Edge if it is on the board.
-    if let Some(system) = state.thunders_edge_system.clone() {
-        state.ingress_tokens.insert(system);
-    }
+    state.ingress_tokens.insert(
+        state
+            .thunders_edge_system
+            .clone()
+            .unwrap_or_else(|| SystemId::new(crate::seating::MECATOL)),
+    );
     state.fracture_in_play = true;
     Ok(())
+}
+
+/// Place the neutral forces printed on the backs of the three Fracture tiles.
+fn place_printed_garrison(state: &mut GameState) {
+    let neutral = crate::neutral_units::owner();
+    // The closure's block scope ends its borrow of `state` before the planet loop below.
+    {
+        let mut place_space = |system: &str, kind: &str, count: usize| {
+            let standing = &mut state.system_mut(&SystemId::new(system)).units;
+            standing.extend((0..count).map(|_| Unit::new(UnitTypeId::new(kind), neutral.clone())));
+        };
+        place_space("fracture1", "neutral_cruiser", 2);
+        place_space("fracture4", "neutral_destroyer", 1);
+        place_space("fracture4", "neutral_dreadnought", 2);
+        place_space("fracture7", "neutral_carrier", 1);
+        place_space("fracture7", "neutral_fighter", 4);
+    }
+
+    for (system, planet, count) in [
+        ("fracture1", "cocytus", 2_usize),
+        ("fracture4", "styx", 3),
+        ("fracture7", "lethe", 1),
+        ("fracture7", "phlegethon", 1),
+    ] {
+        state
+            .system_mut(&SystemId::new(system))
+            .planet_units
+            .entry(PlanetId::new(planet))
+            .or_default()
+            .extend(
+                (0..count).map(|_| Unit::new(UnitTypeId::new("neutral_infantry"), neutral.clone())),
+            );
+    }
 }
 
 /// Rule 15: taking an uncontrolled Fracture planet draws a relic.
@@ -298,12 +429,6 @@ pub enum FractureError {
     /// Rule 6 places neutral units, which need their reference card.
     #[error("the Fracture places neutral units, which this corpus cannot supply")]
     NoNeutralUnits,
-    /// The seven systems' adjacency to each other is not recorded anywhere.
-    #[error(
-        "adjacency within the Fracture is not in this corpus: the seven systems are recorded with \
-         no geometry, and no published source states how they connect"
-    )]
-    InteriorLayoutUnknown,
 }
 
 #[cfg(test)]
@@ -379,20 +504,28 @@ mod tests {
     }
 
     #[test]
-    fn the_interior_layout_is_refused_rather_than_guessed() {
-        assert!(!interior_adjacency_known());
-        assert_eq!(
-            interior_adjacent(&SystemId::new("fracture1"), &SystemId::new("fracture4")),
-            Err(FractureError::InteriorLayoutUnknown)
-        );
+    fn the_interior_is_a_seven_system_chain() {
+        assert!(interior_adjacency_known());
+        for index in 1..7 {
+            let left = SystemId::new(format!("fracture{index}"));
+            let right = SystemId::new(format!("fracture{}", index + 1));
+            assert!(interior_adjacent(&left, &right));
+            assert!(interior_adjacent(&right, &left));
+        }
+        assert!(!interior_adjacent(
+            &SystemId::new("fracture1"),
+            &SystemId::new("fracture3")
+        ));
+        assert!(!interior_adjacent(
+            &SystemId::new("fracture1"),
+            &SystemId::new("19")
+        ));
     }
 
     #[test]
-    fn entering_play_garrisons_every_fracture_planet_and_its_space() {
-        // Rule 6, with the garrison supplied by the caller.
+    fn entering_play_places_the_garrison_printed_on_each_tile_back() {
         let mut state = crate::fixtures::game(&["a"]);
-        let garrison = vec![UnitTypeId::new("neutral_infantry")];
-        enter_play(&mut state, content(), ALL_SOURCES, &[], &garrison).expect("enters play");
+        enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("enters play");
 
         assert!(state.fracture_in_play);
         let neutral = crate::neutral_units::owner();
@@ -405,19 +538,31 @@ mod tests {
             .collect();
         assert_eq!(planet_systems.len(), 3, "Cocytus, Styx, Lethe/Phlegethon");
 
-        for system in planet_systems {
-            let record = state.system_state(&system);
-            assert!(
-                !record.units_of(&neutral).is_empty(),
-                "{system} space area is garrisoned"
-            );
-            assert!(
-                record
-                    .planet_units
-                    .values()
-                    .flatten()
-                    .any(|unit| unit.owner == neutral),
-                "{system} planets are garrisoned"
+        let count_space = |system: &str, kind: &str| {
+            state
+                .system_state(&SystemId::new(system))
+                .units_of(&neutral)
+                .into_iter()
+                .filter(|unit| unit.type_id.as_str() == kind)
+                .count()
+        };
+        assert_eq!(count_space("fracture1", "neutral_cruiser"), 2);
+        assert_eq!(count_space("fracture4", "neutral_destroyer"), 1);
+        assert_eq!(count_space("fracture4", "neutral_dreadnought"), 2);
+        assert_eq!(count_space("fracture7", "neutral_carrier"), 1);
+        assert_eq!(count_space("fracture7", "neutral_fighter"), 4);
+        for (system, planet, count) in [
+            ("fracture1", "cocytus", 2_usize),
+            ("fracture4", "styx", 3),
+            ("fracture7", "lethe", 1),
+            ("fracture7", "phlegethon", 1),
+        ] {
+            assert_eq!(
+                state
+                    .system_state(&SystemId::new(system))
+                    .on_planet_of(&PlanetId::new(planet), &neutral)
+                    .len(),
+                count
             );
         }
     }
@@ -425,10 +570,9 @@ mod tests {
     #[test]
     fn entering_play_twice_is_refused() {
         let mut state = crate::fixtures::game(&["a"]);
-        let garrison = vec![UnitTypeId::new("neutral_infantry")];
-        enter_play(&mut state, content(), ALL_SOURCES, &[], &garrison).expect("first");
+        enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("first");
         assert_eq!(
-            enter_play(&mut state, content(), ALL_SOURCES, &[], &garrison),
+            enter_play(&mut state, content(), ALL_SOURCES, &[]),
             Err(FractureError::AlreadyInPlay)
         );
     }
@@ -439,15 +583,19 @@ mod tests {
         let mut state = crate::fixtures::game(&["a"]);
         let here = SystemId::new("19");
         state.thunders_edge_system = Some(here.clone());
-        enter_play(
-            &mut state,
-            content(),
-            ALL_SOURCES,
-            &[],
-            &[UnitTypeId::new("neutral_infantry")],
-        )
-        .expect("enters play");
+        enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("enters play");
         assert!(state.ingress_tokens.contains(&here));
+    }
+
+    #[test]
+    fn mecatol_takes_the_extra_ingress_when_thunders_edge_is_absent() {
+        let mut state = crate::fixtures::game(&["a"]);
+        enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("enters play");
+        assert!(
+            state
+                .ingress_tokens
+                .contains(&SystemId::new(crate::seating::MECATOL))
+        );
     }
 
     #[test]

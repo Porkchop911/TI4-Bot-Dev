@@ -1,0 +1,32 @@
+engine bugs:
+- putative: deep space cannon and xxcha flagship dont fire into adjacent systems currently
+- space stations don't turn over control when the space is taken over by an other faction
+- space stations are holding infantery which they should not be able to
+- l1z1x assimilate ability does not grant spacedock or pds when gaining control of a planet that has an opponents respective structure
+- when a unit with capacity is destroyed, carried units (mechs fighters infantery) need to be checked for capacity and removed accordingly after the space battle, before any invasions.
+
+
+behavior bug:
+- politics is very undervalued as is the leader token, might be necessary to restrict choice, i.e. only offer giving it to other players as part of a transaction they have to agree to
+
+
+reviewer bug:
+- generally very slow although not a lot of compute resources are used
+- crashes after round about 2000 frames
+
+
+---
+
+carried into main 2026-09-08, needs love later:
+
+- fracture.rs (`after_breakthrough_gained`) and thunders_edge.rs (`choose_placer`,
+  `choose_system`) were landed green but WITHOUT their authors' sign-off. Both come from
+  other sessions and one stopped before finishing its own verification. The workspace suite
+  passes with them and their decision sites were read and registered, but neither mechanic
+  has been exercised end to end in a real game or independently reviewed.
+  Expect to revisit. Specifically unverified:
+    * the Fracture garrison composition is left undefined by rule 6 and was never decided
+    * fracture ingress placement offers no decline, which is believed correct (placement is
+      not optional once the breakthrough is gained) but is untested against the rules
+    * Thunder's Edge placement was mid-verification when its session ended: tests passed,
+      clippy and fmt never ran on it
