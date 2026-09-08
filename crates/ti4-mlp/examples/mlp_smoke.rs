@@ -57,8 +57,19 @@ const TILE_SEED_OFFSET: u64 = 20_000_000;
 /// A vocabulary change with no registry change still makes earlier bundles unusable, which is
 /// worth stating plainly because the failure mode differs: the old bundles remain *readable*, and
 /// their weights are simply attached to the wrong columns. Only the pin catches that.
+///
+/// The OBS-002..012 observation rework replaces `e30b9165…0a2a`. The registry moved to v6 across
+/// that series -- `actor-inventory` in OBS-004a, `opponent-slot` in OBS-005 -- and discovery gained
+/// the candidate-centred board facts of OBS-006, so it is a different artifact by both of the
+/// reasons above at once. Every schema-7 bundle in use, including the blank the stage-2 runs
+/// started from, is this generation; `out/vocabulary/current.json` has named it since.
+///
+/// This pin had been left on the superseded generation, which made the smoke refuse the only
+/// vocabulary anything is actually trained against. It is the one consumer that hardcodes the
+/// digest -- `blank_bundle`, `cpu_gate` and `distill` all resolve it through
+/// `vocabulary_corpus::accepted_generation`, and so agreed with the pointer while this did not.
 const ACCEPTED_SLOTS_SHA256: &str =
-    "e30b9165ab7dffc1d62ae58b1ec8cb5ed97014d4f7ef22ac17931ba8f57d0a2a";
+    "fa3d6f945988cc9f210fffafff115422c9bf883c077ae8aac8aaf483d1ec41fc";
 
 /// The accepted generation's `slots.json`, from `out/vocabulary/current.json`.
 fn ti4_training_generation() -> Option<String> {

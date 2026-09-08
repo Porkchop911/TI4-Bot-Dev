@@ -145,6 +145,12 @@ pub fn import_initial_public_state(snapshot: &Value) -> Result<GameState, Public
                 // The oracle snapshot format predates Thunder's Edge coexistence and carries no
                 // record of it, so an imported position has nobody coexisting anywhere.
                 coexisting: std::collections::BTreeMap::new(),
+                // It predates the Stellar Converter too, and for the same reason: a snapshot has no
+                // way to say a planet was destroyed, so an imported position has none. Written out
+                // rather than filled by `..Default::default()`, so the next field added to
+                // `SystemState` fails here again and is answered deliberately instead of silently
+                // importing as empty.
+                purged_planets: std::collections::BTreeSet::new(),
             },
         );
     }
