@@ -85,6 +85,21 @@ pub struct InferenceFailed {
 pub struct MlpBot {
     actor: std::rc::Rc<Actor>,
     vocabulary: Vocabulary,
+    /// Resolved `FeatureKey -> (column, assigned)`, memoised for this bot.
+    ///
+    /// The same feature names recur constantly — across the options of one decision, across the
+    /// decisions of one game, and across every game this bot plays — while the answer for a given
+    /// key never changes, so the ordered-index walk is repeated work rather than a lookup that had
+    /// to happen.
+    ///
+    /// Safe because the vocabulary cannot move underneath it: `MlpBot` owns it by value, nothing
+    /// hands out `&mut` to it, and the MLP path never calls `Vocabulary::append` — a published
+    /// generation is immutable and a new one produces a new bundle and a new bot. If that ever
+    /// changes, this cache has to be cleared with it; that is the whole invariant.
+    ///
+    /// Counters are still incremented per *occurrence*, not per distinct key, so `assigned` and
+    /// `oov` read exactly as they did before.
+    resolved: std::collections::HashMap<ti4_policy::intern::FeatureKey, (usize, bool)>,
     row: FactionRow,
     temperature: f64,
     rng: rand_chacha::ChaCha8Rng,
@@ -155,6 +170,7 @@ impl MlpBot {
         Self {
             actor,
             vocabulary,
+            resolved: std::collections::HashMap::new(),
             row,
             temperature: 1.0,
             rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
@@ -211,13 +227,21 @@ impl MlpBot {
         let mut values = Vec::with_capacity(vector.len());
         for (key, value) in vector {
             // Keyed lookups throughout: resolving the name here cost a lock, an allocation and a
-            // re-hash per feature (M09-029).
-            if self.vocabulary.is_assigned_key(*key) {
+            // re-hash per feature (M09-029). Both answers now come from one memoised probe rather
+            // than two walks of the ordered index -- see `resolved` and `Vocabulary::resolve_key`.
+            let (column, assigned) = match self.resolved.get(key) {
+                Some(hit) => *hit,
+                None => {
+                    let answer = self.vocabulary.resolve_key(*key);
+                    self.resolved.insert(*key, answer);
+                    answer
+                }
+            };
+            if assigned {
                 self.counters.assigned.fetch_add(1, Ordering::Relaxed);
             } else {
                 self.counters.oov.fetch_add(1, Ordering::Relaxed);
             }
-            let column = self.vocabulary.column_of_key(*key);
             columns.push(
                 i64::try_from(column)
                     .map_err(|_| format!("feature column {column} does not fit i64"))?,

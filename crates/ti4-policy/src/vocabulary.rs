@@ -753,6 +753,26 @@ impl Vocabulary {
         self.index.contains_key(&key)
     }
 
+    /// Both answers from one probe: the column, and whether the key owns it.
+    ///
+    /// The projection needs both for every feature of every option of every decision, and asking
+    /// separately walks the same ordered index twice — two `BTreeMap` descents over ~15,000 slots
+    /// where one suffices, because the hit already carries the column. Measured as roughly 5.7-6%
+    /// of policy time in `plans/INFERENCE_OPTIMIZATION_2026-09-08.md`, which is why it is worth a
+    /// method rather than a comment telling callers to be careful.
+    ///
+    /// Exactly equivalent to `(self.column_of_key(key), self.is_assigned_key(key))`, including the
+    /// out-of-vocabulary fallback: a miss still routes through [`Self::column_of`] by **family**,
+    /// so an unknown name lands on its family's OOV column rather than being dropped.
+    /// `resolving_a_key_once_answers_exactly_what_asking_twice_did` pins that against the pair.
+    #[must_use]
+    pub fn resolve_key(&self, key: FeatureKey) -> (usize, bool) {
+        if let Some(column) = self.index.get(&key) {
+            return (*column, true);
+        }
+        (self.column_of(&crate::intern::name_of(key)), false)
+    }
+
     /// Append newly discovered names into unused preallocated rows.
     ///
     /// Append-only: existing columns are never reordered or reused, so every trained weight and
@@ -1040,6 +1060,52 @@ mod tests {
         .iter()
         .map(|name| (*name).to_owned())
         .collect()
+    }
+
+    /// One probe answers exactly what two probes answered.
+    ///
+    /// `resolve_key` exists only to stop the projection walking the ordered index twice per
+    /// feature, so its whole licence is being indistinguishable from the pair it replaces. Checked
+    /// on assigned names, on names that fall back by family, and on a name in no registered family
+    /// at all — the three routes through `column_of`, since the fallback is where an equivalence
+    /// like this would actually break.
+    #[test]
+    fn resolving_a_key_once_answers_exactly_what_asking_twice_did() {
+        let vocabulary = Vocabulary::build(sample()).expect("builds");
+
+        let probes: Vec<String> = sample()
+            .into_iter()
+            .chain(
+                [
+                    // Unassigned, but in families the registry knows: these must land on the
+                    // family OOV column, not the global one.
+                    "kind:never-seen",
+                    "option:not-a-real-planet",
+                    "ability:invented",
+                    "commit-unit:invented",
+                    // Unassigned and in no registered family at all.
+                    "nonsense:absolutely-not",
+                    "",
+                ]
+                .iter()
+                .map(|name| (*name).to_owned()),
+            )
+            .collect();
+
+        for name in probes {
+            let key = crate::intern::FeatureKey::of(&name);
+            let (column, assigned) = vocabulary.resolve_key(key);
+            assert_eq!(
+                column,
+                vocabulary.column_of_key(key),
+                "column diverged for {name:?}"
+            );
+            assert_eq!(
+                assigned,
+                vocabulary.is_assigned_key(key),
+                "assigned diverged for {name:?}"
+            );
+        }
     }
 
     #[test]
