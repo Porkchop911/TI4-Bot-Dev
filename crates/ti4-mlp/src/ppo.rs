@@ -207,6 +207,19 @@ struct Constants {
 /// Done when a batch is frozen. PPO reads a frozen batch four times per update, and the four reads
 /// used to re-sort the same columns each time.
 fn canonicalise(option: &mut crate::SparseOption) {
+    // Already canonical: strictly increasing columns cannot contain a duplicate, so there is
+    // nothing to fold and nothing to reorder, and the loop below would rebuild the same two
+    // vectors it started from. Returning early is exact rather than approximate for that reason --
+    // it is not a tolerance, it is the identity case.
+    //
+    // Worth the check because it is the common case, not the rare one: 10,473 of 11,120 sampled
+    // options (94.18%) arrive strictly increasing, and each one otherwise pays an allocation, a
+    // comparison sort and a rebuild. `gather_reduce_batch`'s fast path already tests exactly this
+    // property downstream; the same question was simply never asked here.
+    // See plans/INFERENCE_OPTIMIZATION_2026-09-08.md.
+    if option.columns.windows(2).all(|pair| pair[0] < pair[1]) {
+        return;
+    }
     let mut pairs: Vec<(i64, f32)> = option
         .columns
         .iter()
@@ -472,6 +485,8 @@ fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
 /// concatenates a whole epoch's worth and reads them in one transfer instead.
 struct ScoredMinibatch {
     loss: Tensor,
+    /// PPO's policy surrogate plus entropy, excluding the critic objective.
+    policy_loss: Tensor,
     readings: Tensor,
 }
 
@@ -695,7 +710,9 @@ fn score_minibatch(
         .map(|index| settings.entropy_for(head_of(batch, *index)) as f32)
         .collect();
     let coefficients = Tensor::from_slice(&coefficients).to_device(device);
-    let mut term = &actor_term - &entropy * &coefficients;
+    let policy_term = &actor_term - &entropy * &coefficients;
+    let policy_loss = policy_term.mean(ti4_tensor::Kind::Float);
+    let mut term = policy_term;
 
     // ---- the critic's own path to the trunk, per §6.3, and only in the modes that have one ----
     let critic_term = if matches!(critic_mode, CriticMode::BatchMean) {
@@ -739,7 +756,11 @@ fn score_minibatch(
         0,
     );
 
-    Ok(ScoredMinibatch { loss, readings })
+    Ok(ScoredMinibatch {
+        loss,
+        policy_loss,
+        readings,
+    })
 }
 
 /// The schema head a step belongs to, defaulting the way the per-decision loop did.
@@ -923,6 +944,33 @@ pub fn parameter_fingerprint(actor: &Actor, mode: CriticMode) -> Result<Vec<u32>
     Ok(bits)
 }
 
+/// Euclidean norm of the gradients currently held by the PPO optimiser's parameters.
+///
+/// Reading the reduced scalar once keeps this diagnostic out of the per-parameter host-sync path.
+/// A missing gradient is allowed: a sparse auxiliary batch need not touch every embedding row.
+fn gradient_norm(actor: &Actor, mode: CriticMode) -> Result<f64, String> {
+    let mut squared: Option<Tensor> = None;
+    let mut defined = 0usize;
+    for parameter in parameters(actor, mode)? {
+        let gradient = parameter.grad();
+        if gradient.defined() {
+            defined += 1;
+            let contribution = gradient.square().sum(ti4_tensor::Kind::Float);
+            squared = Some(match squared {
+                Some(sum) => sum + contribution,
+                None => contribution,
+            });
+        }
+    }
+    let squared = squared.map_or(0.0, |sum| sum.double_value(&[]));
+    if defined == 0 || !squared.is_finite() || squared < 0.0 {
+        return Err(format!(
+            "PPO auxiliary-gradient measurement found {defined} defined gradients with squared norm {squared}"
+        ));
+    }
+    Ok(squared.sqrt())
+}
+
 /// One PPO update over a frozen batch.
 ///
 /// Returns one [`EpochStats`] per epoch. The advantages are the batch's, unchanged, in every epoch;
@@ -938,6 +986,80 @@ pub fn update(
     settings: Settings,
     shuffle_seed: u64,
     optimizer: &mut Adam,
+) -> Result<Vec<EpochStats>, String> {
+    update_inner(
+        actor,
+        batch,
+        critic_mode,
+        settings,
+        shuffle_seed,
+        optimizer,
+        None,
+    )
+}
+
+/// One PPO update with a bounded auxiliary policy loss.
+///
+/// The callback is evaluated once per PPO minibatch.  Its gradient is measured separately, then
+/// recomputed together with the PPO loss and scaled so its global parameter-gradient norm is at
+/// most `max_fraction` of PPO's.  The final backward pass and Adam step are deliberately shared:
+/// alternating a PPO step and a cloning step would give the two objectives incompatible Adam
+/// moments and would not implement a gradient contribution bound.
+///
+/// The reference norm is PPO's policy surrogate plus entropy only. The critic objective is
+/// deliberately excluded: a large value error must not grant the demonstration policy an
+/// arbitrarily large gradient budget in shared-critic mode.
+///
+/// # Errors
+/// Returns any validation, scoring, callback, gradient, or optimiser error.  A non-finite
+/// auxiliary loss or gradient fails closed rather than silently dropping the demonstration term.
+pub fn update_with_auxiliary<F>(
+    actor: &mut Actor,
+    batch: &Batch,
+    critic_mode: CriticMode,
+    settings: Settings,
+    shuffle_seed: u64,
+    optimizer: &mut Adam,
+    max_fraction: f64,
+    auxiliary: F,
+) -> Result<Vec<EpochStats>, String>
+where
+    F: FnMut(&Actor, usize, usize) -> Result<Option<Tensor>, String>,
+{
+    if !max_fraction.is_finite() || !(0.0..=1.0).contains(&max_fraction) {
+        return Err(format!(
+            "auxiliary gradient fraction {max_fraction} is not finite or outside 0..=1"
+        ));
+    }
+    let mut auxiliary = auxiliary;
+    update_inner(
+        actor,
+        batch,
+        critic_mode,
+        settings,
+        shuffle_seed,
+        optimizer,
+        Some((&mut auxiliary, max_fraction)),
+    )
+}
+
+type Auxiliary<'a> = (
+    &'a mut dyn FnMut(&Actor, usize, usize) -> Result<Option<Tensor>, String>,
+    f64,
+);
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the public PPO update signature plus its optional, tightly coupled loss"
+)]
+fn update_inner(
+    actor: &mut Actor,
+    batch: &Batch,
+    critic_mode: CriticMode,
+    settings: Settings,
+    shuffle_seed: u64,
+    optimizer: &mut Adam,
+    mut auxiliary: Option<Auxiliary<'_>>,
 ) -> Result<Vec<EpochStats>, String> {
     validate_settings(settings)?;
     if batch.is_empty() {
@@ -1013,10 +1135,60 @@ pub fn update(
         // per-decision version of this loop read five scalars per decision out of the graph; each
         // one drains the CUDA pipeline, and 4,096 decisions x 5 reads is what left the GPU at 40%.
         let mut readings: Vec<Tensor> = Vec::new();
-        for minibatch in order.chunks(settings.minibatch) {
+        for (minibatch_index, minibatch) in order.chunks(settings.minibatch).enumerate() {
             let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
-            scored.loss.backward();
-            optimizer.step(actor)?;
+            if let Some((callback, max_fraction)) = auxiliary.as_mut() {
+                // Measure PPO and auxiliary gradients independently.  We must clear between the
+                // two measurements: gradient accumulation would make the second norm a norm of
+                // their sum and defeat the contribution cap.
+                optimizer.zero_grad(actor)?;
+                scored.policy_loss.backward();
+                let ppo_norm = gradient_norm(actor, critic_mode)?;
+
+                optimizer.zero_grad(actor)?;
+                let auxiliary_loss = callback(actor, epoch, minibatch_index)?;
+                let Some(auxiliary_loss) = auxiliary_loss else {
+                    // There is no valid replayed demonstration for this minibatch.  Preserve the
+                    // ordinary PPO step exactly rather than manufacturing a zero-gradient loss.
+                    let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+                    scored.loss.backward();
+                    optimizer.step(actor)?;
+                    readings.push(scored.readings);
+                    seen += minibatch.len();
+                    continue;
+                };
+                let auxiliary_value = auxiliary_loss.double_value(&[]);
+                if !auxiliary_value.is_finite() {
+                    return Err(format!(
+                        "auxiliary loss at epoch {epoch}, minibatch {minibatch_index} is non-finite: {auxiliary_value}"
+                    ));
+                }
+                auxiliary_loss.backward();
+                let auxiliary_norm = gradient_norm(actor, critic_mode)?;
+                let scale = if auxiliary_norm > 0.0 {
+                    (*max_fraction * ppo_norm / auxiliary_norm).min(1.0)
+                } else {
+                    0.0
+                };
+
+                // Build the *sum* in one graph and step it once.  Reusing either earlier graph
+                // would retain the whole PPO minibatch graph through an Adam step; recomputing is
+                // modestly dearer but keeps memory bounded and the objective exact.
+                optimizer.zero_grad(actor)?;
+                let combined = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+                let auxiliary_loss = callback(actor, epoch, minibatch_index)?;
+                if let Some(auxiliary_loss) = auxiliary_loss {
+                    (&combined.loss + auxiliary_loss * scale).backward();
+                } else {
+                    return Err(format!(
+                        "auxiliary callback changed availability at epoch {epoch}, minibatch {minibatch_index}"
+                    ));
+                }
+                optimizer.step(actor)?;
+            } else {
+                scored.loss.backward();
+                optimizer.step(actor)?;
+            }
             readings.push(scored.readings);
             seen += minibatch.len();
         }
@@ -1068,6 +1240,81 @@ pub fn update(
 mod tests {
     use super::*;
     use crate::Width;
+
+    /// The canonical-input shortcut returns exactly what the sort would have produced.
+    ///
+    /// Bit equality, not approximate equality: the whole point of `canonicalise` is that folding
+    /// duplicates in `ordered_pairs`' order gives a specific f32, so a shortcut that merely agreed
+    /// to a tolerance would be a silent change to every downstream gradient. The reference here is
+    /// the original body, kept verbatim, so the two can be compared rather than reasoned about.
+    #[test]
+    fn the_canonical_shortcut_is_bit_identical_to_sorting() {
+        fn by_sorting(option: &mut crate::SparseOption) {
+            let mut pairs: Vec<(i64, f32)> = option
+                .columns
+                .iter()
+                .copied()
+                .zip(option.values.iter().copied())
+                .collect();
+            pairs.sort_by(|left, right| {
+                left.0.cmp(&right.0).then_with(|| {
+                    ti4_tensor::total_order_key(left.1).cmp(&ti4_tensor::total_order_key(right.1))
+                })
+            });
+            option.columns.clear();
+            option.values.clear();
+            for (column, value) in pairs {
+                if option.columns.last() == Some(&column) {
+                    let last = option.values.len() - 1;
+                    option.values[last] += value;
+                } else {
+                    option.columns.push(column);
+                    option.values.push(value);
+                }
+            }
+        }
+
+        let cases: Vec<(Vec<i64>, Vec<f32>)> = vec![
+            // The 94% case the shortcut exists for.
+            (vec![0, 1, 2, 9], vec![0.5, -1.25, 3.0, 0.125]),
+            (vec![7], vec![2.5]),
+            // Everything the shortcut must decline: out of order, a duplicate, both at once, and
+            // equal-column values whose fold order is the tie-break the doc comment names.
+            (vec![2, 1, 0], vec![1.0, 2.0, 3.0]),
+            (vec![0, 0, 1], vec![0.25, 0.5, 1.0]),
+            (vec![3, 1, 3, 1], vec![1.5, -0.5, 0.25, 4.0]),
+            (vec![5, 5], vec![f32::MIN_POSITIVE, -f32::MIN_POSITIVE]),
+            (vec![1, 1], vec![1e30, -1e30]),
+            (vec![4, 4, 4], vec![0.1, 0.2, 0.3]),
+        ];
+
+        for (columns, values) in cases {
+            let mut fast = crate::SparseOption {
+                columns: columns.clone(),
+                values: values.clone(),
+            };
+            let mut reference = crate::SparseOption { columns, values };
+            canonicalise(&mut fast);
+            by_sorting(&mut reference);
+
+            assert_eq!(
+                fast.columns, reference.columns,
+                "columns diverged for {:?}",
+                reference.columns
+            );
+            let fast_bits: Vec<u32> = fast.values.iter().map(|value| value.to_bits()).collect();
+            let reference_bits: Vec<u32> = reference
+                .values
+                .iter()
+                .map(|value| value.to_bits())
+                .collect();
+            assert_eq!(
+                fast_bits, reference_bits,
+                "values differ in bits for columns {:?}",
+                fast.columns
+            );
+        }
+    }
 
     /// An actor whose parameters carry gradients, as a real update requires.
     fn trainable_actor() -> Actor {
