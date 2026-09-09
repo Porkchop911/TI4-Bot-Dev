@@ -318,9 +318,55 @@ fn action_facts(
     option: &ChoiceOption,
     player: &PlayerId,
 ) -> Vec<(String, f64)> {
-    let controlled = seen.controlled_planets(player);
-    let held_systems: std::collections::BTreeSet<&ti4_model::id::SystemId> =
-        controlled.iter().map(|(system, _)| *system).collect();
+    action_facts_within(&ActionContext::of(seen, player), seen, option, player)
+}
+
+/// The part of [`action_facts`] that depends on the decision rather than the option.
+///
+/// Every field here is a function of `(seen, player)` alone, so it is the same for every option of
+/// one decision — and `action_facts` was rebuilding all of it per option. With ~6.3 legal options
+/// per decision that is most of the work thrown away.
+///
+/// `planets` is the reason this is worth a struct rather than two hoisted locals.
+/// [`ti4_content::galaxy::all_planets`] materialises the whole planet catalogue into a map, and its
+/// own doc comment records that "building a hundred-entry map to answer a single question was a
+/// third of a simulated game's running time". It sat inside the activation arm, so a decision
+/// offering twenty systems built it twenty times.
+///
+/// Decision-local, deliberately: nothing here is cached across decisions, because the seat's
+/// holdings change as the game moves and an invalidation scheme is exactly what this avoids
+/// needing. See `plans/INFERENCE_OPTIMIZATION_2026-09-08.md`, which names this as the next target
+/// after the vocabulary lookups.
+struct ActionContext<'a> {
+    /// Every (system, planet) this seat controls.
+    controlled: Vec<(&'a ti4_model::id::SystemId, &'a ti4_model::id::PlanetId)>,
+    /// The systems it holds anything in, derived from `controlled`.
+    held_systems: std::collections::BTreeSet<&'a ti4_model::id::SystemId>,
+    /// The planet catalogue, for what a destination is worth taking.
+    planets: std::collections::BTreeMap<&'a str, ti4_content::galaxy::Planet<'a>>,
+}
+
+impl<'a> ActionContext<'a> {
+    fn of(seen: &'a Observed<'a>, player: &PlayerId) -> Self {
+        let controlled = seen.controlled_planets(player);
+        let held_systems = controlled.iter().map(|(system, _)| *system).collect();
+        Self {
+            controlled,
+            held_systems,
+            planets: ti4_content::galaxy::all_planets(seen.content(), seen.sources()),
+        }
+    }
+}
+
+fn action_facts_within(
+    context: &ActionContext<'_>,
+    seen: &Observed<'_>,
+    option: &ChoiceOption,
+    player: &PlayerId,
+) -> Vec<(String, f64)> {
+    let _ = player;
+    let controlled = &context.controlled;
+    let held_systems = &context.held_systems;
 
     let name = |suffix: &str| format!("{ACTION_FAMILY}:{suffix}");
     #[expect(
@@ -366,7 +412,7 @@ fn action_facts(
             // What the system is worth taking for, beyond a bare planet count. A two-planet tile
             // of one resource each and a two-planet tile of four are the same number and very
             // different moves.
-            let planets = ti4_content::galaxy::all_planets(seen.content(), seen.sources());
+            let planets = &context.planets;
             let (resources, influence) = free.iter().fold((0i64, 0i64), |(r, i), planet| {
                 planets.get(planet.as_str()).map_or((r, i), |record| {
                     (r + record.resources(), i + record.influence())
@@ -1120,14 +1166,19 @@ pub fn mlp_choice_features(
         choice.options.len(),
         "one feature vector per option"
     );
+    // Built once for the decision, not once per option: see `ActionContext`. This is the call site
+    // that mattered -- every option of every decision came through here rebuilding the seat's
+    // holdings and the whole planet catalogue.
+    let context = ActionContext::of(seen, player);
     vectors
         .iter()
         .zip(&choice.options)
         .map(|(vector, option)| {
-            let action: Vec<(crate::intern::FeatureKey, f64)> = action_facts(seen, option, player)
-                .into_iter()
-                .map(|(name, value)| (crate::intern::register(&name), value))
-                .collect();
+            let action: Vec<(crate::intern::FeatureKey, f64)> =
+                action_facts_within(&context, seen, option, player)
+                    .into_iter()
+                    .map(|(name, value)| (crate::intern::register(&name), value))
+                    .collect();
             project_vector(vector, &seat_state, &action)
         })
         .collect()
