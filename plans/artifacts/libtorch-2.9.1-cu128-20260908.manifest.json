@@ -1,0 +1,286 @@
+{
+ "device": "cu128",
+ "files": 13448,
+ "libtorch_version": "2.9.1+cu128",
+ "licenses": "LICENSE (BSD-3-Clause) and NOTICE copied from the torch dist-info, which is outside the package directory and so is reproduced here beside the binaries it covers.",
+ "pinned_files": [
+  {
+   "bytes": 2703490,
+   "path": "lib/XNNPACK.lib",
+   "sha256": "b0e172169f51dbc1d89a7df5cb619e6d6fefff4e834dba459554e75f987c14f5"
+  },
+  {
+   "bytes": 1924,
+   "path": "lib/_C.lib",
+   "sha256": "a141facb7d286e4dfd761d3d06b1e6007761909d354025a3fa08d5a39fa2bc5c"
+  },
+  {
+   "bytes": 1085952,
+   "path": "lib/c10.dll",
+   "sha256": "98de3dece9530aee3524186edfbc7f0eef954cf91c4295d3dc9fbde134bf3a0d"
+  },
+  {
+   "bytes": 814188,
+   "path": "lib/c10.lib",
+   "sha256": "66d8a8404ef5032f069703e69056c70fe9af389b9a35a2b5038b86ec830496c9"
+  },
+  {
+   "bytes": 436736,
+   "path": "lib/c10_cuda.dll",
+   "sha256": "6218f972cf145ea50c1892c1bb66c9787685d7bc1cc2fd93c1b472eebd23442a"
+  },
+  {
+   "bytes": 68208,
+   "path": "lib/c10_cuda.lib",
+   "sha256": "03d69716bea15cf360c578b40f200e21df634c1ccdd3cf6dff69ceabcabd0c51"
+  },
+  {
+   "bytes": 17920,
+   "path": "lib/caffe2_nvrtc.dll",
+   "sha256": "55f8335a7fd612df38a8da5fad31e7d26b7c851e8551766a83761f4a92dd6173"
+  },
+  {
+   "bytes": 1850,
+   "path": "lib/caffe2_nvrtc.lib",
+   "sha256": "0b50187d4839e3858df37de77a1e0fe9a3a715969f43e75bc4a1e3623b1ea048"
+  },
+  {
+   "bytes": 117878,
+   "path": "lib/cpuinfo.lib",
+   "sha256": "7326dd0af5446f6e0ec1ffc0b7f54700fd8d1137063ff8b1ab00f90a460f2657"
+  },
+  {
+   "bytes": 113716224,
+   "path": "lib/cublas64_12.dll",
+   "sha256": "9513540e4ec4c51ee9e7304138c2cc255c29a8c181f9e80c38efa25738becd99"
+  },
+  {
+   "bytes": 674667520,
+   "path": "lib/cublasLt64_12.dll",
+   "sha256": "b199d1ff892a81b7fd3d57ba1781549609b41500b36008fef326038393ad46c7"
+  },
+  {
+   "bytes": 573952,
+   "path": "lib/cudart64_12.dll",
+   "sha256": "c2c9a9c22a9bcba90e261825968836787b331038047a26770cffb7a583c28344"
+  },
+  {
+   "bytes": 266288,
+   "path": "lib/cudnn64_9.dll",
+   "sha256": "9edbcdff73b0af070eb160b2ce66e59feca04aa017351d8eedcc5e8e149967d2"
+  },
+  {
+   "bytes": 282445872,
+   "path": "lib/cudnn_adv64_9.dll",
+   "sha256": "f202e8ff36209ac4292fe2ef79d4539487495b3b948f0c978cc63298f43a1850"
+  },
+  {
+   "bytes": 4618272,
+   "path": "lib/cudnn_cnn64_9.dll",
+   "sha256": "3f03dec3b81f137f049e1d1c06ff469248eef54ff9424b3b9045fc0f69559d1a"
+  },
+  {
+   "bytes": 513926688,
+   "path": "lib/cudnn_engines_precompiled64_9.dll",
+   "sha256": "ebc2c1f74366b029a4350f7f9a3b109ccd5aa9b4ae02527950793dd29f7b74fb"
+  },
+  {
+   "bytes": 20201008,
+   "path": "lib/cudnn_engines_runtime_compiled64_9.dll",
+   "sha256": "93ab6351ca0f2b6ca842f83d284e56c427525778c14657229801a13cf8121bd8"
+  },
+  {
+   "bytes": 2420256,
+   "path": "lib/cudnn_graph64_9.dll",
+   "sha256": "a933efeb280a3252297f92d79f7e83003bcbc6f665872d11645d1dbbab9cb598"
+  },
+  {
+   "bytes": 56823328,
+   "path": "lib/cudnn_heuristic64_9.dll",
+   "sha256": "458175f12771a35de0ea39c04250d727c2424d42a7ffe0bc987ae81204748fba"
+  },
+  {
+   "bytes": 126508576,
+   "path": "lib/cudnn_ops64_9.dll",
+   "sha256": "851d8f4191a24b322b0be738d191a3159455f0da4db47a19f5cc7ad6e55edf61"
+  },
+  {
+   "bytes": 276121600,
+   "path": "lib/cufft64_11.dll",
+   "sha256": "f4fea9227b14843894ad5436725f9638b172171142c95291fc6ae7a493248221"
+  },
+  {
+   "bytes": 163328,
+   "path": "lib/cufftw64_11.dll",
+   "sha256": "84c86dcc4d4b770e75766964149ef688c901dc89e380278fe399dd3c03608541"
+  },
+  {
+   "bytes": 4483664,
+   "path": "lib/cupti64_2025.1.1.dll",
+   "sha256": "d026870a2c503d1b6e38a793170823ceca83d776f9b887f63fb0bb5c93d5c525"
+  },
+  {
+   "bytes": 71955968,
+   "path": "lib/curand64_10.dll",
+   "sha256": "3465fd1b46e551339b8f44c455756a0f2cba8bd846562eb659040d48edb7aaac"
+  },
+  {
+   "bytes": 225683456,
+   "path": "lib/cusolver64_11.dll",
+   "sha256": "3d4f7a66b5f352db56d4bb5962bb453a42d5feb2d831779f4a0bebc9971c36fb"
+  },
+  {
+   "bytes": 157071360,
+   "path": "lib/cusolverMg64_11.dll",
+   "sha256": "c3377f10606ff0606be2f08401d54aff6c37f137b78d6b6e21be356a5b4d6cc2"
+  },
+  {
+   "bytes": 379535872,
+   "path": "lib/cusparse64_12.dll",
+   "sha256": "f4688daa6163c47a0b5293926ec7ae367de6b4af54ea201638b308831b322a0e"
+  },
+  {
+   "bytes": 1318290,
+   "path": "lib/fmt.lib",
+   "sha256": "fda3a6b26a60c893d0b17c740c655fc1ca02c3060ca2101b806553a3f6c63d58"
+  },
+  {
+   "bytes": 1614192,
+   "path": "lib/libiomp5md.dll",
+   "sha256": "d41a71c38f627a95748596820ab380135dcccc4ceecd6fe7d4e247d015bf55a4"
+  },
+  {
+   "bytes": 43888,
+   "path": "lib/libiompstubs5md.dll",
+   "sha256": "137dd44f652a926eb540861994c58ea24ebfbf6b45886ac964a68c5742549c47"
+  },
+  {
+   "bytes": 284300,
+   "path": "lib/libittnotify.lib",
+   "sha256": "ee471890b90ee5a9d04753a14de5a89bbc96ea4985d542712d57fca397500a9b"
+  },
+  {
+   "bytes": 2891768,
+   "path": "lib/microkernels-prod.lib",
+   "sha256": "64f19442f02c75d6b0c0a1b8272b642d9c95a3150a6832fa12a5a964cfc1b09c"
+  },
+  {
+   "bytes": 77860352,
+   "path": "lib/nvJitLink_120_0.dll",
+   "sha256": "959d3cb44527ec884db8dc20772520b584dbe7d622d11b0530e6326417078b3e"
+  },
+  {
+   "bytes": 48128,
+   "path": "lib/nvToolsExt64_1.dll",
+   "sha256": "0fe54f1b80ad3e44da2a3d9f0956e7c3903029d6319689ce1c4068f7a20932f3"
+  },
+  {
+   "bytes": 21641792,
+   "path": "lib/nvperf_host.dll",
+   "sha256": "473b14252a2927607090cba4f12f06436842310245e8e9f5747548813eaff215"
+  },
+  {
+   "bytes": 6356480,
+   "path": "lib/nvrtc-builtins64_128.dll",
+   "sha256": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  {
+   "bytes": 86794240,
+   "path": "lib/nvrtc64_120_0.alt.dll",
+   "sha256": "5464ea01b079d78042374dc7819684910c8e9d5c63000e2d2d5aa02298ecf2ae"
+  },
+  {
+   "bytes": 86728192,
+   "path": "lib/nvrtc64_120_0.dll",
+   "sha256": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93"
+  },
+  {
+   "bytes": 185328,
+   "path": "lib/pthreadpool.lib",
+   "sha256": "5fc4a94d7c42f7f8c8c3ac767628a6504faa397af3c8ec5c553c80bee689279a"
+  },
+  {
+   "bytes": 15360,
+   "path": "lib/shm.dll",
+   "sha256": "c74893cc236f5f5f128ac2406d425b8d360d30c4fe34a4e65491bc581be7de98"
+  },
+  {
+   "bytes": 3790,
+   "path": "lib/shm.lib",
+   "sha256": "0f281128e8748dcfa63a9f6f3c704755a6dff7bb3f40b4bf7a7f4766150d69c2"
+  },
+  {
+   "bytes": 8812252,
+   "path": "lib/sleef.lib",
+   "sha256": "5d8e0f6924a1ee5a6211ca3317b834d89f8dc0243a5e1c49bbb8b64e3701f8b6"
+  },
+  {
+   "bytes": 9728,
+   "path": "lib/torch.dll",
+   "sha256": "727a37ffb531dfe5b740513a4f821c75f9f39f9d26082753701dee48ec9bd5ed"
+  },
+  {
+   "bytes": 1832,
+   "path": "lib/torch.lib",
+   "sha256": "29d1371ffc604de7170c9536163bc7feb992dabb493ecd2438c5edf32712c8dd"
+  },
+  {
+   "bytes": 262806528,
+   "path": "lib/torch_cpu.dll",
+   "sha256": "92c193e2417b3186c0f001aa6a50cf2d22c40576da2cea8c68797e605160ce1a"
+  },
+  {
+   "bytes": 29438978,
+   "path": "lib/torch_cpu.lib",
+   "sha256": "268fafb972379e0fb4d66683d3aaef9a48197beb4881841dc7a25e28451582b6"
+  },
+  {
+   "bytes": 902919680,
+   "path": "lib/torch_cuda.dll",
+   "sha256": "e6836f5516359f729a3d0f45029b50520936cbf3be4c3d3a148491fe57c1986a"
+  },
+  {
+   "bytes": 1784682,
+   "path": "lib/torch_cuda.lib",
+   "sha256": "cf9698b2c5c2056303151b52f5829192b13a5a252ab71466ec7476db8989edda"
+  },
+  {
+   "bytes": 9728,
+   "path": "lib/torch_global_deps.dll",
+   "sha256": "b2bf9a535b4c9e1d7e317e29e3c9d1d795e9e2a68ef897b4ff86851b87d5ef2d"
+  },
+  {
+   "bytes": 18810368,
+   "path": "lib/torch_python.dll",
+   "sha256": "9e35a5523a51f5d162b5a2e1c24cfa42ed4fa87e84c5a9c8ed7c7277268a89cd"
+  },
+  {
+   "bytes": 287976,
+   "path": "lib/torch_python.lib",
+   "sha256": "822ffdd3fd94d636e8fa221f3b6e8c5efa8cdcbf370665f487ddeb65daf79930"
+  },
+  {
+   "bytes": 195072,
+   "path": "lib/uv.dll",
+   "sha256": "fa569e682fc5fb7a8eb94c6829af9f30a569748dbbc6bce39735d48bc960bcf8"
+  },
+  {
+   "bytes": 89088,
+   "path": "lib/zlibwapi.dll",
+   "sha256": "1f047faec08d9a35c304fb4a7cf13853589359a8f7cbfdd48c5d5807712dcf05"
+  },
+  {
+   "bytes": 540626,
+   "path": "licenses/LICENSE",
+   "sha256": "61ebd22a90ad993ee4fa372cd91dca44fe04519f0259c5440f556d9237535007"
+  },
+  {
+   "bytes": 24088,
+   "path": "licenses/NOTICE",
+   "sha256": "1c3dec6c0342c7ed9e12af59b296c7bb1d394af5cf881db74191cc8299efce5c"
+  }
+ ],
+ "provenance": "Re-downloaded 2026-09-09 with pip install --target from download.pytorch.org/whl/cu128, after out/ was destroyed and the original tree lost. A SECOND distribution, not a re-pin: libtorch-2.9.1-cu128.manifest.json is left exactly as it was, so it still records the bytes every measurement before 2026-09-09 was taken against. 38 of its 55 pinned files still match here; the other 17 differ in content at byte-for-byte identical sizes, which is a PyTorch rebuild of the same version carrying new embedded build metadata, not a different artifact. The original bytes are not retrievable: download.pytorch.org serves only the current build.",
+ "total_bytes": 4550535641,
+ "tree_sha256": "437933b39092c42a130b8591aaeef4e93284704b11f1b1eb917149de881e5cb0"
+}

@@ -1,23 +1,23 @@
 {
  "device": "cpu",
- "files": 9313,
+ "files": 13413,
  "libtorch_version": "2.9.1+cpu",
  "licenses": "LICENSE (BSD-3-Clause) and NOTICE copied from torch-2.9.1.dist-info, which is outside the package directory and was missed by the first copy",
  "pinned_files": [
   {
    "bytes": 2703490,
    "path": "lib/XNNPACK.lib",
-   "sha256": "ec350b878be156e7301c25e9a0fc26a1f69f8d86a094aad066fa8aa52ec6d3e5"
+   "sha256": "4f3f0e691cd6051cc78718749dd669d184ceb3ebccf70fcad9cae9e73622899a"
   },
   {
    "bytes": 1924,
    "path": "lib/_C.lib",
-   "sha256": "e0b71f4af86a549ed3ff54a9d52c6086d5107231eaa6319c93a5d0e36f94841f"
+   "sha256": "a141facb7d286e4dfd761d3d06b1e6007761909d354025a3fa08d5a39fa2bc5c"
   },
   {
    "bytes": 1085952,
    "path": "lib/c10.dll",
-   "sha256": "89853f00c79a6d922d3b348616698f873f1687ff96ba85f44b07be572f1d6a0c"
+   "sha256": "f8a49293217d96b1a29f96a7849fb760282ce7fa764d40b3788ee98e2a83efc4"
   },
   {
    "bytes": 814188,
@@ -27,12 +27,12 @@
   {
    "bytes": 117878,
    "path": "lib/cpuinfo.lib",
-   "sha256": "9d00b1219d8321f57d765e96826edaedc27693fe8376c3c1978bf5e385d76987"
+   "sha256": "66d6c638093d8a507c1a2675bc260d871bf706ebe92d68ac34daa23662769775"
   },
   {
    "bytes": 1318290,
    "path": "lib/fmt.lib",
-   "sha256": "9d1a909d38c98b296e0712ea310ff9bda424efa6e27ff28d58ad508f4cbe426e"
+   "sha256": "7210b0b97098122af4097647d24ac0454364bc6c7696f09f07eab74fb27cfbae"
   },
   {
    "bytes": 1614192,
@@ -47,22 +47,22 @@
   {
    "bytes": 284300,
    "path": "lib/libittnotify.lib",
-   "sha256": "8799a4b3b5e67052ea08b48fa2d4a1bcafab74a4a388cfb0582c991e254e53f4"
+   "sha256": "b05bb7c9523358d1f64bb15fdb90df4aa7cd85c80a5b361e212054fb64766fc2"
   },
   {
    "bytes": 2891768,
    "path": "lib/microkernels-prod.lib",
-   "sha256": "4a54b7b59ffc9d2a8e9caaacf2eef86bff74f9852c1eae041e1b23436940985a"
+   "sha256": "6736d6b30e9b24aefc7fea5d5e4dc8420ea53a032104a1c119c7399f9f447ce9"
   },
   {
    "bytes": 185328,
    "path": "lib/pthreadpool.lib",
-   "sha256": "5fca7f22fa902ead4d5a78b8331a55aec9272b2c3ad2c2422ed24ea2153991ac"
+   "sha256": "a323c6b9735683d4dfe5ddc3697e36ab64816f0591b3d942859f1ba71ad92206"
   },
   {
    "bytes": 15360,
    "path": "lib/shm.dll",
-   "sha256": "9d70904461b7994a56a39620053cdd6eb19fca8c59e053990f573f775f57b656"
+   "sha256": "3681259ac0051cf6b04e85fefe0ee969034ecbd1f5728c1d4f32f34ff2082fd6"
   },
   {
    "bytes": 3790,
@@ -72,12 +72,12 @@
   {
    "bytes": 8812252,
    "path": "lib/sleef.lib",
-   "sha256": "6f5a4dad2adb8270327365104871ce9f56f9a5d7ff1b057ad72df41d36046107"
+   "sha256": "3a455e0cd75adcd6f16fda686090612f595ec5a048ecafa903dca54507465266"
   },
   {
    "bytes": 9728,
    "path": "lib/torch.dll",
-   "sha256": "62b745701824e8056e304bd9ecaf14832b7b30da3ea24a0b3dc82858fa368bd3"
+   "sha256": "0620c06663267e3e066e95b6a65b342d927c203501a8341a803470a44f6d1cb5"
   },
   {
    "bytes": 1832,
@@ -87,7 +87,7 @@
   {
    "bytes": 262656512,
    "path": "lib/torch_cpu.dll",
-   "sha256": "f106a2daa5487d919ab121bdddda0dd52a8503e408a51428f621b24cca670950"
+   "sha256": "b50202e45b2cb984f09b3bd7592026ccf5a321ff71e8a6b1ae70dbe2f0105fe4"
   },
   {
    "bytes": 29438978,
@@ -97,12 +97,12 @@
   {
    "bytes": 9728,
    "path": "lib/torch_global_deps.dll",
-   "sha256": "6268960feb741b8d7b8b73b8650d2c44e125b1c3e07c5dcbf43f102ca3cd1716"
+   "sha256": "d0f35b66b211cebdc846c06fe4506b56b1dde8789473d44e4a0d336c79f7f80f"
   },
   {
-   "bytes": 18522624,
+   "bytes": 18460672,
    "path": "lib/torch_python.dll",
-   "sha256": "9c203b49d09804c2e5a99e2b1b4a6bf378f7f3ad183f48f48f7c12bd0794d433"
+   "sha256": "2131095e208ade5c3021061ef0e7b59ad56fc30bce77100d710118c178a7bc26"
   },
   {
    "bytes": 287976,
@@ -115,31 +115,6 @@
    "sha256": "fa569e682fc5fb7a8eb94c6829af9f30a569748dbbc6bce39735d48bc960bcf8"
   },
   {
-   "bytes": 113,
-   "path": "lib/libshm/alloc_info.h",
-   "sha256": "645a0b6fdd40426e3f88af9e14d95b2369f6b5d8d5b56e4a0a0818086567ada3"
-  },
-  {
-   "bytes": 1283,
-   "path": "lib/libshm/err.h",
-   "sha256": "b3f8ec03a27a2931b2e8448764f13dfd2f4d8557c2fa47e8b528b49b93d7788c"
-  },
-  {
-   "bytes": 1242,
-   "path": "lib/libshm/libshm.h",
-   "sha256": "f908d67c6230abbdd474e881165ebf3929fd3836f8f5740036951b666f35ca6b"
-  },
-  {
-   "bytes": 4571,
-   "path": "lib/libshm/socket.h",
-   "sha256": "deaa62fbc75990491c0fdff52e24f43799ce7bb00084cb91280bb83b4f89a21c"
-  },
-  {
-   "bytes": 815,
-   "path": "lib/libshm_windows/libshm.h",
-   "sha256": "4cda048d2158eaf99ff698b5966f05d2a2e4fd2b613312c31864eb74a7a883b1"
-  },
-  {
    "bytes": 538235,
    "path": "licenses/LICENSE",
    "sha256": "a60db7b1ec2872f18d2c1b86d147ea39d5ead7d671fe8a9c07c28b17d167e51d"
@@ -150,7 +125,7 @@
    "sha256": "1c3dec6c0342c7ed9e12af59b296c7bb1d394af5cf881db74191cc8299efce5c"
   }
  ],
- "provenance": "copied once from the python site-packages torch install; never linked in place",
- "total_bytes": 368116173,
- "tree_sha256": "5dce91590eaea3fbe035c338fba206ac052b16e2e1d869a8bfef129b383c425f"
+ "provenance": "RE-PINNED 2026-09-09. The tree this manifest described was destroyed with the rest of out/ and is not retrievable: download.pytorch.org serves only the current build of torch==2.9.1+cpu. Re-downloaded with pip install --target from download.pytorch.org/whl/cpu and re-pinned to the bytes actually present, on the owner's decision. Of the previous pin, 10 of 24 files still match exactly; the rest differ in content at byte-for-byte identical sizes, which is a PyTorch rebuild of the same version carrying new embedded build metadata rather than a different artifact. Measurements taken before 2026-09-09 were made against the previous bytes; per this manifest's own rule, a mismatch means the corpus moved. Previous tree_sha256 was unrecorded. Original provenance: copied once from the python site-packages torch install; never linked in place",
+ "total_bytes": 454099014,
+ "tree_sha256": "f6a0725dd51e6249c09802de7f948e76b0348af6ce05061886099268d4af1613"
 }
