@@ -8263,3 +8263,22 @@ Full verdict: `plans/M09-030_TIER_D_PASS1.md`.
   on the `tokens` head. The rule-dependency matrix itself is still to write.
 
 ---
+
+
+## Operator performance investigation — 2026-09-08
+
+Report: [ENGINE_OPTIMIZATION_2026-09-08.md](ENGINE_OPTIMIZATION_2026-09-08.md).
+Corrected candidate-only timing attribution: direct engine time is ~17% of measured rollout,
+not 86%. Added `crates/ti4-mlp/examples/engine_cost.rs`; optimized only `supply::held` to reuse
+one exact source-scoped catalogue per count. Measured 13.87% engine reduction across 36 unique
+games, 15.15% median over five interleaved pairs; estimated 1.4–1.6% total-training saving.
+All ordered-choice/event/final-state hashes match before/after and direct/legacy runners.
+Final checks: 1,241 engine unit tests and 5 docs pass; profiler test passes; strict engine and
+isolated profiler Clippy pass. Full suite remains blocked by the unrelated decision-delivery
+inventory mismatch (3 integration tests pass, 1 fails); MLP Clippy has 11 existing library lints.
+Other sessions changed combat/space-station/game code during the task; frozen executable and
+source-manifest methodology, exclusions, commands and raw logs are in the report. No unrelated
+source edited, no staging/commit/branch change. Supply patch independent review remains open.
+Next safe action: owner reconciles the delivery registry; rerun full suite and independently
+review the small supply change before integration. This investigation does not advance any
+migration milestone or approve a policy/observation-surface change.

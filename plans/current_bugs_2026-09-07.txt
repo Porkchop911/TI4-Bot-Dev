@@ -1,0 +1,23 @@
+engine bugs:
+- sol still does not get extra cc from versatile
+- support for the throne is not given back when the player is activated
+- something with groundforceas and exploration is wonky 
+- fracture not implemented?
+- thunders' edge does not get placed although triggerd
+- the action card brilliance lets a player gain their own breakthrough if they do not already have it, currently it steals the breakthrough from another player and replaces the breakthrough tehy already have. 
+- benefit and cost in technology are still separate decisions 
+- entropic scar never gets used
+- scoring limits for pblic and secret objectives are SEPERATE
+- engine needs to assign special connection to revealed vp eg. if intimidate council is out it needs to be obvious which tiles are affected
+
+
+
+behavior bugs:
+- fleet supply set to zero during status phase reorganization --> should offer all possible distributions instead of sequential decisions. 
+- while legal, it is unfun if a faction invests in thunders edge expedition ifg they already have their breakthrough --> do not offer thundersedgeexpedition to factions that already have their breakthrough 
+- unit upgrades get ignored even if the objectives ask for it directly
+- xxcha cant just ALWAYS pick diplo--> penalty on >80% same strategy card
+
+reviewer bugs:
+- neutral units pop onto mectaol 
+
