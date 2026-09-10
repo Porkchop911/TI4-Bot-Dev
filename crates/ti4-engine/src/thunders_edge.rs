@@ -68,11 +68,13 @@ fn can_pay(
 
 /// Expedition slices this player can currently claim.
 ///
-/// Suppressed once the player already holds their faction breakthrough. LRR still permits
-/// claiming further slices ("a player can claim multiple expedition slices in a game"), but the
-/// only thing a slice buys past the first is a tie-break on who eventually places infantry on
-/// Thunder's Edge -- not worth offering as a real decision once the one thing every slice is for
-/// has already happened.
+/// Offered whether or not the seat already holds its faction breakthrough. LRR permits it -- "a
+/// player can claim multiple expedition slices in a game" -- and this used to suppress it anyway,
+/// on the reasoning that a later slice bought nothing but a tie-break on who places the infantry.
+///
+/// That reasoning no longer holds. The placer takes control of Thunder's Edge: six influence, a
+/// legendary card, and a planet every objective counting controlled planets can see. Deciding who
+/// places is worth a real decision, and the count that decides it is the slices each seat claimed.
 #[must_use]
 pub fn available_actions(
     state: &GameState,
@@ -81,12 +83,6 @@ pub fn available_actions(
     player: &PlayerId,
 ) -> Vec<ChoiceOption> {
     if !sources.contains(ti4_model::content_types::Source::ThundersEdge) {
-        return Vec::new();
-    }
-    let has_breakthrough = state
-        .player(player)
-        .is_some_and(|seat| seat.breakthrough.is_some());
-    if has_breakthrough {
         return Vec::new();
     }
     SLICES
@@ -536,7 +532,7 @@ mod tests {
     /// While legal to invest further, offering the expedition to a faction that already holds
     /// its breakthrough is not fun: the one thing every slice is for has already happened.
     #[test]
-    fn a_player_who_already_holds_the_breakthrough_is_not_offered_the_expedition() {
+    fn a_player_who_already_holds_the_breakthrough_may_still_claim_slices() {
         let content = ContentStore::embedded();
         let player = PlayerId::new("a");
         let mut state = game(&["a"]);
@@ -553,9 +549,11 @@ mod tests {
         seat.secret_objectives
             .push(SecretObjectiveId::new("destroy_their_greatest_ship"));
 
+        // Every further slice raises this seat's claim on placing the infantry, and the placer
+        // takes the planet -- so the decision is live even once the breakthrough is in hand.
         assert!(
-            available_actions(&state, content, DEFAULT, &player).is_empty(),
-            "already holding the breakthrough, so nothing is offered"
+            !available_actions(&state, content, DEFAULT, &player).is_empty(),
+            "holding the breakthrough does not close the expedition"
         );
     }
 
