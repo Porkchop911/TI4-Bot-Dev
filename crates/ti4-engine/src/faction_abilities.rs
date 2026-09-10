@@ -522,6 +522,12 @@ pub fn annexable(
             if planet.as_str() == "mr" || board.planet_control.contains_key(&planet) {
                 continue; // somebody holds it
             }
+            // Space Stations rule 7 keeps them out of the scoring view and rule 5 keeps
+            // structures off them; annexing one handed Xxcha a planet the rest of the engine
+            // does not treat as one.
+            if ti4_content::galaxy::is_space_station(content, planet.as_str(), sources) {
+                continue;
+            }
             if board
                 .planet_units
                 .get(&planet)
@@ -1316,6 +1322,45 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn peace_accords_do_not_annex_a_space_station() {
+        // Space Stations rule 7 keeps them out of the scoring view, and rule 5 keeps structures
+        // off them; annexation read neither and offered them like any other empty planet, so
+        // Xxcha could take one for free off the back of Diplomacy.
+        let Some(xxcha) = faction_with("peace_accords") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::FULL;
+        // 117 "The Watchtower" carries exactly one planet and it is a space station, so a hit is
+        // unambiguous.
+        let station = ti4_model::id::PlanetId::new("thewatchtower");
+        assert!(
+            ti4_content::galaxy::is_space_station(content, station.as_str(), sources),
+            "the fixture planet must be a space station, or this proves nothing"
+        );
+        // Built here rather than through `fixtures::hub_*`, which pins POK and so cannot place a
+        // Thunder's Edge tile at all.
+        let galaxy =
+            ti4_content::galaxy::Galaxy::build(content, &["19", "117"], sources, 1).unwrap();
+        let (mut state, player) = seated(&xxcha);
+        let mine = ti4_model::id::SystemId::new("19");
+        // Control anything in the centre: annexation reaches out from systems this seat holds.
+        state
+            .system_mut(&mine)
+            .set_control(ti4_model::id::PlanetId::new("held"), player.clone());
+        assert!(
+            galaxy.are_adjacent("19", "117"),
+            "the station must be reachable, or exclusion proves nothing"
+        );
+
+        let open = annexable(&state, content, sources, &galaxy, &player);
+        assert!(
+            !open.iter().any(|(_, planet)| planet == &station),
+            "a space station is not annexable: {open:?}"
+        );
+    }
+
     fn peace_accords_can_decline_instead_of_hardcoding_the_first_planet() {
         let Some(xxcha) = faction_with("peace_accords") else {
             return;
