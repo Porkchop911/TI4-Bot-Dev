@@ -411,8 +411,8 @@ impl<'a> Position<'a> {
                     .is_some_and(|name| !real.contains(name))
             })
             .map(|planet| match kind {
-                crate::production::Spend::Resources => i64::from(planet.resources()),
-                crate::production::Spend::Influence => i64::from(planet.influence()),
+                crate::production::Spend::Resources => planet.resources(),
+                crate::production::Spend::Influence => planet.influence(),
             })
             .sum()
     }

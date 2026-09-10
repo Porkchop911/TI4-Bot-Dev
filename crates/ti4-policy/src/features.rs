@@ -2072,6 +2072,10 @@ fn content_decision_features(choice: &Choice, option: &ChoiceOption, features: &
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one block per option-shaped fact, in the order the engine names them"
+)]
 fn structured_features(
     seen: &Observed<'_>,
     option: &ChoiceOption,
