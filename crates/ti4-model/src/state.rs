@@ -1054,6 +1054,15 @@ pub struct GameState {
     /// why this is a fact about the map rather than about whoever triggered it.
     #[serde(default)]
     pub nexus_unlocked: bool,
+    /// Who held Styx the last time the victory point it carries was settled.
+    ///
+    /// A Song Like Marrow is worth a point to whoever holds the card and takes one back when they
+    /// lose it, so the point follows control rather than being scored once. Control changes hands
+    /// through dozens of paths, so the holder is recorded and the difference settled once per
+    /// step -- the same shape as space-station control and the wormhole laws, and for the same
+    /// reason: a path added later cannot forget to call a hook it does not know about.
+    #[serde(default)]
+    pub styx_holder: Option<PlayerId>,
     /// Planets placed onto a tile during play, mapped to the system they were placed in.
     ///
     /// Twelve planets in the corpus have no printed `tileId` (Mirage, Custodia Vigilia, the ocean
@@ -1407,6 +1416,7 @@ impl GameState {
             wormhole_tokens: BTreeMap::new(),
             ion_storm: None,
             nexus_unlocked: false,
+            styx_holder: None,
             placed_planets: BTreeMap::new(),
             influence_pays_for_units: BTreeSet::new(),
             breach_tokens: BTreeSet::new(),
@@ -1470,6 +1480,7 @@ impl GameState {
             && self.wormhole_tokens == other.wormhole_tokens
             && self.ion_storm == other.ion_storm
             && self.nexus_unlocked == other.nexus_unlocked
+            && self.styx_holder == other.styx_holder
             && self.placed_planets == other.placed_planets
             && self.gravleash_move_values == other.gravleash_move_values
             && self.agenda_choices == other.agenda_choices

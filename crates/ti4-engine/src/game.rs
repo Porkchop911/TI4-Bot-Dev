@@ -878,6 +878,11 @@ impl<'a> Game<'a> {
         if !self.state.nexus_unlocked && crate::seating::nexus_is_triggered(&self.state) {
             self.state.nexus_unlocked = true;
         }
+        // A Song Like Marrow moves a victory point with control of Styx, in both directions.
+        // Reconciled here rather than hooked onto a control change for the same reason as the two
+        // above: control is handed over in dozens of places, and a VP swing that misses one is
+        // silently wrong.
+        crate::legendary::settle_control_points(&mut self.state);
         if let Some(galaxy) = self.galaxy.as_mut() {
             crate::laws::apply_to_galaxy(&self.state, galaxy);
         }

@@ -89,6 +89,44 @@ const END_OF_TURN: [(&str, &str); 8] = [
     ("thundersedge", "Jupiter Brain"),
 ];
 
+/// Settle the victory point A Song Like Marrow attaches to Styx.
+///
+/// "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."
+/// The point follows control, so it is not scored once and kept -- taking Styx off somebody moves
+/// a point across the table.
+///
+/// Reconciled from the board rather than hooked onto a control-change event, because control
+/// changes hands through dozens of paths in this engine and a VP swing that misses one of them is
+/// silently wrong in a way nothing would surface. [`GameState::styx_holder`] records who the point
+/// was last settled with; anything else is a difference to pay out. Idempotent, so calling it
+/// every step costs a lookup and nothing else.
+///
+/// Losing is floored at zero: a seat cannot be pushed into negative points by handing back a card
+/// whose point they never actually banked, which is possible when Styx is taken from a seat that
+/// gained it while already at the cap.
+pub fn settle_control_points(state: &mut GameState) {
+    let styx = PlanetId::new("styx");
+    let holder = state
+        .board
+        .values()
+        .find_map(|here| here.planet_control.get(&styx).cloned());
+    if holder == state.styx_holder {
+        return;
+    }
+    if let Some(previous) = state.styx_holder.clone()
+        && let Some(seat) = state.player_mut(&previous)
+    {
+        seat.victory_points = (seat.victory_points - 1).max(0);
+    }
+    if let Some(gained) = holder.clone()
+        && let Some(seat) = state.player_mut(&gained)
+    {
+        seat.victory_points =
+            (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+    }
+    state.styx_holder = holder;
+}
+
 /// The clause a legendary card resolves the moment its planet changes hands.
 ///
 /// Only Jupiter Brain has one: "gain your breakthrough when you gain this card if you do not
@@ -1033,6 +1071,49 @@ mod tests {
         assert!(
             placed.iter().any(|unit| unit.type_id.as_str() == "carrier2"),
             "the Carrier II the upgrade unlocks, not a base carrier: {placed:?}"
+        );
+    }
+
+    #[test]
+    fn a_song_like_marrow_moves_a_point_with_control_of_styx() {
+        let styx = PlanetId::new("styx");
+        let system = ti4_model::id::SystemId::new("fracture4");
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.board.entry(system.clone()).or_default();
+
+        // Nobody holds it: settling is a no-op, and repeating it stays one.
+        settle_control_points(&mut state);
+        settle_control_points(&mut state);
+        assert_eq!(state.player(&a).unwrap().victory_points, 0);
+
+        state
+            .system_mut(&system)
+            .set_control(styx.clone(), a.clone());
+        settle_control_points(&mut state);
+        assert_eq!(
+            state.player(&a).unwrap().victory_points,
+            1,
+            "gaining the card gains the point"
+        );
+        settle_control_points(&mut state);
+        assert_eq!(
+            state.player(&a).unwrap().victory_points,
+            1,
+            "settling again does not pay twice"
+        );
+
+        state
+            .system_mut(&system)
+            .set_control(styx.clone(), b.clone());
+        settle_control_points(&mut state);
+        assert_eq!(
+            (
+                state.player(&a).unwrap().victory_points,
+                state.player(&b).unwrap().victory_points
+            ),
+            (0, 1),
+            "taking it off somebody moves the point rather than minting one"
         );
     }
 
