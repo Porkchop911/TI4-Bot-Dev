@@ -2009,12 +2009,30 @@ impl InvasionWindow {
         // Jupiter Brain: taking Thunder's Edge off somebody hands the taker their breakthrough.
         crate::legendary::control_gained(state, ctx.content, ctx.sources, &self.invader, planet);
 
+        // Fracture rule 15: the first player to take one of its planets gains a relic. `previous`
+        // is captured before control changed, so it distinguishes the first claim from a later
+        // conquest without trying to infer history from the now-updated control map.
+        if previous.is_none()
+            && crate::fracture::is_fracture_system(content, sources, &self.system)
+            && let Some(relic) = crate::relics::gain(state, &self.invader)
+        {
+            let mut payload = std::collections::BTreeMap::new();
+            payload.insert("player".to_owned(), self.invader.to_string().into());
+            payload.insert("planet".to_owned(), planet.to_string().into());
+            payload.insert("relic".to_owned(), relic.to_string().into());
+            let _ = ctx.emit(state, "FRACTURE_RELIC_GAINED", payload);
+        }
+
         // 35.1: a planet nobody controlled is explored; one taken off another player is not.
         // Only this frame knows which, which is why `captured` carries the previous holder — a
         // caller told merely that control changed would explore every conquest and draw cards
         // the rules do not give.
+        //
+        // `choose_deck` rather than `trait_of`: a planet with two printed traits (several
+        // Thunder's Edge worlds do) is the invader's choice of deck, not a fixed pick of
+        // whichever trait happens to sort first.
         if previous.is_none()
-            && let Some(deck) = crate::exploration::trait_of(content, sources, planet)
+            && let Some(deck) = crate::exploration::choose_deck(ctx, state, &self.invader, planet)
             && let Some(outcome) =
                 crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
         {
@@ -3502,6 +3520,83 @@ mod tests {
         if let Some(conquered) = explore_once(Some(holder())) {
             assert_eq!(conquered, 0, "a planet taken off a rival is not");
         }
+    }
+
+    /// A dual-trait planet explores into whichever deck the invader picks, not whichever trait
+    /// happens to print first.
+    ///
+    /// Lazul Rex prints INDUSTRIAL before CULTURAL. Before `trait_of` was replaced with
+    /// `choose_deck` at the capture site, the `find_map` over the planet's own trait order
+    /// always stopped at INDUSTRIAL -- an invader who wanted the cultural deck could never reach
+    /// it, no matter what they answered, because nothing ever asked.
+    #[test]
+    fn a_dual_trait_planet_explores_into_the_invaders_chosen_deck() {
+        let content = ContentStore::embedded();
+        let planet = PlanetId::new("lazulrex");
+        assert_eq!(
+            crate::exploration::traits_of(content, ALL_SOURCES, &planet),
+            vec!["INDUSTRIAL".to_owned(), "CULTURAL".to_owned()],
+            "Lazul Rex prints industrial before cultural"
+        );
+        let system = ti4_content::galaxy::planet(content, planet.as_str(), ALL_SOURCES)
+            .and_then(|record| record.system_id())
+            .map(SystemId::new)
+            .expect("Lazul Rex sits on a tile");
+
+        let mut state = start_game(content, &[invader(), holder()], ALL_SOURCES, None).unwrap();
+        state
+            .exploration_decks
+            .insert("INDUSTRIAL".to_owned(), vec!["minent".to_owned()]);
+        state
+            .exploration_decks
+            .insert("CULTURAL".to_owned(), vec!["ent".to_owned()]);
+        on_planet(&mut state, &system, &planet, "infantry", &invader(), 1);
+
+        let mut window = InvasionWindow {
+            invader: invader(),
+            system: system.clone(),
+            stage: Stage::Done,
+            report: InvasionReport {
+                committed: vec![planet.clone()],
+                ..InvasionReport::default()
+            },
+            pending_scoring_occurrences: std::collections::VecDeque::new(),
+            current_ground_occurrence: None,
+            notes_at_tactical_start: crate::combat::note_holdings(&state),
+            bombard_plan: Vec::new(),
+            bombard_index: 0,
+            bombard_occurrence: state.begin_feat_occurrence(),
+            bombard_announced: true,
+        };
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(1);
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(["CULTURAL"])));
+        let mut ctx = Resolving {
+            content,
+            sources: ALL_SOURCES,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        window.advance_fighting(&mut state, &mut ctx, std::slice::from_ref(&planet), 0);
+
+        assert_eq!(
+            window.into_report().explored.len(),
+            1,
+            "the planet was explored"
+        );
+        assert_eq!(
+            state.exploration_decks.get("CULTURAL").map(Vec::len),
+            Some(0),
+            "the chosen deck was drawn from"
+        );
+        assert_eq!(
+            state.exploration_decks.get("INDUSTRIAL").map(Vec::len),
+            Some(1),
+            "the deck the invader did not choose was left untouched"
+        );
     }
 
     #[test]

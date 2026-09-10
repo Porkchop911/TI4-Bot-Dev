@@ -493,6 +493,7 @@ mod tests {
             cleared: false,
             shortfall: 3.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         }
     }
 
@@ -637,6 +638,7 @@ mod tests {
             cleared: false,
             shortfall: 1.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
 
         let reward = Reward::for_stage(Stage::One);

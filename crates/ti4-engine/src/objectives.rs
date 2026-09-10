@@ -45,6 +45,46 @@ pub struct Position<'a> {
     /// report unmet rather than guessing, exactly as the oracle does.
     pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
     controlled: Vec<Planet<'a>>,
+    /// Systems this player is *imagined* to hold a unit in, on top of the real board.
+    ///
+    /// Presence semantics, deliberately: one generic ship. It is what an activation option can
+    /// honestly promise -- the seat will have something there -- without predicting which units
+    /// actually arrive. Capital-ship requirements are therefore left unmoved by it, because a
+    /// generic ship is not a flagship or a war sun and saying otherwise would recommend
+    /// activations that cannot score.
+    imagined_systems: std::collections::BTreeSet<String>,
+    /// Technology aliases this player is imagined to have researched.
+    imagined_technologies: Vec<String>,
+    /// Structures this player is imagined to have placed, as (system, planet).
+    imagined_structures: Vec<(String, String)>,
+}
+
+/// What an option would change, for the counterfactual progress a per-option feature differences.
+///
+/// Every field is additive over the real board and every one is optional, so a caller names only
+/// what its option kind actually does: an invasion names planets, an activation names the system
+/// it would put units in, a research names the technology, a structure placement names both.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Imagined<'i> {
+    /// Planets the option would bring under control.
+    pub planets: &'i [ti4_model::id::PlanetId],
+    /// Systems the option would put a unit in.
+    pub systems: &'i [String],
+    /// Technology aliases the option would research.
+    pub technologies: &'i [String],
+    /// Structures the option would place, as (system, planet).
+    pub structures: &'i [(String, String)],
+}
+
+impl Imagined<'_> {
+    /// Whether this changes nothing, in which case the imagined position is the real one.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.planets.is_empty()
+            && self.systems.is_empty()
+            && self.technologies.is_empty()
+            && self.structures.is_empty()
+    }
 }
 
 /// A registered requirement check.
@@ -253,7 +293,38 @@ impl<'a> Position<'a> {
             sources,
             player,
             controlled,
+            imagined_systems: std::collections::BTreeSet::new(),
+            imagined_technologies: Vec::new(),
+            imagined_structures: Vec::new(),
         }
+    }
+
+    /// The position as it would stand after everything in `imagined` happened.
+    ///
+    /// The planet half is [`Self::imagining`]. The rest exists because a planet counterfactual
+    /// cancels for every requirement that counts units, technologies or structures, which is 20 of
+    /// the corpus's 40 public objectives -- so an option that would satisfy one of those carried no
+    /// gain at all, and the policy had the requirement in view with nothing linking any action to
+    /// it.
+    #[must_use]
+    pub fn imagining_all(
+        state: &'a GameState,
+        content: &'a ContentStore,
+        sources: SourceSet,
+        player: &'a PlayerId,
+        imagined: &Imagined<'_>,
+    ) -> Self {
+        let mut position = Self::imagining(state, content, sources, player, imagined.planets);
+        position
+            .imagined_systems
+            .extend(imagined.systems.iter().cloned());
+        position
+            .imagined_technologies
+            .extend(imagined.technologies.iter().cloned());
+        position
+            .imagined_structures
+            .extend(imagined.structures.iter().cloned());
+        position
     }
 
     /// The position as it would stand if this player also controlled `extra`.
@@ -296,6 +367,56 @@ impl<'a> Position<'a> {
         position
     }
 
+    /// Whether this system is one the option is imagined to put a unit in.
+    fn imagined_in(&self, system: &str) -> bool {
+        self.imagined_systems.contains(system)
+    }
+
+    /// Planet ids in the scoring view that the seat does not really control.
+    ///
+    /// The view is a flat list of planet records and has lost where each planet sits, so a
+    /// requirement that needs a planet's *system* must read the real board for the real planets
+    /// and use this only for the imagined ones. Replacing the board read outright placed corpus
+    /// planets at their corpus systems rather than where the game had actually put them.
+    fn imagined_planet_names(&self) -> Vec<&str> {
+        let real: std::collections::BTreeSet<String> = self
+            .state
+            .controlled_planets(self.player)
+            .into_iter()
+            .map(|(_, planet)| planet.to_string())
+            .collect();
+        self.controlled()
+            .iter()
+            .filter_map(ti4_content::galaxy::Planet::name)
+            .filter(|name| !real.contains(*name))
+            .collect()
+    }
+
+    /// The resources or influence the imagined planets add, for affordability.
+    ///
+    /// Only planets the seat does not already hold, and only readied ones can be spent -- a newly
+    /// taken planet arrives readied, so an imagined gain is spendable in full.
+    fn imagined_spending_bonus(&self, kind: crate::production::Spend) -> i64 {
+        let real: std::collections::BTreeSet<String> = self
+            .state
+            .controlled_planets(self.player)
+            .into_iter()
+            .map(|(_, planet)| planet.to_string())
+            .collect();
+        self.controlled()
+            .iter()
+            .filter(|planet| {
+                planet
+                    .name()
+                    .is_some_and(|name| !real.contains(name))
+            })
+            .map(|planet| match kind {
+                crate::production::Spend::Resources => i64::from(planet.resources()),
+                crate::production::Spend::Influence => i64::from(planet.influence()),
+            })
+            .sum()
+    }
+
     /// The content records for every planet this player controls.
     fn controlled(&self) -> &[Planet<'a>] {
         &self.controlled
@@ -306,14 +427,25 @@ impl<'a> Position<'a> {
         let Some(seat) = self.state.player(self.player) else {
             return 0;
         };
+        let matches = |alias: &str| {
+            self.content
+                .get(ContentType::Technologies, alias)
+                .is_some_and(|record| record.strings("types").contains(&wanted))
+        };
+        let held: std::collections::BTreeSet<&str> =
+            seat.technologies.iter().map(ti4_model::id::TechnologyId::as_str).collect();
         seat.technologies
             .iter()
-            .filter(|alias| {
-                self.content
-                    .get(ContentType::Technologies, alias.as_str())
-                    .is_some_and(|record| record.strings("types").contains(&wanted))
-            })
+            .filter(|alias| matches(alias.as_str()))
             .count()
+            + self
+                .imagined_technologies
+                .iter()
+                // Already-researched technologies are ignored rather than counted twice, so the
+                // difference between two positions stays a clean delta.
+                .filter(|alias| !held.contains(alias.as_str()))
+                .filter(|alias| matches(alias.as_str()))
+                .count()
     }
 
     /// Every structure this player has, as (system, planet).
@@ -333,6 +465,18 @@ impl<'a> Position<'a> {
                 }
             }
         }
+        // Imagined placements, minus any planet that already carries one of this player's
+        // structures: `structures_away` dedupes on planet, but `structures` counts them, and a
+        // second structure on a planet that already had one is not a gain the option delivers.
+        let held: std::collections::BTreeSet<&str> =
+            found.iter().map(|(_, planet)| planet.as_str()).collect();
+        let mut added: Vec<(String, String)> = self
+            .imagined_structures
+            .iter()
+            .filter(|(_, planet)| !held.contains(planet.as_str()))
+            .cloned()
+            .collect();
+        found.append(&mut added);
         found
     }
 
@@ -466,7 +610,8 @@ fn edge_systems(galaxy: &ti4_content::galaxy::Galaxy) -> std::collections::BTree
 impl Position<'_> {
     /// Systems where this player has any unit, in space or on a planet.
     fn systems_holding_units(&self) -> Vec<String> {
-        self.state
+        let mut found: std::collections::BTreeSet<String> = self
+            .state
             .board
             .iter()
             .filter(|(_, board)| {
@@ -478,13 +623,16 @@ impl Position<'_> {
                         .any(|unit| &unit.owner == self.player)
             })
             .map(|(id, _)| id.to_string())
-            .collect()
+            .collect();
+        found.extend(self.imagined_systems.iter().cloned());
+        found.into_iter().collect()
     }
 
     /// Systems where this player has a ship.
     fn systems_with_ships(&self) -> Vec<String> {
         let types = ti4_content::units::catalogue(self.content, self.sources);
-        self.state
+        let mut found: std::collections::BTreeSet<String> = self
+            .state
             .board
             .iter()
             .filter(|(_, board)| {
@@ -495,7 +643,10 @@ impl Position<'_> {
                 })
             })
             .map(|(id, _)| id.to_string())
-            .collect()
+            .collect();
+        // Presence is a generic ship, so it counts here.
+        found.extend(self.imagined_systems.iter().cloned());
+        found.into_iter().collect()
     }
 }
 
@@ -583,12 +734,29 @@ fn distinct_rival_home_reaches_count(position: &Position<'_>) -> Option<usize> {
 
     // One planet may only speak for one opponent, so count the opponents reached, not the
     // planets held.
-    let held: Vec<String> = position
+    // Real planets are placed by the board, which is where the game actually put them; imagined
+    // ones are not on it yet, so those alone fall back to the corpus's system. Reading only the
+    // board discarded the imagined planets, so taking a planet beside a rival home reported no
+    // gain toward Rule Distant Lands.
+    let mut held: Vec<String> = position
         .state
         .controlled_planets(position.player)
         .into_iter()
         .map(|(system, _)| system.to_string())
         .collect();
+    let imagined = position.imagined_planet_names();
+    if !imagined.is_empty() {
+        let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+        let system_of: std::collections::BTreeMap<&str, &str> = systems
+            .iter()
+            .flat_map(|(id, system)| system.planets().into_iter().map(move |p| (p, *id)))
+            .collect();
+        held.extend(
+            imagined
+                .into_iter()
+                .filter_map(|planet| system_of.get(planet).map(|s| (*s).to_owned())),
+        );
+    }
     Some(
         homes
             .iter()
@@ -671,9 +839,9 @@ fn fleet_in_one_system_count(position: &Position<'_>) -> usize {
     position
         .state
         .board
-        .values()
-        .map(|system| {
-            system
+        .iter()
+        .map(|(id, system)| {
+            let real = system
                 .units_of(position.player)
                 .into_iter()
                 .filter(|unit| {
@@ -681,7 +849,11 @@ fn fleet_in_one_system_count(position: &Position<'_>) -> usize {
                         .get(unit.type_id.as_str())
                         .is_some_and(|kind| kind.is_ship() && !kind.is_fighter())
                 })
-                .count()
+                .count();
+            // Presence is one generic non-fighter ship, so an activation moves this by one. It
+            // will not carry a five-ship card on its own, which is honest: the option promises
+            // presence, not a fleet.
+            real + usize::from(position.imagined_in(id.as_str()))
         })
         .max()
         .unwrap_or(0)
@@ -690,12 +862,12 @@ fn fleet_in_one_system_count(position: &Position<'_>) -> usize {
 /// Have units in `count` systems that contain no planets.
 fn planetless_systems_count(position: &Position<'_>) -> usize {
     let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
+    // Through the scoring view, so an activation that would put units in an empty system reports
+    // the gain. Reading the board directly is what left Explore Deep Space at 0 for 660.
     position
-        .state
-        .board
-        .iter()
-        .filter(|(_, board)| !board.units_of(position.player).is_empty())
-        .filter(|(id, _)| {
+        .systems_holding_units()
+        .into_iter()
+        .filter(|id| {
             systems
                 .get(id.as_str())
                 .is_some_and(|system| system.planets().is_empty())
@@ -705,18 +877,27 @@ fn planetless_systems_count(position: &Position<'_>) -> usize {
 
 /// Control `count` planets that have an exploration attachment.
 fn attached_planets_count(position: &Position<'_>) -> usize {
+    // Real control from the board, plus whatever the option would add: reading the board alone
+    // discarded the imagined planets, so taking an attached planet reported no gain toward
+    // Discover Lost Outposts or Reclaim Ancient Monuments.
+    let attached = |planet: &str| {
+        position
+            .state
+            .planet_attachments
+            .get(planet)
+            .is_some_and(|list| !list.is_empty())
+    };
     position
         .state
         .controlled_planets(position.player)
         .into_iter()
-        .filter(|(_, planet)| {
-            position
-                .state
-                .planet_attachments
-                .get(*planet)
-                .is_some_and(|attached| !attached.is_empty())
-        })
+        .filter(|(_, planet)| attached(planet.as_str()))
         .count()
+        + position
+            .imagined_planet_names()
+            .into_iter()
+            .filter(|planet| attached(planet))
+            .count()
 }
 
 /// Have units in `count` systems holding a legendary planet, Mecatol Rex, or an anomaly.
@@ -727,11 +908,9 @@ fn in_notable_systems_count(position: &Position<'_>) -> usize {
     let systems = ti4_content::galaxy::all_systems(position.content, position.sources);
     let planets = all_planets(position.content, position.sources);
     position
-        .state
-        .board
-        .iter()
-        .filter(|(_, board)| !board.units_of(position.player).is_empty())
-        .filter(|(id, _)| {
+        .systems_holding_units()
+        .into_iter()
+        .filter(|id| {
             if id.as_str() == crate::seating::MECATOL {
                 return true;
             }
@@ -1428,6 +1607,40 @@ pub fn bought_progress(
         family,
         have,
         target,
+    })
+}
+
+/// [`bought_progress`] through the scoring view, so imagined planets count toward affordability.
+///
+/// `have` is "greatest exactly affordable amount", and taking a planet genuinely raises that --
+/// it is capacity to spend rather than progress at spending, but it is the same number the
+/// unimagined call reports, computed against the position the option would produce. Reading
+/// `state` here is what left all ten spending objectives carrying no gain on any option.
+///
+/// Only the resource and influence spends move: trade goods and command tokens do not arrive with
+/// a planet, so those report the same value on both sides and cancel, correctly.
+#[must_use]
+pub fn bought_progress_at(position: &Position<'_>, alias: &ObjectiveId) -> Option<CostProgress> {
+    let base = bought_progress(
+        position.state,
+        position.content,
+        position.sources,
+        position.player,
+        alias,
+    )?;
+    let bonus = match base.family {
+        CostFamily::Spend(kind) => position.imagined_spending_bonus(kind),
+        // All Three needs resources, influence *and* trade goods together; the planet half can
+        // move but the trade-good half cannot, so the plan is re-run rather than offset.
+        CostFamily::AllThree | CostFamily::TradeGoods | CostFamily::Tokens => 0,
+    };
+    if bonus <= 0 {
+        return Some(base);
+    }
+    Some(CostProgress {
+        family: base.family,
+        have: (base.have + bonus).min(base.target),
+        target: base.target,
     })
 }
 

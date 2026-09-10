@@ -866,6 +866,17 @@ fn main() -> Result<(), String> {
     // final slot so every decision's return carries it (keeps learned play inside the gate's
     // per-faction clearance band). Zero keeps the reference reward exactly.
     let clearance_weight = decimal("--clearance-weight", 0.0);
+    // Moderate fleet-strength shaping: a potential difference over the seat's fleet value in
+    // resources (fighters count as 0.75 each, an upgraded ship at 1.3x its base unit's cost).
+    // Zero keeps the reference reward exactly; keep it well below --clearance-weight.
+    let fleet_weight = decimal("--fleet-weight", 0.0);
+    // Small per-technology shaping beyond the setup baseline. Zero keeps the reference reward
+    // exactly; keep it below vp_weight (1.0) so researching stays a path to points.
+    let tech_weight = decimal("--tech-weight", 0.0);
+    // Terminal strategy-card monoculture penalty: when a seat's most-played card exceeds 80% of
+    // at least three plays, the final slot pays up to this weight (zero at exactly 80%, full at
+    // 100%). Zero keeps the reference reward exactly.
+    let strategy_diversity_weight = decimal("--strategy-diversity-weight", 0.0);
     // Discount on the suffix-sum return. One is the undiscounted rule this trainer has always
     // used; below one, a decision is credited less for what happens far after it.
     let discount = decimal("--discount", 1.0);
@@ -951,6 +962,9 @@ fn main() -> Result<(), String> {
     plan.step.entropy = entropy;
     plan.high_vp_bonus = high_vp_bonus;
     plan.clearance_weight = clearance_weight;
+    plan.fleet_weight = fleet_weight;
+    plan.tech_weight = tech_weight;
+    plan.strategy_diversity_weight = strategy_diversity_weight;
     plan.discount = discount;
     plan.round_baseline = round_baseline;
     plan.r1_bonus = Some(r1_bonus);
@@ -1042,6 +1056,12 @@ fn main() -> Result<(), String> {
         ("entropy".to_owned(), entropy.to_string()),
         ("high_vp_bonus".to_owned(), high_vp_bonus.to_string()),
         ("clearance_weight".to_owned(), clearance_weight.to_string()),
+        ("fleet_weight".to_owned(), fleet_weight.to_string()),
+        ("tech_weight".to_owned(), tech_weight.to_string()),
+        (
+            "strategy_diversity_weight".to_owned(),
+            strategy_diversity_weight.to_string(),
+        ),
         ("discount".to_owned(), discount.to_string()),
         ("round_baseline".to_owned(), round_baseline.to_string()),
         ("ppo_epochs".to_owned(), ppo_epochs.to_string()),
@@ -1147,6 +1167,19 @@ fn main() -> Result<(), String> {
     if clearance_weight > 0.0 {
         println!(
             "  reward: -{clearance_weight:.2} per uncleared opening (full-game cost, final slot)"
+        );
+    }
+    if fleet_weight > 0.0 {
+        println!(
+            "  reward: +{fleet_weight:.3} per resource of fleet value (fighters 0.75 each, upgraded ships 1.3x base cost)"
+        );
+    }
+    if tech_weight > 0.0 {
+        println!("  reward: +{tech_weight:.2} per technology beyond setup");
+    }
+    if strategy_diversity_weight > 0.0 {
+        println!(
+            "  reward: up to -{strategy_diversity_weight:.2} for strategy-card monoculture (>80% of at least three plays)"
         );
     }
     if pipeline {

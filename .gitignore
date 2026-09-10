@@ -64,3 +64,10 @@ fixtures/legacy_entropy/*
 # Bug-fix worktree build output. Named to avoid colliding with the shared tree's
 # target dirs; the ignore list matches by name, so it needs saying explicitly.
 /target-bugfix/
+
+# Audit worktree build and artifact directories.
+/target-audit/
+/target-cuda-audit/
+/checkpoints/
+/dryrun-control/
+/dryrun-cuda-gate/

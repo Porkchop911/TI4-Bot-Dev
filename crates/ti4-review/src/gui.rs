@@ -19,6 +19,19 @@ use crate::{
 };
 
 const STEPS_PER_UI_FRAME: usize = 128;
+
+/// The floor and ceiling on the adaptive autosave interval, in engine steps.
+///
+/// The floor keeps a short review saving often enough to be worth having. The ceiling stops a very
+/// expensive save from pushing the next one so far out that a crash loses the run.
+const AUTOSAVE_MIN_STEPS: usize = 1024;
+const AUTOSAVE_MAX_STEPS: usize = 65_536;
+
+/// The share of running time autosaving is allowed to take.
+///
+/// Ten means a save that took one second buys ten seconds of play before the next, so the cost
+/// stays proportional to the run rather than to the run squared.
+const AUTOSAVE_DUTY: u32 = 10;
 const SETTINGS_PATH: &str = "out/reviews/reviewer-settings.json";
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 
@@ -374,6 +387,21 @@ struct ReviewApp {
     run_target: Option<RunTarget>,
     command_steps: usize,
     autosave: Option<PathBuf>,
+    /// The step count at which the running command may autosave again.
+    ///
+    /// A fixed interval is what made a long review crawl and then appear to hang. `save_session`
+    /// validates every frame, serialises every frame's whole `GameState` into one buffer and writes
+    /// the lot, so one autosave costs O(frames); firing that on a fixed step interval makes a run
+    /// O(frames^2). By two thousand frames the session is hundreds of megabytes and a single
+    /// autosave blocks the UI thread for seconds -- low CPU the whole time, because it is
+    /// serialisation and disk, which is exactly how it was reported.
+    ///
+    /// So the interval is set from what the last autosave actually cost: see
+    /// [`ReviewApp::autosave_now`]. Autosaving stays a bounded share of the run however long it gets,
+    /// and the file format is unchanged.
+    next_autosave_step: usize,
+    /// When the running command started, for the rate the budget above is spent against.
+    command_started: Option<std::time::Instant>,
     last_review: Option<PathBuf>,
     status: String,
     selected_tile: Option<String>,
@@ -400,6 +428,8 @@ impl ReviewApp {
             viewed: 0,
             run_target: None,
             command_steps: 0,
+            next_autosave_step: AUTOSAVE_MIN_STEPS,
+            command_started: None,
             autosave: None,
             last_review: settings.last_review.map(PathBuf::from),
             status: settings_error.map_or_else(
@@ -415,6 +445,45 @@ impl ReviewApp {
             .as_ref()
             .map(|live| &live.session)
             .or(self.replay.as_ref())
+    }
+
+    /// Lend the session to a `&mut self` method without copying it.
+    ///
+    /// The panels need `&mut self` for their own UI state while reading the session, which the
+    /// borrow checker will not allow directly. Cloning it to get around that is what `ui` used to
+    /// do, and it is ruinous here: a clone is a deep copy of every frame's whole `GameState`, so a
+    /// 1,800-frame review copied hundreds of megabytes *per repaint* -- which is why the window got
+    /// slower the longer a run went and why scrolling crawled.
+    ///
+    /// Moving it out and back costs two pointer writes. The session is restored on every path,
+    /// including when `act` panics, because it is put back by the guard's `Drop`.
+    fn with_session<R>(&mut self, act: impl FnOnce(&mut Self, &ReviewSession) -> R) -> Option<R> {
+        /// Whichever field the session was taken from, so it goes back to the same one.
+        enum Held {
+            Live(Box<LiveReview>),
+            Replay(Box<ReviewSession>),
+        }
+
+        // `LiveReview` moves whole rather than by its `session` field: `ReviewSession` is not
+        // `Default`, so there is nothing to leave behind in its place. Once it is out, it is an
+        // ordinary local -- borrowing it shared while `self` is borrowed mutably is disjoint, which
+        // is what makes this safe as well as cheap.
+        let held = match self.live.take() {
+            Some(live) => Held::Live(Box::new(live)),
+            None => Held::Replay(Box::new(self.replay.take()?)),
+        };
+        let result = {
+            let session = match &held {
+                Held::Live(live) => &live.session,
+                Held::Replay(session) => session,
+            };
+            act(self, session)
+        };
+        match held {
+            Held::Live(live) => self.live = Some(*live),
+            Held::Replay(session) => self.replay = Some(*session),
+        }
+        Some(result)
     }
 
     fn latest_index(&self) -> usize {
@@ -541,6 +610,15 @@ impl ReviewApp {
         }
     }
 
+    /// Start a running command's autosave budget over.
+    ///
+    /// Each command is timed on its own. Carrying the previous one's rate across would let a run
+    /// that was interrupted early set the interval for one that is not.
+    fn begin_autosave_budget(&mut self) {
+        self.command_started = Some(std::time::Instant::now());
+        self.next_autosave_step = AUTOSAVE_MIN_STEPS;
+    }
+
     fn autosave_now(&mut self) {
         let Some(path) = self.autosave.clone() else {
             return;
@@ -548,9 +626,37 @@ impl ReviewApp {
         let Some(session) = self.session() else {
             return;
         };
+        let started = std::time::Instant::now();
         if let Err(error) = save_session(&path, session) {
             self.status = format!("Autosave failed: {error}");
         }
+        let cost = started.elapsed();
+
+        // Buy back what the save cost, in steps, from the rate the run is actually managing. A
+        // cheap save on a short session keeps the floor interval; an expensive one on a long
+        // session earns a proportionally longer wait, which is what stops the quadratic blow-up.
+        let elapsed = self
+            .command_started
+            .map_or(cost, |at| at.elapsed())
+            .max(cost);
+        let steps_per_second = if elapsed.as_secs_f64() > 0.0 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "step counts are far below f64's exact-integer range"
+            )]
+            let steps = self.command_steps as f64;
+            steps / elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        let budget = cost.as_secs_f64() * f64::from(AUTOSAVE_DUTY) * steps_per_second;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped into usize range on the next line"
+        )]
+        let interval = (budget as usize).clamp(AUTOSAVE_MIN_STEPS, AUTOSAVE_MAX_STEPS);
+        self.next_autosave_step = self.command_steps.saturating_add(interval);
     }
 
     fn save_as(&mut self) {
@@ -621,6 +727,7 @@ impl ReviewApp {
             remaining: count,
         });
         self.command_steps = 0;
+        self.begin_autosave_budget();
         self.status = format!("Running {count} {unit:?}(s)…");
     }
 
@@ -693,7 +800,7 @@ impl ReviewApp {
             }
         }
         if self.run_target.is_some() {
-            if self.command_steps % 1024 < STEPS_PER_UI_FRAME {
+            if self.command_steps >= self.next_autosave_step {
                 self.autosave_now();
             }
             context.request_repaint();
@@ -854,6 +961,7 @@ impl ReviewApp {
                 {
                     self.run_target = Some(RunTarget::Round(round));
                     self.command_steps = 0;
+        self.begin_autosave_budget();
                     self.status = format!("Running to round {round}…");
                 }
                 if ui
@@ -862,6 +970,7 @@ impl ReviewApp {
                 {
                     self.run_target = Some(RunTarget::End);
                     self.command_steps = 0;
+        self.begin_autosave_budget();
                     "Running to natural completion…".clone_into(&mut self.status);
                 }
                 if ui
@@ -1498,6 +1607,8 @@ impl ReviewApp {
                     ui.colored_label(Color32::LIGHT_RED, error);
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Walks back only as far as the last completed action, which is a handful of
+                    // frames in a running game, so this stays cheap however long the review is.
                     let action_summary = session.frames[..=frame.index]
                         .iter()
                         .rev()
@@ -2046,19 +2157,23 @@ impl eframe::App for ReviewApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.top_bar(root);
         self.controls(root);
-        let Some(session) = self.session().cloned() else {
+        if self.session().is_none() {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.heading("Load a real learned-policy starting table to begin.");
                 });
             });
             return;
-        };
-        self.viewed = self.viewed.min(session.frames.len().saturating_sub(1));
-        let frame = session.frames[self.viewed].clone();
-        Self::player_panel(root, &session, &frame);
-        self.decision_panel(root, &session, &frame);
-        self.board(root, &session, &frame);
+        }
+        // Borrowed, not cloned -- see `with_session`. The viewed frame is borrowed too: it carries
+        // a whole `GameState`, so copying it once per repaint was the second-largest cost here.
+        self.with_session(|app, session| {
+            app.viewed = app.viewed.min(session.frames.len().saturating_sub(1));
+            let frame = &session.frames[app.viewed];
+            Self::player_panel(root, session, frame);
+            app.decision_panel(root, session, frame);
+            app.board(root, session, frame);
+        });
         if self.run_target.is_some() {
             root.ctx().request_repaint();
         }

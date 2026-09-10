@@ -2,7 +2,8 @@
 //!
 //! Both training lineages plateau in the high eighties, and a clearance percentage cannot say
 //! whether the missing tenth is bad play or unreachable positions. The bar has three independent
-//! parts — three planets gained, three distinct systems, one unit built — and a seat clears only by
+//! parts — three planets gained, three distinct systems, and the unit bar (two capacity ships and
+//! three infantry) — and a seat clears only by
 //! meeting all of them. Which part misses, and by how much, is the difference between "the policy
 //! is not trying hard enough" and "this opening could not be cleared by anyone".
 //!
@@ -187,7 +188,14 @@ fn main() {
         "  sample      {seeds} seeds x {} rotations, one round",
         FACTIONS.len()
     );
-    println!("  bar         3 planets gained, 3 systems, 1 unit gained");
+    // Printed from the constant `units_ok` actually tests against. The old hand-written caption
+    // said "1 unit gained" and had been stale since the unit bar became two capacity ships and
+    // three infantry; a diagnostic that misreports its own bar is worse than one that prints none.
+    let bar = ti4_engine::opening::DEFAULT_REQUIREMENT;
+    println!(
+        "  bar         {} planets gained, {} systems, {} capacity ships, {} infantry",
+        bar.planets_gained, bar.systems, bar.capacity_ships, bar.infantry
+    );
 
     let mut tallies: BTreeMap<String, Failures> = BTreeMap::new();
 
