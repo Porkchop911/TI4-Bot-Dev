@@ -1038,6 +1038,13 @@ pub struct GameState {
     /// of the same letter somewhere else, which that map cannot express.
     #[serde(default)]
     pub ion_storm: Option<(SystemId, String)>,
+    /// Whether the Wormhole Nexus has been flipped to its open face.
+    ///
+    /// Sticky: it flips once a unit reaches it or a player takes Mallice, and never flips back.
+    /// The locked face prints a gamma wormhole alone; the open one adds alpha and beta, which is
+    /// why this is a fact about the map rather than about whoever triggered it.
+    #[serde(default)]
+    pub nexus_unlocked: bool,
     /// Planets placed onto a tile during play, mapped to the system they were placed in.
     ///
     /// Twelve planets in the corpus have no printed `tileId` (Mirage, Custodia Vigilia, the ocean
@@ -1390,6 +1397,7 @@ impl GameState {
             ingress_tokens: BTreeSet::new(),
             wormhole_tokens: BTreeMap::new(),
             ion_storm: None,
+            nexus_unlocked: false,
             placed_planets: BTreeMap::new(),
             influence_pays_for_units: BTreeSet::new(),
             breach_tokens: BTreeSet::new(),
@@ -1452,6 +1460,7 @@ impl GameState {
             && self.expedition_slices == other.expedition_slices
             && self.wormhole_tokens == other.wormhole_tokens
             && self.ion_storm == other.ion_storm
+            && self.nexus_unlocked == other.nexus_unlocked
             && self.placed_planets == other.placed_planets
             && self.gravleash_move_values == other.gravleash_move_values
             && self.agenda_choices == other.agenda_choices

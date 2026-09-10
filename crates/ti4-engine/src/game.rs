@@ -871,6 +871,13 @@ impl<'a> Game<'a> {
         // The two wormhole laws are switches on the map, and the map is owned here. Set once per
         // step for the same reason as station control: derived state is cheaper to recompute than
         // to keep in sync from every place a law can be enacted or repealed.
+        // "After a player's unit is placed in or moves into the Wormhole Nexus, or a player gains
+        // control of Mallice." Recomputed here for the same reason as station control above: a
+        // movement path added later cannot forget to. Sticky -- once open it stays open, so this
+        // only ever sets the flag.
+        if !self.state.nexus_unlocked && crate::seating::nexus_is_triggered(&self.state) {
+            self.state.nexus_unlocked = true;
+        }
         if let Some(galaxy) = self.galaxy.as_mut() {
             crate::laws::apply_to_galaxy(&self.state, galaxy);
         }

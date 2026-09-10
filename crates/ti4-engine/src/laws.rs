@@ -622,6 +622,19 @@ pub fn apply_to_galaxy(state: &GameState, galaxy: &mut ti4_content::galaxy::Gala
             .or_default()
             .insert(kind.clone());
     }
+    // The Wormhole Nexus, once flipped. `place_off_map` registered its locked face, which prints
+    // gamma alone; opening it adds alpha and beta. Expressed as tokens rather than by swapping the
+    // tile, because that is the path a face-changing wormhole already takes here -- and because
+    // `nexus_wormholes_off` above suppresses alpha and beta on this very tile, so Nexus
+    // Sovereignty keeps working against it without knowing anything new.
+    if state.nexus_unlocked {
+        let open = galaxy
+            .token_wormholes
+            .entry(crate::seating::LOCKED_NEXUS.to_owned())
+            .or_default();
+        open.insert("ALPHA".to_owned());
+        open.insert("BETA".to_owned());
+    }
     if let Some((system, face)) = state.ion_storm.as_ref() {
         galaxy
             .token_wormholes

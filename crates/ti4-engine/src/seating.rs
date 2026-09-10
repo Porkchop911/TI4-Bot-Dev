@@ -253,6 +253,28 @@ pub fn build_board(
     Ok(galaxy)
 }
 
+/// Whether anything has happened that opens the Wormhole Nexus.
+///
+/// Either a unit has reached the tile, or somebody controls Mallice. Both faces of the planet are
+/// checked: `lockedmallice` is the one printed on the locked tile and `mallice` on the open one,
+/// and a game that opened the Nexus by taking the planet can be holding either name.
+///
+/// Read-only, and deliberately not sticky itself -- the caller owns the latch, because units can
+/// leave a system and control can change hands while the tile stays face up.
+#[must_use]
+pub fn nexus_is_triggered(state: &ti4_model::state::GameState) -> bool {
+    let occupied = state
+        .board
+        .get(&SystemId::new(LOCKED_NEXUS))
+        .is_some_and(|here| !here.units.is_empty() || !here.planet_units.is_empty());
+    let held = state.board.values().any(|here| {
+        here.planet_control
+            .keys()
+            .any(|planet| matches!(planet.as_str(), "mallice" | "lockedmallice"))
+    });
+    occupied || held
+}
+
 /// The Wormhole Nexus, locked face up: a gamma wormhole and nothing else.
 pub const LOCKED_NEXUS: &str = "82a";
 
@@ -858,6 +880,57 @@ mod tests {
 
         assert_eq!(galaxy.coord_of(MECATOL), Some(ti4_model::Hex::ORIGIN));
         assert_eq!(galaxy.adjacent(MECATOL).len(), 6, "a full first ring");
+    }
+
+    #[test]
+    fn the_nexus_opens_when_a_unit_reaches_it_and_stays_open() {
+        // Locked, it prints gamma alone; open, it adds alpha and beta. The flip is a fact about
+        // the map, so it goes through the same token path a face-changing wormhole already uses.
+        let mut state = crate::fixtures::game(&["a"]);
+        let pairs = [("a", "sol"), ("b", "hacan")];
+        let assignments: BTreeMap<PlayerId, FactionId> = pairs
+            .iter()
+            .map(|(p, f)| (PlayerId::new(*p), FactionId::new(*f)))
+            .collect();
+        let filler: Vec<SystemId> = neutral_systems(content(), 30, POK);
+        let borrowed: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let mut galaxy = build_board(content(), &assignments, &borrowed, POK).expect("a board");
+
+        assert!(!nexus_is_triggered(&state), "nothing has reached it yet");
+        crate::laws::apply_to_galaxy(&state, &mut galaxy);
+        let locked = galaxy.wormhole_kinds(LOCKED_NEXUS);
+        assert!(
+            locked.contains("GAMMA") && !locked.contains("ALPHA"),
+            "the locked face is gamma only: {locked:?}"
+        );
+
+        // A ship arrives.
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(LOCKED_NEXUS),
+            "cruiser",
+            &PlayerId::new("a"),
+            1,
+        );
+        assert!(nexus_is_triggered(&state), "a unit in the tile opens it");
+        state.nexus_unlocked = true;
+        crate::laws::apply_to_galaxy(&state, &mut galaxy);
+        let open = galaxy.wormhole_kinds(LOCKED_NEXUS);
+        assert!(
+            open.contains("ALPHA") && open.contains("BETA") && open.contains("GAMMA"),
+            "the open face carries all three: {open:?}"
+        );
+
+        // The ship leaves; the tile stays face up, because the latch is the caller's.
+        state
+            .system_mut(&SystemId::new(LOCKED_NEXUS))
+            .units
+            .clear();
+        crate::laws::apply_to_galaxy(&state, &mut galaxy);
+        assert!(
+            galaxy.wormhole_kinds(LOCKED_NEXUS).contains("ALPHA"),
+            "it does not close again when the ship moves on"
+        );
     }
 
     #[test]
