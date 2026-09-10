@@ -5190,6 +5190,31 @@ fn rescue(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
         return;
     };
     let types = ti4_content::units::catalogue(context.content, context.sources);
+    // "After a player moves ships into a system that contains your ships." Only the active
+    // system was checked for existing, not for being one of yours, so the card was a free
+    // reposition off any activation anywhere on the board.
+    //
+    // Gated here rather than in `is_playable`, which handles component actions and models only
+    // Signal Jamming's eligibility -- the rest are the F13 backlog. That means Rescue can still
+    // be *offered* in a window it does not belong to; it can no longer do anything there.
+    let mine_in_destination = context
+        .state
+        .board
+        .get(&destination)
+        .is_some_and(|board| {
+            board.units_of(player).into_iter().any(|unit| {
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(ti4_content::units::UnitType::is_ship)
+            })
+        });
+    if !mine_in_destination {
+        return;
+    }
+    // "A player" is somebody else: reacting to your own activation is not the window.
+    if context.state.active.as_ref() == Some(player) {
+        return;
+    }
     let origins: Vec<(String, String)> = context
         .state
         .board
@@ -8409,12 +8434,44 @@ mod tests {
         let far = ti4_model::id::SystemId::new(hub.across(&hub.outer[0]));
         let active = ti4_model::id::SystemId::new(hub.outer[0].clone());
         crate::fixtures::put(&mut state, &far, "cruiser", &player, 1);
+        // The window needs one of your ships already in the active system; this test is about
+        // paths and move values, so it satisfies the window rather than exercising it.
+        crate::fixtures::put(&mut state, &active, "destroyer", &player, 1);
         state.active_system = Some(active.clone());
 
         resolve_card(&mut state, "rescue", &player, &[]);
 
-        assert_eq!(state.system_state(&active).units.len(), 1, "it arrived");
+        assert_eq!(state.system_state(&active).units.len(), 2, "it arrived");
         assert_eq!(state.system_state(&far).units.len(), 0, "and left");
+    }
+
+    #[test]
+    fn rescue_needs_one_of_your_ships_in_the_active_system() {
+        // Window: "After a player moves ships into a system that contains your ships." The
+        // effect read only that *some* system was active, so Rescue could be played off any
+        // activation anywhere -- a free reposition every time an opponent moved.
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let hub = crate::fixtures::plain_hub();
+        let far = ti4_model::id::SystemId::new(hub.across(&hub.outer[0]));
+        let active = ti4_model::id::SystemId::new(hub.outer[0].clone());
+        crate::fixtures::put(&mut state, &far, "cruiser", &player, 1);
+        // The activation is somebody else's and holds none of this player's ships.
+        crate::fixtures::put(&mut state, &active, "cruiser", &PlayerId::new("b"), 1);
+        state.active_system = Some(active.clone());
+
+        resolve_card(&mut state, "rescue", &player, &[]);
+
+        assert_eq!(
+            state.system_state(&far).units.len(),
+            1,
+            "the ship stays put: the window never opened"
+        );
+        assert_eq!(
+            state.system_state(&active).units.len(),
+            1,
+            "and nothing arrived but the opponent's own ship"
+        );
     }
 
     #[test]
@@ -8425,6 +8482,7 @@ mod tests {
         let far = ti4_model::id::SystemId::new(hub.across(&hub.outer[0]));
         let active = ti4_model::id::SystemId::new(hub.outer[0].clone());
         crate::fixtures::put(&mut state, &far, "cruiser", &player, 1);
+        crate::fixtures::put(&mut state, &active, "destroyer", &player, 1);
         state.system_mut(&far).command_tokens.insert(player.clone());
         state.active_system = Some(active.clone());
 
@@ -8435,7 +8493,11 @@ mod tests {
             1,
             "your token holds it"
         );
-        assert_eq!(state.system_state(&active).units.len(), 0);
+        assert_eq!(
+            state.system_state(&active).units.len(),
+            1,
+            "only the ship that was already there"
+        );
     }
 
     #[test]
