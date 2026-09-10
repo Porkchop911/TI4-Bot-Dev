@@ -94,7 +94,7 @@ pub fn build_starting_decks(
         .collect::<Vec<_>>();
     rng.shuffle(domain::RELICS, &mut relics);
 
-    let mut agendas = ids(content, ContentType::Agendas, sources);
+    let mut agendas = agenda_ids(content, sources);
     rng.shuffle(domain::AGENDAS, &mut agendas);
 
     let mut action_cards = ids(content, ContentType::ActionCards, sources)
@@ -120,6 +120,41 @@ pub fn build_starting_decks(
 }
 
 /// Sorted catalogue ids, matching the oracle's `sorted(catalogue(sources))` before shuffle.
+/// Base-game agendas Prophecy of Kings takes out of the deck.
+///
+/// PoK adds thirteen agendas and removes thirteen, so the deck stays at fifty. Most of the
+/// removed ones come back as exploration cards or relics -- The Crown of Emphidia is a relic in
+/// PoK, and the corpus carries both it and the base agenda, so without this a PoK game could deal
+/// the agenda *and* hand out the relic version of the same card.
+///
+/// `representative_government` is the base printing, named "Representative Government (Base
+/// Game)" in the corpus; PoK's replacement of the same name is `rep_govt` and stays. Removing by
+/// name rather than alias would have taken both.
+const SUPERSEDED_BY_POK: [&str; 13] = [
+    "core_mining",
+    "crown_of_emphidia",
+    "crown_of_thalnos",
+    "demilitarized_zone",
+    "holy_planet_of_ixth",
+    "representative_government",
+    "rt_biotic",
+    "rt_cybernetic",
+    "rt_propulsion",
+    "rt_warfare",
+    "senate_sanctuary",
+    "shard_of_the_throne",
+    "terraforming_initiative",
+];
+
+/// The agenda deck for a source scope, with the PoK removals applied.
+fn agenda_ids(content: &ContentStore, sources: SourceSet) -> Vec<String> {
+    let mut ids = ids(content, ContentType::Agendas, sources);
+    if sources.contains(ti4_model::content_types::Source::Pok) {
+        ids.retain(|id| !SUPERSEDED_BY_POK.contains(&id.as_str()));
+    }
+    ids
+}
+
 fn ids(content: &ContentStore, category: ContentType, sources: SourceSet) -> Vec<String> {
     let mut ids = content
         .from_sources(category, sources)
@@ -132,7 +167,7 @@ fn ids(content: &ContentStore, category: ContentType, sources: SourceSet) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ti4_model::content_types::{FULL, POK};
+    use ti4_model::content_types::{BASE, FULL, POK};
 
     fn content() -> &'static ContentStore {
         ContentStore::embedded()
@@ -156,6 +191,38 @@ mod tests {
         }));
     }
 
+
+    #[test]
+    fn pok_deals_fifty_agendas_without_the_cards_it_supersedes() {
+        // PoK adds thirteen agendas and removes thirteen; the deck stays at fifty. Dealing all
+        // sixty-three let a PoK game draw The Crown of Emphidia as an agenda while the same card
+        // was also available as a relic.
+        let decks = build_starting_decks(content(), POK, 11);
+        assert_eq!(decks.agendas.len(), 50, "a PoK agenda deck is fifty cards");
+        for superseded in SUPERSEDED_BY_POK {
+            assert!(
+                !decks.agendas.iter().any(|id| id == superseded),
+                "{superseded} is superseded in PoK and must not be dealt"
+            );
+        }
+        // The replacement of the same name stays; removing by name would have taken both.
+        assert!(
+            decks.agendas.iter().any(|id| id == "rep_govt"),
+            "PoK's own Representative Government stays in the deck"
+        );
+    }
+
+    #[test]
+    fn a_base_only_game_keeps_every_base_agenda() {
+        // The removals are PoK's doing. Without it the base deck is untouched, so a base game
+        // still deals Core Mining and the rest.
+        let decks = build_starting_decks(content(), BASE, 11);
+        assert!(
+            decks.agendas.iter().any(|id| id == "crown_of_emphidia"),
+            "a base game still has The Crown of Emphidia"
+        );
+    }
+
     #[test]
     fn every_built_deck_is_a_source_scoped_permutation() {
         let decks = build_starting_decks(content(), POK, 7);
@@ -163,10 +230,7 @@ mod tests {
             decks.action_cards.len(),
             ids(content(), ContentType::ActionCards, POK).len()
         );
-        assert_eq!(
-            decks.agendas.len(),
-            ids(content(), ContentType::Agendas, POK).len()
-        );
+        assert_eq!(decks.agendas.len(), agenda_ids(content(), POK).len());
         assert_eq!(
             decks.secrets.len(),
             ids(content(), ContentType::SecretObjectives, POK).len()
