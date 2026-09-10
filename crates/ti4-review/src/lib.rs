@@ -1846,10 +1846,16 @@ pub fn render_html(session: &ReviewSession) -> Result<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .map(|objective| {
-            let record = content.get(
+            // Both decks, for the reason `objectives::points_for` gives: Classified Document
+            // Leaks moves a secret into the public area, where it is scoreable by everyone and
+            // shows up in `revealed_objectives`. A public-only lookup missed it and fell back to
+            // the raw alias and zero -- so a real 1-point secret rendered as "mrm · 0 VP".
+            let record = [
                 ti4_model::content_types::ContentType::PublicObjectives,
-                &objective,
-            );
+                ti4_model::content_types::ContentType::SecretObjectives,
+            ]
+            .into_iter()
+            .find_map(|category| content.get(category, &objective));
             let meta = serde_json::json!({
                 "name": record.as_ref().and_then(|record| record.text("name")).unwrap_or(&objective),
                 "text": record.as_ref().and_then(|record| record.text("text")).unwrap_or(""),
