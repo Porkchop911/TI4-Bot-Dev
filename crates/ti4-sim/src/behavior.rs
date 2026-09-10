@@ -900,46 +900,76 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     // derivation; the bootstrap seed and draw count are unchanged. `faction_differentiation` moves
     // [0.620533, 1.111333] -> [0.533131, 1.121342]; the example does not print it, so it comes from
     // the gate's own integrity recomputation.
+    // v35 — 2026-09-11. One combined re-baseline for the changes that reached the authored bot
+    // between v34 and this tree, recorded as a single version at the user's direction. Unlike v34,
+    // attribution *was* run, by bisecting this suite across the commits:
+    //
+    // - The 2026-09-10 engine bug-fix batch: twenty commits covering Rescue's activation window,
+    //   Peace Accords and space stations, activatable Fracture systems, the Prophecy of Kings agenda
+    //   removals, the Wormhole Nexus, Thunder's Edge control, and the sixteen legendary planets.
+    //   Alone, every metric stayed inside v34; only the exact-recomputation integrity check moved.
+    // - The objective-linkage merge (839c4bf). It carried the linkage fix -- three objective
+    //   predicates now read through the scoring view -- and, because the audit tree it came from
+    //   was a snapshot of another session's uncommitted 09-07 work, that session's rule changes too:
+    //   dual-trait planets explore into a chosen deck, the Fracture's first-capture relic, its
+    //   interior chain and ingress/egress links as real movement edges, and command-token
+    //   redistribution as one choice over the final sheet. Together these moved
+    //   PRODUCTION_RESOLVED, SHIP_MOVED, SYSTEM_ACTIVATED and TACTICAL_ACTION_BEGAN out of v34; the
+    //   bisection did not separate the two halves of that merge.
+    // - Seeded dice (59e79a7). Every game used to roll one shared seed-0 stream; each seed now rolls
+    //   its own. Fewer invasions and space combats resolve, VP pace falls and score spread widens --
+    //   the signature of fair dice replacing a stream that began [5, 8, 9, 7, 9, 1, ...].
+    //
+    // The secret linkage and the libtorch re-pin do not reach this suite: the authored bot reads no
+    // policy features, and every value was identical with and without them.
+    //
+    // Five shares leave v34: INVASION_RESOLVED, PRODUCTION_RESOLVED, SPACE_COMBAT_RESOLVED,
+    // SYSTEM_ACTIVATED and TACTICAL_ACTION_BEGAN. All thirty games still finish cleanly. The
+    // complete old/new table, and the bisection, are in plans/evidence/M08-021.md.
+    //
+    // Derived with `cargo run --release -p ti4-sim --example rebaseline_behavior` in a clean
+    // worktree at 6b90110, the tree these bounds ship with; the bootstrap seed and draw count are
+    // unchanged.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.388_425_925_925_925_9, 0.443_209_876_543_209_8),
+        (0.375_308_641_975_308_55, 0.435_802_469_135_802_56),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.916_355_936_519_165_8, 2.308_221_213_278_595_3),
+        (2.004_250_222_497_032, 2.535_783_758_297_528_2),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.533_130_748_561_484_1, 1.121_341_788_843_797_3),
+        (0.421_637_021_355_783_9, 0.975_897_813_917_971_8),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_597_055_088_779_156, 0.020_635_618_702_435_674),
+        (0.018_565_278_097_001_31, 0.020_087_019_241_028_417),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.033_743_919_970_482_24, 0.035_053_415_204_335_0),
+        (0.034_874_305_875_793_26, 0.035_966_861_628_863_94),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.047_297_110_244_949_81, 0.051_155_654_849_200_836),
+        (0.046_035_598_770_259, 0.050_339_456_989_615_16),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_665_249_738_519_836, 0.005_503_239_707_255_309),
+        (0.004_244_789_359_310_167, 0.005_047_743_060_648_873_4),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.066_641_039_705_445_05, 0.069_316_842_832_839_02),
+        (0.068_915_447_609_636_22, 0.071_153_428_388_409_2),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.032_877_048_409_703_73, 0.034_243_558_328_385_69),
+        (0.034_029_145_648_798_11, 0.035_171_908_460_882_66),
     );
     bounds
 }
