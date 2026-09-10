@@ -1151,6 +1151,11 @@ impl<'a> Game<'a> {
                         .player_mut(&active)
                         .expect("active player exists")
                         .passed = true;
+                    // "You may exhaust this card when you pass". After the flag, because the
+                    // ability is part of passing rather than a last action before it, and before
+                    // the Prove Endurance window below, so anything it gains is on the board by
+                    // the time the last pass opens scoring.
+                    self.resolve_legendary_pass(&active);
                     // Prove Endurance. Recorded the moment the last seat passes, because the
                     // action phase ends immediately afterwards and the fact is gone by the time
                     // anything else could look for it. "Last to pass" is decided by there being
@@ -1711,6 +1716,30 @@ impl<'a> Game<'a> {
         };
         self.mirror_timing_log(logged);
         done
+    }
+
+    /// Offer the legendary abilities that read "when you pass".
+    fn resolve_legendary_pass(&mut self, player: &PlayerId) {
+        let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
+        let (state, table, dice, rng, event_sequence) = (
+            &mut self.state,
+            &mut self.table,
+            &mut self.dice,
+            &mut self.rng,
+            &mut self.event_sequence,
+        );
+        let mut context = TimingContext {
+            state,
+            content,
+            sources,
+            table,
+            dice,
+            rng,
+            event_sequence,
+            galaxy: galaxy.as_ref(),
+        };
+        crate::legendary::pass(&mut context, player);
     }
 
     /// Let a faction react to a strategy card finishing.
@@ -3424,6 +3453,10 @@ impl<'a> Game<'a> {
     ///
     /// # Errors
     /// [`GameError`] when the `TURN_PASSED` window's deciders answer illegally.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one block per end-of-turn window, in the order the rules run them"
+    )]
     fn advance_turn(&mut self) -> Result<(), GameError> {
         // A new turn re-offers everything: the withholding below is scoped to the turn whose
         // action failed, not to the game.
@@ -3476,8 +3509,10 @@ impl<'a> Game<'a> {
                 &active,
             );
             // Legendary planets share this window: most of them read "you may exhaust this card
-            // at the end of your turn". Offered after the technologies so a card readied by The
-            // Acropolis is readied before anything else asks to spend it.
+            // at the end of your turn". Offered after the technologies because Bio-Stims and
+            // Predictive Intelligence spend a card, and The Acropolis readies one -- readying
+            // last means what it readied survives into the next round rather than being offered
+            // straight back to a spender in the same window.
             let _ = crate::legendary::end_turn(
                 &mut self.state,
                 self.content,
@@ -6713,6 +6748,10 @@ mod tests {
     /// cap at three, and a player who already has three on the board converts *nothing* and is told
     /// nothing about why.
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one fixture, then one arm per branch of the ability"
+    )]
     fn assimilate_converts_after_a_ground_combat_and_is_capped_by_supply() {
         let content = ContentStore::embedded();
         let a = PlayerId::new("a");

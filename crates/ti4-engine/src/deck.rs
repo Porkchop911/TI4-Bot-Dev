@@ -122,14 +122,14 @@ pub fn build_starting_decks(
 /// Sorted catalogue ids, matching the oracle's `sorted(catalogue(sources))` before shuffle.
 /// Base-game agendas Prophecy of Kings takes out of the deck.
 ///
-/// PoK adds thirteen agendas and removes thirteen, so the deck stays at fifty. Most of the
+/// `PoK` adds thirteen agendas and removes thirteen, so the deck stays at fifty. Most of the
 /// removed ones come back as exploration cards or relics -- The Crown of Emphidia is a relic in
-/// PoK, and the corpus carries both it and the base agenda, so without this a PoK game could deal
-/// the agenda *and* hand out the relic version of the same card.
+/// `PoK`, and the corpus carries both it and the base agenda, so without this a `PoK` game could
+/// deal the agenda *and* hand out the relic version of the same card.
 ///
 /// `representative_government` is the base printing, named "Representative Government (Base
-/// Game)" in the corpus; PoK's replacement of the same name is `rep_govt` and stays. Removing by
-/// name rather than alias would have taken both.
+/// Game)" in the corpus; `PoK`'s replacement of the same name is `rep_govt` and stays. Removing
+/// by name rather than alias would have taken both.
 const SUPERSEDED_BY_POK: [&str; 13] = [
     "core_mining",
     "crown_of_emphidia",
@@ -146,7 +146,7 @@ const SUPERSEDED_BY_POK: [&str; 13] = [
     "terraforming_initiative",
 ];
 
-/// The agenda deck for a source scope, with the PoK removals applied.
+/// The agenda deck for a source scope, with the `PoK` removals applied.
 fn agenda_ids(content: &ContentStore, sources: SourceSet) -> Vec<String> {
     let mut ids = ids(content, ContentType::Agendas, sources);
     if sources.contains(ti4_model::content_types::Source::Pok) {

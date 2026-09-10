@@ -540,7 +540,7 @@ fn stellar_converter(
 /// expansion may add another. Both carry the `MR` planet type, so matching on the type keeps the
 /// rule true for tiles that do not exist yet -- and the previous check, `alias == "mecatol_rex"`,
 /// matched no planet at all, which is how the Stellar Converter came to be able to purge it.
-fn is_mecatol(planet: &ti4_content::galaxy::Planet<'_>) -> bool {
+fn is_mecatol(planet: ti4_content::galaxy::Planet<'_>) -> bool {
     planet.planet_types().contains(&"MR")
 }
 
@@ -571,7 +571,7 @@ fn stellar_converter_targets(
         }
         for planet in ti4_content::galaxy::planets_in(content, system, sources) {
             let alias = planet.id();
-            if planet.homeworld_of().is_some() || planet.is_legendary() || is_mecatol(&planet) {
+            if planet.homeworld_of().is_some() || planet.is_legendary() || is_mecatol(planet) {
                 continue;
             }
             let target = PlanetId::new(alias);
@@ -1305,7 +1305,7 @@ mod tests {
             planet.homeworld_of().is_none()
                 && !planet.is_legendary()
                 && !planet.is_placed_during_play()
-                && !is_mecatol(planet)
+                && !is_mecatol(**planet)
                 && planet.system_id().is_some()
         })
         .map(|(id, planet)| {

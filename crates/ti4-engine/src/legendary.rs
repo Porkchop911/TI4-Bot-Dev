@@ -14,6 +14,10 @@
 //! `technology::end_turn` runs it for Bio-Stims and Predictive Intelligence -- so the abilities
 //! hang off that rather than needing timing machinery of their own.
 //!
+//! Three more read "when you pass". That window did not exist; [`pass`] is it, called from the
+//! pass branch of the action phase. Two of the three are here; the third is in [`WHEN_YOU_PASS`]'
+//! doc with the reason it is not.
+//!
 //! The ability card exhausts separately from the planet (`seat.exhausted_legendary`, readied in
 //! the status phase beside technologies and relics), because a seat can spend Primor for its two
 //! resources and still use The Atrament in the same round.
@@ -136,6 +140,326 @@ pub fn end_turn(
     }
 }
 
+
+/// Planets whose ability is used when the holder passes, with the label to offer.
+///
+/// Dok 'N Pic's Salvage Yard (`garbozia`) belongs on this window and is not here: it parks an
+/// action card from the discard pile face-up *on the planet card* and lets the holder purge it
+/// later to play it as though from hand. That is a card zone the state does not have, and half of
+/// it -- taking the card and never being able to play it -- would be worse than not offering it.
+///
+/// Ordinian's two faces are faction-specific and left out with Avernus and Custodia Vigilia.
+const WHEN_YOU_PASS: [(&str, &str); 2] = [
+    ("faunus", "Maxis Central Control"),
+    ("industrex", "Aurex Mechanica"),
+];
+
+/// Offer this seat's when-you-pass legendary abilities, one at a time.
+///
+/// Takes a [`crate::timing::TimingContext`] rather than the table alone because Maxis Central
+/// Control gains control of a planet, and gaining control explores the planet's trait -- which
+/// draws a card, which needs the dice and the random stream.
+pub fn pass(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
+    loop {
+        let offers: Vec<PlanetId> = WHEN_YOU_PASS
+            .iter()
+            .map(|(planet, _)| PlanetId::new(*planet))
+            .filter(|planet| available(context.state, player, planet))
+            .collect();
+        if offers.is_empty() {
+            return;
+        }
+        let mut options: Vec<ChoiceOption> = offers
+            .iter()
+            .map(|planet| {
+                let label = WHEN_YOU_PASS
+                    .iter()
+                    .find(|(id, _)| *id == planet.as_str())
+                    .map_or("legendary ability", |(_, label)| *label);
+                ChoiceOption::labelled(planet.to_string(), "legendary", label)
+            })
+            .collect();
+        options.push(ChoiceOption::decline());
+        let choice = Choice::new(
+            player.clone(),
+            "use a legendary planet ability as you pass",
+            options,
+        )
+        .contextualized(DecisionContext::new(
+            player.clone(),
+            DecisionSource::Content("legendary".to_owned()),
+            "legendary_pass",
+            context.state.phase,
+            context.state.round,
+        ));
+        let Ok(answer) = context.ask_seeing(&choice) else {
+            return;
+        };
+        if answer.is_decline() {
+            return;
+        }
+        let planet = PlanetId::new(answer.id);
+        // Exhausted first, for the same reason as the end-of-turn window: an ability that asks a
+        // follow-up must not be re-offered inside its own resolution.
+        exhaust(context.state, player, &planet);
+        resolve_pass(context, player, &planet);
+    }
+}
+
+/// Every planet Maxis Central Control could take, as `{system}|{planet}` options.
+///
+/// The card names three exclusions -- home, legendary, and anything holding units -- and adds a
+/// fourth in "no attachments". There is no adjacency clause, unlike Peace Accords: any planet on
+/// the board qualifies, including one another player controls but has left empty.
+///
+/// Two exclusions the text does not spell out. A space station is not a planet anywhere else in
+/// this engine (Space Stations rule 7 keeps it out of the scoring view), and Mecatol Rex starts
+/// the game empty, so without a guard this would hand it over on the first pass of round one for
+/// nothing, bypassing the custodians token entirely.
+fn maxis_candidates(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<(ti4_model::id::SystemId, PlanetId)> {
+    let records = ti4_content::galaxy::all_planets(content, sources);
+    let mut found = Vec::new();
+    for (system, board) in &state.board {
+        let Some(record) = content
+            .get(ti4_model::content_types::ContentType::Systems, system.as_str())
+            .filter(|record| record.in_sources(sources))
+        else {
+            continue;
+        };
+        for planet_id in record.strings("planets") {
+            let planet = PlanetId::new(planet_id);
+            if board.planet_control.get(&planet) == Some(player) {
+                continue;
+            }
+            let Some(printed) = records.get(planet_id) else {
+                continue;
+            };
+            // `planet_types` rather than an id: Mecatol is `mr` in the base game and `mrte` in
+            // Thunder's Edge, and only the second of those is legendary.
+            if printed.homeworld_of().is_some()
+                || printed.is_legendary()
+                || printed.is_space_station()
+                || printed.planet_types().contains(&"MR")
+            {
+                continue;
+            }
+            if board
+                .planet_units
+                .get(&planet)
+                .is_some_and(|units| !units.is_empty())
+            {
+                continue;
+            }
+            if state
+                .planet_attachments
+                .get(&planet)
+                .is_some_and(|attached| !attached.is_empty())
+            {
+                continue;
+            }
+            found.push((system.clone(), planet));
+        }
+    }
+    found
+}
+
+/// Apply one when-you-pass ability.
+#[allow(
+    clippy::too_many_lines,
+    reason = "a registry: one arm per card, and splitting them apart would hide which card is               which"
+)]
+fn resolve_pass(
+    context: &mut crate::timing::TimingContext<'_>,
+    player: &PlayerId,
+    planet: &PlanetId,
+) {
+    match planet.as_str() {
+        // "gain control of a non-home, non-legendary planet that contains no units and has no
+        // attachments"
+        "faunus" => {
+            let candidates =
+                maxis_candidates(context.state, context.content, context.sources, player);
+            if candidates.is_empty() {
+                return;
+            }
+            let mut options: Vec<ChoiceOption> = candidates
+                .iter()
+                .map(|(system, target)| {
+                    ChoiceOption::labelled(
+                        format!("{system}|{target}"),
+                        "legendary",
+                        format!("gain control of {target}"),
+                    )
+                })
+                .collect();
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(
+                player.clone(),
+                "Maxis Central Control: gain control of which planet",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_maxis",
+                context.state.phase,
+                context.state.round,
+            ));
+            let Ok(answer) = context.ask_seeing(&choice) else {
+                return;
+            };
+            if answer.is_decline() {
+                return;
+            }
+            let Some((system, target)) = candidates
+                .into_iter()
+                .find(|(system, target)| format!("{system}|{target}") == answer.id)
+            else {
+                return;
+            };
+            context
+                .state
+                .system_mut(&system)
+                .set_control(target.clone(), player.clone());
+            let _ = crate::technology::control_gained(
+                context.state,
+                context.content,
+                context.sources,
+                context.galaxy,
+                context.table,
+                player,
+                &system,
+                &target,
+            );
+            if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, &target)
+            {
+                let mut resolving = crate::choice::Resolving {
+                    content: context.content,
+                    sources: context.sources,
+                    dice: context.dice,
+                    rng: context.rng,
+                    table: context.table,
+                    timing: None,
+                };
+                let _ = crate::exploration::explore_with(
+                    context.state,
+                    &mut resolving,
+                    player,
+                    &deck,
+                    Some(&target),
+                );
+            }
+        }
+        // "place 1 ship that matches a unit upgrade technology you own from your reinforcements
+        // into a system that contains your ships"
+        //
+        // The ship *matches* the upgrade, so it is the upgraded plastic: a seat with Carrier II
+        // places a Carrier II. Infantry II and Space Dock II are unit upgrades too and are
+        // filtered out by not being ships.
+        "industrex" => {
+            let types = ti4_content::units::catalogue(context.content, context.sources);
+            let owned: Vec<ti4_model::id::TechnologyId> = context
+                .state
+                .player(player)
+                .map(|seat| seat.technologies.iter().cloned().collect())
+                .unwrap_or_default();
+            let ships: Vec<ti4_model::id::UnitTypeId> = owned
+                .iter()
+                .filter(|technology| {
+                    crate::technology::is_unit_upgrade(context.content, technology)
+                })
+                .filter_map(|technology| {
+                    types
+                        .values()
+                        .find(|kind| {
+                            kind.is_ship()
+                                && kind.required_technology() == Some(technology.as_str())
+                        })
+                        .map(|kind| ti4_model::id::UnitTypeId::new(kind.id()))
+                })
+                .collect();
+            let systems: Vec<ti4_model::id::SystemId> = context
+                .state
+                .board
+                .iter()
+                .filter(|(_, here)| {
+                    here.units_of(player).into_iter().any(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ship)
+                    })
+                })
+                .map(|(system, _)| system.clone())
+                .collect();
+            if ships.is_empty() || systems.is_empty() {
+                return;
+            }
+            // One question, not two: which ship and where are a single decision, and splitting
+            // them would let a seat pick a hull it cannot supply and then be asked where to put
+            // nothing.
+            let mut options: Vec<ChoiceOption> = Vec::new();
+            for ship in &ships {
+                if crate::supply::allowed(
+                    context.state,
+                    context.content,
+                    context.sources,
+                    player,
+                    ship,
+                    1,
+                ) == 0
+                {
+                    continue;
+                }
+                for system in &systems {
+                    options.push(ChoiceOption::labelled(
+                        format!("{ship}|{system}"),
+                        "legendary",
+                        format!("place a {ship} in {system}"),
+                    ));
+                }
+            }
+            if options.is_empty() {
+                return;
+            }
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(
+                player.clone(),
+                "Aurex Mechanica: place which ship where",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_aurex",
+                context.state.phase,
+                context.state.round,
+            ));
+            let Ok(answer) = context.ask_seeing(&choice) else {
+                return;
+            };
+            if answer.is_decline() {
+                return;
+            }
+            let mut parts = answer.id.splitn(2, '|');
+            let (Some(ship), Some(system)) = (parts.next(), parts.next()) else {
+                return;
+            };
+            let system = ti4_model::id::SystemId::new(system);
+            context.state.system_mut(&system).units.push(
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new(ship),
+                    player.clone(),
+                ),
+            );
+        }
+        _ => {}
+    }
+}
 
 /// This seat's own version of a unit type, falling back to the generic one.
 fn unit_of(
@@ -273,6 +597,10 @@ fn readyable(state: &GameState, player: &PlayerId, excluding: &PlanetId) -> Vec<
 }
 
 /// Apply one ability. A planet with no arm here is an honest gap, not a silent one.
+#[allow(
+    clippy::too_many_lines,
+    reason = "a registry: one arm per card, and splitting them apart would hide which card is               which"
+)]
 fn resolve(
     state: &mut GameState,
     content: &ContentStore,
@@ -532,6 +860,132 @@ mod tests {
             .system_mut(&system)
             .set_control(PlanetId::new(planet), player.clone());
         (state, player)
+    }
+
+    /// Run the pass window with a real timing context.
+    fn passing(
+        state: &mut GameState,
+        table: &mut Table,
+        player: &PlayerId,
+    ) {
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: content(),
+            sources: POK,
+            table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        pass(&mut context, player);
+    }
+
+    #[test]
+    fn maxis_central_control_takes_an_empty_planet_when_you_pass() {
+        let (mut state, player) = holding("faunus", "97");
+        // System 20 is Lodor, an ordinary two-planet system; put it on the board empty.
+        let elsewhere = ti4_model::id::SystemId::new("20");
+        state.board.entry(elsewhere.clone()).or_default();
+        let target = maxis_candidates(&state, content(), POK, &player)
+            .into_iter()
+            .find(|(system, _)| system == &elsewhere)
+            .map(|(_, planet)| planet)
+            .expect("an empty system on the board offers its planets");
+
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "faunus".to_owned(),
+            format!("20|{target}"),
+            "decline".to_owned(),
+        ])));
+        passing(&mut state, &mut table, &player);
+
+        assert_eq!(
+            state.system_state(&elsewhere).planet_control.get(&target),
+            Some(&player),
+            "the planet changed hands"
+        );
+    }
+
+    #[test]
+    fn maxis_central_control_will_not_take_a_planet_that_has_units_on_it() {
+        let (mut state, player) = holding("faunus", "97");
+        let elsewhere = ti4_model::id::SystemId::new("20");
+        state.board.entry(elsewhere.clone()).or_default();
+        let target = maxis_candidates(&state, content(), POK, &player)
+            .into_iter()
+            .find(|(system, _)| system == &elsewhere)
+            .map(|(_, planet)| planet)
+            .expect("offered while empty");
+
+        // Anybody's units, not only a rival's: the card says "contains no units".
+        crate::fixtures::put_on_planet(
+            &mut state,
+            &elsewhere,
+            &target,
+            "infantry",
+            &PlayerId::new("b"),
+            1,
+        );
+
+        let after = maxis_candidates(&state, content(), POK, &player);
+        assert!(
+            !after.iter().any(|(_, planet)| planet == &target),
+            "an occupied planet is not takeable: {after:?}"
+        );
+    }
+
+    #[test]
+    fn maxis_central_control_offers_no_homeworld_and_no_legendary_planet() {
+        let (state, player) = holding("faunus", "97");
+        let mut board = state;
+        for system in ["1", "45", "82b"] {
+            board
+                .board
+                .entry(ti4_model::id::SystemId::new(system))
+                .or_default();
+        }
+        let records = ti4_content::galaxy::all_planets(content(), POK);
+        for (_, planet) in maxis_candidates(&board, content(), POK, &player) {
+            let printed = records
+                .get(planet.as_str())
+                .expect("a candidate the corpus knows");
+            assert!(
+                printed.homeworld_of().is_none() && !printed.is_legendary(),
+                "{planet} is a homeworld or legendary and was offered anyway"
+            );
+        }
+    }
+
+    #[test]
+    fn aurex_mechanica_places_the_upgraded_hull_you_own() {
+        let (mut state, player) = holding("industrex", "97");
+        let here = ti4_model::id::SystemId::new("45");
+        state.board.entry(here.clone()).or_default();
+        state.system_mut(&here).units.push(ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("carrier"),
+            player.clone(),
+        ));
+        if let Some(seat) = state.player_mut(&player) {
+            seat.technologies
+                .insert(ti4_model::id::TechnologyId::new("cv2"));
+        }
+
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "industrex",
+            "carrier2|45",
+            "decline",
+        ])));
+        passing(&mut state, &mut table, &player);
+
+        let placed = state.system_state(&here).units.clone();
+        assert!(
+            placed.iter().any(|unit| unit.type_id.as_str() == "carrier2"),
+            "the Carrier II the upgrade unlocks, not a base carrier: {placed:?}"
+        );
     }
 
     #[test]
