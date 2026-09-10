@@ -71,3 +71,7 @@ fixtures/legacy_entropy/*
 /checkpoints/
 /dryrun-control/
 /dryrun-cuda-gate/
+
+# Merge/eval worktree build output.
+/target-merge/
+/target-cuda/
