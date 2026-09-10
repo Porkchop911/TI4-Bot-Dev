@@ -1267,6 +1267,24 @@ pub fn held_secret_progress(
     )
 }
 
+/// Held-secret progress for `viewer` after `imagined`, from the complete game state.
+///
+/// The offline twin of [`SeatObservation::held_secret_progress_imagining`], and offline for the
+/// same reason as the function above: analysis and training contexts already hold every seat's
+/// cards as readable fields, so there is no hidden information for a bound view to protect. Live
+/// play must use the bound method, which cannot be asked about a seat other than its own.
+#[must_use]
+pub fn held_secret_progress_imagining(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    viewer: &PlayerId,
+    imagined: &crate::objectives::Imagined<'_>,
+) -> Vec<crate::objectives::CardProgress> {
+    held_secret_records(state, content, sources, galaxy, viewer, imagined)
+}
+
 /// A copy of the complete state with every other player's face-down holdings replaced by markers —
 /// for `viewer` only.
 ///

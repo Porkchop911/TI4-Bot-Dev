@@ -414,14 +414,14 @@ pub fn option_feature_names(
 /// extractors separate preserves schema-2 compatibility while making the representation used for
 /// new training unambiguous.
 #[must_use]
-pub fn explicit_option_features(
+pub fn explicit_option_features<'s>(
     seen: &Observed<'_>,
     choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
+    secrets: impl Into<Secrets<'s>>,
 ) -> FeatureVector {
-    let context = choice_context(seen, player, held_secrets);
+    let context = choice_context(seen, player, secrets.into());
     explicit_option_features_with(
         seen,
         &tokens(&choice.prompt),
@@ -440,14 +440,14 @@ pub fn explicit_option_features(
 /// omits presentation-only prompt and label text before projection, while retaining stable option
 /// IDs and every structured factual feature.
 #[must_use]
-pub fn prompt_free_option_features(
+pub fn prompt_free_option_features<'s>(
     seen: &Observed<'_>,
     choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
+    secrets: impl Into<Secrets<'s>>,
 ) -> FeatureVector {
-    let context = choice_context(seen, player, held_secrets);
+    let context = choice_context(seen, player, secrets.into());
     explicit_option_features_with(
         seen,
         &[],
@@ -465,7 +465,75 @@ pub fn prompt_free_option_features(
 /// `own_units` is here rather than looked up per option because
 /// [`Observed::systems_with_units_of`] scans the board and allocates, and an activation choice
 /// offers thirty-odd options that would each have asked the same question.
-struct ChoiceContext<'a> {
+/// The acting seat's secrets, and the only two questions the feature path may ask about them.
+///
+/// A closure rather than the [`ti4_engine::choice::SeatObservation`] itself. That view is bound to
+/// one seat when it is built, and handing it down here would let any later caller ask about a
+/// different one -- which is the hole the bound view exists to close. This can answer "mine now"
+/// and "mine after this option", and nothing else.
+///
+/// `imagining` is optional so the many callers that have no secrets to offer -- analysis tools,
+/// most tests -- keep passing a slice and get the previous behaviour exactly.
+#[derive(Clone, Copy)]
+pub struct Secrets<'s> {
+    current: &'s [ti4_engine::objectives::CardProgress],
+    imagining: Option<
+        &'s dyn Fn(&ti4_engine::objectives::Imagined<'_>) -> Vec<ti4_engine::objectives::CardProgress>,
+    >,
+}
+
+impl<'s> Secrets<'s> {
+    /// The seat's secrets, with the counterfactual its options can be linked through.
+    #[must_use]
+    pub fn linked(
+        current: &'s [ti4_engine::objectives::CardProgress],
+        imagining: &'s dyn Fn(
+            &ti4_engine::objectives::Imagined<'_>,
+        ) -> Vec<ti4_engine::objectives::CardProgress>,
+    ) -> Self {
+        Self {
+            current,
+            imagining: Some(imagining),
+        }
+    }
+}
+
+/// So a caller with no secrets to offer keeps writing `&[]`.
+///
+/// A bare `&[]` is a zero-length *array* reference, not a slice, so the slice impl below does not
+/// cover it. Without this every call site that has no secrets -- most tests, and the analysis
+/// tools -- would have to be edited to say the same thing more loudly.
+impl<'s, const N: usize> From<&'s [ti4_engine::objectives::CardProgress; N]> for Secrets<'s> {
+    fn from(current: &'s [ti4_engine::objectives::CardProgress; N]) -> Self {
+        Self {
+            current,
+            imagining: None,
+        }
+    }
+}
+
+/// And so a caller holding an owned `Vec` keeps passing `&held`.
+impl<'s> From<&'s Vec<ti4_engine::objectives::CardProgress>> for Secrets<'s> {
+    fn from(current: &'s Vec<ti4_engine::objectives::CardProgress>) -> Self {
+        Self {
+            current,
+            imagining: None,
+        }
+    }
+}
+
+impl<'s> From<&'s [ti4_engine::objectives::CardProgress]> for Secrets<'s> {
+    fn from(current: &'s [ti4_engine::objectives::CardProgress]) -> Self {
+        Self {
+            current,
+            imagining: None,
+        }
+    }
+}
+
+struct ChoiceContext<'a, 's> {
+    /// What this seat's secrets are, and what they would be after an option.
+    secrets: Secrets<'s>,
     facts: [(&'static str, f64); 8],
     own_units: Vec<&'a SystemId>,
     objective_facts: Vec<(String, f64)>,
@@ -485,12 +553,14 @@ struct ChoiceContext<'a> {
     opponent_slot_facts: Vec<(String, f64)>,
 }
 
-fn choice_context<'a>(
+fn choice_context<'a, 's>(
     seen: &Observed<'a>,
     player: &PlayerId,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
-) -> ChoiceContext<'a> {
+    secrets: Secrets<'s>,
+) -> ChoiceContext<'a, 's> {
+    let held_secrets = secrets.current;
     ChoiceContext {
+        secrets,
         facts: seat_facts(seen, player),
         own_units: seen.systems_with_units_of(player).into_iter().collect(),
         objective_facts: objective_facts(seen, player, held_secrets),
@@ -927,15 +997,16 @@ pub fn seat_facts(seen: &Observed<'_>, player: &PlayerId) -> [(&'static str, f64
 /// over one unchanging prompt. The feature set is identical either way; only the allocation
 /// count differs.
 #[must_use]
-pub fn explicit_choice_features(
+pub fn explicit_choice_features<'s>(
     seen: &Observed<'_>,
     choice: &Choice,
     player: &PlayerId,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
+    secrets: impl Into<Secrets<'s>>,
 ) -> Vec<FeatureVector> {
+    let secrets = secrets.into();
     // All three are constant across the choice's options and are computed once here.
     let prompt_tokens = tokens(&choice.prompt);
-    let context = choice_context(seen, player, held_secrets);
+    let context = choice_context(seen, player, secrets);
     let cross = state_cross(choice);
     choice
         .options
@@ -957,13 +1028,14 @@ pub fn explicit_choice_features(
 
 /// MLP source vectors for one choice under the prompt- and label-free decision contract.
 #[must_use]
-pub fn prompt_free_choice_features(
+pub fn prompt_free_choice_features<'s>(
     seen: &Observed<'_>,
     choice: &Choice,
     player: &PlayerId,
-    held_secrets: &[ti4_engine::objectives::CardProgress],
+    secrets: impl Into<Secrets<'s>>,
 ) -> Vec<FeatureVector> {
-    let context = choice_context(seen, player, held_secrets);
+    let secrets = secrets.into();
+    let context = choice_context(seen, player, secrets);
     let cross = state_cross(choice);
     choice
         .options
@@ -1074,7 +1146,7 @@ fn uniform_kind(choice: &Choice) -> bool {
 fn explicit_option_features_with(
     seen: &Observed<'_>,
     prompt_tokens: &[String],
-    context: &ChoiceContext<'_>,
+    context: &ChoiceContext<'_, '_>,
     choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
@@ -2080,7 +2152,7 @@ fn structured_features(
     seen: &Observed<'_>,
     option: &ChoiceOption,
     player: &PlayerId,
-    context: &ChoiceContext<'_>,
+    context: &ChoiceContext<'_, '_>,
     features: &mut FeatureVector,
 ) {
     let kind = canonical_feature_kind(&option.kind);
@@ -2108,6 +2180,7 @@ fn structured_features(
                 structures: std::slice::from_ref(&(system.to_owned(), planet.to_owned())),
                 ..ti4_engine::objectives::Imagined::default()
             },
+            context.secrets,
             features,
         );
     }
@@ -2365,7 +2438,7 @@ fn add_system_features(
     seen: &Observed<'_>,
     system_id: &str,
     player: &PlayerId,
-    context: &ChoiceContext<'_>,
+    context: &ChoiceContext<'_, '_>,
     prefix: &str,
     features: &mut FeatureVector,
 ) {
@@ -2651,6 +2724,7 @@ fn add_system_features(
                 systems: &imagined_systems,
                 ..ti4_engine::objectives::Imagined::default()
             },
+            context.secrets,
             features,
         );
     }
@@ -2675,6 +2749,7 @@ fn add_objective_gain(
     player: &PlayerId,
     prefix: &str,
     imagined: &ti4_engine::objectives::Imagined<'_>,
+    secrets: Secrets<'_>,
     features: &mut FeatureVector,
 ) {
     let current = seen.revealed_objective_progress(player);
@@ -2693,6 +2768,30 @@ fn add_objective_gain(
             .any(|card| card.alias == after.alias && card.satisfied);
         if after.satisfied && !was_satisfied {
             newly_satisfied += 1;
+        }
+    }
+    // Secrets fold into the same two names rather than getting their own. A new feature name is
+    // out of vocabulary on every bundle trained before it existed and would fire that family's
+    // shared OOV column on some options and not others -- a differential nudge carried by a weight
+    // trained for something else. Reusing these means a checkpoint benefits with no new columns,
+    // which is the same call the public linkage fix made. The cost is that the policy cannot tell
+    // a public gain from a secret one until a vocabulary generation separates them.
+    if let Some(imagining) = secrets.imagining {
+        let after = imagining(imagined);
+        for card in &after {
+            let before_ratio = secrets
+                .current
+                .iter()
+                .find(|held| held.alias == card.alias)
+                .map_or(0.0, ratio);
+            progress_gain += (ratio(card) - before_ratio).max(0.0);
+            let was_satisfied = secrets
+                .current
+                .iter()
+                .any(|held| held.alias == card.alias && held.satisfied);
+            if card.satisfied && !was_satisfied {
+                newly_satisfied += 1;
+            }
         }
     }
     if progress_gain > 0.0 {
@@ -5422,6 +5521,81 @@ mod tests {
         );
     }
 
+    /// An option that advances a secret the seat holds carries a gain toward it.
+    ///
+    /// The secret half of the same defect: a seat could see it held "control 4 cultural planets"
+    /// and was two of the way there, and no option ever carried a gain toward it. Measured over
+    /// 3,600 self-play seat-games, seats ended holding 1.99 unscored secrets each and 62% of those
+    /// were this linkable kind.
+    ///
+    /// Driven through `Secrets::linked`, the same shape live play uses -- the closure is the only
+    /// thing the feature path may ask, and it can only answer for the seat it was built around.
+    #[test]
+    fn an_option_carries_a_gain_toward_a_secret_the_seat_holds() {
+        let content = ti4_content::ContentStore::embedded();
+        // A system carrying a cultural planet, and a map built around it -- the activation
+        // counterfactual reads the planets of the *target system*, so a cultural planet on a tile
+        // this galaxy does not have would make the test pass vacuously.
+        let (target_system, target_planet) = ti4_content::galaxy::all_systems(content, POK)
+            .keys()
+            .find_map(|system| {
+                ti4_content::galaxy::planets_in(content, system, POK)
+                    .into_iter()
+                    .find(|planet| planet.has_trait("cultural"))
+                    .map(|planet| ((*system).to_owned(), planet.id().to_owned()))
+            })
+            .expect("the corpus has a cultural planet on a tile");
+        let hub = ti4_engine::fixtures::hub_with_outer(&target_system);
+        let a = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        // No public is revealed, so any gain that appears can only have come from the secret.
+        state.revealed_objectives = Vec::new();
+        if let Some(seat) = state.player_mut(&a) {
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("faa")];
+        }
+
+        // A cultural planet the seat does not hold, in a system this fixture's galaxy actually
+        // has: exactly what "faa" counts. Chosen from the hub rather than the corpus, because the
+        // activation counterfactual reads the planets of the *target system* -- a corpus planet
+        // whose tile is off this map contributes nothing and the test would pass vacuously.
+        let cultural = (target_planet, target_system);
+
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        // The offline entry points: a policy test cannot mint a `SeatObservation`, because `bind`
+        // is `pub(crate)` to the engine -- which is the privacy design working as intended.
+        let current =
+            ti4_engine::choice::held_secret_progress(&state, content, POK, Some(&hub.galaxy), &a);
+        let imagining = |im: &ti4_engine::objectives::Imagined<'_>| {
+            ti4_engine::choice::held_secret_progress_imagining(
+                &state,
+                content,
+                POK,
+                Some(&hub.galaxy),
+                &a,
+                im,
+            )
+        };
+        let secrets = Secrets::linked(&current, &imagining);
+
+        let option = ChoiceOption::labelled(&cultural.1, "activate", "activate")
+            .with("system", cultural.1.clone())
+            .with("planet", cultural.0.clone());
+        let choice = Choice::new(a.clone(), "activate a system", vec![option.clone()]);
+        let features = explicit_option_features(&seen, &choice, &option, &a, secrets);
+
+        assert!(
+            value_of(&features, "target:objective-progress-gain").is_some_and(|g| g > 0.0),
+            "taking a cultural planet must carry a gain toward a held \"control 4 cultural              planets\", with no public revealed at all: {:?}",
+            names_of(&features)
+        );
+    }
+
     #[test]
     fn an_empty_system_shows_no_gain_when_no_objective_wants_one() {
         // The other half: presence must not manufacture a gain on its own. Same activation, same
@@ -6666,6 +6840,7 @@ mod tests {
 
         let prompt_tokens = tokens(&choice.prompt);
         let context = ChoiceContext {
+            secrets: (&[]).into(),
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
@@ -6796,6 +6971,7 @@ mod tests {
         assert!(!uniform_kind(&choice));
 
         let context = ChoiceContext {
+            secrets: (&[]).into(),
             facts: seat_facts(&seen, &player),
             own_units: seen.systems_with_units_of(&player).into_iter().collect(),
             objective_facts: objective_facts(&seen, &player, &held(&state, content, Some(&galaxy))),
