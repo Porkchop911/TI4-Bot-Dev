@@ -1074,6 +1074,22 @@ pub struct GameState {
     /// reason: a path added later cannot forget to call a hook it does not know about.
     #[serde(default)]
     pub styx_holder: Option<PlayerId>,
+    /// The seed this game's dice, rifts and breakthrough rolls are drawn from.
+    ///
+    /// Set by setup from the same seed that dealt the decks, and read by `Game::with_table` to
+    /// seed its random streams. Before this field every `Game` began from `GameRng::new(0)`: the
+    /// decks varied per seed, but every training and evaluation game rolled the same dice in the
+    /// same order -- the stream began `[5, 8, 9, 7, 9, 1, ...]` -- and seed 0's breakthrough stream
+    /// put the Fracture into play on the second breakthrough of every single game.
+    ///
+    /// Carried on the state rather than threaded to each place a game is built, so a path added
+    /// later cannot forget it. Defaults to 0 when absent, which is exactly the old behaviour, so a
+    /// state saved before this field existed replays the dice it always did.
+    ///
+    /// Not compared: equality is about the position, and the random stream is not part of the
+    /// position -- `Game` owns it, not the state.
+    #[serde(default)]
+    pub rng_seed: u64,
     /// Planets placed onto a tile during play, mapped to the system they were placed in.
     ///
     /// Twelve planets in the corpus have no printed `tileId` (Mirage, Custodia Vigilia, the ocean
@@ -1430,6 +1446,7 @@ impl GameState {
             ion_storm: None,
             nexus_unlocked: false,
             styx_holder: None,
+            rng_seed: 0,
             placed_planets: BTreeMap::new(),
             influence_pays_for_units: BTreeSet::new(),
             breach_tokens: BTreeSet::new(),

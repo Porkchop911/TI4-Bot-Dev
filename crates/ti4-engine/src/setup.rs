@@ -117,6 +117,9 @@ pub fn start_game_seeded(
         cards_per_player(player_ids.len()),
     );
     let decks = build_starting_decks(content, sources, deck_seed);
+    // The same seed drives the dice. `Game::with_table` reads it back, so every game built from
+    // this state rolls from its own stream rather than all of them sharing seed 0's.
+    state.rng_seed = deck_seed;
     state.objective_deck = decks.objectives;
     state.exploration_decks = decks.exploration;
     state.relic_deck = decks.relics;

@@ -729,12 +729,17 @@ impl<'a> Game<'a> {
         );
         // The dice share the game's seed, so a replayed game rolls the same rifts.
         game.rng = GameRng::new(seed);
+        // Recorded on the state too, so a game saved from here says which dice it rolled.
+        game.state.rng_seed = seed;
         game
     }
 
     /// Create a game with explicit deciders for generated choices.
     #[must_use]
     pub fn with_table(state: GameState, content: &'a ContentStore, table: Table) -> Self {
+        // The dice follow the seed setup recorded. This used to be a literal zero, so every game
+        // built here -- which is every training rollout and every evaluation -- shared one stream.
+        let seed = state.rng_seed;
         let mut timing =
             Resolver::new(state.initiative_order(), state.active.clone(), Table::new());
         // Standing reaction slots, registered once while the game is seated. The resolver has no
@@ -761,7 +766,7 @@ impl<'a> Game<'a> {
             tactical: None,
             aftermath: None,
             trade: None,
-            rng: GameRng::new(0),
+            rng: GameRng::new(seed),
             dice: Dice::new(),
             status_resolved: false,
             agenda_resolved: false,
@@ -6771,6 +6776,55 @@ mod tests {
                     prompt: choice.prompt.clone(),
                 })
         }
+    }
+
+    /// Two seeds roll two different dice streams, and one seed rolls the same stream twice.
+    ///
+    /// Every `Game` used to start from `GameRng::new(0)` whatever seed set it up, so the dice were
+    /// identical across every training and evaluation game. The seed now rides on the state from
+    /// setup, and an unseeded game keeps precisely the dice it always had.
+    #[test]
+    fn the_dice_follow_the_seed_the_game_was_set_up_with() {
+        let content = ti4_content::ContentStore::embedded();
+        let players = [
+            ti4_model::id::PlayerId::new("a"),
+            ti4_model::id::PlayerId::new("b"),
+        ];
+        let first_twelve = |state: GameState| -> Vec<u32> {
+            let mut game = Game::with_table(state, content, crate::choice::Table::new());
+            (0..12)
+                .map(|_| game.rng.die(crate::rng::domain::DICE, 10))
+                .collect()
+        };
+        let seeded = |seed: u64| {
+            crate::setup::start_game_seeded(
+                content,
+                &players,
+                ti4_model::content_types::POK,
+                None,
+                seed,
+            )
+            .expect("setup")
+        };
+
+        assert_eq!(
+            first_twelve(seeded(910_001_000)),
+            first_twelve(seeded(910_001_000)),
+            "one seed, one stream"
+        );
+        assert_ne!(
+            first_twelve(seeded(910_001_000)),
+            first_twelve(seeded(910_001_001)),
+            "two seeds, two streams -- the property every training game was missing"
+        );
+        let unseeded =
+            crate::setup::start_game(content, &players, ti4_model::content_types::POK, None)
+                .expect("setup");
+        assert_eq!(
+            first_twelve(unseeded),
+            vec![5, 8, 9, 7, 9, 1, 8, 8, 10, 8, 9, 10],
+            "an unseeded game still rolls seed 0's stream, exactly as before"
+        );
     }
 
     /// Assimilate converts after a ground combat, and stops when the plastic has run out.
