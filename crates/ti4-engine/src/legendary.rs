@@ -1,7 +1,9 @@
 //! Legendary planet abilities.
 //!
-//! Nineteen planets in the corpus carry a `legendaryAbilityName` and its text, and until this
-//! module nothing read either: `Planet::is_legendary` answered a bool used for excluding them from
+//! Sixteen legendary planets exist, described by nineteen corpus records -- Mallice has a tile
+//! face each side of the Nexus flip, and Mirage carries two alternate printings that nothing
+//! places. Each has a `legendaryAbilityName` and its text, and until this module nothing read
+//! either: `Planet::is_legendary` answered a bool used for excluding them from
 //! Stellar Converter and counting them for objectives, and the printed ability did nothing at all.
 //!
 //! # Shape
@@ -65,16 +67,19 @@ fn end_of_turn_offers(state: &GameState, player: &PlayerId) -> Vec<PlanetId> {
 
 /// Planets whose ability is used at the end of the holder's turn, with the label to offer.
 ///
-/// Three Flight Academies carry identical text on different planets, and both faces of Mallice
-/// carry Exterrix Headquarters, so the table has more rows than there are distinct abilities.
-const END_OF_TURN: [(&str, &str); 9] = [
+/// Six planets, seven rows: Mallice appears twice because the Nexus has two faces and the planet
+/// on the locked tile is `lockedmallice`, so whichever face is up is the id in play.
+///
+/// The corpus also carries `illusion` and `phantasm` -- alternate printings of Mirage, same stats
+/// and same ability with the name changed. They are not here because nothing places them: the
+/// Mirage frontier card places `mirage` and only `mirage` (`exploration.rs`). Sixteen legendary
+/// planets exist; nineteen records describe them.
+const END_OF_TURN: [(&str, &str); 7] = [
     ("hopesend", "Imperial Arms Vault"),
     ("primor", "The Atrament"),
     ("mallice", "Exterrix Headquarters"),
     ("lockedmallice", "Exterrix Headquarters"),
     ("mirage", "Mirage Flight Academy"),
-    ("illusion", "Illusion Flight Academy"),
-    ("phantasm", "Phantasm Flight Academy"),
     ("emelpar", "The Acropolis"),
     ("mrte", "The Galactic Council"),
 ];
