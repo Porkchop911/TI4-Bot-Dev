@@ -507,6 +507,20 @@ fn complete_expedition(
     state.placed_planets.insert(planet.clone(), system.clone());
     state.board.entry(system.clone()).or_default();
     place_infantry(state, content, sources, &placer, &system, &planet, count);
+    // The planet arrives with nobody on it, and ground forces landing on an uncontrolled planet
+    // take it. Without this Thunder's Edge sat on the board held by no one: its six influence
+    // never voted, its legendary card never resolved, and no objective counting controlled
+    // planets ever saw it. Guarded on "uncontrolled" so this can never flip a planet someone
+    // already holds -- taking those is invasion's job, not placement's.
+    if !state
+        .board
+        .get(&system)
+        .is_some_and(|here| here.planet_control.contains_key(&planet))
+    {
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), placer.clone());
+    }
     state.thunders_edge_system = Some(system);
     Ok(())
 }
@@ -627,6 +641,17 @@ mod tests {
         assert!(
             infantry.iter().all(|unit| unit.owner == a),
             "the finisher broke the tie in their own favor, as scripted"
+        );
+        // Placing ground forces on an uncontrolled planet takes it (LRR control). Thunder's Edge
+        // arrives with nobody on it, so the player who lands is the player who holds it -- and
+        // without this the planet's six influence and its legendary card sat outside the game.
+        assert_eq!(
+            state
+                .board
+                .get(&system)
+                .and_then(|board| board.planet_control.get(&planet)),
+            Some(&a),
+            "the player who placed the infantry controls Thunder's Edge"
         );
     }
 
