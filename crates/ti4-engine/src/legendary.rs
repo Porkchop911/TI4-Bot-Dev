@@ -89,6 +89,33 @@ const END_OF_TURN: [(&str, &str); 8] = [
     ("thundersedge", "Jupiter Brain"),
 ];
 
+/// Tempesta, whose card is spent from inside the movement step rather than from a window.
+const IONIAN: &str = "tempesta";
+
+/// Whether the Ionian Fuel Refinery could add +1 to one ship's move right now.
+///
+/// "You may exhaust this card after you activate a system to apply +1 to the move value of 1 of
+/// your ships during this tactical action." There is no separate question: the ability *is* the
+/// extra reach, so it is offered as the move it makes possible and read back by
+/// [`crate::tactical::movable`]. Offering it as its own yes/no first would ask a seat to spend a
+/// card before it knew what the card bought.
+#[must_use]
+pub fn ionian_available(state: &GameState, player: &PlayerId) -> bool {
+    available(state, player, &PlanetId::new(IONIAN))
+}
+
+/// Spend the Ionian Fuel Refinery on a move. `false` if it was not there to spend.
+///
+/// Exhausting is what makes it one ship and once a round: the card readies in the status phase,
+/// so a second boosted move is not offered until the next round.
+pub fn use_ionian(state: &mut GameState, player: &PlayerId) -> bool {
+    if !ionian_available(state, player) {
+        return false;
+    }
+    exhaust(state, player, &PlanetId::new(IONIAN));
+    true
+}
+
 /// Settle the victory point A Song Like Marrow attaches to Styx.
 ///
 /// "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."

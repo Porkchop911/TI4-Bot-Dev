@@ -1838,7 +1838,8 @@ impl<'a> Game<'a> {
                     origin,
                     index,
                     gravity_drive,
-                } => self.begin_one_move(window, &origin, index, gravity_drive),
+                    ionian,
+                } => self.begin_one_move(window, &origin, index, gravity_drive, ionian),
             },
             TacticalStage::Loading {
                 origin,
@@ -1924,6 +1925,7 @@ impl<'a> Game<'a> {
         origin: &SystemId,
         index: usize,
         gravity_drive: bool,
+        ionian: bool,
     ) -> Result<StepResult, GameError> {
         let galaxy = self.galaxy.clone().ok_or(TacticalError::NoActiveSystem)?;
         let active = self
@@ -1952,12 +1954,13 @@ impl<'a> Game<'a> {
             .and_then(|kind| {
                 rules.path_from(
                     origin.as_str(),
-                    crate::tactical::effective_move_value_with_gravity(
+                    crate::tactical::effective_move_value_with_boosts(
                         &self.state,
                         kind,
                         &window.player,
                         origin,
                         gravity_drive,
+                        ionian,
                     ),
                 )
             })
@@ -1967,6 +1970,16 @@ impl<'a> Game<'a> {
             return Err(TacticalError::IllegalChoice(IllegalChoice::NotOffered {
                 player: window.player.clone(),
                 chosen: format!("move_gd|{origin}|{index}"),
+                offered: Vec::new(),
+            })
+            .into());
+        }
+        // The route above was computed with the boost, so the card is spent before the ship moves
+        // -- a refinery that failed to exhaust here would have already paid for the path.
+        if ionian && !crate::legendary::use_ionian(&mut self.state, &window.player) {
+            return Err(TacticalError::IllegalChoice(IllegalChoice::NotOffered {
+                player: window.player.clone(),
+                chosen: format!("move_ion|{origin}|{index}"),
                 offered: Vec::new(),
             })
             .into());

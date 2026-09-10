@@ -5979,6 +5979,7 @@ mod tests {
                 ),
                 capacity: 4,
                 gravity_drive: false,
+                ionian: false,
             }],
         );
         let move_option = move_choice

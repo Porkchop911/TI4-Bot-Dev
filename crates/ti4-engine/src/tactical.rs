@@ -157,6 +157,12 @@ pub struct Movable {
     pub capacity: i64,
     /// This otherwise-unreachable move spends Gravity Drive's +1 for the activation.
     pub gravity_drive: bool,
+    /// This otherwise-unreachable move exhausts the Ionian Fuel Refinery for its +1.
+    ///
+    /// Separate from `gravity_drive` because they are different resources on different clocks --
+    /// Gravity Drive renews every activation, the legendary card once a round -- and a ship two
+    /// hexes short needs both.
+    pub ionian: bool,
 }
 
 /// Effective move value after per-activation bonuses and Gravleash's established origin anchor.
@@ -179,9 +185,27 @@ pub fn effective_move_value_with_gravity(
     origin: &SystemId,
     gravity_drive: bool,
 ) -> i32 {
+    effective_move_value_with_boosts(state, kind, player, origin, gravity_drive, false)
+}
+
+/// Effective move with both one-ship bonuses, applied before Gravleash.
+///
+/// Kept beside the Gravity-Drive-only entry point rather than replacing it: most callers know
+/// about one boost, and widening their signature would make them all state a fact they do not
+/// have.
+#[must_use]
+pub fn effective_move_value_with_boosts(
+    state: &GameState,
+    kind: &ti4_content::units::UnitType<'_>,
+    player: &PlayerId,
+    origin: &SystemId,
+    gravity_drive: bool,
+    ionian: bool,
+) -> i32 {
     let own_move = i32::try_from(kind.move_value()).unwrap_or(0)
         + crate::action_cards::move_bonus(state, player, state.activation_seq)
-        + i32::from(gravity_drive);
+        + i32::from(gravity_drive)
+        + i32::from(ionian);
     if state
         .player(player)
         .and_then(|seat| seat.breakthrough.as_ref())
@@ -255,26 +279,33 @@ pub fn movable_into(
                 continue;
             }
             let move_value = effective_move_value(state, kind, player, origin);
-            if rules.can_reach(origin.as_str(), move_value) {
+            // Cheapest boost first, and only enough of it to arrive. Gravity Drive is preferred
+            // over the Ionian Fuel Refinery when either alone suffices: the drive renews with
+            // every activation, the legendary card only in the status phase, so spending the
+            // renewable one is strictly the smaller commitment.
+            let gravity = crate::technology::gravity_drive_available(state, player);
+            let ionian = crate::legendary::ionian_available(state, player);
+            let boosts = if rules.can_reach(origin.as_str(), move_value) {
+                Some((false, false))
+            } else {
+                [(true, false), (false, true), (true, true)]
+                    .into_iter()
+                    .filter(|(gd, ion)| (!gd || gravity) && (!ion || ionian))
+                    .find(|(gd, ion)| {
+                        rules.can_reach(
+                            origin.as_str(),
+                            effective_move_value_with_boosts(state, kind, player, origin, *gd, *ion),
+                        )
+                    })
+            };
+            if let Some((gravity_drive, ionian)) = boosts {
                 found.push(Movable {
                     origin: origin.clone(),
                     index,
                     unit: hull.clone(),
                     capacity: kind.capacity(),
-                    gravity_drive: false,
-                });
-            } else if crate::technology::gravity_drive_available(state, player)
-                && rules.can_reach(
-                    origin.as_str(),
-                    effective_move_value_with_gravity(state, kind, player, origin, true),
-                )
-            {
-                found.push(Movable {
-                    origin: origin.clone(),
-                    index,
-                    unit: hull.clone(),
-                    capacity: kind.capacity(),
-                    gravity_drive: true,
+                    gravity_drive,
+                    ionian,
                 });
             }
         }
@@ -302,6 +333,7 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
             candidate.unit.sustained_damage,
             candidate.origin.to_string(),
             candidate.gravity_drive,
+            candidate.ionian,
         );
         if !seen.insert(key) {
             continue;
@@ -311,36 +343,42 @@ pub fn movement_options(player: &PlayerId, movable: &[Movable]) -> Choice {
         } else {
             ""
         };
-        options.push(
-            ChoiceOption::labelled(
-                format!(
-                    "{}|{}|{}",
-                    if candidate.gravity_drive {
-                        "move_gd"
-                    } else {
-                        "move"
-                    },
-                    candidate.origin,
-                    candidate.index
-                ),
-                MOVE_KIND,
-                format!(
-                    "move {}{damaged} from {}{}",
-                    candidate.unit.type_id,
-                    candidate.origin,
-                    if candidate.gravity_drive {
-                        " using Gravity Drive"
-                    } else {
-                        ""
-                    }
-                ),
-            )
-            .with("origin", candidate.origin.to_string())
-            .with("unit", candidate.unit.type_id.to_string())
-            .with("damaged", candidate.unit.sustained_damage)
-            .with("capacity", candidate.capacity)
-            .with("gravity_drive", candidate.gravity_drive),
-        );
+        let verb = match (candidate.gravity_drive, candidate.ionian) {
+            (false, false) => "move",
+            (true, false) => "move_gd",
+            (false, true) => "move_ion",
+            (true, true) => "move_gd_ion",
+        };
+        let spent = match (candidate.gravity_drive, candidate.ionian) {
+            (false, false) => "",
+            (true, false) => " using Gravity Drive",
+            (false, true) => " using the Ionian Fuel Refinery",
+            (true, true) => " using Gravity Drive and the Ionian Fuel Refinery",
+        };
+        let mut option = ChoiceOption::labelled(
+            format!("{verb}|{}|{}", candidate.origin, candidate.index),
+            MOVE_KIND,
+            format!(
+                "move {}{damaged} from {}{spent}",
+                candidate.unit.type_id, candidate.origin,
+            ),
+        )
+        .with("origin", candidate.origin.to_string())
+        .with("unit", candidate.unit.type_id.to_string())
+        .with("damaged", candidate.unit.sustained_damage)
+        .with("capacity", candidate.capacity)
+        .with("gravity_drive", candidate.gravity_drive);
+        // Attached only when it is true, unlike `gravity_drive` above. `ionian` is a new payload
+        // key, so it is out of vocabulary on every bundle trained before it existed and falls into
+        // its family's shared OOV column. Attaching it unconditionally would fire that column on
+        // every move option in the game and on none of the "finish movement" options beside them,
+        // which is a constant nudge for or against finishing -- carried by a weight trained for
+        // something else entirely. Attached only where it is true, seats without Tempesta see the
+        // options they saw before, byte for byte.
+        if candidate.ionian {
+            option = option.with("ionian", true);
+        }
+        options.push(option);
     }
     // 89.2b: the player may choose to move nothing.
     options.push(ChoiceOption::labelled(
@@ -454,6 +492,8 @@ pub enum MoveSelection {
         origin: SystemId,
         index: usize,
         gravity_drive: bool,
+        /// Exhausts the Ionian Fuel Refinery for this ship's +1.
+        ionian: bool,
     },
     /// 89.2b: move nothing further.
     Done,
@@ -490,7 +530,8 @@ pub fn read_move(choice: &Choice, answer: ChoiceOption) -> Result<MoveSelection,
             Ok(MoveSelection::Ship {
                 origin: SystemId::new(origin),
                 index,
-                gravity_drive: verb == "move_gd",
+                gravity_drive: matches!(verb, "move_gd" | "move_gd_ion"),
+                ionian: matches!(verb, "move_ion" | "move_gd_ion"),
             })
         },
     )
@@ -618,6 +659,47 @@ mod tests {
             reach(&state),
             0,
             "a later activation's bonus is not this one's"
+        );
+    }
+
+    /// The Ionian Fuel Refinery buys the same reach Gravity Drive does, from a different clock.
+    ///
+    /// The two are separate resources, so a seat holding only Tempesta gets the boosted move on
+    /// its own -- and once the card is exhausted the move stops being offered, which is what makes
+    /// it "1 of your ships" rather than all of them.
+    #[test]
+    fn the_ionian_fuel_refinery_reaches_where_the_hull_alone_cannot() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let far = SystemId::new(hub.across(&hub.outer[0]));
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        // Tempesta, held somewhere else entirely: the card is a possession, not a place.
+        let home = SystemId::new(hub.centre.clone());
+        state.board.entry(home.clone()).or_default();
+        state
+            .system_mut(&home)
+            .set_control(ti4_model::id::PlanetId::new("tempesta"), player.clone());
+        activate(&mut state, &player, &far).unwrap();
+
+        let found = movable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].ionian && !found[0].gravity_drive, "{found:?}");
+        assert_eq!(
+            movement_options(&player, &found).options[0].id,
+            format!("move_ion|{origin}|0")
+        );
+
+        // Exhausted, the reach is gone: one ship, once a round.
+        state
+            .player_mut(&player)
+            .unwrap()
+            .exhausted_legendary
+            .insert(ti4_model::id::PlanetId::new("tempesta"));
+        assert!(
+            movable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player).is_empty(),
+            "the boosted move is not offered a second time"
         );
     }
 
@@ -1072,6 +1154,7 @@ mod tests {
                 origin: ids[1].clone(),
                 index: 0,
                 gravity_drive: false,
+                ionian: false,
             }
         );
     }
