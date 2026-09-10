@@ -507,8 +507,14 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "legendary.rs",
-        function: "resolve",
+        function: "place_on_own_planet",
         count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "legendary.rs",
+        function: "resolve",
+        count: 4,
         delivery: Delivery::ObservedHere,
     },
     Producer {
@@ -863,7 +869,8 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
     ("legendary.rs", "end_turn", 1),
-    ("legendary.rs", "resolve", 1),
+    ("legendary.rs", "place_on_own_planet", 1),
+    ("legendary.rs", "resolve", 4),
     ("relics.rs", "neuraloop", 1),
     ("secrets.rs", "enforce_hand_limit", 1),
     ("strategy_cards.rs", "ask", 1),

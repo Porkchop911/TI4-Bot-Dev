@@ -136,6 +136,84 @@ pub fn end_turn(
     }
 }
 
+
+/// This seat's own version of a unit type, falling back to the generic one.
+fn unit_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    base: &str,
+) -> Option<ti4_model::id::UnitTypeId> {
+    let faction = state
+        .player(player)
+        .map(|seat| seat.faction.to_string())
+        .unwrap_or_default();
+    let generic = ti4_content::units::catalogue(content, sources)
+        .get(base)
+        .map(|unit| unit.id().to_owned());
+    ti4_content::units::faction_unit(content, &faction, base, sources)
+        .map(|unit| unit.id().to_owned())
+        .or(generic)
+        .map(ti4_model::id::UnitTypeId::new)
+}
+
+/// Ask which of this seat's planets to place on, then put `count` of `base` there.
+///
+/// Reinforcements are finite, so the number placed is whatever `supply` allows rather than what
+/// the card asks for. Both cards that use this say "up to", which is the same thing said aloud.
+fn place_on_own_planet(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    base: &str,
+    count: usize,
+    prompt: &str,
+) -> Result<(), IllegalChoice> {
+    let Some(type_id) = unit_of(state, content, sources, player, base) else {
+        return Ok(());
+    };
+    let placeable = crate::supply::allowed(state, content, sources, player, &type_id, count);
+    let options: Vec<ChoiceOption> = state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(system, planet)| {
+            ChoiceOption::labelled(
+                format!("{system}|{planet}"),
+                "legendary",
+                format!("place on {planet}"),
+            )
+        })
+        .collect();
+    if placeable == 0 || options.is_empty() {
+        return Ok(());
+    }
+    let choice = Choice::new(player.clone(), prompt, options).contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::Content("legendary".to_owned()),
+        "legendary_place",
+        state.phase,
+        state.round,
+    ));
+    let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+    let mut parts = answer.id.split('|');
+    let (Some(system), Some(planet), None) = (parts.next(), parts.next(), parts.next()) else {
+        return Ok(());
+    };
+    let held = state
+        .system_mut(&ti4_model::id::SystemId::new(system))
+        .planet_units
+        .entry(PlanetId::new(planet))
+        .or_default();
+    for _ in 0..placeable {
+        held.push(ti4_model::units::Unit::new(type_id.clone(), player.clone()));
+    }
+    Ok(())
+}
+
 /// Apply one ability. A planet with no arm here is an honest gap, not a silent one.
 fn resolve(
     state: &mut GameState,
@@ -177,6 +255,137 @@ fn resolve(
                 }
             }
         }
+        // "place up to 2 infantry from your reinforcements on any planet you control"
+        "primor" => place_on_own_planet(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            player,
+            "infantry",
+            2,
+            "The Atrament: place infantry where",
+        )?,
+        // "place 1 mech from your reinforcements on any planet you control, or draw 1 action card"
+        "hopesend" => {
+            let options = vec![
+                ChoiceOption::labelled("mech", "legendary", "place 1 mech"),
+                ChoiceOption::labelled("card", "legendary", "draw 1 action card"),
+            ];
+            let choice = Choice::new(player.clone(), "Imperial Arms Vault", options)
+                .contextualized(DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Content("legendary".to_owned()),
+                    "legendary_arms_vault",
+                    state.phase,
+                    state.round,
+                ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            if answer.id == "card" {
+                crate::action_cards::draw(state, content, table, player, 1)?;
+            } else {
+                place_on_own_planet(
+                    state,
+                    content,
+                    sources,
+                    galaxy,
+                    table,
+                    player,
+                    "mech",
+                    1,
+                    "Imperial Arms Vault: place the mech where",
+                )?;
+            }
+        }
+        // "place up to 2 fighters in any system that contains 1 or more of your ships" -- a
+        // system rather than a planet, and only one this seat is already in.
+        "mirage" => {
+            let Some(type_id) = unit_of(state, content, sources, player, "fighter") else {
+                return Ok(());
+            };
+            let placeable = crate::supply::allowed(state, content, sources, player, &type_id, 2);
+            let types = ti4_content::units::catalogue(content, sources);
+            let options: Vec<ChoiceOption> = state
+                .board
+                .iter()
+                .filter(|(_, here)| {
+                    here.units_of(player).into_iter().any(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(ti4_content::units::UnitType::is_ship)
+                    })
+                })
+                .map(|(system, _)| {
+                    ChoiceOption::labelled(
+                        system.to_string(),
+                        "legendary",
+                        format!("place fighters in {system}"),
+                    )
+                })
+                .collect();
+            if placeable == 0 || options.is_empty() {
+                return Ok(());
+            }
+            let choice = Choice::new(
+                player.clone(),
+                "Mirage Flight Academy: place fighters where",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_place",
+                state.phase,
+                state.round,
+            ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            let system = ti4_model::id::SystemId::new(answer.id);
+            let units = &mut state.system_mut(&system).units;
+            for _ in 0..placeable {
+                units.push(ti4_model::units::Unit::new(type_id.clone(), player.clone()));
+            }
+        }
+        // "discard 1 secret objective to draw 1 secret objective"
+        "mrte" => {
+            let held: Vec<ti4_model::id::SecretObjectiveId> = state
+                .player(player)
+                .map(|seat| seat.secret_objectives.clone())
+                .unwrap_or_default();
+            if held.is_empty() {
+                return Ok(());
+            }
+            let options: Vec<ChoiceOption> = held
+                .iter()
+                .map(|secret| {
+                    ChoiceOption::labelled(secret.to_string(), "legendary", "discard this secret")
+                })
+                .collect();
+            let choice = Choice::new(
+                player.clone(),
+                "The Galactic Council: discard which secret",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_galactic_council",
+                state.phase,
+                state.round,
+            ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            let discarded = ti4_model::id::SecretObjectiveId::new(answer.id);
+            if let Some(seat) = state.player_mut(player) {
+                seat.secret_objectives.retain(|s| s != &discarded);
+            }
+            // Back to the deck before the draw, so a one-card deck still yields a card and the
+            // swap cannot silently lose the discarded objective.
+            state.secret_deck.push(discarded);
+            crate::secrets::draw(state, content, table, player)?;
+        }
         _ => {}
     }
     Ok(())
@@ -206,6 +415,96 @@ mod tests {
             seat.trade_goods = 0;
         }
         (state, player, planet)
+    }
+
+
+    /// A seat holding `planet`, with a board entry for `system`.
+    fn holding(planet: &str, system: &str) -> (GameState, PlayerId) {
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let system = ti4_model::id::SystemId::new(system);
+        state.board.entry(system.clone()).or_default();
+        state
+            .system_mut(&system)
+            .set_control(PlanetId::new(planet), player.clone());
+        (state, player)
+    }
+
+    #[test]
+    fn the_atrament_places_two_infantry_on_a_planet_you_control() {
+        let (mut state, player) = holding("primor", "45");
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "primor",
+            "45|primor",
+            "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+
+        let placed = state
+            .system_state(&ti4_model::id::SystemId::new("45"))
+            .planet_units
+            .get(&PlanetId::new("primor"))
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(placed.len(), 2, "two infantry: {placed:?}");
+        assert!(placed.iter().all(|unit| unit.owner == player));
+    }
+
+    #[test]
+    fn the_imperial_arms_vault_draws_a_card_when_that_branch_is_taken() {
+        let (mut state, player) = holding("hopesend", "45");
+        let before = state.player(&player).unwrap().action_cards.len();
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "hopesend", "card", "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+
+        assert_eq!(
+            state.player(&player).unwrap().action_cards.len(),
+            before + 1,
+            "the other branch of the same ability"
+        );
+    }
+
+    #[test]
+    fn the_galactic_council_swaps_one_secret_for_another() {
+        let (mut state, player) = holding("mrte", "112");
+        let discarded = ti4_model::id::SecretObjectiveId::new("mrm");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.secret_objectives = vec![discarded.clone()];
+        }
+        state.secret_deck = vec![ti4_model::id::SecretObjectiveId::new("baf")];
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "mrte", "mrm", "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+
+        let held = state.player(&player).unwrap().secret_objectives.clone();
+        assert_eq!(held.len(), 1, "still one secret, a different one: {held:?}");
+        assert!(
+            !held.contains(&discarded),
+            "the discarded objective is gone from the hand"
+        );
+    }
+
+    #[test]
+    fn an_ability_is_offered_once_a_round() {
+        // Exhausted before it resolves, so an ability that asks a follow-up question cannot be
+        // re-offered inside its own resolution -- and cannot be used twice in one turn.
+        let (mut state, player) = holding("primor", "45");
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "primor",
+            "45|primor",
+            "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+        assert!(!available(&state, &player, &PlanetId::new("primor")));
+
+        // The status phase readies it, beside technologies and relics.
+        for seat in &mut state.players {
+            seat.exhausted_legendary.clear();
+        }
+        assert!(available(&state, &player, &PlanetId::new("primor")));
     }
 
     #[test]
