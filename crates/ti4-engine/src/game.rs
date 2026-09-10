@@ -3475,6 +3475,17 @@ impl<'a> Game<'a> {
                 &mut self.table,
                 &active,
             );
+            // Legendary planets share this window: most of them read "you may exhaust this card
+            // at the end of your turn". Offered after the technologies so a card readied by The
+            // Acropolis is readied before anything else asks to spend it.
+            let _ = crate::legendary::end_turn(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+                &active,
+            );
         }
         // 37.3 across the whole table, at the end of every turn.
         //

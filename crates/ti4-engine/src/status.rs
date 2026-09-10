@@ -137,6 +137,9 @@ pub fn resolve_after_token_gain(state: &mut GameState, report: &mut StatusPhaseR
         // themselves (Heart of Ixth), and a relic that spent its use on a die must wait for
         // this step before it may bend another one.
         player.exhausted_relics.clear();
+        // Legendary ability cards ready here for the same reason: they exhaust to use
+        // themselves and would otherwise be once per game rather than once per round.
+        player.exhausted_legendary.clear();
     }
     // Leaders ready here too. An exhausted agent that never readies reads, after a round or
     // two, as a player who has simply run out of agents.

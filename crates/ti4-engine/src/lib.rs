@@ -50,6 +50,7 @@ pub mod game;
 pub mod invasion;
 pub mod laws;
 pub mod leaders;
+pub mod legendary;
 pub mod movement;
 pub mod neutral_units;
 pub mod objectives;

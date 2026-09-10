@@ -369,6 +369,13 @@ pub struct Player {
     /// same card would bend every die in the game.
     #[serde(default)]
     pub exhausted_relics: BTreeSet<RelicId>,
+    /// Legendary ability cards spent this round, keyed by the planet that carries the ability.
+    ///
+    /// Its own set because the ability card exhausts independently of the planet: a seat can
+    /// exhaust Primor for resources and still use The Atrament, and using The Atrament does not
+    /// stop the planet paying for something later in the same round.
+    #[serde(default)]
+    pub exhausted_legendary: BTreeSet<PlanetId>,
     /// Exploration cards placed faceup in the play area, which carry their own ACTION.
     ///
     /// Two Enigmatic Device cards say "place this card faceup in your play area" and then print an
@@ -580,6 +587,7 @@ impl PartialEq for Player {
             && self.breakthrough == other.breakthrough
             && self.relics == other.relics
             && self.exhausted_relics == other.exhausted_relics
+            && self.exhausted_legendary == other.exhausted_legendary
             && self.plots == other.plots
             && self.plot_objectives == other.plot_objectives
             && self.public_objectives_forbidden == other.public_objectives_forbidden
@@ -653,6 +661,7 @@ impl Player {
             relic_fragments: BTreeMap::new(),
             relics: Vec::new(),
             exhausted_relics: BTreeSet::new(),
+            exhausted_legendary: BTreeSet::new(),
             exploration_cards: Vec::new(),
             plots: Vec::new(),
             plot_objectives: BTreeSet::new(),
