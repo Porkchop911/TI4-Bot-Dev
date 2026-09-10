@@ -289,13 +289,13 @@ fn main() {
         .collect();
 
     let mut tallies: BTreeMap<String, Tally> = BTreeMap::new();
-    let mut rows: Vec<(u64, usize, String, bool)> = Vec::new();
+    let mut rows: Vec<(u64, usize, String, bool, f64)> = Vec::new();
     for chunk in harvest {
         for (seed, rotation, faction, cleared, points) in
             chunk.unwrap_or_else(|error| refuse(&error))
         {
             if per_seat.is_some() {
-                rows.push((seed, rotation, faction.clone(), cleared));
+                rows.push((seed, rotation, faction.clone(), cleared, points));
             }
             let entry = tallies.entry(faction).or_default();
             entry.seats += 1;
@@ -333,10 +333,14 @@ fn main() {
         // Sorted, so two runs over the same seeds produce line-for-line comparable files and the
         // pairing is positional rather than something a consumer has to reconstruct.
         rows.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
-        let mut body = String::from("seed rotation faction cleared\n");
-        for (seed, rotation, faction, cleared) in &rows {
+        // Victory points as well as clearance. The file exists so a consumer can pair a
+        // difference by map, and for a stage-2 checkpoint the difference that matters is VP --
+        // which is tallied here and was then dropped, leaving the printed table as the only
+        // place it appeared and no way to put an interval on a change in it.
+        let mut body = String::from("seed rotation faction cleared victory_points\n");
+        for (seed, rotation, faction, cleared, points) in &rows {
             body.push_str(&format!(
-                "{seed} {rotation} {faction} {}\n",
+                "{seed} {rotation} {faction} {} {points}\n",
                 u8::from(*cleared)
             ));
         }
