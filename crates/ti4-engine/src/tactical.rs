@@ -46,12 +46,27 @@ pub enum TacticalError {
 #[must_use]
 pub fn activatable(state: &GameState, galaxy: &Galaxy, player: &PlayerId) -> Vec<SystemId> {
     let held = state.systems_with_token(player);
-    galaxy
+    // The galaxy is the *printed map*; the board is what is actually in play. The Fracture adds
+    // seven systems after setup and never touches the galaxy, so enumerating the galaxy alone
+    // left those tiles reachable -- `movement` already makes an ingress adjacent to each egress
+    // -- and unactivatable, which is a state no tactical action can resolve.
+    //
+    // Ordered and deduplicated: the galaxy first, so the ordinary map keeps the order it had and
+    // only the added systems appear after it.
+    let mut seen: std::collections::BTreeSet<SystemId> = std::collections::BTreeSet::new();
+    let mut found = Vec::new();
+    for system in galaxy
         .system_ids()
         .into_iter()
         .map(SystemId::new)
-        .filter(|system| !held.contains(system))
-        .collect()
+        .chain(state.board.keys().cloned())
+    {
+        if held.contains(&system) || !seen.insert(system.clone()) {
+            continue;
+        }
+        found.push(system);
+    }
+    found
 }
 
 /// The activation choice, or `None` when the player cannot take a tactical action.

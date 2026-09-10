@@ -588,6 +588,28 @@ mod tests {
     }
 
     #[test]
+    fn a_fracture_system_can_be_activated_once_the_fracture_is_in_play() {
+        // The Fracture adds systems to the game after setup, and `movement` already treats an
+        // ingress and each egress as adjacent -- so ships can reach them. Activation enumerated
+        // the *galaxy*, which is the printed map and never learns about them, so the tiles were
+        // reachable and unactivatable at the same time: no tactical action could ever target one.
+        let mut state = crate::fixtures::game(&["a"]);
+        let hub = crate::fixtures::plain_hub();
+        enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("enters play");
+
+        let inside = systems(content(), ALL_SOURCES)
+            .into_iter()
+            .next()
+            .expect("the corpus carries Fracture tiles");
+        let offered = crate::tactical::activatable(&state, &hub.galaxy, &PlayerId::new("a"));
+        assert!(
+            offered.contains(&inside),
+            "a Fracture system in play must be activatable: {inside:?} not among {} offered",
+            offered.len()
+        );
+    }
+
+    #[test]
     fn mecatol_takes_the_extra_ingress_when_thunders_edge_is_absent() {
         let mut state = crate::fixtures::game(&["a"]);
         enter_play(&mut state, content(), ALL_SOURCES, &[]).expect("enters play");
