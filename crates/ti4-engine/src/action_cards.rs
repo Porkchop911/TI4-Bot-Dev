@@ -153,6 +153,12 @@ pub const ACTION_KIND: &str = "component";
 /// The prefix of an option that plays an action card as a turn action.
 const PLAY_PREFIX: &str = "action_card|";
 
+/// Playing a card off Garbozia rather than out of hand.
+///
+/// Addressed by alias where a held card is addressed by hand index: the yard is a different zone,
+/// and an index into it would read as an index into the hand.
+const SALVAGE_PREFIX: &str = "action_card|salvaged|";
+
 /// Whether a card's printed window makes it a component action (22.1).
 #[must_use]
 pub fn is_component_action(content: &ContentStore, alias: &ActionCardId) -> bool {
@@ -205,6 +211,20 @@ pub fn available_actions(
     let Some(seat) = state.player(player) else {
         return Vec::new();
     };
+    // Cards on Garbozia are playable "as if they were in your hand", so they run every filter the
+    // hand does and differ only in how the option addresses them and what playing one costs.
+    let salvaged: Vec<crate::choice::ChoiceOption> = crate::legendary::salvaged(state, player)
+        .into_iter()
+        .filter(|alias| is_component_action(content, alias))
+        .filter(|alias| is_playable(state, content, sources, galaxy, player, alias))
+        .map(|alias| {
+            crate::choice::ChoiceOption::labelled(
+                format!("{SALVAGE_PREFIX}{alias}"),
+                ACTION_KIND,
+                format!("play {} off the salvage yard", name_of(content, &alias)),
+            )
+        })
+        .collect();
     seat.action_cards
         .iter()
         .enumerate()
@@ -217,6 +237,7 @@ pub fn available_actions(
                 format!("play {}", name_of(content, alias)),
             )
         })
+        .chain(salvaged)
         .collect()
 }
 
@@ -236,18 +257,26 @@ pub fn perform(
     player: &PlayerId,
     option: &crate::choice::ChoiceOption,
 ) -> Result<bool, crate::timing::TimingError> {
-    let Some(index) = option
+    // Off the salvage yard, or out of hand. Checked in this order because the salvaged prefix
+    // extends the hand prefix, so parsing the hand form first would read "salvaged|xyz" as a
+    // malformed index and refuse the play.
+    let salvaged = option
+        .id
+        .strip_prefix(SALVAGE_PREFIX)
+        .map(ActionCardId::new)
+        .filter(|alias| crate::legendary::salvaged(context.state, player).contains(alias));
+    let from_hand = option
         .id
         .strip_prefix(PLAY_PREFIX)
-        .and_then(|index| index.parse::<usize>().ok())
-    else {
-        return Ok(false);
-    };
-    let held = context
-        .state
-        .player(player)
-        .and_then(|seat| seat.action_cards.get(index).cloned());
-    let Some(alias) = held else {
+        .and_then(|index| index.parse::<usize>().ok());
+    let Some(alias) = salvaged.clone().or_else(|| {
+        from_hand.and_then(|index| {
+            context
+                .state
+                .player(player)
+                .and_then(|seat| seat.action_cards.get(index).cloned())
+        })
+    }) else {
         return Ok(false);
     };
     if !is_component_action(context.content, &alias)
@@ -264,8 +293,13 @@ pub fn perform(
     }
 
     // 22.3: the card leaves the hand whether or not its effect is modelled. It was genuinely
-    // played, and pretending otherwise would let a bot hold it for ever.
-    discard(context.state, player, index);
+    // played, and pretending otherwise would let a bot hold it for ever. A salvaged card is
+    // purged instead of discarded, so it cannot be salvaged again out of the pile it came from.
+    if salvaged.is_some() {
+        crate::legendary::purge_salvaged(context.state, player, &alias);
+    } else if let Some(index) = from_hand {
+        discard(context.state, player, index);
+    }
     // `announce` reports whether the play stood. A cancelled play still discards the card,
     // but returns `false` so the caller keeps the turn instead of advancing it (22.4).
     crate::reactions::announce(context, resolver, player, &alias)

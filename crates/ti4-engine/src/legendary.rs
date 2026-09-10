@@ -15,8 +15,11 @@
 //! hang off that rather than needing timing machinery of their own.
 //!
 //! Three more read "when you pass". That window did not exist; [`pass`] is it, called from the
-//! pass branch of the action phase. Two of the three are here; the third is in [`WHEN_YOU_PASS`]'
-//! doc with the reason it is not.
+//! pass branch of the action phase.
+//!
+//! Two abilities are neither: the Ionian Fuel Refinery is offered as the extra reach it buys, from
+//! inside the movement step, and Dok 'N Pic's Salvage Yard is half a window and half a card zone --
+//! stocking it is a pass ability, playing out of it is a second place the play paths look.
 //!
 //! The ability card exhausts separately from the planet (`seat.exhausted_legendary`, readied in
 //! the status phase beside technologies and relics), because a seat can spend Primor for its two
@@ -91,6 +94,51 @@ const END_OF_TURN: [(&str, &str); 8] = [
 
 /// Tempesta, whose card is spent from inside the movement step rather than from a window.
 const IONIAN: &str = "tempesta";
+
+/// Garbozia, whose card is a zone other cards sit in.
+const SALVAGE: &str = "garbozia";
+
+/// Action cards this seat may play out of Dok 'N Pic's Salvage Yard.
+///
+/// "You can purge cards on this card to play them as if they were in your hand." The zone belongs
+/// to the planet, so it answers empty for everyone except whoever currently holds Garbozia --
+/// including a player who took the planet off the seat that stocked it.
+///
+/// Unlike the abilities either side of this, holding the planet is the whole requirement: the
+/// ability card is exhausted to *stock* the yard, not to play out of it, so an exhausted card does
+/// not lock what is already lying on it.
+#[must_use]
+pub fn salvaged(state: &GameState, player: &PlayerId) -> Vec<ti4_model::id::ActionCardId> {
+    let holds = state
+        .controlled_planets(player)
+        .into_iter()
+        .any(|(_, held)| held.as_str() == SALVAGE);
+    if holds {
+        state.salvage_yard.clone()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Purge one card off the salvage yard, which is how playing it is paid for.
+///
+/// `false` if this seat could not have played it, so a caller that also reads the hand can try
+/// this second and fall through cleanly.
+pub fn purge_salvaged(
+    state: &mut GameState,
+    player: &PlayerId,
+    alias: &ti4_model::id::ActionCardId,
+) -> bool {
+    if !salvaged(state, player).contains(alias) {
+        return false;
+    }
+    // Purged, not discarded: it must not come back round through the discard pile it came from.
+    if let Some(at) = state.salvage_yard.iter().position(|held| held == alias) {
+        state.salvage_yard.remove(at);
+        return true;
+    }
+    false
+}
 
 /// Whether the Ionian Fuel Refinery could add +1 to one ship's move right now.
 ///
@@ -243,15 +291,11 @@ pub fn end_turn(
 
 /// Planets whose ability is used when the holder passes, with the label to offer.
 ///
-/// Dok 'N Pic's Salvage Yard (`garbozia`) belongs on this window and is not here: it parks an
-/// action card from the discard pile face-up *on the planet card* and lets the holder purge it
-/// later to play it as though from hand. That is a card zone the state does not have, and half of
-/// it -- taking the card and never being able to play it -- would be worse than not offering it.
-///
 /// Ordinian's two faces are faction-specific and left out with Avernus and Custodia Vigilia.
-const WHEN_YOU_PASS: [(&str, &str); 2] = [
+const WHEN_YOU_PASS: [(&str, &str); 3] = [
     ("faunus", "Maxis Central Control"),
     ("industrex", "Aurex Mechanica"),
+    ("garbozia", "Dok 'N Pic's Salvage Yard"),
 ];
 
 /// Offer this seat's when-you-pass legendary abilities, one at a time.
@@ -455,6 +499,60 @@ fn resolve_pass(
                     &deck,
                     Some(&target),
                 );
+            }
+        }
+        // "place 1 action card from the discard pile faceup on this card; you can purge cards on
+        // this card to play them as if they were in your hand"
+        //
+        // Only the first half happens here. The second is not a window at all -- it is a second
+        // place the play paths look for a card, which is why `salvaged` sits beside the hand in
+        // `reactions::available_reactions` and `action_cards::available_actions`.
+        "garbozia" => {
+            let pile = context.state.discarded_action_cards.clone();
+            if pile.is_empty() {
+                return;
+            }
+            let mut options: Vec<ChoiceOption> = pile
+                .iter()
+                .map(|alias| {
+                    ChoiceOption::labelled(
+                        alias.to_string(),
+                        "legendary",
+                        format!(
+                            "salvage {}",
+                            crate::action_cards::name_of(context.content, alias)
+                        ),
+                    )
+                })
+                .collect();
+            options.push(ChoiceOption::decline());
+            let choice = Choice::new(
+                player.clone(),
+                "Dok 'N Pic's Salvage Yard: salvage which card",
+                options,
+            )
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_salvage",
+                context.state.phase,
+                context.state.round,
+            ));
+            let Ok(answer) = context.ask_seeing(&choice) else {
+                return;
+            };
+            if answer.is_decline() {
+                return;
+            }
+            let salvaged = ti4_model::id::ActionCardId::new(answer.id);
+            let state = &mut *context.state;
+            if let Some(at) = state
+                .discarded_action_cards
+                .iter()
+                .position(|held| held == &salvaged)
+            {
+                state.discarded_action_cards.remove(at);
+                state.salvage_yard.push(salvaged);
             }
         }
         // "place 1 ship that matches a unit upgrade technology you own from your reinforcements
@@ -1071,6 +1169,44 @@ mod tests {
                 "{planet} is a homeworld or legendary and was offered anyway"
             );
         }
+    }
+
+    #[test]
+    fn the_salvage_yard_takes_a_card_off_the_discard_pile_and_holds_it() {
+        let (mut state, player) = holding("garbozia", "97");
+        let card = ti4_model::id::ActionCardId::new("fs1");
+        state.discarded_action_cards = vec![card.clone()];
+
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "garbozia", "fs1", "decline",
+        ])));
+        passing(&mut state, &mut table, &player);
+
+        assert_eq!(state.salvage_yard, vec![card.clone()]);
+        assert!(
+            state.discarded_action_cards.is_empty(),
+            "it left the pile rather than being copied out of it"
+        );
+        assert_eq!(
+            salvaged(&state, &player),
+            vec![card.clone()],
+            "the holder may play it as if it were in hand"
+        );
+
+        // The zone is on the planet card, so it answers for whoever holds the planet.
+        assert!(
+            salvaged(&state, &PlayerId::new("b")).is_empty(),
+            "and for nobody else"
+        );
+
+        // Purging is what playing it costs, and it does not fall back into the pile.
+        assert!(purge_salvaged(&mut state, &player, &card));
+        assert!(state.salvage_yard.is_empty());
+        assert!(state.discarded_action_cards.is_empty());
+        assert!(
+            !purge_salvaged(&mut state, &player, &card),
+            "and cannot be purged twice"
+        );
     }
 
     #[test]

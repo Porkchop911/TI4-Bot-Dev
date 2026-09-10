@@ -1020,6 +1020,14 @@ pub struct GameState {
     /// is play-relevant — so it is compared.
     #[serde(default)]
     pub discarded_action_cards: Vec<ActionCardId>,
+    /// Action cards lying face-up on Garbozia's planet card.
+    ///
+    /// Dok 'N Pic's Salvage Yard parks a card from the discard pile here and lets whoever holds
+    /// the planet purge it to play it "as if it were in your hand". A zone on the planet card
+    /// rather than in a seat's hand, so it is global here and travels with control of Garbozia --
+    /// a player who takes the planet inherits what is sitting on it.
+    #[serde(default)]
+    pub salvage_yard: Vec<ActionCardId>,
     pub secret_deck: Vec<SecretObjectiveId>,
     /// Laws in play: alias to the outcome that passed (LRR 8.20). Not compared.
     pub laws: BTreeMap<String, String>,
@@ -1343,6 +1351,7 @@ impl PartialEq for GameState {
             && self.agenda_deck == other.agenda_deck
             && self.action_card_deck == other.action_card_deck
             && self.discarded_action_cards == other.discarded_action_cards
+            && self.salvage_yard == other.salvage_yard
             && self.secret_deck == other.secret_deck
             && self.custodians_removed == other.custodians_removed
             && self.frontier_tokens == other.frontier_tokens
@@ -1406,6 +1415,7 @@ impl GameState {
             agenda_deck: Vec::new(),
             action_card_deck: Vec::new(),
             discarded_action_cards: Vec::new(),
+            salvage_yard: Vec::new(),
             secret_deck: Vec::new(),
             laws: BTreeMap::new(),
             custodians_removed: false,

@@ -558,8 +558,12 @@ pub fn playable_now(
     let Some(seat) = state.player(player) else {
         return Vec::new();
     };
+    // Cards lying on Garbozia are played "as if they were in your hand", so they are read beside
+    // it rather than through a path of their own -- every guard below applies to them unchanged.
+    let salvaged = crate::legendary::salvaged(state, player);
     seat.action_cards
         .iter()
+        .chain(salvaged.iter())
         .filter(|alias| {
             window_for(content, alias).is_some_and(|window| {
                 window.event == event.event_type
@@ -590,10 +594,12 @@ pub fn play(
         .state
         .player(player)
         .and_then(|seat| seat.action_cards.iter().position(|held| held == alias));
-    let Some(index) = held else {
+    if let Some(index) = held {
+        crate::action_cards::discard(context.state, player, index);
+    } else if !crate::legendary::purge_salvaged(context.state, player, alias) {
+        // Not in hand and not on Garbozia: there was nothing to play.
         return Ok(false);
-    };
-    crate::action_cards::discard(context.state, player, index);
+    }
     announce(context, resolver, player, alias)
 }
 
