@@ -266,7 +266,7 @@ fn pay(
     }
 }
 
-fn breakthrough_for(
+pub(crate) fn breakthrough_for(
     content: &ContentStore,
     _sources: SourceSet,
     faction: &str,
@@ -516,6 +516,10 @@ fn complete_expedition(
         state
             .system_mut(&system)
             .set_control(planet.clone(), placer.clone());
+        // Jupiter Brain's first clause. Usually a no-op here -- the placer holds a slice, and the
+        // first slice already granted them their breakthrough -- but the clause is on the card,
+        // and the placer need not be the seat that finished the expedition.
+        crate::legendary::control_gained(state, content, sources, &placer, &planet);
     }
     state.thunders_edge_system = Some(system);
     Ok(())

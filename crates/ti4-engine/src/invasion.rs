@@ -2006,6 +2006,8 @@ impl InvasionWindow {
             &self.system,
             planet,
         );
+        // Jupiter Brain: taking Thunder's Edge off somebody hands the taker their breakthrough.
+        crate::legendary::control_gained(state, ctx.content, ctx.sources, &self.invader, planet);
 
         // 35.1: a planet nobody controlled is explored; one taken off another player is not.
         // Only this frame knows which, which is why `captured` carries the previous holder — a

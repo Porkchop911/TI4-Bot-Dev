@@ -625,6 +625,13 @@ pub fn strategy_resolved(
         &system,
         &planet,
     );
+    crate::legendary::control_gained(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        &planet,
+    );
 
     if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, &planet) {
         let mut resolving = crate::choice::Resolving {

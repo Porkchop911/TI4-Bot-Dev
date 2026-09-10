@@ -3521,6 +3521,22 @@ impl<'a> Game<'a> {
                 &mut self.table,
                 &active,
             );
+            // Jupiter Brain grants an additional action from inside that window, which sits below
+            // the check at the top of this function. Without repeating it here the flag would go
+            // untouched until some later turn ended, handing the extra action to whoever was
+            // active then. It returns before the fleet sweep for the same reason the Master Plan
+            // path above does: the turn has not ended, so the end-of-turn work is not due.
+            if self
+                .state
+                .transient_flags
+                .has(TransientFlags::ADDITIONAL_ACTION)
+            {
+                self.state
+                    .transient_flags
+                    .clear(TransientFlags::ADDITIONAL_ACTION);
+                self.emit("TURN_RETAINED");
+                return Ok(());
+            }
         }
         // 37.3 across the whole table, at the end of every turn.
         //

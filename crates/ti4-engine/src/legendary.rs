@@ -71,14 +71,14 @@ fn end_of_turn_offers(state: &GameState, player: &PlayerId) -> Vec<PlanetId> {
 
 /// Planets whose ability is used at the end of the holder's turn, with the label to offer.
 ///
-/// Six planets, seven rows: Mallice appears twice because the Nexus has two faces and the planet
+/// Seven planets, eight rows: Mallice appears twice because the Nexus has two faces and the planet
 /// on the locked tile is `lockedmallice`, so whichever face is up is the id in play.
 ///
 /// The corpus also carries `illusion` and `phantasm` -- alternate printings of Mirage, same stats
 /// and same ability with the name changed. They are not here because nothing places them: the
 /// Mirage frontier card places `mirage` and only `mirage` (`exploration.rs`). Sixteen legendary
 /// planets exist; nineteen records describe them.
-const END_OF_TURN: [(&str, &str); 7] = [
+const END_OF_TURN: [(&str, &str); 8] = [
     ("hopesend", "Imperial Arms Vault"),
     ("primor", "The Atrament"),
     ("mallice", "Exterrix Headquarters"),
@@ -86,7 +86,42 @@ const END_OF_TURN: [(&str, &str); 7] = [
     ("mirage", "Mirage Flight Academy"),
     ("emelpar", "The Acropolis"),
     ("mrte", "The Galactic Council"),
+    ("thundersedge", "Jupiter Brain"),
 ];
+
+/// The clause a legendary card resolves the moment its planet changes hands.
+///
+/// Only Jupiter Brain has one: "gain your breakthrough when you gain this card if you do not
+/// already have it". It matters when Thunder's Edge is *taken*, not when it is placed -- the
+/// placer claimed an expedition slice, and the first slice already granted them the breakthrough.
+/// An invader who never funded the expedition gets it here.
+///
+/// Called beside `technology::control_gained`, from every path that hands a planet over.
+pub fn control_gained(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+) {
+    if planet.as_str() != "thundersedge" {
+        return;
+    }
+    let Some(faction) = state.player(player).map(|seat| seat.faction.to_string()) else {
+        return;
+    };
+    if state
+        .player(player)
+        .is_some_and(|seat| seat.breakthrough.is_some())
+    {
+        return; // "if you do not already have it"
+    }
+    if let Some(breakthrough) = crate::thunders_edge::breakthrough_for(content, sources, &faction)
+        && let Some(seat) = state.player_mut(player)
+    {
+        seat.breakthrough = Some(breakthrough);
+    }
+}
 
 /// Offer this seat's end-of-turn legendary abilities, one at a time.
 ///
@@ -336,6 +371,8 @@ fn resolve_pass(
                 &system,
                 &target,
             );
+            // No `control_gained` here: Maxis Central Control excludes legendary planets, so
+            // Thunder's Edge can never arrive through this path.
             if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, &target)
             {
                 let mut resolving = crate::choice::Resolving {
@@ -780,6 +817,17 @@ fn resolve(
                 _ => {}
             }
         }
+        // "perform another action"
+        //
+        // The same flag Master Plan and the Minister of War set, read by `advance_turn` to keep
+        // the turn with this seat. The card exhausts, so it is one extra action a round, not a
+        // loop -- and the flag cannot stack, so exhausting it during an action Master Plan
+        // already granted does not bank a third.
+        "thundersedge" => {
+            state
+                .transient_flags
+                .set(ti4_model::state::TransientFlags::ADDITIONAL_ACTION);
+        }
         // "discard 1 secret objective to draw 1 secret objective"
         "mrte" => {
             let held: Vec<ti4_model::id::SecretObjectiveId> = state
@@ -986,6 +1034,45 @@ mod tests {
             placed.iter().any(|unit| unit.type_id.as_str() == "carrier2"),
             "the Carrier II the upgrade unlocks, not a base carrier: {placed:?}"
         );
+    }
+
+    #[test]
+    fn jupiter_brain_retains_the_turn_for_another_action() {
+        let (mut state, player) = holding("thundersedge", "117");
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "thundersedge",
+            "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+
+        assert!(
+            state
+                .transient_flags
+                .has(ti4_model::state::TransientFlags::ADDITIONAL_ACTION),
+            "the same flag Master Plan sets, which `advance_turn` reads to keep the turn here"
+        );
+    }
+
+    #[test]
+    fn jupiter_brain_hands_its_breakthrough_to_a_seat_that_takes_the_planet() {
+        let (mut state, player) = holding("thundersedge", "117");
+        let planet = PlanetId::new("thundersedge");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        assert!(
+            state.player(&player).unwrap().breakthrough.is_none(),
+            "the fixture starts without one"
+        );
+
+        control_gained(&mut state, content(), POK, &player, &planet);
+        let gained = state.player(&player).unwrap().breakthrough.clone();
+        assert!(
+            gained.is_some(),
+            "an invader who never funded the expedition still gains their breakthrough"
+        );
+
+        // "if you do not already have it" -- a second gain does not swap the one they hold.
+        control_gained(&mut state, content(), POK, &player, &planet);
+        assert_eq!(state.player(&player).unwrap().breakthrough, gained);
     }
 
     #[test]
