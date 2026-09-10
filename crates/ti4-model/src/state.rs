@@ -893,8 +893,11 @@ impl RerollEntry {
                 .iter()
                 .enumerate()
                 .filter(|(index, face)| {
-                    let adjusted =
-                        i64::from(**face) + self.deltas.get(index).map_or(0, |offset| i64::from(*offset));
+                    let adjusted = i64::from(**face)
+                        + self
+                            .deltas
+                            .get(index)
+                            .map_or(0, |offset| i64::from(*offset));
                     adjusted >= i64::from(on)
                 })
                 .count()
@@ -1654,7 +1657,9 @@ impl GameState {
             return count;
         }
         let granted = count.min(self.tokens_in_reinforcements(player));
-        if granted > 0 && let Some(seat) = self.player_mut(player) {
+        if granted > 0
+            && let Some(seat) = self.player_mut(player)
+        {
             seat.gain_token_uncapped(pool, granted);
         }
         granted
@@ -1920,13 +1925,8 @@ mod tests {
     #[test]
     fn a_faction_has_sixteen_command_tokens_and_no_more() {
         let player = PlayerId::new("a");
-        let mut state = GameState::new(
-            std::slice::from_ref(&player),
-            &[],
-            BTreeMap::new(),
-            None,
-            0,
-        );
+        let mut state =
+            GameState::new(std::slice::from_ref(&player), &[], BTreeMap::new(), None, 0);
 
         // 3 + 3 + 2 on the sheet at setup leaves eight in reinforcements.
         assert_eq!(state.tokens_in_reinforcements(&player), 8);

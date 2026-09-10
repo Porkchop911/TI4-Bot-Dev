@@ -198,6 +198,15 @@ pub struct FactionPlan {
     /// final slot so every decision's return carries it (Stage-2 gate experiments only). Zero
     /// keeps the reference reward exactly; see `Reward::clearance_weight`.
     pub clearance_weight: f64,
+    /// Moderate fleet-strength shaping (potential difference over fleet value in resources).
+    /// Zero keeps the reference reward exactly; see `Reward::fleet_weight`.
+    pub fleet_weight: f64,
+    /// Small per-technology shaping beyond the setup baseline. Zero keeps the reference reward
+    /// exactly; see `Reward::tech_weight`.
+    pub tech_weight: f64,
+    /// Terminal strategy-card monoculture penalty (above 80% of at least three plays). Zero keeps
+    /// the reference reward exactly; see `Reward::strategy_diversity_weight`.
+    pub strategy_diversity_weight: f64,
     /// Discount on the suffix-sum return (gamma). One is the undiscounted reference.
     pub discount: f64,
     /// Centre returns against their round's mean rather than one mean per head.
@@ -282,6 +291,9 @@ impl FactionPlan {
             start: None,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
+            fleet_weight: 0.0,
+            tech_weight: 0.0,
+            strategy_diversity_weight: 0.0,
             discount: 1.0,
             round_baseline: false,
             pipeline: false,
@@ -321,6 +333,9 @@ impl FactionPlan {
             start: None,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
+            fleet_weight: 0.0,
+            tech_weight: 0.0,
+            strategy_diversity_weight: 0.0,
             discount: 1.0,
             round_baseline: false,
             pipeline: false,
@@ -363,6 +378,9 @@ pub fn train_factions(content: &'static ContentStore, plan: &FactionPlan) -> Fac
     let mut reward = Reward::for_stage(plan.stage);
     reward.high_vp_bonus = plan.high_vp_bonus;
     reward.clearance_weight = plan.clearance_weight;
+    reward.fleet_weight = plan.fleet_weight;
+    reward.tech_weight = plan.tech_weight;
+    reward.strategy_diversity_weight = plan.strategy_diversity_weight;
     reward.discount = plan.discount;
     reward.round_baseline = plan.round_baseline;
     if let Some(bonus) = plan.r1_bonus {

@@ -224,7 +224,14 @@ pub fn movable_into(
 ) -> Vec<Movable> {
     let types = catalogue(content, sources);
     let board = Board::for_player(state, content, sources, player);
-    let mut rules = MovementRules::new(galaxy, content, sources, active.as_str(), board);
+    let mut rules = MovementRules::with_laws(
+        galaxy,
+        content,
+        sources,
+        active.as_str(),
+        board,
+        Some(state),
+    );
     crate::action_cards::apply_movement_effects(&mut rules, state, player);
 
     let mut found = Vec::new();
@@ -389,12 +396,13 @@ pub fn preview_moves(
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let route_exits_rift = origin.is_some_and(|origin| {
-            let mut rules = MovementRules::new(
+            let mut rules = MovementRules::with_laws(
                 galaxy,
                 content,
                 sources,
                 active.as_str(),
                 Board::for_player(state, content, sources, player),
+                Some(state),
             );
             crate::action_cards::apply_movement_effects(&mut rules, state, player);
             let path = rules.path_from(

@@ -582,9 +582,8 @@ impl Galaxy {
             self.wormholes_all_linked && kinds.iter().any(|k| LINKED_KINDS.contains(k));
         // Lost Star Chart, while its tactical action is in flight: a system that carries both
         // an alpha and a beta wormhole links to every other system that does.
-        let star_links = self.wormhole_star_links
-            && kinds.contains("ALPHA")
-            && kinds.contains("BETA");
+        let star_links =
+            self.wormhole_star_links && kinds.contains("ALPHA") && kinds.contains("BETA");
 
         // Every system that has a wormhole from either source. A token can put the first wormhole
         // on a tile that has none printed, so this cannot iterate `self.wormholes` alone.

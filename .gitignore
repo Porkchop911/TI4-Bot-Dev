@@ -60,3 +60,10 @@ fixtures/legacy_entropy/*
 
 # Local git bundles taken before handing the repo to another agent.
 .backup/
+
+# Audit worktree build and artifact directories.
+/target-audit/
+/target-cuda-audit/
+/checkpoints/
+/dryrun-control/
+/dryrun-cuda-gate/

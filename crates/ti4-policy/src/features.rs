@@ -2085,6 +2085,29 @@ fn structured_features(
         add_system_features(seen, &option.id, player, context, "target", features);
     }
 
+    // Structure placement carries its system in the option id (`{unit}|{system}|{planet}`, from
+    // `strategy_cards::structure_options`) and sets no `system` payload, so it reached none of the
+    // system facts below and no objective gain at all. Improve Infrastructure -- structures on 3
+    // planets *outside* home -- is decided entirely by which planet is picked here, which is the
+    // one thing the policy could not see. Reuses the existing `production` prefix.
+    if kind == "build"
+        && let Some((unit, system, planet)) = split_structure_option(&option.id)
+        && ti4_content::units::catalogue(seen.content(), seen.sources())
+            .get(unit)
+            .is_some_and(ti4_content::units::UnitType::is_structure)
+    {
+        add_objective_gain(
+            seen,
+            player,
+            "production",
+            &ti4_engine::objectives::Imagined {
+                structures: std::slice::from_ref(&(system.to_owned(), planet.to_owned())),
+                ..ti4_engine::objectives::Imagined::default()
+            },
+            features,
+        );
+    }
+
     if let Some(system) = payload_string(option, "system") {
         let prefix = match kind {
             "produce" | "build" => "production",
@@ -2349,6 +2372,21 @@ fn add_system_features(
         return;
     }
     let system = seen.system(&SystemId::new(system_id));
+    let implicated = seen.objectives_implicating_system(player, &SystemId::new(system_id));
+    if !implicated.is_empty() {
+        add_named(
+            features,
+            format_args!("{prefix}:revealed-objective-implicated"),
+            count_value(implicated.len()),
+        );
+        for objective in implicated {
+            add_named(
+                features,
+                format_args!("{prefix}:implicated-by-objective:{objective}"),
+                1.0,
+            );
+        }
+    }
     // The system record already lists its planets, so this reads them directly instead of
     // scanning the whole planet corpus for a matching `tileId` -- a call measured at 2,327 ns,
     // made one to three times for every option of every decision. The two agree across all 231
@@ -2593,40 +2631,79 @@ fn add_system_features(
         .filter(|planet| controls.get(**planet) != Some(player))
         .map(|planet| PlanetId::new(*planet))
         .collect();
-    if !uncontrolled.is_empty() {
-        let current = seen.revealed_objective_progress(player);
-        let gaining = seen.revealed_objective_progress_gaining(player, &uncontrolled);
-        let ratio =
-            |card: &ti4_engine::objectives::CardProgress| (card.have / card.threshold).min(1.0);
-        let mut progress_gain = 0.0;
-        let mut newly_satisfied = 0usize;
-        for after in &gaining {
-            let before_ratio = current
-                .iter()
-                .find(|card| card.alias == after.alias)
-                .map_or(0.0, ratio);
-            progress_gain += (ratio(after) - before_ratio).max(0.0);
-            let was_satisfied = current
-                .iter()
-                .any(|card| card.alias == after.alias && card.satisfied);
-            if after.satisfied && !was_satisfied {
-                newly_satisfied += 1;
-            }
+    // The target system itself, as imagined unit presence. Without it this block ran only when the
+    // option would take a planet, so an activation into an empty system -- the whole of Explore
+    // Deep Space, and most of Populate the Outer Rim and Make History -- was skipped by the guard
+    // and carried no gain at all. Presence is one generic ship: what an activation can honestly
+    // promise without predicting which units arrive.
+    let imagined_systems = [system_id.to_owned()];
+    if !uncontrolled.is_empty() || !system_id.is_empty() {
+        add_objective_gain(
+            seen,
+            player,
+            prefix,
+            &ti4_engine::objectives::Imagined {
+                planets: &uncontrolled,
+                systems: &imagined_systems,
+                ..ti4_engine::objectives::Imagined::default()
+            },
+            features,
+        );
+    }
+}
+
+/// `{unit}|{system}|{planet}`, the id `strategy_cards::structure_options` builds.
+fn split_structure_option(id: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = id.split('|');
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(unit), Some(system), Some(planet), None) => Some((unit, system, planet)),
+        _ => None,
+    }
+}
+
+/// How much closer to its revealed objectives this option would leave the seat.
+///
+/// Differences the engine's own progress against the progress it would report after `imagined`,
+/// so the number is the requirement functions' answer rather than a reimplementation of them.
+/// Summed over cards and clipped at each card's threshold, so overshoot is not paid for twice.
+fn add_objective_gain(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    prefix: &str,
+    imagined: &ti4_engine::objectives::Imagined<'_>,
+    features: &mut FeatureVector,
+) {
+    let current = seen.revealed_objective_progress(player);
+    let gaining = seen.revealed_objective_progress_imagining(player, imagined);
+    let ratio = |card: &ti4_engine::objectives::CardProgress| (card.have / card.threshold).min(1.0);
+    let mut progress_gain = 0.0;
+    let mut newly_satisfied = 0usize;
+    for after in &gaining {
+        let before_ratio = current
+            .iter()
+            .find(|card| card.alias == after.alias)
+            .map_or(0.0, ratio);
+        progress_gain += (ratio(after) - before_ratio).max(0.0);
+        let was_satisfied = current
+            .iter()
+            .any(|card| card.alias == after.alias && card.satisfied);
+        if after.satisfied && !was_satisfied {
+            newly_satisfied += 1;
         }
-        if progress_gain > 0.0 {
-            add_named(
-                features,
-                format_args!("{prefix}:objective-progress-gain"),
-                progress_gain,
-            );
-        }
-        if newly_satisfied > 0 {
-            add_named(
-                features,
-                format_args!("{prefix}:objective-newly-satisfied"),
-                count_value(newly_satisfied),
-            );
-        }
+    }
+    if progress_gain > 0.0 {
+        add_named(
+            features,
+            format_args!("{prefix}:objective-progress-gain"),
+            progress_gain,
+        );
+    }
+    if newly_satisfied > 0 {
+        add_named(
+            features,
+            format_args!("{prefix}:objective-newly-satisfied"),
+            count_value(newly_satisfied),
+        );
     }
 }
 
@@ -5296,6 +5373,114 @@ mod tests {
             "an uncontrolled planet that counts towards a revealed objective must show a gain: \
              {:?}",
             names_of(&features)
+        );
+    }
+
+    #[test]
+    fn activating_an_empty_system_shows_a_gain_toward_explore_deep_space() {
+        // The case the whole counterfactual missed. `deep_space` ("units in 3 systems that do not
+        // contain planets") is counted in unit *presence*, so a planet-only counterfactual read
+        // the same board on both sides and cancelled; worse, the caller's guard only ran the block
+        // when the option would take a planet, and an empty system offers none. The card was
+        // scored 0 times in 660 exposures across two independent measurements.
+        let content = ti4_content::ContentStore::embedded();
+        let target_system = "46".to_owned(); // "Empty System": no planets, not an anomaly.
+        assert!(
+            ti4_content::galaxy::planets_in(content, &target_system, POK).is_empty(),
+            "tile 46 must have no planets, or this tests nothing"
+        );
+        let hub = ti4_engine::fixtures::hub_with_outer(&target_system);
+        let a = PlayerId::new("a");
+
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        state.revealed_objectives = vec![ti4_model::id::ObjectiveId::new("deep_space")];
+
+        let option = ChoiceOption::labelled(
+            &target_system,
+            "activate",
+            format!("activate {target_system}"),
+        );
+        let choice = Choice::new(a.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        let features = explicit_option_features(&seen, &choice, &option, &a, &[]);
+
+        assert!(
+            value_of(&features, "target:objective-progress-gain").is_some_and(|gain| gain > 0.0),
+            "activating a planetless system must show a gain toward a revealed Explore Deep \
+             Space, even though the option takes no planet: {:?}",
+            names_of(&features)
+        );
+    }
+
+    #[test]
+    fn an_empty_system_shows_no_gain_when_no_objective_wants_one() {
+        // The other half: presence must not manufacture a gain on its own. Same activation, same
+        // empty tile, an objective it cannot advance -- the feature must be absent, or every
+        // activation would look productive and the signal above would mean nothing.
+        let content = ti4_content::ContentStore::embedded();
+        let target_system = "46".to_owned();
+        let hub = ti4_engine::fixtures::hub_with_outer(&target_system);
+        let a = PlayerId::new("a");
+
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        // Counted in planets controlled, which an empty system can never supply.
+        state.revealed_objectives = vec![ti4_model::id::ObjectiveId::new("expand_borders")];
+
+        let option = ChoiceOption::labelled(
+            &target_system,
+            "activate",
+            format!("activate {target_system}"),
+        );
+        let choice = Choice::new(a.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+        let features = explicit_option_features(&seen, &choice, &option, &a, &[]);
+
+        assert!(
+            value_of(&features, "target:objective-progress-gain").is_none(),
+            "an empty system advances no planet-counting objective and must show no gain: {:?}",
+            names_of(&features)
+        );
+    }
+
+    #[test]
+    fn revealed_map_objectives_mark_each_implicated_candidate_system() {
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::hub_with_centre(ti4_engine::seating::MECATOL);
+        let player = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        state.revealed_objectives = vec![ti4_model::id::ObjectiveId::new("intimidate")];
+        let target = hub.outer[0].clone();
+        let option = ChoiceOption::labelled(&target, "activate", format!("activate {target}"));
+        let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+
+        let features = explicit_option_features(&seen, &choice, &option, &player, &[]);
+
+        assert_eq!(
+            value_of(&features, "target:revealed-objective-implicated"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&features, "target:implicated-by-objective:intimidate"),
+            Some(1.0)
         );
     }
 

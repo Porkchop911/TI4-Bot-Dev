@@ -6,7 +6,7 @@
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{PlanetId, PlayerId, RelicId, SystemId};
+use ti4_model::id::{PlanetId, PlayerId, RelicId, SystemId, TechnologyId};
 use ti4_model::state::GameState;
 
 use crate::decision_context::{DecisionContext, DecisionSource};
@@ -33,20 +33,75 @@ pub enum Explored {
     Discarded { card: String },
 }
 
+/// Every exploration deck a planet could be explored into, in the planet's own printed trait
+/// order (35.2b).
+///
+/// Some Thunder's Edge planets (Lazul Rex, Lesab, and others) print two traits. `galaxy::Planet`
+/// already warns about this shape at its own `planet_type`: "a dual-trait planet answers to both
+/// of its traits, and picking the first would drop one of them." [`trait_of`] used to do exactly
+/// that -- `find_map` over the planet's traits stopped at the first one with a deck, so Lazul Rex
+/// (INDUSTRIAL, CULTURAL) always explored INDUSTRIAL and its CULTURAL half could never be
+/// reached. This returns every matching deck so a caller with a decider can ask which.
+#[must_use]
+pub fn traits_of(content: &ContentStore, sources: SourceSet, planet: &PlanetId) -> Vec<String> {
+    let catalogue = ti4_content::galaxy::all_planets(content, sources);
+    let Some(record) = catalogue.get(planet.as_str()) else {
+        return Vec::new();
+    };
+    record
+        .planet_types()
+        .into_iter()
+        .filter_map(|kind| {
+            let trait_name = kind.to_ascii_uppercase();
+            EXPLORATION_TRAITS
+                .iter()
+                .find(|known| **known == trait_name && **known != FRONTIER)
+                .map(|known| (*known).to_owned())
+        })
+        .collect()
+}
+
 /// The deck a planet explores into, or `None` if it cannot be explored (35.2b).
+///
+/// For a planet with more than one trait this reports only the first — callers that can ask a
+/// player which deck to use should call [`traits_of`] (or [`choose_deck`]) instead; keeping this
+/// unchanged preserves every existing single-trait caller.
 #[must_use]
 pub fn trait_of(content: &ContentStore, sources: SourceSet, planet: &PlanetId) -> Option<String> {
-    let catalogue = ti4_content::galaxy::all_planets(content, sources);
-    let record = catalogue.get(planet.as_str())?;
-    // A planet may carry more than one trait (Thunder's Edge has six such); it explores into the
-    // first of them that is an exploration deck.
-    record.planet_types().into_iter().find_map(|kind| {
-        let trait_name = kind.to_ascii_uppercase();
-        EXPLORATION_TRAITS
-            .iter()
-            .find(|known| **known == trait_name && **known != FRONTIER)
-            .map(|known| (*known).to_owned())
-    })
+    traits_of(content, sources, planet).into_iter().next()
+}
+
+/// The deck this player explores `planet` into, asking when more than one trait qualifies.
+///
+/// A dual-trait planet is the player's choice, not the engine's: without asking, the planet
+/// would always explore into whichever trait happens to sort first among its own printed traits,
+/// silently dropping the deck a player might have preferred.
+pub fn choose_deck(
+    ctx: &mut crate::choice::Resolving<'_>,
+    state: &GameState,
+    player: &PlayerId,
+    planet: &PlanetId,
+) -> Option<String> {
+    let mut traits = traits_of(ctx.content, ctx.sources, planet);
+    match traits.len() {
+        0 => None,
+        1 => traits.pop(),
+        _ => {
+            let options: Vec<(&str, &str)> = traits
+                .iter()
+                .map(|trait_name| (trait_name.as_str(), trait_name.as_str()))
+                .collect();
+            ask(
+                ctx,
+                state,
+                player,
+                "exploration",
+                "choose which deck to explore this planet into",
+                &options,
+            )
+            .or_else(|| traits.into_iter().next())
+        }
+    }
 }
 
 /// Draw the top card of one exploration deck.
@@ -178,14 +233,17 @@ fn place_on_planet(
 
 /// "If you have at least 1 mech on this planet, or if you remove 1 infantry from this planet."
 ///
-/// A mech pays by being there; infantry pays by dying. A player with neither cannot resolve the
-/// card at all, which is the card working rather than a gap.
+/// A mech satisfies the condition merely by being there. Infantry satisfies it only when the
+/// player explicitly chooses to remove one; declining the sacrifice leaves the reward unresolved.
+/// A player with neither cannot resolve the card at all.
 fn pay_with_mech_or_infantry(
+    ctx: &mut crate::choice::Resolving<'_>,
     state: &mut GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
     planet: &PlanetId,
+    card: &str,
 ) -> bool {
     let Some(system) = system_of(state, planet) else {
         return false;
@@ -216,17 +274,75 @@ fn pay_with_mech_or_infantry(
     let Some(index) = infantry else {
         return false;
     };
+    let chosen = ask(
+        ctx,
+        state,
+        player,
+        card,
+        "remove 1 infantry from this planet to resolve the exploration card",
+        &[
+            ("remove_infantry", "remove 1 infantry and gain the reward"),
+            ("decline", "do not remove an infantry"),
+        ],
+    );
+    if chosen.as_deref() != Some("remove_infantry") {
+        return false;
+    }
     if let Some(held) = state.system_mut(&system).planet_units.get_mut(planet) {
         held.remove(index);
     }
     true
 }
 
+/// Every technology Enigmatic Device could grant right now: not already held, and -- 90.11 --
+/// belonging to this player's own faction if it belongs to any.
+///
+/// Mirrors `relics::grant_chosen_technology`'s own filter (colour narrowing aside, which neither
+/// exploration card uses): Enigmatic Device deliberately does not route through `can_research`,
+/// because its price is already the price and a prerequisite check would charge for one twice.
+/// Sorted, not corpus order, for the same reason every other option list here is (F-M08-019-1).
+fn enigmatic_device_technologies(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<TechnologyId> {
+    let held: std::collections::BTreeSet<String> = state
+        .player(player)
+        .map(|seat| {
+            seat.technologies
+                .iter()
+                .map(|alias| alias.as_str().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let faction = state.player(player).map(|seat| seat.faction.to_string());
+    let mut technologies: Vec<TechnologyId> = content
+        .from_sources(ContentType::Technologies, sources)
+        .filter(|record| {
+            record
+                .text("faction")
+                .is_none_or(|owner| faction.as_deref().is_some_and(|mine| mine == owner))
+        })
+        .filter_map(|record| record.text("alias"))
+        .filter(|alias| !held.contains(*alias))
+        .map(TechnologyId::new)
+        .collect();
+    technologies.sort();
+    technologies
+}
+
 /// Component actions from exploration cards held faceup in the play area.
 ///
-/// Only the two Enigmatic Device cards print one. Offered on the same 22.3 terms as a relic action:
-/// withheld when its six resources cannot be paid, because an action that cannot fully resolve is
-/// never offered.
+/// Only the two Enigmatic Device cards print one. Offered on the same 22.3 terms as a relic
+/// action: withheld when its six resources cannot be paid, because an action that cannot fully
+/// resolve is never offered.
+///
+/// One option per (card, technology) pair, not one option per card. Before this, the option was
+/// just "spend 6 resources to research a technology" -- a decision to pay, blind to which
+/// technology would follow, with a second and entirely separate decision only after the resources
+/// were already gone. A policy could not weigh the technology against its price because the price
+/// was the only thing either decision ever showed it.
 #[must_use]
 pub fn available_actions(
     state: &GameState,
@@ -237,24 +353,32 @@ pub fn available_actions(
     let Some(seat) = state.player(player) else {
         return Vec::new();
     };
+    if crate::production::available(
+        state,
+        content,
+        sources,
+        player,
+        crate::production::Spend::Resources,
+    ) < ENIGMATIC_DEVICE_COST
+    {
+        return Vec::new();
+    }
+    let technologies = enigmatic_device_technologies(state, content, sources, player);
     seat.exploration_cards
         .iter()
         .filter(|card| matches!(card.as_str(), "ed1" | "ed2"))
-        .filter(|_| {
-            crate::production::available(
-                state,
-                content,
-                sources,
-                player,
-                crate::production::Spend::Resources,
-            ) >= ENIGMATIC_DEVICE_COST
-        })
-        .map(|card| {
-            crate::choice::ChoiceOption::labelled(
-                format!("{PLAY_AREA_PREFIX}{card}"),
-                crate::relics::ACTION_KIND,
-                "spend 6 resources to research a technology".to_owned(),
-            )
+        .flat_map(|card| {
+            technologies.iter().map(move |tech| {
+                crate::choice::ChoiceOption::labelled(
+                    format!("{PLAY_AREA_PREFIX}{card}:{tech}"),
+                    crate::relics::ACTION_KIND,
+                    format!(
+                        "spend 6 resources to research {}",
+                        crate::technology::name(content, tech)
+                    ),
+                )
+                .with("technology", tech.to_string())
+            })
         })
         .collect()
 }
@@ -265,11 +389,14 @@ pub fn perform_action(
     content: &ContentStore,
     sources: SourceSet,
     table: &mut crate::choice::Table,
-    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    _galaxy: Option<&ti4_content::galaxy::Galaxy>,
     player: &PlayerId,
     option: &crate::choice::ChoiceOption,
 ) -> bool {
-    let Some(card) = option.id.strip_prefix(PLAY_AREA_PREFIX) else {
+    let Some(rest) = option.id.strip_prefix(PLAY_AREA_PREFIX) else {
+        return false;
+    };
+    let Some((card, technology)) = rest.split_once(':') else {
         return false;
     };
     if !state
@@ -278,9 +405,9 @@ pub fn perform_action(
     {
         return false;
     }
-    // Paid before the question, as the relic is: 22.3 does not offer an action that cannot fully
-    // resolve, and asking which technology before knowing it can be paid for spends a decision on
-    // nothing.
+    // Paid after the technology is already chosen, since the option now names both: 22.3 does
+    // not offer an action that cannot fully resolve, and this pays for exactly what was picked
+    // rather than for an unspecified one.
     if !crate::production::pay(
         state,
         content,
@@ -299,9 +426,8 @@ pub fn perform_action(
     {
         seat.exploration_cards.remove(at); // purged
     }
-    crate::relics::grant_chosen_technology(
-        state, content, sources, table, galaxy, player, None, card,
-    )
+    crate::technology::grant(state, player, &TechnologyId::new(technology));
+    true
 }
 
 /// The Enigmatic Device's price, on the relic and on both exploration cards.
@@ -615,7 +741,7 @@ fn resolve_instant(
             let Some(planet) = planet else {
                 return true;
             };
-            if pay_with_mech_or_infantry(state, content, sources, player, planet)
+            if pay_with_mech_or_infantry(ctx, state, content, sources, player, planet, card)
                 && let Some(seat) = state.player_mut(player)
             {
                 seat.trade_goods += 1;
@@ -626,7 +752,7 @@ fn resolve_instant(
             let Some(planet) = planet else {
                 return true;
             };
-            if pay_with_mech_or_infantry(state, content, sources, player, planet) {
+            if pay_with_mech_or_infantry(ctx, state, content, sources, player, planet, card) {
                 state.exhausted_planets.remove(planet);
             }
             return true;
@@ -635,7 +761,7 @@ fn resolve_instant(
             let Some(planet) = planet else {
                 return true;
             };
-            if pay_with_mech_or_infantry(state, content, sources, player, planet) {
+            if pay_with_mech_or_infantry(ctx, state, content, sources, player, planet, card) {
                 state.gain_token(player, ti4_model::state::TokenPool::Strategic, 1);
             }
             return true;
@@ -1030,6 +1156,52 @@ mod tests {
         assert!(traited > 0 && untraited > 0, "the corpus has both");
     }
 
+    /// `traits_of` reports every deck a dual-trait planet could explore into, in the planet's own
+    /// printed order -- not just the first one, which is what `trait_of` still gives callers who
+    /// have no decider to ask.
+    #[test]
+    fn a_dual_trait_planet_reports_both_of_its_decks() {
+        let content = ContentStore::embedded();
+        let planet = PlanetId::new("lazulrex");
+        assert_eq!(
+            traits_of(content, ti4_model::content_types::FULL, &planet),
+            vec!["INDUSTRIAL".to_owned(), "CULTURAL".to_owned()]
+        );
+        assert_eq!(
+            trait_of(content, ti4_model::content_types::FULL, &planet).as_deref(),
+            Some("INDUSTRIAL"),
+            "the single-deck lookup still reports only the first, for callers with no decider"
+        );
+    }
+
+    /// When more than one deck qualifies, `choose_deck` asks and honors the answer rather than
+    /// silently taking the planet's first printed trait.
+    #[test]
+    fn choose_deck_asks_when_a_planet_has_more_than_one_trait() {
+        let planet = PlanetId::new("lazulrex");
+        let state = game(&["a"]);
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                "CULTURAL",
+            ])));
+        let mut ctx = crate::choice::Resolving {
+            content: ContentStore::embedded(),
+            sources: ti4_model::content_types::FULL,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+
+        assert_eq!(
+            choose_deck(&mut ctx, &state, &player(), &planet).as_deref(),
+            Some("CULTURAL"),
+            "the answer is honored, not the printed order"
+        );
+    }
+
     #[test]
     fn drawing_takes_from_the_top_and_empties() {
         let mut state = game(&["a"]);
@@ -1265,7 +1437,9 @@ mod tests {
         );
     }
 
-    /// An Enigmatic Device explored goes to the play area and is offered as an action there.
+    /// An Enigmatic Device explored goes to the play area and is offered as an action there --
+    /// one option per technology it could grant, each already carrying its price, not a single
+    /// "pay 6, then find out what you got" option.
     #[test]
     fn an_enigmatic_device_becomes_a_component_action() {
         let (mut state, planet) = holder(0, 0);
@@ -1285,7 +1459,18 @@ mod tests {
             seat.trade_goods = 6;
         }
         let offered = available_actions(&state, ContentStore::embedded(), POK, &player());
-        assert_eq!(offered.len(), 1, "and a seat that can pay is");
+        assert!(
+            offered.len() > 1,
+            "one option per unheld technology, not one option for an unspecified one: {}",
+            offered.len()
+        );
+        let chosen = &offered[0];
+        let wanted = chosen
+            .payload
+            .get("technology")
+            .and_then(serde_json::Value::as_str)
+            .expect("each option names the technology it pays for")
+            .to_owned();
 
         let mut table = crate::choice::Table::with_default(Box::new(crate::choice::FirstOption));
         let before = state.player(&player()).unwrap().technologies.len();
@@ -1305,12 +1490,20 @@ mod tests {
             &mut table,
             None,
             &player(),
-            &offered[0],
+            chosen,
         ));
         assert_eq!(
             state.player(&player()).unwrap().technologies.len(),
             before + 1,
             "a technology arrived"
+        );
+        assert!(
+            state
+                .player(&player())
+                .unwrap()
+                .technologies
+                .contains(&TechnologyId::new(&wanted)),
+            "and it is the exact technology the chosen option named"
         );
         assert_eq!(
             crate::production::available(
@@ -1482,7 +1675,13 @@ mod tests {
         // "If you have at least 1 mech on this planet, or if you remove 1 infantry from this
         // planet" — a player with neither gains nothing, which is the card working.
         let (mut state, planet) = holder(0, 0);
-        resolve_card(&mut state, &player(), Some(&planet), "cm1", &[]);
+        resolve_card(
+            &mut state,
+            &player(),
+            Some(&planet),
+            "cm1",
+            &["remove_infantry"],
+        );
         assert_eq!(
             state.player(&player()).unwrap().trade_goods,
             0,
@@ -1511,9 +1710,41 @@ mod tests {
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player(), 1);
         state.exhausted_planets.insert(planet.clone());
 
-        resolve_card(&mut state, &player(), Some(&planet), "exp1", &[]);
+        resolve_card(
+            &mut state,
+            &player(),
+            Some(&planet),
+            "exp1",
+            &["remove_infantry"],
+        );
 
         assert!(!state.exhausted_planets.contains(&planet));
+    }
+
+    #[test]
+    fn hazardous_exploration_never_removes_an_infantry_without_consent() {
+        for card in ["cm1", "exp1", "vfs1"] {
+            let (mut state, planet) = holder(0, 0);
+            let system = crate::fixtures::a_placed_planet().0;
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player(), 1);
+            state.exhausted_planets.insert(planet.clone());
+            let before_tokens = state.player(&player()).unwrap().strategic_tokens;
+
+            resolve_card(&mut state, &player(), Some(&planet), card, &["decline"]);
+
+            let units = state
+                .system_state(&system)
+                .planet_units
+                .get(&planet)
+                .map_or(0, Vec::len);
+            assert_eq!(units, 1, "{card} preserved the declined infantry");
+            assert_eq!(state.player(&player()).unwrap().trade_goods, 0);
+            assert_eq!(
+                state.player(&player()).unwrap().strategic_tokens,
+                before_tokens
+            );
+            assert!(state.exhausted_planets.contains(&planet));
+        }
     }
 
     #[test]

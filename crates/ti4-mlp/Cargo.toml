@@ -22,6 +22,9 @@ sha2.workspace = true
 
 [dev-dependencies]
 rayon.workspace = true
+# A dev-dependency, not a real one: only the `mlp_decide` example reads a table, and making the
+# trainer depend on the bridge would drag TTS wire formats into every training build.
+ti4-bridge.workspace = true
 ti4-sim.workspace = true
 ti4-training.workspace = true
 sha2.workspace = true

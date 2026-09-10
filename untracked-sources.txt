@@ -1,0 +1,15 @@
+crates/ti4-bridge/examples/bridge_selftest.rs
+crates/ti4-bridge/examples/import_capture.rs
+crates/ti4-bridge/src/client.rs
+crates/ti4-bridge/src/commands.rs
+crates/ti4-bridge/src/hexsummary.rs
+crates/ti4-bridge/src/mapping.rs
+crates/ti4-bridge/src/wire.rs
+crates/ti4-bridge/tests/hexsummary_golden.rs
+crates/ti4-bridge/tests/import_golden.rs
+crates/ti4-bridge/tests/wire_golden.rs
+crates/ti4-mlp/examples/mlp_decide.rs
+crates/ti4-mlp/examples/mlp_serve.rs
+crates/ti4-mlp/examples/mlp_simulate.rs
+crates/ti4-mlp/examples/tts_bot_game.rs
+crates/ti4-mlp/examples/vp_sources.rs

@@ -409,10 +409,10 @@ pub fn read_line(line: usize, text: &str) -> Result<Trajectory, CorpusError> {
         seed,
         rotation,
         faction,
-        temperature_milli,
         planets,
         systems,
         units_ok,
+        temperature_milli,
         actions,
         decisions,
     })
@@ -460,6 +460,22 @@ pub struct Demo {
     /// stops a position with forty discovered solutions outweighing one with a single solution, and
     /// a further `1 / trajectories` per faction restores balance across factions.
     pub weight: f64,
+}
+
+/// A replayed clean demonstration together with the return it actually achieved.
+///
+/// [`Demo`] is sufficient for ordinary behaviour cloning. Hybrid PPO also needs the recorded
+/// continuation return and the option-free state vector so it can imitate only where the current
+/// critic judges the clean continuation better than its own expectation. Neither belongs in the
+/// persistent trajectory corpus: both are reconstructed during deterministic replay.
+#[derive(Clone, Debug)]
+pub struct AdvantageDemo {
+    /// The demonstrated policy decision and its balancing weight.
+    pub demo: Demo,
+    /// The Stage-1 return-to-go from this exact position on the clean replayed line.
+    pub return_to_go: f64,
+    /// The option-free critic observation for this exact position.
+    pub critic: crate::CriticInput,
 }
 
 /// Weighted mean negative log-likelihood of the demonstrated actions.
@@ -515,6 +531,76 @@ pub fn clone_loss(
         return Err("the demonstration batch carries no weight".to_owned());
     }
     Ok(total.map(|sum| sum / mass))
+}
+
+/// Advantage-weighted cloning loss for the clean-replay auxiliary objective.
+///
+/// The weight is the positive, detached critic surprise of the demonstrated continuation,
+/// normalised by the batch standard deviation and clipped at two. A clean action whose recorded
+/// continuation is no better than the current critic expects therefore contributes no imitation
+/// gradient; this avoids treating every strategically indifferent action on a successful line as
+/// a command. The caller's trajectory/faction weight remains multiplicative, so the corpus
+/// balancing contract is preserved.
+///
+/// Returns `None` when no demonstrated continuation has positive advantage. That is a real signal
+/// to the hybrid updater to take its ordinary PPO step, not an error and not a zero tensor.
+///
+/// # Errors
+/// If a stored return is invalid, current critic inference fails, or the weighted policy loss
+/// cannot be formed.
+pub fn advantage_weighted_clone_loss(
+    actor: &crate::Actor,
+    demos: &[AdvantageDemo],
+) -> Result<Option<ti4_tensor::Tensor>, String> {
+    if demos.is_empty() {
+        return Ok(None);
+    }
+    let mut advantages = Vec::with_capacity(demos.len());
+    for item in demos {
+        if !item.return_to_go.is_finite() {
+            return Err(format!(
+                "an advantage demonstration has non-finite return {}",
+                item.return_to_go
+            ));
+        }
+        let value = actor
+            .value(&item.critic, item.demo.row)
+            .map_err(|error| format!("advantage critic inference failed: {error}"))?;
+        advantages.push((item.return_to_go - value).max(0.0));
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "demonstration batches are bounded"
+    )]
+    let mean = advantages.iter().sum::<f64>() / advantages.len() as f64;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "demonstration batches are bounded"
+    )]
+    let deviation = (advantages
+        .iter()
+        .map(|advantage| (advantage - mean).powi(2))
+        .sum::<f64>()
+        / advantages.len() as f64)
+        .sqrt();
+    // A constant positive advantage should still teach the common clean action. Its scale carries
+    // no ranking information, so divide by one rather than manufacture a giant weight from ε.
+    let normalizer = if deviation > 1e-8 { deviation } else { 1.0 };
+    let weighted: Vec<Demo> = demos
+        .iter()
+        .zip(advantages)
+        .filter_map(|(item, advantage)| {
+            let weight = item.demo.weight * (advantage / normalizer).clamp(0.0, 2.0);
+            (weight > 0.0).then(|| Demo {
+                row: item.demo.row,
+                head: item.demo.head,
+                options: item.demo.options.clone(),
+                chosen: item.demo.chosen,
+                weight,
+            })
+        })
+        .collect();
+    clone_loss(actor, &weighted)
 }
 
 #[cfg(test)]
@@ -684,6 +770,42 @@ mod tests {
             "equal scores must not prefer a position"
         );
         assert!(super::clone_loss(&actor, &[]).expect("loss").is_none());
+    }
+
+    #[test]
+    fn advantage_cloning_drops_a_clean_line_the_critic_already_expects() {
+        // The auxiliary is not ordinary BC: with a zero actor and zero demonstrated return,
+        // G - V(s) is zero, hence it must produce no policy gradient at all.
+        let actor = crate::Actor::zeros(crate::Width::W256, 64);
+        let demo = super::AdvantageDemo {
+            demo: super::Demo {
+                row: crate::FactionRow::of("sol").expect("roster"),
+                head: 0,
+                options: vec![
+                    crate::SparseOption {
+                        columns: vec![1],
+                        values: vec![1.0],
+                    },
+                    crate::SparseOption {
+                        columns: vec![2],
+                        values: vec![1.0],
+                    },
+                ],
+                chosen: 0,
+                weight: 1.0,
+            },
+            return_to_go: 0.0,
+            critic: crate::CriticInput::from_sparse(crate::SparseOption {
+                columns: vec![3],
+                values: vec![1.0],
+            }),
+        };
+        assert!(
+            super::advantage_weighted_clone_loss(&actor, &[demo])
+                .expect("loss")
+                .is_none(),
+            "a zero positive advantage must not secretly become plain cloning"
+        );
     }
 
     #[test]

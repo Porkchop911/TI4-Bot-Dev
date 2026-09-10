@@ -247,7 +247,7 @@ fn units_of(state: &GameState, player: &PlayerId) -> usize {
 /// Ground forces are counted wherever they are. Infantry being transported sit in the space area,
 /// not on a planet, and a seat that has loaded its infantry onto a carrier has not stopped having
 /// them.
-fn fleet_of(
+pub(crate) fn fleet_of(
     state: &GameState,
     player: &PlayerId,
     content: &ContentStore,

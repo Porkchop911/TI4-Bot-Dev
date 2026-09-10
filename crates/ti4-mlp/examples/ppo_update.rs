@@ -30,20 +30,26 @@
 
 use rayon::prelude::*;
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
 use ti4_content::ContentStore;
 use ti4_engine::Choice;
-use ti4_engine::choice::Decider;
+use ti4_engine::choice::{ChoiceOption, Decider, IllegalChoice, SeatObservation};
 use ti4_mlp::bundle::CriticMode;
+use ti4_mlp::positive_corpus::{AdvantageDemo, Demo, Trajectory, read_all};
 use ti4_mlp::ppo::{Batch, Settings, Step};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
 
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
 const TILE_SEED_OFFSET: u64 = 20_000_000;
+/// `build_positive_corpus`'s map convention. Corpus replay must reproduce that generator, not PPO.
+const CORPUS_TILE_SEED_OFFSET: u64 = 0;
+const DEMO_TEMPERATURES_MILLI: [u64; 4] = [1, 250, 500, 750];
 /// §6.3: "Each update is 16 game seeds × six rotations."
 const SEEDS_PER_UPDATE: u64 = 16;
 
@@ -83,6 +89,242 @@ fn argument(name: &str) -> Option<String> {
 fn refuse(reason: &str) -> ! {
     eprintln!("\nREFUSED: {reason}");
     std::process::exit(2);
+}
+
+/// Force a stored successful line while allowing the MLP recorder to rebuild its features.
+struct Replaying {
+    inner: Box<dyn Decider>,
+    script: Vec<String>,
+    at: usize,
+    forced: Rc<RefCell<Vec<usize>>>,
+    broken: Rc<RefCell<Option<String>>>,
+}
+
+impl Replaying {
+    fn answer(
+        &mut self,
+        choice: &Choice,
+        delegate: impl FnOnce(&mut Box<dyn Decider>) -> Result<ChoiceOption, IllegalChoice>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        if choice.options.len() < 2 {
+            return delegate(&mut self.inner);
+        }
+        let _ = delegate(&mut self.inner)?;
+        let Some(wanted) = self.script.get(self.at).cloned() else {
+            *self.broken.borrow_mut() = Some("replay script exhausted".to_owned());
+            return Err(IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: "replay script exhausted".to_owned(),
+            });
+        };
+        self.at += 1;
+        let Some(index) = choice.options.iter().position(|option| option.id == wanted) else {
+            *self.broken.borrow_mut() = Some(format!("{wanted:?} was not offered"));
+            return Err(IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: format!("recorded option {wanted:?} is not on offer"),
+            });
+        };
+        self.forced.borrow_mut().push(index);
+        Ok(choice.options[index].clone())
+    }
+}
+
+impl Decider for Replaying {
+    fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+        self.answer(choice, |inner| inner.choose(choice))
+    }
+
+    fn choose_seeing(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        self.answer(choice, |inner| inner.choose_seeing(choice, seen))
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a deterministic corpus replay needs its table"
+)]
+fn replay_advantage(
+    frozen: &Rc<ti4_mlp::Actor>,
+    trajectory: &Trajectory,
+    content: &'static ContentStore,
+    factions: &[FactionId],
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    pool: &Arc<ti4_sim::MapPool>,
+    reward: &ti4_training::reward::Reward,
+) -> Result<Vec<AdvantageDemo>, String> {
+    let handle: Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>> =
+        Rc::new(RefCell::new(None));
+    let forced = Rc::new(RefCell::new(Vec::new()));
+    let broken = Rc::new(RefCell::new(None));
+    let wanted_faction = trajectory.faction.clone();
+    let script = trajectory.decisions.clone();
+    let records_handle = Rc::clone(&handle);
+    let forced_handle = Rc::clone(&forced);
+    let broken_handle = Rc::clone(&broken);
+    let (_events, _setup, assignments, openings, _final) =
+        ti4_training::rollout::audit_game_with_deciders(
+            content,
+            factions,
+            DEFAULT,
+            trajectory.seed,
+            trajectory.rotation,
+            ti4_training::rollout::Horizon {
+                rounds: 1,
+                steps: 200_000,
+            },
+            &ti4_training::rollout::OpeningMap::PythonPool {
+                pool: Arc::clone(pool),
+                tile_seed_offset: CORPUS_TILE_SEED_OFFSET,
+            },
+            |seated, baselines| {
+                let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                for (index, (player, faction)) in seated.iter().enumerate() {
+                    let row = ti4_mlp::FactionRow::of(faction.as_str())
+                        .map_err(|error| format!("{player}: {error}"))?;
+                    let baseline = baselines
+                        .get(player)
+                        .copied()
+                        .ok_or_else(|| format!("{player}: no baseline"))?;
+                    let temperature = trajectory.temperature_milli as f64 / 1_000.0;
+                    let stream = trajectory
+                        .seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(index as u64)
+                        .wrapping_add(trajectory.temperature_milli);
+                    let bot =
+                        ti4_mlp::bot::MlpBot::sharing(frozen, vocabulary.clone(), row, stream)
+                            .at_temperature(temperature)
+                            .from_setup(baseline);
+                    if faction.as_str() == wanted_faction {
+                        let bot = bot.recording_ppo(CriticMode::Shared);
+                        *records_handle.borrow_mut() = Some(bot.ppo_records());
+                        let (decider, _) = bot.seat();
+                        deciders.insert(
+                            player.clone(),
+                            Box::new(Replaying {
+                                inner: decider,
+                                script: script.clone(),
+                                at: 0,
+                                forced: Rc::clone(&forced_handle),
+                                broken: Rc::clone(&broken_handle),
+                            }),
+                        );
+                    } else {
+                        let (decider, _) = bot.seat();
+                        deciders.insert(player.clone(), decider);
+                    }
+                }
+                Ok(deciders)
+            },
+        )?;
+    if let Some(reason) = broken.borrow().clone() {
+        return Err(format!("{} replay: {reason}", trajectory.faction));
+    }
+    let records = handle
+        .borrow_mut()
+        .take()
+        .ok_or_else(|| "replay recorded nothing".to_owned())?;
+    let target = assignments
+        .iter()
+        .find(|(_, faction)| faction.as_str() == wanted_faction)
+        .map(|(player, _)| player)
+        .ok_or_else(|| "replay target assignment missing".to_owned())?;
+    let opening = openings
+        .get(target)
+        .ok_or_else(|| "replay target opening missing".to_owned())?;
+    let recorded = records.borrow();
+    let returns = ti4_training::reward::returns(
+        &ti4_training::reward::Episode {
+            steps: recorded.iter().map(|record| record.progress).collect(),
+            final_progress: ti4_policy::progress::Progress {
+                planets_gained: i64::try_from(opening.planets_gained).unwrap_or(i64::MAX),
+                systems: i64::try_from(opening.systems).unwrap_or(i64::MAX),
+                units_gained: i64::try_from(opening.units_gained).unwrap_or(i64::MAX),
+                capacity_ships: i64::try_from(opening.capacity_ships).unwrap_or(i64::MAX),
+                infantry: i64::try_from(opening.infantry).unwrap_or(i64::MAX),
+                round_number: 1,
+                ..ti4_policy::progress::Progress::default()
+            },
+            cleared: opening.cleared(),
+            shortfall: opening.weighted_shortfall(1.0, 1.0),
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        },
+        reward,
+    );
+    let forced = forced.borrow();
+    if recorded.len() != forced.len() || recorded.len() != returns.len() {
+        return Err("replay record/target/return lengths disagree".to_owned());
+    }
+    let scale = 1.0 / recorded.len().max(1) as f64;
+    recorded
+        .iter()
+        .zip(forced.iter())
+        .zip(returns)
+        .map(|((record, chosen), return_to_go)| {
+            let critic = record
+                .step
+                .critic
+                .clone()
+                .ok_or_else(|| "shared replay omitted critic".to_owned())?;
+            Ok(AdvantageDemo {
+                demo: Demo {
+                    row: record.step.row,
+                    head: record.step.head,
+                    options: record.step.options.clone(),
+                    chosen: *chosen,
+                    weight: scale,
+                },
+                return_to_go,
+                critic,
+            })
+        })
+        .collect()
+}
+
+/// Policy drift on the exact visible decisions in the current clean replay slice.
+fn reference_drift(
+    reference: &ti4_mlp::Actor,
+    current: &ti4_mlp::Actor,
+    demos: &[AdvantageDemo],
+) -> Result<(f64, f64), String> {
+    if demos.is_empty() {
+        return Ok((0.0, 0.0));
+    }
+    let mut kl = 0.0;
+    let mut flips = 0usize;
+    tch::no_grad(|| -> Result<(), String> {
+        for item in demos {
+            let head = ti4_mlp::heads()
+                .get(item.demo.head)
+                .copied()
+                .ok_or_else(|| format!("demo head {} is out of range", item.demo.head))?;
+            let before = reference
+                .logits(&item.demo.options, head, item.demo.row)
+                .map_err(|error| format!("reference drift scoring failed: {error}"))?
+                .log_softmax(0, ti4_tensor::Kind::Float);
+            let after = current
+                .logits(&item.demo.options, head, item.demo.row)
+                .map_err(|error| format!("current drift scoring failed: {error}"))?
+                .log_softmax(0, ti4_tensor::Kind::Float);
+            kl += (before.exp() * (&before - &after))
+                .sum(ti4_tensor::Kind::Float)
+                .double_value(&[]);
+            flips += usize::from(
+                before.argmax(0, false).int64_value(&[]) != after.argmax(0, false).int64_value(&[]),
+            );
+        }
+        Ok(())
+    })?;
+    let count = demos.len() as f64;
+    Ok((kl / count, flips as f64 / count))
 }
 
 /// One self-play game, recorded as PPO steps with §6.1's shaped per-decision returns.
@@ -293,6 +535,7 @@ fn play_one(
             cleared: seat.episode.cleared,
             shortfall: seat.episode.shortfall,
             traded_goods: seat.episode.traded_goods,
+            strategy_card_plays: seat.episode.strategy_card_plays.clone(),
         };
         let per_decision = ti4_training::reward::returns(&episode, reward);
         if per_decision.len() != recorded.len() {
@@ -651,6 +894,30 @@ fn main() {
     let vocabulary = loaded.vocabulary;
     let mut actor = loaded.actor;
     let critic_mode = loaded.critic_mode;
+    let replay_actor = Rc::new(actor.inference_copy());
+    let demo_per_update: usize = argument("--demo-per-update").map_or(0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--demo-per-update expects an unsigned integer"))
+    });
+    let demo_corpus: BTreeMap<String, Vec<Trajectory>> =
+        argument("--demo-corpus").map_or_else(BTreeMap::new, |directory| {
+            let mut all = BTreeMap::new();
+            for faction in FACTIONS {
+                let path = std::path::Path::new(&directory).join(format!("{faction}.corpus"));
+                let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+                    refuse(&format!("reading {}: {error}", path.display()))
+                });
+                let parsed = read_all(&text).unwrap_or_else(|error| {
+                    refuse(&format!("parsing {}: {error}", path.display()))
+                });
+                all.extend(parsed);
+            }
+            all
+        });
+    if demo_per_update > 0 && demo_corpus.is_empty() {
+        refuse("--demo-per-update requires --demo-corpus");
+    }
 
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
@@ -746,6 +1013,34 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--seed-base expects an unsigned integer"))
     });
+    // NEGLECTED_SCORING_PLAN_2026-09-09 Stage 2 screen, isolated worktree only: an explicit,
+    // pre-classified seed sequence read one `u64` per line, `updates * SEEDS_PER_UPDATE` lines
+    // long. When present it replaces the sequential `seed_base + offset` range below with exactly
+    // these seeds, in file order -- everything else (rotation assignment, reward, observation,
+    // action set) is untouched, so this changes only which games get played, never the rules
+    // available inside one. Absent, behaviour is bit-identical to the unmodified trainer.
+    let curriculum_seeds: Option<Vec<u64>> = argument("--curriculum-seeds").map(|path| {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| refuse(&format!("reading {path}: {error}")));
+        let seeds: Vec<u64> = text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                line.parse()
+                    .unwrap_or_else(|_| refuse(&format!("{path}: {line:?} is not a u64")))
+            })
+            .collect();
+        let want = updates * SEEDS_PER_UPDATE as usize;
+        if seeds.len() != want {
+            refuse(&format!(
+                "{path}: {} seeds, expected updates({updates}) * SEEDS_PER_UPDATE({SEEDS_PER_UPDATE}) = {want}",
+                seeds.len()
+            ));
+        }
+        eprintln!("  curriculum  {path} ({} seeds)", seeds.len());
+        seeds
+    });
     // Sampling temperature for self-play. One knob for both acting and the recorded behaviour
     // probabilities -- `MlpBot` has a single `probabilities()` call -- so the PPO importance ratio
     // is computed against the same distribution the action was drawn from. Setting one and not the
@@ -809,11 +1104,26 @@ fn main() {
     reward.r1_shaping = weight("--r1-shaping", reward.r1_shaping);
     reward.clearance_weight = weight("--clearance-weight", reward.clearance_weight);
     reward.high_vp_bonus = weight("--high-vp-bonus", reward.high_vp_bonus);
+    // The three shapings the profile trainer already exposed. They live on the shared `Reward` and
+    // default to zero, so until now an MLP run silently trained the reference reward no matter what
+    // the surrounding experiment thought it was configuring.
+    reward.fleet_weight = weight("--fleet-weight", reward.fleet_weight);
+    reward.tech_weight = weight("--tech-weight", reward.tech_weight);
+    reward.strategy_diversity_weight = weight(
+        "--strategy-diversity-weight",
+        reward.strategy_diversity_weight,
+    );
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
+        // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
+        // a negative weight would read as off rather than as a reversed penalty.
+        (
+            "--strategy-diversity-weight",
+            reward.strategy_diversity_weight,
+        ),
     ] {
         if value < 0.0 {
             refuse(&format!(
@@ -831,7 +1141,7 @@ fn main() {
     println!("  critic mode {critic_mode:?}");
     if matches!(stage, ti4_training::reward::Stage::One) {
         println!(
-            "  potential   expansion {} | unit {} | conjunctive {} | clear bonus {}",
+            "  potential   planets+systems {} | capacity+infantry {} | conjunctive {} | clear bonus {}",
             reward.expansion_weight,
             reward.unit_weight,
             reward.conjunctive_weight,
@@ -846,6 +1156,10 @@ fn main() {
         println!(
             "  points      vp {} | objective {} | secret {}",
             reward.vp_weight, reward.objective_weight, reward.secret_weight
+        );
+        println!(
+            "  shaping     fleet {} | tech {} | strategy diversity {}",
+            reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
         );
     }
     println!(
@@ -866,6 +1180,11 @@ fn main() {
         settings.strategy_entropy,
         settings.movement_entropy
     );
+    if demo_per_update > 0 {
+        println!(
+            "  auxiliary   {demo_per_update} clean trajectories/update, advantage weighted, 10% gradient cap"
+        );
+    }
     // Recorded in the header because run-030's log did not name it, and the temperature is the
     // whole difference between that run and the one before it. A log that cannot say what it was
     // run at cannot be compared against another.
@@ -887,6 +1206,10 @@ fn main() {
 
     let players: Vec<PlayerId> = (0..FACTIONS.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let replay_factions: Vec<FactionId> = FACTIONS
+        .iter()
+        .map(|faction| FactionId::new(*faction))
         .collect();
 
     // F-M10-034-D3: **once**, for the whole run. Constructing this inside the loop discarded the
@@ -944,8 +1267,18 @@ fn main() {
         // each chunk carries an owned `Actor` copy: `tch::Tensor` is `Send` but not `Sync`, so the
         // actor cannot be borrowed across threads. Per-job copies would allocate 96 actors instead
         // of one per core.
-        let base = seed_base + SEEDS_PER_UPDATE * update as u64;
-        let jobs: Vec<(u64, usize)> = (base..base + SEEDS_PER_UPDATE)
+        let update_seeds: Vec<u64> = curriculum_seeds.as_ref().map_or_else(
+            || {
+                let base = seed_base + SEEDS_PER_UPDATE * update as u64;
+                (base..base + SEEDS_PER_UPDATE).collect()
+            },
+            |all| {
+                let start = update * SEEDS_PER_UPDATE as usize;
+                all[start..start + SEEDS_PER_UPDATE as usize].to_vec()
+            },
+        );
+        let jobs: Vec<(u64, usize)> = update_seeds
+            .into_iter()
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
         let workers = rayon::current_num_threads().max(1);
@@ -1019,6 +1352,72 @@ fn main() {
         }
 
         // ---- optimise ----
+        // Reconstruct a small, faction-balanced clean slice under the frozen source policy. The
+        // stored corpus contains action ids, not stale feature dumps; replay is what gives the
+        // auxiliary its exact state, return, and critic input.
+        let mut demonstrations = Vec::new();
+        if demo_per_update > 0 {
+            let buckets = FACTIONS.len() * DEMO_TEMPERATURES_MILLI.len();
+            if !demo_per_update.is_multiple_of(buckets) {
+                refuse(&format!(
+                    "--demo-per-update must be divisible by {buckets} to balance six factions and four temperatures"
+                ));
+            }
+            let each = demo_per_update / buckets;
+            for faction in FACTIONS {
+                let rows = demo_corpus
+                    .get(faction)
+                    .unwrap_or_else(|| refuse(&format!("demo corpus has no {faction} rows")));
+                for temperature in DEMO_TEMPERATURES_MILLI {
+                    let bucket: Vec<&Trajectory> = rows
+                        .iter()
+                        .filter(|row| row.temperature_milli == temperature)
+                        .collect();
+                    if bucket.len() < each {
+                        refuse(&format!(
+                            "demo corpus has {} {faction} trajectories at T={:.3}, needs {each}",
+                            bucket.len(),
+                            temperature as f64 / 1_000.0
+                        ));
+                    }
+                    for offset in 0..each {
+                        let stride = (bucket.len() / each).max(1);
+                        let index = (update.wrapping_mul(7_919) + offset * stride) % bucket.len();
+                        match replay_advantage(
+                            &replay_actor,
+                            bucket[index],
+                            content,
+                            &replay_factions,
+                            &vocabulary,
+                            &pool,
+                            &reward,
+                        ) {
+                            Ok(mut rows) => demonstrations.append(&mut rows),
+                            Err(error) => refuse(&format!(
+                                "replaying clean {faction} T={:.3} demo: {error}",
+                                temperature as f64 / 1_000.0
+                            )),
+                        }
+                    }
+                }
+            }
+            // One trajectory already carries one total unit of mass. Equalise the six faction
+            // masses after replay so a longer Hacan line cannot outweigh a shorter Letnev line.
+            let mut mass: BTreeMap<usize, f64> = BTreeMap::new();
+            for demo in &demonstrations {
+                *mass.entry(demo.demo.row.index()).or_default() += demo.demo.weight;
+            }
+            for demo in &mut demonstrations {
+                if let Some(total) = mass.get(&demo.demo.row.index())
+                    && *total > 0.0
+                {
+                    demo.demo.weight /= *total;
+                }
+            }
+            if demonstrations.is_empty() {
+                refuse("the requested clean demonstration slice replayed empty");
+            }
+        }
         let batch = Batch::freeze(steps, critic_mode)
             .unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
         if batch.steps().len() != seated_decisions {
@@ -1046,14 +1445,37 @@ fn main() {
             ..settings
         };
 
-        let stats = ti4_mlp::ppo::update(
-            &mut actor,
-            &batch,
-            critic_mode,
-            settings,
-            seed_base ^ update as u64,
-            &mut optimizer,
-        )
+        let stats = if demonstrations.is_empty() {
+            ti4_mlp::ppo::update(
+                &mut actor,
+                &batch,
+                critic_mode,
+                settings,
+                seed_base ^ update as u64,
+                &mut optimizer,
+            )
+        } else {
+            let batches = batch.len().div_ceil(settings.minibatch);
+            ti4_mlp::ppo::update_with_auxiliary(
+                &mut actor,
+                &batch,
+                critic_mode,
+                settings,
+                seed_base ^ update as u64,
+                &mut optimizer,
+                0.10,
+                |current, epoch, minibatch| {
+                    let width = 128usize;
+                    let start = ((epoch * batches + minibatch) * width) % demonstrations.len();
+                    let selected: Vec<_> = (0..width.min(demonstrations.len()))
+                        .map(|offset| {
+                            demonstrations[(start + offset) % demonstrations.len()].clone()
+                        })
+                        .collect();
+                    ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
+                },
+            )
+        }
         .unwrap_or_else(|error| refuse(&format!("update: {error}")));
         let optimise_time = optimised.elapsed();
 
@@ -1104,6 +1526,18 @@ fn main() {
         let done = update + 1;
         if cadence.due(done) || done == updates {
             report(done, &window, previous.as_ref(), reported_at);
+            if !demonstrations.is_empty() {
+                let (reference_kl, greedy_flip) = reference_drift(
+                    &replay_actor,
+                    &actor.inference_copy().to_device(ti4_tensor::Device::Cpu),
+                    &demonstrations,
+                )
+                .unwrap_or_else(|error| refuse(&format!("measuring reference drift: {error}")));
+                println!(
+                    "  reference   KL {reference_kl:.6}  greedy-action flips {:.2}%",
+                    greedy_flip * 100.0
+                );
+            }
             reported_at = done;
             let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
                 .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));

@@ -14,7 +14,9 @@ fn main() {
     let old = behavior::baseline_bounds();
     let metrics = behavior::batch_metrics(&batch);
 
-    println!("metric                          old lo       old hi   |   new lo       new hi   | now");
+    println!(
+        "metric                          old lo       old hi   |   new lo       new hi   | now"
+    );
     let mut moved = 0usize;
     for (name, (lo, hi)) in &old {
         let Some((new_lo, new_hi)) = behavior::recompute_bound(&batch, name) else {

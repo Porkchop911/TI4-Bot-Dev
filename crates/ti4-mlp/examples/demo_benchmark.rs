@@ -147,6 +147,10 @@ struct Scored {
     probability: f64,
     /// Its rank, 1 being the policy's own top choice.
     rank: usize,
+    /// KL(reference || policy) over this exact legal option set.
+    reference_kl: f64,
+    /// Whether the policy and reference disagree on the greedy option.
+    greedy_flip: bool,
 }
 
 /// Running totals for one head.
@@ -157,6 +161,8 @@ struct Tally {
     log_prob: f64,
     rank: usize,
     options: usize,
+    reference_kl: f64,
+    greedy_flips: usize,
 }
 
 impl Tally {
@@ -167,12 +173,14 @@ impl Tally {
         }
         let n = self.decisions as f64;
         println!(
-            "    {name:<12} {:>7}   {:>6.1}   {:>7.3}   {:>6.2}   {:>6.1}%",
+            "    {name:<12} {:>7}   {:>6.1}   {:>7.3}   {:>6.2}   {:>6.1}%   {:>8.5}   {:>6.2}%",
             self.decisions,
             self.options as f64 / n,
             -self.log_prob / n,
             self.rank as f64 / n,
-            self.top1 as f64 / n * 100.0
+            self.top1 as f64 / n * 100.0,
+            self.reference_kl / n,
+            self.greedy_flips as f64 / n * 100.0,
         );
     }
 }
@@ -202,6 +210,7 @@ fn score(
     table: &Table<'_>,
     replay_actor: &Rc<ti4_mlp::Actor>,
     scoring_actor: &ti4_mlp::Actor,
+    reference_actor: &ti4_mlp::Actor,
     trajectory: &Trajectory,
     opponents: Opponents,
 ) -> Result<Vec<Scored>, String> {
@@ -316,13 +325,30 @@ fn score(
         let probabilities = scoring_actor
             .probabilities(&step.options, head, step.row, 1.0)
             .map_err(|error| format!("scoring: {error}"))?;
+        let reference = reference_actor
+            .probabilities(&step.options, head, step.row, 1.0)
+            .map_err(|error| format!("reference scoring: {error}"))?;
         let mine = probabilities.get(*chosen).copied().unwrap_or(0.0);
         let rank = 1 + probabilities.iter().filter(|p| **p > mine).count();
+        let reference_kl = reference
+            .iter()
+            .zip(&probabilities)
+            .map(|(before, after)| before * (before.max(1e-12).ln() - after.max(1e-12).ln()))
+            .sum();
+        let argmax = |values: &[f64]| {
+            values
+                .iter()
+                .enumerate()
+                .max_by(|left, right| left.1.total_cmp(right.1))
+                .map_or(0, |(index, _)| index)
+        };
         out.push(Scored {
             head: (*head).to_owned(),
             options: step.options.len(),
             probability: mine,
             rank,
+            reference_kl,
+            greedy_flip: argmax(&reference) != argmax(&probabilities),
         });
     }
     Ok(out)
@@ -333,6 +359,8 @@ fn benchmark(
     directory: &str,
     table: &Table<'_>,
     actor: &ti4_mlp::Actor,
+    replay_actor: &ti4_mlp::Actor,
+    reference_actor: &ti4_mlp::Actor,
     per_corpus: usize,
     opponents: Opponents,
 ) {
@@ -369,15 +397,22 @@ fn benchmark(
     let per_worker = trajectories.len().div_ceil(workers).max(1);
     let harvest: Vec<(Vec<Scored>, usize)> = trajectories
         .chunks(per_worker)
-        .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
+        .map(|chunk| {
+            (
+                actor.inference_copy(),
+                replay_actor.inference_copy(),
+                reference_actor.inference_copy(),
+                chunk.to_vec(),
+            )
+        })
         .collect::<Vec<_>>()
         .into_par_iter()
-        .map(|(local, chunk)| {
-            let replay = Rc::new(local.inference_copy());
+        .map(|(local, replay, reference, chunk)| {
+            let replay = Rc::new(replay);
             let mut rows = Vec::new();
             let mut bad = 0usize;
             for trajectory in chunk {
-                match score(table, &replay, &local, &trajectory, opponents) {
+                match score(table, &replay, &local, &reference, &trajectory, opponents) {
                     Ok(mut scored) => rows.append(&mut scored),
                     Err(_) => bad += 1,
                 }
@@ -401,12 +436,16 @@ fn benchmark(
                 tally.log_prob += row.probability.max(1e-12).ln();
                 tally.rank += row.rank;
                 tally.options += row.options;
+                tally.reference_kl += row.reference_kl;
+                tally.greedy_flips += usize::from(row.greedy_flip);
             }
             all.decisions += 1;
             all.top1 += usize::from(row.rank == 1);
             all.log_prob += row.probability.max(1e-12).ln();
             all.rank += row.rank;
             all.options += row.options;
+            all.reference_kl += row.reference_kl;
+            all.greedy_flips += usize::from(row.greedy_flip);
         }
     }
 
@@ -421,7 +460,9 @@ fn benchmark(
         println!("    WARNING: the scored rows are a remnant, not a sample. Do not read them.");
     }
     println!();
-    println!("    head         decisions   options        CE     rank    top-1");
+    println!(
+        "    head         decisions   options        CE     rank    top-1     ref-KL    flips"
+    );
     let mut rows: Vec<(&String, &Tally)> = by_head.iter().collect();
     rows.sort_by(|a, b| b.1.decisions.cmp(&a.1.decisions));
     for (head, tally) in rows {
@@ -432,6 +473,9 @@ fn benchmark(
 
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| refuse("--bundle is required"));
+    let replay_bundle_path = argument("--replay-bundle").unwrap_or_else(|| bundle_path.clone());
+    let reference_bundle_path =
+        argument("--reference-bundle").unwrap_or_else(|| replay_bundle_path.clone());
     let positive = argument("--corpus").unwrap_or_else(|| "out/corpus/positive".to_owned());
     let rescued = argument("--rescued").unwrap_or_else(|| "out/corpus/rescued".to_owned());
     let per_corpus: usize = number("--per-corpus", 400);
@@ -441,8 +485,14 @@ fn main() {
     let content = ContentStore::embedded();
     let loaded = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
-    let vocabulary = loaded.vocabulary;
+    let replay_loaded = ti4_mlp::bundle::read(std::path::Path::new(&replay_bundle_path))
+        .unwrap_or_else(|error| refuse(&format!("reading {replay_bundle_path}: {error}")));
+    let reference_loaded = ti4_mlp::bundle::read(std::path::Path::new(&reference_bundle_path))
+        .unwrap_or_else(|error| refuse(&format!("reading {reference_bundle_path}: {error}")));
+    let vocabulary = replay_loaded.vocabulary;
     let actor = loaded.actor;
+    let replay_actor = replay_loaded.actor;
+    let reference_actor = reference_loaded.actor;
     let pool = Arc::new(
         ti4_sim::MapPool::from_reader(std::io::Cursor::new(
             ti4_sim::artifacts::read_and_verify_pool_role(
@@ -464,12 +514,16 @@ fn main() {
     println!("demonstration benchmark for {bundle_path}");
     println!("  held out by starting position (1 seed in 5), never by trajectory");
     println!("  CE and probability read at temperature 1.0; rank is temperature-free");
+    println!("  replay      {replay_bundle_path}");
+    println!("  reference   {reference_bundle_path}");
 
     benchmark(
         "ORDINARY SUCCESSES",
         &positive,
         &table,
         &actor,
+        &replay_actor,
+        &reference_actor,
         per_corpus,
         Opponents::SameTemperature,
     );
@@ -478,6 +532,8 @@ fn main() {
         &rescued,
         &table,
         &actor,
+        &replay_actor,
+        &reference_actor,
         per_corpus,
         Opponents::Greedy,
     );

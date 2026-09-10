@@ -4001,6 +4001,7 @@ dependencies = [
  "sha2",
  "tch",
  "thiserror 2.0.20",
+ "ti4-bridge",
  "ti4-content",
  "ti4-engine",
  "ti4-model",

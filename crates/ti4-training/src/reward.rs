@@ -37,12 +37,7 @@ use serde::{Deserialize, Serialize};
 use ti4_engine::opening::{DEFAULT_REQUIREMENT, Requirement};
 pub use ti4_policy::progress::Progress;
 
-/// How many gained units the dense shaping pays for.
-///
-/// One, as the oracle trainer had it. This is not the gate — see [`potential`].
-const UNIT_SHAPING_CAP: usize = 1;
-
-/// Potential over exactly the three Stage-1 gate components.
+/// Potential over exactly the four Stage-1 gate components.
 ///
 /// Capping each component at its requirement is what stops production or territory beyond the gate
 /// from farming an auxiliary reward. A state loss produces a negative delta, which is the point of
@@ -66,15 +61,8 @@ pub fn potential(
     };
     let planets = capped(progress.planets_gained, requirement.planets_gained);
     let systems = capped(progress.systems, requirement.systems);
-    // A dense proxy for the fleet gate, not the gate itself, and deliberately unchanged by the
-    // move to a composition bar.
-    //
-    // `Opening::units_ok` now asks for two capacity ships and three ground forces. A per-decision
-    // `Progress` carries neither, so the shaping still pays for the first unit gained and no more.
-    // Raising the cap to match the composition would change every shaped return and break parity
-    // with the oracle trainer this was ported from -- a real regression, in exchange for a proxy
-    // that would still not be the gate.
-    let units = capped(progress.units_gained, UNIT_SHAPING_CAP);
+    let capacity_ships = capped(progress.capacity_ships, requirement.capacity_ships);
+    let infantry = capped(progress.infantry, requirement.infantry);
 
     #[expect(clippy::cast_precision_loss, reason = "bars are single digits")]
     let planet_bar = requirement.planets_gained.max(1) as f64;
@@ -83,7 +71,9 @@ pub fn potential(
     // Balanced progress, so a seat cannot bank the whole potential on one component.
     let balanced = (planets / planet_bar).min(systems / system_bar);
 
-    expansion_weight * (planets + systems) + unit_weight * units + conjunctive_weight * balanced
+    expansion_weight * (planets + systems)
+        + unit_weight * (capacity_ships + infantry)
+        + conjunctive_weight * balanced
 }
 
 /// Every coefficient of the training return, carried as one object.
@@ -137,6 +127,22 @@ pub struct Reward {
     /// is only visible to round-one decisions; this one prices the clearance risk everywhere.
     /// Zero keeps the reference reward exactly (Stage-2 gate experiments).
     pub clearance_weight: f64,
+    /// Moderate reward for fleet strength, as a potential difference over the seat's fleet value
+    /// in resources ([`Progress::fleet_value_permille`]: fighters 0.75 each, upgraded ships 1.3x
+    /// their base unit's cost). Paid when the fleet grows and taken back when it is lost, like
+    /// every other term here. Off by default; keep it well below `clearance_weight`, so a whole
+    /// game of fleet-building never pays more than an uncleared opening costs.
+    pub fleet_weight: f64,
+    /// Small reward per technology owned beyond the setup baseline ([`Progress::technologies_gained`]).
+    /// Off by default; keep it below `vp_weight`, so researching is a path to points rather than
+    /// an end in itself.
+    pub tech_weight: f64,
+    /// Terminal penalty for strategy-card monoculture. When this seat played at least three cards
+    /// and its most-played card exceeds 80% of them, the final slot pays `weight * excess`, where
+    /// excess ramps linearly from zero at exactly 80% to one at 100% -- a four-of-four monoculture
+    /// pays exactly `weight`, three-of-four (75%) pays nothing. Credited at the final slot like
+    /// the clearance floor, so every decision's return carries it. Off by default.
+    pub strategy_diversity_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -186,6 +192,9 @@ impl Default for Reward {
             round_baseline: false,
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
+            fleet_weight: 0.0,
+            tech_weight: 0.0,
+            strategy_diversity_weight: 0.0,
         }
     }
 }
@@ -212,7 +221,8 @@ impl Reward {
         )
     }
 
-    /// Victory points, plus the objectives this seat could convert into them.
+    /// Victory points, plus the objectives this seat could convert into them, plus the shaped
+    /// path terms (fleet value and technologies beyond setup) when their weights are on.
     #[must_use]
     pub fn horizon_potential(&self, progress: &Progress) -> f64 {
         #[expect(clippy::cast_precision_loss, reason = "scores are single digits")]
@@ -221,7 +231,18 @@ impl Reward {
         let public = progress.scoreable_public as f64;
         #[expect(clippy::cast_precision_loss, reason = "counts are single digits")]
         let secret = progress.scoreable_secret as f64;
-        self.vp_weight * points + self.objective_weight * public + self.secret_weight * secret
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "permille fleet values stay far below f64's exact-integer range"
+        )]
+        let fleet = progress.fleet_value_permille as f64 / 1000.0;
+        #[expect(clippy::cast_precision_loss, reason = "tech counts are single digits")]
+        let techs = progress.technologies_gained as f64;
+        self.vp_weight * points
+            + self.objective_weight * public
+            + self.secret_weight * secret
+            + self.fleet_weight * fleet
+            + self.tech_weight * techs
     }
 
     /// Whether this reward is self-consistent.
@@ -275,6 +296,10 @@ pub struct Episode {
     pub shortfall: f64,
     /// Trade goods obtained through transactions.
     pub traded_goods: f64,
+    /// Strategy cards this seat played, by corpus card id. Feeds the monoculture penalty; empty
+    /// keeps every legacy episode exactly as it was scored before the field existed.
+    #[serde(default)]
+    pub strategy_card_plays: std::collections::BTreeMap<String, i64>,
 }
 
 /// The reward following each captured decision, as potential differences.
@@ -363,6 +388,23 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
             {
                 *last -= f64::from(u8::from(!episode.cleared)) * reward.clearance_weight;
             }
+            // The strategy-card monoculture penalty, credited at the final slot like the clearance
+            // floor. A share of exactly 80% pays nothing; it ramps to `weight` at 100%. Fewer than
+            // three plays is too small a sample to call monoculture.
+            if reward.strategy_diversity_weight > 0.0 {
+                let total: i64 = episode.strategy_card_plays.values().sum();
+                if total >= 3 {
+                    let most = *episode.strategy_card_plays.values().max().unwrap_or(&0);
+                    #[allow(clippy::cast_precision_loss, reason = "card counts are single digits")]
+                    let share = (most as f64) / (total as f64);
+                    if share > 0.8 {
+                        let excess = ((share - 0.8) / 0.2).clamp(0.0, 1.0);
+                        if let Some(last) = rewards.last_mut() {
+                            *last -= reward.strategy_diversity_weight * excess;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -397,6 +439,37 @@ mod tests {
             round_number: round,
             ..Progress::default()
         }
+    }
+
+    fn opening_composition(capacity_ships: i64, infantry: i64) -> Progress {
+        Progress {
+            capacity_ships,
+            infantry,
+            round_number: 1,
+            ..Progress::default()
+        }
+    }
+
+    #[test]
+    fn capacity_and_infantry_each_provide_dense_progress_up_to_the_real_bar() {
+        let reward = Reward::default();
+        let empty = reward.stage1_potential(&opening_composition(0, 0));
+        let one_hull = reward.stage1_potential(&opening_composition(1, 0));
+        let composed = reward.stage1_potential(&opening_composition(2, 3));
+        let excess = reward.stage1_potential(&opening_composition(20, 30));
+
+        assert!(
+            one_hull > empty,
+            "a capacity ship must advance the potential"
+        );
+        assert!(
+            composed > one_hull,
+            "ground forces must advance the potential"
+        );
+        assert_eq!(
+            composed, excess,
+            "both composition components cap at the gate"
+        );
     }
 
     #[test]
@@ -441,6 +514,7 @@ mod tests {
             cleared: true,
             shortfall: 0.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         let missed = Episode {
             cleared: false,
@@ -471,6 +545,7 @@ mod tests {
             cleared: true,
             shortfall: 0.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         let below = Episode {
             final_progress: Progress {
@@ -512,6 +587,7 @@ mod tests {
             cleared: true,
             shortfall: 0.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         let missed = Episode {
             final_progress: Progress {
@@ -539,6 +615,113 @@ mod tests {
     }
 
     #[test]
+    fn fleet_and_tech_shaping_pay_for_gains_and_claw_back_losses() {
+        // Both terms are potential differences: building the fleet and researching pay, losing
+        // them takes it back. Off by default, so the reference reward stays exact.
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fleet_weight = 0.05;
+        reward.tech_weight = 0.1;
+
+        let weak = Progress {
+            fleet_value_permille: 2000,
+            technologies_gained: 0,
+            round_number: 2,
+            ..Progress::default()
+        };
+        let strong = Progress {
+            fleet_value_permille: 12000,
+            technologies_gained: 3,
+            round_number: 2,
+            ..Progress::default()
+        };
+
+        // +10 resources of fleet and three new technologies: 0.05 * 10 + 0.1 * 3 = 0.8.
+        let up = step_rewards(&[weak, strong], &reward)[0];
+        assert!((up - 0.8).abs() < 1e-9, "{}", up);
+
+        // The same ground lost is a negative step of the same size.
+        let down = step_rewards(
+            &[
+                Progress {
+                    fleet_value_permille: 12000,
+                    technologies_gained: 3,
+                    round_number: 2,
+                    ..Progress::default()
+                },
+                Progress {
+                    fleet_value_permille: 2000,
+                    technologies_gained: 0,
+                    round_number: 2,
+                    ..Progress::default()
+                },
+            ],
+            &reward,
+        )[0];
+        assert!((down + 0.8).abs() < 1e-9, "{}", down);
+
+        // Off by default: the reference reward is untouched (the golden oracle test above pins
+        // this bit-for-bit).
+        let reference = Reward::for_stage(Stage::Two);
+        assert!(reference.fleet_weight.abs() < f64::EPSILON);
+        assert!(reference.tech_weight.abs() < f64::EPSILON);
+    }
+
+    fn episode_with_plays(plays: &[(&str, i64)]) -> Episode {
+        let mut strategy_card_plays = std::collections::BTreeMap::new();
+        for (card, count) in plays {
+            strategy_card_plays.insert((*card).to_owned(), *count);
+        }
+        Episode {
+            steps: vec![at(1), at(2)],
+            final_progress: at(3),
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays,
+        }
+    }
+
+    #[test]
+    fn strategy_card_monoculture_pays_only_above_eighty_percent_of_at_least_three_plays() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.strategy_diversity_weight = 1.0;
+        let reference = Reward::for_stage(Stage::Two); // penalty stays off
+
+        // Four-of-four: a full monoculture pays exactly the weight, carried by every return.
+        let mono = episode_with_plays(&[("warfare", 4)]);
+        for (got, base) in returns(&mono, &reward)
+            .iter()
+            .zip(returns(&mono, &reference))
+        {
+            assert!((got - base + 1.0).abs() < 1e-9, "{got} against {base}");
+        }
+
+        // Three-of-four is 75%: below the bar, nothing moves.
+        let mixed = episode_with_plays(&[("warfare", 3), ("diplomacy", 1)]);
+        assert_eq!(returns(&mixed, &reward), returns(&mixed, &reference));
+
+        // Four-of-five is exactly 80%: the bar is strict.
+        let at_bar = episode_with_plays(&[("warfare", 4), ("diplomacy", 1)]);
+        assert_eq!(returns(&at_bar, &reward), returns(&at_bar, &reference));
+
+        // Five-of-six ramps: (5/6 - 0.8) / 0.2 = one sixth of the weight.
+        let ramped = episode_with_plays(&[("warfare", 5), ("diplomacy", 1)]);
+        for (got, base) in returns(&ramped, &reward)
+            .iter()
+            .zip(returns(&ramped, &reference))
+        {
+            assert!(
+                (got - base + 1.0 / 6.0).abs() < 1e-9,
+                "{got} against {base}"
+            );
+        }
+
+        // Two plays is too small a sample to call monoculture.
+        let tiny = episode_with_plays(&[("warfare", 2)]);
+        assert_eq!(returns(&tiny, &reward), returns(&tiny, &reference));
+    }
+
+    #[test]
     fn a_return_is_the_sum_of_every_reward_still_to_come() {
         let reward = Reward::for_stage(Stage::One);
         let episode = Episode {
@@ -547,6 +730,7 @@ mod tests {
             cleared: false,
             shortfall: 1.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         let steps = {
             let mut snapshots = episode.steps.clone();
@@ -682,6 +866,7 @@ mod tests {
             cleared: true,
             shortfall: 0.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         let missed = Episode {
             cleared: false,
@@ -740,16 +925,25 @@ mod tests {
     }
 
     #[test]
-    fn the_returns_match_the_oracle_trainer_to_the_number() {
-        // Generated by calling the oracle's `_returns`, not by reading it. Every coefficient and
-        // every placement rule interacts — the clear bonus telescopes back through the episode,
-        // the round-one bonus lands on one specific decision, the shaping applies to some
-        // transitions and not others — so agreeing on each rule separately is not the same as
-        // agreeing on the number a trainer would actually use.
-        let corpus: Vec<GoldenEpisode> =
+    fn legacy_returns_match_the_oracle_on_the_shared_subspace() {
+        // Generated by calling the oracle's `_returns`, not by reading it. The historical fixture
+        // predates the composition gate, so migrate its one-unit proxy onto one capacity ship.
+        // This retains exact parity for every unchanged return rule; the dedicated composition
+        // test above owns the intentional divergence in Stage-1 shaping.
+        let mut corpus: Vec<GoldenEpisode> =
             serde_json::from_str(include_str!("../tests/golden_returns.json"))
                 .expect("the golden corpus parses");
         assert!(corpus.len() >= 6, "both stages, several shapes");
+
+        for case in &mut corpus {
+            for progress in case
+                .steps
+                .iter_mut()
+                .chain(std::iter::once(&mut case.final_progress))
+            {
+                progress.capacity_ships = progress.units_gained.clamp(0, 1);
+            }
+        }
 
         for (index, case) in corpus.iter().enumerate() {
             let reward = Reward::for_stage(if case.stage == 1 {
@@ -757,12 +951,15 @@ mod tests {
             } else {
                 Stage::Two
             });
+            // Legacy episodes carry no card-play data; with the new weights off by default this
+            // stays bit-for-bit the oracle's return, which is exactly what the assertion checks.
             let episode = Episode {
                 steps: case.steps.clone(),
                 final_progress: case.final_progress,
                 cleared: case.cleared,
                 shortfall: case.shortfall,
                 traded_goods: case.traded_goods,
+                strategy_card_plays: std::collections::BTreeMap::new(),
             };
 
             let ours = returns(&episode, &reward);
@@ -784,6 +981,7 @@ mod tests {
             cleared: false,
             shortfall: 7.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
         assert!(returns(&empty, &Reward::default()).is_empty());
     }
@@ -804,6 +1002,7 @@ mod tests {
             cleared: true,
             shortfall: 0.0,
             traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
         };
 
         let one = returns(&episode, &Reward::for_stage(Stage::One));

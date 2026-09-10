@@ -122,6 +122,28 @@ struct Played {
     notes: Vec<Note>,
 }
 
+/// Greedy evaluation counters kept independently for each faction.
+#[derive(Default)]
+struct EvaluationTally {
+    seats: usize,
+    cleared: usize,
+    any_waste: usize,
+    tactical: usize,
+    wasted: usize,
+    clear_zero_waste: usize,
+}
+
+impl EvaluationTally {
+    fn add(&mut self, cleared: bool, tactical: usize, wasted: usize) {
+        self.seats += 1;
+        self.cleared += usize::from(cleared);
+        self.any_waste += usize::from(wasted > 0);
+        self.tactical += tactical;
+        self.wasted += wasted;
+        self.clear_zero_waste += usize::from(cleared && wasted == 0);
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "one pass: playing the games, filtering them and writing them are one thing"
@@ -210,6 +232,7 @@ fn main() {
     let mut waste_count_total = 0usize;
     let mut any_waste_seats = 0usize;
     let mut cleared_total = 0usize;
+    let mut evaluation: BTreeMap<String, EvaluationTally> = BTreeMap::new();
     let explain: usize = number("--explain", 0);
     let mut explained = 0usize;
 
@@ -337,6 +360,11 @@ fn main() {
                 waste_count_total += waste_count;
                 any_waste_seats += usize::from(wasted);
                 cleared_total += usize::from(played.cleared);
+                evaluation.entry(played.faction.clone()).or_default().add(
+                    played.cleared,
+                    tactical,
+                    waste_count,
+                );
                 if wasted {
                     if played.cleared {
                         waste_when_cleared += 1;
@@ -423,7 +451,7 @@ fn main() {
 
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
     let waste_share = rejected_waste as f64 / seats_total.max(1) as f64 * 100.0;
-    let manifest = format!(
+    let mut manifest = format!(
         "schema ti4-positive-corpus-v1\nbundle {bundle_path}\npool {pool_path}\ncommit \
          {git_commit}\nseeds {seed_base}..{}\ntemperatures {}\nseat_games {seats_total}\nkept \
          {written}\nfailed_bar {failed_bar}\nrejected_wasted_activation {rejected_waste}\n",
@@ -434,6 +462,17 @@ fn main() {
             .collect::<Vec<_>>()
             .join(",")
     );
+    for (faction, tally) in &evaluation {
+        manifest.push_str(&format!(
+            "evaluation {faction} seats {} cleared {} any_waste {} tactical {} wasted {} clear_zero_waste {}\n",
+            tally.seats,
+            tally.cleared,
+            tally.any_waste,
+            tally.tactical,
+            tally.wasted,
+            tally.clear_zero_waste
+        ));
+    }
     let manifest_path = directory.join("manifest.txt");
     std::fs::write(&manifest_path, manifest)
         .unwrap_or_else(|error| refuse(&format!("writing the manifest: {error}")));
@@ -461,14 +500,30 @@ fn main() {
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
     {
         let seats = seats_total.max(1) as f64;
+        let clear_zero_waste: usize = evaluation.values().map(|row| row.clear_zero_waste).sum();
         println!();
         println!(
-            "  TABLE  clear {:.2}%  tactical/seat {:.3}  waste/seat {:.3}  any-waste {:.2}%  waste/tactical {:.3}",
+            "  TABLE  clear {:.2}%  tactical/seat {:.3}  waste/seat {:.3}  any-waste {:.2}%  waste/tactical {:.3}  clear+zero {:.2}%",
             of(cleared_total, seats_total),
             tactical_total as f64 / seats,
             waste_count_total as f64 / seats,
             of(any_waste_seats, seats_total),
-            waste_count_total as f64 / tactical_total.max(1) as f64
+            waste_count_total as f64 / tactical_total.max(1) as f64,
+            of(clear_zero_waste, seats_total),
+        );
+    }
+    println!();
+    println!("  faction      seats    clear  any-waste  tactical/seat  waste/tactical  clear+zero");
+    for (faction, tally) in &evaluation {
+        let seats = tally.seats.max(1) as f64;
+        println!(
+            "  {faction:<10} {:>6}  {:>6.2}%    {:>6.2}%          {:>5.3}           {:>5.3}      {:>6.2}%",
+            tally.seats,
+            of(tally.cleared, tally.seats),
+            of(tally.any_waste, tally.seats),
+            tally.tactical as f64 / seats,
+            tally.wasted as f64 / tally.tactical.max(1) as f64,
+            of(tally.clear_zero_waste, tally.seats),
         );
     }
     println!(

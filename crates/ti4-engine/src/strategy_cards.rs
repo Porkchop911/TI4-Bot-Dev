@@ -1218,9 +1218,8 @@ fn warfare_primary(
 
 /// Move command tokens between a player's own pools under the caller's named rule/effect.
 ///
-/// Offered one move at a time until the player declines, which is what "redistribute" allows and
-/// what keeps each move a decision a policy can see. Bounded by the tokens actually held, so a
-/// decider that never declines still terminates.
+/// Offered as one choice over every legal final distribution, so the policy scores the complete
+/// command sheet it is choosing rather than a sequence of isolated one-token moves.
 pub(crate) fn redistribute_tokens(
     state: &mut GameState,
     content: &ContentStore,
@@ -1232,80 +1231,27 @@ pub(crate) fn redistribute_tokens(
     subtype: &str,
     prompt: &str,
 ) -> Result<Ability, IllegalChoice> {
-    use ti4_model::state::TokenPool;
-    const POOLS: [(TokenPool, &str); 3] = [
-        (TokenPool::Tactic, "tactic"),
-        (TokenPool::Fleet, "fleet"),
-        (TokenPool::Strategic, "strategy"),
-    ];
-    let held = |state: &GameState, pool: TokenPool| -> i32 {
-        state.player(player).map_or(0, |seat| match pool {
-            TokenPool::Tactic => seat.tactic_tokens,
-            TokenPool::Fleet => seat.fleet_tokens,
-            TokenPool::Strategic => seat.strategic_tokens,
-        })
+    let mut window = crate::tokens::TokenRedistribution::new(player.clone());
+    let Some(choice) = window.pending_choice(state) else {
+        return Ok(Ability::Resolved);
     };
-    let total: i32 = POOLS.iter().map(|(pool, _)| held(state, *pool)).sum();
-    for _ in 0..total.max(0) {
-        let mut options = Vec::new();
-        for (from, from_name) in POOLS {
-            if held(state, from) <= 0 {
-                continue;
-            }
-            for (to, to_name) in POOLS {
-                if from_name == to_name {
-                    continue;
-                }
-                let _ = to;
-                options.push(ChoiceOption::labelled(
-                    format!("move|{from_name}|{to_name}"),
-                    "redistribute",
-                    format!("move a token from {from_name} to {to_name}"),
-                ));
-            }
-        }
-        if options.is_empty() {
-            break;
-        }
-        options.push(ChoiceOption::decline());
-        let choice = Choice::new(
-            player.clone(),
-            prompt,
-            options,
-        )
-        .contextualized(DecisionContext::new(
+    let choice =
+        Choice::new(player.clone(), prompt, choice.options).contextualized(DecisionContext::new(
             player.clone(),
             source.clone(),
             subtype,
             state.phase,
             state.round,
         ));
-        let answer = ask(state, content, sources, galaxy, table, &choice)?;
-        if answer.is_decline() {
-            break;
-        }
-        let Some((from_name, to_name)) = answer
-            .id
-            .strip_prefix("move|")
-            .and_then(|rest| rest.split_once('|'))
-        else {
-            break;
-        };
-        let pool_of = |name: &str| {
-            POOLS
-                .iter()
-                .find(|(_, label)| *label == name)
-                .map(|(pool, _)| *pool)
-        };
-        let (Some(from), Some(to)) = (pool_of(from_name), pool_of(to_name)) else {
-            break;
-        };
-        if let Some(seat) = state.player_mut(player)
-            && seat.spend_token(from)
-        {
-            seat.gain_token_uncapped(to, 1); // moved, not gained
-        }
-    }
+    let answer = ask(state, content, sources, galaxy, table, &choice)?;
+    window.resolve(state, answer).map_err(|error| match error {
+        crate::tokens::RedistributeError::IllegalChoice(error) => error,
+        other => IllegalChoice::DeciderFailed {
+            player: player.clone(),
+            prompt: prompt.to_owned(),
+            reason: other.to_string(),
+        },
+    })?;
     Ok(Ability::Resolved)
 }
 
@@ -1593,9 +1539,9 @@ mod tests {
             seat.strategic_tokens = 0;
         }
 
-        // One move then stop: the first option moves tactic -> fleet, the second answer declines.
+        // Choose the complete final sheet with the one token moved from tactic to fleet.
         let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
-            "move|tactic|fleet".to_owned(),
+            "0|1|0".to_owned(),
         ])));
         redistribute_tokens(
             &mut state,

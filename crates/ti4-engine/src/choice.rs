@@ -487,6 +487,33 @@ impl<'a> Observed<'a> {
         self.galaxy
     }
 
+    /// Revealed public objectives whose fixed map-shaped requirement includes `system`.
+    ///
+    /// This is derived by the objective engine from the same map geometry used for scoring, so a
+    /// decision model need not infer the connection from card text or reimplement adjacency.
+    #[must_use]
+    pub fn objectives_implicating_system(
+        &self,
+        player: &PlayerId,
+        system: &SystemId,
+    ) -> Vec<ti4_model::id::ObjectiveId> {
+        let Some(galaxy) = self.galaxy else {
+            return Vec::new();
+        };
+        let position =
+            crate::objectives::Position::new(self.state, self.content, self.sources, player)
+                .with_galaxy(galaxy);
+        self.state
+            .revealed_objectives
+            .iter()
+            .filter(|objective| {
+                crate::objectives::implicated_systems(objective, &position)
+                    .is_some_and(|systems| systems.contains(system))
+            })
+            .cloned()
+            .collect()
+    }
+
     /// The round number.
     #[must_use]
     pub const fn round(&self) -> u32 {
@@ -876,6 +903,66 @@ impl<'a> Observed<'a> {
             .sum()
     }
 
+    /// Capacity ships and ground forces owned by this player, using the opening gate's exact
+    /// catalogue-aware classification.
+    ///
+    /// This deliberately delegates to the authoritative opening measurement. Training reward
+    /// shaping and final clearance must not drift into two different definitions of the same
+    /// fleet-composition bar.
+    #[must_use]
+    pub fn opening_fleet(&self, player: &PlayerId) -> (usize, usize) {
+        crate::opening::fleet_of(self.state, player, self.content, self.sources)
+    }
+
+    /// The value of this player's fleet in per-mille resource units.
+    ///
+    /// Ships only -- ground forces are not fleet. Fighters count as 0.75 resources each (750),
+    /// other ships at their printed cost times 1000, and an upgraded ship at 1300 times its base
+    /// unit's cost: the upgrade's own printed price is deliberately ignored, so a dreadnought II
+    /// counts as 5.2 (5200) against the dreadnought's four rather than whatever the corpus prints
+    /// for the card itself. A unit whose type or base type is missing from the active catalogue
+    /// contributes nothing rather than guessing.
+    #[must_use]
+    pub fn fleet_value_permille(&self, player: &PlayerId) -> i64 {
+        let types = ti4_content::units::catalogue(self.content, self.sources);
+        self.state
+            .board
+            .values()
+            .flat_map(|system| system.units_of(player))
+            .filter_map(|unit| types.get(unit.type_id.as_str()))
+            .map(|stats| Self::ship_value_permille(*stats, &types))
+            .sum()
+    }
+
+    /// One ship's share of [`Self::fleet_value_permille`].
+    fn ship_value_permille(
+        stats: ti4_content::units::UnitType<'_>,
+        types: &BTreeMap<&str, ti4_content::units::UnitType<'_>>,
+    ) -> i64 {
+        if !stats.is_ship() {
+            return 0;
+        }
+        // Fighters are valued at a flat 0.75 resources each; an upgraded ship counts as 1.3x its
+        // base unit's cost, ignoring the upgrade's own printed price (dreadnought II = 5.2);
+        // everything else pays its printed cost, whole resources for every non-fighter ship.
+        let resources = if stats.is_fighter() {
+            0.75
+        } else if let Some(base_id) = stats.upgrades_from()
+            && let Some(base) = types.get(base_id)
+        {
+            base.cost() * 1.3
+        } else {
+            stats.cost()
+        };
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            reason = "fleet values stay far below f64's exact-integer range"
+        )]
+        let permille = (resources * 1000.0).round() as i64;
+        permille
+    }
+
     /// How many revealed public objectives this seat could score right now.
     ///
     /// A rules predicate, not an opinion about which objective is worth chasing. It exists so a
@@ -919,21 +1006,42 @@ impl<'a> Observed<'a> {
     /// report the progress that would result. Compared against the current progress it gives an
     /// exact per-card delta.
     ///
-    /// Only planet control is imagined. Requirements about units, technologies or map shape read
-    /// the real state on both sides and cancel out of the difference, so a caller that differences
-    /// two calls is never told an action helps a card it cannot touch.
+    /// Planet control only. For everything else an option changes -- unit presence, technologies,
+    /// structures -- use [`Self::revealed_objective_progress_imagining`], which this delegates to.
     #[must_use]
     pub fn revealed_objective_progress_gaining(
         &self,
         player: &PlayerId,
         gained: &[PlanetId],
     ) -> Vec<crate::objectives::CardProgress> {
-        let mut position = crate::objectives::Position::imagining(
+        self.revealed_objective_progress_imagining(
+            player,
+            &crate::objectives::Imagined {
+                planets: gained,
+                ..crate::objectives::Imagined::default()
+            },
+        )
+    }
+
+    /// The same, for everything an option would change, not planet control alone.
+    ///
+    /// A planet-only counterfactual cancels for the 20 public objectives counted in units,
+    /// technologies or structures, so no option ever carried a gain toward them: the requirement
+    /// was in view with nothing linking any action to it. The caller names what its option kind
+    /// actually does -- an invasion names planets, an activation the system it would occupy, a
+    /// research the technology -- and the engine's own requirement functions report the result.
+    #[must_use]
+    pub fn revealed_objective_progress_imagining(
+        &self,
+        player: &PlayerId,
+        imagined: &crate::objectives::Imagined<'_>,
+    ) -> Vec<crate::objectives::CardProgress> {
+        let mut position = crate::objectives::Position::imagining_all(
             self.state,
             self.content,
             self.sources,
             player,
-            gained,
+            imagined,
         );
         if let Some(galaxy) = self.galaxy {
             position = position.with_galaxy(galaxy);
@@ -958,14 +1066,7 @@ impl<'a> Observed<'a> {
                         stage,
                     });
                 }
-                crate::objectives::bought_progress(
-                    self.state,
-                    self.content,
-                    self.sources,
-                    player,
-                    alias,
-                )
-                .map(|cost| {
+                crate::objectives::bought_progress_at(&position, alias).map(|cost| {
                     // Planner amounts are bounded by the cost target; exact in f64.
                     #[expect(clippy::cast_precision_loss, reason = "small integer amounts")]
                     let (have, threshold) = (cost.have as f64, cost.target as f64);
