@@ -77,6 +77,17 @@ pub struct Imagined<'i> {
 }
 
 impl Imagined<'_> {
+    /// Nothing imagined: the real board.
+    ///
+    /// A `const` rather than a `Default` impl because the fields are borrowed slices, and the
+    /// empty slice is the one value that borrows nothing and so lives for `'static`.
+    pub const NONE: Imagined<'static> = Imagined {
+        planets: &[],
+        systems: &[],
+        technologies: &[],
+        structures: &[],
+    };
+
     /// Whether this changes nothing, in which case the imagined position is the real one.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
@@ -1731,6 +1742,7 @@ fn satisfied(position: &Position<'_>, alias: &ObjectiveId) -> bool {
             sources: position.sources,
             player: position.player,
             galaxy: position.galaxy,
+            imagined: crate::objectives::Imagined::NONE,
         })
     })
 }
@@ -4377,6 +4389,7 @@ mod tests {
             sources: POK,
             player: &player,
             galaxy: Some(&hub.galaxy),
+            imagined: crate::objectives::Imagined::NONE,
         };
         for alias in crate::secrets::registered_aliases() {
             let id = ti4_model::id::SecretObjectiveId::new(alias);
@@ -4433,6 +4446,7 @@ mod tests {
             sources: POK,
             player: &player,
             galaxy: Some(&hub.galaxy),
+            imagined: crate::objectives::Imagined::NONE,
         };
         for alias in crate::secrets::registered_aliases() {
             let id = ti4_model::id::SecretObjectiveId::new(alias);

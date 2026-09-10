@@ -1204,6 +1204,32 @@ impl<'a> SeatObservation<'a> {
             self.observed.sources,
             self.observed.galaxy,
             &self.acting_seat,
+            &crate::objectives::Imagined::NONE,
+        )
+    }
+
+    /// Held-secret progress as it would stand after everything in `imagined` happened.
+    ///
+    /// The secret half of the counterfactual the public objectives already use, taking the same
+    /// [`crate::objectives::Imagined`] value so one option's counterfactual is built once and
+    /// handed to both. Differencing this against [`Self::held_secret_progress`] is what links an
+    /// option to a secret the seat is holding -- which nothing did, so a seat could see it was two
+    /// of three toward a secret and never see which action would make it three.
+    ///
+    /// Bound to the acting seat like the rest of this type: an option can be linked to *your*
+    /// secret and never to anybody else's, enforced here rather than by caller convention.
+    #[must_use]
+    pub fn held_secret_progress_imagining(
+        &self,
+        imagined: &crate::objectives::Imagined<'_>,
+    ) -> Vec<crate::objectives::CardProgress> {
+        held_secret_records(
+            self.observed.state,
+            self.observed.content,
+            self.observed.sources,
+            self.observed.galaxy,
+            &self.acting_seat,
+            imagined,
         )
     }
 }
@@ -1231,7 +1257,14 @@ pub fn held_secret_progress(
     galaxy: Option<&Galaxy>,
     viewer: &PlayerId,
 ) -> Vec<crate::objectives::CardProgress> {
-    held_secret_records(state, content, sources, galaxy, viewer)
+    held_secret_records(
+        state,
+        content,
+        sources,
+        galaxy,
+        viewer,
+        &crate::objectives::Imagined::NONE,
+    )
 }
 
 /// A copy of the complete state with every other player's face-down holdings replaced by markers —
@@ -1257,6 +1290,7 @@ fn held_secret_records(
     sources: SourceSet,
     galaxy: Option<&Galaxy>,
     player: &PlayerId,
+    imagined: &crate::objectives::Imagined<'_>,
 ) -> Vec<crate::objectives::CardProgress> {
     let Some(seat) = state.players.iter().find(|seat| &seat.id == player) else {
         return Vec::new();
@@ -1267,6 +1301,7 @@ fn held_secret_records(
         sources,
         player,
         galaxy,
+        imagined: *imagined,
     };
     seat.secret_objectives
         .iter()

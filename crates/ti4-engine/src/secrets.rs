@@ -174,6 +174,11 @@ pub struct Position<'a> {
     pub player: &'a PlayerId,
     /// The map, when the caller has one. `None` leaves board-shape requirements unmet.
     pub galaxy: Option<&'a ti4_content::galaxy::Galaxy>,
+    /// What an option would add on top of the real board.
+    ///
+    /// The same type the public objectives use, so one option's counterfactual can be handed to
+    /// both without building it twice. [`crate::objectives::Imagined::NONE`] is the real board.
+    pub imagined: crate::objectives::Imagined<'a>,
 }
 
 impl Position<'_> {
@@ -203,26 +208,52 @@ impl Position<'_> {
     /// Systems where this player has a ship.
     fn systems_with_ships(&self) -> usize {
         let types = ti4_content::units::catalogue(self.content, self.sources);
-        self.state
+        let real: std::collections::BTreeSet<String> = self
+            .state
             .board
-            .values()
-            .filter(|board| {
+            .iter()
+            .filter(|(_, board)| {
                 board.units_of(self.player).into_iter().any(|unit| {
                     types
                         .get(unit.type_id.as_str())
                         .is_some_and(ti4_content::units::UnitType::is_ship)
                 })
             })
+            .map(|(system, _)| system.to_string())
+            .collect();
+        // Presence semantics, matching the public side: an imagined system holds one generic ship.
+        // Unit-*type* counts below are deliberately left unmoved by it, because a generic ship is
+        // not a dreadnought and saying otherwise would recommend activations that cannot score.
+        real.union(&self.imagined.systems.iter().cloned().collect())
             .count()
+    }
+
+    /// Planets this seat controls, plus the ones the option would take.
+    ///
+    /// Every planet-counting secret reads through here, so a requirement cannot be added later
+    /// that silently ignores the counterfactual -- which is exactly how the public objectives came
+    /// to have thirty-three cards no option was ever linked to.
+    fn controlled(&self) -> Vec<ti4_model::id::PlanetId> {
+        let mut held: Vec<ti4_model::id::PlanetId> = self
+            .state
+            .controlled_planets(self.player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .collect();
+        for planet in self.imagined.planets {
+            if !held.contains(planet) {
+                held.push(planet.clone());
+            }
+        }
+        held
     }
 
     /// Controlled planets of one trait.
     fn planets_of_trait(&self, trait_name: &str) -> usize {
         let catalogue = ti4_content::galaxy::all_planets(self.content, self.sources);
-        self.state
-            .controlled_planets(self.player)
+        self.controlled()
             .into_iter()
-            .filter(|(_, planet)| {
+            .filter(|planet| {
                 catalogue
                     .get(planet.as_str())
                     .is_some_and(|record| record.has_trait(trait_name))
@@ -232,11 +263,10 @@ impl Position<'_> {
 
     /// Combined resources or influence of controlled planets.
     fn combined(&self, kind: crate::production::Spend) -> i64 {
-        self.state
-            .controlled_planets(self.player)
+        self.controlled()
             .into_iter()
-            .map(|(_, planet)| {
-                crate::production::planet_value(self.content, self.sources, planet, kind)
+            .map(|planet| {
+                crate::production::planet_value(self.content, self.sources, &planet, kind)
             })
             .sum()
     }
@@ -356,10 +386,9 @@ fn fragment_count(state: &GameState, player: &PlayerId) -> i32 {
 fn legendary_planets_count(position: &Position<'_>) -> usize {
     let catalogue = ti4_content::galaxy::all_planets(position.content, position.sources);
     position
-        .state
-        .controlled_planets(position.player)
+        .controlled()
         .into_iter()
-        .filter(|(_, planet)| {
+        .filter(|planet| {
             catalogue
                 .get(planet.as_str())
                 .is_some_and(ti4_content::galaxy::Planet::is_legendary)
@@ -1007,6 +1036,7 @@ pub fn scoreable_on(
         sources,
         player,
         galaxy,
+        imagined: crate::objectives::Imagined::NONE,
     };
     seat.secret_objectives
         .iter()
@@ -1051,6 +1081,7 @@ pub fn scoreable_event(
         sources,
         player,
         galaxy,
+        imagined: crate::objectives::Imagined::NONE,
     };
     seat.secret_objectives
         .iter()
@@ -1124,6 +1155,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
         let expected = [
             ("eap", CountFamily::Units { base_type: "pds" }, 4),
@@ -1197,6 +1229,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: Some(&hub.galaxy),
+            imagined: crate::objectives::Imagined::NONE,
         };
         let expected = [
             ("csl", CountFamily::RivalDockSystemsWithShips, 1),
@@ -1284,6 +1317,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
         for alias in ["lsc", "te", "fc"] {
             assert!(
@@ -1451,6 +1485,97 @@ mod tests {
         assert!(scoreable(&state, ContentStore::embedded(), POK, &player()).is_empty());
     }
 
+    /// A secret's progress moves when the option would take the planets it counts.
+    ///
+    /// The public objectives had exactly this hole: the requirement was in view, the qualifying
+    /// action was not, and nothing joined them. Secrets were the same, one layer over -- a seat
+    /// could see it held "control 4 cultural planets" and be two of the way there, and no option
+    /// ever carried a gain toward it. This is the engine half of closing that.
+    #[test]
+    fn a_secret_counts_the_planets_an_option_would_take() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let state = crate::fixtures::game(&["a", "b"]);
+        let player = player();
+        let alias = SecretObjectiveId::new("faa"); // "control 4 cultural planets"
+
+        // Four cultural planets the seat does not hold, named from the corpus.
+        let cultural: Vec<ti4_model::id::PlanetId> = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .filter(|(_, planet)| planet.has_trait("cultural"))
+            .map(|(id, _)| ti4_model::id::PlanetId::new(*id))
+            .take(4)
+            .collect();
+        assert_eq!(cultural.len(), 4, "the corpus has four cultural planets");
+
+        let real = Position {
+            state: &state,
+            content,
+            sources,
+            player: &player,
+            galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
+        };
+        let imagined = crate::objectives::Imagined {
+            planets: &cultural,
+            ..crate::objectives::Imagined::NONE
+        };
+        let after = Position {
+            state: &state,
+            content,
+            sources,
+            player: &player,
+            galaxy: None,
+            imagined,
+        };
+
+        let before = counting_progress(&alias, &real).expect("a counting secret");
+        let gained = counting_progress(&alias, &after).expect("a counting secret");
+        assert_eq!(before.have, 0, "the fixture holds no cultural planets");
+        assert_eq!(
+            gained.have, 4,
+            "the four the option would take are counted: {gained:?}"
+        );
+        assert!(gained.satisfied() && !before.satisfied());
+    }
+
+    /// The counterfactual must not manufacture progress on its own.
+    ///
+    /// The negative control the public fix also needed: if imagining planets moved a card that
+    /// counts something else, every option would look productive and the signal above would mean
+    /// nothing.
+    #[test]
+    fn imagined_planets_do_not_advance_a_secret_that_counts_units() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let state = crate::fixtures::game(&["a", "b"]);
+        let player = player();
+        let alias = SecretObjectiveId::new("eap"); // "have 4 PDS on the board"
+
+        let every: Vec<ti4_model::id::PlanetId> = ti4_content::galaxy::all_planets(content, sources)
+            .keys()
+            .map(|id| ti4_model::id::PlanetId::new(*id))
+            .collect();
+        let imagined = crate::objectives::Imagined {
+            planets: &every,
+            ..crate::objectives::Imagined::NONE
+        };
+        let after = Position {
+            state: &state,
+            content,
+            sources,
+            player: &player,
+            galaxy: None,
+            imagined,
+        };
+
+        let gained = counting_progress(&alias, &after).expect("a counting secret");
+        assert_eq!(
+            gained.have, 0,
+            "handing the seat every planet in the corpus builds no PDS: {gained:?}"
+        );
+    }
+
     #[test]
     fn four_pds_satisfies_its_secret() {
         let mut state = game(&["a"]);
@@ -1522,6 +1647,7 @@ mod tests {
             sources: POK,
             player: seat,
             galaxy: Some(galaxy),
+            imagined: crate::objectives::Imagined::NONE,
         }
     }
 
@@ -1535,6 +1661,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
 
         for alias in ["lsc", "te", "fc"] {
@@ -1753,6 +1880,7 @@ mod tests {
                 sources: POK,
                 player: &seat,
                 galaxy: None,
+                imagined: crate::objectives::Imagined::NONE,
             };
             let progress =
                 remaining_position_progress(&SecretObjectiveId::new("sai"), &position).unwrap();
@@ -1877,6 +2005,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
 
         assert_eq!(
@@ -1935,6 +2064,7 @@ mod tests {
             sources: POK,
             player: &player(),
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
         assert_eq!(
             remaining_position_progress(&SecretObjectiveId::new("sb"), &position)
@@ -2064,6 +2194,7 @@ mod tests {
                 sources: POK,
                 player: seat,
                 galaxy: None,
+                imagined: crate::objectives::Imagined::NONE,
             }
         }
 
@@ -2211,6 +2342,7 @@ mod tests {
             sources: POK,
             player: &seat,
             galaxy: None,
+            imagined: crate::objectives::Imagined::NONE,
         };
         assert_eq!(
             counting_progress(&SecretObjectiveId::new("mtm"), &position)
