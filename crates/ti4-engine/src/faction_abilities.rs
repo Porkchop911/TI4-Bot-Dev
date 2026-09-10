@@ -1322,7 +1322,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn peace_accords_do_not_annex_a_space_station() {
         // Space Stations rule 7 keeps them out of the scoring view, and rule 5 keeps structures
         // off them; annexation read neither and offered them like any other empty planet, so
@@ -1361,6 +1360,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn peace_accords_can_decline_instead_of_hardcoding_the_first_planet() {
         let Some(xxcha) = faction_with("peace_accords") else {
             return;

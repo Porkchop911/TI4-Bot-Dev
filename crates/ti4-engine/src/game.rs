@@ -6704,7 +6704,6 @@ mod tests {
         }
     }
 
-    #[test]
     /// Assimilate converts after a ground combat, and stops when the plastic has run out.
     ///
     /// Two things the no-fight test next door cannot see. The first arm answers "does Assimilate

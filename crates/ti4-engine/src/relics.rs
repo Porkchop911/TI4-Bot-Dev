@@ -1301,7 +1301,7 @@ mod tests {
             ti4_model::content_types::DEFAULT,
         )
         .iter()
-        .find(|(id, planet)| {
+        .find(|(_, planet)| {
             planet.homeworld_of().is_none()
                 && !planet.is_legendary()
                 && !planet.is_placed_during_play()
@@ -1317,13 +1317,7 @@ mod tests {
         .expect("the corpus has an ordinary planet")
     }
 
-    /// The Stellar Converter destroys a planet, and the destruction sticks.
-    ///
-    /// Two halves, and the second is the one worth testing: purging the planet card means there is
-    /// nothing left to take, so an invader who lands there afterwards gains nothing. A version that
-    /// only cleared the current occupants would pass a units-are-gone check and still let the next
-    /// player take the planet on the following turn.
-    #[test]
+    /// The Stellar Converter may not be aimed at Mecatol Rex.
     #[test]
     fn the_stellar_converter_cannot_destroy_mecatol_rex() {
         // "Choose 1 non-home, non-legendary planet other than Mecatol Rex". The guard for the
@@ -1373,6 +1367,13 @@ mod tests {
         }
     }
 
+    /// The Stellar Converter destroys a planet, and the destruction sticks.
+    ///
+    /// Two halves, and the second is the one worth testing: purging the planet card means there is
+    /// nothing left to take, so an invader who lands there afterwards gains nothing. A version that
+    /// only cleared the current occupants would pass a units-are-gone check and still let the next
+    /// player take the planet on the following turn.
+    #[test]
     fn the_stellar_converter_destroys_a_planet_for_good() {
         let content = ti4_content::ContentStore::embedded();
         let sources = ti4_model::content_types::DEFAULT;

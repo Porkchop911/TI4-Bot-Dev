@@ -80,6 +80,10 @@ unsafe_code = "forbid"
 dead_code = "warn"
 unused_imports = "warn"
 unused_variables = "warn"
+# Denied, not warned: a second `#[test]` on one function is always a test inserted between an
+# existing attribute and the function it belonged to, which silently stops the *other* test
+# running. It happened three times on this branch alone and the warning went unread each time.
+duplicate_macro_attributes = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

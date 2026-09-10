@@ -214,6 +214,64 @@ fn place_on_own_planet(
     Ok(())
 }
 
+/// Every exhausted card The Acropolis could ready, as `kind|id` options.
+///
+/// Strategy cards are excluded by the printed text; `excluding` is The Acropolis' own card, which
+/// the caller exhausted before resolving and which "another" rules out. A planet card belongs to
+/// whoever controls the planet, so the exhausted-planet set is intersected with this seat's
+/// holdings rather than read whole.
+fn readyable(state: &GameState, player: &PlayerId, excluding: &PlanetId) -> Vec<ChoiceOption> {
+    let mut options: Vec<ChoiceOption> = state
+        .controlled_planets(player)
+        .into_iter()
+        .map(|(_, planet)| planet)
+        .filter(|planet| state.exhausted_planets.contains(planet.as_str()))
+        .map(|planet| {
+            ChoiceOption::labelled(
+                format!("planet|{planet}"),
+                "legendary",
+                format!("ready {planet}"),
+            )
+        })
+        .collect();
+    let Some(seat) = state.player(player) else {
+        return options;
+    };
+    for technology in &seat.exhausted_technologies {
+        options.push(ChoiceOption::labelled(
+            format!("technology|{technology}"),
+            "legendary",
+            format!("ready {technology}"),
+        ));
+    }
+    for relic in &seat.exhausted_relics {
+        options.push(ChoiceOption::labelled(
+            format!("relic|{relic}"),
+            "legendary",
+            format!("ready {relic}"),
+        ));
+    }
+    for card in seat.exhausted_legendary.iter().filter(|id| *id != excluding) {
+        options.push(ChoiceOption::labelled(
+            format!("legendary|{card}"),
+            "legendary",
+            format!("ready the {card} ability"),
+        ));
+    }
+    for (leader, _) in seat
+        .leaders
+        .iter()
+        .filter(|(_, status)| **status == ti4_model::state::LeaderStatus::Exhausted)
+    {
+        options.push(ChoiceOption::labelled(
+            format!("leader|{leader}"),
+            "legendary",
+            format!("ready {leader}"),
+        ));
+    }
+    options
+}
+
 /// Apply one ability. A planet with no arm here is an honest gap, not a silent one.
 fn resolve(
     state: &mut GameState,
@@ -348,6 +406,52 @@ fn resolve(
                 units.push(ti4_model::units::Unit::new(type_id.clone(), player.clone()));
             }
         }
+        // "ready another component that isn't a strategy card"
+        //
+        // "Another" excludes The Acropolis itself, which the caller has already exhausted. Every
+        // other exhaustible card this seat owns is fair game: planets it controls, technologies,
+        // relics, leaders, and the other legendary ability cards. Strategy cards are named out.
+        "emelpar" => {
+            let options = readyable(state, player, planet);
+            if options.is_empty() {
+                return Ok(());
+            }
+            let choice = Choice::new(player.clone(), "The Acropolis: ready what", options)
+                .contextualized(DecisionContext::new(
+                    player.clone(),
+                    DecisionSource::Content("legendary".to_owned()),
+                    "legendary_acropolis",
+                    state.phase,
+                    state.round,
+                ));
+            let answer =
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+            let mut parts = answer.id.splitn(2, '|');
+            match (parts.next(), parts.next()) {
+                (Some("planet"), Some(id)) => state.ready_planet(&PlanetId::new(id)),
+                (Some("technology"), Some(id)) => {
+                    if let Some(seat) = state.player_mut(player) {
+                        seat.exhausted_technologies
+                            .remove(&ti4_model::id::TechnologyId::new(id));
+                    }
+                }
+                (Some("relic"), Some(id)) => {
+                    if let Some(seat) = state.player_mut(player) {
+                        seat.exhausted_relics
+                            .remove(&ti4_model::id::RelicId::new(id));
+                    }
+                }
+                (Some("legendary"), Some(id)) => {
+                    if let Some(seat) = state.player_mut(player) {
+                        seat.exhausted_legendary.remove(&PlanetId::new(id));
+                    }
+                }
+                (Some("leader"), Some(id)) => {
+                    crate::leaders::ready(state, player, &ti4_model::id::LeaderId::new(id));
+                }
+                _ => {}
+            }
+        }
         // "discard 1 secret objective to draw 1 secret objective"
         "mrte" => {
             let held: Vec<ti4_model::id::SecretObjectiveId> = state
@@ -428,6 +532,55 @@ mod tests {
             .system_mut(&system)
             .set_control(PlanetId::new(planet), player.clone());
         (state, player)
+    }
+
+    #[test]
+    fn the_acropolis_readies_another_card() {
+        let (mut state, player) = holding("emelpar", "99");
+        let other = PlanetId::new("primor");
+        let elsewhere = ti4_model::id::SystemId::new("45");
+        state.board.entry(elsewhere.clone()).or_default();
+        state
+            .system_mut(&elsewhere)
+            .set_control(other.clone(), player.clone());
+        state.exhaust_planet(other.clone());
+
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([
+            "emelpar",
+            "planet|primor",
+            "decline",
+        ])));
+        end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
+
+        assert!(
+            !state.exhausted_planets.contains(&other),
+            "the chosen planet card readied"
+        );
+    }
+
+    #[test]
+    fn the_acropolis_offers_neither_a_strategy_card_nor_itself() {
+        let (mut state, player) = holding("emelpar", "99");
+        let emelpar = PlanetId::new("emelpar");
+        let technology = ti4_model::id::TechnologyId::new("sarweenTools");
+        if let Some(seat) = state.player_mut(&player) {
+            seat.exhausted_strategy_cards
+                .insert(ti4_model::id::StrategyCardId::new("warfare"));
+            seat.exhausted_technologies.insert(technology.clone());
+            // As `end_turn` leaves it: the ability card is spent before it resolves.
+            seat.exhausted_legendary.insert(emelpar.clone());
+        }
+
+        let offered: Vec<String> = readyable(&state, &player, &emelpar)
+            .into_iter()
+            .map(|option| option.id)
+            .collect();
+
+        assert_eq!(
+            offered,
+            vec![format!("technology|{technology}")],
+            "the strategy card is named out by the card, and \"another\" excludes The Acropolis"
+        );
     }
 
     #[test]

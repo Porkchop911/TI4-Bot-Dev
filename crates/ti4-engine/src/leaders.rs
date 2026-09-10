@@ -304,6 +304,21 @@ pub fn ready_all(state: &mut GameState, player: &PlayerId) -> Vec<LeaderId> {
     exhausted
 }
 
+/// Ready one exhausted leader. `false` if it was not exhausted.
+///
+/// The status phase readies them all at once; this is for the effects that ready a single card
+/// out of turn, like The Acropolis.
+pub fn ready(state: &mut GameState, player: &PlayerId, leader: &LeaderId) -> bool {
+    let Some(seat) = state.player_mut(player) else {
+        return false;
+    };
+    if seat.leaders.get(leader) != Some(&LeaderStatus::Exhausted) {
+        return false;
+    }
+    seat.leaders.insert(leader.clone(), LeaderStatus::Readied);
+    true
+}
+
 /// Exhaust a leader to use it. `false` if it was not readied.
 pub fn exhaust(state: &mut GameState, player: &PlayerId, leader: &LeaderId) -> bool {
     let Some(seat) = state.player_mut(player) else {
