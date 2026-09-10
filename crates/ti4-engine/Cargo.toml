@@ -23,6 +23,7 @@ enumset.workspace = true
 itertools.workspace = true
 
 [dev-dependencies]
+strum.workspace = true
 rstest.workspace = true
 proptest.workspace = true
 

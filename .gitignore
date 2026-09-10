@@ -60,3 +60,7 @@ fixtures/legacy_entropy/*
 
 # Local git bundles taken before handing the repo to another agent.
 .backup/
+
+# Bug-fix worktree build output. Named to avoid colliding with the shared tree's
+# target dirs; the ignore list matches by name, so it needs saying explicitly.
+/target-bugfix/

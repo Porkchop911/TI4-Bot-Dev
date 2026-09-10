@@ -534,6 +534,16 @@ fn stellar_converter(
 /// The three exclusions are printed on the card; the adjacency is measured from every system
 /// holding one of this player's BOMBARDMENT units, which is a property of the unit type rather
 /// than of the unit, so it comes from the catalogue.
+/// Whether this planet is Mecatol Rex, by printed type rather than by id.
+///
+/// There is more than one Mecatol: `mr` in the base game and `mrte` in Thunder's Edge, and an
+/// expansion may add another. Both carry the `MR` planet type, so matching on the type keeps the
+/// rule true for tiles that do not exist yet -- and the previous check, `alias == "mecatol_rex"`,
+/// matched no planet at all, which is how the Stellar Converter came to be able to purge it.
+fn is_mecatol(planet: &ti4_content::galaxy::Planet<'_>) -> bool {
+    planet.planet_types().contains(&"MR")
+}
+
 fn stellar_converter_targets(
     state: &GameState,
     content: &ContentStore,
@@ -561,7 +571,7 @@ fn stellar_converter_targets(
         }
         for planet in ti4_content::galaxy::planets_in(content, system, sources) {
             let alias = planet.id();
-            if planet.homeworld_of().is_some() || planet.is_legendary() || alias == "mecatol_rex" {
+            if planet.homeworld_of().is_some() || planet.is_legendary() || is_mecatol(&planet) {
                 continue;
             }
             let target = PlanetId::new(alias);
@@ -1295,7 +1305,7 @@ mod tests {
             planet.homeworld_of().is_none()
                 && !planet.is_legendary()
                 && !planet.is_placed_during_play()
-                && !id.eq_ignore_ascii_case("mecatol_rex")
+                && !is_mecatol(planet)
                 && planet.system_id().is_some()
         })
         .map(|(id, planet)| {
@@ -1314,6 +1324,55 @@ mod tests {
     /// only cleared the current occupants would pass a units-are-gone check and still let the next
     /// player take the planet on the following turn.
     #[test]
+    #[test]
+    fn the_stellar_converter_cannot_destroy_mecatol_rex() {
+        // "Choose 1 non-home, non-legendary planet other than Mecatol Rex". The guard for the
+        // last clause compared a planet id against "mecatol_rex", which is not an id any planet
+        // has -- Mecatol is `mr` in the base game and `mrte` in Thunder's Edge -- so it was dead
+        // and the relic could purge the seat of the Galactic Council. Base Mecatol carries no
+        // legendary ability either, so nothing else caught it.
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let attacker = PlayerId::new("a");
+
+        let mecatol = ti4_model::id::SystemId::new(crate::seating::MECATOL);
+        let hub = crate::fixtures::hub_with_outer(mecatol.as_str());
+        let centre = ti4_model::id::SystemId::new(&hub.centre);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        // A bombarding ship next door is the whole of the relic's range requirement.
+        crate::fixtures::put(&mut state, &centre, "dreadnought", &attacker, 1);
+
+        let targets =
+            stellar_converter_targets(&state, content, sources, &hub.galaxy, &attacker);
+        // Prove the tile really was in range, or excluding it would prove nothing.
+        assert!(
+            hub.galaxy.are_adjacent(&hub.centre, mecatol.as_str()),
+            "the fixture must put Mecatol next to the bombarding ship"
+        );
+        let mecatol_planets: Vec<String> =
+            ti4_content::galaxy::planets_in(content, mecatol.as_str(), sources)
+                .iter()
+                .map(|planet| planet.id().to_owned())
+                .collect();
+        assert!(
+            !mecatol_planets.is_empty(),
+            "tile {} must carry Mecatol Rex",
+            crate::seating::MECATOL
+        );
+        for (system, planet) in &targets {
+            assert!(
+                !(system == &mecatol && mecatol_planets.contains(&planet.to_string())),
+                "Mecatol Rex was offered as a Stellar Converter target: {planet:?}"
+            );
+        }
+    }
+
     fn the_stellar_converter_destroys_a_planet_for_good() {
         let content = ti4_content::ContentStore::embedded();
         let sources = ti4_model::content_types::DEFAULT;
