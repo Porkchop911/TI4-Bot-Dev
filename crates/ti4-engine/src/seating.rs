@@ -242,8 +242,22 @@ pub fn build_board(
 
     // Three rings hold 37 tiles, enough for Mecatol plus six homes and filler.
     let rings = 3;
-    Ok(Galaxy::build(content, &ids, sources, rings)?)
+    let mut galaxy = Galaxy::build(content, &ids, sources, rings)?;
+    // The Wormhole Nexus is always in play under Prophecy of Kings and is never dealt as filler:
+    // it sits beside the board, reached only through its wormholes. It starts on its locked face,
+    // which prints a gamma wormhole and nothing else -- so until it is flipped only a gamma
+    // source reaches it, which is Creuss's business.
+    if sources.contains(ti4_model::content_types::Source::Pok) {
+        galaxy.place_off_map(content, LOCKED_NEXUS, sources)?;
+    }
+    Ok(galaxy)
 }
+
+/// The Wormhole Nexus, locked face up: a gamma wormhole and nothing else.
+pub const LOCKED_NEXUS: &str = "82a";
+
+/// The Wormhole Nexus once flipped: alpha, beta and gamma.
+pub const OPEN_NEXUS: &str = "82b";
 
 /// Ordinary planet-bearing tiles to fill a map with.
 ///
@@ -844,6 +858,34 @@ mod tests {
 
         assert_eq!(galaxy.coord_of(MECATOL), Some(ti4_model::Hex::ORIGIN));
         assert_eq!(galaxy.adjacent(MECATOL).len(), 6, "a full first ring");
+    }
+
+    #[test]
+    fn the_wormhole_nexus_is_in_play_off_the_map_under_pok() {
+        // It is never dealt as filler -- `neutral_systems` drops anything carrying a wormhole --
+        // and nothing else placed it, so the Nexus simply was not in the game.
+        let pairs = [("a", "sol"), ("b", "hacan")];
+        let assignments: BTreeMap<PlayerId, FactionId> = pairs
+            .iter()
+            .map(|(p, f)| (PlayerId::new(*p), FactionId::new(*f)))
+            .collect();
+        let filler: Vec<SystemId> = neutral_systems(content(), 30, POK);
+        let borrowed: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        let galaxy = build_board(content(), &assignments, &borrowed, POK).expect("a board");
+
+        assert!(
+            galaxy.coord_of(LOCKED_NEXUS).is_none(),
+            "the Nexus is beside the board, not on it"
+        );
+        assert!(
+            !galaxy.system_ids().contains(&LOCKED_NEXUS),
+            "so it is not one of the placed tiles either"
+        );
+        // Present all the same: its gamma reaches anything else carrying gamma.
+        assert!(
+            galaxy.wormhole_kinds(LOCKED_NEXUS).contains("GAMMA"),
+            "the locked face prints a gamma wormhole"
+        );
     }
 
     #[test]

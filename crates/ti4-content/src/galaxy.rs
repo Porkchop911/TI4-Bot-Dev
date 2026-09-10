@@ -648,7 +648,11 @@ impl Galaxy {
     }
 
     /// The wormhole kinds at a system: printed on the tile, plus any placed there by a token.
-    fn wormhole_kinds(&self, system_id: &str) -> BTreeSet<&str> {
+    ///
+    /// Public because a system placed off the map has no coordinate and does not appear in
+    /// `system_ids`, so this is the only way for a caller to see that it is in play at all.
+    #[must_use]
+    pub fn wormhole_kinds(&self, system_id: &str) -> BTreeSet<&str> {
         let suppressed = self.nexus_wormholes_off && system_id.starts_with(NEXUS_TILE);
         self.wormholes
             .get(system_id)
