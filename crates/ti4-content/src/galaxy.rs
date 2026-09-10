@@ -514,6 +514,36 @@ impl Galaxy {
         })
     }
 
+    /// Register a system that is in play but not on the hex grid.
+    ///
+    /// The Wormhole Nexus is placed beside the board: it has no hex, no hex neighbours, and is
+    /// reached only through the wormholes printed on it. Everything else about it is an ordinary
+    /// system, so it joins `wormholes` without joining `placement` or `coords`.
+    ///
+    /// # Errors
+    /// [`GalaxyError::UnknownSystem`] if the corpus has no such system in this scope, and
+    /// [`GalaxyError::DuplicateSystem`] if it is already on the grid.
+    pub fn place_off_map(
+        &mut self,
+        store: &ContentStore,
+        system_id: &str,
+        sources: SourceSet,
+    ) -> Result<(), GalaxyError> {
+        if self.coords.contains_key(system_id) {
+            return Err(GalaxyError::DuplicateSystem(system_id.to_owned()));
+        }
+        let system = system(store, system_id, sources)
+            .ok_or_else(|| GalaxyError::UnknownSystem(system_id.to_owned()))?;
+        self.wormholes.insert(
+            system_id.to_owned(),
+            system.wormholes().into_iter().map(str::to_owned).collect(),
+        );
+        if system.is_hyperlane() {
+            self.hyperlanes.insert(system_id.to_owned());
+        }
+        Ok(())
+    }
+
     /// System ids on the board, in placement order (centre outwards).
     #[must_use]
     pub fn system_ids(&self) -> Vec<&str> {
@@ -543,14 +573,19 @@ impl Galaxy {
     /// Returns an empty set for a system that is not on this board.
     #[must_use]
     pub fn adjacent(&self, system_id: &str) -> BTreeSet<&str> {
-        let Some(here) = self.coords.get(system_id) else {
-            return BTreeSet::new();
-        };
-        let mut neighbours: BTreeSet<&str> = here
-            .neighbours()
-            .into_iter()
-            .filter_map(|n| self.system_at(n))
-            .collect();
+        // A system with no hex is off the map -- the Wormhole Nexus sits beside the board rather
+        // than on it -- so it has no hex neighbours but keeps its wormholes. Returning early on a
+        // missing coord made that one-directional: an on-map tile listed the Nexus as a
+        // wormhole partner while the Nexus listed nothing, so ships could move in and not out.
+        let mut neighbours: BTreeSet<&str> = self.coords.get(system_id).map_or_else(
+            BTreeSet::new,
+            |here| {
+                here.neighbours()
+                    .into_iter()
+                    .filter_map(|n| self.system_at(n))
+                    .collect()
+            },
+        );
         if !self.wormholes_off {
             neighbours.extend(self.wormhole_partners(system_id));
         }
@@ -905,6 +940,38 @@ mod tests {
         assert!(
             galaxy.are_adjacent("18", "19"),
             "hex neighbours are unaffected"
+        );
+    }
+
+    #[test]
+    fn an_off_map_system_reaches_its_wormhole_partners_both_ways() {
+        // The Wormhole Nexus sits beside the board, not on it: no hex, no hex neighbours, reached
+        // only through its printed wormholes. Adjacency used to return early when a system had no
+        // coord, which made that one-directional -- the on-map tile listed the Nexus as a partner
+        // while the Nexus listed nothing, so a ship could move in and never move out.
+        let store = ContentStore::embedded();
+        let sources = ti4_model::content_types::FULL;
+        // 39 is the printed Alpha Wormhole; 82b, the open face of the Nexus, carries alpha too.
+        let mut galaxy = Galaxy::build(store, &["19", "39"], sources, 1).unwrap();
+        galaxy.place_off_map(store, "82b", sources).unwrap();
+
+        assert!(
+            galaxy.coord_of("82b").is_none(),
+            "the Nexus is not on the grid"
+        );
+        assert!(
+            galaxy.adjacent("82b").contains("39"),
+            "the Nexus reaches the alpha tile: {:?}",
+            galaxy.adjacent("82b")
+        );
+        assert!(
+            galaxy.adjacent("39").contains("82b"),
+            "and the alpha tile reaches the Nexus: {:?}",
+            galaxy.adjacent("39")
+        );
+        assert!(
+            !galaxy.adjacent("19").contains("82b"),
+            "a tile with no wormhole does not touch it"
         );
     }
 
